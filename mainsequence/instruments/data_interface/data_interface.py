@@ -2,10 +2,19 @@ import datetime
 from typing import Dict, Optional, TypedDict, Any
 import random
 from mainsequence.instruments.utils import to_ql_date
+import mainsequence.client as msc
 import QuantLib as ql
 import os
 import pandas as pd
 from pathlib import Path
+
+
+DISCOUNT_CURVES_TABLE=msc.Constant.get_or_none(name="DISCOUNT_CURVES_TABLE")
+REFERENCE_RATES_FIXING_TABLE = msc.Constant.get_or_none(name="REFERENCE_RATES_FIXING_TABLE")
+
+assert DISCOUNT_CURVES_TABLE is not None, "DISCOUNT_CURVES_TABLE not found in constants"
+assert REFERENCE_RATES_FIXING_TABLE is not None, "REFERENCE_RATES_FIXING_TABLE not found in constants"
+
 
 
 class DateInfo(TypedDict, total=False):
@@ -278,7 +287,6 @@ class MSInterface():
     @cachedmethod(cache=attrgetter("_curve_cache"), lock=attrgetter("_curve_cache_lock"))
     def get_historical_discount_curve(self, curve_name, target_date):
         from mainsequence.tdag import APIDataNode
-        from mainsequence.instruments.settings import DISCOUNT_CURVES_TABLE
         data_node = APIDataNode.build_from_identifier(identifier=DISCOUNT_CURVES_TABLE)
 
 

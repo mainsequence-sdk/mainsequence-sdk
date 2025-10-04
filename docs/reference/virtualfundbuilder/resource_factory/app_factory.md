@@ -1,1 +1,0 @@
-::: mainsequence.virtualfundbuilder.resource_factory.app_factory

@@ -38,6 +38,9 @@ def _refresh_token() -> str | None:
     return tok.get("refresh")
 
 def login(email: str, password: str) -> dict:
+    email = (email or "").strip()
+    password = (password or "").rstrip("\r\n")
+
     url = _full(AUTH_PATHS["obtain"])
     payload = {"email": email, "password": password}  # server expects 'email'
     r = S.post(url, data=json.dumps(payload))
@@ -155,3 +158,31 @@ def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> No
                {"key_title": key_title, "public_key": public_key})
     except Exception:
         pass
+
+def get_project_token(project_id: int | str) -> str:
+    """
+    Fetch the project's token using the current access token.
+    If the access token is expired or missing, authed() will refresh once.
+    If refresh also fails, NotLoggedIn is raised so the caller can prompt re-login.
+    """
+    r = authed("GET", f"/orm/api/pods/projects/{project_id}/get_project_token/")
+    if not r.ok:
+        # authed() already tried refresh on 401;
+        # at this point treat as API error with server message.
+        msg = r.text
+        try:
+            if r.headers.get("content-type","").startswith("application/json"):
+                data = r.json()
+                msg = data.get("detail") or data.get("message") or msg
+        except Exception:
+            pass
+        raise ApiError(f"Project token fetch failed ({r.status_code}). {msg}")
+
+    token = None
+    if r.headers.get("content-type","").startswith("application/json"):
+        data = r.json()
+        token=data["development"][0]
+
+    if not token:
+        raise ApiError("Project token response did not include a token.")
+    return token

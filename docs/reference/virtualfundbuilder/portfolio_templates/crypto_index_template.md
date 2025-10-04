@@ -1,1 +1,0 @@
-::: mainsequence.virtualfundbuilder.portfolio_templates.crypto_index_template

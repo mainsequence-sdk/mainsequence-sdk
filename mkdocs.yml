@@ -7,7 +7,7 @@ edit_uri: edit/main/docs/
 
 theme:
   name: "material"
-  logo: "img/logo.png"
+  logo: "https://main-sequence.app/static/media/logos/MS_logo_long_black.png"
   favicon: "img/favico.ico" # Optional: Add a favicon
   palette:
     scheme: slate  # This makes dark mode the default scheme

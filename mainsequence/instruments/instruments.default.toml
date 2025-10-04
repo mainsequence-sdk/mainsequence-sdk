@@ -1,0 +1,17 @@
+# instruments.toml — defaults for MainSequence Instruments
+
+DISCOUNT_CURVES_TABLE        = "discount_curves"
+REFERENCE_RATES_FIXING_TABLE = "fixing_rates_1d"
+
+TIIE_28_ZERO_CURVE = "F_TIIE_28_VALMER"
+M_BONOS_ZERO_CURVE = "M_BONOS_ZERO_OTR"
+
+TIIE_28_UID        = "TIIE_28"
+TIIE_91_UID        = "TIIE_91"
+TIIE_182_UID       = "TIIE_182"
+TIIE_OVERNIGHT_UID = "TIIE_OVERNIGHT"
+
+CETE_28_UID  = "CETE_28"
+CETE_91_UID  = "CETE_91"
+CETE_182_UID = "CETE_182"
+

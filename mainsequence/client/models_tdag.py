@@ -18,9 +18,10 @@ from typing import Union
 import time
 import os
 from mainsequence.logconf import logger
+from threading import RLock
 
-from pydantic import BaseModel, Field, field_validator
-from typing import Optional, List, Dict, Any, TypedDict, Tuple
+from pydantic import BaseModel, Field, field_validator,computed_field
+from typing import Optional, List, Dict, Any, TypedDict, Tuple, ClassVar
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from functools import wraps
 import math
@@ -28,6 +29,9 @@ import gzip
 import base64
 import numpy as np
 import concurrent.futures
+
+from cachetools import TTLCache, cachedmethod
+from operator import attrgetter
 
 _default_data_source = None  # Module-level cache
 
@@ -2271,6 +2275,130 @@ class PodDataSource:
     def __repr__(self):
         return f"{self.data_source.related_resource}"
 
+
+
+def _norm_value(v: Any) -> Any:
+    """Normalize values into hashable, deterministic forms for the cache key."""
+    # Project objects → their integer IDs (project scoped vs global)
+    if Project and isinstance(v, Project):
+        return getattr(v, "id", v)
+
+    # Common iterables → sorted tuples to ignore order in queries like name__in
+    if isinstance(v, (set, list, tuple)):
+        # Convert nested items too, just in case
+        return tuple(sorted(_norm_value(x) for x in v))
+
+    # Dicts → sorted (k,v) tuples
+    if isinstance(v, dict):
+        return tuple(sorted((k, _norm_value(val)) for k, val in v.items()))
+
+    return v  # primitives pass through
+def _norm_kwargs(kwargs: Dict[str, Any]) -> Tuple[Tuple[str, Any], ...]:
+    """Stable, hashable key from kwargs (order-insensitive)."""
+    items = []
+    for k, v in kwargs.items():
+        # Special-case a big `name__in` so you don’t produce huge keys.
+        if k == "name__in" and isinstance(v, (list, tuple, set)):
+            items.append((k, tuple(sorted(str(x) for x in v))))
+        else:
+            items.append((k, _norm_value(v)))
+    return tuple(sorted(items))
+
+class Constant(BasePydanticModel, BaseObjectOrm):
+    """
+    Simple scoped constant.
+    - Global when project is None.
+    - Project-scoped when project is set.
+
+    Uniqueness (enforced in DB/service layer):
+      * Global:      (organization_owner, name)
+      * Per-project: (organization_owner, project, name)
+    """
+    id: Optional[int]
+
+    name: str = Field(
+        ...,
+        max_length=255,
+        description="UPPER_SNAKE_CASE; optional category via double-underscore, e.g. 'CURVE__US_TREASURIES'."
+    )
+    value: Any = Field(
+        ...,
+        description="Small JSON value (string/number/bool/object/array). Keep it small (e.g., <=10KB).",
+    )
+    project: Optional[Union[Project,int]] = Field(
+        None,
+        description="Project ID; None ⇒ global."
+    )
+    category: Optional[str] = None
+
+    # Class-level cache & lock (Pydantic ignores ClassVar)
+    _filter_cache: ClassVar[TTLCache] = TTLCache(maxsize=512, ttl=600)
+    _get_cache:    ClassVar[TTLCache] = TTLCache(maxsize=1024, ttl=600)
+
+
+    _cache_lock: ClassVar[RLock] = RLock()
+
+    model_config = dict(from_attributes=True)  # allows .model_validate(from_orm_obj)
+
+
+    @classmethod
+    @cachedmethod(
+        lambda cls: cls._filter_cache,  # <- resolves to the real TTLCache
+        lock=lambda cls: cls._cache_lock,
+        key=lambda cls, **kw: _norm_kwargs(kw)
+    )
+    def filter(cls, **kwargs):
+        # Delegate to your real filter (API/DB) only on cache miss
+        return super().filter(**kwargs)
+
+    @classmethod
+    @cachedmethod(
+        lambda cls: cls._get_cache,
+        lock=lambda cls: cls._cache_lock,
+        key=lambda cls, **kw: _norm_kwargs(kw),
+    )
+    def get(cls, **kwargs):
+        # e.g. get(name="CURVE__M_BONOS", project=None)
+        return super().get(**kwargs)
+
+    @classmethod
+    def get_value(cls,name:str,project_id:Optional[int]=None):
+        return cls.get(name=name,project_id=project_id).value
+
+    @classmethod
+    def invalidate_filter_cache(cls) -> None:
+        cls._filter_cache.clear()
+
+    @classmethod
+    def create_constants_if_not_exist(cls,constants_to_create: dict):
+        # crete global constants if not exist in  backed
+
+        # constants_to_create=dict(
+        # TIIE_28_UID        = "TIIE_28",
+        # TIIE_91_UID        = "TIIE_91",
+        # TIIE_182_UID       = "TIIE_182",
+        # TIIE_OVERNIGHT_UID = "TIIE_OVERNIGHT",
+        #
+        # CETE_28_UID        = "CETE_28",
+        # CETE_91_UID        = "CETE_91",
+        # CETE_182_UID       = "CETE_182",
+        #
+        # # Curve identifiers
+        # TIIE_28_ZERO_CURVE = "F_TIIE_28_VALMER",
+        # M_BONOS_ZERO_CURVE = "M_BONOS_ZERO_OTR",
+        #
+        #
+        # DISCOUNT_CURVES_TABLE         = "discount_curves",
+        # REFERENCE_RATES_FIXING_TABLE  = "fixing_rates_1d",
+        # )
+        existing_constants = cls.filter(name__in=list(constants_to_create.keys()))
+        existing_constants_names = [c.name for c in existing_constants]
+        constants_to_register = {k: v for k, v in constants_to_create.items() if k not in existing_constants_names}
+        created_constants=[]
+        for k, v in constants_to_register.items():
+            new_constant = cls.create(name=k, value=v)
+            created_constants.append(new_constant)
+        return created_constants
 
 SessionDataSource = PodDataSource()
 SessionDataSource.set_remote_db()

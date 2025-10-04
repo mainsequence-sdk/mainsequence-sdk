@@ -75,4 +75,8 @@ def set_env_access(access: str) -> None:
 def backend_url() -> str:
     cfg = get_config()
     url = (cfg.get("backend_url") or DEFAULTS["backend_url"]).rstrip("/")
+
+    if os.environ.get("MAIN_SEQUENCE_BACKEND_URL") is not None:
+        url=os.environ.get("MAIN_SEQUENCE_BACKEND_URL")
+
     return url

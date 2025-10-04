@@ -1,1 +1,0 @@
-::: mainsequence.tdag.time_series.persist_managers

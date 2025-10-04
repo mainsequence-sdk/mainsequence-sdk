@@ -4,7 +4,7 @@ from .models_tdag import (request_to_datetime, LocalTimeSeriesDoesNotExist, Dyna
                           SourceTableConfigurationDoesNotExist, LocalTimeSerieUpdateDetails,
                           JSON_COMPRESSED_PREFIX, Scheduler, SchedulerDoesNotExist, LocalTimeSerie,
                           DynamicTableMetaData, DynamicTableDataSource,DUCK_DB,
-ColumnMetaData,Artifact,TableMetaData ,DataFrequency,SourceTableConfiguration,
+ColumnMetaData,Artifact,TableMetaData ,DataFrequency,SourceTableConfiguration,Constant,
                           Project, UniqueIdentifierRangeMap, LocalTimeSeriesHistoricalUpdate,
                           UpdateStatistics, DataSource, PodDataSource, SessionDataSource)
 

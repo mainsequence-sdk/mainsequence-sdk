@@ -7,6 +7,8 @@ import sys
 from pathlib import Path
 from types import SimpleNamespace
 
+
+HERE = Path(__file__).resolve().parent
 # ---------------- App identity & app dirs ----------------
 APP_VENDOR = "mainsequence"
 APP_NAME = "instruments"
@@ -15,6 +17,8 @@ APP_ID = f"{APP_VENDOR}/{APP_NAME}"
 # All environment variables use this prefix now.
 ENV_PREFIX = "MSI"                    # e.g., MSI_CONFIG_FILE, MSI_DATA_BACKEND
 ENV_CONFIG_FILE = f"{ENV_PREFIX}_CONFIG_FILE"
+ENV_DEFAULT_TOML_FILE = f"{ENV_PREFIX}_DEFAULT_TOML_FILE"
+
 
 def _user_config_root() -> Path:
     if sys.platform == "win32":
@@ -62,31 +66,22 @@ def _load_file_config() -> dict:
             pass
     return {}
 
-# ---------------- default TOML (written only if no config exists) ----------------
-DEFAULT_TOML = """# instruments.toml — defaults for MainSequence Instruments
-
-DISCOUNT_CURVES_TABLE        = "discount_curves"
-REFERENCE_RATES_FIXING_TABLE = "fixing_rates_1d"
-
-TIIE_28_ZERO_CURVE = "F_TIIE_28_VALMER"
-M_BONOS_ZERO_CURVE = "M_BONOS_ZERO_OTR"
-
-TIIE_28_UID        = "TIIE_28"
-TIIE_91_UID        = "TIIE_91"
-TIIE_182_UID       = "TIIE_182"
-TIIE_OVERNIGHT_UID = "TIIE_OVERNIGHT"
-
-CETE_28_UID  = "CETE_28"
-CETE_91_UID  = "CETE_91"
-CETE_182_UID = "CETE_182"
-
-[data]
-backend = "mock"
-
-[files]
-tiie_zero_csv      = ""
-tiie28_fixings_csv = ""
-"""
+# ---------------- default TOML (read from a real file next to this module) -----
+def _read_default_toml_text() -> str | None:
+    """
+    Returns the text of the default TOML configuration.
+    Order of precedence:
+      1) Path from MSI_DEFAULT_TOML_FILE (if set)
+      2) instruments.default.toml next to this file
+    Returns None if no default file is found/readable.
+    """
+    candidate = Path(os.getenv(ENV_DEFAULT_TOML_FILE, HERE / "instruments.default.toml")).expanduser()
+    try:
+        if candidate.exists():
+            return candidate.read_text(encoding="utf-8")
+    except Exception:
+        pass
+    return None
 
 def _existing_config_path() -> Path | None:
     env_cfg = os.getenv(ENV_CONFIG_FILE)
@@ -108,11 +103,15 @@ def _ensure_default_config_file() -> Path | None:
     """If no config exists anywhere, create one. Never overwrites existing."""
     if _existing_config_path() is not None:
         return None
+    default_text = _read_default_toml_text()
+    if default_text is None:
+        return None
+
     target = Path(os.getenv(ENV_CONFIG_FILE, APP_ROOT / "config.toml")).expanduser()
     try:
         target.parent.mkdir(parents=True, exist_ok=True)  # ensure parent dir only
         if not target.exists():
-            target.write_text(DEFAULT_TOML, encoding="utf-8")
+            target.write_text(default_text, encoding="utf-8")
     except Exception:
         return None
     return target

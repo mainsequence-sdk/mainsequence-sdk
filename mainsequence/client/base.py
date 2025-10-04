@@ -128,6 +128,7 @@ class BaseObjectOrm:
         "DynamicResource": "tdag-gpt/dynamic_resource",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
+        "Constant":"pods/constant",
 
         #ReportBuilder
         "Presentation": "reports/presentations",

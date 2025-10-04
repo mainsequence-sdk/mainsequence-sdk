@@ -9,7 +9,7 @@ This CLI helps you sign in, view and set up projects locally (with SSH keys gene
 
 ## Quick start
 
-```bash
+```powershell
 # 1) Sign in (prompts for password)
 mainsequence login you@example.com
 
@@ -19,13 +19,13 @@ mainsequence settings
 # 3) List projects you have access to
 mainsequence project list
 
-# 4) Clone & link a project locally (creates ~/.ssh/<repo-key>, starts ssh-agent, writes .env)
+# 4) Clone & link a project locally (creates SSH keys, starts ssh-agent, writes .env)
 mainsequence project set-up-locally 123
 
-# 5) Open the mapped folder in your file manager
+# 5) Open the mapped folder in File Explorer
 mainsequence project open 123
 
-# 6) Open a terminal pre-wired with ssh-agent & the project’s key
+# 6) Open a PowerShell terminal pre-wired with ssh-agent & the project's key
 mainsequence project open-signed-terminal 123
 ```
 
@@ -34,18 +34,19 @@ mainsequence project open-signed-terminal 123
 ## Prerequisites
 
 - **Python** and **git** available on PATH.
-- **OpenSSH**/**ssh-agent** available (the CLI will try to start it and add keys).
-- For clipboard copy of the public key: `pbcopy` (macOS) or `wl-copy`/`xclip` (Linux); optional.
+- **OpenSSH** (included in Windows 10/11) and **ssh-agent** service available.
+- For clipboard copy of the public key (optional): Windows clipboard is handled automatically. On macOS/Linux, requires `pbcopy` (macOS) or `wl-copy`/`xclip` (Linux).
 - For `build_and_run`:  
   - **uv** (`pip install uv`)  
-  - **Docker** (if you use the Docker part).
+  - **Docker Desktop** (if you use the Docker part).
 
 ---
 
 ## Configuration & files
 
 - **Config directory**
-  - **Windows:** `%APPDATA%\MainSequenceCLI`
+  - **Windows:** `%APPDATA%\MainSequenceCLI`  
+    (typically: `C:\Users\YourName\AppData\Roaming\MainSequenceCLI`)
   - **macOS:** `~/Library/Application Support/MainSequenceCLI`
   - **Linux:** `~/.config/mainsequence`
 - **Files**
@@ -55,14 +56,16 @@ mainsequence project open-signed-terminal 123
 
 **Defaults**
 - Backend: `https://main-sequence.app/` (override with `MAIN_SEQUENCE_BACKEND_URL`)
-- Projects base: `~/mainsequence`
+- Projects base: 
+  - **Windows:** `C:\Users\YourName\mainsequence`
+  - **macOS/Linux:** `~/mainsequence`
 
 ---
 
 ## Environment variables
 
 - `MAIN_SEQUENCE_BACKEND_URL` – set before running the CLI to point at a different backend.
-- `MAIN_SEQUENCE_USER_TOKEN` – access token; `login --export` prints a shell-ready `export …` line.
+- `MAIN_SEQUENCE_USER_TOKEN` – access token; `login --export` prints a shell-ready export line.
 
 ---
 
@@ -71,7 +74,7 @@ mainsequence project open-signed-terminal 123
 ### `login`
 Obtain and store tokens, set `MAIN_SEQUENCE_USER_TOKEN` for the current process, and (by default) print a projects table.
 
-```bash
+```powershell
 mainsequence login <email>
 # options:
 #   --export      Print: export MAIN_SEQUENCE_USER_TOKEN="…"
@@ -79,30 +82,51 @@ mainsequence login <email>
 ```
 
 **Examples**
-```bash
-# POSIX shells: set token env var for the current shell
-eval "$(mainsequence login you@example.com --export)"
+
+**Windows PowerShell:**
+```powershell
+# The CLI prints a POSIX export line, but you need to set it manually in PowerShell
+mainsequence login you@example.com --export
+# Copy the token from output, then:
+$env:MAIN_SEQUENCE_USER_TOKEN = "<paste token here>"
 ```
 
-> On Windows PowerShell, run login normally (it prints a POSIX `export …` line). Then set the token manually:  
-> `$env:MAIN_SEQUENCE_USER_TOKEN = "<paste token>"`
+**macOS/Linux (bash/zsh):**
+```bash
+# Set token env var for the current shell
+eval "$(mainsequence login you@example.com --export)"
+```
 
 ---
 
 ### `settings`
 Show or change local settings.
 
-```bash
+```powershell
 # `settings` with no subcommand == `settings show`
 mainsequence settings
 mainsequence settings show
 
 # Change the projects base folder (created if missing)
-mainsequence settings set-base "D:\Work\mainsequence"         # Windows
-mainsequence settings set-base ~/work/mainsequence             # macOS/Linux
+# Windows:
+mainsequence settings set-base "D:\Work\mainsequence"
+mainsequence settings set-base "C:\Users\YourName\Projects\mainsequence"
+
+# macOS/Linux:
+# mainsequence settings set-base ~/work/mainsequence
 ```
 
 Output of `show` is JSON, e.g.:
+
+**Windows:**
+```json
+{
+  "backend_url": "https://main-sequence.app/",
+  "mainsequence_path": "C:\\Users\\YourName\\mainsequence"
+}
+```
+
+**macOS/Linux:**
 ```json
 {
   "backend_url": "https://main-sequence.app/",
@@ -117,7 +141,7 @@ Output of `show` is JSON, e.g.:
 #### `project list`
 List projects with local mapping status and guessed path.
 
-```bash
+```powershell
 mainsequence project list
 ```
 
@@ -128,17 +152,24 @@ Output columns:
 #### `project set-up-locally <project_id>`
 End-to-end local setup:
 1. Figures out the repository SSH URL (from `git_ssh_url` or nested data source hints).
-2. Creates a dedicated SSH key in `~/.ssh/<repo-name>` (if missing).
+2. Creates a dedicated SSH key in the `.ssh` directory (if missing):
+   - **Windows:** `C:\Users\YourName\.ssh\<repo-name>`
+   - **macOS/Linux:** `~/.ssh/<repo-name>`
 3. Tries to register the public key as a **deploy key** on the server.
 4. Starts `ssh-agent` and adds that key.
 5. Clones into:  
-   `<base>/<org-slug>/projects/<safe-project-name>`
+   - **Windows:** `<base>\<org-slug>\projects\<safe-project-name>`
+   - **macOS/Linux:** `<base>/<org-slug>/projects/<safe-project-name>`
 6. Fetches environment text from the backend and writes `.env` (ensuring `VFB_PROJECT_PATH=<local-path>`).
 
-```bash
+```powershell
 mainsequence project set-up-locally 123
-# optional: override base dir for this one command
-mainsequence project set-up-locally 123 --base-dir ~/my-projects
+
+# Optional: override base dir for this one command
+# Windows:
+mainsequence project set-up-locally 123 --base-dir "D:\my-projects"
+# macOS/Linux:
+# mainsequence project set-up-locally 123 --base-dir ~/my-projects
 ```
 
 **Exit codes**
@@ -149,17 +180,18 @@ mainsequence project set-up-locally 123 --base-dir ~/my-projects
 #### `project open <project_id>`
 Opens the mapped/guessed folder in your OS file manager.
 
-```bash
+```powershell
 mainsequence project open 123
 ```
 
 If no mapping exists yet, the CLI tries the default path:
-`<base>/<org-slug>/projects/<safe-project-name>`.
+- **Windows:** `<base>\<org-slug>\projects\<safe-project-name>`
+- **macOS/Linux:** `<base>/<org-slug>/projects/<safe-project-name>`
 
 #### `project delete-local <project_id> [--permanent]`
 Unlink the local mapping; optionally **delete** the folder.
 
-```bash
+```powershell
 # just unlink the mapping (keeps folder)
 mainsequence project delete-local 123
 
@@ -173,7 +205,7 @@ Opens a new terminal window **in the project directory** with `ssh-agent` starte
 - **macOS:** opens **Terminal.app** with a ready shell.  
 - **Linux:** opens the first available emulator (e.g. `gnome-terminal`, `konsole`, etc.).
 
-```bash
+```powershell
 mainsequence project open-signed-terminal 123
 ```
 
@@ -186,16 +218,19 @@ Project packaging helper:
 2) `uv export --format requirements --no-dev --hashes > requirements.txt`  
 3) If `DOCKERFILE` provided: `docker build …` then `docker run -it` the image.
 
-```bash
+```powershell
 # Only lock & export requirements.txt (no Docker)
 mainsequence build_and_run
 
 # Build & run with a specific Dockerfile
-mainsequence build_and_run ./Dockerfile
+# Windows:
+mainsequence build_and_run .\Dockerfile
+# macOS/Linux:
+# mainsequence build_and_run ./Dockerfile
 ```
 
 **Requirements & behavior**
-- Fails early if `uv` is missing or `pyproject.toml` isn’t present.
+- Fails early if `uv` is missing or `pyproject.toml` isn't present.
 - Image name defaults to `<cwd-name>-img` (override with `IMAGE_NAME`).
 - Tag defaults to short `git` SHA, else a timestamp (override with `TAG`).
 
@@ -203,7 +238,7 @@ mainsequence build_and_run ./Dockerfile
 
 ## Typical workflow
 
-```bash
+```powershell
 # sign in
 mainsequence login you@example.com
 
@@ -224,7 +259,7 @@ mainsequence project open-signed-terminal 456
 
 ## Troubleshooting
 
-- **“Not logged in.”**  
+- **"Not logged in."**  
   Run `mainsequence login <email>` again. Tokens live in `token.json`.
 
 - **Token refresh / 401**  
@@ -235,25 +270,50 @@ mainsequence project open-signed-terminal 456
   If your project truly lacks a repo, ask an admin to attach one.
 
 - **`git clone` failed**  
-  Likely SSH access. The CLI generates `~/.ssh/<repo-name>` and tries to add it as a deploy key.  
+  Likely SSH access. The CLI generates an SSH key and tries to add it as a deploy key.  
+  - **Windows:** Key is at `C:\Users\YourName\.ssh\<repo-name>`
+  - **macOS/Linux:** Key is at `~/.ssh/<repo-name>`
+  
   You may need to add that **public key** to your Git host manually. Re-run after access is granted.
 
-- **Clipboard didn’t copy the public key**  
-  Install `pbcopy` (macOS) or `wl-copy`/`xclip` (Linux), or open `~/.ssh/<repo-name>.pub` and copy manually.
+- **ssh-agent service not running (Windows)**  
+  Open PowerShell as Administrator and run:
+  ```powershell
+  Set-Service ssh-agent -StartupType Automatic
+  Start-Service ssh-agent
+  ```
 
-- **Linux: “No terminal emulator found”** when opening a signed terminal  
+- **Clipboard didn't copy the public key**  
+  - **Windows:** Clipboard should work automatically
+  - **macOS:** Install `pbcopy` (usually pre-installed)
+  - **Linux:** Install `wl-copy` or `xclip`
+  
+  Or manually open the `.pub` file and copy the contents.
+
+- **Linux: "No terminal emulator found"** when opening a signed terminal  
   Install one of: `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `tilix`, `mate-terminal`, `alacritty`, `kitty`, or `xterm`.
 
 - **Change backend URL**  
-  Run with `MAIN_SEQUENCE_BACKEND_URL` set, e.g.  
-  `export MAIN_SEQUENCE_BACKEND_URL="https://staging.main-sequence.app"`  
-  (or edit `config.json` directly).
+  
+  **Windows PowerShell:**
+  ```powershell
+  $env:MAIN_SEQUENCE_BACKEND_URL = "https://staging.main-sequence.app"
+  mainsequence project list
+  ```
+  
+  **macOS/Linux (bash/zsh):**
+  ```bash
+  export MAIN_SEQUENCE_BACKEND_URL="https://staging.main-sequence.app"
+  mainsequence project list
+  ```
+  
+  Or edit `config.json` directly in your config directory.
 
 ---
 
 ## Help
 
-```bash
+```powershell
 mainsequence --help
 mainsequence login --help
 mainsequence settings --help

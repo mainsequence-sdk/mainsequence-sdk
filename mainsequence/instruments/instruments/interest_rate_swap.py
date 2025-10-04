@@ -12,6 +12,8 @@ from mainsequence.instruments.pricing_models.swap_pricer import  get_swap_cashfl
 from mainsequence.instruments.pricing_models.indices import get_index
 from mainsequence.instruments.utils import to_ql_date, to_py_date
 from .base_instrument import InstrumentModel
+from mainsequence.instruments.pricing_models.indices import build_zero_curve
+
 
 from .ql_fields import (
     QuantLibPeriod as QPeriod,

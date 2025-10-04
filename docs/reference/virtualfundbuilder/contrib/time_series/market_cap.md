@@ -1,1 +1,0 @@
-::: mainsequence.virtualfundbuilder.contrib.time_series.market_cap

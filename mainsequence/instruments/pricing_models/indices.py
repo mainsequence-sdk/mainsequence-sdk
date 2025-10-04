@@ -1,18 +1,17 @@
 # pricing_models/indices.py
 # -*- coding: utf-8 -*-
 """
-Index factory for QuantLib (identifier-driven, no aliases/registry/tenor parsing).
+Index factory for QuantLib (identifier-driven).
 
 Usage
 -----
 >>> from datetime import date
->>> from mainsequence.instruments.settings import TIIE_28_UID
 >>> from mainsequence.instruments.pricing_models.indices import get_index
->>> idx = get_index(TIIE_28_UID, target_date=date(2024, 6, 14))  # As of target_date
+>>> idx = get_index("TIIE_28", target_date=date(2024, 6, 14))
 
 You can also supply a forwarding curve handle:
 >>> h = ql.RelinkableYieldTermStructureHandle()
->>> idx = get_index(TIIE_28_UID, target_date=date(2025, 9, 16), forwarding_curve=h)
+>>> idx = get_index("TIIE_28", target_date=date(2025, 9, 16), forwarding_curve=h)
 
 Notes
 -----
@@ -30,9 +29,8 @@ import QuantLib as ql
 from functools import lru_cache
 
 from mainsequence.instruments.data_interface import data_interface
-from mainsequence.instruments import settings
 from mainsequence.instruments.utils import to_py_date, to_ql_date
-
+from mainsequence.client import Constant as _C
 
 # ----------------------------- Cache (ONLY by identifier + date) ----------------------------- #
 
@@ -50,8 +48,8 @@ def clear_index_cache() -> None:
 # No tenor tokens; we store the QuantLib Period directly.
 
 INDEX_CONFIGS: Dict[str, Dict] = {
-    settings.indices.TIIE_28_UID: dict(
-        curve_uid=settings.curves.TIIE_28_ZERO_CURVE,
+    _C.get_value(name="TIIE_28_UID"): dict(
+        curve_uid=_C.get_value(name="TIIE_28_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),
         currency=(ql.MXNCurrency() if hasattr(ql, "MXNCurrency") else ql.USDCurrency()),
@@ -60,8 +58,8 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.ModifiedFollowing,
         end_of_month=False,
     ),
-    settings.indices.TIIE_91_UID: dict(
-        curve_uid=settings.curves.TIIE_28_ZERO_CURVE,
+    _C.get_value(name="TIIE_91_UID"): dict(
+        curve_uid=_C.get_value(name="TIIE_28_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),
         currency=ql.MXNCurrency(),
@@ -70,8 +68,8 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.ModifiedFollowing,
         end_of_month=False,
     ),
-    settings.indices.TIIE_182_UID: dict(
-        curve_uid=settings.curves.TIIE_28_ZERO_CURVE,
+    _C.get_value(name="TIIE_182_UID"): dict(
+        curve_uid=_C.get_value(name="TIIE_28_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),
         currency=ql.MXNCurrency(),
@@ -81,8 +79,8 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         end_of_month=False,
     ),
     # Add more identifiers here as needed.
-    settings.indices.TIIE_OVERNIGHT_UID: dict(
-        curve_uid=settings.curves.TIIE_28_ZERO_CURVE,
+    _C.get_value(name="TIIE_OVERNIGHT_UID"): dict(
+        curve_uid=_C.get_value(name="TIIE_28_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),
         currency=ql.MXNCurrency(),
@@ -91,8 +89,8 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.ModifiedFollowing,
         end_of_month=False,
     ),
-    settings.indices.CETE_28_UID: dict(
-        curve_uid=settings.curves.M_BONOS_ZERO_CURVE,
+    _C.get_value(name="CETE_28_UID"): dict(
+        curve_uid=_C.get_value(name="M_BONOS_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),  # BONOS accrue on Act/360
         currency=ql.MXNCurrency(),
@@ -101,9 +99,19 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.Following,  # “next banking business day” => Following
         end_of_month=False,  # Irrelevant when scheduling by days
     ),
+    _C.get_value(name="CETE_91_UID"): dict(
+        curve_uid=_C.get_value(name="M_BONOS_ZERO_CURVE"),
+        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
+        day_counter=ql.Actual360(),  # BONOS accrue on Act/360
+        currency=ql.MXNCurrency(),
+        period=ql.Period(91, ql.Days),  # Coupons every 28 days
+        settlement_days=1,  # T+1 in Mexico since May 27–28, 2024
+        bdc=ql.Following,  # “next banking business day” => Following
+        end_of_month=False,  # Irrelevant when scheduling by days
+    ),
 
-    settings.indices.CETE_182_UID: dict(
-        curve_uid=settings.curves.M_BONOS_ZERO_CURVE,
+    _C.get_value(name="CETE_182_UID"): dict(
+        curve_uid=_C.get_value(name="M_BONOS_ZERO_CURVE"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
         day_counter=ql.Actual360(),  # BONOS accrue on Act/360
         currency=ql.MXNCurrency(),

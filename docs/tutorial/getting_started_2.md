@@ -1,8 +1,8 @@
 # Getting Started (Part 2): Multi‑Index Columns — Working with Assets
 
-In Part 1, you created a project and built a basic `DataNode`. Here, you’ll build a `DataNode` designed for **financial workflows**: one that stores **security prices**. The same pattern also works for signals, news, or other asset‑centric datasets.
+In Part 1, you created a project and built a basic `DataNode`. Here, you'll build a `DataNode` designed for **financial workflows**: one that stores **security prices**. The same pattern also works for signals, news, or other asset‑centric datasets.
 
-Create a file at `src/data_nodes/prices_nodes.py` and add the following data node. **Do not forget to include the correct imports for your project setup.** You can reference the full working example here:
+Create a file at `src\data_nodes\prices_nodes.py` (Windows) or `src/data_nodes/prices_nodes.py` (macOS/Linux) and add the following data node. **Do not forget to include the correct imports for your project setup.** You can reference the full working example here:
 
 https://github.com/mainsequence-sdk/mainsequence-sdk/blob/main/examples/data_nodes/simple_simulated_prices.py
 
@@ -10,20 +10,23 @@ https://github.com/mainsequence-sdk/mainsequence-sdk/blob/main/examples/data_nod
 
 class PriceSimulConfig(BaseModel):
 
-    asset_list:List[msc.AssetMixin]=Field(...,title="Asset List",description="List of assets to simulate",
-                                          ignore_from_storage_hash=True
-                                          )
+    asset_list: List[msc.AssetMixin] = Field(
+        ...,
+        title="Asset List",
+        description="List of assets to simulate",
+        ignore_from_storage_hash=True
+    )
 
 class SimulatedPrices(DataNode):
     """
     Simulates price updates for a specific list of assets provided at initialization.
     """
     OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
-    def __init__(self, simulation_config: PriceSimulConfig,
-                 *args, **kwargs):
+    
+    def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
         """
         Args:
-            asset_list (ModelList): List of asset objects.
+            simulation_config: Configuration containing the asset list
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
@@ -44,18 +47,18 @@ Notice that we **ignore** `asset_list` when computing the **storage hash**. This
 Use this method to assign a **human‑readable unique identifier** to the table (and optional metadata like data frequency). This makes it easy to reference the table across projects and keep naming consistent.
 
 ```python
-def get_table_metadata(self)->msc.TableMetaData:
+def get_table_metadata(self) -> msc.TableMetaData:
     """
-    REturns the market time serie unique identifier, assets to append , or asset to overwrite
+    Returns the market time series unique identifier, assets to append, or asset to overwrite
     Returns:
 
     """
 
-    mts=msc.TableMetaData(identifier="simulated_prices",
-                                           data_frequency_id=msc.DataFrequency.one_d,
-                                           description="This is a simulated prices time serie from asset category",
-                                           )
-
+    mts = msc.TableMetaData(
+        identifier="simulated_prices",
+        data_frequency_id=msc.DataFrequency.one_d,
+        description="This is a simulated prices time series from asset category",
+    )
 
     return mts
 ```
@@ -72,16 +75,14 @@ def get_column_metadata(self):
 
     """
     from mainsequence.client.models_tdag import ColumnMetaData
-    columns_metadata = [ColumnMetaData(column_name="close",
-                                       dtype="float",
-                                       label="Close",
-                                       description=(
-                                           "Simulated Close Price"
-                                       )
-                                       ),
-
-
-                        ]
+    columns_metadata = [
+        ColumnMetaData(
+            column_name="close",
+            dtype="float",
+            label="Close",
+            description="Simulated Close Price"
+        ),
+    ]
     return columns_metadata
 ```
 
@@ -89,7 +90,7 @@ def get_column_metadata(self):
 
 ## Exposing the Asset List
 
-When a node works with assets, implement `get_asset_list`. Sometimes you won’t pass assets explicitly; you might pass filters or an asset category name. Returning the resolved list lets the platform automatically maintain **update‑process statistics** and context.
+When a node works with assets, implement `get_asset_list`. Sometimes you won't pass assets explicitly; you might pass filters or an asset category name. Returning the resolved list lets the platform automatically maintain **update‑process statistics** and context.
 
 ```python
 def get_asset_list(self):
@@ -100,32 +101,69 @@ def get_asset_list(self):
 
 ## Why All This Metadata Matters
 
-As your data system grows, metadata becomes crucial. Many users won’t have access to the code, so clear table and column metadata helps them understand what’s stored beyond the raw `type`. It’s also extremely helpful for **agentic workflows**, giving agents better context about the data they’re interacting with.
+As your data system grows, metadata becomes crucial. Many users won't have access to the code, so clear table and column metadata helps them understand what's stored beyond the raw `type`. It's also extremely helpful for **agentic workflows**, giving agents better context about the data they're interacting with.
 
 ---
 
 ## Launcher Script and Multi‑Index Output
 
-Create `scripts/simulated_prices_launcher.py` (note the corrected filename) and add the following code to run two separate update processes that write to the **same** prices table:
+Create `scripts\simulated_prices_launcher.py` (Windows) or `scripts/simulated_prices_launcher.py` (macOS/Linux) and add the following code to run two separate update processes that write to the **same** prices table:
 
 ```python
-assets = Asset.filter(ticker__in=["NVDA", "APPL"], )
-config=PriceSimulConfig(asset_list=assets,)
+from src.data_nodes.prices_nodes import SimulatedPrices, PriceSimulConfig
+from mainsequence.client import Asset
 
-batch_2_assets = Asset.filter(ticker__in=["JPM", "GS"], )
-config_2 = PriceSimulConfig(asset_list=batch_2_assets, )
+assets = Asset.filter(ticker__in=["NVDA", "APPL"])
+config = PriceSimulConfig(asset_list=assets)
+
+batch_2_assets = Asset.filter(ticker__in=["JPM", "GS"])
+config_2 = PriceSimulConfig(asset_list=batch_2_assets)
 
 ts = SimulatedPrices(simulation_config=config)
-ts.run(debug_mode=True,force_update=True)
-
+ts.run(debug_mode=True, force_update=True)
 
 ts_2 = SimulatedPrices(simulation_config=config_2)
-ts_2.run(debug_mode=True,force_update=True)
+ts_2.run(debug_mode=True, force_update=True)
 ```
 
 This runs two update processes—each updating a different set of tickers—while persisting to the **same underlying table**.
 
+### Running the Launcher
+
+You can run this launcher directly or set up a debug configuration in VS Code.
+
+**Add to `.vscode\launch.json` (Windows):**
+```json
+{
+    "name": "Debug simulated_prices_launcher",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\simulated_prices_launcher.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+
+**Add to `.vscode/launch.json` (macOS/Linux):**
+```json
+{
+    "name": "Debug simulated_prices_launcher",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/simulated_prices_launcher.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
 > **Note on output shape:** In the `update` method, return a DataFrame with a **two‑level index**: `time_index` and `unique_identifier`. Those two indices are the only prerequisites for working with assets in a `DataNode`.
 
-we can see our new table in 
+We can see our new table in:
+
 https://main-sequence.app/dynamic-table-metadatas/?search=simulatedprices&storage_hash=&identifier=

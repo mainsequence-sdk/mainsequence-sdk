@@ -26,6 +26,7 @@ from .api import (
     login as api_login,
     repo_name_from_git_url,
     safe_slug,
+get_project_token
 )
 from .ssh_utils import (
     ensure_key_for_repo,
@@ -128,7 +129,6 @@ def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_sl
 def login(
     email: str = typer.Argument(..., help="Email/username (server expects 'email' field)"),
     password: Optional[str] = typer.Option(None, prompt=True, hide_input=True, help="Password"),
-    export: bool = typer.Option(False, "--export", help='Print `export MAIN_SEQUENCE_USER_TOKEN=...` so you can eval it'),
     no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login")
 ):
     """
@@ -146,9 +146,7 @@ def login(
     typer.secho(f"Signed in as {res['username']} (Backend: {res['backend']})", fg=typer.colors.GREEN)
     typer.echo(f"Projects base folder: {base}")
 
-    tok = cfg.get_tokens().get("access", os.environ.get("MAIN_SEQUENCE_USER_TOKEN", ""))
-    if export and tok:
-        print(f'export MAIN_SEQUENCE_USER_TOKEN="{tok}"')
+
 
     if not no_status:
         try:
@@ -287,6 +285,7 @@ def project_set_up_locally(
     cfg_obj = cfg.get_config()
     base = base_dir or cfg_obj["mainsequence_path"]
 
+
     org_slug = _org_slug_from_profile()
 
     items = get_projects()
@@ -346,7 +345,32 @@ def project_set_up_locally(
     else:
         if env_text and not env_text.endswith("\n"): env_text += "\n"
         env_text += f"VFB_PROJECT_PATH={str(target_dir)}\n"
+
+    try:
+        project_token = get_project_token(project_id)
+    except NotLoggedIn:
+        typer.secho("Session expired or refresh failed. Run: mainsequence login <email>", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    except ApiError as e:
+        typer.secho(f"Could not fetch project token: {e}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    lines = env_text.splitlines()
+    if any(line.startswith("MAINSEQUENCE_TOKEN=") for line in lines):
+        lines = [
+            (f"MAINSEQUENCE_TOKEN={project_token}" if line.startswith("MAINSEQUENCE_TOKEN=") else line)
+            for line in lines
+        ]
+        env_text = "\n".join(lines)
+    else:
+        if env_text and not env_text.endswith("\n"): env_text += "\n"
+        env_text += f"MAINSEQUENCE_TOKEN={project_token}\n"
+
+    # write final .env with both vars present
     (target_dir / ".env").write_text(env_text, encoding="utf-8")
+
+
+
 
     cfg.set_link(project_id, str(target_dir))
 

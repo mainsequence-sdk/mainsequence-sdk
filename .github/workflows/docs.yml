@@ -1,30 +1,42 @@
 name: Deploy MkDocs Documentation
 
 on:
+
+  workflow_dispatch: # run manually from the Actions tab
+    inputs:
+      ref:
+        description: "Branch or tag to build"
+        required: false
+        default: main
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'   # only run on version tags (e.g. v1.2.3)
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
 jobs:
-  deploy:
+  deploy-docs:
+    # extra safety so it never runs on non-tag refs
+    if: startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python 3.10
-        uses: actions/setup-python@v4
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      # --- START OF THE FIX ---
-      # Instead of using a requirements.txt file, we install the
-      # documentation-specific packages directly here.
+
       - name: Install MkDocs and plugins
         run: |
           pip install \
@@ -32,21 +44,19 @@ jobs:
             mkdocs-gen-files \
             mkdocs-literate-nav \
             mkdocs-autorefs \
-            mkdocs-mermaid2 \
-            mkdocstrings[python]
-      # --- END OF THE FIX ---
+            mkdocs-mermaid2-plugin \
+            'mkdocstrings[python]'
 
       - name: Build MkDocs site
         run: mkdocs build
 
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/configure-pages@v4
         with:
-          path: './site'
+          enablement: true
 
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./site
+
+      - id: deployment
         uses: actions/deploy-pages@v4
