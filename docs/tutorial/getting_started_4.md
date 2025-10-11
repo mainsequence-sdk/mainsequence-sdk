@@ -44,7 +44,7 @@ We’ll source the data from **polygon.io**.
 
 A complete `DataNode` implementation lives in the public data connectors repo:  
 https://github.com/mainsequence-sdk/data-connectors  
-Look under `data_connectors/prices/polygon/data_node.py`.
+Look under `data_connectors/prices/polygon/data_nodes.py`.
 
 ```python
 class PolygonUSTCMTYields(PolygonEconomyNode):
@@ -82,15 +82,70 @@ def build_assets(self) -> List[msc.Asset]:
 def get_asset_list(self) -> List[msc.Asset]:
     return self.build_assets()
 ```
-As in the previous tutorial, you can copy code from **data connectors** into your tutorial project 
-and create a **run endpoint** to update the data for the first time.
-Even better, you can **fork the full repo** into a new project so you have all connectors available.
+As in the previous tutorial, you can copy code snippets from **data connectors** repository into your tutorial project and adjust the imports making sure they point to the correct locations and create a **run endpoint** to update the data for the first time.
 
-> TODO: Add step‑by‑step instructions to fork the public repo and keep a remote pointing to `main-sequence` public.
+Or even better and simpler - if you not sure that will be able add all needed code and adjust it manually, you can fork Data Connectors project into a new project so you have all connectors available. Than you will be able to follow this  tutorial adding only missing pieces and ensuring everything works smoothly.
 
-After running the node, you should see the table in the platform:
+To fork the repo into new project:
+1. Go to [https://main-sequence.app/projects/](https://main-sequence.app/projects/)
+2. Find project with "data_connectors" name and click on it
+3. In the top right corner you see three dots menu, open it and  click on "Fork Project" button, assing it name like "my_data_connectors" and click on "Fork".
+4. Than you can set up new project locally as you done before in prevbious part of tutorial and work with this new project afterwards.
 
-![img.png](img.png)
+Now create a new runner file in `scripts` folder with a name `run_ust_cmt_yields.py` and add this code to it:
+
+```python
+from data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields
+from mainsequence.client import Constant as _C
+
+data_node = PolygonUSTCMTYields()
+data_node.run(debug_mode=True, force_update=True)
+```
+
+
+Now you need is to get your API key from polygon.io and add it as environment variable `POLYGON_API_KEY` in the `.env` file in the root of your project.
+
+Register and request your API key here [https://polygon.io/](https://polygon.io/)
+
+```env
+POLYGON_API_KEY="your_polygon_api_key_here"
+```
+
+
+After that you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then run it from the Run and Debug tab in VS Code.
+
+After running the node, you should see the table in the platform: [https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=](https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=)
 
 
 ## From CMT Yields to a Zero Curve
@@ -185,41 +240,85 @@ So far, we’ve used the `zero_curve` registry helper from `data_connectors` to 
 Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED).
 
 Take the code below and run it in your tutorial project.
-
+create a new runner file in `scripts` folder with a name `run_fred_fixings.py` and add this code to it:
 
 ```python
-def run_fred_fixing():
-    from src.data_nodes.interest_rates.nodes import FixingRatesNode, FixingRateConfig, RateConfig
-    from mainsequence.client import Constant as _C
+from src.data_nodes.interest_rates.nodes import FixingRatesNode, FixingRateConfig, RateConfig
+from mainsequence.client import Constant as _C
 
-    USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
-    USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
-    USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
-    fixing_config = FixingRateConfig(rates_config_list=[
-    RateConfig(unique_identifier=USD_SOFR,
-               name=f"Secured Overnight Financing Rate "),
-    RateConfig(unique_identifier=USD_EFFR,
-               name=f"Effective Federal Funds Rate "),
-    RateConfig(unique_identifier=USD_OBFR,
-               name=f"Overnight Bank Funding Rate"),
-        ])
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
+USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
+USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
+USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
+fixing_config = FixingRateConfig(rates_config_list=[
+RateConfig(unique_identifier=USD_SOFR,
+            name=f"Secured Overnight Financing Rate "),
+RateConfig(unique_identifier=USD_EFFR,
+            name=f"Effective Federal Funds Rate "),
+RateConfig(unique_identifier=USD_OBFR,
+            name=f"Overnight Bank Funding Rate"),
+    ])
+ts = FixingRatesNode(rates_config=fixing_config)
+ts.run(debug_mode=True, force_update=True)
 
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
-
+ts = FixingRatesNode(rates_config=fixing_config)
+ts.run(debug_mode=True, force_update=True)
 ```
 
-Important: Don’t forget to copy the interest_rate folder from data_connectors.
+>**Important: Don’t forget to copy the interest_rate folder from data_connectors if you not forked the project completely.**
+
+Now you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Before you be able to run this you need to get an API key from FRED and add it as environment variable `FRED_API_KEY` in the `.env` file in the root of your project.
+```env
+FRED_API_KEY="your_fred_api_key_here"
+```
+
+Register and request your API key here:
+
+[https://fredaccount.stlouisfed.org/apikeys](https://fredaccount.stlouisfed.org/apikeys)
+
+
+
+Then run it from the Run and Debug tab in VS Code.
 
 
 ## One‑Shot Runner
 
-Here’s how everything looks if you want to run it all at once:
+Here’s how everything looks if you want to run your data nodes at once:
+
 
 ```python
 from data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields
+from mainsequence.client import Constant as _C
 
 data_node = PolygonUSTCMTYields()
 data_node.run(debug_mode=True, force_update=True)
@@ -234,3 +333,44 @@ config = CurveConfig(
 node = DiscountCurves(curve_config=config)
 node.run(debug_mode=True, force_update=True)
 ```
+
+Add this code to new file `run_ust_cmt_and_zero_curve.py` in the `scripts` folder in your project.
+
+Dont forget about Polygon API key in the `.env` file if you not added it before:
+```env
+POLYGON_API_KEY="your_polygon_api_key_here"
+```
+
+Now you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug ust_cmt_and_zero_curve",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_ust_cmt_and_zero_curve.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+
+(macOS/Linux):
+```json
+{
+    "name": "Debug ust_cmt_and_zero_curve",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_ust_cmt_and_zero_curve.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then run it from the Run and Debug tab in VS Code.
