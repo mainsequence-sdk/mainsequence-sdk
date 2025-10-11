@@ -16,7 +16,7 @@ from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
 
 logger = get_vfb_logger()
 
-portfolio_ids = [portfolio.id for portfolio in Portfolio.filter(local_time_serie__isnull=False)]
+portfolio_ids = [portfolio.id for portfolio in Portfolio.filter(signal_data_node_update__isnull=False)]
 
 class ReportType(Enum):
     FIXED_INCOME = "fixed_income"

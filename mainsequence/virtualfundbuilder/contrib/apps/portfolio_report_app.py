@@ -17,7 +17,7 @@ import plotly.graph_objects as go
 
 logger = get_vfb_logger()
 
-portfolio_ids = [portfolio.id for portfolio in Portfolio.filter(local_time_serie__isnull=False)]
+portfolio_ids = [portfolio.id for portfolio in Portfolio.filter(signal_data_node_update__isnull=False)]
 
 class PortfolioReportConfiguration(BaseModel):
     report_title: str = "Portfolio Report"
