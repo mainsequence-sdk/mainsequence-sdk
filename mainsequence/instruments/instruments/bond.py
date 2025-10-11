@@ -284,16 +284,16 @@ class FixedRateBond(Bond):
 
     coupon_rate: float = Field(...)
 
-    # Optional market curve if you want to discount off a curve instead of a flat yield
-    discount_curve: Optional[ql.YieldTermStructureHandle] = Field(default=None)
-
     model_config = {"arbitrary_types_allowed": True}
 
+    # Optional market curve if you want to discount off a curve instead of a flat yield
+    _discount_curve: Optional[ql.YieldTermStructureHandle] = PrivateAttr(default=None)
+
     def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
-        self.discount_curve = curve
+        self._discount_curve = curve
     
     def _get_default_discount_curve(self) -> Optional[ql.YieldTermStructureHandle]:
-        return self.discount_curve
+        return self._discount_curve
 
     def _build_schedule(self) -> ql.Schedule:
         if self.schedule is not None:
