@@ -123,9 +123,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   mkdir -p "$ROOT_PROJECT_PATH/src/scripts"
 
   echo "Copying Files from mainsequence-sdk"
-#  cp -a "/opt/code/mainsequence-sdk/examples/getting_started/Getting Started.ipynb" "$VFB_PROJECT_PATH/notebooks" || echo "WARNING: Copy Notebooks step failed!"
   cp -a "/opt/code/mainsequence-sdk/requirements.txt" "${ROOT_PROJECT_PATH}/requirements.txt" || echo "WARNING: Copy requirements step failed!"
-#  cp -a /opt/code/mainsequence-sdk/examples/configurations/market_cap.yaml "$VFB_PROJECT_PATH/configurations" || echo "WARNING: Copy configurations step failed!"
 
   echo "Adding/Updating .gitignore..."
   echo ".ipynb_checkpoints" > "$ROOT_PROJECT_PATH/.gitignore"
@@ -138,7 +136,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
 
   chown -R 1000:100 "$HOME_DIR" 2>/dev/null || true
 
-  echo "Create initial commit"
+  echo "Create initial commit New version"
   cd "$ROOT_PROJECT_PATH"
   git add -A
   git commit -am "initial commit for $TDAG_ENDPOINT"
