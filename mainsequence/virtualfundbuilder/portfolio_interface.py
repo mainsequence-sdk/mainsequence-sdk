@@ -87,7 +87,7 @@ class PortfolioInterface():
             target_portfolio.patch(**standard_kwargs)
 
             index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
-
+        return target_portfolio, index_asset
 
     def _initialize_nodes(self,patch_build_configuration=True) -> None:
         """

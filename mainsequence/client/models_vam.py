@@ -1532,6 +1532,24 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
     def __repr__(self):
         return f"{self.display_name} ({self.unique_identifier}), {len(self.portfolios)} portfolios"
 
+    @classmethod
+    def get_or_create(cls,unique_identifier:str,display_name:str,portfolio_ids:List[int],source:Optional[str]=None,
+
+                      description:Optional[str]=None,timeout=None):
+        url = f"{cls.get_object_url()}/get_or_create/"
+        payload = {"json": {"display_name": display_name,
+                            "source": source,
+                            "unique_identifier":unique_identifier,
+                            "portfolios": portfolio_ids,
+                            "description": description,
+                            }}
+        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout
+                         )
+        if r.status_code not in [201,200]:
+            raise Exception(f" {r.text}")
+        return cls(**r.json())
+
     def append_portfolios(self, portfolio_ids: List[int]) -> "PortfolioGroup":
         """
         Appends portfolios to the group by calling the custom API action.
@@ -1600,29 +1618,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
         return self
 
-class ExecutionPrediction(BaseObjectOrm):
-    @classmethod
-    def add_prediction_from_time_serie(
-            cls,
-            time_serie_hash_id: str,
-            prediction_time: datetime.datetime,
-            symbol_to_search_map,
-            predictions: dict,
-            human_readable_name: Union[None, str] = None,
-            timeout=None
-    ):
-        url = f"{cls.get_object_url()}/add_prediction_from_time_serie/"
-        payload = {"json": {"time_serie_hash_id": time_serie_hash_id,
-                            "prediction_time": prediction_time.strftime(DATE_FORMAT),
-                            "symbol_to_search_map": symbol_to_search_map,
-                            "predictions": predictions,
-                            }, }
 
-        r = make_request(s=cls.build_session(),
-                         loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=timeout)
-        if r.status_code in [201, 204] == False:
-            raise Exception(f"Error inserting new prediction{r.text}")
-        return r.json()
 
 class VirtualFundPositionDetail(BaseObjectOrm, BasePydanticModel):
     id: Optional[int] = None

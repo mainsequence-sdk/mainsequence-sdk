@@ -40,6 +40,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYPROJECT_TEMPLATE="${SCRIPT_DIR}/pyproject.template.toml"
 README_TEMPLATE="${SCRIPT_DIR}/README.template.md"
 
+# Nodes template + target
+NODE_TEMPLATE="${SCRIPT_DIR}/template_node_file.py"
+NODES_TARGET="$ROOT_PROJECT_PATH/src/data_nodes/nodes.py"
 
 if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   echo "File ${ROOT_PROJECT_PATH}/requirements.txt does not exist. Cloning repo..."
@@ -105,6 +108,17 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   # ensure src/<package>/__init__.py exists for packaging
   mkdir -p "$ROOT_PROJECT_PATH/src/data_nodes"
   [ -f "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py"
+
+  # create nodes.py from template IF MISSING (create-only)
+  mkdir -p "$(dirname "$NODES_TARGET")"
+  if [ ! -f "$NODES_TARGET" ]; then
+    if [ -f "$NODE_TEMPLATE" ]; then
+      cp -a "$NODE_TEMPLATE" "$NODES_TARGET" || echo "WARNING: copying nodes.py failed!"
+    else
+      echo "WARNING: node template not found: $NODE_TEMPLATE"
+    fi
+  fi
+
 
   mkdir -p "$ROOT_PROJECT_PATH/src/scripts"
 
