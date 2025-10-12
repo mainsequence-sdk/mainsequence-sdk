@@ -104,7 +104,7 @@ def get_pod_configuration():
     if not project_library:
         raise RuntimeError("PROJECT_LIBRARY_NAME is not set in environment")
 
-    print(f"Project library: {project_library}")
+
     project_path = os.getenv("VFB_PROJECT_PATH")
 
     # Gather all submodules in data_nodes
@@ -140,6 +140,7 @@ def get_pod_configuration():
     script_lines.append("tdag_agent = TDAGAgent()")
 
     TMP_SCRIPT = "\n".join(script_lines)
+    print(f"Project library: {project_library}")
     print(f"Executing Script: \n{TMP_SCRIPT}")
 
     # Write out to a temporary .py file and run
