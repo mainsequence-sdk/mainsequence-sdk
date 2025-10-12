@@ -38,7 +38,7 @@ import time
 
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
-project = typer.Typer(help="Project commands")
+project = typer.Typer(help="Project commands (set up locally, signed terminal, etc.)")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 
 app.add_typer(project, name="project")
@@ -132,8 +132,7 @@ def login(
     no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login")
 ):
     """
-    Obtain tokens, store them locally, and set MAIN_SEQUENCE_USER_TOKEN for this process.
-    On success, print the base folder and the project table (like the Electron app).
+    Login to the Main Sequence platform to  set up projects locally. to login: mainsequence login <email>
     """
     try:
         res = api_login(email, password)
