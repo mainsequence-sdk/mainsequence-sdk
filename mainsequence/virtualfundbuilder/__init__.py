@@ -39,7 +39,8 @@ if os.getenv("PROJECT_LIBRARY_NAME") is None:
 
 RUNS_IN_JOB = os.getenv("JOB_ID", None)
 if RUNS_IN_JOB:
-    register_default_strategies()
+    # register_default_strategies() #
+    pass
 
 if runs_in_main_process():
     get_pod_configuration()
