@@ -5,7 +5,7 @@ from typing import Any, Callable, Mapping, MutableMapping, Optional, Tuple, Unio
 
 import streamlit as st
 
-from mainsequence.dashboards.streamlit.core.theme import inject_css_for_dark_accents, override_spinners
+from mainsequence.dashboards.streamlit.core.theme import inject_css_for_dark_accents, override_spinners,remove_deploy_button
 from importlib.resources import files as _pkg_files
 import sys
 import os
@@ -193,7 +193,7 @@ def run_page(cfg: PageConfig):
 
     # 3) Spinners (pure CSS)
     override_spinners()
-
+    remove_deploy_button()
     # 4) Do NOT hide the native nav unless explicitly asked
     if cfg.hide_streamlit_multipage_nav:
         st.markdown(_HIDE_NATIVE_NAV, unsafe_allow_html=True)

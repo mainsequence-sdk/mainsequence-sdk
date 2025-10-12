@@ -40,6 +40,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYPROJECT_TEMPLATE="${SCRIPT_DIR}/pyproject.template.toml"
 README_TEMPLATE="${SCRIPT_DIR}/README.template.md"
 
+# App template + target (same pattern as pyproject.template.toml)
+APP_TEMPLATE="${SCRIPT_DIR}/app.sample.py"
+APP_TARGET="$ROOT_PROJECT_PATH/dashboards/sample_app/app.py"
+
 # Nodes template + target
 NODE_TEMPLATE="${SCRIPT_DIR}/template_node_file.py"
 NODES_TARGET="$ROOT_PROJECT_PATH/src/data_nodes/nodes.py"
@@ -100,7 +104,6 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   mkdir -p "$ROOT_PROJECT_PATH/scripts"
 
 
-  touch "$ROOT_PROJECT_PATH/dashboards/__init__.py"
   touch "$ROOT_PROJECT_PATH/src/__init__.py"
   touch "$ROOT_PROJECT_PATH/scripts/__init__.py"
   touch "$ROOT_PROJECT_PATH/agent_tools/__init__.py"
@@ -135,6 +138,10 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   # Render root files from templates (create-only by default)
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PYPROJECT_TEMPLATE" "$ROOT_PROJECT_PATH/pyproject.toml" "${OVERWRITE_TEMPLATES:-false}"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$README_TEMPLATE"    "$ROOT_PROJECT_PATH/README.md"      "${OVERWRITE_TEMPLATES:-false}"
+
+   # Render dashboards/sample_app/app.py from app.sample.py (create-only by default)
+   mkdir -p "$(dirname "$APP_TARGET")"
+   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$APP_TEMPLATE" "$APP_TARGET" "${OVERWRITE_TEMPLATES:-false}"
 
   chown -R 1000:100 "$HOME_DIR" 2>/dev/null || true
 

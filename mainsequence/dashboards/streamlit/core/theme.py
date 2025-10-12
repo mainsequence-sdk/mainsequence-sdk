@@ -229,3 +229,32 @@ header [data-testid="stSpinner"] svg {{
 }}
 </style>
     """, unsafe_allow_html=True)
+
+def remove_deploy_button() -> None:
+    """
+    Hide Streamlit's "Deploy" button while keeping the rest of the toolbar.
+    Works across several Streamlit versions/DOM variants.
+    """
+    st.markdown(
+        """
+        <style>
+        /* Optionally hide only the Deploy button (keep toolbar/menu/spinner) */
+        .stDeployButton,
+        .stAppDeployButton,
+        [data-testid="stDeployButton"],
+        [data-testid="stAppDeployButton"],
+        /* aria-label variants */
+        div[data-testid="stToolbar"] a[aria-label*="Deploy"],
+        div[data-testid="stToolbar"] button[aria-label*="Deploy"],
+        /* link-based fallbacks seen in older/newer builds */
+        div[data-testid="stToolbar"] a[href*="/deploy"],
+        div[data-testid="stToolbar"] a[href*="share.streamlit"],
+        div[data-testid="stToolbar"] a[href*="streamlit.app/deploy"],
+        div[data-testid="stToolbar"] a[href*="streamlit.io/cloud"] {
+            display: none !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
