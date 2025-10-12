@@ -11,7 +11,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 from pydantic import BaseModel
 from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
     HtmlApp,
-    register_app,
+    regiester_agent_tool,
 )
 
 logger = get_vfb_logger()
@@ -28,7 +28,7 @@ class PortfolioTableConfiguration(BaseModel):
     portfolio_ids: List[int] = portfolio_ids
     report_days: int = 365 * 5
 
-@register_app()
+@regiester_agent_tool()
 class PortfolioTable(HtmlApp):
     configuration_class = PortfolioTableConfiguration
 

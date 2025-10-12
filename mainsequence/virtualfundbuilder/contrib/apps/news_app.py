@@ -16,7 +16,7 @@ from jinja2 import Environment, FileSystemLoader
 
 from mainsequence.client import AssetCategory
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool
 
 logger = get_vfb_logger()
 
@@ -34,8 +34,8 @@ class SentimentReportConfig(BaseModel):
     news_items_per_day_limit: int = 5
     report_id: Optional[str] = "MS_SentimentReport"
 
-@register_app()
-class SentimentReport(BaseApp):
+@regiester_agent_tool()
+class SentimentReport(BaseAgentTool):
     """
     Generates an HTML report summarizing news sentiment and headlines
     for a list of stock tickers using data from Polygon.io.

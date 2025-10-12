@@ -20,7 +20,7 @@ from jinja2 import Template
 
 from mainsequence.client import DoesNotExist, AssetCategory
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import register_app, BaseApp
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import regiester_agent_tool, BaseAgentTool
 
 logger = get_vfb_logger()
 
@@ -139,8 +139,8 @@ class ExampleReportConfig(BaseModel):
         "importance of broad diversification across regions and sectors."
     )
 
-@register_app()
-class ExampleReportApp(BaseApp):
+@regiester_agent_tool()
+class ExampleReportApp(BaseAgentTool):
     """
     Minimal example of a 'ReportApp' that can:
     1) Generate dummy data and create charts (line + heatmap).

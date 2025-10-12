@@ -7,7 +7,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 from pydantic import BaseModel
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool
 
 logger = get_vfb_logger()
 
@@ -17,8 +17,8 @@ class LoadExternalPortfolioConfig(BaseModel):
     portfolio_name: str
     created_asset_category_name: str
 
-@register_app()
-class LoadExternalPortfolio(BaseApp):
+@regiester_agent_tool()
+class LoadExternalPortfolio(BaseAgentTool):
     configuration_class = LoadExternalPortfolioConfig
 
     def run(self):

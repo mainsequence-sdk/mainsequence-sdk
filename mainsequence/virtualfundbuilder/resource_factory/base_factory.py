@@ -176,7 +176,7 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
     merged_required = set()
     merged_definitions = {}
 
-    # Special case for BaseApp subclasses that use a configuration_class
+    # Special case for BaseAgentTool subclasses that use a configuration_class
     if hasattr(resource_class, 'configuration_class') and inspect.isclass(resource_class.configuration_class) and issubclass(resource_class.configuration_class,
                                                                                                                              BaseModel):
         config_class = resource_class.configuration_class

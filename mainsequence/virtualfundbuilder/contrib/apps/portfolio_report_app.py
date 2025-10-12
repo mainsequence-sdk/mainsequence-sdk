@@ -12,7 +12,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 from plotly.subplots import make_subplots
 
 from pydantic import BaseModel
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app, HtmlApp
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool, HtmlApp
 import plotly.graph_objects as go
 
 logger = get_vfb_logger()
@@ -24,7 +24,7 @@ class PortfolioReportConfiguration(BaseModel):
     portfolio_ids: List[int] = portfolio_ids
     report_days: int = 365 * 5
 
-@register_app()
+@regiester_agent_tool()
 class PortfolioReport(HtmlApp):
     configuration_class = PortfolioReportConfiguration
 

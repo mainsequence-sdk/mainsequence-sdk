@@ -14,7 +14,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 from pydantic import BaseModel
 from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
     HtmlApp,
-    register_app,
+    regiester_agent_tool,
 )
 
 logger = get_vfb_logger()
@@ -26,7 +26,7 @@ class ETFReplicatorConfiguration(BaseModel):
     tracking_strategy: TrackingStrategy = TrackingStrategy.LASSO
     tracking_strategy_configuration: TrackingStrategyConfiguration
 
-@register_app()
+@regiester_agent_tool()
 class ETFReplicatorApp(HtmlApp):
     configuration_class = ETFReplicatorConfiguration
 

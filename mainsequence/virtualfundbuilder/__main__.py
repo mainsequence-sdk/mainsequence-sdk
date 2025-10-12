@@ -50,14 +50,14 @@ def run_configuration(configuration_name):
 
 
 def run_app(app_name, configuration):
-    from mainsequence.virtualfundbuilder.resource_factory.app_factory import APP_REGISTRY
+    from mainsequence.virtualfundbuilder.resource_factory.app_factory import AGENT_TOOL_REGISTRY
     from mainsequence.virtualfundbuilder.utils import get_vfb_logger
     from mainsequence.virtualfundbuilder.config_handling import replace_none_and_empty_dict_with_python_none
 
     logger = get_vfb_logger()
     logger.info(f"Start App {app_name} with configuration\n{configuration}")
     try:
-        app_cls = APP_REGISTRY[app_name]
+        app_cls = AGENT_TOOL_REGISTRY[app_name]
 
         configuration_json = yaml.load(configuration, Loader=yaml.UnsafeLoader)
         configuration_json = replace_none_and_empty_dict_with_python_none(configuration_json)

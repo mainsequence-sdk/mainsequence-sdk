@@ -6,7 +6,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 from pydantic import BaseModel
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool
 
 logger = get_vfb_logger()
 
@@ -23,8 +23,8 @@ class NamedPortfolioConfiguration(BaseModel):
     portfolio_name: PortfolioNameEnum
     portfolio_run_parameters: PortfolioRunParameters
 
-@register_app()
-class RunNamedPortfolio(BaseApp):
+@regiester_agent_tool()
+class RunNamedPortfolio(BaseAgentTool):
     configuration_class = NamedPortfolioConfiguration
 
     def __init__(self, configuration: NamedPortfolioConfiguration):

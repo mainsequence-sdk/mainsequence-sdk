@@ -12,7 +12,7 @@ from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
-class BaseApp(BaseResource):
+class BaseAgentTool(BaseResource):
     TYPE = ResourceType.APP
 
     def __init__(self, configuration: BaseModel):
@@ -75,17 +75,17 @@ class BaseApp(BaseResource):
         return h.hexdigest()
 
 
-APP_REGISTRY = APP_REGISTRY if 'APP_REGISTRY' in globals() else {}
-def register_app(name=None, register_in_agent=True):
+AGENT_TOOL_REGISTRY = AGENT_TOOL_REGISTRY if 'AGENT_TOOL_REGISTRY' in globals() else {}
+def regiester_agent_tool(name=None, register_in_agent=True):
     """
     Decorator to register a model class in the factory.
     If `name` is not provided, the class's name is used as the key.
     """
     def decorator(cls):
-        return insert_in_registry(APP_REGISTRY, cls, register_in_agent, name)
+        return insert_in_registry(AGENT_TOOL_REGISTRY, cls, register_in_agent, name)
     return decorator
 
-class HtmlApp(BaseApp):
+class HtmlApp(BaseAgentTool):
     """
     A base class for apps that generate HTML output.
     """
