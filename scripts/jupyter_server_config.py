@@ -26,6 +26,9 @@ for project_dir in home.iterdir():
     for app_py in dashboards_dir.glob("*/app.py"):
         app_slug = app_py.parent.name.replace("_", "-")   # e.g. companies_overview -> companies-overview
         key = f"streamlit-{app_slug}"                     # URL segment you wanted
-        servers[key] = {"command": _cmd_factory(app_py, key)}
+        servers[key] = {"command": _cmd_factory(app_py, key),
+                        "absolute_url": True
+
+                        }
 
 c.ServerProxy.servers = servers
