@@ -98,13 +98,13 @@ def get_py_modules(folder_path):
     return [f.split(".")[0] for f in files]
 
 def get_pod_configuration():
-    # TODO needs to introspect for apps in any folder?
     print("Get pod configuration")
 
     project_library = os.getenv("PROJECT_LIBRARY_NAME")
     if not project_library:
         raise RuntimeError("PROJECT_LIBRARY_NAME is not set in environment")
 
+    print(f"Project library: {project_library}")
     project_path = os.getenv("VFB_PROJECT_PATH")
 
     # Gather all submodules in data_nodes

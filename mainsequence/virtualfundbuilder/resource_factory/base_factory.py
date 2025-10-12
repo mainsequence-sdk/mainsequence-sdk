@@ -130,11 +130,11 @@ def insert_in_registry(registry, cls, register_in_agent, name=None, attributes: 
     logger.debug(f"Registered {cls.TYPE} class '{key}': {cls}")
 
     if register_in_agent and not SKIP_REGISTRATION and runs_in_main_process():
-        # send_resource_to_backend(cls, attributes)
-        Thread(
-            target=send_resource_to_backend,
-            args=(cls, attributes),
-        ).start()
+        send_resource_to_backend(cls, attributes)
+        # Thread(
+        #     target=send_resource_to_backend,
+        #     args=(cls, attributes),
+        # ).start()
 
     return cls
 
