@@ -136,7 +136,7 @@ def get_pod_configuration():
 
     #debugin stuff remove
     print(f"Project Path: {project_path}")
-    print(f"Project Path: {repo_path}")
+    print(f"Repo Path: {repo_path}")
     print(f"Contents of repo_path ({repo_path}):")
     for item in os.listdir(repo_path):
         print(item)

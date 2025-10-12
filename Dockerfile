@@ -68,6 +68,9 @@ RUN pip install --no-cache-dir \
     streamlit \
     jupyter-server-proxy
 
+COPY scripts/jupyter_server_config.py /opt/venv/etc/jupyter/jupyter_server_config.py
+
+
 RUN pip install --no-cache-dir jupyterhub
 RUN pip install --no-cache-dir jupyterlab
 RUN pip install --no-cache-dir ipywidgets

@@ -6,23 +6,16 @@
 
 
 
-The **Main Sequence Python SDK** is a powerful set of client libraries designed to facilitate interaction with Main Sequence systems using Python. The SDK covers four main components:
+The **Main Sequence Python SDK** is a powerful set of client libraries designed to facilitate interaction with Main Sequence systems using Python. 
 
 1. **TDAG:** A Time Series Data Orchestration and Scheduling Tool.
 2. **Client:** The Main Sequence client for interacting with the Main Sequence API.
 3. **VirtualFundBuilder:** A collection of classes and methods to quickly build portfolios and interact with our AI agents.
 4. **Examples:** A comprehensive collection of examples demonstrating how to build portfolios and interact with our AI agents.
 
-
-
-
-
-
-
-
-
-
-**We strongly** encourage you to go through our examples. We have built the examples as individual Jupyter notebooks that explain the SDK through use cases. Since most platform usage involves a combination of operations, this is the most intuitive way to learn about Main Sequence.
+**We strongly** encourage you to go through our examples. 
+We have built the examples as individual Jupyter notebooks that explain the SDK through use cases. 
+Since most platform usage involves a combination of operations, this is the most intuitive way to learn about Main Sequence.
 
 
 
