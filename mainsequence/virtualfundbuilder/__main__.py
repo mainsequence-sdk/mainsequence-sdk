@@ -105,6 +105,7 @@ def get_pod_configuration():
 
 
     project_path = os.getenv("VFB_PROJECT_PATH")
+    repo_path = os.path.dirname(project_path)
 
     # Gather all submodules in data_nodes
     # data_nodes_package = f"{project_library}.data_nodes"
@@ -116,7 +117,7 @@ def get_pod_configuration():
 
     # Gather all submodules in apps
     agent_tools_package = "agent_tools"
-    agent_tools_modules = get_py_modules(os.path.join(project_path, agent_tools_package))
+    agent_tools_modules =get_py_modules(os.path.join(repo_path, agent_tools_package))
     # Build the temporary Python script to import all files
     script_lines = []
 
@@ -132,13 +133,20 @@ def get_pod_configuration():
     for mod in agent_tools_modules:
         script_lines.append(f"import {agent_tools_package}.{mod}")
 
+
+    #debugin stuff remove
+    print(f"Project Path: {project_path}")
+    print(f"Project Path: {repo_path}")
+    print(f"Contents of repo_path ({repo_path}):")
+    for item in os.listdir(repo_path):
+        print(item)
+
     script_lines.append("")
     script_lines.append("from mainsequence.virtualfundbuilder.agent_interface import TDAGAgent")
     script_lines.append("print('Initialize TDAGAgent')")
     script_lines.append("tdag_agent = TDAGAgent()")
 
     TMP_SCRIPT = "\n".join(script_lines)
-    print(f"Project Path: {project_path}")
     print(f"Executing Script: \n{TMP_SCRIPT}")
 
     # Write out to a temporary .py file and run
