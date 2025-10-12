@@ -116,8 +116,8 @@ def get_pod_configuration():
     rebalance_modules = get_py_modules(os.path.join(project_path, "rebalance_strategies"))
 
     # Gather all submodules in apps
-    apps_package = f"{project_library}.apps"
-    apps_modules = get_py_modules(os.path.join(project_path, "apps"))
+    apps_package = f"agent_tools"
+    apps_modules = get_py_modules(apps_package)
 
     # Build the temporary Python script to import all files
     script_lines = []
