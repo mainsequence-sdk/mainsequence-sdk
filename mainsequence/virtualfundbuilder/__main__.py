@@ -108,31 +108,30 @@ def get_pod_configuration():
     project_path = os.getenv("VFB_PROJECT_PATH")
 
     # Gather all submodules in data_nodes
-    data_nodes_package = f"{project_library}.data_nodes"
-    data_nodes_modules = get_py_modules(os.path.join(project_path, "data_nodes"))
+    # data_nodes_package = f"{project_library}.data_nodes"
+    # data_nodes_modules = get_py_modules(os.path.join(project_path, "data_nodes"))
 
     # Gather all submodules in rebalance_strategies
-    rebalance_package = f"{project_library}.rebalance_strategies"
-    rebalance_modules = get_py_modules(os.path.join(project_path, "rebalance_strategies"))
+    # rebalance_package = f"{project_library}.rebalance_strategies"
+    # rebalance_modules = get_py_modules(os.path.join(project_path, "rebalance_strategies"))
 
     # Gather all submodules in apps
-    apps_package = f"agent_tools"
-    apps_modules = get_py_modules(apps_package)
-
+    agent_tools_package = "agent_tools"
+    agent_tools_modules = get_py_modules(os.path.join(project_path, agent_tools_package))
     # Build the temporary Python script to import all files
     script_lines = []
 
-    script_lines.append("# -- Auto-generated imports for data_nodes --")
-    for mod in data_nodes_modules:
-        script_lines.append(f"import {data_nodes_package}.{mod}")
+    # script_lines.append("# -- Auto-generated imports for data_nodes --")
+    # for mod in data_nodes_modules:
+    #     script_lines.append(f"import {data_nodes_package}.{mod}")
 
-    script_lines.append("# -- Auto-generated imports for rebalance_strategies --")
-    for mod in rebalance_modules:
-        script_lines.append(f"import {rebalance_package}.{mod}")
+    # script_lines.append("# -- Auto-generated imports for rebalance_strategies --")
+    # for mod in rebalance_modules:
+    #     script_lines.append(f"import {rebalance_package}.{mod}")
 
     script_lines.append("# -- Auto-generated imports for apps --")
-    for mod in apps_modules:
-        script_lines.append(f"import {apps_package}.{mod}")
+    for mod in agent_tools_modules:
+        script_lines.append(f"import {agent_tools_package}.{mod}")
 
     script_lines.append("")
     script_lines.append("from mainsequence.virtualfundbuilder.agent_interface import TDAGAgent")
