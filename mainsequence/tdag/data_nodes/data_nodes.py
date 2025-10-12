@@ -782,7 +782,7 @@ class DataNode(DataAccessMixin,ABC):
 
         self.__dict__.update(state)
 
-        self.local_persist_manager.synchronize_metadata(data_node_update=None)
+        self.local_persist_manager.synchronize_data_node_update(data_node_update=None)
 
     def _prepare_state_for_pickle(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """

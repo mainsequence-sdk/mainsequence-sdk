@@ -454,7 +454,7 @@ class UpdateRunner:
 
         # refresh update statistics of direct dependencies
         #for edge case of multicolumn self update
-        self.ts.local_persist_manager.synchronize_metadata(None)
+        self.ts.local_persist_manager.synchronize_data_node_update(None)
         us=self.ts.local_persist_manager.get_update_statistics_for_table()
         self.ts.update_statistics = us
 

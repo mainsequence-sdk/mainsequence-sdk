@@ -410,6 +410,11 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
 
         depth_df = pd.DataFrame(r.json())
+
+        if depth_df.empty ==False:
+            #hot fix for compatiblity with backend
+            depth_df=depth_df.rename(columns={"local_time_serie_id":"data_node_update_id"})
+
         return depth_df
 
     @classmethod
