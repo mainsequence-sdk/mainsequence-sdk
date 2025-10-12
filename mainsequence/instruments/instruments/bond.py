@@ -40,6 +40,10 @@ class Bond(InstrumentModel):
     settlement_days: int = Field(default=2)
     schedule: Optional[QSchedule] = Field(None)
 
+    benchmark_rate_index_name: Optional[str] = Field(...,description="A default index benchmark rate, helpful when doing"
+                                                                     "analysis and we want to  map the bond to a bencharmk for example to"
+                                                                     "the SOFR Curve or to de US Treasury curve etc")
+
     model_config = {"arbitrary_types_allowed": True}
 
     _bond: Optional[ql.Bond] = PrivateAttr(default=None)
@@ -279,13 +283,17 @@ class FixedRateBond(Bond):
     """Plain-vanilla fixed-rate bond following the shared Bond lifecycle."""
 
     coupon_rate: float = Field(...)
-    # Optional market curve if you want to discount off a curve instead of a flat yield
-    discount_curve: Optional[ql.YieldTermStructureHandle] = Field(default=None)
 
     model_config = {"arbitrary_types_allowed": True}
 
+    # Optional market curve if you want to discount off a curve instead of a flat yield
+    _discount_curve: Optional[ql.YieldTermStructureHandle] = PrivateAttr(default=None)
+
+    def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
+        self._discount_curve = curve
+    
     def _get_default_discount_curve(self) -> Optional[ql.YieldTermStructureHandle]:
-        return self.discount_curve
+        return self._discount_curve
 
     def _build_schedule(self) -> ql.Schedule:
         if self.schedule is not None:

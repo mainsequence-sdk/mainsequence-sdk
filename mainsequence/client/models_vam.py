@@ -15,7 +15,7 @@ import time
 
 from enum import IntEnum, Enum
 from decimal import Decimal
-from mainsequence.client import LocalTimeSerie
+from mainsequence.client import DataNodeUpdate
 
 from .base import BasePydanticModel, BaseObjectOrm, MARKETS_CONSTANTS as CONSTANTS, TDAG_ENDPOINT, API_ENDPOINT, HtmlSaveException
 from .utils import AuthLoaders, make_request, DoesNotExist, request_to_datetime, DATE_FORMAT
@@ -1427,8 +1427,8 @@ class PortfolioAbout(TypedDict):
 class PortfolioMixin:
     id: Optional[int] = None
     is_active: bool = False
-    local_time_serie: Optional['LocalTimeSerie']
-    signal_local_time_serie: Optional['LocalTimeSerie']
+    data_node_update: Optional['DataNodeUpdate']
+    signal_data_node_update: Optional['DataNodeUpdate']
     follow_account_rebalance: bool = False
     comparable_portfolios: Optional[List[int]] = None
     backtest_table_price_column_name: Optional[str] = Field(None, max_length=20)
@@ -1454,8 +1454,8 @@ class PortfolioMixin:
     def create_from_time_series(
             cls,
             portfolio_name: str,
-            local_time_serie_id: int,
-            signal_local_time_serie_id: int,
+            data_node_update_id: int,
+            signal_data_node_update_id: int,
             is_active: bool,
             calendar_name: str,
             target_portfolio_about: PortfolioAbout,
@@ -1468,8 +1468,8 @@ class PortfolioMixin:
         payload_data = {
             "portfolio_name": portfolio_name,
             "is_active": is_active,
-            "local_time_serie_id": local_time_serie_id,
-            "signal_local_time_serie_id": signal_local_time_serie_id,
+            "data_node_update_id": data_node_update_id,
+            "signal_data_node_update_id": signal_data_node_update_id,
             # Using the same ID for local_signal_time_serie_id as specified.
             "calendar_name": calendar_name,
             "target_portfolio_about": target_portfolio_about,
@@ -1512,9 +1512,9 @@ class PortfolioMixin:
     def get_historical_weights(self,
                                start_date_timestamp:float,end_date_timestamp:float,
                                timeout=None)->Dict[str, float]:
-        if self.local_time_serie is None:
+        if self.data_node_update is None:
             print("this portfolio does not have a weights table")
-        self.local_time_serie
+        self.data_node_update
 
 
 class Portfolio(PortfolioMixin, BaseObjectOrm, BasePydanticModel):
@@ -1531,6 +1531,24 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
     def __repr__(self):
         return f"{self.display_name} ({self.unique_identifier}), {len(self.portfolios)} portfolios"
+
+    @classmethod
+    def get_or_create(cls,unique_identifier:str,display_name:str,portfolio_ids:List[int],source:Optional[str]=None,
+
+                      description:Optional[str]=None,timeout=None):
+        url = f"{cls.get_object_url()}/get_or_create/"
+        payload = {"json": {"display_name": display_name,
+                            "source": source,
+                            "unique_identifier":unique_identifier,
+                            "portfolios": portfolio_ids,
+                            "description": description,
+                            }}
+        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout
+                         )
+        if r.status_code not in [201,200]:
+            raise Exception(f" {r.text}")
+        return cls(**r.json())
 
     def append_portfolios(self, portfolio_ids: List[int]) -> "PortfolioGroup":
         """
@@ -1600,29 +1618,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
         return self
 
-class ExecutionPrediction(BaseObjectOrm):
-    @classmethod
-    def add_prediction_from_time_serie(
-            cls,
-            time_serie_hash_id: str,
-            prediction_time: datetime.datetime,
-            symbol_to_search_map,
-            predictions: dict,
-            human_readable_name: Union[None, str] = None,
-            timeout=None
-    ):
-        url = f"{cls.get_object_url()}/add_prediction_from_time_serie/"
-        payload = {"json": {"time_serie_hash_id": time_serie_hash_id,
-                            "prediction_time": prediction_time.strftime(DATE_FORMAT),
-                            "symbol_to_search_map": symbol_to_search_map,
-                            "predictions": predictions,
-                            }, }
 
-        r = make_request(s=cls.build_session(),
-                         loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=timeout)
-        if r.status_code in [201, 204] == False:
-            raise Exception(f"Error inserting new prediction{r.text}")
-        return r.json()
 
 class VirtualFundPositionDetail(BaseObjectOrm, BasePydanticModel):
     id: Optional[int] = None

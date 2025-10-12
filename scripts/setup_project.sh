@@ -40,6 +40,9 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PYPROJECT_TEMPLATE="${SCRIPT_DIR}/pyproject.template.toml"
 README_TEMPLATE="${SCRIPT_DIR}/README.template.md"
 
+# Nodes template + target
+NODE_TEMPLATE="${SCRIPT_DIR}/template_node_file.py"
+NODES_TARGET="$ROOT_PROJECT_PATH/src/data_nodes/nodes.py"
 
 if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   echo "File ${ROOT_PROJECT_PATH}/requirements.txt does not exist. Cloning repo..."
@@ -103,15 +106,24 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
 
 
   # ensure src/<package>/__init__.py exists for packaging
-  mkdir -p "$ROOT_PROJECT_PATH/src/data_notes"
-  [ -f "$ROOT_PROJECT_PATH/src/data_notes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_notes/__init__.py"
+  mkdir -p "$ROOT_PROJECT_PATH/src/data_nodes"
+  [ -f "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py"
+
+  # create nodes.py from template IF MISSING (create-only)
+  mkdir -p "$(dirname "$NODES_TARGET")"
+  if [ ! -f "$NODES_TARGET" ]; then
+    if [ -f "$NODE_TEMPLATE" ]; then
+      cp -a "$NODE_TEMPLATE" "$NODES_TARGET" || echo "WARNING: copying nodes.py failed!"
+    else
+      echo "WARNING: node template not found: $NODE_TEMPLATE"
+    fi
+  fi
+
 
   mkdir -p "$ROOT_PROJECT_PATH/src/scripts"
 
   echo "Copying Files from mainsequence-sdk"
-#  cp -a "/opt/code/mainsequence-sdk/examples/getting_started/Getting Started.ipynb" "$VFB_PROJECT_PATH/notebooks" || echo "WARNING: Copy Notebooks step failed!"
   cp -a "/opt/code/mainsequence-sdk/requirements.txt" "${ROOT_PROJECT_PATH}/requirements.txt" || echo "WARNING: Copy requirements step failed!"
-#  cp -a /opt/code/mainsequence-sdk/examples/configurations/market_cap.yaml "$VFB_PROJECT_PATH/configurations" || echo "WARNING: Copy configurations step failed!"
 
   echo "Adding/Updating .gitignore..."
   echo ".ipynb_checkpoints" > "$ROOT_PROJECT_PATH/.gitignore"
@@ -124,7 +136,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
 
   chown -R 1000:100 "$HOME_DIR" 2>/dev/null || true
 
-  echo "Create initial commit"
+  echo "Create initial commit New version"
   cd "$ROOT_PROJECT_PATH"
   git add -A
   git commit -am "initial commit for $TDAG_ENDPOINT"
@@ -139,8 +151,8 @@ else
   pull_changes
 
   # Ensure templated files exist after pulling and commit if anything changed
-  mkdir -p "$ROOT_PROJECT_PATH/src/data_notes"
-  [ -f "$ROOT_PROJECT_PATH/src/data_notes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_notes/__init__.py"
+  mkdir -p "$ROOT_PROJECT_PATH/src/data_nodes"
+  [ -f "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PYPROJECT_TEMPLATE" "$ROOT_PROJECT_PATH/pyproject.toml" "${OVERWRITE_TEMPLATES:-false}"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$README_TEMPLATE"    "$ROOT_PROJECT_PATH/README.md"      "${OVERWRITE_TEMPLATES:-false}"
   git add -A

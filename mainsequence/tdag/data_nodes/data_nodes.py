@@ -34,7 +34,7 @@ from abc import ABC
 
 from typing import Union
 
-from mainsequence.client import LocalTimeSerie,  CONSTANTS, \
+from mainsequence.client import DataNodeUpdate,  CONSTANTS, \
     DynamicTableDataSource, AssetTranslationTable
 
 from functools import wraps
@@ -106,7 +106,7 @@ class DataAccessMixin:
 
     def __repr__(self) -> str:
         try:
-            local_id = self.local_time_serie.id
+            local_id = self.data_node_update.id
         except:
             local_id = 0
         repr = self.__class__.__name__ + f" {os.environ['TDAG_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
@@ -350,14 +350,14 @@ class APIDataNode(DataAccessMixin):
 
 
     @classmethod
-    def build_from_local_time_serie(cls, source_table: "LocalTimeSerie") -> "APIDataNode":
+    def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
         return cls(data_source_id=source_table.data_source.id,
                    storage_hash=source_table.storage_hash
                    )
 
     @classmethod
     def build_from_table_id(cls, table_id: str) -> "APIDataNode":
-        table = ms_client.DynamicTableMetaData.get(id=table_id)
+        table = ms_client.DataNodeStorage.get(id=table_id)
         ts = cls(
             data_source_id=table.data_source.id,
             storage_hash=table.storage_hash
@@ -367,7 +367,7 @@ class APIDataNode(DataAccessMixin):
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
 
-        table = ms_client.DynamicTableMetaData.get(identifier=identifier)
+        table = ms_client.DataNodeStorage.get(identifier=identifier)
         ts = cls(
             data_source_id=table.data_source.id,
             storage_hash=table.storage_hash
@@ -462,9 +462,9 @@ class APIDataNode(DataAccessMixin):
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
         self._local_persist_manager = APIPersistManager(storage_hash=self.storage_hash, data_source_id=self.data_source_id)
-        metadata = self._local_persist_manager.metadata
+        data_node_storage = self._local_persist_manager.data_node_storage
 
-        assert metadata is not None, f"Verify that the table {self.storage_hash} exists "
+        assert data_node_storage is not None, f"Verify that the table {self.storage_hash} exists "
 
 
 
@@ -480,7 +480,7 @@ class APIDataNode(DataAccessMixin):
             A tuple containing the last update time for the table and a dictionary of last update times per asset.
         """
 
-        return  self.local_persist_manager.metadata.sourcetableconfiguration.get_data_updates()
+        return  self.local_persist_manager.data_node_storage.sourcetableconfiguration.get_data_updates()
 
     def get_earliest_updated_asset_filter(self, unique_identifier_list: list,
                                           last_update_per_asset: dict) -> datetime.datetime:
@@ -537,7 +537,7 @@ class DataNode(DataAccessMixin,ABC):
             *args,
             **kwargs):
         """
-        Initializes the DataNode object with the provided metadata and configurations. For extension of the method
+        Initializes the DataNode object with the provided data_node_storage and configurations. For extension of the method
 
         This method sets up the time series object, loading the necessary configurations
         and metadata.
@@ -548,7 +548,7 @@ class DataNode(DataAccessMixin,ABC):
         - init_meta
         - build_meta_data
 
-        Each DataNode instance will create a update_hash and a LocalTimeSerie instance in the Data Engine by uniquely hashing
+        Each DataNode instance will create a update_hash and a DataNodeUpdate instance in the Data Engine by uniquely hashing
         the same arguments as the table but excluding the arguments inside _LOCAL_KWARGS_TO_IGNORE
 
 
@@ -715,12 +715,12 @@ class DataNode(DataAccessMixin,ABC):
 
 
     @property
-    def local_time_serie(self) -> LocalTimeSerie:
+    def data_node_update(self) -> DataNodeUpdate:
         """The local time series metadata object."""
-        return self.local_persist_manager.local_metadata
+        return self.local_persist_manager.data_node_update
 
     @property
-    def metadata(self) -> "DynamicTableMetaData":
+    def metadata(self) -> "DataNodeStorage":
         return self.local_persist_manager.metadata
 
 
@@ -768,7 +768,7 @@ class DataNode(DataAccessMixin,ABC):
         if graph_depth <= graph_depth_limit and self.data_source.related_resource_class_type:
             self._set_local_persist_manager(
                 update_hash=self.update_hash,
-                local_metadata=None,
+                data_node_update=None,
             )
 
         deserializer = build_operations.DeserializerManager()
@@ -782,7 +782,7 @@ class DataNode(DataAccessMixin,ABC):
 
         self.__dict__.update(state)
 
-        self.local_persist_manager.synchronize_metadata(local_metadata=None)
+        self.local_persist_manager.synchronize_metadata(data_node_update=None)
 
     def _prepare_state_for_pickle(self, state: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -803,8 +803,8 @@ class DataNode(DataAccessMixin,ABC):
                 "local_persist_manager",
                 "logger",
                 "init_meta",
-                "_local_metadata_future",
-                "_local_metadata_lock",
+                "_data_node_update_future",
+                "_data_node_update_lock",
                 "_local_persist_manager",
                 "update_tracker",
             ]:
@@ -822,7 +822,7 @@ class DataNode(DataAccessMixin,ABC):
 
         return properties
     def _set_local_persist_manager(self, update_hash: str,
-                                  local_metadata: Union[None, dict] = None,
+                                  data_node_update: Union[None, dict] = None,
 
                                   ) -> None:
         """
@@ -835,13 +835,13 @@ class DataNode(DataAccessMixin,ABC):
                The local hash ID for the time series.
            storage_hash : str
                The remote table hash name for the time series.
-           local_metadata : Union[None, dict], optional
+           data_node_update : Union[None, dict], optional
                Local metadata for the time series, if available.
         """
         self._local_persist_manager = PersistManager.get_from_data_type(
             update_hash=update_hash,
             class_name=self.__class__.__name__,
-            local_metadata=local_metadata,
+            data_node_update=data_node_update,
             data_source=self.data_source
         )
 
@@ -883,7 +883,7 @@ class DataNode(DataAccessMixin,ABC):
 
         """Sets the node relationships in the backend by calling the dependencies() method."""
 
-        if self.local_persist_manager.local_metadata is None:
+        if self.local_persist_manager.data_node_update is None:
             self.verify_and_build_remote_objects()  #
         if self.local_persist_manager.is_local_relation_tree_set():
             return
@@ -911,7 +911,7 @@ class DataNode(DataAccessMixin,ABC):
         self.depth_df = depth_df
         if not depth_df.empty:
             self.dependencies_df = depth_df[
-                depth_df["local_time_serie_id"] != self.local_time_serie.id].copy()
+                depth_df["data_node_update_id"] != self.data_node_update.id].copy()
         else:
             self.dependencies_df = pd.DataFrame()
 
@@ -1108,7 +1108,7 @@ class WrapperDataNode(DataNode):
             """
             from mainsequence.client import DoesNotExist
             try:
-                metadata = ms_client.DynamicTableMetaData.get(identifier=table_identifier)
+                metadata = ms_client.DataNodeStorage.get(identifier=table_identifier)
 
             except DoesNotExist as e:
                 raise e

@@ -1,7 +1,9 @@
 from __future__ import annotations
-import streamlit as st
 from pathlib import Path
+import streamlit as st
 
+
+# --------------------- small theme helpers ---------------------
 
 def inject_css_for_dark_accents():
     st.markdown(
@@ -22,126 +24,173 @@ def explain_theming():
     )
 
 
+# --------------------- spinner frame loader (runs once on import) ---------------------
 
+def _read_txt(p: Path) -> str:
+    return p.read_text(encoding="utf-8").strip()
 
-# --- Load spinner frames ONCE from two levels above, files: image_1_base64.txt ... image_5_base64.txt ---
 def _load_spinner_frames_for_this_template() -> list[str]:
-    base_dir = Path(__file__).resolve().parent.parent.parent.parent # two levels above this module
-    frames: list[str] = []
-    for i in range(1, 6):
-        p = base_dir / f"image_{i}_base64.txt"
-        if not p.exists():
-            raise FileNotFoundError(f"Missing spinner frame file: {p}")
-        frames.append(p.read_text(encoding="utf-8").strip())
-    return frames
+    """
+    Looks under: <repo>/mainsequence/dashboards/streamlit/assets/
 
+    Order of precedence:
+      1) image_1_base64.txt ... image_5_base64.txt
+      2) image_base64.txt  (single file, replicated to 5 frames)
+      3) spinner_1.txt ... spinner_5.txt
+      4) Any *base64.txt (sorted) or *.txt (sorted), up to 5 frames
+         - If only one file is found, it is replicated to 5 frames.
+         - If 2-4 files are found, the last one is repeated to reach 5.
+    On total failure, returns five copies of a 1x1 transparent PNG.
+    """
+    assets = Path(__file__).resolve().parent.parent / "assets"
 
-_SPINNER_FRAMES_RAW = _load_spinner_frames_for_this_template()
+    # 1) Named sequence: image_1_base64.txt .. image_5_base64.txt
+    seq = [assets / f"image_{i}_base64.txt" for i in range(1, 6)]
+    if all(p.exists() for p in seq):
+        return [_read_txt(p) for p in seq]
 
+    # 2) Single file replicated
+    single = assets / "image_base64.txt"
+    if single.exists():
+        s = _read_txt(single)
+        return [s] * 5
 
-# Expose constants for the function (keeps the code below simple)
+    # 3) Alternate sequence
+    alt_seq = [assets / f"spinner_{i}.txt" for i in range(1, 6)]
+    if all(p.exists() for p in alt_seq):
+        return [_read_txt(p) for p in alt_seq]
+
+    # 4) Any *base64.txt, then any *.txt
+    candidates = sorted(assets.glob("*base64.txt")) or sorted(assets.glob("*.txt"))
+    frames = [_read_txt(p) for p in candidates[:5]]
+    if frames:
+        if len(frames) == 1:
+            frames = frames * 5
+        elif len(frames) < 5:
+            frames += [frames[-1]] * (5 - len(frames))
+        return frames
+
+    # Fallback: 1x1 transparent PNG
+    transparent_png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+                       "/w8AAn8B9p7u3t8AAAAASUVORK5CYII=")
+    return [transparent_png] * 5
+
+try:
+    _SPINNER_FRAMES_RAW = _load_spinner_frames_for_this_template()
+except Exception:
+    # Never break import due to spinner assets
+    transparent_png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+                       "/w8AAn8B9p7u3t8AAAAASUVORK5CYII=")
+    _SPINNER_FRAMES_RAW = [transparent_png] * 5
+
+# Public constants (used only within this module, but left as globals for clarity)
 IMAGE_1_B64, IMAGE_2_B64, IMAGE_3_B64, IMAGE_4_B64, IMAGE_5_B64 = _SPINNER_FRAMES_RAW
+
+
+# --------------------- spinner override (CSS only) ---------------------
 
 def override_spinners(
     hide_deploy_button: bool = False,
     *,
     # Sizes
-    top_px: int = 35,          # top-right toolbar & st.status icon base size
-    inline_px: int = 288,       # animation size when centered
+    top_px: int = 20,          # top-right toolbar spinner size
+    inline_px: int = 96,       # inline/status spinner size
     # Timing
     duration_ms: int = 900,
-    # Toolbar nudges / spacing
-    toolbar_nudge_px: int = -3,
+    # Toolbar micro-positioning
+    toolbar_nudge_px: int = -2,
     toolbar_gap_left_px: int = 2,
     toolbar_left_offset_px: int = 0,
-    # Centered overlay styling
-    center_non_toolbar: bool = True,        # << keep True to center inline + status
-    dim_backdrop: bool = True,              # << set False to hide the dark veil
-    overlay_blur_px: float = 1.5,
-    overlay_opacity: float = 0.35,
-    overlay_z_index: int = 9990,            # keep below toolbar; we also lift toolbar above
+    # Overlay options (for inline/status)
+    center_non_toolbar: bool = True,
+    dim_backdrop: bool = False,
+    overlay_blur_px: float = 0.0,
+    overlay_opacity: float = 0.0,
+    overlay_z_index: int = 9990,
 ) -> None:
-    """Override Streamlit spinners with a 4-frame animation.
-    - Toolbar spinner stays in the toolbar (top-right).
-    - All other spinners (inline + st.status icon) are centered on screen.
+    """Replace Streamlit's spinners with a 5‑frame bitmap animation.
+
+    This injects CSS only (no JS). It hides native SVGs and applies the frames
+    to the toolbar spinner, inline st.spinner, and st.status icon.
     """
 
-    def as_data_uri(s: str, mime="image/png") -> str:
-        s = s.strip()
+    def as_data_uri(s: str, mime: str = "image/png") -> str:
+        s = (s or "").strip()
         return s if s.startswith("data:") else f"data:{mime};base64,{s}"
 
     i1 = as_data_uri(IMAGE_1_B64)
     i2 = as_data_uri(IMAGE_2_B64)
     i3 = as_data_uri(IMAGE_3_B64)
     i4 = as_data_uri(IMAGE_4_B64)
-    i5= as_data_uri(IMAGE_5_B64)
-
-    veil_bg = f"rgba(0,0,0,{overlay_opacity})"
+    i5 = as_data_uri(IMAGE_5_B64)
 
     st.markdown(f"""
 <style>
-/* ---- 4-frame animation ---- */
-@keyframes st-fourframe {{
-  0%% {{ background-image:url("{i1}"); }}
-  20%      {{ background-image:url("{i2}"); }}
-  40%      {{ background-image:url("{i3}"); }}
-  60%      {{ background-image:url("{i4}"); }}
-   80% {{ background-image:url("{i5}"); }}
-      100% {{ background-image:url("{i5}"); }}
+/* ===== 5-frame animation (fixed: do NOT use '0%%') ===== */
+@keyframes st-fiveframe {{
+  0%  {{ background-image:url("{i1}"); }}
+  20% {{ background-image:url("{i2}"); }}
+  40% {{ background-image:url("{i3}"); }}
+  60% {{ background-image:url("{i4}"); }}
+  80% {{ background-image:url("{i5}"); }}
+  100%{{ background-image:url("{i5}"); }}
 }}
 
-/* ---- CSS variables ---- */
 :root {{
-  --st-spin-top:{top_px}px;                 /* toolbar/status base size */
-  --st-spin-inline:{inline_px}px;           /* centered spinner size */
+  --st-spin-top:{top_px}px;
+  --st-spin-inline:{inline_px}px;
   --st-spin-dur:{duration_ms}ms;
 
-  --st-spin-toolbar-nudge:{toolbar_nudge_px}px;
-  --st-spin-toolbar-gap:{toolbar_gap_left_px}px;
-  --st-spin-toolbar-left:{toolbar_left_offset_px}px;
+  --st-toolbar-nudge:{toolbar_nudge_px}px;
+  --st-toolbar-gap:{toolbar_gap_left_px}px;
+  --st-toolbar-left:{toolbar_left_offset_px}px;
 
   --st-overlay-z:{overlay_z_index};
-  --st-overlay-bg:{veil_bg};
+  --st-overlay-bg: rgba(0,0,0,{overlay_opacity});
   --st-overlay-blur:{overlay_blur_px}px;
 }}
 
-/* Lift toolbar above any overlay so Stop/Deploy remain clickable */
+/* ===== ensure toolbar itself stays clickable above overlays ===== */
 div[data-testid="stToolbar"],
 [data-testid="stStatusWidget"] {{
   position: relative;
   z-index: calc(var(--st-overlay-z) + 5);
 }}
 
-/* =======================================================================
-   1) Top-right toolbar widget  (kept in place, not centered)
-   ======================================================================= */
+/* ===== hide every built-in spinner glyph (SVG/img) ===== */
+[data-testid="stSpinner"] svg,
+[data-testid="stSpinnerIcon"] svg,
+[data-testid="stStatusWidget"] svg,
+header [data-testid="stSpinner"] svg {{
+  display: none !important;
+}}
+
+/* ===== toolbar spinner (top-right) ===== */
 [data-testid="stStatusWidget"] {{
   position:relative;
-  padding-left: calc(var(--st-spin-top) + var(--st-spin-toolbar-gap));
+  padding-left: calc(var(--st-spin-top) + var(--st-toolbar-gap));
 }}
-[data-testid="stStatusWidget"] svg,
-[data-testid="stStatusWidget"] img {{ display:none !important; }}
 [data-testid="stStatusWidget"]::before {{
   content:"";
   position:absolute;
-  left: var(--st-spin-toolbar-left);
+  left: var(--st-toolbar-left);
   top:50%;
-  transform:translateY(-50%) translateY(var(--st-spin-toolbar-nudge));
+  transform: translateY(calc(-50% + var(--st-toolbar-nudge)));
   width:var(--st-spin-top);
   height:var(--st-spin-top);
-  background:no-repeat center/contain;
-  animation:st-fourframe var(--st-spin-dur) linear infinite;
+  background-image:url("{i1}");
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:contain;
+  animation: st-fiveframe var(--st-spin-dur) steps(1, end) infinite;
 }}
 
-/* Hide the entire toolbar if requested */
+/* Optionally hide Deploy/Stop toolbar entirely */
 {"div[data-testid='stToolbar']{display:none !important;}" if hide_deploy_button else ""}
 
-/* =======================================================================
-   2) Inline spinner (st.spinner) — centered overlay
-   ======================================================================= */
-[data-testid="stSpinner"] svg {{ display:none !important; }}
+/* ===== inline st.spinner ===== */
 [data-testid="stSpinner"] {{
-  min-height: 0 !important;  /* avoid layout jump, since we center globally */
+  min-height: 0 !important;
 }}
 { "[data-testid='stSpinner']::after { content:''; position:fixed; inset:0; background:var(--st-overlay-bg); backdrop-filter: blur(var(--st-overlay-blur)); z-index: var(--st-overlay-z); pointer-events: none; }" if dim_backdrop else "" }
 [data-testid="stSpinner"]::before {{
@@ -152,61 +201,31 @@ div[data-testid="stToolbar"],
   transform: translate(-50%,-50%);
   width: var(--st-spin-inline);
   height: var(--st-spin-inline);
-  background:no-repeat center/contain;
-  animation:st-fourframe var(--st-spin-dur) linear infinite;
+  background-image:url("{i1}");
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:contain;
+  animation: st-fiveframe var(--st-spin-dur) steps(1, end) infinite;
   z-index: calc(var(--st-overlay-z) + 1);
 }}
 
-/* Center the spinner message below the animation (works in sidebar or main) */
-[data-testid="stSpinner"] [data-testid="stSpinnerMessage"],
-[data-testid="stSpinner"] > div > div:last-child,
-[data-testid="stSpinner"] > div > div:only-child {{
-  position: fixed !important;
-  left: 50% !important;
-  top: calc(50% + var(--st-spin-inline) / 2 + 12px) !important;
-  transform: translateX(-50%) !important;
-  z-index: calc(var(--st-overlay-z) + 2) !important;
-  text-align: center !important;
-  margin: 0 !important;
-  padding: .25rem .75rem !important;
-  max-width: min(80vw, 900px) !important;  /* keeps long text from stretching off-screen */
-  white-space: normal !important;          /* use `nowrap` if you prefer single-line */
-  font-weight: 500 !important;
-}}
-
-/* Kill the tiny default glyph wrapper so you don't get a stray dot in the sidebar */
-[data-testid="stSpinner"] > div > div:first-child {{
-  display: none !important; 
-}}
-
-/* We still hide the default SVG everywhere */
-[data-testid="stSpinner"] svg {{
-  display: none !important; 
-}}
-
-/* =======================================================================
-   3) st.status(...) icon — centered overlay
-   ======================================================================= */
-[data-testid="stStatus"] [data-testid="stStatusIcon"] svg,
-[data-testid="stStatus"] [data-testid="stStatusIcon"] img {{ display:none !important; }}
-{"[data-testid='stStatus']::after { content:''; position:fixed; inset:0; background:var(--st-overlay-bg); backdrop-filter: blur(var(--st-overlay-blur)); z-index: var(--st-overlay-z); pointer-events: none; }" if dim_backdrop else ""}
+/* ===== st.status(...) icon ===== */
+[data-testid="stStatus"] [data-testid="stStatusIcon"] svg {{ display:none !important; }}
+{ "[data-testid='stStatus']::after { content:''; position:fixed; inset:0; background:var(--st-overlay-bg); backdrop-filter: blur(var(--st-overlay-blur)); z-index: var(--st-overlay-z); pointer-events: none; }" if dim_backdrop else "" }
 [data-testid="stStatus"] [data-testid="stStatusIcon"]::before {{
   content:"";
   position: fixed;
   left: 50%;
   top: 50%;
   transform: translate(-50%,-50%);
-  width: var(--st-spin-inline);             /* use same size as inline */
+  width: var(--st-spin-inline);
   height: var(--st-spin-inline);
-  background:no-repeat center/contain;
-  animation:st-fourframe var(--st-spin-dur) linear infinite;
+  background-image:url("{i1}");
+  background-repeat:no-repeat;
+  background-position:center center;
+  background-size:contain;
+  animation: st-fiveframe var(--st-spin-dur) steps(1, end) infinite;
   z-index: calc(var(--st-overlay-z) + 1);
 }}
-
-/* Optional: allow 'esc' feel without blocking clicks — achieved via pointer-events:none above. */
 </style>
     """, unsafe_allow_html=True)
-
-
-
-

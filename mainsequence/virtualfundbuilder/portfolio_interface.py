@@ -69,10 +69,10 @@ class PortfolioInterface():
 
 
         ## manualely
-        target_portfolio = Portfolio.get_or_none(local_time_serie__id=portfolio_node.local_time_serie.id)
+        target_portfolio = Portfolio.get_or_none(data_node_update__id=portfolio_node.data_node_update.id)
         standard_kwargs = dict(portfolio_name=portfolio_node.portfolio_name,
-                               local_time_serie_id=portfolio_node.local_time_serie.id,
-                               signal_local_time_serie_id=None,
+                               data_node_update_id=portfolio_node.data_node_update.id,
+                               signal_data_node_update_id=None,
                                is_active=True,
                                calendar_name=portfolio_node.calendar_name,
                                target_portfolio_about=dict(description=portfolio_node.target_portfolio_about,
@@ -87,7 +87,7 @@ class PortfolioInterface():
             target_portfolio.patch(**standard_kwargs)
 
             index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
-
+        return target_portfolio, index_asset
 
     def _initialize_nodes(self,patch_build_configuration=True) -> None:
         """
@@ -121,9 +121,9 @@ class PortfolioInterface():
             signal_weights_ts = ts.signal_weights
 
             # timeseries can be running in local lake so need to request the id
-            standard_kwargs = dict(local_time_serie_id=ts.local_time_serie.id,
+            standard_kwargs = dict(local_time_serie_id=ts.data_node_update.id,
                                    is_active=True,
-                                   signal_local_time_serie_id=signal_weights_ts.local_time_serie.id,
+                                   signal_local_time_serie_id=signal_weights_ts.data_node_update.id,
                                    )
 
             user_kwargs = self.portfolio_markets_config.model_dump()
@@ -145,13 +145,13 @@ class PortfolioInterface():
 
             standard_kwargs["backtest_table_price_column_name"] = "close"
 
-            target_portfolio = Portfolio.get_or_none(local_time_serie__id=ts.local_time_serie.id)
+            target_portfolio = Portfolio.get_or_none(local_time_serie__id=ts.data_node_update.id)
             if target_portfolio is None:
                 target_portfolio, index_asset = Portfolio.create_from_time_series(**standard_kwargs)
             else:
                 # patch timeserie of portfolio to guaranteed recreation
                 target_portfolio.patch(**standard_kwargs)
-                self.logger.debug(f"Target portfolio {target_portfolio.portfolio_ticker} for local time serie {ts.local_time_serie.update_hash} already exists in Backend")
+                self.logger.debug(f"Target portfolio {target_portfolio.portfolio_ticker} for local time serie {ts.data_node_update.update_hash} already exists in Backend")
                 index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
 
             return target_portfolio, index_asset

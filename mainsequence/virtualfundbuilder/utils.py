@@ -94,7 +94,7 @@ def convert_to_binance_frequency(freq: str) -> str:
 
 def get_last_query_times_per_asset(
         latest_value: datetime,
-        metadata: dict,
+        data_node_storage: dict,
         asset_list: List[Asset],
         max_lookback_time: datetime,
         current_time: datetime,
@@ -115,7 +115,7 @@ def get_last_query_times_per_asset(
         Dict[str, Optional[float]]: A dictionary mapping asset IDs to their respective last query times expressed in UNIX timestamp.
     """
     if latest_value:
-        last_query_times_per_asset = metadata["sourcetableconfiguration"]["multi_index_stats"]["max_per_asset_symbol"]
+        last_query_times_per_asset = data_node_storage["sourcetableconfiguration"]["multi_index_stats"]["max_per_asset_symbol"]
     else:
         last_query_times_per_asset = {}
 

@@ -16,6 +16,7 @@ import json
 
 from typing import Dict, List, Union,Optional
 import datetime
+
 from mainsequence.logconf import logger
 from ..utils import DATE_FORMAT, make_request, set_types_in_table
 import os
@@ -97,7 +98,7 @@ def filter_by_assets_ranges(table_name, asset_ranges_map, index_names, data_sour
     return df
 
 
-def direct_data_from_db(local_metadata: dict, connection_uri: str,
+def direct_data_from_db(data_node_update: "DataNodeUpdate", connection_uri: str,
                         start_date: Union[datetime.datetime, None] = None,
                         great_or_equal: bool = True, less_or_equal: bool = True,
                         end_date: Union[datetime.datetime, None] = None,
@@ -131,7 +132,7 @@ def direct_data_from_db(local_metadata: dict, connection_uri: str,
         Data from the table as a pandas DataFrame, optionally filtered by date range.
     """
     import_psycopg2()
-    metadata=local_metadata.remote_table
+    data_node_storage=data_node_update.data_node_storage
     def fast_table_dump(connection_config, table_name, ):
         query = f"COPY {table_name} TO STDOUT WITH CSV HEADER"
 
@@ -149,7 +150,7 @@ def direct_data_from_db(local_metadata: dict, connection_uri: str,
 
     # Build the WHERE clause dynamically
     where_clauses = []
-    time_index_name = metadata.sourcetableconfiguration.time_index_name
+    time_index_name = data_node_storage.sourcetableconfiguration.time_index_name
     if start_date:
         operator = ">=" if great_or_equal else ">"
         where_clauses.append(f"{time_index_name} {operator} '{start_date}'")
@@ -165,7 +166,7 @@ def direct_data_from_db(local_metadata: dict, connection_uri: str,
     where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     # Construct the query
-    query = f"SELECT {select_clause} FROM {metadata.table_name} {where_clause}"
+    query = f"SELECT {select_clause} FROM {data_node_storage.table_name} {where_clause}"
     # if where_clause=="":
     #     data=fast_table_dump(connection_config, metadata['table_name'])
     #     data[metadata["sourcetableconfiguration"]['time_index_name']]=pd.to_datetime(data[metadata["sourcetableconfiguration"]['time_index_name']])
@@ -179,12 +180,12 @@ def direct_data_from_db(local_metadata: dict, connection_uri: str,
     # Convert to DataFrame
     data = pd.DataFrame(data=data, columns=column_names)
 
-    data = data.set_index(metadata.sourcetableconfiguration.index_names)
+    data = data.set_index(data_node_storage.sourcetableconfiguration.index_names)
 
     return data
 
 
-def direct_table_update(metadata:"DynamicTableMetaData", serialized_data_frame: pd.DataFrame, overwrite: bool,
+def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_frame: pd.DataFrame, overwrite: bool,
                         grouped_dates,
                          table_is_empty: bool,
                         time_series_orm_db_connection: Union[str, None] = None,
@@ -206,9 +207,9 @@ def direct_table_update(metadata:"DynamicTableMetaData", serialized_data_frame: 
     import_psycopg2()
     columns = serialized_data_frame.columns.tolist()
 
-    index_names=metadata.sourcetableconfiguration.index_names
-    table_name=metadata.table_name
-    time_index_name=metadata.sourcetableconfiguration.time_index_name
+    index_names=data_node_storage.sourcetableconfiguration.index_names
+    table_name=data_node_storage.table_name
+    time_index_name=data_node_storage.sourcetableconfiguration.time_index_name
     def drop_indexes(table_name, table_index_names):
         # Use a separate connection for index management
         with psycopg2.connect(time_series_orm_db_connection) as conn:
@@ -226,8 +227,8 @@ def direct_table_update(metadata:"DynamicTableMetaData", serialized_data_frame: 
    
 
     # do not drop indices this is only done on inception
-    if metadata._drop_indices==True:
-        table_index_names=metadata.sourcetableconfiguration.get_time_scale_extra_table_indices()
+    if data_node_storage._drop_indices==True:
+        table_index_names=data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
         drop_indexes(table_name, table_index_names)
 
     if overwrite and not table_is_empty:
@@ -358,9 +359,9 @@ def direct_table_update(metadata:"DynamicTableMetaData", serialized_data_frame: 
             print(f"An error occurred during single insert: {e}")
             raise
     # do not rebuild  indices this is only done on inception
-    if metadata._rebuild_indices:
+    if data_node_storage._rebuild_indices:
         logger.info("Rebuilding indices...")
-        extra_indices = metadata.sourcetableconfiguration.get_time_scale_extra_table_indices()
+        extra_indices = data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
 
         with psycopg2.connect(time_series_orm_db_connection) as conn:
             with conn.cursor() as cur:
@@ -388,7 +389,7 @@ def direct_table_update(metadata:"DynamicTableMetaData", serialized_data_frame: 
 
 def process_and_update_table(
         serialized_data_frame,
-        local_metadata: "LocalTimeSerie",
+        data_node_update: "DataNodeUpdate",
         grouped_dates: List,
         data_source: object,
         index_names: List[str],
@@ -403,7 +404,7 @@ def process_and_update_table(
 
     Args:
         serialized_data_frame (pd.DataFrame): The DataFrame to process and update.
-        metadata (DynamicTableMetaData): Metadata about the table, including table configuration.
+        data_node_storage (DataNodeStorage): data_node_storage about the table, including table configuration.
         grouped_dates (list): List of grouped dates to assist with the update.
         data_source (object): A data source object with a `get_connection_uri` method.
         index_names (list): List of index column names.
@@ -416,7 +417,7 @@ def process_and_update_table(
     """
     import_psycopg2()
     JSON_COMPRESSED_PREFIX=JSON_COMPRESSED_PREFIX or []
-    metadata=local_metadata.remote_table
+    data_node_storage=data_node_update.data_node_storage
     if "unique_identifier" in serialized_data_frame.columns:
         serialized_data_frame['unique_identifier'] = serialized_data_frame['unique_identifier'].astype(str)
 
@@ -437,7 +438,7 @@ def process_and_update_table(
     # Handle overwrite and decompress chunks if required
     recompress = False
     if overwrite:
-        url = f"{base_url}/{metadata.id}/decompress_chunks/"
+        url = f"{base_url}/{data_node_storage.id}/decompress_chunks/"
         from ..models_vam import BaseObject
         s = BaseObject.build_session()
 
@@ -461,14 +462,14 @@ def process_and_update_table(
             recompress = True
 
     # Check if the table is empty
-    table_is_empty = metadata.sourcetableconfiguration.last_time_index_value is None
+    table_is_empty = data_node_storage.sourcetableconfiguration.last_time_index_value is None
 
     # Update the table
     direct_table_update(
         serialized_data_frame=serialized_data_frame,
         grouped_dates=grouped_dates,
         time_series_orm_db_connection=data_source.get_connection_uri(),
-        metadata=metadata,
+        data_node_storage=data_node_storage,
         overwrite=overwrite,
         table_is_empty=table_is_empty,
     )

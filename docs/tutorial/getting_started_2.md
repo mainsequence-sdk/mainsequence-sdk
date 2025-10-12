@@ -105,6 +105,32 @@ As your data system grows, metadata becomes crucial. Many users won't have acces
 
 ---
 
+## Add `dependencies` and `update` Methods
+
+Finally, implement `dependencies` and `update` that are required for the `DataNode` to function properly. Here, we simulate prices for the specified assets. 
+
+ Add required imports to the top of your nodes file:
+```python
+from typing import Dict, Union
+from mainsequence.tdag.data_nodes import APIDataNode
+```
+
+Then add the following methods to your `SimulatedPrices` class:
+```python
+def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {}
+
+def update(self):
+    update_manager=SimulatedPricesManager(self)
+    df=update_manager.update()
+    return df
+```
+
+**Next step is to implement a simple manager class to handle the price simulation logic - `SimulatedPricesManager`, you can copy it from the full example linked here:
+[Simulated Prices Example - class SimulatedPricesManager](https://github.com/mainsequence-sdk/mainsequence-sdk/blob/16d121a3dfcbaae0b06ab8ecd873efcc23f1d28f/examples/data_nodes/simple_simulated_prices.py#L24)**
+
+---
+
 ## Launcher Script and Multi‑Index Output
 
 Create `scripts\simulated_prices_launcher.py` (Windows) or `scripts/simulated_prices_launcher.py` (macOS/Linux) and add the following code to run two separate update processes that write to the **same** prices table:

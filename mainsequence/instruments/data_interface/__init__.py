@@ -4,7 +4,7 @@ from mainsequence.client import Constant as _C
 import os
 
 def _make_backend():
-    backend = os.getenv("MSI_DATA_BACKEND", "mock").lower()
+    backend = os.getenv("MSI_DATA_BACKEND", "mainsequence").lower()
     return MSInterface() if backend == "mainsequence" else MockDataInterface()
 
 # export a single, uniform instance

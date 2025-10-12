@@ -614,7 +614,7 @@ rebalance details:"""
 
 
     def get_table_metadata(self) -> Optional[ms_client.TableMetaData]:
-        asset = ms_client.PortfolioIndexAsset.get_or_none(reference_portfolio__local_time_serie__update_hash=self.local_time_serie.update_hash)
+        asset = ms_client.PortfolioIndexAsset.get_or_none(reference_portfolio__local_time_serie__update_hash=self.data_node_update.update_hash)
         if asset is not None:
             identifier = asset.unique_identifier
             return ms_client.TableMetaData(

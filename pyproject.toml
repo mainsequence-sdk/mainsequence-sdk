@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "2.0.4b"
+version = "3.0.4"
 description = "Main Sequence SDK"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -40,7 +40,7 @@ mainsequence = "mainsequence.cli.cli:app"
 dev = [
   "mkdocs", "mkdocs-material", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-autorefs",
   "mkdocstrings[python]", "mkdocs-mermaid2-plugin", "pymdown-extensions", "pipdeptree",
-  "pytest", "pytest-freezegun", "twine", "streamlit"
+  "pytest", "pytest-freezegun", "twine", "streamlit","IPython"
 ]
 
 # Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])
@@ -50,7 +50,7 @@ include = ["mainsequence", "mainsequence.*"]
 # Include your non-.py assets in wheels/sdists
 [tool.setuptools.package-data]
 "mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml"]
-"mainsequence.dashboards.streamlit" = ["assets/*.png", "assets/config.toml"]
+"mainsequence.dashboards.streamlit" = ["assets/*.png", "assets/*.txt"]
 
 [[tool.uv.index]]
 name = "testpypi"

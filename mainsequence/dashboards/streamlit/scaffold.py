@@ -10,6 +10,9 @@ from importlib.resources import files as _pkg_files
 import sys
 import os
 
+
+
+
 def _detect_app_dir() -> Path:
     """
     Best-effort detection of the directory that contains the running Streamlit app.

@@ -1,4 +1,6 @@
-from importlib.metadata import metadata
+from __future__ import annotations
+
+from asyncio import exceptions
 
 import yaml
 
@@ -32,6 +34,9 @@ import concurrent.futures
 
 from cachetools import TTLCache, cachedmethod
 from operator import attrgetter
+from mainsequence.client  import exceptions
+
+
 
 _default_data_source = None  # Module-level cache
 
@@ -105,7 +110,7 @@ class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
 
 class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
     id: Optional[int] = Field(None, description="Primary key, auto-incremented ID")
-    related_table: Union[int, "DynamicTableMetaData"]
+    related_table: Union[int, "DataNodeStorage"]
     time_index_name: str = Field(..., max_length=100, description="Time index name")
     column_dtypes_map: Dict[str, Any] = Field(..., description="Column data types map")
     index_names: List
@@ -191,25 +196,25 @@ class ColumnMetaData(BasePydanticModel):
     description: str = Field(..., description="Detailed description")
 
 
-class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
+class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     id: Optional[int] = Field(None, description="Primary key, auto-incremented ID")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
-    remote_table: Union[int, "DynamicTableMetaData"]
+    data_node_storage: Union[int, "DataNodeStorage"]
     build_configuration: Dict[str, Any] = Field(..., description="Configuration in JSON format")
     build_meta_data: Optional[Dict[str, Any]] = Field(None, description="Optional YAML metadata")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: Optional[list[str]] = Field(default=[], description="List of tags")
     description: Optional[str] = Field(None, description="Optional HTML description")
-    localtimeserieupdatedetails: Optional[Union["LocalTimeSerieUpdateDetails", int]] = None
+    update_details: Optional[Union["DataNodeUpdateDetails", int]] = None
     run_configuration: Optional["RunConfiguration"] = None
     open_for_everyone: bool = Field(default=False, description="Whether the ts is open for everyone")
 
     @property
     def data_source_id(self):
-        if isinstance(self.remote_table.data_source, int):
-            return self.remote_table.data_source
+        if isinstance(self.data_node_storage.data_source, int):
+            return self.data_node_storage.data_source
         else:
-            return self.remote_table.data_source.id
+            return self.data_node_storage.data_source.id
 
     @classmethod
     def get_or_create(cls, **kwargs):
@@ -247,8 +252,8 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=timeout)
         if r.status_code != 200:
             raise Exception(f"{r.text}")
-        all_metadatas = {m["update_hash"]: m for m in r.json()}
-        return all_metadatas
+        all_data_node_storage = {m["update_hash"]: m for m in r.json()}
+        return all_data_node_storage
 
     def set_start_of_execution(self, **kwargs):
         s = self.build_session()
@@ -332,16 +337,16 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Error in request ")
 
     @classmethod
-    def set_last_update_index_time(cls, metadata, timeout=None):
+    def set_last_update_index_time(cls, data_node_storage, timeout=None):
         s = cls.build_session()
-        url = cls.get_object_url() + f"/{metadata['id']}/set_last_update_index_time/"
+        url = cls.get_object_url() + f"/{data_node_storage['id']}/set_last_update_index_time/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
 
         if r.status_code == 404:
             raise SourceTableConfigurationDoesNotExist
 
         if r.status_code != 200:
-            raise Exception(f"{metadata['update_hash']}{r.text}")
+            raise Exception(f"{data_node_storage['update_hash']}{r.text}")
         return r
 
     def set_last_update_index_time_from_update_stats(
@@ -350,7 +355,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             max_per_asset_symbol,
             multi_index_column_stats,
             timeout=None
-    ) -> "LocalTimeSerie":
+    ) -> "DataNodeUpdate":
         s = self.build_session()
         url = self.get_object_url() + f"/{self.id}/set_last_update_index_time_from_update_stats/"
 
@@ -373,7 +378,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
 
         if r.status_code != 200:
             raise Exception(f"{self.update_hash}{r.text}")
-        return LocalTimeSerie(**r.json())
+        return DataNodeUpdate(**r.json())
 
     @classmethod
     def create_historical_update(cls, *args, **kwargs):
@@ -448,13 +453,13 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             *args, **kwargs
     ):
 
-        return self.remote_table.get_data_between_dates_from_api(*args, **kwargs)
+        return self.data_node_storage.get_data_between_dates_from_api(*args, **kwargs)
 
     @classmethod
-    def insert_data_into_table(cls, local_metadata_id, records: List[dict],
+    def insert_data_into_table(cls, data_node_update_id, records: List[dict],
                                overwrite=True, add_insertion_time=False):
         s = cls.build_session()
-        url = cls.get_object_url() + f"/{local_metadata_id}/insert_data_into_table/"
+        url = cls.get_object_url() + f"/{data_node_update_id}/insert_data_into_table/"
 
         chunk_json_str = json.dumps(records)
         compressed = gzip.compress(chunk_json_str.encode('utf-8'))
@@ -485,7 +490,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             cls,
             serialized_data_frame: pd.DataFrame,
             chunk_size: int = 50_000,
-            local_metadata: dict = None,
+            data_node_update: "DataNodeUpdate" = None,
             data_source: str = None,
             index_names: list = None,
             time_index_name: str = 'timestamp',
@@ -496,7 +501,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
         If a chunk is too large (HTTP 413), it's automatically split in half and retried.
         """
         s = cls.build_session()
-        url = cls.get_object_url() + f"/{local_metadata.id}/insert_data_into_table/"
+        url = cls.get_object_url() + f"/{data_node_update.id}/insert_data_into_table/"
 
         def _send_chunk_recursively(df_chunk: pd.DataFrame, chunk_idx: int, total_chunks: int,
                                     is_sub_chunk: bool = False):
@@ -575,7 +580,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             _send_chunk_recursively(chunk_df, i, total_chunks)
 
     @classmethod
-    def get_metadatas_and_set_updates(
+    def get_data_nodes_and_set_updates(
             cls,
             local_time_series_ids: list,
             update_details_kwargs,
@@ -603,9 +608,9 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
         r = r.json()
         r["source_table_config_map"] = {int(k): SourceTableConfiguration(**v) if v is not None else v for k, v in
                                         r["source_table_config_map"].items()}
-        r["state_data"] = {int(k): LocalTimeSerieUpdateDetails(**v) for k, v in r["state_data"].items()}
+        r["state_data"] = {int(k): DataNodeUpdateDetails(**v) for k, v in r["state_data"].items()}
         r["all_index_stats"] = {int(k): v for k, v in r["all_index_stats"].items()}
-        r["local_metadatas"] = [LocalTimeSerie(**v) for v in r["local_metadatas"]]
+        r["data_node_updates"] = [DataNodeUpdate(**v) for v in r["local_metadatas"]]
         return r
 
     def depends_on_connect(self, target_time_serie_id
@@ -662,7 +667,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
-        metadata = self.remote_table
+        metadata = self.data_node_storage
 
         data, index_names, column_dtypes_map, time_index_name = self._break_pandas_dataframe(
             data)
@@ -695,7 +700,7 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
 
         data_source.insert_data_into_table(
             serialized_data_frame=data,
-            local_metadata=self,
+            data_node_update=self,
             overwrite=overwrite,
             time_index_name=time_index_name,
             index_names=index_names,
@@ -717,16 +722,16 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
                 uid: extract_max(stats)
                 for uid, stats in global_stats["_PER_ASSET_"].items()
             }
-        local_metadata = self.set_last_update_index_time_from_update_stats(
+        data_node_update = self.set_last_update_index_time_from_update_stats(
             max_per_asset_symbol=max_per_asset_symbol,
             last_time_index_value=last_time_index_value,
             multi_index_column_stats=multi_index_column_stats
         )
-        return local_metadata
+        return data_node_update
 
     def get_node_time_to_wait(self):
 
-        next_update = self.localtimeserieupdatedetails.next_update
+        next_update = self.update_details.next_update
         time_to_wait = 0.0
         if next_update is not None:
             time_to_wait = (pd.to_datetime(next_update) - datetime.datetime.now(pytz.utc)).total_seconds()
@@ -745,13 +750,40 @@ class LocalTimeSerie(BasePydanticModel, BaseObjectOrm):
             time.sleep(time_to_wait)
 
 
+
+class DataNodeUpdateDetails(BasePydanticModel, BaseObjectOrm):
+    related_table: Union[int, DataNodeUpdate]
+    active_update: bool = Field(default=False, description="Flag to indicate if update is active")
+    update_pid: int = Field(default=0, description="Process ID of the update")
+    error_on_last_update: bool = Field(default=False,
+                                       description="Flag to indicate if there was an error in the last update")
+    last_update: Optional[datetime.datetime] = Field(None, description="Timestamp of the last update")
+    next_update: Optional[datetime.datetime] = Field(None, description="Timestamp of the next update")
+    update_statistics: Optional[Dict[str, Any]] = Field(None, description="JSON field for update statistics")
+    active_update_status: str = Field(default="Q", max_length=20, description="Current update status")
+    active_update_scheduler: Optional[Union[int, Scheduler]] = Field(None,
+                                                                     description="Scheduler  for active update")
+    update_priority: int = Field(default=0, description="Priority level of the update")
+    last_updated_by_user: Optional[int] = Field(None, description="Foreign key reference to User")
+
+    run_configuration: Optional["RunConfiguration"] = None
+
+    @staticmethod
+    def _parse_parameters_filter(parameters):
+        for key, value in parameters.items():
+            if "__in" in key:
+                assert isinstance(value, list)
+                parameters[key] = ",".join(value)
+        return parameters
+
+
 class TableMetaData(BaseModel):
     identifier: str = None
     description: Optional[str] = None
     data_frequency_id: Optional[DataFrequency] = None
 
 
-class DynamicTableMetaData(BasePydanticModel, BaseObjectOrm):
+class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
     id: int = Field(None, description="Primary key, auto-incremented ID")
     storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     table_name: Optional[str] = Field(None, max_length=63, description="Max length of PostgreSQL table name")
@@ -790,7 +822,10 @@ class DynamicTableMetaData(BasePydanticModel, BaseObjectOrm):
         s = self.build_session()
         r = make_request(s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=time_out)
         if r.status_code != 200:
-            raise Exception(f"Error in request {r.text}")
+            data = r.json()  # guaranteed JSON from your backend
+            if r.status_code == 409:
+                raise exceptions.ConflictError(data["error"])
+            raise exceptions.ApiError(data["error"])
         return self.__class__(**r.json())
 
     @classmethod
@@ -1000,9 +1035,9 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     api_address: Optional[str]
     api_port: Optional[int]
     last_heart_beat: Optional[datetime.datetime] = None
-    pre_loads_in_tree: Optional[List[LocalTimeSerie]] = None  # Assuming this is a list of strings
-    in_active_tree: Optional[List[LocalTimeSerie]] = None  # Assuming this is a list of strings
-    schedules_to: Optional[List[LocalTimeSerie]] = None
+    pre_loads_in_tree: Optional[List[DataNodeUpdate]] = None  # Assuming this is a list of strings
+    in_active_tree: Optional[List[DataNodeUpdate]] = None  # Assuming this is a list of strings
+    schedules_to: Optional[List[DataNodeUpdate]] = None
     # for heartbeat
     _stop_heart_beat: bool = False
     _executor: Optional[object] = None
@@ -1010,7 +1045,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     @classmethod
     def get_scheduler_for_ts(cls, ts_id: int):
         """
-        GET /schedulers/for-ts/?ts_id=<LocalTimeSerie PK>
+        GET /schedulers/for-ts/?ts_id=<DataNodeUpdate PK>
         """
         s = cls.build_session()
         url = cls.get_object_url() + "/for-ts/"
@@ -1197,31 +1232,6 @@ class RunConfiguration(BasePydanticModel, BaseObjectOrm):
     def ROOT_URL(cls):
         return None
 
-
-class LocalTimeSerieUpdateDetails(BasePydanticModel, BaseObjectOrm):
-    related_table: Union[int, LocalTimeSerie]
-    active_update: bool = Field(default=False, description="Flag to indicate if update is active")
-    update_pid: int = Field(default=0, description="Process ID of the update")
-    error_on_last_update: bool = Field(default=False,
-                                       description="Flag to indicate if there was an error in the last update")
-    last_update: Optional[datetime.datetime] = Field(None, description="Timestamp of the last update")
-    next_update: Optional[datetime.datetime] = Field(None, description="Timestamp of the next update")
-    update_statistics: Optional[Dict[str, Any]] = Field(None, description="JSON field for update statistics")
-    active_update_status: str = Field(default="Q", max_length=20, description="Current update status")
-    active_update_scheduler: Optional[Union[int, Scheduler]] = Field(None,
-                                                                     description="Scheduler  for active update")
-    update_priority: int = Field(default=0, description="Priority level of the update")
-    last_updated_by_user: Optional[int] = Field(None, description="Foreign key reference to User")
-
-    run_configuration: Optional["RunConfiguration"] = None
-
-    @staticmethod
-    def _parse_parameters_filter(parameters):
-        for key, value in parameters.items():
-            if "__in" in key:
-                assert isinstance(value, list)
-                parameters[key] = ",".join(value)
-        return parameters
 
 
 class UpdateStatistics(BaseModel):
@@ -1746,7 +1756,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     def insert_data_into_table(
             self,
             serialized_data_frame: pd.DataFrame,
-            local_metadata: LocalTimeSerie,
+            data_node_update: DataNodeUpdate,
             overwrite: bool,
             time_index_name: str,
             index_names: list,
@@ -1756,12 +1766,12 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         if self.class_type == DUCK_DB:
             DuckDBInterface().upsert(
                 df=serialized_data_frame,
-                table=local_metadata.remote_table.table_name
+                table=data_node_update.data_node_storage.table_name
             )
         else:
-            LocalTimeSerie.post_data_frame_in_chunks(
+            DataNodeUpdate.post_data_frame_in_chunks(
                 serialized_data_frame=serialized_data_frame,
-                local_metadata=local_metadata,
+                data_node_update=data_node_update,
                 data_source=self,
                 index_names=index_names,
                 time_index_name=time_index_name,
@@ -1771,16 +1781,16 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     def insert_data_into_local_table(
             self,
             serialized_data_frame: pd.DataFrame,
-            local_metadata: LocalTimeSerie,
+            data_node_update: DataNodeUpdate,
             overwrite: bool,
             time_index_name: str,
             index_names: list,
             grouped_dates: dict,
     ):
 
-        # LocalTimeSerie.post_data_frame_in_chunks(
+        # DataNodeUpdate.post_data_frame_in_chunks(
         #     serialized_data_frame=serialized_data_frame,
-        #     local_metadata=local_metadata,
+        #     data_node_update=data_node_update,
         #     data_source=self,
         #     index_names=index_names,
         #     time_index_name=time_index_name,
@@ -1790,7 +1800,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
     def get_data_by_time_index(
             self,
-            local_metadata: dict,
+            data_node_update: "DataNodeUpdate",
             start_date: Optional[datetime.datetime] = None,
             end_date: Optional[datetime.datetime] = None,
             great_or_equal: bool = True,
@@ -1801,10 +1811,9 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             column_range_descriptor: Optional[Dict[str, UniqueIdentifierRangeMap]] = None,
     ) -> pd.DataFrame:
 
-        logger.warning("EXTEND THE CONSTRAIN READ HERE!!")
         if self.class_type == DUCK_DB:
             db_interface = DuckDBInterface()
-            table_name = local_metadata.remote_table.table_name
+            table_name = data_node_update.data_node_storage.table_name
 
             adjusted_start, adjusted_end, adjusted_uirm, _ = db_interface.constrain_read(
                 table=table_name,
@@ -1835,7 +1844,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         else:
             if column_range_descriptor is not None:
                 raise Exception("On this data source do not use column_range_descriptor")
-            df = local_metadata.get_data_between_dates_from_api(
+            df = data_node_update.get_data_between_dates_from_api(
                 start_date=start_date,
                 end_date=end_date,
                 great_or_equal=great_or_equal,
@@ -1846,11 +1855,11 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             )
         if len(df) == 0:
             logger.warning(
-                f"No data returned from remote API for {local_metadata.update_hash}"
+                f"No data returned from remote API for {data_node_update.update_hash}"
             )
             return df
 
-        stc = local_metadata.remote_table.sourcetableconfiguration
+        stc = data_node_update.data_node_storage.sourcetableconfiguration
         try:
             df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format='ISO8601')
         except Exception as e:
@@ -1867,11 +1876,11 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         return df
 
     def get_earliest_value(self,
-                           local_metadata: LocalTimeSerie,
+                           data_node_update: DataNodeUpdate,
                            ) -> Tuple[Optional[pd.Timestamp], Dict[Any, Optional[pd.Timestamp]]]:
         if self.class_type == DUCK_DB:
             db_interface = DuckDBInterface()
-            table_name = local_metadata.remote_table.table_name
+            table_name = data_node_update.data_node_storage.table_name
             return db_interface.time_index_minima(table=table_name)
 
 
@@ -1935,7 +1944,7 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
 
     def get_data_by_time_index(self, *args, **kwargs):
         if self.has_direct_postgres_connection():
-            stc = kwargs["local_metadata"].remote_table.sourcetableconfiguration
+            stc = kwargs["data_node_update"].data_node_storage.sourcetableconfiguration
 
             df = TimeScaleInterface.direct_data_from_db(
                 connection_uri=self.related_resource.get_connection_uri(),
@@ -1998,16 +2007,16 @@ class TimeScaleDB(DataSource):
     def insert_data_into_table(
             self,
             serialized_data_frame: pd.DataFrame,
-            local_metadata: dict,
+            data_node_update: "DataNodeUpdate",
             overwrite: bool,
             time_index_name: str,
             index_names: list,
             grouped_dates: dict,
     ):
 
-        LocalTimeSerie.post_data_frame_in_chunks(
+        DataNodeUpdate.post_data_frame_in_chunks(
             serialized_data_frame=serialized_data_frame,
-            local_metadata=local_metadata,
+            data_node_update=data_node_update,
             data_source=self,
             index_names=index_names,
             time_index_name=time_index_name,
@@ -2033,7 +2042,7 @@ class TimeScaleDB(DataSource):
                 column_types=column_types
             )
         else:
-            df = LocalTimeSerie.get_data_between_dates_from_api(
+            df = DataNodeUpdate.get_data_between_dates_from_api(
                 update_hash=update_hash,
                 data_source_id=self.id,
                 start_date=None,
@@ -2049,7 +2058,7 @@ class TimeScaleDB(DataSource):
 
     def get_data_by_time_index(
             self,
-            local_metadata: dict,
+            data_node_update: DataNodeUpdate,
             start_date: Optional[datetime.datetime] = None,
             end_date: Optional[datetime.datetime] = None,
             great_or_equal: bool = True,
@@ -2059,9 +2068,9 @@ class TimeScaleDB(DataSource):
 
     ) -> pd.DataFrame:
 
-        metadata = local_metadata.remote_table
+        metadata = data_node_update.data_node_storage
 
-        df = local_metadata.get_data_between_dates_from_api(
+        df = data_node_update.get_data_between_dates_from_api(
 
             start_date=start_date,
             end_date=end_date,
@@ -2073,11 +2082,11 @@ class TimeScaleDB(DataSource):
         if len(df) == 0:
             if logger:
                 logger.warning(
-                    f"No data returned from remote API for {local_metadata.update_hash}"
+                    f"No data returned from remote API for {data_node_update.update_hash}"
                 )
             return df
 
-        stc = local_metadata.remote_table.sourcetableconfiguration
+        stc = data_node_update.data_node_storage.sourcetableconfiguration
         df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name])
         for c, c_type in stc.column_dtypes_map.items():
             if c != stc.time_index_name:
@@ -2236,8 +2245,8 @@ class PodDataSource:
         )
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
-        remote_tables = DynamicTableMetaData.filter(data_source__id=duckdb_dynamic_data_source.id, list_tables=True)
-        remote_table_names = [t.table_name for t in remote_tables]
+        remote_node_storages = DataNodeStorage.filter(data_source__id=duckdb_dynamic_data_source.id, list_tables=True)
+        remote_table_names = [t.table_name for t in remote_node_storages]
         from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
         from mainsequence.client.utils import DataFrequency
         db_interface = DuckDBInterface()
@@ -2249,7 +2258,7 @@ class PodDataSource:
             db_interface.drop_table(table_name)
 
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
-        for remote_table in remote_tables:
+        for remote_table in remote_node_storages:
             if remote_table.table_name in tables_to_delete_remotely:
                 logger.debug(f"Deleting table remotely {remote_table.table_name}")
                 if remote_table.protect_from_deletion:
@@ -2402,3 +2411,11 @@ class Constant(BasePydanticModel, BaseObjectOrm):
 
 SessionDataSource = PodDataSource()
 SessionDataSource.set_remote_db()
+
+DataNodeUpdateDetails.model_rebuild()
+DataNodeUpdate.model_rebuild()
+RunConfiguration.model_rebuild()
+SourceTableConfiguration.model_rebuild()
+DataNodeStorage.model_rebuild()
+DynamicTableDataSource.model_rebuild()
+DataSource.model_rebuild()

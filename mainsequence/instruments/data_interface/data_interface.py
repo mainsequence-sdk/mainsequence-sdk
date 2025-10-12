@@ -9,8 +9,9 @@ import pandas as pd
 from pathlib import Path
 
 
-DISCOUNT_CURVES_TABLE=msc.Constant.get_or_none(name="DISCOUNT_CURVES_TABLE")
-REFERENCE_RATES_FIXING_TABLE = msc.Constant.get_or_none(name="REFERENCE_RATES_FIXING_TABLE")
+
+DISCOUNT_CURVES_TABLE=msc.Constant.get_value(name="DISCOUNT_CURVES_TABLE")
+REFERENCE_RATES_FIXING_TABLE = msc.Constant.get_value(name="REFERENCE_RATES_FIXING_TABLE")
 
 assert DISCOUNT_CURVES_TABLE is not None, "DISCOUNT_CURVES_TABLE not found in constants"
 assert REFERENCE_RATES_FIXING_TABLE is not None, "REFERENCE_RATES_FIXING_TABLE not found in constants"
@@ -287,20 +288,22 @@ class MSInterface():
     @cachedmethod(cache=attrgetter("_curve_cache"), lock=attrgetter("_curve_cache_lock"))
     def get_historical_discount_curve(self, curve_name, target_date):
         from mainsequence.tdag import APIDataNode
+        from mainsequence.logconf import logger
         data_node = APIDataNode.build_from_identifier(identifier=DISCOUNT_CURVES_TABLE)
 
 
 
         # for test purposes only get lats observations
-        update_statistics = data_node.get_update_statistics()
-        target_date = update_statistics.asset_time_statistics[curve_name]
-        print("REMOVE ABOCVE ONLU FOR TESTING")
+        use_last_observation=os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT","true").lower()=="true"
+        if use_last_observation:
+            update_statistics = data_node.get_update_statistics()
+            target_date = update_statistics.asset_time_statistics[curve_name]
+            logger.warning("Curve is using last observation")
 
 
-        try:
-            limit = target_date + datetime.timedelta(days=1)
-        except Exception as e:
-            raise e
+    
+        limit = target_date + datetime.timedelta(days=1)
+       
 
 
 
@@ -336,19 +339,36 @@ class MSInterface():
         :return:
         """
         from mainsequence.tdag import APIDataNode
-        from mainsequence.instruments.settings import REFERENCE_RATES_FIXING_TABLE
+        from mainsequence.logconf import logger
+        import pytz  # patch
 
         data_node = APIDataNode.build_from_identifier(identifier=REFERENCE_RATES_FIXING_TABLE)
 
-        import pytz  # patch
         start_date = datetime.datetime(2024, 9, 10, tzinfo=pytz.utc)
         end_date=datetime.datetime(2025, 9, 17, tzinfo=pytz.utc)
+        
+        
+        
 
         fixings_df = data_node.get_ranged_data_per_asset(
             range_descriptor={reference_rate_uid: {"start_date": start_date, "start_date_operand": ">=",
                                                    "end_date": end_date, "end_date_operand": "<=", }}
         )
         if fixings_df.empty:
+
+            use_last_observation = os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+            if use_last_observation:
+                logger.warning("Fixings are using last observation and filled forward")
+                fixings_df = data_node.get_ranged_data_per_asset(
+                    range_descriptor={reference_rate_uid: {"start_date": datetime.datetime(1900,1,1,tzinfo=pytz.utc),
+                                                           "start_date_operand": ">=",
+                                                           }}
+
+
+                )
+                
+                a=5
+            
             raise Exception(f"{reference_rate_uid} has not data between {start_date} and {end_date}.")
         fixings_df = fixings_df.reset_index().rename(columns={"time_index": "date"})
         fixings_df["date"] = fixings_df["date"].dt.date

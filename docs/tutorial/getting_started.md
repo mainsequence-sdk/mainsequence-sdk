@@ -171,7 +171,11 @@ export VFB_PROJECT_PATH="/home/user/mainsequence/my_organization/projects/tutori
 
 **Key concepts:** data DAGs, `DataNode`, dependencies, `update_hash`, and `storage_hash`.
 
-Main Sequence encourages you to express workflows as data DAGs—composing work into small steps called **data nodes**, where each node performs a transformation. Create a new file at `src\data_nodes\example_nodes.py` (Windows) or `src/data_nodes/example_nodes.py` (macOS/Linux) and define the first node, `DailyRandomNumber`, by extending `DataNode`.
+Main Sequence encourages you to model workflows as data DAGs (directed acyclic graphs), composing your work into small steps called **data nodes**, each performing a single transformation.
+
+Create a new file at `src\data_nodes\example_nodes.py` (Windows) or `src/data_nodes/example_nodes.py` (macOS/Linux), and define your first node, `DailyRandomNumber`, by subclassing `DataNode`.
+
+You can find the complete code for the subsequent data nodes in the [examples folder](https://github.com/mainsequence-sdk/mainsequence-sdk/tree/main/examples).
 
 ```python
 from typing import Dict, Union
@@ -335,18 +339,32 @@ Click the **storage hash**, then in the table's context menu (the **…** button
 Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the following to `src\data_nodes\example_nodes.py`:
 
 ```python
-class DailyRandomAddition(DataNode):
-    def __init__(self, mean: float, std: float, *args, **kwargs):
-        self.mean = mean
-        self.std = std
-        self.daily_random_number_data_node = DailyRandomNumber(
-            node_configuration=RandomDataNodeConfig(mean=0.0),
-            *args, **kwargs
-        )
+class DailyRandomAdditionAPI(DataNode):
+    def __init__(self,mean:float,std:float,
+                 dependency_identifier:int,
+                 *args, **kwargs):
+        self.mean=mean
+        self.std=std
+
+        self.daily_random_number_data_node=APIDataNode.build_from_identifier(identifier=dependency_identifier)
         super().__init__(*args, **kwargs)
-     
     def dependencies(self):
-        return {"number_generator": self.daily_random_number_data_node}
+        return {"number_generator":self.daily_random_number_data_node}
+    def update(self) -> pd.DataFrame:
+        """Draw daily samples from N(mean, std) since last run (UTC days)."""
+        today = pd.Timestamp.now("UTC").normalize()
+        last = self.update_statistics.max_time_index_value
+        if last is not None and last >= today:
+            return pd.DataFrame()
+        random_number=np.random.normal(self.mean, self.std)
+        dependency_noise=self.daily_random_number_data_node.\
+                get_df_between_dates(start_date=today, great_or_equal=True).iloc[0]["random_number"]
+        self.logger.info(f"random_number={random_number} dependency_noise={dependency_noise}")
+
+        return pd.DataFrame(
+            {"random_number": [random_number+dependency_noise]},
+            index=pd.DatetimeIndex([today], name="time_index", tz="UTC"),
+        )
 ```
 
 This simply defines a **dependent** node (`DailyRandomAddition`) that references and uses the output of `DailyRandomNumber`.

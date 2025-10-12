@@ -70,20 +70,20 @@ class UpdateRunner:
 
         name_prefix = "DEBUG_" if self.debug_mode else ""
         self.scheduler = ms_client.Scheduler.build_and_assign_to_ts(
-            scheduler_name=f"{name_prefix}{self.ts.local_time_serie.id}",
-            time_serie_ids=[self.ts.local_time_serie.id],
+            scheduler_name=f"{name_prefix}{self.ts.data_node_update.id}",
+            time_serie_ids=[self.ts.data_node_update.id],
             remove_from_other_schedulers=True,
             running_in_debug_mode=self.debug_mode
         )
         self.scheduler.start_heart_beat()
 
-    def _pre_update_routines(self, local_metadata: Optional[dict] = None) -> Tuple[Dict[int,ms_client.LocalTimeSerie], Any]:
+    def _pre_update_routines(self, data_node_update: Optional[dict] = None) -> Tuple[Dict[int,ms_client.DataNodeUpdate], Any]:
         """
         Prepares the DataNode and its dependencies for an update by fetching the
         latest metadata for the entire dependency graph.
 
         Args:
-            local_metadata: Optional dictionary with metadata for the head node,
+            data_node_update: Optional dictionary with metadata for the head node,
                             used to synchronize before fetching the full tree.
 
         Returns:
@@ -91,7 +91,7 @@ class UpdateRunner:
             tree (keyed by ID) and the corresponding state data.
         """
         # 1. Synchronize the head node and load its dependency structure.
-        self.ts.local_persist_manager.synchronize_metadata(local_metadata=local_metadata)
+        self.ts.local_persist_manager.synchronize_data_node_update(data_node_update=data_node_update)
         self.ts.set_relation_tree()
 
         # The `load_dependencies` logic is now integrated here.
@@ -102,19 +102,19 @@ class UpdateRunner:
         if not self.ts._scheduler_tree_connected and self.update_tree:
             self.logger.debug("Connecting dependency tree to scheduler...")
             if not self.ts.depth_df.empty:
-                all_ids = self.ts.depth_df["local_time_serie_id"].to_list() + [self.ts.local_time_serie.id]
+                all_ids = self.ts.depth_df["data_node_update_id"].to_list() + [self.ts.data_node_update.id]
                 self.scheduler.in_active_tree_connect(local_time_series_ids=all_ids)
             self.ts._scheduler_tree_connected = True
 
         # 3. Collect all IDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.ts.depth_df.empty:
-            all_ids_in_tree = self.ts.depth_df["local_time_serie_id"].to_list()
+            all_ids_in_tree = self.ts.depth_df["data_node_update_id"].to_list()
         else:
             all_ids_in_tree = []
 
         # Always include the head node itself.
-        all_ids_in_tree.append(self.ts.local_time_serie.id)
+        all_ids_in_tree.append(self.ts.data_node_update.id)
 
         # 4. Fetch the latest metadata for the entire tree from the backend.
         update_details_batch = dict(
@@ -123,7 +123,7 @@ class UpdateRunner:
             active_update_status="Q"  # Assuming queue status is always set here
         )
 
-        all_metadatas_response = ms_client.LocalTimeSerie.get_metadatas_and_set_updates(
+        all_metadatas_response = ms_client.DataNodeUpdate.get_data_nodes_and_set_updates(
             local_time_series_ids=all_ids_in_tree,
             update_details_kwargs=update_details_batch,
             update_priority_dict=None
@@ -131,28 +131,28 @@ class UpdateRunner:
 
         # 5. Process and return the results.
         state_data = all_metadatas_response['state_data']
-        local_metadatas_list = all_metadatas_response["local_metadatas"]
-        local_metadatas_map = {m.id: m for m in local_metadatas_list}
+        data_node_updates_list = all_metadatas_response["data_node_updates"]
+        data_node_updates_map = {m.id: m for m in data_node_updates_list}
 
         self.ts.scheduler = self.scheduler
-        self.ts.update_details_tree = {key: v.run_configuration for key, v in local_metadatas_map.items()}
+        self.ts.update_details_tree = {key: v.run_configuration for key, v in data_node_updates_map.items()}
 
-        return local_metadatas_map, state_data
+        return data_node_updates_map, state_data
 
-    def _setup_execution_environment(self) -> Dict[int, ms_client.LocalTimeSerie]:
-        local_metadatas, state_data = self._pre_update_routines()
-        return local_metadatas
+    def _setup_execution_environment(self) -> Dict[int, ms_client.DataNodeUpdate]:
+        data_node_updates, state_data = self._pre_update_routines()
+        return data_node_updates
 
     def _start_update(self, use_state_for_update: bool,override_update_stats:Optional[UpdateStatistics]=None) -> [bool,pd.DataFrame]:
         """Orchestrates a single DataNode update, including pre/post routines."""
-        historical_update = self.ts.local_persist_manager.local_metadata.set_start_of_execution(
+        historical_update = self.ts.local_persist_manager.data_node_update.set_start_of_execution(
             active_update_scheduler_id=self.scheduler.id
         )
 
         must_update = historical_update.must_update or self.force_update
 
         # Ensure metadata is fully loaded with relationship details before proceeding.
-        self.ts.local_persist_manager.set_local_metadata_lazy(include_relations_detail=True)
+        self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
 
         if override_update_stats is not None:
@@ -178,13 +178,13 @@ class UpdateRunner:
             error_on_last_update = True
             raise e
         finally:
-            self.ts.local_persist_manager.local_metadata.set_end_of_execution(
+            self.ts.local_persist_manager.data_node_update.set_end_of_execution(
                 historical_update_id=historical_update.id,
                 error_on_update=error_on_last_update
             )
 
             # Always set last relations details after the run completes.
-            self.ts.local_persist_manager.set_local_metadata_lazy(include_relations_detail=True)
+            self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
             self.ts.run_post_update_routines(error_on_last_update=error_on_last_update)
             self.ts.local_persist_manager.set_column_metadata(columns_metadata=self.ts.get_column_metadata())
@@ -305,17 +305,17 @@ class UpdateRunner:
         """
         # 1. Ensure the dependency graph is built in the backend
         declared_dependencies = self.ts.dependencies() or {}
-        deps_ids=[d.local_time_serie.id  if (d.is_api ==False and d.local_time_serie is not None) else None  for d in declared_dependencies.values()]
+        deps_ids=[d.data_node_update.id  if (d.is_api ==False and d.data_node_update is not None) else None  for d in declared_dependencies.values()]
 
         # 2. Get the list of dependencies to update
         dependencies_df = self.ts.dependencies_df
 
-        if any([a is None for a in deps_ids]) or any([d not in dependencies_df["local_time_serie_id"].to_list() for d in deps_ids]):
+        if any([a is None for a in deps_ids]) or any([d not in dependencies_df["data_node_update_id"].to_list() for d in deps_ids]):
             #Datanode not update set
-            self.ts.local_persist_manager.local_metadata.patch(ogm_dependencies_linked=False)
+            self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)
 
 
-        if self.ts.local_persist_manager.local_metadata.ogm_dependencies_linked==False:
+        if self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked==False:
             self.logger.info("Dependency tree not set. Building now...")
             start_time = time.time()
             self.ts.set_relation_tree()
@@ -507,7 +507,7 @@ class UpdateRunner:
 
                 # 4. Wait for the scheduled update time, if not forcing an immediate run
                 if not self.force_update:
-                    self.ts.local_time_serie.wait_for_update_time()
+                    self.ts.data_node_update.wait_for_update_time()
 
                 # 5. Trigger the core update process
                 error_on_last_update,updated_df=self._start_update(

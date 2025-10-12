@@ -3,7 +3,7 @@ import datetime
 portfolio_ticker = "portfo446B" # An example ticker that should exist
 portfolios = ms_client.Portfolio.filter()
 
-# portfolio=[p for p in portfolios if p.local_time_serie is not None][0]
+# portfolio=[p for p in portfolios if p.data_node_update is not None][0]
 
 
 #

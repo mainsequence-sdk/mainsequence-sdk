@@ -112,8 +112,8 @@ class TimeSeriesOGM:
         return target_path
 
     @property
-    def local_metadata_path(self):
-        target_path = os.path.join(f"{self.time_series_folder}", "metadata")
+    def data_node_update_path(self):
+        target_path = os.path.join(f"{self.time_series_folder}", "data_node_update")
         self.verify_exist(target_path=target_path)
         return target_path
 

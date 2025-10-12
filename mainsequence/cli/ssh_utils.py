@@ -78,18 +78,33 @@ def quote_pwsh(s: str) -> str:
     return '"' + s.replace('"','``"') + '"'
 
 def open_signed_terminal(repo_dir: str, key_path: pathlib.Path, repo_name: str) -> None:
+    # Windows
     if sys.platform == "win32":
         ps = "; ".join([
             "$ErrorActionPreference='Stop'",
-            "Try { Set-Service -Name ssh-agent -StartupType Automatic; Start-Service ssh-agent } Catch {}",
+            # Check if ssh-agent service is running and start with admin privileges if not
+            "$svc = Get-Service ssh-agent",
+            "if ($svc.Status -ne 'Running') {",
+            "  Write-Host 'SSH agent service is not running. Starting admin PowerShell to configure it...' -ForegroundColor Yellow",
+            "  $adminScript = 'Set-Service ssh-agent -StartupType Automatic; Start-Service ssh-agent; Write-Host \"SSH agent configured successfully!\" -ForegroundColor Green; Start-Sleep -Seconds 2'",
+            "  Start-Process powershell -ArgumentList '-NoProfile','-Command',$adminScript -Verb RunAs -Wait",
+            "  Write-Host 'Service configured. Continuing...' -ForegroundColor Green",
+            "}",
+            # ensure key exists and add to agent
             f"if (!(Test-Path -Path {quote_pwsh(str(key_path))})) {{ ssh-keygen -t ed25519 -C 'mainsequence@main-sequence.io' -f {quote_pwsh(str(key_path))} -N '' }}",
             f"ssh-add {quote_pwsh(str(key_path))}",
             "ssh-add -l",
+            # Set GIT_SSH_COMMAND to use the specific key (in set-up-locally we also add key to ssh-agent but use this environment variable as well to be sure)
+            f"$env:GIT_SSH_COMMAND = 'ssh -i {quote_pwsh(str(key_path))} -o IdentitiesOnly=yes'",
             f"Set-Location {quote_pwsh(repo_dir)}",
             f"Write-Host 'SSH agent ready for {repo_name}. You can now run git.' -ForegroundColor Green"
         ])
-        subprocess.Popen(["powershell.exe","-NoExit","-Command", ps])
+        subprocess.Popen(
+            ["powershell.exe", "-NoExit", "-Command", ps],
+            creationflags=subprocess.CREATE_NEW_CONSOLE
+        )
         return
+    # macOS
     if sys.platform == "darwin":
         bash = " && ".join([
             f"cd {quote_bash(repo_dir)}",

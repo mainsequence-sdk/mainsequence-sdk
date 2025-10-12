@@ -526,7 +526,10 @@ class JSONMixin:
     Uses Pydantic's JSON mode (so field_serializers are honored).
     """
     def to_json_dict(self) -> Dict[str, Any]:
-        return self.model_dump(mode="json")
+        try:
+            return self.model_dump(mode="json")
+        except Exception as e:
+            raise e
 
     def to_json(self, **json_kwargs: Any) -> str:
         return json.dumps(self.to_json_dict(), default=str, **json_kwargs)

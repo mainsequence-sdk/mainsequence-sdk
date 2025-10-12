@@ -1,7 +1,7 @@
 from .models_vam import *
 from .base import MARKETS_CONSTANTS
-from .models_tdag import DynamicTableMetaData, LocalTimeSerie
-from .models_tdag import LocalTimeSerie, POD_PROJECT
+from .models_tdag import DataNodeStorage, DataNodeUpdate
+from .models_tdag import DataNodeUpdate, POD_PROJECT
 import datetime
 
 from pydantic import BaseModel, Field, PositiveInt

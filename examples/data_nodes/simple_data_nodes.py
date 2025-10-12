@@ -145,3 +145,5 @@ def build_test_time_series():
                                         )
     daily_node.run(debug_mode=True, force_update=True)
 
+if __name__ == "__main__":
+    build_test_time_series()  # Call your main function
