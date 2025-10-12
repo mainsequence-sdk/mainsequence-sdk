@@ -95,6 +95,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
 
   # create default folders if not exist
   mkdir -p "$ROOT_PROJECT_PATH/dashboards"
+  mkdir -p "$ROOT_PROJECT_PATH/agent_tools"
   mkdir -p "$ROOT_PROJECT_PATH/src"
   mkdir -p "$ROOT_PROJECT_PATH/scripts"
 
@@ -102,6 +103,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   touch "$ROOT_PROJECT_PATH/dashboards/__init__.py"
   touch "$ROOT_PROJECT_PATH/src/__init__.py"
   touch "$ROOT_PROJECT_PATH/scripts/__init__.py"
+  touch "$ROOT_PROJECT_PATH/agent_tools/__init__.py"
   printf 'import mainsequence\nprint("Main Sequence running")\n' > "$ROOT_PROJECT_PATH/scripts/test_script.py"
 
 

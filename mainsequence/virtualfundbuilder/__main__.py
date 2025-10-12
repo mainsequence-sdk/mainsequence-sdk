@@ -99,10 +99,9 @@ def get_py_modules(folder_path):
 
 def get_pod_configuration():
     print("Get pod configuration")
+    #todo register nodes by running the tree
 
-    project_library = os.getenv("PROJECT_LIBRARY_NAME")
-    if not project_library:
-        raise RuntimeError("PROJECT_LIBRARY_NAME is not set in environment")
+
 
 
     project_path = os.getenv("VFB_PROJECT_PATH")
@@ -129,7 +128,7 @@ def get_pod_configuration():
     # for mod in rebalance_modules:
     #     script_lines.append(f"import {rebalance_package}.{mod}")
 
-    script_lines.append("# -- Auto-generated imports for apps --")
+    script_lines.append("# -- Auto-generated imports for agent tools --")
     for mod in agent_tools_modules:
         script_lines.append(f"import {agent_tools_package}.{mod}")
 
@@ -139,7 +138,7 @@ def get_pod_configuration():
     script_lines.append("tdag_agent = TDAGAgent()")
 
     TMP_SCRIPT = "\n".join(script_lines)
-    print(f"Project library: {project_library}")
+    print(f"Project Path: {project_path}")
     print(f"Executing Script: \n{TMP_SCRIPT}")
 
     # Write out to a temporary .py file and run
