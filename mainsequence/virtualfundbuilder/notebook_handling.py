@@ -1,10 +1,7 @@
 import tempfile
 from pathlib import Path
+
 from nbconvert import PythonExporter
-import importlib.util
-import sys
-import inspect
-from typing import List, Type
 
 
 def convert_notebook_to_python_file(notebook_path):
@@ -38,5 +35,3 @@ def convert_notebook_to_python_file(notebook_path):
     print(f"Notebook converted and saved to: {python_file_path}")
 
     return python_file_path
-
-

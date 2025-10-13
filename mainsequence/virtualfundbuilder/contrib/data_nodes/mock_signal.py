@@ -1,15 +1,21 @@
-from mainsequence.tdag.data_nodes import DataNode
 from datetime import datetime
-import pytz
+
 import pandas as pd
-from typing import Union
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase,  register_signal_class
+import pytz
+
+from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+    WeightsBase,
+    register_signal_class,
+)
+
 
 @register_signal_class(register_in_agent=True)
 class MockSignal(WeightsBase, DataNode):
     """
     Mock Signal to test strategies. Creates a signal with long/short of ETH and BTC in frequency.
     """
+
     def __init__(self, source_frequency: str = "30min", *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -32,7 +38,7 @@ class MockSignal(WeightsBase, DataNode):
     def maximum_forward_fill(self):
         return self.source_frequency
 
-    def update(self, latest_value: Union[datetime, None], *args, **kwargs) -> pd.DataFrame:
+    def update(self, latest_value: datetime | None, *args, **kwargs) -> pd.DataFrame:
         """
         Args:
             latest_value (Union[datetime, None]): The timestamp of the most recent data point.
@@ -48,9 +54,9 @@ class MockSignal(WeightsBase, DataNode):
             return pd.DataFrame()
 
         signal_index = pd.date_range(
-            start=latest_value + pd.Timedelta(self.source_frequency), 
+            start=latest_value + pd.Timedelta(self.source_frequency),
             end=current_time,
-            freq=self.source_frequency
+            freq=self.source_frequency,
         )
         signal_weights = []
         for ev, asset_map in self.asset_mapping.items():
@@ -61,18 +67,22 @@ class MockSignal(WeightsBase, DataNode):
 
         last_observation = self.get_last_observation()
         if last_observation is not None:
-            asset_1_weight = -last_observation.query(f"asset_symbol == '{self.asset_1.symbol}'")["signal_weight"].iloc[0]
+            asset_1_weight = -last_observation.query(f"asset_symbol == '{self.asset_1.symbol}'")[
+                "signal_weight"
+            ].iloc[0]
         else:
             asset_1_weight = 1.0
 
         signal_weights.loc[:, (self.asset_1.execution_venue.symbol, self.asset_1.symbol)] = [
             asset_1_weight if i % 2 == 0 else -asset_1_weight for i in range(len(signal_weights))
         ]
-        signal_weights.loc[:, (self.asset_2.execution_venue.symbol, self.asset_2.symbol)] = -signal_weights.loc[
-            :, (self.asset_1.execution_venue.symbol, self.asset_1.symbol)
-        ]
+        signal_weights.loc[:, (self.asset_2.execution_venue.symbol, self.asset_2.symbol)] = (
+            -signal_weights.loc[:, (self.asset_1.execution_venue.symbol, self.asset_1.symbol)]
+        )
 
-        signal_weights = signal_weights.stack().stack().to_frame(name='signal_weight').astype(float)
-        signal_weights.index.set_names(["time_index", "asset_symbol", "execution_venue_symbol"], inplace=True)
+        signal_weights = signal_weights.stack().stack().to_frame(name="signal_weight").astype(float)
+        signal_weights.index.set_names(
+            ["time_index", "asset_symbol", "execution_venue_symbol"], inplace=True
+        )
 
         return signal_weights

@@ -1,24 +1,28 @@
 from __future__ import annotations
 
 import datetime
-from typing import Optional, List, Dict, Any
-
-import QuantLib as ql
-from pydantic import Field, PrivateAttr, field_serializer, field_validator
+from typing import Any
 
 import pandas as pd
+import QuantLib as ql
+from pydantic import Field, PrivateAttr
 
-from mainsequence.instruments.pricing_models.swap_pricer import  get_swap_cashflows, price_vanilla_swap_with_curve
-from mainsequence.instruments.pricing_models.indices import get_index
-from mainsequence.instruments.utils import to_ql_date, to_py_date
+from mainsequence.instruments.pricing_models.indices import build_zero_curve, get_index
+from mainsequence.instruments.pricing_models.swap_pricer import (
+    get_swap_cashflows,
+    price_vanilla_swap_with_curve,
+)
+from mainsequence.instruments.utils import to_py_date, to_ql_date
+
 from .base_instrument import InstrumentModel
-from mainsequence.instruments.pricing_models.indices import build_zero_curve
-
-
+from .ql_fields import (
+    QuantLibBDC as QBDC,
+)
+from .ql_fields import (
+    QuantLibDayCounter as QDayCounter,
+)
 from .ql_fields import (
     QuantLibPeriod as QPeriod,
-    QuantLibDayCounter as QDayCounter,
-    QuantLibBDC as QBDC,
 )
 
 
@@ -43,25 +47,22 @@ class InterestRateSwap(InstrumentModel):
     # ---- floating leg ----
     float_leg_tenor: QPeriod = Field(...)
     float_leg_spread: float = Field(...)
-    float_leg_index_name: str = Field(
+    float_leg_index_name: str = Field()
 
-    )
-
-    tenor: Optional[ql.Period] = Field(
+    tenor: ql.Period | None = Field(
         default=None,
-        description="If set (e.g. ql.Period('156W')), maturity is start + tenor using spot start (T+1)."
+        description="If set (e.g. ql.Period('156W')), maturity is start + tenor using spot start (T+1).",
     )
 
     model_config = {"arbitrary_types_allowed": True}
 
     # runtime-only
-    _swap: Optional[ql.VanillaSwap] = PrivateAttr(default=None)
-    _float_leg_index: Optional[ql.IborIndex] = PrivateAttr(default=None)
-
+    _swap: ql.VanillaSwap | None = PrivateAttr(default=None)
+    _float_leg_index: ql.IborIndex | None = PrivateAttr(default=None)
 
     # ---------- convenience access to runtime index (NOT serialized) ----------
     @property
-    def float_leg_ibor_index(self) -> Optional[ql.IborIndex]:
+    def float_leg_ibor_index(self) -> ql.IborIndex | None:
         return self._float_leg_index
 
     # ---------- lifecycle ----------
@@ -104,9 +105,10 @@ class InterestRateSwap(InstrumentModel):
         assert self.valuation_date is not None
         # Build the default  curve.
         self._ensure_index()
-        default_curve = build_zero_curve(target_date=self.valuation_date,
-                                         index_identifier=self.float_leg_ibor_index.familyName(),
-                                          )
+        default_curve = build_zero_curve(
+            target_date=self.valuation_date,
+            index_identifier=self.float_leg_ibor_index.familyName(),
+        )
 
         # Call the common swap construction logic.
         self._build_swap(default_curve)
@@ -115,7 +117,7 @@ class InterestRateSwap(InstrumentModel):
         self._setup_pricer()
         return float(self._swap.NPV())
 
-    def get_cashflows(self) -> Dict[str, List[Dict[str, Any]]]:
+    def get_cashflows(self) -> dict[str, list[dict[str, Any]]]:
         self._setup_pricer()
         return get_swap_cashflows(self._swap)
 
@@ -140,10 +142,7 @@ class InterestRateSwap(InstrumentModel):
         ql.Settings.instance().includeReferenceDateEvents = False
         ql.Settings.instance().enforceTodaysHistoricFixings = True
 
-
         cal = self.float_leg_ibor_index.fixingCalendar()
-
-
 
         # 3) Effective end
         if self.tenor is not None:
@@ -173,12 +172,12 @@ class InterestRateSwap(InstrumentModel):
         cls,
         *,
         notional: float,
-        start_date:datetime.date,
+        start_date: datetime.date,
         fixed_rate: float,
         float_leg_spread: float = 0.0,
         # choose exactly one of (tenor, maturity_date)
-        tenor: Optional[ql.Period] = None,
-        maturity_date: Optional[datetime.date] = None,
+        tenor: ql.Period | None = None,
+        maturity_date: datetime.date | None = None,
     ) -> InterestRateSwap:
         """
         Build a MXN TIIE(28D) IRS with standard conventions:
@@ -213,7 +212,3 @@ class InterestRateSwap(InstrumentModel):
             float_leg_spread=float_leg_spread,
             float_leg_index_name="TIIE_28D",
         )
-
-
-
-

@@ -4,7 +4,7 @@ import os
 def build_markdown_index():
     # Fixed source directory and target file location
     base_dir = "../examples"
-    target_file ="../docs/examples/index.md"
+    target_file = "../docs/examples/index.md"
 
     # Ensure the output directory exists
 
@@ -32,13 +32,15 @@ def build_markdown_index():
         if rel_dir == ".":
             header = "# Root"
         else:
-            header_level = rel_dir.count(os.sep) + 2  # h2 for first level, h3 for second level, etc.
+            header_level = (
+                rel_dir.count(os.sep) + 2
+            )  # h2 for first level, h3 for second level, etc.
             header = f"{'#' * header_level} {os.path.basename(root)}"
         markdown_lines.append(header)
         markdown_lines.append("")  # Blank line for spacing
 
         # Find all Jupyter notebooks (.ipynb) in the current directory
-        notebooks = [f for f in files if f.endswith('.ipynb')]
+        notebooks = [f for f in files if f.endswith(".ipynb")]
         for nb in notebooks:
             # Build a relative path link for the notebook (using forward slashes for URLs)
             nb_path = os.path.join(rel_dir, nb) if rel_dir != "." else nb

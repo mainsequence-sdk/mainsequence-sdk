@@ -1,7 +1,8 @@
 import os
-from pathlib import Path
 from enum import Enum
-from .utils import read_key_from_yaml, write_yaml, read_yaml
+from pathlib import Path
+
+from .utils import read_key_from_yaml, read_yaml, write_yaml
 
 DEFAULT_RETENTION_POLICY = dict(scheduler_name="default", retention_policy_time="90 days")
 
@@ -24,21 +25,24 @@ Path(GT_RAY_FOLDER).mkdir(parents=True, exist_ok=True)
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
+
 class bcolors:
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    IMPORTANT = '\033[45m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+    HEADER = "\033[95m"
+    OKBLUE = "\033[94m"
+    OKCYAN = "\033[96m"
+    OKGREEN = "\033[92m"
+    IMPORTANT = "\033[45m"
+    WARNING = "\033[93m"
+    FAIL = "\033[91m"
+    ENDC = "\033[0m"
+    BOLD = "\033[1m"
+    UNDERLINE = "\033[4m"
+
 
 class RunningMode(Enum):
     TRAINING = "train"
     LIVE = "live"
+
 
 class Configuration:
     OBLIGATORY_ENV_VARIABLES = [
@@ -51,7 +55,7 @@ class Configuration:
         self._assert_env_variables()
 
     @classmethod
-    def add_env_variables_to_registry(cls,env_vars:list):
+    def add_env_variables_to_registry(cls, env_vars: list):
         cls.OBLIGATORY_ENV_VARIABLES.extend(env_vars)
 
     def set_gt_configuration(self):
@@ -61,8 +65,8 @@ class Configuration:
         self.configuration = read_yaml(TDAG_CONFIG_PATH)
 
     def _assert_env_variables(self):
-        do_not_check= os.environ.get("DO_NOT_CHECK_TDAG","false").lower()=="true"
-        if do_not_check== True:
+        do_not_check = os.environ.get("DO_NOT_CHECK_TDAG", "false").lower() == "true"
+        if do_not_check == True:
             return None
         for ob_var in self.OBLIGATORY_ENV_VARIABLES:
             assert ob_var in os.environ, f"{ob_var} not in environment variables"
@@ -71,18 +75,16 @@ class Configuration:
         config = {
             "time_series_config": {
                 "ignore_update_timeout": False,
-
             },
             "instrumentation_config": {
                 "grafana_agent_host": "localhost",
-                "export_trace_to_console": False
-            }
+                "export_trace_to_console": False,
+            },
         }
         write_yaml(path=TDAG_CONFIG_PATH, dict_file=config)
 
+
 configuration = Configuration()
-
-
 
 
 class TimeSeriesOGM:
@@ -104,7 +106,6 @@ class TimeSeriesOGM:
         self.verify_exist(target_path=target_path)
         return target_path
 
-
     @property
     def temp_folder(self):
         target_path = os.path.join(f"{self.time_series_folder}", "temp")
@@ -125,5 +126,6 @@ class TimeSeriesOGM:
 
     def get_ts_pickle_path(self, update_hash: str):
         return os.path.join(f"{self.pickle_storage_path}", f"{update_hash}.pickle")
+
 
 ogm = TimeSeriesOGM()

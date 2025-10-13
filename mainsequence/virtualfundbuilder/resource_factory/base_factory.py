@@ -1,30 +1,28 @@
-import json
-import os
-import inspect
+import ast
 import importlib.util
-from threading import Thread
+import inspect
+import os
+import sys
+from enum import Enum
+from pathlib import Path
+from typing import Union, get_type_hints
 
-import yaml
+from pydantic import BaseModel
 
 from mainsequence.client.models_tdag import DynamicResource
 from mainsequence.tdag import DataNode
-from mainsequence.virtualfundbuilder.utils import get_vfb_logger, create_schema_from_signature
-from typing import get_type_hints, List, Optional, Union
-from pydantic import BaseModel
-from enum import Enum
-from pathlib import Path
-import sys
-import ast
+from mainsequence.virtualfundbuilder.utils import create_schema_from_signature, get_vfb_logger
 
 logger = get_vfb_logger()
-from mainsequence.virtualfundbuilder.enums import ResourceType
 from mainsequence.virtualfundbuilder.utils import runs_in_main_process
 
-class BaseResource():
+
+class BaseResource:
     @classmethod
     def get_source_notebook(cls):
         """Retrieve the exact source code of the class from notebook cells."""
         from IPython import get_ipython
+
         ipython_shell = get_ipython()
         history = ipython_shell.history_manager.get_range()
 
@@ -50,7 +48,7 @@ class BaseResource():
         return "Class definition not found in notebook history."
 
     @classmethod
-    def build_and_parse_from_configuration(cls, **kwargs) -> 'WeightsBase':
+    def build_and_parse_from_configuration(cls, **kwargs) -> "WeightsBase":
         type_hints = get_type_hints(cls.__init__)
 
         def parse_value_into_hint(value, hint):
@@ -65,7 +63,8 @@ class BaseResource():
             if value is None:
                 return None
 
-            from typing import get_origin, get_args, Union
+            from typing import get_args, get_origin
+
             origin = get_origin(hint)
             args = get_args(hint)
 
@@ -117,9 +116,12 @@ class BaseResource():
 
         return cls(**kwargs)
 
+
 SKIP_REGISTRATION = os.getenv("SKIP_REGISTRATION", "").lower() == "true"
-def insert_in_registry(registry, cls, register_in_agent, name=None, attributes: Optional[dict]=None):
-    """ helper for strategy decorators """
+
+
+def insert_in_registry(registry, cls, register_in_agent, name=None, attributes: dict | None = None):
+    """helper for strategy decorators"""
     key = name or cls.__name__  # Use the given name or the class name as the key
 
     if key in registry and register_in_agent:
@@ -167,7 +169,7 @@ class BaseFactory:
                 logger.warning(f"Error reading code in strategy {filename}: {e}")
 
 
-def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
+def send_resource_to_backend(resource_class, attributes: dict | None = None):
     """
     Parses the __init__ signatures of the class and its parents to generate a
     unified JSON schema and sends the resource payload to the backend.
@@ -177,8 +179,11 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
     merged_definitions = {}
 
     # Special case for BaseAgentTool subclasses that use a configuration_class
-    if hasattr(resource_class, 'configuration_class') and inspect.isclass(resource_class.configuration_class) and issubclass(resource_class.configuration_class,
-                                                                                                                             BaseModel):
+    if (
+        hasattr(resource_class, "configuration_class")
+        and inspect.isclass(resource_class.configuration_class)
+        and issubclass(resource_class.configuration_class, BaseModel)
+    ):
         config_class = resource_class.configuration_class
         config_name = config_class.__name__
 
@@ -195,7 +200,7 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
         # Create a top-level "configuration" property that references the schema
         merged_properties["configuration"] = {
             "$ref": f"#/$defs/{config_name}",
-            "title": "Configuration"
+            "title": "Configuration",
         }
         # Mark the top-level "configuration" as required
         merged_required.add("configuration")
@@ -203,7 +208,11 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
     else:
         # Standard logic for other resource types
         for parent_class in reversed(resource_class.__mro__):
-            if parent_class is object or not hasattr(parent_class, '__init__') or parent_class is DataNode:
+            if (
+                parent_class is object
+                or not hasattr(parent_class, "__init__")
+                or parent_class is DataNode
+            ):
                 continue
             if "__init__" in parent_class.__dict__:
                 parent_schema = create_schema_from_signature(parent_class.__init__)
@@ -217,10 +226,13 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
         "properties": merged_properties,
     }
     if merged_required:
-        schema_required = sorted([
-            field for field in merged_required
-            if 'default' not in merged_properties.get(field, {})
-        ])
+        schema_required = sorted(
+            [
+                field
+                for field in merged_required
+                if "default" not in merged_properties.get(field, {})
+            ]
+        )
         if schema_required:
             final_json_schema["required"] = schema_required
 
@@ -235,4 +247,3 @@ def send_resource_to_backend(resource_class, attributes: Optional[dict] = None):
     )
 
     logger.debug(f"Sending resource '{resource_class.__name__}' to backend.")
-

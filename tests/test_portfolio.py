@@ -1,15 +1,14 @@
-
-#comment out for local testing out of Main Sequence Platform
+# comment out for local testing out of Main Sequence Platform
 import dotenv
 
-from mainsequence.client import SessionDataSource, Asset
-from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import get_interpolated_prices_timeseries
-
-dotenv.load_dotenv('../.env.dev')
+dotenv.load_dotenv("../.env.dev")
 
 from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
-portfolio = PortfolioInterface.load_from_configuration(configuration_name=None,
-                                                       config_file="/home/jose/code/MainSequenceClientSide/mainsequence-sdk/examples/configurations/market_cap_vol_control.yaml")
+
+portfolio = PortfolioInterface.load_from_configuration(
+    configuration_name=None,
+    config_file="/home/jose/code/MainSequenceClientSide/mainsequence-sdk/examples/configurations/market_cap_vol_control.yaml",
+)
 
 # SessionDataSource.set_local_db()
 
@@ -20,4 +19,3 @@ print(res)
 
 # bars_ts.run(debug_mode=True, force_update=True)
 # res.head()
-

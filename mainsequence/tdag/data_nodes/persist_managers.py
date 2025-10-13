@@ -1,24 +1,24 @@
-import pandas as pd
-import datetime
-from typing import Union, List, Dict, Optional, Tuple
-import os
-from mainsequence.logconf import logger
-
-
-from mainsequence.client import (DataNodeUpdate, UniqueIdentifierRangeMap,
-                                 LocalTimeSeriesDoesNotExist,
-                                 DynamicTableDoesNotExist, DynamicTableDataSource, TDAG_CONSTANTS as CONSTANTS, DataNodeStorage,
-                                 UpdateStatistics, DoesNotExist)
-
-from mainsequence.client.models_tdag import  DataNodeUpdateDetails
-import mainsequence.client as ms_client
+import hashlib
+import inspect
 import json
 import threading
 from concurrent.futures import Future
-from .. import  future_registry
-from mainsequence.instrumentation import tracer, tracer_instrumentator
-import inspect
-import hashlib
+
+import pandas as pd
+
+import mainsequence.client as ms_client
+from mainsequence.client import TDAG_CONSTANTS as CONSTANTS
+from mainsequence.client import (
+    DataNodeStorage,
+    DataNodeUpdate,
+    DynamicTableDataSource,
+)
+from mainsequence.client.models_tdag import DataNodeUpdateDetails
+from mainsequence.instrumentation import tracer
+from mainsequence.logconf import logger
+
+from .. import future_registry
+
 
 def get_data_node_source_code(DataNodeClass: "DataNode") -> str:
     """
@@ -37,9 +37,11 @@ def get_data_node_source_code(DataNodeClass: "DataNode") -> str:
         if source.strip():
             return source
     except Exception:
-        logger.warning \
-            ("Your TimeSeries is not in a python module this will likely bring exceptions when running in a pipeline")
+        logger.warning(
+            "Your TimeSeries is not in a python module this will likely bring exceptions when running in a pipeline"
+        )
     from IPython import get_ipython
+
     # Fallback: Scan IPython's input history.
     ip = get_ipython()  # Get the current IPython instance.
     if ip is not None:
@@ -50,6 +52,7 @@ def get_data_node_source_code(DataNodeClass: "DataNode") -> str:
         if idx != -1:
             return history[idx:]
     return "Source code unavailable."
+
 
 def get_data_node_source_code_git_hash(DataNodeClass: "DataNode") -> str:
     """
@@ -66,7 +69,7 @@ def get_data_node_source_code_git_hash(DataNodeClass: "DataNode") -> str:
     # Git hashing format: "blob <size_of_content>\0<content>"
     content = f"blob {len(data_node_class_source_code)}\0{data_node_class_source_code}"
     # Compute the SHA-1 hash (Git hash)
-    hash_object = hashlib.sha1(content.encode('utf-8'))
+    hash_object = hashlib.sha1(content.encode("utf-8"))
     git_hash = hash_object.hexdigest()
     return git_hash
 
@@ -95,16 +98,17 @@ class APIPersistManager:
         # Register the future globally.
         future_registry.add_future(self._data_node_storage_future)
         # Launch the REST request in a separate, non-daemon thread.
-        thread = threading.Thread(target=self._init_data_node_storage,
-                                  name=f"ApiDataNodeStorageThread-{self.storage_hash}",
-                                  daemon=False)
+        thread = threading.Thread(
+            target=self._init_data_node_storage,
+            name=f"ApiDataNodeStorageThread-{self.storage_hash}",
+            daemon=False,
+        )
         thread.start()
-
 
     @property
     def data_node_storage(self) -> DataNodeStorage:
         """Lazily block and cache the result if needed."""
-        if not hasattr(self, '_data_node_storage_cached'):
+        if not hasattr(self, "_data_node_storage_cached"):
             # This call blocks until the future is resolved.
             self._data_node_storage_cached = self._data_node_storage_future.result()
         return self._data_node_storage_cached
@@ -115,9 +119,10 @@ class APIPersistManager:
         Sets the result or exception on the future object.
         """
         try:
-            result = DataNodeStorage.get_or_none(storage_hash=self.storage_hash,
-                                                data_source__id=self.data_source_id,
-                                                include_relations_detail=True
+            result = DataNodeStorage.get_or_none(
+                storage_hash=self.storage_hash,
+                data_source__id=self.data_source_id,
+                include_relations_detail=True,
             )
             self._data_node_storage_future.set_result(result)
         except Exception as exc:
@@ -139,10 +144,12 @@ class APIPersistManager:
 
         # fix types
         stc = self.data_node_storage.sourcetableconfiguration
-        filtered_data[stc.time_index_name] = pd.to_datetime(filtered_data[stc.time_index_name], utc=True)
-        column_filter = kwargs.get("columns") or  stc.column_dtypes_map.keys()
+        filtered_data[stc.time_index_name] = pd.to_datetime(
+            filtered_data[stc.time_index_name], utc=True
+        )
+        column_filter = kwargs.get("columns") or stc.column_dtypes_map.keys()
         for c in column_filter:
-            c_type=stc.column_dtypes_map[c]
+            c_type = stc.column_dtypes_map[c]
             if c != stc.time_index_name:
                 if c_type == "object":
                     c_type = "str"
@@ -153,14 +160,15 @@ class APIPersistManager:
 
 
 class PersistManager:
-    def __init__(self,
-                 data_source: DynamicTableDataSource,
-                 update_hash: str,
-                 description: Optional[str] = None,
-                 class_name: Optional[str] = None,
-                 data_node_storage: Optional[Dict] = None,
-                 data_node_update: Optional[DataNodeUpdate] = None
-                 ):
+    def __init__(
+        self,
+        data_source: DynamicTableDataSource,
+        update_hash: str,
+        description: str | None = None,
+        class_name: str | None = None,
+        data_node_storage: dict | None = None,
+        data_node_update: DataNodeUpdate | None = None,
+    ):
         """
         Initializes the PersistManager.
 
@@ -177,29 +185,31 @@ class PersistManager:
         if data_node_update is not None and data_node_storage is None:
             # query remote storage_hash
             data_node_storage = data_node_update.data_node_storage
-        self.description: Optional[str] = description
+        self.description: str | None = description
         self.logger = logger
 
         self.table_model_loaded: bool = False
-        self.class_name: Optional[str] = class_name
+        self.class_name: str | None = class_name
 
         # Private members for managing lazy asynchronous retrieval.
-        self._data_node_update_future: Optional[Future] = None
-        self._data_node_update_cached: Optional[DataNodeUpdate] = None
+        self._data_node_update_future: Future | None = None
+        self._data_node_update_cached: DataNodeUpdate | None = None
         self._data_node_update_lock = threading.Lock()
-        self._data_node_storage_cached: Optional[DataNodeStorage] = None
+        self._data_node_storage_cached: DataNodeStorage | None = None
 
         if self.update_hash is not None:
             self.synchronize_data_node_update(data_node_update=data_node_update)
 
-    def synchronize_data_node_update(self, data_node_update: Optional[DataNodeUpdate]) -> None:
+    def synchronize_data_node_update(self, data_node_update: DataNodeUpdate | None) -> None:
         if data_node_update is not None:
             self.set_data_node_update(data_node_update)
         else:
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
     @classmethod
-    def get_from_data_type(cls, data_source: DynamicTableDataSource, *args, **kwargs) -> 'PersistManager':
+    def get_from_data_type(
+        cls, data_source: DynamicTableDataSource, *args, **kwargs
+    ) -> "PersistManager":
         """
         Factory method to get the correct PersistManager based on data source type.
 
@@ -238,8 +248,9 @@ class PersistManager:
             return self._data_node_update_cached
 
             # Define a callback that will launch set_local_data_node_lazy after the remote update is complete.
+
     @property
-    def data_node_storage(self) -> Optional[DataNodeStorage]:
+    def data_node_storage(self) -> DataNodeStorage | None:
         """
         Lazily retrieves and returns the remote data_node_storage.
         """
@@ -247,18 +258,26 @@ class PersistManager:
             return None
         if self.data_node_update.data_node_storage is not None:
             if self.data_node_update.data_node_storage.sourcetableconfiguration is not None:
-                if self.data_node_update.data_node_storage.build_meta_data.get("initialize_with_default_partitions",True) == False:
-                    if self.data_node_update.data_node_storage.data_source.related_resource_class_type in CONSTANTS.DATA_SOURCE_TYPE_TIMESCALEDB:
+                if (
+                    self.data_node_update.data_node_storage.build_meta_data.get(
+                        "initialize_with_default_partitions", True
+                    )
+                    == False
+                ):
+                    if (
+                        self.data_node_update.data_node_storage.data_source.related_resource_class_type
+                        in CONSTANTS.DATA_SOURCE_TYPE_TIMESCALEDB
+                    ):
                         self.logger.warning("Default Partitions will not be initialized ")
 
         return self.data_node_update.data_node_storage
 
     @property
-    def local_build_configuration(self) -> Dict:
+    def local_build_configuration(self) -> dict:
         return self.data_node_update.build_configuration
 
     @property
-    def local_build_metadata(self) -> Dict:
+    def local_build_metadata(self) -> dict:
         return self.data_node_update.build_meta_data
 
     def set_data_node_update_lazy_callback(self, fut: Future) -> None:
@@ -275,7 +294,9 @@ class PersistManager:
         # Launch the local metadata update regardless of the outcome.
         self.set_data_node_update_lazy(force_registry=True)
 
-    def set_data_node_update_lazy(self, force_registry: bool = True, include_relations_detail: bool = True) -> None:
+    def set_data_node_update_lazy(
+        self, force_registry: bool = True, include_relations_detail: bool = True
+    ) -> None:
         """
         Initiates a lazy, asynchronous fetch of the local data_node_update.
 
@@ -298,10 +319,12 @@ class PersistManager:
                 result = DataNodeUpdate.get_or_none(
                     update_hash=self.update_hash,
                     remote_table__data_source__id=self.data_source.id,
-                    include_relations_detail=include_relations_detail
+                    include_relations_detail=include_relations_detail,
                 )
                 if result is None:
-                    self.logger.warning(f"TimeSeries {self.update_hash} with data source {self.data_source.id} not found in backend")
+                    self.logger.warning(
+                        f"TimeSeries {self.update_hash} with data source {self.data_source.id} not found in backend"
+                    )
                 new_future.set_result(result)
             except Exception as exc:
                 new_future.set_exception(exc)
@@ -309,12 +332,12 @@ class PersistManager:
                 # Remove the future from the global registry once done.
                 future_registry.remove_future(new_future)
 
-        thread = threading.Thread(target=_get_or_none_data_node_update,
-                                  name=f"LocalDataNodeStorageThreadPM-{self.update_hash}",
-                                  daemon=False)
+        thread = threading.Thread(
+            target=_get_or_none_data_node_update,
+            name=f"LocalDataNodeStorageThreadPM-{self.update_hash}",
+            daemon=False,
+        )
         thread.start()
-
-
 
     def depends_on_connect(self, new_ts: "DataNode", is_api: bool) -> None:
         """
@@ -325,10 +348,14 @@ class PersistManager:
             is_api: True if the target is an APIDataNode
         """
         if not is_api:
-            self.data_node_update.depends_on_connect(target_time_serie_id=new_ts.data_node_update.id)
+            self.data_node_update.depends_on_connect(
+                target_time_serie_id=new_ts.data_node_update.id
+            )
         else:
             try:
-                self.data_node_update.depends_on_connect_to_api_table(target_table_id=new_ts.local_persist_manager.data_node_storage.id)
+                self.data_node_update.depends_on_connect_to_api_table(
+                    target_table_id=new_ts.local_persist_manager.data_node_storage.id
+                )
             except Exception as exc:
                 raise exc
 
@@ -339,12 +366,10 @@ class PersistManager:
         Returns:
             An HTML string containing the Mermaid diagram and supporting Javascript.
         """
-        from IPython.core.display import display, HTML, Javascript
 
-        response = ms_client.TimeSerieLocalUpdate.get_mermaid_dependency_diagram(update_hash=self.update_hash,
-                                                                       data_source_id=self.data_source.id
-                                                                       )
-        from IPython.core.display import display, HTML, Javascript
+        response = ms_client.TimeSerieLocalUpdate.get_mermaid_dependency_diagram(
+            update_hash=self.update_hash, data_source_id=self.data_source.id
+        )
         mermaid_chart = response.get("mermaid_chart")
         metadata = response.get("metadata")
         # Render Mermaid.js diagram with metadata display
@@ -387,7 +412,7 @@ class PersistManager:
         Returns:
             The Mermaid diagram string.
         """
-        from IPython.display import display, HTML
+        from IPython.display import HTML, display
 
         mermaid_diagram = self.display_mermaid_dependency_diagram()
 
@@ -442,20 +467,20 @@ class PersistManager:
         self.data_node_update.patch(ogm_dependencies_linked=True)
 
     @property
-    def update_details(self) -> Optional[DataNodeUpdateDetails]:
+    def update_details(self) -> DataNodeUpdateDetails | None:
         """Returns the update details associated with the local time series."""
         return self.data_node_update.update_details
 
     @property
-    def run_configuration(self) -> Optional[Dict]:
+    def run_configuration(self) -> dict | None:
         """Returns the run configuration from the local metadata."""
         return self.data_node_update.run_configuration
 
     @property
-    def source_table_configuration(self) -> Optional[Dict]:
+    def source_table_configuration(self) -> dict | None:
         """Returns the source table configuration from the remote metadata."""
         if "sourcetableconfiguration" in self.metadata.keys():
-            return self.metadata['sourcetableconfiguration']
+            return self.metadata["sourcetableconfiguration"]
         return None
 
     def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
@@ -467,9 +492,7 @@ class PersistManager:
             time_serie_source_code=source_code,
         )
 
-
-
-    def add_tags(self, tags: List[str]) -> None:
+    def add_tags(self, tags: list[str]) -> None:
         """Adds tags to the local time series metadata if they don't already exist."""
         if any([t not in self.data_node_update.tags for t in tags]) == True:
             self.data_node_update.add_tags(tags=tags)
@@ -478,7 +501,7 @@ class PersistManager:
     def persist_size(self) -> int:
         """Returns the size of the persisted table, or 0 if not available."""
         try:
-            return self.metadata['table_size']
+            return self.metadata["table_size"]
         except KeyError:
             return 0
 
@@ -488,8 +511,9 @@ class PersistManager:
             return True
         return False
 
-    def patch_build_configuration(self, local_configuration: dict, remote_configuration: dict,
-                                  remote_build_metadata: dict) -> None:
+    def patch_build_configuration(
+        self, local_configuration: dict, remote_configuration: dict, remote_build_metadata: dict
+    ) -> None:
         """
         Asynchronously patches the build configuration for the remote and local tables.
 
@@ -504,12 +528,13 @@ class PersistManager:
             future_registry.add_future(self._data_node_update_future)
 
         kwargs = dict(
-                      build_configuration=remote_configuration, )
+            build_configuration=remote_configuration,
+        )
 
-
-        data_node_update_kwargs = dict(update_hash=self.update_hash,
-                               build_configuration=local_configuration,
-                              )
+        data_node_update_kwargs = dict(
+            update_hash=self.update_hash,
+            build_configuration=local_configuration,
+        )
 
         patch_future = Future()
         future_registry.add_future(patch_future)
@@ -525,7 +550,7 @@ class PersistManager:
                     build_meta_data=remote_build_metadata,
                     local_table_patch=data_node_update_kwargs,
                 )
-                patch_future.set_result(True) #success
+                patch_future.set_result(True)  # success
             except Exception as exc:
                 patch_future.set_exception(exc)
             finally:
@@ -535,22 +560,21 @@ class PersistManager:
         thread = threading.Thread(
             target=_patch_build_configuration,
             name=f"PatchBuildConfigThread-{self.update_hash}",
-            daemon=False
+            daemon=False,
         )
         thread.start()
 
         patch_future.add_done_callback(self.set_data_node_update_lazy_callback)
 
-
     def local_persist_exist_set_config(
-            self,
-            storage_hash: str,
-            local_configuration: dict,
-            remote_configuration: dict,
-            data_source: DynamicTableDataSource,
-            time_serie_source_code_git_hash: str,
-            time_serie_source_code: str,
-            build_configuration_json_schema: dict,
+        self,
+        storage_hash: str,
+        local_configuration: dict,
+        remote_configuration: dict,
+        data_source: DynamicTableDataSource,
+        time_serie_source_code_git_hash: str,
+        time_serie_source_code: str,
+        build_configuration_json_schema: dict,
     ) -> None:
         """
         Ensures local and remote persistence objects exist and sets their configurations.
@@ -562,22 +586,26 @@ class PersistManager:
 
         if remote_build_configuration is None:
             logger.debug(f"remote table {storage_hash} does not exist creating")
-            #create remote table
+            # create remote table
 
             try:
 
                 # table may not exist but
-                remote_build_metadata = remote_configuration["build_meta_data"] if "build_meta_data" in remote_configuration.keys() else {}
+                remote_build_metadata = (
+                    remote_configuration["build_meta_data"]
+                    if "build_meta_data" in remote_configuration.keys()
+                    else {}
+                )
                 remote_configuration.pop("build_meta_data", None)
-                kwargs = dict(storage_hash=storage_hash,
-                              time_serie_source_code_git_hash=time_serie_source_code_git_hash,
-                              time_serie_source_code=time_serie_source_code,
-                              build_configuration=remote_configuration,
-                              data_source=data_source.model_dump(),
-                              build_meta_data=remote_build_metadata,
-                build_configuration_json_schema=build_configuration_json_schema
-                              )
-
+                kwargs = dict(
+                    storage_hash=storage_hash,
+                    time_serie_source_code_git_hash=time_serie_source_code_git_hash,
+                    time_serie_source_code=time_serie_source_code,
+                    build_configuration=remote_configuration,
+                    data_source=data_source.model_dump(),
+                    build_meta_data=remote_build_metadata,
+                    build_configuration_json_schema=build_configuration_json_schema,
+                )
 
                 dtd_metadata = DataNodeStorage.get_or_create(**kwargs)
                 storage_hash = dtd_metadata.storage_hash
@@ -588,54 +616,69 @@ class PersistManager:
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
             storage_hash = self.metadata.storage_hash
 
-        local_table_exist = self._verify_local_ts_exists(storage_hash=storage_hash, local_configuration=local_configuration)
+        local_table_exist = self._verify_local_ts_exists(
+            storage_hash=storage_hash, local_configuration=local_configuration
+        )
 
-
-    def _verify_local_ts_exists(self, storage_hash: str,
-                                local_configuration: Optional[Dict] = None) -> None:
+    def _verify_local_ts_exists(
+        self, storage_hash: str, local_configuration: dict | None = None
+    ) -> None:
         """
         Verifies that the local time series exists in the ORM, creating it if necessary.
         """
         local_build_configuration = None
         if self.data_node_update is not None:
-            local_build_configuration, local_build_metadata = self.local_build_configuration, self.local_build_metadata
+            local_build_configuration, local_build_metadata = (
+                self.local_build_configuration,
+                self.local_build_metadata,
+            )
         if local_build_configuration is None:
 
             logger.debug(f"data_node_update {self.update_hash} does not exist creating")
-            local_update = DataNodeUpdate.get_or_none(update_hash=self.update_hash,
-                                                       remote_table__data_source__id=self.data_source.id)
+            local_update = DataNodeUpdate.get_or_none(
+                update_hash=self.update_hash, remote_table__data_source__id=self.data_source.id
+            )
             if local_update is None:
-                local_build_metadata = local_configuration[
-                    "build_meta_data"] if "build_meta_data" in local_configuration.keys() else {}
+                local_build_metadata = (
+                    local_configuration["build_meta_data"]
+                    if "build_meta_data" in local_configuration.keys()
+                    else {}
+                )
                 local_configuration.pop("build_meta_data", None)
                 metadata_kwargs = dict(
                     update_hash=self.update_hash,
                     build_configuration=local_configuration,
                     remote_table__hash_id=storage_hash,
-                    data_source_id=self.data_source.id
+                    data_source_id=self.data_source.id,
                 )
 
-                data_node_update = DataNodeUpdate.get_or_create(**metadata_kwargs,)
+                data_node_update = DataNodeUpdate.get_or_create(
+                    **metadata_kwargs,
+                )
             else:
                 data_node_update = local_update
 
             self.set_data_node_update(data_node_update=data_node_update)
 
-
     def _verify_insertion_format(self, temp_df: pd.DataFrame) -> None:
         """
         Verifies that a DataFrame is properly configured for insertion.
         """
-        if isinstance(temp_df.index,pd.MultiIndex)==True:
-            assert temp_df.index.names==["time_index", "asset_symbol"] or  temp_df.index.names==["time_index", "asset_symbol", "execution_venue_symbol"]
+        if isinstance(temp_df.index, pd.MultiIndex) == True:
+            assert temp_df.index.names == ["time_index", "asset_symbol"] or temp_df.index.names == [
+                "time_index",
+                "asset_symbol",
+                "execution_venue_symbol",
+            ]
 
     def build_update_details(self, source_class_name: str) -> None:
         """
         Asynchronously builds or updates the update details for the time series.
         """
-        update_kwargs=dict(source_class_name=source_class_name,
-                           local_metadata=json.loads(self.data_node_update.model_dump_json())
-                           )
+        update_kwargs = dict(
+            source_class_name=source_class_name,
+            local_metadata=json.loads(self.data_node_update.model_dump_json()),
+        )
         # This ensures that later accesses to data_node_update will block for the new value.
         with self._data_node_update_lock:
             self._data_node_update_future = Future()
@@ -648,7 +691,9 @@ class PersistManager:
         def _update_task():
             try:
                 # Run the remote build/update details task.
-                self.data_node_update.data_node_storage.build_or_update_update_details(**update_kwargs)
+                self.data_node_update.data_node_storage.build_or_update_update_details(
+                    **update_kwargs
+                )
                 future.set_result(True)  # Signal success
             except Exception as exc:
                 future.set_exception(exc)
@@ -657,9 +702,7 @@ class PersistManager:
                 future_registry.remove_future(future)
 
         thread = threading.Thread(
-            target=_update_task,
-            name=f"BuildUpdateDetailsThread-{self.update_hash}",
-            daemon=False
+            target=_update_task, name=f"BuildUpdateDetailsThread-{self.update_hash}", daemon=False
         )
         thread.start()
 
@@ -668,11 +711,11 @@ class PersistManager:
 
     def patch_table(self, **kwargs) -> None:
         """Patches the remote metadata table with the given keyword arguments."""
-        self.metadata.patch( **kwargs)
+        self.metadata.patch(**kwargs)
 
     def protect_from_deletion(self, protect_from_deletion: bool = True) -> None:
         """Sets the 'protect_from_deletion' flag on the remote metadata."""
-        self.metadata.patch( protect_from_deletion=protect_from_deletion)
+        self.metadata.patch(protect_from_deletion=protect_from_deletion)
 
     def open_for_everyone(self, open_for_everyone: bool = True) -> None:
         """Sets the 'open_for_everyone' flag on local, remote, and source table configurations."""
@@ -685,36 +728,31 @@ class PersistManager:
         if not self.metadata.sourcetableconfiguration.open_for_everyone:
             self.metadata.sourcetableconfiguration.patch(open_for_everyone=open_for_everyone)
 
-
-
-
-
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         """
         Retrieves a DataFrame from the data source between specified dates.
         """
         filtered_data = self.data_source.get_data_by_time_index(
-            data_node_update=self.data_node_update,
-            *args, **kwargs
+            data_node_update=self.data_node_update, *args, **kwargs
         )
         return filtered_data
 
-    def set_column_metadata(self,
-                            columns_metadata: Optional[List[ms_client.ColumnMetaData]]
-                            ) -> None:
+    def set_column_metadata(self, columns_metadata: list[ms_client.ColumnMetaData] | None) -> None:
         if self.data_node_storage:
             if self.data_node_storage.sourcetableconfiguration != None:
                 if self.data_node_storage.sourcetableconfiguration.columns_metadata is not None:
                     if columns_metadata is None:
-                        self.logger.info(f"get_column_metadata method not implemented")
+                        self.logger.info("get_column_metadata method not implemented")
                         return
 
                     self.data_node_storage.sourcetableconfiguration.set_or_update_columns_metadata(
-                        columns_metadata=columns_metadata)
+                        columns_metadata=columns_metadata
+                    )
 
-    def set_table_metadata(self,
-                           table_metadata: ms_client.TableMetaData,
-                           ):
+    def set_table_metadata(
+        self,
+        table_metadata: ms_client.TableMetaData,
+    ):
         """
         Creates or updates the MarketsTimeSeriesDetails metadata in the backend.
 
@@ -736,14 +774,14 @@ class PersistManager:
     def delete_table(self) -> None:
         if self.data_source.related_resource.class_type == "duck_db":
             from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
+
             db_interface = DuckDBInterface()
             db_interface.drop_table(self.data_node_storage.storage_hash)
 
         self.data_node_storage.delete()
 
     @tracer.start_as_current_span("TS: Persist Data")
-    def persist_updated_data(self,
-                             temp_df: pd.DataFrame, overwrite: bool = False) -> bool:
+    def persist_updated_data(self, temp_df: pd.DataFrame, overwrite: bool = False) -> bool:
         """
         Persists the updated data to the database.
 
@@ -758,14 +796,12 @@ class PersistManager:
         persisted = False
         if not temp_df.empty:
             if overwrite == True:
-                self.logger.warning(f"Values will be overwritten")
+                self.logger.warning("Values will be overwritten")
 
             self._data_node_update_cached = self.data_node_update.upsert_data_into_table(
                 data=temp_df,
                 data_source=self.data_source,
-
             )
-
 
             persisted = True
         return persisted
@@ -792,21 +828,18 @@ class PersistManager:
     def is_local_relation_tree_set(self) -> bool:
         return self.data_node_update.ogm_dependencies_linked
 
-
-
-    def update_git_and_code_in_backend(self,time_serie_class) -> None:
+    def update_git_and_code_in_backend(self, time_serie_class) -> None:
         """Updates the source code and git hash information in the backend."""
         self.update_source_informmation(
             git_hash_id=get_data_node_source_code_git_hash(time_serie_class),
             source_code=get_data_node_source_code(time_serie_class),
         )
 
+
 class TimeScaleLocalPersistManager(PersistManager):
     """
     Main Controler to interacti with backend
     """
-    def get_table_schema(self,table_name):
+
+    def get_table_schema(self, table_name):
         return self.data_node_storage["sourcetableconfiguration"]["column_dtypes_map"]
-
-
-

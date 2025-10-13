@@ -1,29 +1,29 @@
-
+import copy
+import datetime
 import json
+from typing import Any, Union
 
 # Imports should be at the top of the file
 import numpy as np
-np.NaN = np.nan # Fix for a pandas-ta compatibility issue
-from mainsequence.tdag import DataNode, APIDataNode, WrapperDataNode
-from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
-import mainsequence.client as msc
-from typing import Union, Optional, List, Dict, Any
-import datetime
-import pytz
 import pandas as pd
+import pytz
+from pydantic import BaseModel, Field
 from sklearn.linear_model import ElasticNet
-import copy
-from pydantic import BaseModel,Field
-from abc import ABC, abstractmethod
 
+import mainsequence.client as msc
+from mainsequence.client.models_tdag import ColumnMetaData, UpdateStatistics
+from mainsequence.tdag import APIDataNode, DataNode, WrapperDataNode
+
+np.NaN = np.nan  # Fix for a pandas-ta compatibility issue
 MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES = "simulated_prices_from_category"
-TEST_TRANSLATION_TABLE_UID="test_translation_table"
+TEST_TRANSLATION_TABLE_UID = "test_translation_table"
 
 import base64
 
+
 class SimulatedPricesManager:
 
-    def __init__(self,owner:DataNode):
+    def __init__(self, owner: DataNode):
         self.owner = owner
 
     @staticmethod
@@ -51,15 +51,16 @@ class SimulatedPricesManager:
         except (KeyError, IndexError):
             # KeyError if unique_id not present, IndexError if slice is empty
             return fallback
-    def update(self)->pd.DataFrame:
+
+    def update(self) -> pd.DataFrame:
         """
-       Mocks price updates for assets with stochastic lognormal returns.
-       For each asset, simulate new data starting one hour after its last update
-        until yesterday at 00:00 UTC, using the last observed price as the seed.
-        The last observation is not duplicated.
-        Returns:
-            pd.DataFrame: A DataFrame with a multi-index (time_index, unique_identifier)
-                          and a single column 'close' containing the simulated prices.
+        Mocks price updates for assets with stochastic lognormal returns.
+        For each asset, simulate new data starting one hour after its last update
+         until yesterday at 00:00 UTC, using the last observed price as the seed.
+         The last observation is not duplicated.
+         Returns:
+             pd.DataFrame: A DataFrame with a multi-index (time_index, unique_identifier)
+                           and a single column 'close' containing the simulated prices.
         """
         import numpy as np
 
@@ -68,10 +69,10 @@ class SimulatedPricesManager:
         sigma = 0.01  # volatility component for lognormal returns
 
         df_list = []
-        update_statistics=self.owner.update_statistics
+        update_statistics = self.owner.update_statistics
         # Get the latest historical observations; assumed to be a DataFrame with a multi-index:
         # (time_index, unique_identifier) and a column "close" for the last observed price.
-        range_descriptor=update_statistics.get_update_range_map_great_or_equal()
+        range_descriptor = update_statistics.get_update_range_map_great_or_equal()
         last_observation = self.owner.get_ranged_data_per_asset(range_descriptor=range_descriptor)
         # Define simulation end: yesterday at midnight (UTC)
         yesterday_midnight = datetime.datetime.now(pytz.utc).replace(
@@ -80,19 +81,19 @@ class SimulatedPricesManager:
         # Loop over each unique identifier and its last update timestamp.
         for asset in update_statistics.asset_list:
             # Simulation starts one hour after the last update.
-            start_time = update_statistics.get_asset_earliest_multiindex_update(asset=asset) + datetime.timedelta(hours=1)
+            start_time = update_statistics.get_asset_earliest_multiindex_update(
+                asset=asset
+            ) + datetime.timedelta(hours=1)
             if start_time > yesterday_midnight:
                 continue  # Skip if no simulation period is available.
-            time_range = pd.date_range(start=start_time, end=yesterday_midnight, freq='D')
+            time_range = pd.date_range(start=start_time, end=yesterday_midnight, freq="D")
             if len(time_range) == 0:
 
                 continue
-             # Use the last observed price for the asset as the starting price (or fallback).
+            # Use the last observed price for the asset as the starting price (or fallback).
             last_price = self._get_last_price(
-            obs_df=last_observation,
-            unique_id=asset.unique_identifier,
-            fallback=initial_price
-                )
+                obs_df=last_observation, unique_id=asset.unique_identifier, fallback=initial_price
+            )
 
             random_returns = np.random.lognormal(mean=mu, sigma=sigma, size=len(time_range))
             simulated_prices = last_price * np.cumprod(random_returns)
@@ -110,40 +111,36 @@ class SimulatedPricesManager:
         data = data.set_index("unique_identifier", append=True)
         return data
 
-
-
     def get_column_metadata(self):
         from mainsequence.client.models_tdag import ColumnMetaData
-        columns_metadata = [ColumnMetaData(column_name="close",
-                                           dtype="float",
-                                           label="Close ",
-                                           description=(
-                                               "Simulated close price"
-                                           )
-                                           ),
 
-
-                            ]
+        columns_metadata = [
+            ColumnMetaData(
+                column_name="close",
+                dtype="float",
+                label="Close ",
+                description=("Simulated close price"),
+            ),
+        ]
         return columns_metadata
-
-
-
-
-
 
 
 class SingleIndexTS(DataNode):
     """
-       A simple time series with a single index, generating random numbers daily.
-       This serves as a basic, non-asset-based example.
-       """
+    A simple time series with a single index, generating random numbers daily.
+    This serves as a basic, non-asset-based example.
+    """
+
     OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
+
     def update(self):
-        today_utc = datetime.datetime.now(tz=pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-        update_statistics=self.update_statistics
+        today_utc = datetime.datetime.now(tz=pytz.utc).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        update_statistics = self.update_statistics
         if update_statistics.max_time_index_value is None:
             start_date = self.OFFSET_START
         else:
@@ -154,11 +151,11 @@ class SingleIndexTS(DataNode):
             return pd.DataFrame()
 
         num_days = (today_utc - start_date).days + 1
-        time_index = pd.date_range(start=start_date, periods=num_days, freq='D', tz=pytz.utc)
+        time_index = pd.date_range(start=start_date, periods=num_days, freq="D", tz=pytz.utc)
         random_values = np.random.rand(num_days)
 
-        df = pd.DataFrame({'random_number': random_values}, index=time_index)
-        df.index.name = 'time_index'
+        df = pd.DataFrame({"random_number": random_values}, index=time_index)
+        df.index.name = "time_index"
         return df
 
     def get_column_metadata(self):
@@ -168,47 +165,47 @@ class SingleIndexTS(DataNode):
 
         """
         from mainsequence.client.models_tdag import ColumnMetaData
-        columns_metadata = [ColumnMetaData(column_name="random_number",
-                                           dtype="float",
-                                           label="Random Number ",
-                                           description=(
-                                               "A random number with no meaning whatsoever"
-                                           )
-                                           ),
 
-                            ]
+        columns_metadata = [
+            ColumnMetaData(
+                column_name="random_number",
+                dtype="float",
+                label="Random Number ",
+                description=("A random number with no meaning whatsoever"),
+            ),
+        ]
         return columns_metadata
 
-
-    def get_table_metadata(self)->msc.TableMetaData:
-        """
-
-
-        """
+    def get_table_metadata(self) -> msc.TableMetaData:
+        """ """
         MARKET_TIME_SERIES_UNIQUE_IDENTIFIER = "simple_time_serie_example"
-        mts=msc.TableMetaData(unique_identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
-                                               data_frequency_id=msc.DataFrequency.one_d,
-                                               description="This is a simulated prices time serie from asset category",
-                                               )
-
+        mts = msc.TableMetaData(
+            unique_identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description="This is a simulated prices time serie from asset category",
+        )
 
         return mts
 
 
-
 class PriceSimulConfig(BaseModel):
 
-    asset_list:List[msc.AssetMixin]=Field(...,title="Asset List",description="List of assets to simulate",
-                                          ignore_from_storage_hash=True
-                                          )
+    asset_list: list[msc.AssetMixin] = Field(
+        ...,
+        title="Asset List",
+        description="List of assets to simulate",
+        ignore_from_storage_hash=True,
+    )
+
 
 class SimulatedPrices(DataNode):
     """
     Simulates price updates for a specific list of assets provided at initialization.
     """
+
     OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
-    def __init__(self, simulation_config: PriceSimulConfig,
-                 *args, **kwargs):
+
+    def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
         """
         Args:
             asset_list (ModelList): List of asset objects.
@@ -219,16 +216,17 @@ class SimulatedPrices(DataNode):
         self.asset_symbols_filter = [a.unique_identifier for a in self.asset_list]
         super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
 
     def update(self):
-        update_manager=SimulatedPricesManager(self)
-        df=update_manager.update()
+        update_manager = SimulatedPricesManager(self)
+        df = update_manager.update()
         return df
 
     def get_asset_list(self):
         return self.asset_list
+
     def get_column_metadata(self):
         """
         Add MetaData information to the DataNode Table
@@ -236,30 +234,29 @@ class SimulatedPrices(DataNode):
 
         """
         from mainsequence.client.models_tdag import ColumnMetaData
-        columns_metadata = [ColumnMetaData(column_name="close",
-                                           dtype="float",
-                                           label="Close",
-                                           description=(
-                                               "Simulated Close Price"
-                                           )
-                                           ),
 
-
-                            ]
+        columns_metadata = [
+            ColumnMetaData(
+                column_name="close",
+                dtype="float",
+                label="Close",
+                description=("Simulated Close Price"),
+            ),
+        ]
         return columns_metadata
 
-    def get_table_metadata(self)->msc.TableMetaData:
+    def get_table_metadata(self) -> msc.TableMetaData:
         """
         REturns the market time serie unique identifier, assets to append , or asset to overwrite
         Returns:
 
         """
 
-        mts=msc.TableMetaData(identifier="simulated_prices",
-                                               data_frequency_id=msc.DataFrequency.one_d,
-                                               description="This is a simulated prices time serie from asset category",
-                                               )
-
+        mts = msc.TableMetaData(
+            identifier="simulated_prices",
+            data_frequency_id=msc.DataFrequency.one_d,
+            description="This is a simulated prices time serie from asset category",
+        )
 
         return mts
 
@@ -273,7 +270,7 @@ class Volatility(DataNode):
         self.prices = SimulatedPrices(asset_list=self.asset_list)
         super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {"prices": self.prices}
 
     def get_asset_list(self):
@@ -283,7 +280,7 @@ class Volatility(DataNode):
         prices = self.prices
         df = prices.get_df_between_dates()
         # Step 1: Pivot to wide
-        price_wide = df['close'].unstack(level="unique_identifier")
+        price_wide = df["close"].unstack(level="unique_identifier")
 
         # Step 2: Compute percent returns
         returns = price_wide.pct_change()
@@ -292,20 +289,22 @@ class Volatility(DataNode):
 
         # Step 4 (optional): Annualize if using hourly data → ~252*24 = 6048 trading hours/year
         rolling_vol_annualized = rolling_vol * np.sqrt(6048)
-        rolling_vol_annualized=rolling_vol_annualized.unstack()
-        rolling_vol_annualized.index=rolling_vol_annualized.index.swaplevel()
+        rolling_vol_annualized = rolling_vol_annualized.unstack()
+        rolling_vol_annualized.index = rolling_vol_annualized.index.swaplevel()
         return rolling_vol_annualized.dropna().to_frame("volatility")
+
 
 class CategorySimulatedPrices(DataNode):
     """
-        Simulates price updates for all assets belonging to a specified category.
-        This demonstrates using a hook (`get_asset_list`) to dynamically define the asset universe.
-        It also shows a dependency on another DataNode (`SingleIndexTS`).
-        """
+    Simulates price updates for all assets belonging to a specified category.
+    This demonstrates using a hook (`get_asset_list`) to dynamically define the asset universe.
+    It also shows a dependency on another DataNode (`SingleIndexTS`).
+    """
+
     OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
     _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_category_id"]
-    def __init__(self, asset_category_id:str,
-                 *args, **kwargs):
+
+    def __init__(self, asset_category_id: str, *args, **kwargs):
         """
         Initialize the SimpleCryptoFeature time series.
 
@@ -316,33 +315,36 @@ class CategorySimulatedPrices(DataNode):
         """
         self.asset_category_id = asset_category_id
 
-        #this time serie has a dependency to include dependencies is just enough to declared them in the init method
-        self.simple_ts=SingleIndexTS()
+        # this time serie has a dependency to include dependencies is just enough to declared them in the init method
+        self.simple_ts = SingleIndexTS()
 
         super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
-        return {"simple_ts":self.simple_ts}
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
+        return {"simple_ts": self.simple_ts}
 
     def get_asset_list(self):
         """[Hook] Dynamically fetches the list of assets from a category."""
 
-        asset_category=msc.AssetCategory.get(unique_identifier=self.asset_category_id)
-        asset_list=msc.Asset.filter(id__in=asset_category.assets)
+        asset_category = msc.AssetCategory.get(unique_identifier=self.asset_category_id)
+        asset_list = msc.Asset.filter(id__in=asset_category.assets)
         return asset_list
+
     def update(self):
         """
-              Simulates prices and then adds a random number from its dependency,
-              demonstrating how to combine data from multiple sources.
-              """
-        update_manager=SimulatedPricesManager(self)
-        data=update_manager.update(self.update_statistics)
+        Simulates prices and then adds a random number from its dependency,
+        demonstrating how to combine data from multiple sources.
+        """
+        update_manager = SimulatedPricesManager(self)
+        data = update_manager.update(self.update_statistics)
         if data.empty:
             return pd.DataFrame()
-        #an example of a dependencies calls
-        historical_random_data=self.simple_ts.get_df_between_dates(start_date=self.update_statistics.max_time_index_value)
-        number=historical_random_data["random_number"].iloc[-1]
-        return data+number
+        # an example of a dependencies calls
+        historical_random_data = self.simple_ts.get_df_between_dates(
+            start_date=self.update_statistics.max_time_index_value
+        )
+        number = historical_random_data["random_number"].iloc[-1]
+        return data + number
 
     def get_column_metadata(self):
         """
@@ -351,26 +353,24 @@ class CategorySimulatedPrices(DataNode):
 
         """
         from mainsequence.client.models_tdag import ColumnMetaData
-        columns_metadata = [ColumnMetaData(column_name="close",
-                                           dtype="float",
-                                           label="Close",
-                                           description=(
-                                               "Simulated Close Price"
-                                           )
-                                           ),
 
-                            ]
+        columns_metadata = [
+            ColumnMetaData(
+                column_name="close",
+                dtype="float",
+                label="Close",
+                description=("Simulated Close Price"),
+            ),
+        ]
         return columns_metadata
 
-    def get_table_metadata(self)->msc.TableMetaData:
-        """
-
-        """
-        meta=msc.TableMetaData(identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES,
-                                               data_frequency_id=msc.DataFrequency.one_d,
-                                               description="This is a simulated prices time serie from asset category",
-                                               )
-
+    def get_table_metadata(self) -> msc.TableMetaData:
+        """ """
+        meta = msc.TableMetaData(
+            identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description="This is a simulated prices time serie from asset category",
+        )
 
         return meta
 
@@ -385,7 +385,9 @@ class CategorySimulatedPrices(DataNode):
         Returns:
 
         """
-        translation_table = msc.AssetTranslationTable.get_or_none(unique_identifier=TEST_TRANSLATION_TABLE_UID)
+        translation_table = msc.AssetTranslationTable.get_or_none(
+            unique_identifier=TEST_TRANSLATION_TABLE_UID
+        )
 
         rules = [
             msc.AssetTranslationRule(
@@ -407,16 +409,18 @@ class CategorySimulatedPrices(DataNode):
         else:
             translation_table.add_rules(rules)
 
+
 # Mocking UpdateStatistics and Running the Test
 
 
 class FeatureStoreTA(DataNode):
     """
-       A derived time series that calculates a technical analysis feature from another price series.
-       """
+    A derived time series that calculates a technical analysis feature from another price series.
+    """
+
     _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list", "ta_feature_config"]
-    def __init__(self, asset_list: List[msc.Asset], ta_feature_config:List[dict],
-                 *args, **kwargs):
+
+    def __init__(self, asset_list: list[msc.Asset], ta_feature_config: list[dict], *args, **kwargs):
         """
         Initialize the TA feature time series.
 
@@ -431,19 +435,17 @@ class FeatureStoreTA(DataNode):
         self.asset_symbols_filter = [a.unique_identifier for a in asset_list]
         self.ta_feature_config = ta_feature_config
 
-
         # Instantiate the base price simulation.
         # Replace this import with the actual location of SimulatedCryptoPrices if needed.
 
-        self.prices_time_serie = SimulatedPrices(asset_list=asset_list,
-                                                 *args, **kwargs)
+        self.prices_time_serie = SimulatedPrices(asset_list=asset_list, *args, **kwargs)
         super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
             "prices_time_serie": self.prices_time_serie,
-
         }
+
     @staticmethod
     def encode_col(orig_dict: str) -> str:
         json_text = json.dumps(orig_dict, sort_keys=True)
@@ -482,30 +484,34 @@ class FeatureStoreTA(DataNode):
         """
         SIMULATION_OFFSET_START = datetime.timedelta(days=50)
         import pandas_ta as ta
-        import pytz
-        #when using more than 2 indices in a multiindex table it is extremely importnat to make all the filters
-        #accross all levels to keep consistency in the update
+
+        # when using more than 2 indices in a multiindex table it is extremely importnat to make all the filters
+        # accross all levels to keep consistency in the update
         self.update_statistics.filter_assets_by_level(
-                                                 level=2,
-                                                 filters=[json.dumps(c) for c in self.ta_feature_config])
+            level=2, filters=[json.dumps(c) for c in self.ta_feature_config]
+        )
 
         # --- Step 1: Prepare the Data Request ---
         # We need to fetch not just new data, but also a "lookback" window of older data
         # to ensure the TA indicator can be calculated correctly from the very first new point.
-        rolling_window = datetime.timedelta(days=np.max([a["length"] for a in self.ta_feature_config]).item()+1)  #Fetch the max of the required features
+        rolling_window = datetime.timedelta(
+            days=np.max([a["length"] for a in self.ta_feature_config]).item() + 1
+        )  # Fetch the max of the required features
         asset_range_descriptor = {}
 
         for asset in self.update_statistics.asset_list:
             # For each asset, find its last update time. If it's a new asset,
             # fall back to the global offset defined on the class.
-            last_update = self.update_statistics.get_asset_earliest_multiindex_update(asset)- SIMULATION_OFFSET_START
-
+            last_update = (
+                self.update_statistics.get_asset_earliest_multiindex_update(asset)
+                - SIMULATION_OFFSET_START
+            )
 
             # The start date for our data request is the last update time minus the lookback window.
             start_date_for_asset = last_update - rolling_window
             asset_range_descriptor[asset.unique_identifier] = {
                 "start_date": start_date_for_asset,
-                "start_date_operand": ">="  # Use ">=" to include the start of the window
+                "start_date_operand": ">=",  # Use ">=" to include the start of the window
             }
 
         # --- Step 2: Fetch Data From Dependency ---
@@ -515,7 +521,9 @@ class FeatureStoreTA(DataNode):
         # `get_ranged_data_per_asset` is highly efficient because it takes a dictionary
         # that specifies a *different* start date for each asset, allowing us to get all
         # the data we need in a single call.
-        prices_df = self.prices_time_serie.get_ranged_data_per_asset( range_descriptor=asset_range_descriptor  )
+        prices_df = self.prices_time_serie.get_ranged_data_per_asset(
+            range_descriptor=asset_range_descriptor
+        )
 
         if prices_df.empty:
             self.logger.warning("Base price data was empty for the requested range.")
@@ -524,19 +532,17 @@ class FeatureStoreTA(DataNode):
         # --- Step 3: Calculate the TA Feature and Reshape the Data ---
         # The pandas-ta library expects data in a "wide" format, where each column
         # is a different time series. We pivot the data to create this structure.
-        prices_pivot = (
-            prices_df
-            .reset_index()
-            .pivot(index="time_index", columns="unique_identifier", values="close")
+        prices_pivot = prices_df.reset_index().pivot(
+            index="time_index", columns="unique_identifier", values="close"
         )
 
         # wide shape: (time × asset) rows × M features columns
 
-        all_features=[]
+        all_features = []
         for feature_config in self.ta_feature_config:
             features_df = pd.DataFrame(index=prices_pivot.stack(dropna=False).index)
-            f_conf=copy.deepcopy(feature_config)
-            feature_name=json.dumps(f_conf)
+            f_conf = copy.deepcopy(feature_config)
+            feature_name = json.dumps(f_conf)
             feature_kind = f_conf.pop("kind").lower()
             func = getattr(ta, feature_kind)
             out = prices_pivot.apply(lambda col: func(col, **feature_config))
@@ -544,11 +550,13 @@ class FeatureStoreTA(DataNode):
             features_df[feature_name] = out.stack(dropna=False)
             all_features.append(features_df)
 
-        all_features=pd.concat(all_features,axis=1)
-        all_features.columns=[self.encode_col(c) for c in all_features.columns]
+        all_features = pd.concat(all_features, axis=1)
+        all_features.columns = [self.encode_col(c) for c in all_features.columns]
         return all_features
 
+
 from pydantic import BaseModel
+
 
 class ModelConfiguration(BaseModel):
     """
@@ -557,7 +565,7 @@ class ModelConfiguration(BaseModel):
     """
 
     def build_model(self) -> Any:
-       raise NotImplementedError
+        raise NotImplementedError
 
 
 class ElasticNetConfiguration(ModelConfiguration):
@@ -565,6 +573,7 @@ class ElasticNetConfiguration(ModelConfiguration):
     Configuration for sklearn.linear_model.ElasticNet.
     All fields map 1:1 to its __init__ parameters.
     """
+
     alpha: float = 1.0
     l1_ratio: float = 0.5
     fit_intercept: bool = True
@@ -589,9 +598,7 @@ class ElasticNetConfiguration(ModelConfiguration):
 
 
 def _prepare_model_data(
-        feature_ts: DataNode,
-        prices_ts: DataNode,
-        update_statistics: UpdateStatistics
+    feature_ts: DataNode, prices_ts: DataNode, update_statistics: UpdateStatistics
 ) -> pd.DataFrame:
     """
     Helper to fetch, align, and prepare feature and target data for modeling.
@@ -619,18 +626,14 @@ def _prepare_model_data(
     if feats_df.empty or prices_df.empty:
         return pd.DataFrame()
 
-
-
     # Compute next-day returns
     price_ser = (
-        prices_df
-        .reset_index()
+        prices_df.reset_index()
         .rename(columns={"close": "price"})
         .set_index(["time_index", "unique_identifier"])["price"]
     )
     returns = (
-        price_ser
-        .groupby(level="unique_identifier")
+        price_ser.groupby(level="unique_identifier")
         .pct_change()
         .shift(-1)  # Align so return_1d at t = (p_{t+1}/p_t - 1)
         .to_frame(name="return_1d")
@@ -638,6 +641,7 @@ def _prepare_model_data(
 
     # Join features + target and drop rows with missing values
     return feats_df.join(returns, how="inner").dropna()
+
 
 class ModelTrainTimeSerie(DataNode):
     """
@@ -654,15 +658,16 @@ class ModelTrainTimeSerie(DataNode):
         window_size: rows in rolling window
         retrain_config: when/how often to retrain
     """
+
     def __init__(
         self,
-        asset_list: List[msc.Asset],
-        ta_feature_config: List[Dict[str, Any]],
-        model_config: Any,                  # ModelConfiguration
+        asset_list: list[msc.Asset],
+        ta_feature_config: list[dict[str, Any]],
+        model_config: Any,  # ModelConfiguration
         window_size: int,
         retrain_config_days: int,
         *args,
-        **kwargs
+        **kwargs,
     ):
         self.asset_list = asset_list
         self.ta_feature_config = ta_feature_config
@@ -671,18 +676,22 @@ class ModelTrainTimeSerie(DataNode):
         self.retrain_config_days = retrain_config_days
 
         # downstream TS for features & prices
-        self.feature_ts = FeatureStoreTA(asset_list=asset_list, ta_feature_config=ta_feature_config, *args, **kwargs)
-        self.prices_ts  = SimulatedPrices(asset_list=asset_list, *args, **kwargs)
+        self.feature_ts = FeatureStoreTA(
+            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
+        )
+        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
 
-        super().__init__( *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, DataNode]:
+    def dependencies(self) -> dict[str, DataNode]:
         return {
             "feature_ts": self.feature_ts,
             "prices_ts": self.prices_ts,
         }
 
-    def update(self, ) -> pd.DataFrame:
+    def update(
+        self,
+    ) -> pd.DataFrame:
         """
         Retrain once per retrain_frequency.  Returns a DataFrame of
         model coefficients + intercept for each asset at the retrain timestamp.
@@ -691,14 +700,16 @@ class ModelTrainTimeSerie(DataNode):
         if data.empty:
             return pd.DataFrame()
 
-        feature_cols = [c for c in data.columns if c!="return_1d"]
+        feature_cols = [c for c in data.columns if c != "return_1d"]
 
-        now=datetime.datetime.now(pytz.utc).replace(microsecond=0,minute=0,second=0,tzinfo=pytz.utc)
-        records= []
+        now = datetime.datetime.now(pytz.utc).replace(
+            microsecond=0, minute=0, second=0, tzinfo=pytz.utc
+        )
+        records = []
         for uid, grp in data.groupby(level="unique_identifier"):
 
             last_retrain = self.update_statistics.get_last_update_index_2d(uid)
-            if (now-last_retrain).days < self.retrain_config_days:
+            if (now - last_retrain).days < self.retrain_config_days:
                 continue
 
             df = grp.droplevel("unique_identifier").sort_index()
@@ -706,11 +717,11 @@ class ModelTrainTimeSerie(DataNode):
                 continue
 
             # train on most recent window
-            win = df.iloc[-self.window_size:]
+            win = df.iloc[-self.window_size :]
             X = win[feature_cols].to_numpy()
             y = win["return_1d"].to_numpy()
 
-            job_id=self._handle_model_train(X,y,uid)
+            job_id = self._handle_model_train(X, y, uid)
             retrain_time = win.index[-1]  # use last data timestamp, not now
             records.append((retrain_time, uid, job_id))
 
@@ -718,13 +729,15 @@ class ModelTrainTimeSerie(DataNode):
             return pd.DataFrame()
 
         # build MultiIndex:
-        df=pd.DataFrame(records, columns=["last_timestamp_on_train", "unique_identifier", "job_id"])
-        df["last_timestamp_on_train"]=df["last_timestamp_on_train"].apply(lambda x: x.timestamp())
-        df["time_index"]=now
-        df=df.set_index(["time_index","unique_identifier"])
+        df = pd.DataFrame(
+            records, columns=["last_timestamp_on_train", "unique_identifier", "job_id"]
+        )
+        df["last_timestamp_on_train"] = df["last_timestamp_on_train"].apply(lambda x: x.timestamp())
+        df["time_index"] = now
+        df = df.set_index(["time_index", "unique_identifier"])
         return df
 
-    def _handle_model_train(self,X, y,uid):
+    def _handle_model_train(self, X, y, uid):
         """
         Handle Model Train This could be in a different Job in another cloud service
         Ideally we get the information regarding the model via ML Flow
@@ -736,8 +749,6 @@ class ModelTrainTimeSerie(DataNode):
         Returns:
 
         """
-        import tempfile
-        import pickle
         # model = self.model_config.build_model()
         # model.fit(X, y)
 
@@ -755,39 +766,41 @@ class ModelTrainTimeSerie(DataNode):
         #     )
         return 1
 
-
-    def get_table_metadata(self, ) -> msc.TableMetaData:
+    def get_table_metadata(
+        self,
+    ) -> msc.TableMetaData:
         return msc.TableMetaData(
             identifier="model_retrain",
             data_frequency_id=None,
-            description="Model coefficients retrained at specified frequency"
+            description="Model coefficients retrained at specified frequency",
         )
+
 
 class RollingModelPrediction(DataNode):
     """
-    Predicts the next-day return via a rolling ElasticNet regression on TA features.
+        Predicts the next-day return via a rolling ElasticNet regression on TA features.
 
-    Dependencies:
-      - TAFeature: configured technical indicators.
-      - SimulatedPrices: base price series for return calculation.
+        Dependencies:
+          - TAFeature: configured technical indicators.
+          - SimulatedPrices: base price series for return calculation.
 
-    Args:
-        asset_list: List of msc.Asset to include.
-        ta_feature_config: List of dicts, each with keys "kind" and parameters
-                           for the TA indicator (e.g. {"kind":"SMA","length":14}).
-        elastic_net_config: Dict of parameters to pass into sklearn.linear_model.ElasticNet.
-        window_size: Number of past observations to use in each rolling regression.
-g    """
+        Args:
+            asset_list: List of msc.Asset to include.
+            ta_feature_config: List of dicts, each with keys "kind" and parameters
+                               for the TA indicator (e.g. {"kind":"SMA","length":14}).
+            elastic_net_config: Dict of parameters to pass into sklearn.linear_model.ElasticNet.
+            window_size: Number of past observations to use in each rolling regression.
+    g"""
 
     def __init__(
         self,
-        asset_list: List[msc.Asset],
-        ta_feature_config: List[Dict[str, Any]],
+        asset_list: list[msc.Asset],
+        ta_feature_config: list[dict[str, Any]],
         model_config: ModelConfiguration,
         window_size: int,
-        retrain_config_days:int,
+        retrain_config_days: int,
         *args,
-        **kwargs
+        **kwargs,
     ):
         # Core configuration
         self.asset_list = asset_list
@@ -797,45 +810,44 @@ g    """
 
         # Declare dependencies by instantiating them as attributes
         self.feature_ts = FeatureStoreTA(
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            *args,
-            **kwargs
+            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
         )
-        self.prices_ts = SimulatedPrices(
-            asset_list=asset_list,
-            *args,
-            **kwargs
+        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
+
+        # even more prices from a DataNode not in the project using APIDataNode
+
+        self.external_prices = APIDataNode.build_from_identifier(
+            identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES
         )
-
-        #even more prices from a DataNode not in the project using APIDataNode
-
-        self.external_prices = APIDataNode.build_from_identifier(identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES)
-        translation_table=msc.AssetTranslationTable.get(unique_identifier=TEST_TRANSLATION_TABLE_UID)
-        self.translated_prices_ts=WrapperDataNode(translation_table=translation_table)
+        translation_table = msc.AssetTranslationTable.get(
+            unique_identifier=TEST_TRANSLATION_TABLE_UID
+        )
+        self.translated_prices_ts = WrapperDataNode(translation_table=translation_table)
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
+            *args,
             asset_list=asset_list,
             ta_feature_config=ta_feature_config,
             model_config=model_config,
             window_size=window_size,
             retrain_config_days=retrain_config_days,
-            *args, **kwargs
+            **kwargs,
         )
 
-        super().__init__( *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
             "prices_ts": self.prices_ts,
             "feature_ts": self.feature_ts,
-            "api_prices":self.external_prices,
+            "api_prices": self.external_prices,
             "translated_prices_ts": self.translated_prices_ts,
             "model_train_ts": self.model_train_ts,
         }
 
-
-    def update(self, ) -> pd.DataFrame:
+    def update(
+        self,
+    ) -> pd.DataFrame:
         """
         For each asset, fits a rolling-window ElasticNet to predict the return
         from today to tomorrow. X = today's TA features; y = tomorrow's 1d return.
@@ -846,14 +858,10 @@ g    """
             return pd.DataFrame()
 
         # 6) Loop per asset via groupby; drop the UID level so asset_df is purely wide
-        trainer = ElasticNetTrainer(model_config=self.model_config)
+        trainer = None  # ElasticNetTrainer(model_config=self.model_config)
         records: list = []
         for uid, grp in data.groupby(level="unique_identifier"):
-            asset_df = (
-                grp
-                .droplevel("unique_identifier")
-                .sort_index()
-            )
+            asset_df = grp.droplevel("unique_identifier").sort_index()
             # asset_df now has columns = [<feature1>, <feature2>, ..., "return_1d"]
 
             # need at least window_size + 1 rows to train & predict
@@ -862,12 +870,12 @@ g    """
 
             feature_cols = [c for c in asset_df.columns if c != "return_1d"]
             for i in range(self.window_size, len(asset_df)):
-                train_win = asset_df.iloc[i - self.window_size: i]
+                train_win = asset_df.iloc[i - self.window_size : i]
                 X_train = train_win[feature_cols].to_numpy()  # shape (window_size, n_features)
                 y_train = train_win["return_1d"].to_numpy()  # shape (window_size,)
 
                 # Fit ElasticNet with user‐supplied hyperparams
-                model =  trainer.train(X_train, y_train)
+                model = trainer.train(X_train, y_train)
 
                 # Predict using today's features
                 X_today = asset_df.iloc[[i]][feature_cols].to_numpy()
@@ -881,41 +889,40 @@ g    """
             return pd.DataFrame()
 
         idx = pd.MultiIndex.from_tuples(
-            [(t, u) for t, u, _ in records],
-            names=["time_index", "unique_identifier"]
+            [(t, u) for t, u, _ in records], names=["time_index", "unique_identifier"]
         )
-        return pd.DataFrame(
-            {"predicted_return": [v for _, _, v in records]},
-            index=idx
-        )
+        return pd.DataFrame({"predicted_return": [v for _, _, v in records]}, index=idx)
 
-    def get_column_metadata(self) -> List[ColumnMetaData]:
+    def get_column_metadata(self) -> list[ColumnMetaData]:
         return [
             ColumnMetaData(
                 column_name="predicted_return",
                 dtype="float",
                 label="Predicted Next-Day Return",
-                description="Return from today to tomorrow predicted by rolling ElasticNet"
+                description="Return from today to tomorrow predicted by rolling ElasticNet",
             )
         ]
 
-    def get_table_metadata(self, ) -> msc.TableMetaData:
+    def get_table_metadata(
+        self,
+    ) -> msc.TableMetaData:
         return msc.TableMetaData(
             identifier="next_day_elastic_net",
             data_frequency_id=msc.DataFrequency.one_d,
-            description="Next-day return via rolling ElasticNet on TA indicators"
+            description="Next-day return via rolling ElasticNet on TA indicators",
         )
+
 
 class LivePrediction(DataNode):
     def __init__(
-            self,
-            asset_list: List[msc.Asset],
-            ta_feature_config: List[Dict[str, Any]],
-            model_config: ModelConfiguration,
-            window_size: int,
-            retrain_config_days: int,
-            *args,
-            **kwargs
+        self,
+        asset_list: list[msc.Asset],
+        ta_feature_config: list[dict[str, Any]],
+        model_config: ModelConfiguration,
+        window_size: int,
+        retrain_config_days: int,
+        *args,
+        **kwargs,
     ):
         # Core configuration
         self.asset_list = asset_list
@@ -925,22 +932,18 @@ class LivePrediction(DataNode):
 
         # Declare dependencies by instantiating them as attributes
         self.feature_ts = FeatureStoreTA(
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            *args,
-            **kwargs
+            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
         )
-        self.prices_ts = SimulatedPrices(
-            asset_list=asset_list,
-            *args,
-            **kwargs
-        )
+        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
 
         # even more prices from a DataNode not in the project using APIDataNode
 
         self.external_prices = APIDataNode.build_from_identifier(
-            identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES)
-        translation_table = msc.AssetTranslationTable.get(unique_identifier=TEST_TRANSLATION_TABLE_UID)
+            identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES
+        )
+        translation_table = msc.AssetTranslationTable.get(
+            unique_identifier=TEST_TRANSLATION_TABLE_UID
+        )
         self.translated_prices_ts = WrapperDataNode(translation_table=translation_table)
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
@@ -949,12 +952,13 @@ class LivePrediction(DataNode):
             model_config=model_config,
             window_size=window_size,
             retrain_config_days=retrain_config_days,
-            *args, **kwargs
+            *args,
+            **kwargs,
         )
 
-        super().__init__( *args, **kwargs)
+        super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
             "prices_ts": self.prices_ts,
             "feature_ts": self.feature_ts,
@@ -962,7 +966,8 @@ class LivePrediction(DataNode):
             "translated_prices_ts": self.translated_prices_ts,
             "model_train_ts": self.model_train_ts,
         }
-    def update(self,*args,**kwargs):
+
+    def update(self, *args, **kwargs):
         """
         live predictions from a life databatrse
         Args:
@@ -974,16 +979,17 @@ class LivePrediction(DataNode):
         """
         return pd.DataFrame()
 
+
 class WorkflowManager(DataNode):
     def __init__(
-            self,
-            asset_list: List[msc.Asset],
-            ta_feature_config: List[Dict[str, Any]],
-            model_config: ModelConfiguration,
-            window_size: int,
-            retrain_config_days: int,
-            *args,
-            **kwargs
+        self,
+        asset_list: list[msc.Asset],
+        ta_feature_config: list[dict[str, Any]],
+        model_config: ModelConfiguration,
+        window_size: int,
+        retrain_config_days: int,
+        *args,
+        **kwargs,
     ):
         self.prediction_back_test = RollingModelPrediction(
             asset_list=asset_list,
@@ -991,61 +997,72 @@ class WorkflowManager(DataNode):
             model_config=model_config,
             window_size=window_size,
             retrain_config_days=retrain_config_days,
-            *args, **kwargs
+            *args,
+            **kwargs,
         )
-        self.live_back_test=LivePrediction(
+        self.live_back_test = LivePrediction(
             asset_list=asset_list,
             ta_feature_config=ta_feature_config,
             model_config=model_config,
             window_size=window_size,
             retrain_config_days=retrain_config_days,
-            *args, **kwargs
+            *args,
+            **kwargs,
         )
 
         super().__init__(*args, **kwargs)
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
-        return {"prediction_back_test":self.prediction_back_test,
-                "live_back_test":self.live_back_test
-                }
-    def update(self,*args,**kwargs):
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
+        return {
+            "prediction_back_test": self.prediction_back_test,
+            "live_back_test": self.live_back_test,
+        }
+
+    def update(self, *args, **kwargs):
         pass
 
 
 def test_features_from_prices_local_storage():
     from mainsequence.client import Asset
-    from mainsequence.client import MARKETS_CONSTANTS
+
     msc.SessionDataSource.set_local_db()
-    assets = Asset.filter(ticker__in=["NVDA", "JPM"] )
-    ts = FeatureStoreTA(asset_list=assets, ta_feature_config=[dict(kind="SMA", length=28),
-                                                         dict(kind="SMA", length=21),
-                                                         dict(kind="RSI", length=21)
-                                                         ]
-                   )
+    assets = Asset.filter(ticker__in=["NVDA", "JPM"])
+    ts = FeatureStoreTA(
+        asset_list=assets,
+        ta_feature_config=[
+            dict(kind="SMA", length=28),
+            dict(kind="SMA", length=21),
+            dict(kind="RSI", length=21),
+        ],
+    )
 
-    ts.run(debug_mode=True,force_update=True)
+    ts.run(debug_mode=True, force_update=True)
 
+    a = 5
 
-
-    a=5
 
 def test_simulated_prices():
     from mainsequence.client import Asset
-    from mainsequence.client import MARKETS_CONSTANTS
 
-    assets = Asset.filter(ticker__in=["NVDA", "APPL"], )
-    config=PriceSimulConfig(asset_list=assets,)
+    assets = Asset.filter(
+        ticker__in=["NVDA", "APPL"],
+    )
+    config = PriceSimulConfig(
+        asset_list=assets,
+    )
 
-    batch_2_assets = Asset.filter(ticker__in=["JPM", "GS"], )
-    config_2 = PriceSimulConfig(asset_list=batch_2_assets, )
+    batch_2_assets = Asset.filter(
+        ticker__in=["JPM", "GS"],
+    )
+    config_2 = PriceSimulConfig(
+        asset_list=batch_2_assets,
+    )
 
     ts = SimulatedPrices(simulation_config=config)
-    ts.run(debug_mode=True,force_update=True)
-
+    ts.run(debug_mode=True, force_update=True)
 
     ts_2 = SimulatedPrices(simulation_config=config_2)
-    ts_2.run(debug_mode=True,force_update=True)
-
+    ts_2.run(debug_mode=True, force_update=True)
 
     # ts_2=CategorySimulatedPrices(asset_category_id="external_magnificent_7")
     #
@@ -1086,9 +1103,3 @@ def test_simulated_prices():
     #        update_tree=True,
     #        force_update=True,
     #        )
-
-
-
-
-
-

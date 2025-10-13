@@ -1,36 +1,42 @@
 # src/instruments/base_instrument.py
-from typing import Protocol, runtime_checkable, Optional, Union,Dict, Any, Mapping,Type,ClassVar
-from pydantic import BaseModel, Field, PrivateAttr
-from .json_codec import JSONMixin
 import datetime
 import json
+from collections.abc import Mapping
+from typing import Any, ClassVar
+
+from pydantic import BaseModel, Field, PrivateAttr
+
+from .json_codec import JSONMixin
+
+
 class InstrumentModel(BaseModel, JSONMixin):
     """
     Common base for all Pydantic instrument models.
     Adds a shared optional 'main_sequence_uid' field and shared config.
     """
-    main_sequence_asset_id :Optional[int] = Field(
-        default=None,
-        description="Optional UID linking this instrument to a main sequence record."
+
+    main_sequence_asset_id: int | None = Field(
+        default=None, description="Optional UID linking this instrument to a main sequence record."
     )
 
     # Keep your existing behavior (QuantLib types, etc.)
     model_config = {"arbitrary_types_allowed": True}
 
-    _valuation_date: Optional[datetime.datetime] =PrivateAttr(default=None)
+    _valuation_date: datetime.datetime | None = PrivateAttr(default=None)
 
-    _DEFAULT_REGISTRY: ClassVar[Dict[str, Type["InstrumentModel"]]] = {}
+    _DEFAULT_REGISTRY: ClassVar[dict[str, type["InstrumentModel"]]] = {}
+
     # public read access (still not serialized)
     @property
-    def valuation_date(self) -> Optional[datetime.datetime]:
+    def valuation_date(self) -> datetime.datetime | None:
         return self._valuation_date
 
     # explicit setter method (per your request)
-    def set_valuation_date(self, value: Optional[datetime.datetime]) -> None:
+    def set_valuation_date(self, value: datetime.datetime | None) -> None:
         self._valuation_date = value
 
     def serialize_for_backend(self):
-        serialized={}
+        serialized = {}
         data = self.model_dump_json()
         data = json.loads(data)
         serialized["instrument_type"] = type(self).__name__
@@ -40,9 +46,9 @@ class InstrumentModel(BaseModel, JSONMixin):
 
     @classmethod
     def rebuild(
-            cls,
-            data: Union[str, Dict[str, Any]],
-            registry: Optional[Mapping[str, Type["InstrumentModel"]]] = None,
+        cls,
+        data: str | dict[str, Any],
+        registry: Mapping[str, type["InstrumentModel"]] | None = None,
     ) -> "InstrumentModel":
         """
         Rebuild a single instrument from its wire format.
@@ -67,12 +73,10 @@ class InstrumentModel(BaseModel, JSONMixin):
         t = data.get("instrument_type")
         payload = data.get("instrument", {})
         if not t or not isinstance(payload, dict):
-            raise ValueError(
-                "Expected {'instrument_type': <str>, 'instrument': <dict>}."
-            )
+            raise ValueError("Expected {'instrument_type': <str>, 'instrument': <dict>}.")
 
         # Merge registries (explicit registry overrides defaults)
-        effective_registry: Dict[str, Type[InstrumentModel]] = dict(cls._DEFAULT_REGISTRY)
+        effective_registry: dict[str, type[InstrumentModel]] = dict(cls._DEFAULT_REGISTRY)
         if registry:
             effective_registry.update(registry)
 

@@ -1,30 +1,53 @@
-import pandas as pd
 import datetime
 import logging
+from typing import Any, ClassVar
+
+import pandas as pd
 import pandas_market_calendars as mcal
+from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
 from mainsequence.virtualfundbuilder.enums import ResourceType
-from mainsequence.virtualfundbuilder.resource_factory.base_factory import BaseFactory, BaseResource, insert_in_registry
+from mainsequence.virtualfundbuilder.resource_factory.base_factory import (
+    BaseFactory,
+    BaseResource,
+    insert_in_registry,
+)
 
 logger = logging.getLogger("virtualfundbuilder")
 
-class RebalanceStrategyBase(BaseResource):
-    TYPE = ResourceType.REBALANCE_STRATEGY
 
-    def __init__(self,
-                 calendar: str='24/7',
-                 *args, **kwargs
-    ):
-        """
-        Args:
-            calendar (str): Trading calendar. The string should must be valid calendar from the pandas_market_calendars (like '24/7' or 'NYSE')
-        """
-        self._calendar = calendar
+class RebalanceStrategyBase(BaseResource, BaseModel):
+    TYPE: ClassVar[ResourceType] = ResourceType.REBALANCE_STRATEGY
+
+    calendar_key: str = Field(
+        "24/7", description="Trading calendar should match pandas market calendar string"
+    )
+
+    # Optional cache for the heavy pmc calendar object; excluded from serialization/pickling
+    _calendar_obj: Any = PrivateAttr(default=None)
+
+    @field_validator("calendar_key")
+    @classmethod
+    def _validate_calendar_exists(cls, v: str) -> str:
+        # Validate the key early; we don't keep the object here
+        try:
+            mcal.get_calendar(v)
+        except Exception as e:
+            raise ValueError(f"Unknown calendar '{v}': {e}")
+        return v
 
     @property
     def calendar(self):
-        """ Workaround due to error when pickleing the calendar """
-        return mcal.get_calendar(self._calendar)
+        """
+        Recreate (and cache) the pandas_market_calendars calendar object on access.
+        Not included in serialization; avoids pickling issues.
+        """
+        if (
+            self._calendar_obj is None
+            or getattr(self._calendar_obj, "name", None) != self.calendar_key
+        ):
+            self._calendar_obj = mcal.get_calendar(self.calendar_key)
+        return self._calendar_obj
 
     def get_explanation(self):
         info = f"""
@@ -33,47 +56,47 @@ class RebalanceStrategyBase(BaseResource):
         return info
 
     def calculate_rebalance_dates(
-            self,
-            start: datetime.datetime,
-            end: datetime.datetime,
-            calendar,
-            rebalance_frequency_strategy: str
+        self,
+        start: datetime.datetime,
+        end: datetime.datetime,
+        calendar,
+        rebalance_frequency_strategy: str,
     ) -> pd.DatetimeIndex:
         """
-        Determines the dates on which portfolio rebalancing should be executed based on the specified rebalancing strategy.
-        This calculation takes into account the start time of the rebalancing window and the execution frequency.
-
-        Args:
-            start (pd.DataFrame): A datetime containing the start time
-
-        Returns:
-            pd.DatetimeIndex: A DatetimeIndex containing all the dates when rebalancing should occur.
+        Determines the dates on which portfolio rebalancing should be executed.
+        Keeps the same signature for backward compatibility.
         """
-        # to account for the time during the day at which the execution starts
         if end is None:
             raise NotImplementedError("end_date cannot be None")
 
         if rebalance_frequency_strategy == "daily":
             early = calendar.schedule(start_date=start.date(), end_date=end.date())
-            rebalance_dates = early.set_index("market_open")
-            rebalance_dates = rebalance_dates.index
+            rebalance_dates = early.set_index("market_open").index
         elif rebalance_frequency_strategy == "EOQ":
-            # carefull to use dates from the same calendar
+            # careful to use dates from the same calendar
             raise NotImplementedError
         else:
             raise NotImplementedError(f"Strategy {rebalance_frequency_strategy} not implemented")
 
-        return rebalance_dates
+        return pd.DatetimeIndex(rebalance_dates)
 
-REBALANCE_CLASS_REGISTRY = REBALANCE_CLASS_REGISTRY if 'REBALANCE_CLASS_REGISTRY' in globals() else {}
+
+REBALANCE_CLASS_REGISTRY = (
+    REBALANCE_CLASS_REGISTRY if "REBALANCE_CLASS_REGISTRY" in globals() else {}
+)
+
+
 def register_rebalance_class(name=None, register_in_agent=True):
     """
     Decorator to register a model class in the factory.
     If `name` is not provided, the class's name is used as the key.
     """
+
     def decorator(cls):
         return insert_in_registry(REBALANCE_CLASS_REGISTRY, cls, register_in_agent, name)
+
     return decorator
+
 
 class RebalanceFactory(BaseFactory):
 
@@ -88,14 +111,9 @@ class RebalanceFactory(BaseFactory):
 
     @staticmethod
     def get_rebalance_strategies():
-        import mainsequence.virtualfundbuilder.contrib.rebalance_strategies # get default strategies
+
         try:
             RebalanceFactory.import_module("rebalance_strategies")
         except FileNotFoundError:
             logger.info("rebalance_strategies folder no present no strategies to import")
         return REBALANCE_CLASS_REGISTRY
-
-
-
-
-

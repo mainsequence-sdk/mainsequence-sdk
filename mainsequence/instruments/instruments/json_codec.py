@@ -1,13 +1,15 @@
 # src/instruments/json_codec.py
 from __future__ import annotations
 
-import json
-from typing import Any, Dict, Optional, Union
-import QuantLib as ql
+import hashlib
 import inspect  # <-- ADD
+import json
+from typing import Any
+
+import QuantLib as ql
 
 from mainsequence.instruments.pricing_models.indices import get_index as _index_by_name
-import hashlib
+
 # ----------------------------- ql.Period -------------------------------------
 
 _UNITS_TO_SHORT = {
@@ -17,7 +19,8 @@ _UNITS_TO_SHORT = {
     ql.Years: "Y",
 }
 
-def period_to_json(p: Optional[Union[str, ql.Period]]) -> Optional[str]:
+
+def period_to_json(p: str | ql.Period | None) -> str | None:
     """
     Encode a QuantLib Period as a compact string like '28D', '3M', '6M', '2Y'.
     Accepts strings and passes them through (idempotent).
@@ -28,7 +31,8 @@ def period_to_json(p: Optional[Union[str, ql.Period]]) -> Optional[str]:
         return f"{p.length()}{_UNITS_TO_SHORT[p.units()]}"
     return str(p)
 
-def period_from_json(v: Optional[Union[str, ql.Period]]) -> Optional[ql.Period]:
+
+def period_from_json(v: str | ql.Period | None) -> ql.Period | None:
     """Decode strings like '28D', '3M' into ql.Period; pass ql.Period through."""
     if v is None or isinstance(v, ql.Period):
         return v
@@ -50,6 +54,7 @@ _DAYCOUNT_FACTORIES = {
     "Thirty360_ISDA": lambda: ql.Thirty360(ql.Thirty360.ISDA),
 }
 
+
 def daycount_to_json(dc: ql.DayCounter) -> str:
     """Encode common DayCounters to a stable string token."""
     if isinstance(dc, ql.Actual360):
@@ -62,7 +67,8 @@ def daycount_to_json(dc: ql.DayCounter) -> str:
     # Fallback to class name (caller should ensure a known value)
     return dc.__class__.__name__
 
-def daycount_from_json(v: Union[str, ql.DayCounter]) -> ql.DayCounter:
+
+def daycount_from_json(v: str | ql.DayCounter) -> ql.DayCounter:
     """Decode from a string token back to a DayCounter instance."""
     if isinstance(v, ql.DayCounter):
         return v
@@ -79,12 +85,13 @@ def daycount_from_json(v: Union[str, ql.DayCounter]) -> ql.DayCounter:
 # We standardize on: {"name": "<QuantLib class name>", "market": <int optional>}
 # Example: {"name": "Mexico"}, {"name": "UnitedStates", "market": 1}
 
-def _build_calendar_display_factory() -> Dict[str, callable]:
+
+def _build_calendar_display_factory() -> dict[str, callable]:
     """
     Build a mapping: display name (Calendar::name()) -> zero-arg callable that
     constructs a concrete ql.Calendar. Handles classes with Market enums too.
     """
-    factory: Dict[str, callable] = {}
+    factory: dict[str, callable] = {}
 
     def _try_register(ctor):
         try:
@@ -125,27 +132,32 @@ def _build_calendar_display_factory() -> Dict[str, callable]:
 
     return factory
 
+
 # Build once + case-insensitive mirror
-_CAL_DISP_FACTORY: Dict[str, callable] = _build_calendar_display_factory()
-_CAL_DISP_FACTORY_CI: Dict[str, callable] = {k.casefold(): v for k, v in _CAL_DISP_FACTORY.items()}
+_CAL_DISP_FACTORY: dict[str, callable] = _build_calendar_display_factory()
+_CAL_DISP_FACTORY_CI: dict[str, callable] = {k.casefold(): v for k, v in _CAL_DISP_FACTORY.items()}
+
 
 def _calendar_from_display_name(display: str) -> ql.Calendar:
     ctor = _CAL_DISP_FACTORY.get(display) or _CAL_DISP_FACTORY_CI.get(display.casefold())
     if ctor is None:
         raise ValueError(
             f"Unsupported calendar display name {display!r}. "
-            f"Available: " + ", ".join(sorted(_CAL_DISP_FACTORY.keys())[:20]) +
-            ("..." if len(_CAL_DISP_FACTORY) > 20 else "")
+            f"Available: "
+            + ", ".join(sorted(_CAL_DISP_FACTORY.keys())[:20])
+            + ("..." if len(_CAL_DISP_FACTORY) > 20 else "")
         )
     return ctor()
 
-def _try_get_market(c: ql.Calendar) -> Optional[int]:
+
+def _try_get_market(c: ql.Calendar) -> int | None:
     try:
-        return int(getattr(c, "market")())
+        return int(c.market())
     except Exception:
         return None
 
-def _normalize_calendar_to_class_and_market(cal: ql.Calendar) -> Dict[str, Any]:
+
+def _normalize_calendar_to_class_and_market(cal: ql.Calendar) -> dict[str, Any]:
     """
     Return the canonical JSON dict {"name": <class name>, "market": <int?>}
     even if 'cal' is a base Calendar proxy. We achieve this by re-instantiating
@@ -166,19 +178,21 @@ def _normalize_calendar_to_class_and_market(cal: ql.Calendar) -> Dict[str, Any]:
         name = cls_name
         market = _try_get_market(cal)
 
-    out: Dict[str, Any] = {"name": name}
+    out: dict[str, Any] = {"name": name}
     if market is not None:
         out["market"] = market
     return out
 
-def calendar_to_json(cal: ql.Calendar) -> Dict[str, Any]:
+
+def calendar_to_json(cal: ql.Calendar) -> dict[str, Any]:
     """
     Encode a Calendar as canonical {"name": "<QuantLib class name>", "market": <int?>}.
     Robust to base Calendar proxies returned by SWIG.
     """
     return _normalize_calendar_to_class_and_market(cal)
 
-def _calendar_from_class_and_market(name: str, market: Optional[int]) -> ql.Calendar:
+
+def _calendar_from_class_and_market(name: str, market: int | None) -> ql.Calendar:
     """
     Construct a calendar from a QuantLib class name + optional market.
     Tries nested Market enums, then plain int, then no-arg.
@@ -190,7 +204,7 @@ def _calendar_from_class_and_market(name: str, market: Optional[int]) -> ql.Cale
     if market is not None:
         # Most calendars expose a nested Market enum:
         try:
-            enum_cls = getattr(cls, "Market")
+            enum_cls = cls.Market
             return cls(enum_cls(int(market)))
         except Exception:
             pass
@@ -202,7 +216,8 @@ def _calendar_from_class_and_market(name: str, market: Optional[int]) -> ql.Cale
     # Fallback: no-arg constructor
     return cls()
 
-def calendar_from_json(v: Union[Dict[str, Any], str, ql.Calendar]) -> ql.Calendar:
+
+def calendar_from_json(v: dict[str, Any] | str | ql.Calendar) -> ql.Calendar:
     """
     Decode dict or string into a Calendar instance. Accepts:
       - {"name": "<class name>", "market": <int?>}    (canonical)
@@ -237,6 +252,7 @@ def calendar_from_json(v: Union[Dict[str, Any], str, ql.Calendar]) -> ql.Calenda
 
     raise TypeError(f"Cannot decode calendar from {type(v).__name__}")
 
+
 # ----------------------------- Business Day Convention helpers --------------
 
 _BDC_TO_STR = {
@@ -251,11 +267,13 @@ _BDC_TO_STR = {
 
 _STR_TO_BDC = {v: k for k, v in _BDC_TO_STR.items()}
 
-def bdc_to_json(bdc: int) -> Union[int, str]:
+
+def bdc_to_json(bdc: int) -> int | str:
     """Encode BusinessDayConvention as a stable string (falls back to int if unknown)."""
     return _BDC_TO_STR.get(int(bdc), int(bdc))
 
-def bdc_from_json(v: Union[int, str]) -> int:
+
+def bdc_from_json(v: int | str) -> int:
     """Decode a BusinessDayConvention from string or int."""
     if isinstance(v, int):
         return int(v)
@@ -271,14 +289,20 @@ def bdc_from_json(v: Union[int, str]) -> int:
         except Exception:
             pass
     raise ValueError(f"Unsupported business day convention '{v}'")
+
+
 # ----------------------------- Date utils -----------------------------------
+
 
 def _ql_date_to_iso(d: ql.Date) -> str:
     return f"{d.year():04d}-{int(d.month()):02d}-{d.dayOfMonth():02d}"
 
+
 def _iso_to_ql_date(s: str) -> ql.Date:
     y, m, d = (int(x) for x in s.split("-"))
     return ql.Date(d, m, y)
+
+
 # ----------------------------- Schedule codec --------------------------------
 
 # Optional rule mapping (used only if you ever store rule-based schedules)
@@ -295,7 +319,8 @@ _RULE_TO_STR = {
 }
 _STR_TO_RULE = {v: k for k, v in _RULE_TO_STR.items() if v != 9999}
 
-def schedule_to_json(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any]]:
+
+def schedule_to_json(s: ql.Schedule | None) -> dict[str, Any] | None:
     """
     Encode a QuantLib Schedule. We always include the explicit 'dates' array so
     round-tripping never depends on rule/tenor reconstruction.
@@ -310,7 +335,7 @@ def schedule_to_json(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any]]:
         # Some SWIG builds require iterating via size()/date(i)
         dates_iso = [_ql_date_to_iso(s.date(i)) for i in range(s.size())]
 
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "dates": dates_iso,
     }
 
@@ -324,7 +349,9 @@ def schedule_to_json(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any]]:
     except Exception:
         pass
     try:
-        payload["termination_business_day_convention"] = bdc_to_json(int(s.terminationDateConvention()))
+        payload["termination_business_day_convention"] = bdc_to_json(
+            int(s.terminationDateConvention())
+        )
     except Exception:
         pass
     try:
@@ -344,7 +371,9 @@ def schedule_to_json(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any]]:
     return payload
 
 
-def schedule_from_json(v: Union[None, ql.Schedule, Dict[str, Any], List[str], List[ql.Date]]) -> Optional[ql.Schedule]:
+def schedule_from_json(
+    v: None | ql.Schedule | dict[str, Any] | List[str] | List[ql.Date]
+) -> ql.Schedule | None:
     """
     Decode a schedule. Supported forms:
       - None
@@ -418,9 +447,11 @@ def schedule_from_json(v: Union[None, ql.Schedule, Dict[str, Any], List[str], Li
 
     raise TypeError(f"Cannot decode Schedule from {type(v).__name__}")
 
+
 # ----------------------------- ql.IborIndex ----------------------------------
 
-def ibor_to_json(idx: Optional[ql.IborIndex]) -> Optional[Dict[str, Any]]:
+
+def ibor_to_json(idx: ql.IborIndex | None) -> dict[str, Any] | None:
     """
     Encode an IborIndex without trying to serialize the curve handle:
     {"family": "USDLibor", "tenor": "3M"}  or {"family":"Euribor","tenor":"6M"}.
@@ -441,6 +472,7 @@ def ibor_to_json(idx: Optional[ql.IborIndex]) -> Optional[Dict[str, Any]]:
         out["tenor"] = ten
     return out
 
+
 def _construct_ibor(family: str, tenor: str) -> ql.IborIndex:
     p = ql.Period(tenor)
     # Common families—extend as needed
@@ -458,7 +490,8 @@ def _construct_ibor(family: str, tenor: str) -> ql.IborIndex:
     # TIIE is not a built-in IborIndex; TIIE swaps build their own index later.
     raise ValueError(f"Unsupported Ibor index family '{family}'")
 
-def ibor_from_json(v: Union[None, str, Dict[str, Any], ql.IborIndex]) -> Optional[ql.IborIndex]:
+
+def ibor_from_json(v: None | str | dict[str, Any] | ql.IborIndex) -> ql.IborIndex | None:
     """
     Decode from JSON into a ql.IborIndex, delegating to the central factory when possible.
     Falls back to legacy parsing for 'USDLibor3M' / 'Euribor6M' styles.
@@ -483,7 +516,7 @@ def ibor_from_json(v: Union[None, str, Dict[str, Any], ql.IborIndex]) -> Optiona
         for t in ("1M", "3M", "6M", "12M", "1Y", "28D"):
             if name.endswith(t):
                 tenor = t
-                family = name[:-len(t)]
+                family = name[: -len(t)]
                 break
         else:
             family = name
@@ -508,24 +541,33 @@ def ibor_from_json(v: Union[None, str, Dict[str, Any], ql.IborIndex]) -> Optiona
 
     raise TypeError(f"Cannot decode IborIndex from {type(v).__name__}")
 
+
 def _fix_schedule_calendar_from_top_level(data: dict) -> dict:
     try:
         sched = data.get("schedule")
         top_cal = data.get("calendar")
         if isinstance(sched, dict) and isinstance(sched.get("calendar"), dict):
-            if sched["calendar"].get("name") == "Calendar" and isinstance(top_cal, dict) and top_cal.get("name"):
+            if (
+                sched["calendar"].get("name") == "Calendar"
+                and isinstance(top_cal, dict)
+                and top_cal.get("name")
+            ):
                 sched["calendar"] = {"name": top_cal["name"]}
     except Exception:
         pass
     return data
+
+
 # ----------------------------- Generic mixin ---------------------------------
+
 
 class JSONMixin:
     """
     Mixin to give Pydantic models convenient JSON round-trip helpers.
     Uses Pydantic's JSON mode (so field_serializers are honored).
     """
-    def to_json_dict(self) -> Dict[str, Any]:
+
+    def to_json_dict(self) -> dict[str, Any]:
         try:
             return self.model_dump(mode="json")
         except Exception as e:
@@ -535,18 +577,17 @@ class JSONMixin:
         return json.dumps(self.to_json_dict(), default=str, **json_kwargs)
 
     @classmethod
-    def from_json_dict(cls, data: Dict[str, Any]):
+    def from_json_dict(cls, data: dict[str, Any]):
         data = _fix_schedule_calendar_from_top_level(data)
         return cls.model_validate(data)
 
     @classmethod
-    def from_json(cls, payload: Union[str, bytes, Dict[str, Any]]):  # <-- broadened
+    def from_json(cls, payload: str | bytes | dict[str, Any]):  # <-- broadened
         if isinstance(payload, dict):
             return cls.from_json_dict(payload)
         if isinstance(payload, (bytes, bytearray)):
             payload = payload.decode("utf-8")
         return cls.from_json_dict(json.loads(payload))
-
 
     def to_canonical_json(self) -> str:
         """
@@ -569,7 +610,7 @@ class JSONMixin:
         return h.hexdigest()
 
     @classmethod
-    def hash_payload(cls, payload: Union[str, bytes, Dict[str, Any]], algorithm: str = "sha256") -> str:
+    def hash_payload(cls, payload: str | bytes | dict[str, Any], algorithm: str = "sha256") -> str:
         """
         Hash an arbitrary JSON payload (str/bytes/dict) using the same canonicalization.
         Useful if you have serialized JSON already and want the same digest.
@@ -582,7 +623,9 @@ class JSONMixin:
             obj = payload
         else:
             raise TypeError(f"Unsupported payload type: {type(payload).__name__}")
-        s = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        s = json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+            "utf-8"
+        )
         h = hashlib.new(algorithm)
         h.update(s)
         return h.hexdigest()

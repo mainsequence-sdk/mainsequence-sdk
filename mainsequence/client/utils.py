@@ -1,18 +1,19 @@
 import copy
+import datetime
+import os
+import time
+from enum import Enum
 from socket import socket
+from typing import TypedDict
 
 import psutil
-import requests
-import os
-from requests.structures import CaseInsensitiveDict
-import datetime
-import time
 import pytz
-from typing import Union, Optional, TypedDict, Dict
-from mainsequence.logconf import logger
-from enum import Enum
+import requests
+from requests.structures import CaseInsensitiveDict
 
-DATE_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
+from mainsequence.logconf import logger
+
+DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 
 class DataFrequency(str, Enum):
@@ -26,25 +27,27 @@ class DataFrequency(str, Enum):
 
 
 class DateInfo(TypedDict, total=False):
-    start_date: Optional[datetime.datetime]
-    start_date_operand: Optional[str]
-    end_date: Optional[datetime.datetime]
-    end_date_operand: Optional[str]
+    start_date: datetime.datetime | None
+    start_date_operand: str | None
+    end_date: datetime.datetime | None
+    end_date_operand: str | None
 
 
-UniqueIdentifierRangeMap = Dict[str, DateInfo]
+UniqueIdentifierRangeMap = dict[str, DateInfo]
 
 
 def request_to_datetime(string_date: str):
     if "+" in string_date:
-        string_date = datetime.datetime.fromisoformat(string_date.replace("T", " ")).replace(tzinfo=pytz.utc)
+        string_date = datetime.datetime.fromisoformat(string_date.replace("T", " ")).replace(
+            tzinfo=pytz.utc
+        )
         return string_date
     try:
-        date = datetime.datetime.strptime(string_date, DATE_FORMAT).replace(
-            tzinfo=pytz.utc)
+        date = datetime.datetime.strptime(string_date, DATE_FORMAT).replace(tzinfo=pytz.utc)
     except ValueError:
         date = datetime.datetime.strptime(string_date, "%Y-%m-%dT%H:%M:%SZ").replace(
-            tzinfo=pytz.utc)
+            tzinfo=pytz.utc
+        )
     return date
 
 
@@ -70,13 +73,13 @@ def get_authorization_headers():
 
 
 def make_request(
-        s,
-        r_type: str,
-        url: str,
-        loaders: Union[AuthLoaders, None],
-        payload: Union[dict, None] = None,
-        time_out=None,
-        accept_gzip: bool = True
+    s,
+    r_type: str,
+    url: str,
+    loaders: AuthLoaders | None,
+    payload: dict | None = None,
+    time_out=None,
+    accept_gzip: bool = True,
 ):
     from requests.models import Response
 
@@ -136,7 +139,7 @@ def make_request(
             else:
                 keep_request = False
                 break
-        except requests.exceptions.ConnectionError as errc:
+        except requests.exceptions.ConnectionError:
             logger.exception(f"Error connecting {url}")
         except TypeError as e:
             logger.exception(f"Type error for {url} exception {e}")
@@ -153,17 +156,22 @@ def make_request(
             r.status_code = 500
             break
 
-        logger.debug(f"Trying request again after {TIMEOFF}s "
-                     f"- Counter: {counter}/{TRIES} - URL: {url}")
+        logger.debug(
+            f"Trying request again after {TIMEOFF}s " f"- Counter: {counter}/{TRIES} - URL: {url}"
+        )
         time.sleep(TIMEOFF)
     return r
 
 
 def build_session():
     from requests.adapters import HTTPAdapter, Retry
+
     s = requests.Session()
-    retries = Retry(total=2, backoff_factor=2, )
-    s.mount('http://', HTTPAdapter(max_retries=retries))
+    retries = Retry(
+        total=2,
+        backoff_factor=2,
+    )
+    s.mount("http://", HTTPAdapter(max_retries=retries))
     return s
 
 
@@ -246,10 +254,10 @@ class LazyConstants(dict):
         return out
 
 
-if 'TDAG_CONSTANTS' not in locals():
+if "TDAG_CONSTANTS" not in locals():
     TDAG_CONSTANTS = LazyConstants("tdag")
 
-if 'MARKETS_CONSTANTS' not in locals():
+if "MARKETS_CONSTANTS" not in locals():
     MARKETS_CONSTANTS = LazyConstants("vam")
 
 if "BINANCE_CONSTANTS" not in locals():
@@ -323,14 +331,13 @@ def serialize_to_json(kwargs):
     return new_data
 
 
-import os
 import pathlib
 import shutil
 import subprocess
 import uuid
 
 
-def _linux_machine_id() -> Optional[str]:
+def _linux_machine_id() -> str | None:
     """Return the OS machine‑id if readable (many distros make this 0644)."""
     for p in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
         path = pathlib.Path(p)

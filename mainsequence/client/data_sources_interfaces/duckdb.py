@@ -1,18 +1,21 @@
 from __future__ import annotations
 
-import os
-from typing import Optional, Literal, List, Dict,TypedDict, Tuple, Any
-import os, pyarrow.fs as pafs
-
-import duckdb, pandas as pd
-from pathlib import Path
 import datetime
-from mainsequence.logconf import logger
-import pyarrow as pa
-import pyarrow.parquet as pq
-from ..utils import DataFrequency,UniqueIdentifierRangeMap
+import os
 import uuid
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import pandas as pd
+import pyarrow.fs as pafs
+import pyarrow.parquet as pq
 from pyarrow import fs
+
+from mainsequence.logconf import logger
+
+from ..utils import DataFrequency, UniqueIdentifierRangeMap
+
 
 def get_logger():
     global logger
@@ -21,15 +24,13 @@ def get_logger():
     logger.bind(sub_application="duck_db_interface")
     return logger
 
+
 logger = get_logger()
+
 
 def _list_parquet_files(fs, dir_path: str) -> list[str]:
     infos = fs.get_file_info(pafs.FileSelector(dir_path, recursive=False))
-    return [i.path for i in infos
-            if i.type == pafs.FileType.File and i.path.endswith(".parquet")]
-
-
-
+    return [i.path for i in infos if i.type == pafs.FileType.File and i.path.endswith(".parquet")]
 
 
 class DuckDBInterface:
@@ -37,7 +38,7 @@ class DuckDBInterface:
     Persist/serve (time_index, unique_identifier, …) DataFrames in a DuckDB file.
     """
 
-    def __init__(self, db_path: Optional[str | Path] = None):
+    def __init__(self, db_path: str | Path | None = None):
         """
         Initializes the interface with the path to the DuckDB database file.
 
@@ -48,6 +49,7 @@ class DuckDBInterface:
                                              in the current directory if the variable is not set.
         """
         from mainsequence.tdag.config import TDAG_DATA_PATH
+
         # ── choose default & normalise to string ───────────────────────────
         default_path = os.getenv(
             "DUCKDB_PATH",
@@ -79,9 +81,10 @@ class DuckDBInterface:
 
         self.db_path = db_uri  # keep the fully‑qualified URI
 
-    def launch_gui(self, host='localhost', port=4213, timeout=0.5):
-        import duckdb
+    def launch_gui(self, host="localhost", port=4213, timeout=0.5):
         import socket
+
+        import duckdb
 
         def ui_is_running(host, port, timeout):
             """Returns True if something is listening on host:port."""
@@ -90,7 +93,7 @@ class DuckDBInterface:
                 try:
                     s.connect((host, port))
                     return True
-                except (ConnectionRefusedError, socket.timeout):
+                except (TimeoutError, ConnectionRefusedError):
                     return False
 
         # 1. Connect to your database
@@ -113,10 +116,10 @@ class DuckDBInterface:
     # ──────────────────────────────────────────────────────────────────────────────
 
     def time_index_minima(
-            self,
-            table: str,
-            ids: Optional[List[str]] = None,
-    ) -> Tuple[Optional[pd.Timestamp], Dict[Any, Optional[pd.Timestamp]]]:
+        self,
+        table: str,
+        ids: list[str] | None = None,
+    ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
         """
         Compute the minimum time_index over the entire dataset AND the minimum per unique_identifier.
 
@@ -139,9 +142,9 @@ class DuckDBInterface:
                    directly under {self.db_path}/{table}/**/*.parquet with hive_partitioning.
             ids:   optional list; if provided, restricts to those unique_identifiers only.
         """
+
         import duckdb
         import pandas as pd
-        from typing import Any, Dict, Optional, Tuple, List
 
         def qident(name: str) -> str:
             return '"' + str(name).replace('"', '""') + '"'
@@ -165,7 +168,7 @@ class DuckDBInterface:
         )
 
         # Optional filter to reduce the output cardinality if the caller only cares about some ids
-        params: List[Any] = []
+        params: list[Any] = []
         where_clause = ""
         if ids:
             placeholders = ", ".join("?" for _ in ids)
@@ -190,8 +193,8 @@ class DuckDBInterface:
         try:
             rows = self.con.execute(sql_one_pass, params).fetchall()
 
-            global_min_raw: Optional[Any] = None
-            per_id_raw: Dict[Any, Optional[Any]] = {}
+            global_min_raw: Any | None = None
+            per_id_raw: dict[Any, Any | None] = {}
 
             for uid, min_val, is_total in rows:
                 if is_total:
@@ -235,7 +238,7 @@ class DuckDBInterface:
             per_id = {uid: to_ts(min_val) for uid, min_val in pairs}
             return global_min, per_id
 
-    def remove_columns(self, table: str, columns: List[str]) -> Dict[str, Any]:
+    def remove_columns(self, table: str, columns: list[str]) -> dict[str, Any]:
         """
         Forcefully drop the given columns from the dataset backing `table`.
 
@@ -252,6 +255,7 @@ class DuckDBInterface:
           • Destructive and idempotent.
         """
         import uuid
+
         import duckdb
 
         def qident(name: str) -> str:
@@ -274,7 +278,12 @@ class DuckDBInterface:
                 self._ensure_view(table)
             except Exception as ev:
                 logger.warning(f"remove_columns: _ensure_view failed after scan error: {ev}")
-            return {"dropped": [], "skipped": requested, "partitions_rebuilt": 0, "files_deleted": 0}
+            return {
+                "dropped": [],
+                "skipped": requested,
+                "partitions_rebuilt": 0,
+                "files_deleted": 0,
+            }
 
         to_drop_global = [c for c in requested if c in present_cols and c not in protected]
         skipped_global = [c for c in requested if c not in present_cols or c in protected]
@@ -282,11 +291,13 @@ class DuckDBInterface:
         # Enumerate all partition directories that currently contain Parquet files
         selector = fs.FileSelector(f"{self.db_path}/{table}", recursive=True)
         infos = self._fs.get_file_info(selector)
-        part_dirs = sorted({
-            info.path.rpartition("/")[0]
-            for info in infos
-            if info.type == fs.FileType.File and info.path.endswith(".parquet")
-        })
+        part_dirs = sorted(
+            {
+                info.path.rpartition("/")[0]
+                for info in infos
+                if info.type == fs.FileType.File and info.path.endswith(".parquet")
+            }
+        )
 
         if not part_dirs:
             logger.info(f"remove_columns: table '{table}' has no Parquet files.")
@@ -294,8 +305,12 @@ class DuckDBInterface:
                 self._ensure_view(table)
             except Exception as ev:
                 logger.warning(f"remove_columns: _ensure_view failed on empty table: {ev}")
-            return {"dropped": to_drop_global, "skipped": skipped_global,
-                    "partitions_rebuilt": 0, "files_deleted": 0}
+            return {
+                "dropped": to_drop_global,
+                "skipped": skipped_global,
+                "partitions_rebuilt": 0,
+                "files_deleted": 0,
+            }
 
         partitions_rebuilt = 0
         files_deleted = 0
@@ -312,7 +327,9 @@ class DuckDBInterface:
                     part_cols_ordered = [r[0] for r in part_desc]
                     part_cols_set = set(part_cols_ordered)
                 except duckdb.Error as e:
-                    logger.warning(f"remove_columns: skipping partition due to scan error at {part_path}: {e}")
+                    logger.warning(
+                        f"remove_columns: skipping partition due to scan error at {part_path}: {e}"
+                    )
                     continue
 
                 to_drop_here = [c for c in to_drop_global if c in part_cols_set]
@@ -321,7 +338,9 @@ class DuckDBInterface:
                 keep_cols = [c for c in part_cols_ordered if c not in to_drop_here]
                 if not keep_cols:
                     # Should not happen due to 'protected', but guard anyway
-                    logger.warning(f"remove_columns: nothing to write after drops in {part_path}; skipping")
+                    logger.warning(
+                        f"remove_columns: nothing to write after drops in {part_path}; skipping"
+                    )
                     continue
                 keep_csv = ", ".join(qident(c) for c in keep_cols)
 
@@ -333,7 +352,9 @@ class DuckDBInterface:
                         f"                                      hive_partitioning=TRUE, union_by_name=TRUE, filename=TRUE)"
                     ).fetchall()
                     cols_with_fname = {r[0] for r in fname_desc}
-                    added_by_filename = cols_with_fname - part_cols_set  # usually {'filename'} or {'file_name', ...}
+                    added_by_filename = (
+                        cols_with_fname - part_cols_set
+                    )  # usually {'filename'} or {'file_name', ...}
                     file_col = next(iter(added_by_filename), None)
                 except duckdb.Error:
                     file_col = None
@@ -372,7 +393,11 @@ class DuckDBInterface:
                 try:
                     current_infos = self._fs.get_file_info(fs.FileSelector(part_path))
                     for fi in current_infos:
-                        if fi.type == fs.FileType.File and fi.path.endswith(".parquet") and fi.path != tmp_file:
+                        if (
+                            fi.type == fs.FileType.File
+                            and fi.path.endswith(".parquet")
+                            and fi.path != tmp_file
+                        ):
                             self._fs.delete_file(fi.path)
                             files_deleted += 1
                 except Exception as cleanup_e:
@@ -394,15 +419,17 @@ class DuckDBInterface:
             "files_deleted": files_deleted,
         }
 
-    def upsert(self, df: pd.DataFrame, table: str,
-               data_frequency: DataFrequency = DataFrequency.one_m) -> None:
+    def upsert(
+        self, df: pd.DataFrame, table: str, data_frequency: DataFrequency = DataFrequency.one_m
+    ) -> None:
         """
         Idempotently writes a DataFrame into *table* using (time_index, unique_identifier) PK.
         Extra columns are added to the table automatically.
         """
+        import datetime
         import os
         import uuid
-        import datetime
+
         from pyarrow import fs  # used for cleanup listing
 
         if df.empty:
@@ -429,7 +456,7 @@ class DuckDBInterface:
 
         # ──  Write each partition safely ─────────────────────────────────
         for keys, sub in df.groupby(part_cols, sort=False):
-            part_path = self._partition_path(dict(zip(part_cols, keys)), table=table)
+            part_path = self._partition_path(dict(zip(part_cols, keys, strict=False)), table=table)
             self._fs.create_dir(part_path, recursive=True)
 
             # Register incoming batch as a DuckDB relation
@@ -458,8 +485,9 @@ class DuckDBInterface:
             # Exact PK overlap check (only if time windows overlap)
             overlap_exists = False
             if has_existing and time_overlap:
-                overlap_exists = bool(self.con.execute(
-                    f"""
+                overlap_exists = bool(
+                    self.con.execute(
+                        f"""
                     SELECT EXISTS (
                       SELECT 1
                       FROM incoming_sub i
@@ -469,7 +497,8 @@ class DuckDBInterface:
                       LIMIT 1
                     );
                     """
-                ).fetchone()[0])
+                    ).fetchone()[0]
+                )
 
             # -------------------- Append path (no PK collision) --------------------
             if not has_existing or not time_overlap or not overlap_exists:
@@ -541,7 +570,9 @@ class DuckDBInterface:
                 existing_cols = [r[0] for r in desc_rows]
 
                 # ADDED: also look at incoming schema so we can build a typed e-select
-                incoming_desc = self.con.execute("DESCRIBE SELECT * FROM incoming_sub").fetchall()  # ADDED
+                incoming_desc = self.con.execute(
+                    "DESCRIBE SELECT * FROM incoming_sub"
+                ).fetchall()  # ADDED
                 incoming_cols = [r[0] for r in incoming_desc]
 
                 all_cols = list(dict.fromkeys(incoming_cols + existing_cols))  # deterministic order
@@ -558,7 +589,8 @@ class DuckDBInterface:
                     if c in inc_set and c in ex_set:
                         if c in part_cols:
                             select_exprs.append(
-                                f"COALESCE(CAST(i.{qc} AS BIGINT), CAST(e.{qc} AS BIGINT)) AS {qc}")  # CHANGED
+                                f"COALESCE(CAST(i.{qc} AS BIGINT), CAST(e.{qc} AS BIGINT)) AS {qc}"
+                            )  # CHANGED
                         else:
                             select_exprs.append(f"COALESCE(i.{qc}, e.{qc}) AS {qc}")
                     elif c in inc_set:
@@ -640,9 +672,9 @@ class DuckDBInterface:
                 try:
                     for fi in self._fs.get_file_info(fs.FileSelector(part_path)):
                         if (
-                                fi.type == fs.FileType.File
-                                and fi.path.endswith(".parquet")
-                                and os.path.basename(fi.path) != final_name
+                            fi.type == fs.FileType.File
+                            and fi.path.endswith(".parquet")
+                            and os.path.basename(fi.path) != final_name
                         ):
                             self._fs.delete_file(fi.path)
                 except Exception as cleanup_e:
@@ -655,8 +687,10 @@ class DuckDBInterface:
         # ──  Refresh view ────────────────────────────────────────────────
         self._ensure_view(table=table)
 
-    def table_exists(self,table):
-        table_exists_result = self.con.execute("""
+    def table_exists(self, table):
+        table_exists_result = (
+            self.con.execute(
+                """
                                                                    SELECT COUNT(*) 
                                                                      FROM information_schema.tables
                                                                     WHERE table_schema='main' AND table_name = ?
@@ -664,28 +698,34 @@ class DuckDBInterface:
                                                                    SELECT COUNT(*) 
                                                                      FROM information_schema.views
                                                                     WHERE table_schema='main' AND table_name = ?
-                                                               """, [table, table]).fetchone()[0] > 0
+                                                               """,
+                [table, table],
+            ).fetchone()[0]
+            > 0
+        )
 
         if table_exists_result is None:
-            logger.warning(f"Table '{table}' does not exist in {self.db_path}. Returning empty DataFrame.")
+            logger.warning(
+                f"Table '{table}' does not exist in {self.db_path}. Returning empty DataFrame."
+            )
             return pd.DataFrame()
         return table_exists_result
 
     def constrain_read(
-            self,
-            table: str,
-            *,
-            start: Optional[datetime.datetime] = None,
-            end: Optional[datetime.datetime] = None,
-            ids: Optional[List[str]] = None,
-            unique_identifier_range_map: Optional[Dict[str, Dict[str, Any]]] = None,
-            max_rows: Optional[int] = None,
-            now: Optional[datetime.datetime] = None,
-    ) -> Tuple[
-        Optional[datetime.datetime],  # adjusted_start
-        Optional[datetime.datetime],  # adjusted_end
-        Optional[Dict[str, Dict[str, Any]]],  # adjusted_unique_identifier_range_map
-        Dict[str, Any]  # diagnostics
+        self,
+        table: str,
+        *,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        ids: list[str] | None = None,
+        unique_identifier_range_map: dict[str, dict[str, Any]] | None = None,
+        max_rows: int | None = None,
+        now: datetime.datetime | None = None,
+    ) -> tuple[
+        datetime.datetime | None,  # adjusted_start
+        datetime.datetime | None,  # adjusted_end
+        dict[str, dict[str, Any]] | None,  # adjusted_unique_identifier_range_map
+        dict[str, Any],  # diagnostics
     ]:
         """
         Constrain a prospective read so that the estimated number of rows does not exceed *max_rows*.
@@ -715,16 +755,15 @@ class DuckDBInterface:
         """
         import os
         import re
-        import math
+        from calendar import monthrange
+
         import numpy as np
         import pandas as pd
-        import pyarrow.parquet as pq
         from pyarrow import fs as pa_fs
-        from calendar import monthrange
 
         # --- helpers -------------------------------------------------------------
 
-        def _to_utc_ts(dt: Optional[datetime.datetime]) -> Optional[pd.Timestamp]:
+        def _to_utc_ts(dt: datetime.datetime | None) -> pd.Timestamp | None:
             if dt is None:
                 return None
             ts = pd.to_datetime(dt, utc=True)
@@ -737,7 +776,7 @@ class DuckDBInterface:
                 ts = ts.tz_convert("UTC")
             return ts
 
-        def _effective_start_from_range_map(rmap: Dict[str, Dict[str, Any]]) -> Optional[pd.Timestamp]:
+        def _effective_start_from_range_map(rmap: dict[str, dict[str, Any]]) -> pd.Timestamp | None:
             starts = []
             for v in rmap.values():
                 s = v.get("start_date")
@@ -752,7 +791,7 @@ class DuckDBInterface:
                 starts.append(ts)
             return min(starts) if starts else None
 
-        def _effective_end_from_range_map(rmap: Dict[str, Dict[str, Any]]) -> Optional[pd.Timestamp]:
+        def _effective_end_from_range_map(rmap: dict[str, dict[str, Any]]) -> pd.Timestamp | None:
             ends = []
             for v in rmap.values():
                 e = v.get("end_date")
@@ -760,7 +799,9 @@ class DuckDBInterface:
                     ends.append(_to_utc_ts(e))
             return max(ends) if ends else None
 
-        def _parse_part_bounds_from_path(path: str) -> Tuple[Optional[pd.Timestamp], Optional[pd.Timestamp]]:
+        def _parse_part_bounds_from_path(
+            path: str,
+        ) -> tuple[pd.Timestamp | None, pd.Timestamp | None]:
             """
             Infer inclusive [partition_start, partition_end] purely from path components
             like .../year=2024/month=07[/day=03]/file.parquet.
@@ -775,18 +816,24 @@ class DuckDBInterface:
             m = int(m_month.group(1))
             if m_day:
                 d = int(m_day.group(1))
-                start = pd.Timestamp(datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.timezone.utc))
+                start = pd.Timestamp(
+                    datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.timezone.utc)
+                )
                 end = start + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
                 return start, end
             # month granularity
             last_day = monthrange(y, m)[1]
             start = pd.Timestamp(datetime.datetime(y, m, 1, 0, 0, 0, tzinfo=datetime.timezone.utc))
-            end = pd.Timestamp(datetime.datetime(y, m, last_day, 23, 59, 59, tzinfo=datetime.timezone.utc)) \
-                  + pd.Timedelta(seconds=0.999999999)  # inclusive
+            end = pd.Timestamp(
+                datetime.datetime(y, m, last_day, 23, 59, 59, tzinfo=datetime.timezone.utc)
+            ) + pd.Timedelta(
+                seconds=0.999999999
+            )  # inclusive
             return start, end
 
-        def _collect_row_groups_meta(file_path: str) -> Tuple[
-            List[Tuple[pd.Timestamp, pd.Timestamp, int]], Optional[str]]:
+        def _collect_row_groups_meta(
+            file_path: str,
+        ) -> tuple[list[tuple[pd.Timestamp, pd.Timestamp, int]], str | None]:
             """
             Return list of (rg_min, rg_max, rg_rows) for 'time_index' from Parquet footer.
             If stats are missing, returns empty list and a reason.
@@ -806,7 +853,7 @@ class DuckDBInterface:
                 # If schema isn't Arrow-resolvable, fall back to 'ns'
                 unit = "ns"
 
-            rg_list: List[Tuple[pd.Timestamp, pd.Timestamp, int]] = []
+            rg_list: list[tuple[pd.Timestamp, pd.Timestamp, int]] = []
             try:
                 meta = pf.metadata
                 nrg = meta.num_row_groups
@@ -879,8 +926,11 @@ class DuckDBInterface:
                 return [], f"meta_error:{e}"
             return rg_list, None
 
-        def _rows_estimate_until(T: pd.Timestamp, rgs: List[Tuple[pd.Timestamp, pd.Timestamp, int]],
-                                 start_ts: pd.Timestamp) -> int:
+        def _rows_estimate_until(
+            T: pd.Timestamp,
+            rgs: list[tuple[pd.Timestamp, pd.Timestamp, int]],
+            start_ts: pd.Timestamp,
+        ) -> int:
             """
             Estimate rows in [start_ts, T] by assuming uniform distribution within each row-group
             between its (min_time, max_time). Uses only metadata.
@@ -890,12 +940,12 @@ class DuckDBInterface:
             total = 0.0
             Ts = T.value
             Ss = start_ts.value
-            for (mn, mx, rows) in rgs:
+            for mn, mx, rows in rgs:
                 a = max(Ss, mn.value)
                 b = min(Ts, mx.value)
                 if b <= a:
                     continue
-                denom = (mx.value - mn.value)
+                denom = mx.value - mn.value
                 if denom <= 0:
                     # degenerate: all timestamps equal; include whole group if it intersects
                     total += float(rows)
@@ -909,7 +959,9 @@ class DuckDBInterface:
         if max_rows is None:
             env_val = os.getenv("MAX_READ_ROWS") or os.getenv("TDAG_MAX_READ_ROWS")
             try:
-                max_rows = int(str(env_val).replace(",", "_")) if env_val is not None else 10_000_000
+                max_rows = (
+                    int(str(env_val).replace(",", "_")) if env_val is not None else 10_000_000
+                )
             except Exception:
                 max_rows = 10_000_000
         if now is None:
@@ -918,8 +970,11 @@ class DuckDBInterface:
         # Normalize inputs
         start_ts = _to_utc_ts(start)
         end_ts = _to_utc_ts(end)
-        uirm = None if unique_identifier_range_map is None else {k: dict(v) for k, v in
-                                                                 unique_identifier_range_map.items()}
+        uirm = (
+            None
+            if unique_identifier_range_map is None
+            else {k: dict(v) for k, v in unique_identifier_range_map.items()}
+        )
 
         # If ids are given without a range map, create a simple one from start/end
         if ids and (uirm is None):
@@ -927,9 +982,14 @@ class DuckDBInterface:
                 uid: {
                     "start_date": start_ts.to_pydatetime() if start_ts is not None else None,
                     "start_date_operand": ">=",
-                    "end_date": (end_ts or _to_utc_ts(now)).to_pydatetime() if (end_ts or now) is not None else None,
+                    "end_date": (
+                        (end_ts or _to_utc_ts(now)).to_pydatetime()
+                        if (end_ts or now) is not None
+                        else None
+                    ),
                     "end_date_operand": "<=",
-                } for uid in ids
+                }
+                for uid in ids
             }
 
         # Compute global window from inputs
@@ -958,7 +1018,7 @@ class DuckDBInterface:
         ]
 
         # Gather row-group metadata for relevant files
-        row_groups: List[Tuple[pd.Timestamp, pd.Timestamp, int]] = []
+        row_groups: list[tuple[pd.Timestamp, pd.Timestamp, int]] = []
         files_considered = 0
         files_skipped_part = 0
         files_meta_errors = 0
@@ -981,7 +1041,9 @@ class DuckDBInterface:
                     try:
                         pf = pq.ParquetFile(path, filesystem=self._fs)
                         nrows_file = pf.metadata.num_rows
-                        row_groups.append((p_start or eff_start or _to_utc_ts(now), p_end or eff_end, nrows_file))
+                        row_groups.append(
+                            (p_start or eff_start or _to_utc_ts(now), p_end or eff_end, nrows_file)
+                        )
                         files_considered += 1
                     except Exception:
                         pass
@@ -1014,7 +1076,7 @@ class DuckDBInterface:
             diagnostics = {
                 "reason": "no_groups_in_window",
                 "window": [str(eff_start), str(eff_end)],
-                "max_rows": max_rows
+                "max_rows": max_rows,
             }
             return eff_start, eff_end, uirm, diagnostics
 
@@ -1089,17 +1151,18 @@ class DuckDBInterface:
         return adjusted_start, adjusted_end, adjusted_uirm or uirm, diagnostics
 
     def read(
-            self,
-            table: str,data_frequency:DataFrequency=DataFrequency.one_m,
-            *,
-            start: Optional[datetime.datetime] = None,
-            end: Optional[datetime.datetime] = None,
-            great_or_equal: bool = True,  # Changed back to boolean
-            less_or_equal: bool = True,  # Changed back to boolean
-            ids: Optional[List[str]] = None,
-            columns: Optional[List[str]] = None,
-            unique_identifier_range_map: Optional[UniqueIdentifierRangeMap] = None,
-            column_range_descriptor: Optional[Dict[str,UniqueIdentifierRangeMap]] = None
+        self,
+        table: str,
+        data_frequency: DataFrequency = DataFrequency.one_m,
+        *,
+        start: datetime.datetime | None = None,
+        end: datetime.datetime | None = None,
+        great_or_equal: bool = True,  # Changed back to boolean
+        less_or_equal: bool = True,  # Changed back to boolean
+        ids: list[str] | None = None,
+        columns: list[str] | None = None,
+        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
+        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
     ) -> pd.DataFrame:
         """
         Reads data from the specified table, with optional filtering.
@@ -1125,8 +1188,8 @@ class DuckDBInterface:
             ValueError: If both `ids` and `unique_identifier_range_map` are provided.
         """
         # Map boolean flags to operator strings internally
-        start_operator = '>=' if great_or_equal else '>'
-        end_operator = '<=' if less_or_equal else '<'
+        start_operator = ">=" if great_or_equal else ">"
+        end_operator = "<=" if less_or_equal else "<"
 
         if ids is not None and unique_identifier_range_map is not None:
             raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
@@ -1136,12 +1199,13 @@ class DuckDBInterface:
             f"ids={ids is not None}, columns={columns}, range_map={unique_identifier_range_map is not None}"
         )
 
-
         if columns is not None:
             table_exists_result = self.table_exists(table)
             df_cols = self.con.execute(f"SELECT * FROM {table} AS _q LIMIT 0").fetch_df()
-            if any([c not in  df_cols.columns for c in columns ]):
-                logger.warning(f"not all Columns '{columns}' are not present in table '{table}'. returning an empty DF")
+            if any([c not in df_cols.columns for c in columns]):
+                logger.warning(
+                    f"not all Columns '{columns}' are not present in table '{table}'. returning an empty DF"
+                )
                 return pd.DataFrame()
 
         cols_select = "*"
@@ -1162,7 +1226,8 @@ class DuckDBInterface:
             where_clauses.append(f"time_index {end_operator} ?")
             params.append(end.replace(tzinfo=None) if end.tzinfo else end)
         if ids:
-            if not isinstance(ids, list): ids = list(ids)
+            if not isinstance(ids, list):
+                ids = list(ids)
             if ids:
                 placeholders = ", ".join("?" for _ in ids)
                 where_clauses.append(f"unique_identifier IN ({placeholders})")
@@ -1173,22 +1238,23 @@ class DuckDBInterface:
                 uid_conditions = ["unique_identifier = ?"]
                 range_params = [uid]
                 # Use operands from map if present, otherwise default to >= and <=
-                s_op = date_info.get('start_date_operand', '>=')
-                e_op = date_info.get('end_date_operand', '<=')
-                if date_info.get('start_date'):
+                s_op = date_info.get("start_date_operand", ">=")
+                e_op = date_info.get("end_date_operand", "<=")
+                if date_info.get("start_date"):
                     uid_conditions.append(f"time_index {s_op} ?")
-                    s_date = date_info['start_date']
+                    s_date = date_info["start_date"]
                     range_params.append(s_date.replace(tzinfo=None) if s_date.tzinfo else s_date)
-                if date_info.get('end_date'):
+                if date_info.get("end_date"):
                     uid_conditions.append(f"time_index {e_op} ?")
-                    e_date = date_info['end_date']
+                    e_date = date_info["end_date"]
                     range_params.append(e_date.replace(tzinfo=None) if e_date.tzinfo else e_date)
                 range_conditions.append(f"({' AND '.join(uid_conditions)})")
                 params.extend(range_params)
             if range_conditions:
                 where_clauses.append(f"({' OR '.join(range_conditions)})")
 
-        if where_clauses: sql_parts.append("WHERE " + " AND ".join(where_clauses))
+        if where_clauses:
+            sql_parts.append("WHERE " + " AND ".join(where_clauses))
         sql_parts.append("ORDER BY time_index")
         query = " ".join(sql_parts)
         logger.debug(f"Executing read query: {query} with params: {params}")
@@ -1208,22 +1274,26 @@ class DuckDBInterface:
                 for col, target_type in type_map.items():
                     try:
                         if target_type == "datetime64[ns, UTC]":
-                            arr =df[col].values
+                            arr = df[col].values
                             arr_ns = arr.astype("datetime64[ns]")
-                            df[col] =pd.Series(
-                                    pd.DatetimeIndex(arr_ns, tz="UTC"),
-                                    index=df.index,
-                                    name=col,
-                                )
+                            df[col] = pd.Series(
+                                pd.DatetimeIndex(arr_ns, tz="UTC"),
+                                index=df.index,
+                                name=col,
+                            )
                         elif target_type == "datetime64[ns]":
-                            df[col] = pd.to_datetime(df[col], errors='coerce')
+                            df[col] = pd.to_datetime(df[col], errors="coerce")
                         else:
-                            if isinstance(target_type, (pd.Int64Dtype, pd.BooleanDtype, pd.StringDtype)):
-                                df[col] = df[col].astype(target_type, errors='ignore')
+                            if isinstance(
+                                target_type, (pd.Int64Dtype, pd.BooleanDtype, pd.StringDtype)
+                            ):
+                                df[col] = df[col].astype(target_type, errors="ignore")
                             else:
-                                df[col] = df[col].astype(target_type, errors='ignore')
+                                df[col] = df[col].astype(target_type, errors="ignore")
                     except Exception as type_e:
-                        logger.warning(f"Could not coerce column '{col}' to type '{target_type}': {type_e}")
+                        logger.warning(
+                            f"Could not coerce column '{col}' to type '{target_type}': {type_e}"
+                        )
 
                 logger.debug(f"Read {len(df)} rows from table '{table}'.")
                 return df
@@ -1261,10 +1331,12 @@ class DuckDBInterface:
             logger.error(f"Failed to drop table/view '{table}': {e}")
             raise
         except Exception as e:
-            logger.exception(f"An unexpected error occurred while dropping table/view '{table}': {e}")
+            logger.exception(
+                f"An unexpected error occurred while dropping table/view '{table}': {e}"
+            )
             raise
 
-    def list_tables(self) -> List[str]:
+    def list_tables(self) -> list[str]:
         """
         Returns names of all tables and views in the main schema.
         """
@@ -1274,7 +1346,6 @@ class DuckDBInterface:
         except duckdb.Error as e:
             logger.error(f"Error listing tables/views in {self.db_path}: {e}")
             return []
-
 
     # ──────────────────────────────────────────────────────────────────────────────
     # Private helpers
@@ -1312,12 +1383,15 @@ class DuckDBInterface:
         # Build CAST list, dropping partition columns
         cols = [(r[0], r[1]) for r in desc_rows if r and r[0] not in partition_cols]
         if not cols:
-            logger.warning(f"_ensure_view: no non-partition columns for '{table}'. Skipping view refresh.")
+            logger.warning(
+                f"_ensure_view: no non-partition columns for '{table}'. Skipping view refresh."
+            )
             return
 
         # Build the list of columns with explicit CASTs to enforce types
-        select_exprs = [f"CAST({qident(name)} AS {coltype}) AS {qident(name)}"
-                        for name, coltype in cols]
+        select_exprs = [
+            f"CAST({qident(name)} AS {coltype}) AS {qident(name)}" for name, coltype in cols
+        ]
         select_list = ",\n       ".join(select_exprs)
 
         # ✅ Key Change 3: Fix the DDL to be syntactically correct and use the robust read_clause.
@@ -1330,12 +1404,13 @@ class DuckDBInterface:
 
         self._execute_transaction(ddl)
 
-    def _partition_path(self, keys: dict,table:str) -> str:
-        parts = [f"{k}={int(v):02d}" if k != "year" else f"{k}={int(v):04d}"
-                 for k, v in keys.items()]
+    def _partition_path(self, keys: dict, table: str) -> str:
+        parts = [
+            f"{k}={int(v):02d}" if k != "year" else f"{k}={int(v):04d}" for k, v in keys.items()
+        ]
         return f"{self.db_path}/{table}/" + "/".join(parts)
 
-    def _partition_keys(self, ts: pd.Series,data_frequency:DataFrequency) -> dict:
+    def _partition_keys(self, ts: pd.Series, data_frequency: DataFrequency) -> dict:
         """Return a dict of partition column → Series."""
         keys = {"year": ts.dt.year.astype(str), "month": ts.dt.month.astype(str)}
         if data_frequency == "minute":
@@ -1358,13 +1433,13 @@ class DuckDBInterface:
             except Exception:
                 pass
             raise
+
     @staticmethod
     def _pandas_to_duck(dtype) -> str:
         """
         Minimal dtype → DuckDB mapping. Extend as needed.
         """
-        if (pd.api.types.is_datetime64_any_dtype(dtype)
-                or pd.api.types.is_datetime64tz_dtype(dtype)):
+        if pd.api.types.is_datetime64_any_dtype(dtype) or pd.api.types.is_datetime64tz_dtype(dtype):
             return "TIMESTAMPTZ"
         if pd.api.types.is_integer_dtype(dtype):
             return "BIGINT"
@@ -1375,7 +1450,7 @@ class DuckDBInterface:
         return "VARCHAR"
 
     @staticmethod
-    def _duck_to_pandas(duck_type: str,data_frequency:DataFrequency):
+    def _duck_to_pandas(duck_type: str, data_frequency: DataFrequency):
         """
         Minimal DuckDB → pandas dtype mapping.
         Returns the dtype object (preferred) so that
@@ -1389,17 +1464,19 @@ class DuckDBInterface:
             # keep the UTC tz-awareness
             return "datetime64[ns, UTC]"
 
-
-        if dt in ("TIMESTAMP", "DATETIME",):
+        if dt in (
+            "TIMESTAMP",
+            "DATETIME",
+        ):
             # keep timezone if present; duckdb returns tz‑aware objects already,
             # so no explicit 'UTC' suffix is needed here.
             return "datetime64[ns]"
         if dt == "DATE":
-            return "datetime64[ns]"          # pandas treats it as midnight
+            return "datetime64[ns]"  # pandas treats it as midnight
 
         # --- integers -------------------------------------------------------
         if dt in ("TINYINT", "SMALLINT", "INTEGER", "INT", "BIGINT"):
-            return pd.Int64Dtype()           # nullable 64‑bit int
+            return pd.Int64Dtype()  # nullable 64‑bit int
 
         # --- floats / numerics ---------------------------------------------
         if dt in ("REAL", "FLOAT", "DOUBLE", "DECIMAL"):
@@ -1407,15 +1484,15 @@ class DuckDBInterface:
 
         # --- booleans -------------------------------------------------------
         if dt == "BOOLEAN":
-            return pd.BooleanDtype()         # nullable boolean
+            return pd.BooleanDtype()  # nullable boolean
 
         # --- everything else ------------------------------------------------
-        return pd.StringDtype()              # pandas‘ native nullable string
+        return pd.StringDtype()  # pandas‘ native nullable string
 
         # ─────────────────────────────────────────────────────────────────────── #
         # 3. OVERNIGHT DEDUP & COMPACTION                                        #
         # ─────────────────────────────────────────────────────────────────────── #
-        def overnight_dedup(self, table: str, date: Optional[datetime.date] = None) -> None:
+        def overnight_dedup(self, table: str, date: datetime.date | None = None) -> None:
             """
             Keep only the newest row per (time_index, unique_identifier)
             for each partition, coalesce small files into one Parquet file.
@@ -1425,15 +1502,21 @@ class DuckDBInterface:
             # --- select partitions to touch ------------------------------------
             base = f"{self.db_path}/{table}"
             selector = fs.FileSelector(base, recursive=True)
-            dirs = {info.path.rpartition("/")[0] for info in self._fs.get_file_info(selector)
-                    if info.type == fs.FileType.File
-                    and info.path.endswith(".parquet")}
+            dirs = {
+                info.path.rpartition("/")[0]
+                for info in self._fs.get_file_info(selector)
+                if info.type == fs.FileType.File and info.path.endswith(".parquet")
+            }
 
             if date:
                 y, m, d = date.year, date.month, date.day
-                dirs = {p for p in dirs if
-                        f"year={y:04d}" in p and f"month={m:02d}" in p
-                        and (data_frequency != "minute" or f"day={d:02d}" in p)}
+                dirs = {
+                    p
+                    for p in dirs
+                    if f"year={y:04d}" in p
+                    and f"month={m:02d}" in p
+                    and (data_frequency != "minute" or f"day={d:02d}" in p)
+                }
 
             for part_path in sorted(dirs):
                 tmp_file = f"{part_path}/compact-{uuid.uuid4().hex}.parquet"

@@ -1,54 +1,47 @@
 # mainsequence/instruments/pricing_models/bond_pricer.py
+
 import QuantLib as ql
-from typing import List, Dict, Any, Optional
-from mainsequence.instruments.data_interface import data_interface
-from mainsequence.instruments.utils import to_ql_date
-import datetime
-import matplotlib.pyplot as plt
 
 
 def _map_daycount(dc: str) -> ql.DayCounter:
-    s = (dc or '').upper()
-    if s.startswith('30/360'):
+    s = (dc or "").upper()
+    if s.startswith("30/360"):
         return ql.Thirty360(ql.Thirty360.USA)
-    if s in ('ACT/365', 'ACT/365F', 'ACTUAL/365', 'ACTUAL/365F'):
+    if s in ("ACT/365", "ACT/365F", "ACTUAL/365", "ACTUAL/365F"):
         return ql.Actual365Fixed()
-    if s in ('ACT/ACT', 'ACTUAL/ACTUAL'):
+    if s in ("ACT/ACT", "ACTUAL/ACTUAL"):
         return ql.ActualActual()
     return ql.Thirty360(ql.Thirty360.USA)
 
 
-
-
-
-
 def create_fixed_rate_bond(
-        calculation_date: ql.Date,
-        face: float,
-        issue_date: ql.Date,
-        maturity_date: ql.Date,
-        coupon_rate: float,
-        coupon_frequency: ql.Period,
-        day_count: ql.DayCounter,
-        calendar: ql.Calendar = ql.TARGET(),
-        business_day_convention: int = ql.Following,  # enums are ints in the Python wrapper
-        settlement_days: int = 2,
-        discount_curve: Optional[ql.YieldTermStructureHandle] = None,
-        schedule: Optional[ql.Schedule] = None,
-
+    calculation_date: ql.Date,
+    face: float,
+    issue_date: ql.Date,
+    maturity_date: ql.Date,
+    coupon_rate: float,
+    coupon_frequency: ql.Period,
+    day_count: ql.DayCounter,
+    calendar: ql.Calendar = ql.TARGET(),
+    business_day_convention: int = ql.Following,  # enums are ints in the Python wrapper
+    settlement_days: int = 2,
+    discount_curve: ql.YieldTermStructureHandle | None = None,
+    schedule: ql.Schedule | None = None,
 ) -> ql.FixedRateBond:
     """Construct and engine-attach."""
     ql.Settings.instance().evaluationDate = calculation_date
 
-
-
-
     # --------- Schedule ----------
     if schedule is None:
         schedule = ql.Schedule(
-            issue_date, maturity_date, coupon_frequency, calendar,
-            business_day_convention, business_day_convention,
-            ql.DateGeneration.Forward, False
+            issue_date,
+            maturity_date,
+            coupon_frequency,
+            calendar,
+            business_day_convention,
+            business_day_convention,
+            ql.DateGeneration.Forward,
+            False,
         )
     else:
         asof = ql.Settings.instance().evaluationDate
@@ -57,7 +50,7 @@ def create_fixed_rate_bond(
         has_periods_left = (n >= 2) and any(schedule.dates()[i + 1] > asof for i in range(n - 1))
         if not has_periods_left:
             # Redemption-only: price as a zero-coupon bond (par redemption by default).
-            maturity = schedule.dates()[n-1] if n > 0 else maturity_date
+            maturity = schedule.dates()[n - 1] if n > 0 else maturity_date
             zcb = ql.ZeroCouponBond(
                 settlement_days,
                 calendar,  # use the same calendar as above
@@ -65,11 +58,10 @@ def create_fixed_rate_bond(
                 maturity,  # maturity date
                 business_day_convention,  # payment convention (for settlement)
                 100.0,  # redemption (% of face)
-                issue_date  # issue date
+                issue_date,  # issue date
             )
             zcb.setPricingEngine(ql.DiscountingBondEngine(discount_curve))
             return zcb
-
 
     bond = ql.FixedRateBond(settlement_days, face, schedule, [coupon_rate], day_count)
     bond.setPricingEngine(ql.DiscountingBondEngine(discount_curve))
@@ -77,22 +69,22 @@ def create_fixed_rate_bond(
 
 
 def create_floating_rate_bond_with_curve(
-        *,
-        calculation_date: ql.Date,
-        face: float,
-        issue_date: ql.Date,
-        maturity_date: ql.Date,
-        floating_rate_index: ql.IborIndex,
-        spread: float = 0.0,
-        coupon_frequency: ql.Period | None = None,
-        day_count: ql.DayCounter | None = None,
-        calendar: ql.Calendar | None = None,
-        business_day_convention: int = ql.Following,
-        settlement_days: int = 2,
-        curve: ql.YieldTermStructureHandle,
-        seed_past_fixings_from_curve: bool = True,
-        discount_curve: Optional[ql.YieldTermStructureHandle] = None,
-        schedule: Optional[ql.Schedule] = None,
+    *,
+    calculation_date: ql.Date,
+    face: float,
+    issue_date: ql.Date,
+    maturity_date: ql.Date,
+    floating_rate_index: ql.IborIndex,
+    spread: float = 0.0,
+    coupon_frequency: ql.Period | None = None,
+    day_count: ql.DayCounter | None = None,
+    calendar: ql.Calendar | None = None,
+    business_day_convention: int = ql.Following,
+    settlement_days: int = 2,
+    curve: ql.YieldTermStructureHandle,
+    seed_past_fixings_from_curve: bool = True,
+    discount_curve: ql.YieldTermStructureHandle | None = None,
+    schedule: ql.Schedule | None = None,
 ) -> ql.FloatingRateBond:
     """
     Build/prices a floating-rate bond like your swap-with-curve:
@@ -131,9 +123,14 @@ def create_floating_rate_bond_with_curve(
     # --------- Schedule ----------
     if schedule is None:
         schedule = ql.Schedule(
-            eff_start, eff_end, freq, cal,
-            business_day_convention, business_day_convention,
-            ql.DateGeneration.Forward, False
+            eff_start,
+            eff_end,
+            freq,
+            cal,
+            business_day_convention,
+            business_day_convention,
+            ql.DateGeneration.Forward,
+            False,
         )
     else:
         asof = ql.Settings.instance().evaluationDate
@@ -142,7 +139,7 @@ def create_floating_rate_bond_with_curve(
         has_periods_left = (n >= 2) and any(schedule.dates()[i + 1] > asof for i in range(n - 1))
         if not has_periods_left:
             # Redemption-only: price as a zero-coupon bond (par redemption by default).
-            maturity = schedule.dates()[n-1] if n > 0 else eff_end
+            maturity = schedule.dates()[n - 1] if n > 0 else eff_end
             zcb = ql.ZeroCouponBond(
                 settlement_days,
                 cal,  # use the same calendar as above
@@ -150,11 +147,10 @@ def create_floating_rate_bond_with_curve(
                 maturity,  # maturity date
                 business_day_convention,  # payment convention (for settlement)
                 100.0,  # redemption (% of face)
-                issue_date  # issue date
+                issue_date,  # issue date
             )
             zcb.setPricingEngine(ql.DiscountingBondEngine(curve))
             return zcb
-
 
     # --------- Instrument ----------
     try:
@@ -168,15 +164,13 @@ def create_floating_rate_bond_with_curve(
             pricing_index.fixingDays(),
             [1.0],  # gearings
             [spread],  # spreads
-            [], [],  # caps, floors
+            [],
+            [],  # caps, floors
             False,  # inArrears
             100.0,  # redemption
-            issue_date
+            issue_date,
         )
     except Exception as e:
         raise e
 
-
-
     return bond
-

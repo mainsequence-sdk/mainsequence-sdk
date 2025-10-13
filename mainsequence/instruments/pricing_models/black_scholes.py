@@ -2,11 +2,11 @@ import QuantLib as ql
 
 
 def create_bsm_model(
-        calculation_date: ql.Date,
-        spot_price: float,
-        volatility: float,
-        risk_free_rate: float,
-        dividend_yield: float
+    calculation_date: ql.Date,
+    spot_price: float,
+    volatility: float,
+    risk_free_rate: float,
+    dividend_yield: float,
 ) -> ql.BlackScholesMertonProcess:
     """
     Sets up the Black-Scholes-Merton process in QuantLib.
@@ -42,8 +42,6 @@ def create_bsm_model(
     )
 
     # Create the Black-Scholes-Merton process
-    bsm_process = ql.BlackScholesMertonProcess(
-        underlying_handle, dividend_ts, flat_ts, flat_vol_ts
-    )
+    bsm_process = ql.BlackScholesMertonProcess(underlying_handle, dividend_ts, flat_ts, flat_vol_ts)
 
     return bsm_process

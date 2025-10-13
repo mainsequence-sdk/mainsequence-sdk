@@ -1,3 +1,3 @@
-from .position import Position, PositionLine
-from .bond import FloatingRateBond, FixedRateBond
 from .base_instrument import InstrumentModel as Instrument
+from .bond import FixedRateBond, FloatingRateBond
+from .position import Position, PositionLine

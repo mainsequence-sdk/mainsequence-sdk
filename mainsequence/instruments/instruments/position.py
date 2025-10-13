@@ -2,33 +2,33 @@ from __future__ import annotations
 
 import datetime
 from collections import defaultdict
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any
 
+import numpy as np
+import pandas as pd
 from pydantic import BaseModel, Field, field_validator
 
-from .base_instrument import InstrumentModel as Instrument  # runtime_checkable Protocol: requires .price() -> float
+from .base_instrument import (
+    InstrumentModel as Instrument,  # runtime_checkable Protocol: requires .price() -> float
+)
 
-from typing import Type, Mapping
-
-from .european_option import EuropeanOption
-from .vanilla_fx_option import VanillaFXOption
-from .knockout_fx_option import KnockOutFXOption
-from .bond import FixedRateBond
-from .bond import FloatingRateBond
-from .interest_rate_swap import InterestRateSwap
-import pandas as pd
-import numpy as np
-Instrument._DEFAULT_REGISTRY.update({
-    "EuropeanOption":    globals().get("EuropeanOption"),
-    "VanillaFXOption":   globals().get("VanillaFXOption"),
-    "KnockOutFXOption":  globals().get("KnockOutFXOption"),
-    "FixedRateBond":     globals().get("FixedRateBond"),
-    "FloatingRateBond":  globals().get("FloatingRateBond"),
-    "InterestRateSwap":  globals().get("InterestRateSwap"),
-})
+Instrument._DEFAULT_REGISTRY.update(
+    {
+        "EuropeanOption": globals().get("EuropeanOption"),
+        "VanillaFXOption": globals().get("VanillaFXOption"),
+        "KnockOutFXOption": globals().get("KnockOutFXOption"),
+        "FixedRateBond": globals().get("FixedRateBond"),
+        "FloatingRateBond": globals().get("FloatingRateBond"),
+        "InterestRateSwap": globals().get("InterestRateSwap"),
+    }
+)
 # Optionally: prune any Nones if some classes aren't imported yet
-Instrument._DEFAULT_REGISTRY = {k: v for k, v in Instrument._DEFAULT_REGISTRY.items() if v is not None}
+Instrument._DEFAULT_REGISTRY = {
+    k: v for k, v in Instrument._DEFAULT_REGISTRY.items() if v is not None
+}
+
 
 @dataclass(frozen=True)
 class PositionLine:
@@ -36,9 +36,10 @@ class PositionLine:
     A single position: an instrument and the number of units held.
     Units may be negative for short positions.
     """
+
     instrument: Instrument
     units: float
-    extra_market_info:dict = None
+    extra_market_info: dict = None
 
     def unit_price(self) -> float:
         return float(self.instrument.price())
@@ -59,32 +60,29 @@ class Position(BaseModel):
     - `get_greeks()` sums greeks from instruments that expose `get_greeks()`.
     """
 
-    lines: List[PositionLine] = Field(default_factory=list)
-    position_date:Optional[datetime.datetime]=None
+    lines: list[PositionLine] = Field(default_factory=list)
+    position_date: datetime.datetime | None = None
     model_config = {"arbitrary_types_allowed": True}
-
-
-
 
     @classmethod
     def from_json_dict(
-            cls,
-            data: Dict[str, Any],
-            registry: Optional[Mapping[str, Type]] = None
-    ) -> "Position":
+        cls, data: dict[str, Any], registry: Mapping[str, type] | None = None
+    ) -> Position:
         # default registry with your known instruments
 
-        lines: List[PositionLine] = []
+        lines: list[PositionLine] = []
         for item in data.get("lines", []):
             inst = Instrument.rebuild(item, registry=registry)
             units = item["units"]
             extra_market_info = item.get("extra_market_info")
-            lines.append(PositionLine(instrument=inst, units=units, extra_market_info=extra_market_info))
+            lines.append(
+                PositionLine(instrument=inst, units=units, extra_market_info=extra_market_info)
+            )
         return cls(lines=lines)
 
         # ---------------- JSON ENCODING ----------------
 
-    def _instrument_payload(self, inst: Any) -> Dict[str, Any]:
+    def _instrument_payload(self, inst: Any) -> dict[str, Any]:
         """
         Robustly obtain a JSON-serializable dict from an instrument.
         Tries, in order: to_json_dict(), to_json() (parse), model_dump(mode="json").
@@ -120,7 +118,7 @@ class Position(BaseModel):
             f"Provide to_json_dict()/to_json() or a Pydantic model."
         )
 
-    def to_json_dict(self) -> Dict[str, Any]:
+    def to_json_dict(self) -> dict[str, Any]:
         """
         Serialize the position as:
         {
@@ -133,22 +131,24 @@ class Position(BaseModel):
         out_lines: list[dict] = []
         for line in self.lines:
             inst = line.instrument
-            out_lines.append({
-                "instrument_type": type(inst).__name__,
-                "instrument": self._instrument_payload(inst),
-                "units": float(line.units),
-                "extra_market_info":line.extra_market_info
-            })
+            out_lines.append(
+                {
+                    "instrument_type": type(inst).__name__,
+                    "instrument": self._instrument_payload(inst),
+                    "units": float(line.units),
+                    "extra_market_info": line.extra_market_info,
+                }
+            )
         return {"lines": out_lines}
 
     # ---- validation ---------------------------------------------------------
     @field_validator("lines")
     @classmethod
-    def _validate_lines(cls, v: List[PositionLine]) -> List[PositionLine]:
+    def _validate_lines(cls, v: list[PositionLine]) -> list[PositionLine]:
         for i, line in enumerate(v):
             inst = line.instrument
             # Accept anything implementing the Instrument Protocol (price() -> float)
-            if not hasattr(inst, "price") or not callable(getattr(inst, "price")):
+            if not hasattr(inst, "price") or not callable(inst.price):
                 raise TypeError(
                     f"lines[{i}].instrument must implement price() -> float; got {type(inst).__name__}"
                 )
@@ -159,7 +159,7 @@ class Position(BaseModel):
         """Append a new position line."""
         self.lines.append(PositionLine(instrument=instrument, units=units))
 
-    def extend(self, items: Iterable[Tuple[Instrument, float]]) -> None:
+    def extend(self, items: Iterable[tuple[Instrument, float]]) -> None:
         """Append many (instrument, units) items."""
         for inst, qty in items:
             self.add(inst, qty)
@@ -169,12 +169,12 @@ class Position(BaseModel):
         """Total market value: Σ units * instrument.price()."""
         return float(sum(line.market_value() for line in self.lines))
 
-    def price_breakdown(self) -> List[Dict[str, Any]]:
+    def price_breakdown(self) -> list[dict[str, Any]]:
         """
         Line-by-line price decomposition.
         Returns: [{instrument, units, unit_price, market_value}, ...]
         """
-        out: List[Dict[str, Any]] = []
+        out: list[dict[str, Any]] = []
         for line in self.lines:
             out.append(
                 {
@@ -187,7 +187,7 @@ class Position(BaseModel):
         return out
 
     # ---- cashflows ----------------------------------------------------------
-    def get_cashflows(self, aggregate: bool = False) -> Dict[str, List[Dict[str, Any]]]:
+    def get_cashflows(self, aggregate: bool = False) -> dict[str, list[dict[str, Any]]]:
         """
         Merge cashflows from all instruments that implement `get_cashflows()`.
 
@@ -197,7 +197,7 @@ class Position(BaseModel):
 
         If aggregate=True, amounts are summed by payment date within each leg.
         """
-        combined: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+        combined: dict[str, list[dict[str, Any]]] = defaultdict(list)
 
         for idx, line in enumerate(self.lines):
             inst = line.instrument
@@ -227,24 +227,24 @@ class Position(BaseModel):
             return dict(combined)
 
         # Aggregate amounts by payment date (fallback to 'date' or 'fixing_date' if needed)
-        aggregated: Dict[str, List[Dict[str, Any]]] = {}
+        aggregated: dict[str, list[dict[str, Any]]] = {}
         for leg, items in combined.items():
-            buckets: Dict[datetime.date, float] = defaultdict(float)
-            exemplars: Dict[datetime.date, Dict[str, Any]] = {}
+            buckets: dict[datetime.date, float] = defaultdict(float)
+            exemplars: dict[datetime.date, dict[str, Any]] = {}
 
             for cf in items:
                 # identify a date field
-                dt = (
-                    cf.get("payment_date")
-                    or cf.get("date")
-                    or cf.get("fixing_date")
-                )
+                dt = cf.get("payment_date") or cf.get("date") or cf.get("fixing_date")
                 if isinstance(dt, datetime.date):
                     amount = float(cf.get("amount", 0.0))
                     buckets[dt] += amount
                     # keep exemplar fields for output ordering/context
                     if dt not in exemplars:
-                        exemplars[dt] = {k: v for k, v in cf.items() if k not in {"amount", "units", "position_index"}}
+                        exemplars[dt] = {
+                            k: v
+                            for k, v in cf.items()
+                            if k not in {"amount", "units", "position_index"}
+                        }
                 # if no usable date, just pass through (unaggregated)
                 else:
                     buckets_key = None  # sentinel
@@ -252,7 +252,7 @@ class Position(BaseModel):
                     buckets[datetime.date.today()] += float(cf.get("amount", 0.0))
 
             # build sorted list
-            leg_rows: List[Dict[str, Any]] = []
+            leg_rows: list[dict[str, Any]] = []
             for dt, amt in sorted(buckets.items(), key=lambda kv: kv[0]):
                 row = {"payment_date": dt, "amount": amt}
                 # attach exemplar metadata if any
@@ -265,14 +265,14 @@ class Position(BaseModel):
         return aggregated
 
     # ---- greeks (optional) --------------------------------------------------
-    def get_greeks(self) -> Dict[str, float]:
+    def get_greeks(self) -> dict[str, float]:
         """
         Aggregate greeks from instruments that implement `get_greeks()`.
 
         For each instrument i with dictionary Gi and units ui, returns Σ ui * Gi[key].
         Keys not common across all instruments are included on a best-effort basis.
         """
-        totals: Dict[str, float] = defaultdict(float)
+        totals: dict[str, float] = defaultdict(float)
         for line in self.lines:
             inst = line.instrument
             getg = getattr(inst, "get_greeks", None)
@@ -286,20 +286,20 @@ class Position(BaseModel):
 
     # ---- convenience constructors -------------------------------------------
     @classmethod
-    def from_single(cls, instrument: Instrument, units: float = 1.0) -> "Position":
+    def from_single(cls, instrument: Instrument, units: float = 1.0) -> Position:
         return cls(lines=[PositionLine(instrument=instrument, units=units)])
 
     # Mao interface
 
-    def units_by_id(self) -> Dict[str, float]:
+    def units_by_id(self) -> dict[str, float]:
         """Map instrument id -> units."""
         return {line.instrument.content_hash(): float(line.units) for line in self.lines}
 
-    def npvs_by_id(self, *, apply_units: bool = True) -> Dict[str, float]:
+    def npvs_by_id(self, *, apply_units: bool = True) -> dict[str, float]:
         """
         Return PVs per instrument id. If apply_units=True, PVs are already scaled by line.units.
         """
-        out: Dict[str, float] = {}
+        out: dict[str, float] = {}
         for line in self.lines:
             ins = line.instrument
             ins_id = ins.content_hash()
@@ -309,10 +309,9 @@ class Position(BaseModel):
             out[ins_id] = pv
         return out
 
-    def cashflows_by_id(self,
-                        cutoff: Optional[datetime.date] = None,
-                        *,
-                        apply_units: bool = True) -> pd.DataFrame:
+    def cashflows_by_id(
+        self, cutoff: datetime.date | None = None, *, apply_units: bool = True
+    ) -> pd.DataFrame:
         """
         Aggregate cashflows across all lines.
 
@@ -388,12 +387,22 @@ class Position(BaseModel):
                 flows = g()
                 flat = []
                 for leg, items in (flows or {}).items():
-                    for cf in (items or []):
-                        pay = cf.get("payment_date") or cf.get("date") or cf.get("pay_date") or cf.get("fixing_date")
+                    for cf in items or []:
+                        pay = (
+                            cf.get("payment_date")
+                            or cf.get("date")
+                            or cf.get("pay_date")
+                            or cf.get("fixing_date")
+                        )
                         amt = cf.get("amount")
                         if pay is None or amt is None:
                             continue
-                        flat.append({"payment_date": pd.to_datetime(pay).date(), "amount": float(amt) * units})
+                        flat.append(
+                            {
+                                "payment_date": pd.to_datetime(pay).date(),
+                                "amount": float(amt) * units,
+                            }
+                        )
                 if flat:
                     rows.append(pd.DataFrame(flat))
 
@@ -412,7 +421,9 @@ class Position(BaseModel):
             tot += float(line.units) * float(line.instrument.price())
         return float(tot)
 
-    def position_carry_to_cutoff(self, valuation_date: datetime.date, cutoff: datetime.date) -> float:
+    def position_carry_to_cutoff(
+        self, valuation_date: datetime.date, cutoff: datetime.date
+    ) -> float:
         """
         Carry = Σ net cashflow amounts with valuation_date < payment_date ≤ cutoff.
         Positive = inflow to the bank; negative = outflow.
@@ -423,11 +434,14 @@ class Position(BaseModel):
         mask = (cf["payment_date"] > valuation_date) & (cf["payment_date"] <= cutoff)
         return float(cf.loc[mask, "amount"].sum())
 
-def npv_table(npv_base: Dict[str, float],
-              npv_bumped: Optional[Dict[str, float]] = None,
-              units: Optional[Dict[str, float]] = None,
-              *,
-              include_total: bool = True) -> pd.DataFrame:
+
+def npv_table(
+    npv_base: dict[str, float],
+    npv_bumped: dict[str, float] | None = None,
+    units: dict[str, float] | None = None,
+    *,
+    include_total: bool = True,
+) -> pd.DataFrame:
     """
     Build a raw (unformatted) NPV table for programmatic use.
 
@@ -438,9 +452,15 @@ def npv_table(npv_base: Dict[str, float],
     for ins_id in ids:
         base = float(npv_base.get(ins_id, np.nan))
         bumped = float(npv_bumped.get(ins_id, np.nan)) if npv_bumped is not None else np.nan
-        delta = bumped - base if npv_bumped is not None and np.isfinite(base) and np.isfinite(bumped) else np.nan
+        delta = (
+            bumped - base
+            if npv_bumped is not None and np.isfinite(base) and np.isfinite(bumped)
+            else np.nan
+        )
         u = float(units.get(ins_id, np.nan)) if units else np.nan
-        rows.append({"instrument": ins_id, "units": u, "base": base, "bumped": bumped, "delta": delta})
+        rows.append(
+            {"instrument": ins_id, "units": u, "base": base, "bumped": bumped, "delta": delta}
+        )
 
     df = pd.DataFrame(rows)
 
@@ -456,14 +476,17 @@ def npv_table(npv_base: Dict[str, float],
 
     return df
 
-def portfolio_stats(position, bumped_position, valuation_date: datetime.date, cutoff: datetime.date):
+
+def portfolio_stats(
+    position, bumped_position, valuation_date: datetime.date, cutoff: datetime.date
+):
     """
     Returns a dict with base/bumped NPV and Carry to cutoff, plus deltas.
     """
-    npv_base  = position.position_total_npv()
-    npv_bump  = bumped_position.position_total_npv()
-    carry_base = position.position_carry_to_cutoff( valuation_date, cutoff)
-    carry_bump = bumped_position.position_carry_to_cutoff( valuation_date, cutoff)
+    npv_base = position.position_total_npv()
+    npv_bump = bumped_position.position_total_npv()
+    carry_base = position.position_carry_to_cutoff(valuation_date, cutoff)
+    carry_bump = bumped_position.position_carry_to_cutoff(valuation_date, cutoff)
 
     return {
         "npv_base": npv_base,

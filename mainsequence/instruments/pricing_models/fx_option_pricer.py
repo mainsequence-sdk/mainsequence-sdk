@@ -1,17 +1,18 @@
 import QuantLib as ql
-from mainsequence.instruments.data_interface import data_interface, DateInfo
+
+from mainsequence.instruments.data_interface import DateInfo, data_interface
 
 
 def create_fx_garman_kohlhagen_model(
-        calculation_date: ql.Date,
-        spot_fx_rate: float,
-        volatility: float,
-        domestic_rate: float,
-        foreign_rate: float
+    calculation_date: ql.Date,
+    spot_fx_rate: float,
+    volatility: float,
+    domestic_rate: float,
+    foreign_rate: float,
 ) -> ql.BlackScholesMertonProcess:
     """
     Sets up the Garman-Kohlhagen process for FX options in QuantLib.
-    
+
     The Garman-Kohlhagen model is essentially Black-Scholes where:
     - The underlying is the FX spot rate
     - The "dividend yield" is replaced by the foreign risk-free rate
@@ -51,9 +52,7 @@ def create_fx_garman_kohlhagen_model(
     )
 
     # Create the Garman-Kohlhagen process (using BlackScholesMertonProcess)
-    gk_process = ql.BlackScholesMertonProcess(
-        spot_handle, foreign_ts, domestic_ts, vol_ts
-    )
+    gk_process = ql.BlackScholesMertonProcess(spot_handle, foreign_ts, domestic_ts, vol_ts)
 
     return gk_process
 
@@ -61,30 +60,30 @@ def create_fx_garman_kohlhagen_model(
 def get_fx_market_data(currency_pair: str, calculation_date) -> dict:
     """
     Fetches FX market data for a given currency pair.
-    
+
     Args:
         currency_pair: Currency pair in format "EURUSD", "GBPUSD", etc.
         calculation_date: The calculation date for market data
-        
+
     Returns:
         Dictionary containing spot rate, volatility, domestic rate, and foreign rate
     """
     # Extract domestic and foreign currencies from pair
     if len(currency_pair) != 6:
         raise ValueError("Currency pair must be 6 characters (e.g., 'EURUSD')")
-    
+
     foreign_ccy = currency_pair[:3]  # First 3 characters
     domestic_ccy = currency_pair[3:]  # Last 3 characters
-    
+
     # Fetch market data using the data interface
     asset_range_map = {currency_pair: DateInfo(start_date=calculation_date)}
     market_data = data_interface.get_historical_data("fx_options", asset_range_map)
-    
+
     return {
         "spot_fx_rate": market_data["spot_fx_rate"],
         "volatility": market_data["volatility"],
         "domestic_rate": market_data["domestic_rate"],
         "foreign_rate": market_data["foreign_rate"],
         "foreign_currency": foreign_ccy,
-        "domestic_currency": domestic_ccy
+        "domestic_currency": domestic_ccy,
     }

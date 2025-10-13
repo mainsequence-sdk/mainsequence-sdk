@@ -1,28 +1,33 @@
 import copy
-from datetime import datetime
-from typing import Union, Dict
 from enum import Enum
+from typing import Union
 
 import numpy as np
 import pandas as pd
-import pytz
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression
 from tqdm import tqdm
 
-from mainsequence.client import AssetCategory, Asset, MARKETS_CONSTANTS
-from mainsequence.virtualfundbuilder import TIMEDELTA
-from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import get_interpolated_prices_timeseries
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase, register_signal_class
-from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from mainsequence.client import MARKETS_CONSTANTS, Asset, AssetCategory
 from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.virtualfundbuilder import TIMEDELTA
+from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
+    get_interpolated_prices_timeseries,
+)
+from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+    WeightsBase,
+    register_signal_class,
+)
 
 
 class TrackingStrategy(Enum):
     ELASTIC_NET = "elastic_net"
     LASSO = "lasso"
 
+
 class TrackingStrategyConfiguration(VFBConfigBaseModel):
-    configuration: Dict = {"alpha": 0, "l1_ratio": 0}
+    configuration: dict = {"alpha": 0, "l1_ratio": 0}
+
 
 def rolling_pca_betas(X, window, n_components=5, *args, **kwargs):
     """
@@ -42,7 +47,7 @@ def rolling_pca_betas(X, window, n_components=5, *args, **kwargs):
 
     # Loop over each rolling window
     for i in tqdm(range(window, len(X)), desc="Performing rolling PCA"):
-        X_window = X.iloc[i - window:i]
+        X_window = X.iloc[i - window : i]
 
         # Perform PCA on the windowed data
         pca = PCA(n_components=n_components)
@@ -58,7 +63,9 @@ def rolling_pca_betas(X, window, n_components=5, *args, **kwargs):
         eigenvectors_transposed = eigenvectors.T  # Shape: (n_assets, n_components)
 
         # Normalize the eigenvectors so that sum of absolute values = 1 for each component
-        weights_normalized = eigenvectors_transposed / np.sum(np.abs(eigenvectors_transposed), axis=0)
+        weights_normalized = eigenvectors_transposed / np.sum(
+            np.abs(eigenvectors_transposed), axis=0
+        )
 
         # Append the normalized weights (betas) for this window
         betas.append(weights_normalized)
@@ -89,11 +96,11 @@ def rolling_lasso_regression(y, X, window, alpha=1.0, *args, **kwargs):
         null_xs = X.isnull().sum()
         null_xs = null_xs[null_xs > 0]
         symbols_to_zero = None
-        X_window = X.iloc[i - window:i]
+        X_window = X.iloc[i - window : i]
         if null_xs.shape[0] > 0:
             symbols_to_zero = null_xs.index.to_list()
             X_window = X_window[[c for c in X_window.columns if c not in symbols_to_zero]]
-        y_window = y.iloc[i - window:i]
+        y_window = y.iloc[i - window : i]
 
         # Fit the Lasso model
         try:
@@ -131,8 +138,8 @@ def rolling_elastic_net(y, X, window, alpha=1.0, l1_ratio=0.5):
     enet = ElasticNet(alpha=alpha, l1_ratio=l1_ratio, fit_intercept=False)
 
     for i in tqdm(range(window, len(y)), desc="Building rolling regression"):
-        X_window = X.iloc[i - window:i]
-        y_window = y.iloc[i - window:i]
+        X_window = X.iloc[i - window : i]
+        y_window = y.iloc[i - window : i]
 
         # Fit the ElasticNet model
         enet.fit(X_window, y_window)
@@ -141,6 +148,7 @@ def rolling_elastic_net(y, X, window, alpha=1.0, l1_ratio=0.5):
         betas.append(enet.coef_)
 
     return np.array(betas)
+
 
 @register_signal_class(register_in_agent=True)
 class ETFReplicator(WeightsBase, DataNode):
@@ -176,8 +184,10 @@ class ETFReplicator(WeightsBase, DataNode):
         self.tracking_strategy = tracking_strategy
         self.tracking_strategy_configuration = tracking_strategy_configuration
 
-    def get_asset_list(self) -> Union[None, list]:
-        asset_category = AssetCategory.get(unique_identifier=self.assets_configuration.assets_category_unique_id)
+    def get_asset_list(self) -> None | list:
+        asset_category = AssetCategory.get(
+            unique_identifier=self.assets_configuration.assets_category_unique_id
+        )
         self.price_assets = Asset.filter(id__in=asset_category.assets)
         self.etf_asset = Asset.get(
             ticker=self.etf_ticker,
@@ -187,7 +197,7 @@ class ETFReplicator(WeightsBase, DataNode):
         )
         return self.price_assets + [self.etf_asset]
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
             "bars_ts": self.bars_ts,
             "etf_bars_ts": self.etf_bars_ts,
@@ -233,7 +243,9 @@ class ETFReplicator(WeightsBase, DataNode):
 
     def update(self) -> pd.DataFrame:
         if self.update_statistics.max_time_index_value:
-            prices_start_date = self.update_statistics.max_time_index_value - pd.Timedelta(days=self.in_window)
+            prices_start_date = self.update_statistics.max_time_index_value - pd.Timedelta(
+                days=self.in_window
+            )
         else:
             prices_start_date = self.OFFSET_START - pd.Timedelta(days=self.in_window)
 

@@ -1,32 +1,34 @@
 import datetime
-from typing import Dict, Optional, TypedDict, Any
-import random
-from mainsequence.instruments.utils import to_ql_date
-import mainsequence.client as msc
-import QuantLib as ql
 import os
-import pandas as pd
+import random
 from pathlib import Path
+from typing import Any, TypedDict
 
+import pandas as pd
+import QuantLib as ql
 
+import mainsequence.client as msc
+from mainsequence.instruments.utils import to_ql_date
 
-DISCOUNT_CURVES_TABLE=msc.Constant.get_value(name="DISCOUNT_CURVES_TABLE")
+DISCOUNT_CURVES_TABLE = msc.Constant.get_value(name="DISCOUNT_CURVES_TABLE")
 REFERENCE_RATES_FIXING_TABLE = msc.Constant.get_value(name="REFERENCE_RATES_FIXING_TABLE")
 
 assert DISCOUNT_CURVES_TABLE is not None, "DISCOUNT_CURVES_TABLE not found in constants"
-assert REFERENCE_RATES_FIXING_TABLE is not None, "REFERENCE_RATES_FIXING_TABLE not found in constants"
-
+assert (
+    REFERENCE_RATES_FIXING_TABLE is not None
+), "REFERENCE_RATES_FIXING_TABLE not found in constants"
 
 
 class DateInfo(TypedDict, total=False):
     """Defines the date range for a data query."""
-    start_date: Optional[datetime.datetime]
-    start_date_operand: Optional[str]
-    end_date: Optional[datetime.datetime]
-    end_date_operand: Optional[str]
+
+    start_date: datetime.datetime | None
+    start_date_operand: str | None
+    end_date: datetime.datetime | None
+    end_date_operand: str | None
 
 
-UniqueIdentifierRangeMap = Dict[str, DateInfo]
+UniqueIdentifierRangeMap = dict[str, DateInfo]
 
 
 class MockDataInterface:
@@ -38,8 +40,9 @@ class MockDataInterface:
     """
 
     @staticmethod
-    def get_historical_fixings(index_name: str, start_date: datetime.date, end_date: datetime.date) -> Dict[
-        datetime.date, float]:
+    def get_historical_fixings(
+        index_name: str, start_date: datetime.date, end_date: datetime.date
+    ) -> dict[datetime.date, float]:
         """
         Simulates fetching historical index fixings from a database.
 
@@ -48,13 +51,13 @@ class MockDataInterface:
 
         # Dynamically select the calendar based on the index name
         calendar = ql.TARGET()  # Default calendar
-        if 'USDLibor' in index_name:
+        if "USDLibor" in index_name:
             calendar = ql.UnitedKingdom()
             print("Using UnitedKingdom calendar for LIBOR.")
-        elif 'Euribor' in index_name:
+        elif "Euribor" in index_name:
             calendar = ql.TARGET()  # TARGET is the standard for EUR rates
             print("Using TARGET calendar for Euribor.")
-        elif 'SOFR' in index_name:
+        elif "SOFR" in index_name:
             calendar = ql.UnitedStates(ql.UnitedStates.SOFR)
             print("Using UnitedStates.SOFR calendar for SOFR.")
         elif index_name == "TIIE28":
@@ -71,8 +74,7 @@ class MockDataInterface:
             fixings["rate"] = fixings["rate"] / 100
             return fixings.set_index("date")["rate"].to_dict()
 
-
-        elif 'TIIE' in index_name or 'F-TIIE' in index_name:
+        elif "TIIE" in index_name or "F-TIIE" in index_name:
             raise Exception("Unrecognized index name")
 
         print("---------------------\n")
@@ -104,7 +106,7 @@ class MockDataInterface:
         Returns:
             A dictionary containing mock market data.
         """
-        print(f"--- MOCK DATA API ---")
+        print("--- MOCK DATA API ---")
         print(f"Fetching data from table '{table_name}' for assets: {list(asset_range_map.keys())}")
         print("---------------------\n")
 
@@ -115,7 +117,7 @@ class MockDataInterface:
                     "spot_price": 175.50,
                     "volatility": 0.20,
                     "dividend_yield": 0.015,
-                    "risk_free_rate": 0.04
+                    "risk_free_rate": 0.04,
                 }
             }
             if asset_ticker in mock_data:
@@ -128,13 +130,13 @@ class MockDataInterface:
             # This includes short-term deposit rates and longer-term swap rates.
             return {
                 "curve_nodes": [
-                    {'type': 'deposit', 'tenor': '3M', 'rate': 0.048},
-                    {'type': 'deposit', 'tenor': '6M', 'rate': 0.050},
-                    {'type': 'swap', 'tenor': '1Y', 'rate': 0.052},
-                    {'type': 'swap', 'tenor': '2Y', 'rate': 0.054},
-                    {'type': 'swap', 'tenor': '3Y', 'rate': 0.055},
-                    {'type': 'swap', 'tenor': '5Y', 'rate': 0.056},
-                    {'type': 'swap', 'tenor': '10Y', 'rate': 0.057},
+                    {"type": "deposit", "tenor": "3M", "rate": 0.048},
+                    {"type": "deposit", "tenor": "6M", "rate": 0.050},
+                    {"type": "swap", "tenor": "1Y", "rate": 0.052},
+                    {"type": "swap", "tenor": "2Y", "rate": 0.054},
+                    {"type": "swap", "tenor": "3Y", "rate": 0.055},
+                    {"type": "swap", "tenor": "5Y", "rate": 0.056},
+                    {"type": "swap", "tenor": "10Y", "rate": 0.057},
                 ]
             }
         elif table_name == "discount_bond_curve":
@@ -148,18 +150,52 @@ class MockDataInterface:
                     {"type": "zcb", "days_to_maturity": 180, "yield": 0.0395},
                     {"type": "zcb", "days_to_maturity": 270, "yield": 0.0405},
                     {"type": "zcb", "days_to_maturity": 360, "yield": 0.0410},
-
                     # --- Coupon bond section (>= 2Y) ---
-                    {"type": "bond", "days_to_maturity": 730, "coupon": 0.0425, "clean_price": 99.20,
-                     "dirty_price": 99.45, "frequency": "6M", "day_count": "30/360"},
-                    {"type": "bond", "days_to_maturity": 1095, "coupon": 0.0440, "clean_price": 98.85,
-                     "dirty_price": 99.10, "frequency": "6M", "day_count": "30/360"},
-                    {"type": "bond", "days_to_maturity": 1825, "coupon": 0.0475, "clean_price": 98.10,
-                     "dirty_price": 98.40, "frequency": "6M", "day_count": "30/360"},
-                    {"type": "bond", "days_to_maturity": 2555, "coupon": 0.0490, "clean_price": 97.25,
-                     "dirty_price": 97.60, "frequency": "6M", "day_count": "30/360"},
-                    {"type": "bond", "days_to_maturity": 3650, "coupon": 0.0500, "clean_price": 96.80,
-                     "dirty_price": 97.20, "frequency": "6M", "day_count": "30/360"},
+                    {
+                        "type": "bond",
+                        "days_to_maturity": 730,
+                        "coupon": 0.0425,
+                        "clean_price": 99.20,
+                        "dirty_price": 99.45,
+                        "frequency": "6M",
+                        "day_count": "30/360",
+                    },
+                    {
+                        "type": "bond",
+                        "days_to_maturity": 1095,
+                        "coupon": 0.0440,
+                        "clean_price": 98.85,
+                        "dirty_price": 99.10,
+                        "frequency": "6M",
+                        "day_count": "30/360",
+                    },
+                    {
+                        "type": "bond",
+                        "days_to_maturity": 1825,
+                        "coupon": 0.0475,
+                        "clean_price": 98.10,
+                        "dirty_price": 98.40,
+                        "frequency": "6M",
+                        "day_count": "30/360",
+                    },
+                    {
+                        "type": "bond",
+                        "days_to_maturity": 2555,
+                        "coupon": 0.0490,
+                        "clean_price": 97.25,
+                        "dirty_price": 97.60,
+                        "frequency": "6M",
+                        "day_count": "30/360",
+                    },
+                    {
+                        "type": "bond",
+                        "days_to_maturity": 3650,
+                        "coupon": 0.0500,
+                        "clean_price": 96.80,
+                        "dirty_price": 97.20,
+                        "frequency": "6M",
+                        "day_count": "30/360",
+                    },
                 ]
             }
         elif table_name == "fx_options":
@@ -172,26 +208,26 @@ class MockDataInterface:
                     "spot_fx_rate": 1.0850,
                     "volatility": 0.12,
                     "domestic_rate": 0.045,  # USD rate
-                    "foreign_rate": 0.035  # EUR rate
+                    "foreign_rate": 0.035,  # EUR rate
                 },
                 "GBPUSD": {
                     "spot_fx_rate": 1.2650,
                     "volatility": 0.15,
                     "domestic_rate": 0.045,  # USD rate
-                    "foreign_rate": 0.040  # GBP rate
+                    "foreign_rate": 0.040,  # GBP rate
                 },
                 "USDJPY": {
                     "spot_fx_rate": 148.50,
                     "volatility": 0.11,
                     "domestic_rate": 0.005,  # JPY rate
-                    "foreign_rate": 0.045  # USD rate
+                    "foreign_rate": 0.045,  # USD rate
                 },
                 "USDCHF": {
                     "spot_fx_rate": 0.8950,
                     "volatility": 0.13,
                     "domestic_rate": 0.015,  # CHF rate
-                    "foreign_rate": 0.045  # USD rate
-                }
+                    "foreign_rate": 0.045,  # USD rate
+                },
             }
 
             if currency_pair in fx_mock_data:
@@ -202,7 +238,7 @@ class MockDataInterface:
                     "spot_fx_rate": 1.0000,
                     "volatility": 0.15,
                     "domestic_rate": 0.040,
-                    "foreign_rate": 0.040
+                    "foreign_rate": 0.040,
                 }
 
         elif table_name == "tiie_zero_valmer":
@@ -216,7 +252,9 @@ class MockDataInterface:
             """
 
             # You can override this path in your env; default points to the uploaded file
-            DEFAULT_TIIE_CSV = Path(__file__).resolve().parents[2] / "data" / "MEXDERSWAP_IRSTIIEPR.csv"
+            DEFAULT_TIIE_CSV = (
+                Path(__file__).resolve().parents[2] / "data" / "MEXDERSWAP_IRSTIIEPR.csv"
+            )
             csv_path = os.getenv("TIIE_ZERO_CSV") or str(DEFAULT_TIIE_CSV)
             if not os.path.exists(csv_path):
                 raise FileNotFoundError(f"TIIE zero curve CSV not found at: {csv_path}")
@@ -234,7 +272,7 @@ class MockDataInterface:
             base_dt = df["asof_yyMMdd"].iloc[0].date()
             nodes = [
                 {"days_to_maturity": d, "zero": z}
-                for d, z in zip(df["days_to_maturity"], df["zero_rate"])
+                for d, z in zip(df["days_to_maturity"], df["zero_rate"], strict=False)
                 if d > 0
             ]
             return {"curve_nodes": nodes}
@@ -243,14 +281,16 @@ class MockDataInterface:
             raise ValueError(f"Table '{table_name}' not found in mock data API.")
 
 
-import json
 import base64
 import gzip
-from cachetools import cachedmethod, LRUCache
+import json
 from operator import attrgetter
 from threading import RLock
 
-class MSInterface():
+from cachetools import LRUCache, cachedmethod
+
+
+class MSInterface:
 
     # ---- bounded, shared caches (class-level) ----
     _curve_cache = LRUCache(maxsize=1024)
@@ -260,7 +300,7 @@ class MSInterface():
     _fixings_cache_lock = RLock()
 
     @staticmethod
-    def decompress_string_to_curve(b64_string: str) -> Dict[Any, Any]:
+    def decompress_string_to_curve(b64_string: str) -> dict[Any, Any]:
         """
         Decodes, decompresses, and deserializes a string back into a curve dictionary.
 
@@ -273,7 +313,7 @@ class MSInterface():
             The reconstructed Python dictionary.
         """
         # 1. Encode the ASCII string back into Base64 bytes
-        base64_bytes = b64_string.encode('ascii')
+        base64_bytes = b64_string.encode("ascii")
 
         # 2. Decode the Base64 to get the compressed Gzip bytes
         compressed_bytes = base64.b64decode(base64_bytes)
@@ -282,36 +322,37 @@ class MSInterface():
         json_bytes = gzip.decompress(compressed_bytes)
 
         # 4. Decode the JSON bytes to a string and parse back into a dictionary
-        return json.loads(json_bytes.decode('utf-8'))
+        return json.loads(json_bytes.decode("utf-8"))
 
     # NOTE: caching is applied at the method boundary; body is unchanged.
     @cachedmethod(cache=attrgetter("_curve_cache"), lock=attrgetter("_curve_cache_lock"))
     def get_historical_discount_curve(self, curve_name, target_date):
-        from mainsequence.tdag import APIDataNode
         from mainsequence.logconf import logger
+        from mainsequence.tdag import APIDataNode
+
         data_node = APIDataNode.build_from_identifier(identifier=DISCOUNT_CURVES_TABLE)
 
-
-
         # for test purposes only get lats observations
-        use_last_observation=os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT","true").lower()=="true"
+        use_last_observation = (
+            os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+        )
         if use_last_observation:
             update_statistics = data_node.get_update_statistics()
             target_date = update_statistics.asset_time_statistics[curve_name]
             logger.warning("Curve is using last observation")
 
-
-    
         limit = target_date + datetime.timedelta(days=1)
-       
-
-
-
 
         curve = data_node.get_ranged_data_per_asset(
-            range_descriptor={curve_name: {"start_date": target_date, "start_date_operand": ">=",
-                                           "end_date": limit, "end_date_operand": "<", }}
-            )
+            range_descriptor={
+                curve_name: {
+                    "start_date": target_date,
+                    "start_date_operand": ">=",
+                    "end_date": limit,
+                    "end_date_operand": "<",
+                }
+            }
+        )
 
         if curve.empty:
             raise Exception(f"{target_date} is empty.")
@@ -320,17 +361,14 @@ class MSInterface():
         zeros["index"] = pd.to_numeric(zeros["index"])
         zeros = zeros.set_index("index")[0]
 
-        nodes = [
-            {"days_to_maturity": d, "zero": z}
-            for d, z in zeros.to_dict().items()
-            if d > 0
-        ]
+        nodes = [{"days_to_maturity": d, "zero": z} for d, z in zeros.to_dict().items() if d > 0]
 
         return nodes
 
     @cachedmethod(cache=attrgetter("_fixings_cache"), lock=attrgetter("_fixings_cache_lock"))
-    def get_historical_fixings(self, reference_rate_uid: str, start_date: datetime.datetime,
-                               end_date: datetime.datetime):
+    def get_historical_fixings(
+        self, reference_rate_uid: str, start_date: datetime.datetime, end_date: datetime.datetime
+    ):
         """
 
         :param reference_rate_uid:
@@ -338,38 +376,47 @@ class MSInterface():
         :param end_date:
         :return:
         """
-        from mainsequence.tdag import APIDataNode
-        from mainsequence.logconf import logger
         import pytz  # patch
+
+        from mainsequence.logconf import logger
+        from mainsequence.tdag import APIDataNode
 
         data_node = APIDataNode.build_from_identifier(identifier=REFERENCE_RATES_FIXING_TABLE)
 
         start_date = datetime.datetime(2024, 9, 10, tzinfo=pytz.utc)
-        end_date=datetime.datetime(2025, 9, 17, tzinfo=pytz.utc)
-        
-        
-        
+        end_date = datetime.datetime(2025, 9, 17, tzinfo=pytz.utc)
 
         fixings_df = data_node.get_ranged_data_per_asset(
-            range_descriptor={reference_rate_uid: {"start_date": start_date, "start_date_operand": ">=",
-                                                   "end_date": end_date, "end_date_operand": "<=", }}
+            range_descriptor={
+                reference_rate_uid: {
+                    "start_date": start_date,
+                    "start_date_operand": ">=",
+                    "end_date": end_date,
+                    "end_date_operand": "<=",
+                }
+            }
         )
         if fixings_df.empty:
 
-            use_last_observation = os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+            use_last_observation = (
+                os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+            )
             if use_last_observation:
                 logger.warning("Fixings are using last observation and filled forward")
                 fixings_df = data_node.get_ranged_data_per_asset(
-                    range_descriptor={reference_rate_uid: {"start_date": datetime.datetime(1900,1,1,tzinfo=pytz.utc),
-                                                           "start_date_operand": ">=",
-                                                           }}
-
-
+                    range_descriptor={
+                        reference_rate_uid: {
+                            "start_date": datetime.datetime(1900, 1, 1, tzinfo=pytz.utc),
+                            "start_date_operand": ">=",
+                        }
+                    }
                 )
-                
-                a=5
-            
-            raise Exception(f"{reference_rate_uid} has not data between {start_date} and {end_date}.")
+
+                a = 5
+
+            raise Exception(
+                f"{reference_rate_uid} has not data between {start_date} and {end_date}."
+            )
         fixings_df = fixings_df.reset_index().rename(columns={"time_index": "date"})
         fixings_df["date"] = fixings_df["date"].dt.date
         return fixings_df.set_index("date")["rate"].to_dict()
@@ -383,7 +430,12 @@ class MSInterface():
     @classmethod
     def cache_info(cls) -> dict:
         return {
-            "discount_curve_cache": {"size": cls._curve_cache.currsize, "max": cls._curve_cache.maxsize},
-            "fixings_cache": {"size": cls._fixings_cache.currsize, "max": cls._fixings_cache.maxsize},
+            "discount_curve_cache": {
+                "size": cls._curve_cache.currsize,
+                "max": cls._curve_cache.maxsize,
+            },
+            "fixings_cache": {
+                "size": cls._fixings_cache.currsize,
+                "max": cls._fixings_cache.maxsize,
+            },
         }
-

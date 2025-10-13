@@ -5,37 +5,39 @@ from pathlib import Path
 
 import requests
 import structlog
-from typing import Union
-
 from requests.structures import CaseInsensitiveDict
 from structlog.dev import ConsoleRenderer
+
 from .instrumentation import OTelJSONRenderer
+
 logger = None
-from structlog.stdlib import BoundLogger
-from typing import Dict, Any
 import inspect
-import importlib
-from structlog.threadlocal import wrap_dict
 import sys
+from typing import Any
+
+from structlog.stdlib import BoundLogger
+
 
 def ensure_dir(file_path):
     directory = os.path.dirname(file_path)
     Path(directory).mkdir(parents=True, exist_ok=True)
 
+
 def add_structlog_event_to_record(logger, method_name, event_dict):
-    record = event_dict.get('_record')
+    record = event_dict.get("_record")
     if record is not None:
         # Remove '_record' to prevent circular reference
-        event_dict.pop('_record', None)
+        event_dict.pop("_record", None)
         record.structlog_event = event_dict.copy()
     return event_dict
+
 
 class CustomConsoleRenderer(ConsoleRenderer):
     def __call__(self, logger, name, event_dict):
         # Extract call site parameters
-        lineno = event_dict.pop('lineno', None)
-        filename = event_dict.pop('filename', None)
-        func_name = event_dict.pop('func_name', None)
+        lineno = event_dict.pop("lineno", None)
+        filename = event_dict.pop("filename", None)
+        func_name = event_dict.pop("func_name", None)
         # application_name = event_dict.pop('application_name', None)
         # update_hash=event_dict.pop('update_hash', "")
         # Call the parent renderer
@@ -47,10 +49,8 @@ class CustomConsoleRenderer(ConsoleRenderer):
             rendered += f" (at {filename}:{lineno})"
         return rendered
 
-def build_application_logger(
-        application_name:str="ms-sdk",
-        **metadata
-):
+
+def build_application_logger(application_name: str = "ms-sdk", **metadata):
     """
     Create a logger that logs to console and file in JSON format.
     """
@@ -65,7 +65,7 @@ def build_application_logger(
     command_id = os.getenv("COMMAND_ID")
     params = {}
     if command_id:
-        params['command_id'] = command_id
+        params["command_id"] = command_id
 
     response = requests.get(project_info_endpoint, headers=headers, params=params)
 
@@ -89,8 +89,10 @@ def build_application_logger(
     logger_name = "tdag"
 
     # Define the timestamper and pre_chain processors
-    timestamper = structlog.processors.TimeStamper( fmt="iso",
-    utc=True,)
+    timestamper = structlog.processors.TimeStamper(
+        fmt="iso",
+        utc=True,
+    )
     pre_chain = [
         structlog.stdlib.add_log_level,
         structlog.stdlib.ExtraAdder(),
@@ -101,23 +103,23 @@ def build_application_logger(
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "colored",
-            "level":os.getenv("LOG_LEVEL", "DEBUG")
+            "level": os.getenv("LOG_LEVEL", "DEBUG"),
         },
     }
     if logger_file is not None:
-        ensure_dir(logger_file) # Ensure the directory for the log file exists
+        ensure_dir(logger_file)  # Ensure the directory for the log file exists
 
         handlers.update(
             {
                 "file": {
-                        "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
-                        "formatter": "plain",
-                        "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
-                        "filename": logger_file,
-                        "mode": "a",
-                        "delay": True,
-                        "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
-                        "backupCount": 5,  # Keep up to 5 backup files
+                    "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
+                    "formatter": "plain",
+                    "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
+                    "filename": logger_file,
+                    "mode": "a",
+                    "delay": True,
+                    "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
+                    "backupCount": 5,  # Keep up to 5 backup files
                 }
             }
         )
@@ -128,19 +130,19 @@ def build_application_logger(
         "formatters": {
             "plain": {
                 "()": structlog.stdlib.ProcessorFormatter,
-                "processor":OTelJSONRenderer(),#structlog.processors.JSONRenderer(),
+                "processor": OTelJSONRenderer(),  # structlog.processors.JSONRenderer(),
                 "foreign_pre_chain": pre_chain,
             },
             "colored": {
                 "()": structlog.stdlib.ProcessorFormatter,
                 "processor": CustomConsoleRenderer(colors=True),
-                "foreign_pre_chain":  pre_chain,
+                "foreign_pre_chain": pre_chain,
             },
         },
-        "handlers":handlers,
+        "handlers": handlers,
         "loggers": {
             logger_name: {
-                "handlers":list(handlers.keys()),
+                "handlers": list(handlers.keys()),
                 "level": os.getenv("LOG_LEVEL_STDOUT", "INFO"),
                 "propagate": False,
             },
@@ -165,10 +167,9 @@ def build_application_logger(
             ),
             timestamper,
             structlog.processors.StackInfoRenderer(),
-            structlog.processors.format_exc_info, # suggested to remove for pretty exceptions
+            structlog.processors.format_exc_info,  # suggested to remove for pretty exceptions
             add_structlog_event_to_record,  # Add this processor before wrap_for_formatter
             structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
-
         ],
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
@@ -178,7 +179,7 @@ def build_application_logger(
 
     # Create the structlog logger and bind metadata
     logger = structlog.get_logger(logger_name)
-    logger = logger.bind(application_name=application_name,**metadata)
+    logger = logger.bind(application_name=application_name, **metadata)
 
     try:
         logger = logger.bind(project_id=json_response["project_id"], **metadata)
@@ -194,7 +195,7 @@ def build_application_logger(
     return logger
 
 
-def dump_structlog_bound_logger(logger: BoundLogger) -> Dict[str, Any]:
+def dump_structlog_bound_logger(logger: BoundLogger) -> dict[str, Any]:
     """
     Serialize a fully‑initialized structlog BoundLogger into a dict:
       - Global structlog config (as import paths)
@@ -238,14 +239,14 @@ def dump_structlog_bound_logger(logger: BoundLogger) -> Dict[str, Any]:
     }
 
 
-def load_structlog_bound_logger(dump: Dict[str, Any]) -> BoundLogger:
+def load_structlog_bound_logger(dump: dict[str, Any]) -> BoundLogger:
     """
     Given the dict from dump_structlog_bound_logger(),
     return a BoundLogger with the same name, level, and context,
     but using the EXISTING global structlog configuration.
     """
-    name          = dump["logger_name"]
-    level         = dump["logger_level"]
+    name = dump["logger_name"]
+    level = dump["logger_level"]
     bound_context = dump["bound_context"]
 
     # 1) Grab the already‐configured logger
@@ -259,10 +260,12 @@ def load_structlog_bound_logger(dump: Dict[str, Any]) -> BoundLogger:
     # 3) Re‐bind the original context
     return base.bind(**bound_context)
 
+
 logger = build_application_logger()
 
 # create a new system exection hook to also log terminating exceptions
 original_hook = sys.excepthook
+
 
 def handle_exception(exc_type, exc_value, exc_traceback):
     """
@@ -274,11 +277,9 @@ def handle_exception(exc_type, exc_value, exc_traceback):
         return
 
     # Log the exception using our configured logger
-    logger.error(
-        "Uncaught exception",
-        exc_info=(exc_type, exc_value, exc_traceback)
-    )
+    logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
     # Also call the original hook to print the traceback to the console
     original_hook(exc_type, exc_value, exc_traceback)
+
 
 sys.excepthook = handle_exception

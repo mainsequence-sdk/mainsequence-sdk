@@ -2,32 +2,35 @@
 from __future__ import annotations
 
 import inspect
-from typing import Optional, Dict, Any
-from typing_extensions import Annotated
-from pydantic import BeforeValidator, PlainSerializer, WithJsonSchema
+from typing import Annotated, Any, Optional
+
 import QuantLib as ql
+from pydantic import BeforeValidator, PlainSerializer, WithJsonSchema
 
 # Reuse your existing codec helpers
 from mainsequence.instruments.instruments.json_codec import (
-    # Period
-    period_to_json, period_from_json,
-    # DayCounter
-    daycount_to_json, daycount_from_json,
-    # Calendar
-    calendar_to_json, calendar_from_json,
+    bdc_from_json,
     # BDC
-    bdc_to_json, bdc_from_json,
-    # IborIndex (used only for legacy conversion)
-    ibor_to_json, ibor_from_json,
+    bdc_to_json,
+    calendar_from_json,
+    # Calendar
+    daycount_from_json,
+    # DayCounter
+    daycount_to_json,
+    period_from_json,
+    # Period
+    period_to_json,
+    schedule_from_json,
     # Schedule
-    schedule_to_json, schedule_from_json,
+    schedule_to_json,
 )
 
 # ============================================================================
 # Automatic Calendar Factory
 # ============================================================================
 
-def _build_fully_automatic_calendar_factory() -> Dict[str, callable]:
+
+def _build_fully_automatic_calendar_factory() -> dict[str, callable]:
     """
     Build a mapping: <calendar display name> -> zero-arg callable that returns ql.Calendar
     We try both no-arg constructors and Market-enum constructors.
@@ -39,7 +42,7 @@ def _build_fully_automatic_calendar_factory() -> Dict[str, callable]:
       - "United States settlement"    (ql.UnitedStates(ql.UnitedStates.Settlement))
       - "London stock exchange"       (ql.UnitedKingdom(ql.UnitedKingdom.LSE))
     """
-    factory: Dict[str, callable] = {}
+    factory: dict[str, callable] = {}
 
     def _try_register(ctor):
         try:
@@ -85,8 +88,8 @@ def _build_fully_automatic_calendar_factory() -> Dict[str, callable]:
 
 
 # Build once; also a case-insensitive mirror for defensive lookups.
-_CAL_FACTORY: Dict[str, callable] = _build_fully_automatic_calendar_factory()
-_CAL_FACTORY_CI: Dict[str, callable] = {k.casefold(): v for k, v in _CAL_FACTORY.items()}
+_CAL_FACTORY: dict[str, callable] = _build_fully_automatic_calendar_factory()
+_CAL_FACTORY_CI: dict[str, callable] = {k.casefold(): v for k, v in _CAL_FACTORY.items()}
 
 
 def calendar_from_display_name(name: str) -> ql.Calendar:
@@ -96,8 +99,12 @@ def calendar_from_display_name(name: str) -> ql.Calendar:
     """
     ctor = _CAL_FACTORY.get(name) or _CAL_FACTORY_CI.get(name.casefold())
     if ctor is None:
-        raise ValueError(f"Unsupported calendar display name {name!r}. "
-                         "Available: " + ", ".join(sorted(_CAL_FACTORY.keys())[:20]) + ("..." if len(_CAL_FACTORY) > 20 else ""))
+        raise ValueError(
+            f"Unsupported calendar display name {name!r}. "
+            "Available: "
+            + ", ".join(sorted(_CAL_FACTORY.keys())[:20])
+            + ("..." if len(_CAL_FACTORY) > 20 else "")
+        )
     return ctor()
 
 
@@ -105,14 +112,16 @@ def calendar_from_display_name(name: str) -> ql.Calendar:
 # Strict serializers that force the real calendar name via virtual .name()
 # ============================================================================
 
-def _calendar_to_json_actual(cal: ql.Calendar) -> Dict[str, Any]:
+
+def _calendar_to_json_actual(cal: ql.Calendar) -> dict[str, Any]:
     """
     Serialize as {'name': cal.name()} using the virtual method.
     Works even if 'cal' is a base Calendar proxy returned by SWIG.
     """
     return {"name": cal.name()}
 
-def _schedule_to_json_actual(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any]]:
+
+def _schedule_to_json_actual(s: ql.Schedule | None) -> dict[str, Any] | None:
     """
     Serialize a schedule; ensure its calendar is emitted with the true display name.
     """
@@ -129,6 +138,7 @@ def _schedule_to_json_actual(s: Optional[ql.Schedule]) -> Optional[Dict[str, Any
 # ============================================================================
 # Lenient deserializers that accept {'name': '<display name>'}
 # ============================================================================
+
 
 def _calendar_from_json_auto(v):
     """
@@ -148,6 +158,7 @@ def _calendar_from_json_auto(v):
         return calendar_from_display_name(v)
     # Fallback to your existing helper (may accept other legacy formats)
     return calendar_from_json(v)
+
 
 def _schedule_from_json_auto(v):
     """
@@ -189,16 +200,21 @@ QuantLibDayCounter = Annotated[
 # ---------- Calendar ---------------------------------------------------------
 QuantLibCalendar = Annotated[
     ql.Calendar,
-    BeforeValidator(_calendar_from_json_auto),          # <— use factory-based loader
-    PlainSerializer(_calendar_to_json_actual, return_type=Dict[str, Any]),  # <— always emit true name
+    BeforeValidator(_calendar_from_json_auto),  # <— use factory-based loader
+    PlainSerializer(
+        _calendar_to_json_actual, return_type=dict[str, Any]
+    ),  # <— always emit true name
 ]
+
 
 # ---------- Business Day Convention (BDC) -----------------------------------
 def _bdc_from_any(v):
     return bdc_from_json(v)
 
+
 def _bdc_to_str(v: int) -> str:
     return str(bdc_to_json(int(v)))
+
 
 QuantLibBDC = Annotated[
     int,
@@ -208,14 +224,19 @@ QuantLibBDC = Annotated[
 
 # ---------- Schedule ---------------------------------------------------------
 QuantLibSchedule = Annotated[
-    Optional[ql.Schedule],
-    BeforeValidator(_schedule_from_json_auto),           # <— rebuild calendar from display name first
-    PlainSerializer(_schedule_to_json_actual, return_type=Optional[Dict[str, Any]]),  # <— emit true name
+    ql.Schedule | None,
+    BeforeValidator(_schedule_from_json_auto),  # <— rebuild calendar from display name first
+    PlainSerializer(
+        _schedule_to_json_actual, return_type=Optional[dict[str, Any]]
+    ),  # <— emit true name
     WithJsonSchema(
         {
             "type": ["object", "null"],
             "properties": {
-                "dates": {"type": "array", "items": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"}},
+                "dates": {
+                    "type": "array",
+                    "items": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+                },
                 "calendar": {"type": "object"},  # {"name": "<display name from cal.name()>"}
                 "business_day_convention": {"type": ["string", "integer"]},
                 "termination_business_day_convention": {"type": ["string", "integer"]},

@@ -1,16 +1,20 @@
 from __future__ import annotations
+
+import os
+import sys
+from collections.abc import Callable, Mapping, MutableMapping
 from dataclasses import dataclass
+from importlib.resources import files as _pkg_files
 from pathlib import Path
-from typing import Any, Callable, Mapping, MutableMapping, Optional, Tuple, Union
+from typing import Any
 
 import streamlit as st
 
-from mainsequence.dashboards.streamlit.core.theme import inject_css_for_dark_accents, override_spinners,remove_deploy_button
-from importlib.resources import files as _pkg_files
-import sys
-import os
-
-
+from mainsequence.dashboards.streamlit.core.theme import (
+    inject_css_for_dark_accents,
+    override_spinners,
+    remove_deploy_button,
+)
 
 
 def _detect_app_dir() -> Path:
@@ -33,6 +37,7 @@ def _detect_app_dir() -> Path:
     # 2) Streamlit runtime (private API; guarded)
     try:
         from streamlit.runtime.scriptrunner.script_run_context import get_script_run_ctx
+
         ctx = get_script_run_ctx()
         if ctx and getattr(ctx, "main_script_path", None):
             return Path(ctx.main_script_path).resolve().parent
@@ -54,7 +59,7 @@ def _detect_app_dir() -> Path:
 
 def _bootstrap_theme_from_package(
     package: str = "mainsequence.dashboards.streamlit",
-    resource: str = "assets/config.toml",   # keep this in assets/ (dot-dirs often excluded from wheels)
+    resource: str = "assets/config.toml",  # keep this in assets/ (dot-dirs often excluded from wheels)
     target_root: Path | None = None,
 ) -> Path | None:
     """
@@ -92,29 +97,32 @@ def _bootstrap_theme_from_package(
 
     return cfg_file
 
+
 # --- App configuration contract (provided by the example app) -----------------
 
-HeaderFn      = Callable[[Any], None]
-RouteFn       = Callable[[Mapping[str, Any]], str]
-ContextFn     = Callable[[MutableMapping[str, Any]], Any]
+HeaderFn = Callable[[Any], None]
+RouteFn = Callable[[Mapping[str, Any]], str]
+ContextFn = Callable[[MutableMapping[str, Any]], Any]
 InitSessionFn = Callable[[MutableMapping[str, Any]], None]
-NotFoundFn    = Callable[[], None]
+NotFoundFn = Callable[[], None]
+
 
 @dataclass
 class PageConfig:
     title: str
-    build_context: Optional[ContextFn]   =None                           # required
+    build_context: ContextFn | None = None  # required
 
-    render_header: Optional[HeaderFn] = None              # if None, minimal header
-    init_session: Optional[InitSessionFn] = None          # set defaults in session_state
+    render_header: HeaderFn | None = None  # if None, minimal header
+    init_session: InitSessionFn | None = None  # set defaults in session_state
 
     # Optional overrides; if None, scaffold uses its bundled defaults.
-    logo_path: Optional[Union[str, Path]] = None
-    page_icon_path: Optional[Union[str, Path]] = None
+    logo_path: str | Path | None = None
+    page_icon_path: str | Path | None = None
 
     use_wide_layout: bool = True
     hide_streamlit_multipage_nav: bool = False
     inject_theme_css: bool = True
+
 
 # --- Internal helpers ---------------------------------------------------------
 
@@ -122,19 +130,26 @@ _HIDE_NATIVE_NAV = """
 <style>[data-testid='stSidebarNav']{display:none!important}</style>
 """
 
+
 def _hide_sidebar() -> None:
-    st.markdown("""
+    st.markdown(
+        """
         <style>
           [data-testid="stSidebar"]{display:none!important;}
           [data-testid="stSidebarCollapseControl"]{display:none!important;}
         </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 def _minimal_header(title: str) -> None:
     st.title(title)
 
-def _resolve_assets(explicit_logo: Optional[Union[str, Path]],
-                    explicit_icon: Optional[Union[str, Path]]) -> Tuple[Optional[str], Union[str, None], Optional[str]]:
+
+def _resolve_assets(
+    explicit_logo: str | Path | None, explicit_icon: str | Path | None
+) -> tuple[str | None, str | None, str | None]:
     """
     Returns a tuple:
       (logo_path_for_st_logo, page_icon_for_set_page_config, icon_path_for_st_logo_param)
@@ -154,9 +169,9 @@ def _resolve_assets(explicit_logo: Optional[Union[str, Path]],
     icon_path = Path(explicit_icon) if explicit_icon else default_favicon
 
     # Effective values
-    logo_for_logo_api: Optional[str] = str(logo_path) if logo_path.exists() else None
-    icon_for_page_config: Union[str, None]
-    icon_for_logo_param: Optional[str]
+    logo_for_logo_api: str | None = str(logo_path) if logo_path.exists() else None
+    icon_for_page_config: str | None
+    icon_for_logo_param: str | None
 
     if icon_path.exists():
         icon_for_page_config = str(icon_path)
@@ -168,7 +183,9 @@ def _resolve_assets(explicit_logo: Optional[Union[str, Path]],
 
     return logo_for_logo_api, icon_for_page_config, icon_for_logo_param
 
+
 # --- Public entrypoint --------------------------------------------------------
+
 
 # scaffold.py
 def run_page(cfg: PageConfig):
@@ -202,7 +219,7 @@ def run_page(cfg: PageConfig):
     if cfg.init_session:
         cfg.init_session(st.session_state)
 
-    ctx={}
+    ctx = {}
     if cfg.build_context:
         ctx = cfg.build_context(st.session_state)
 
@@ -214,10 +231,8 @@ def run_page(cfg: PageConfig):
 
     # 7) Create .streamlit/config.toml on first run (reruns once if created)
     from pathlib import Path
+
     print(Path.cwd())
     _bootstrap_theme_from_package()
 
     return ctx
-
-
-

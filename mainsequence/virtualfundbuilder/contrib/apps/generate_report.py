@@ -4,25 +4,23 @@ import base64
 import os
 from datetime import datetime
 from io import BytesIO
-from typing import List
 
-from jinja2 import Environment, FileSystemLoader
-import numpy as np
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objs as go
+from jinja2 import Environment, FileSystemLoader
+from pydantic import BaseModel
 
+from mainsequence.client import AssetCategory, DoesNotExist
+from mainsequence.client.models_tdag import Artifact
 from mainsequence.tdag import APIDataNode
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
+    BaseAgentTool,
+    regiester_agent_tool,
+)
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
-from pydantic import BaseModel
-from jinja2 import Template
-
-from mainsequence.client import DoesNotExist, AssetCategory
-from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import regiester_agent_tool, BaseAgentTool
-
 logger = get_vfb_logger()
+
 
 def example_data(assets):
     """
@@ -37,14 +35,17 @@ def example_data(assets):
     market_time_serie_unique_identifier = "polygon_historical_fundamentals"
     try:
         from mainsequence.client import MarketsTimeSeriesDetails
+
         hbs = MarketsTimeSeriesDetails.get(unique_identifier=market_time_serie_unique_identifier)
     except DoesNotExist as e:
-        logger.exception(f"HistoricalBarsSource does not exist for {market_time_serie_unique_identifier}")
+        logger.exception(
+            f"HistoricalBarsSource does not exist for {market_time_serie_unique_identifier}"
+        )
         raise e
 
     api_ts = APIDataNode(
         data_source_id=hbs.related_local_time_serie.data_source_id,
-        update_hash=hbs.related_local_time_serie.update_hash
+        update_hash=hbs.related_local_time_serie.update_hash,
     )
 
     # This returns a DataFrame, indexed by (time_index, unique_identifier)
@@ -68,19 +69,16 @@ def example_data(assets):
 
     # ------------------------------------------------------------------------------
     # 2) TIME-SERIES LINE CHART: Revenue over time, color by ticker
-    import plotly.express as px
     fig_line = px.line(
-        df,
-        x="time_index",
-        y="Revenue",
-        color="asset_id",
-        title="Revenue Over Time by Asset"
+        df, x="time_index", y="Revenue", color="asset_id", title="Revenue Over Time by Asset"
     )
     fig_line.update_layout(xaxis_title="Date", yaxis_title="Revenue")
 
     # ------------------------------------------------------------------------------
     # 3) CORRELATION HEATMAP
-    latest_date = df.groupby("unique_identifier")["quarter"].max().min() # latest date where all values are present
+    latest_date = (
+        df.groupby("unique_identifier")["quarter"].max().min()
+    )  # latest date where all values are present
     df_latest = df[df["quarter"] == latest_date].copy()
 
     # Pivot so each row is an asset and columns are the fundamental metrics
@@ -88,22 +86,16 @@ def example_data(assets):
     df_pivot = df_latest.pivot_table(
         index="asset_id",
         values=["Revenue", "EPS"],
-        aggfunc="mean"  # or 'first' if each (asset, time_index) is unique
+        aggfunc="mean",  # or 'first' if each (asset, time_index) is unique
     )
 
     corr_matrix = df_pivot.corr()
-    import plotly.graph_objs as go
     fig_heatmap = go.Figure(
         data=go.Heatmap(
-            z=corr_matrix.values,
-            x=corr_matrix.columns,
-            y=corr_matrix.index,
-            colorscale="Blues"
+            z=corr_matrix.values, x=corr_matrix.columns, y=corr_matrix.index, colorscale="Blues"
         )
     )
-    fig_heatmap.update_layout(
-        title=f"Correlation of Fundamentals on {latest_date}"
-    )
+    fig_heatmap.update_layout(title=f"Correlation of Fundamentals on {latest_date}")
 
     # ------------------------------------------------------------------------------
     # 4) CONVERT PLOTS TO BASE64 STRINGS
@@ -122,15 +114,17 @@ def example_data(assets):
 
     return chart1_base64, chart2_base64
 
+
 class ExampleReportConfig(BaseModel):
     """Pydantic model defining the parameters for report generation."""
+
     report_id: str = "MC-2025"
     report_title: str = "Global Strategy Views: Diversify to Amplify"
     bucket_name: str = "Reports"
     authors: str = "Main Sequence AI"
     sector: str = "US Equities"
     region: str = "USA"
-    topics: List[str] = ["Diversification", "Equities", "Fundamentals"]
+    topics: list[str] = ["Diversification", "Equities", "Fundamentals"]
     asset_category_unique_identifier: str = "magnificent_7"
     summary: str = (
         "We are entering a more benign phase of the economic cycle characterized by "
@@ -138,6 +132,7 @@ class ExampleReportConfig(BaseModel):
         "such an environment supports equities but also highlights the increasing "
         "importance of broad diversification across regions and sectors."
     )
+
 
 @regiester_agent_tool()
 class ExampleReportApp(BaseAgentTool):
@@ -147,11 +142,15 @@ class ExampleReportApp(BaseAgentTool):
     2) Embed those charts into an HTML template.
     3) Optionally export the HTML to PDF using WeasyPrint.
     """
+
     configuration_class = ExampleReportConfig
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        category = AssetCategory.get(unique_identifier=self.configuration.asset_category_unique_identifier)
+        category = AssetCategory.get(
+            unique_identifier=self.configuration.asset_category_unique_identifier
+        )
         self.assets = category.get_assets()
         self.category_name = category.display_name
 
@@ -175,9 +174,9 @@ class ExampleReportApp(BaseAgentTool):
 
         # Build context from config
         template_context = {
-            "current_date": datetime.now().strftime('%Y-%m-%d'),
+            "current_date": datetime.now().strftime("%Y-%m-%d"),
             "current_year": datetime.now().year,
-            "logo_location": f"https://main-sequence.app/static/media/logos/MS_logo_long_white.png",
+            "logo_location": "https://main-sequence.app/static/media/logos/MS_logo_long_white.png",
             # Pulling fields from our pydantic config:
             "report_id": self.configuration.report_id,
             "authors": self.configuration.authors,
@@ -247,7 +246,7 @@ class ExampleReportApp(BaseAgentTool):
                     As the macroeconomic environment evolves, shifts in these fundamental correlations may offer additional
                     opportunities for strategic repositioning and optimized sector exposures.
                 </p>
-            """
+            """,
         }
 
         """
@@ -255,18 +254,18 @@ class ExampleReportApp(BaseAgentTool):
         and (optionally) saves it as PDF using WeasyPrint.
         """
         # 2) Setup the Jinja2 environment: (point to the templates directory)
-        template_dir = os.path.join(os.path.dirname(__file__), 'templates')
+        template_dir = os.path.join(os.path.dirname(__file__), "templates")
         env = Environment(loader=FileSystemLoader(template_dir), autoescape=False)
 
         # 3) Load the derived template (which should reference placeholders in Jinja syntax).
-        template = env.get_template('report.html')
+        template = env.get_template("report.html")
 
         # 5) Render the HTML:
         rendered_html = template.render(template_context)
 
         # 6) Write the rendered HTML to a file
-        output_html_path = os.path.join(os.path.dirname(__file__), 'output_report.html')
-        with open(output_html_path, 'w', encoding='utf-8') as f:
+        output_html_path = os.path.join(os.path.dirname(__file__), "output_report.html")
+        with open(output_html_path, "w", encoding="utf-8") as f:
             f.write(rendered_html)
 
         print(f"HTML report generated: {output_html_path}")
@@ -282,8 +281,9 @@ class ExampleReportApp(BaseAgentTool):
             filepath=output_html_path,
             name=self.configuration.report_id,
             created_by_resource_name=self.__class__.__name__,
-            bucket_name=self.configuration.bucket_name
+            bucket_name=self.configuration.bucket_name,
         )
+
 
 if __name__ == "__main__":
     # Example usage:

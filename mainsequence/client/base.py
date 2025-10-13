@@ -1,31 +1,41 @@
 import copy
 import inspect
-import json
 import os
 from datetime import datetime
-from typing import Union
 
 import requests
 from pydantic import BaseModel, ConfigDict
 
-from tqdm import tqdm
-from .utils import MARKETS_CONSTANTS, request_to_datetime, DATE_FORMAT, AuthLoaders, make_request, DoesNotExist
+from .utils import (
+    DATE_FORMAT,
+    AuthLoaders,
+    DoesNotExist,
+    make_request,
+    request_to_datetime,
+)
 
-TDAG_ENDPOINT = os.environ.get('TDAG_ENDPOINT',"https://main-sequence.app")
+TDAG_ENDPOINT = os.environ.get("TDAG_ENDPOINT", "https://main-sequence.app")
 API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
 
 loaders = AuthLoaders()
 
+
 def build_session(loaders):
     from requests.adapters import HTTPAdapter, Retry
+
     s = requests.Session()
     s.headers.update(loaders.auth_headers)
-    retries = Retry(total=2, backoff_factor=2, )
-    s.mount('http://', HTTPAdapter(max_retries=retries))
+    retries = Retry(
+        total=2,
+        backoff_factor=2,
+    )
+    s.mount("http://", HTTPAdapter(max_retries=retries))
     s.headers["Accept-Encoding"] = "gzip"
     return s
 
+
 session = build_session(loaders=loaders)
+
 
 class HtmlSaveException(Exception):
     def __init__(self, message):
@@ -33,7 +43,7 @@ class HtmlSaveException(Exception):
         self.message = message
         self.file_path = None
 
-        if 'html' in message.lower():
+        if "html" in message.lower():
             self.file_path = self.save_as_html_file()
 
     def save_as_html_file(self):
@@ -41,10 +51,10 @@ class HtmlSaveException(Exception):
         caller_method = inspect.stack()[2].function
 
         # Get the current timestamp
-        timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Create the directory to save HTML files if it doesn't exist
-        folder_path = 'html_exceptions'
+        folder_path = "html_exceptions"
         os.makedirs(folder_path, exist_ok=True)
 
         # Create the filename
@@ -52,7 +62,7 @@ class HtmlSaveException(Exception):
         file_path = os.path.join(folder_path, filename)
 
         # Save the message as an HTML file
-        with open(file_path, 'w') as file:
+        with open(file_path, "w") as file:
             file.write(self.message)
 
         return file_path
@@ -63,8 +73,9 @@ class HtmlSaveException(Exception):
         else:
             return self.message
 
+
 class BasePydanticModel(BaseModel):
-    model_config = ConfigDict(extra='forbid')  # Forbid extra fields in v2
+    model_config = ConfigDict(extra="forbid")  # Forbid extra fields in v2
     orm_class: str = None  # This will be set to the class that inherits
 
     @classmethod
@@ -73,12 +84,12 @@ class BasePydanticModel(BaseModel):
         # Set orm_class to the class itself
         cls.orm_class = cls.__name__
 
+
 class BaseObjectOrm:
     END_POINTS = {
         "User": "user",
-
         # VAM
-        "Portfolio": 'assets/target_portfolio',
+        "Portfolio": "assets/target_portfolio",
         "PortfolioGroup": "assets/portfolio_group",
         "Asset": "assets/asset",
         "IndexAsset": "assets/index_asset",
@@ -108,16 +119,13 @@ class BaseObjectOrm:
         "MarketsTimeSeriesDetails": "data_sources/markets-time-series-details",
         "AssetCategory": "assets/asset-category",
         "AssetTranslationTable": "assets/asset-translation-tables",
-
         # TDAG
         "Scheduler": "ts_manager/scheduler",
         "MultiIndexMetadata": "orm/multi_index_metadata",
         "ContinuousAggMultiIndex": "ts_manager/cont_agg_multi_ind",
         "DataNodeStorage": "ts_manager/dynamic_table",
         # "LocalTimeSerieNodesMethods": "ogm/local_time_serie",
-
         "LocalTimeSerieNodesMethods": "ts_manager/local_time_serie",
-
         "DataNodeUpdate": "ts_manager/local_time_serie",
         "DataNodeUpdateDetails": "ts_manager/local_time_serie_update_details",
         "LocalTimeSerieHistoricalUpdate": "ts_manager/lts_historical_update",
@@ -128,14 +136,12 @@ class BaseObjectOrm:
         "DynamicResource": "tdag-gpt/dynamic_resource",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
-        "Constant":"pods/constant",
-
-        #ReportBuilder
+        "Constant": "pods/constant",
+        # ReportBuilder
         "Presentation": "reports/presentations",
-        "Folder":"reports/folder",
-        "Slide":"reports/slides",
+        "Folder": "reports/folder",
+        "Slide": "reports/slides",
         "Theme": "reports/themes",
-
     }
     ROOT_URL = API_ENDPOINT
     LOADERS = loaders
@@ -218,7 +224,7 @@ class BaseObjectOrm:
                 r_type="GET",
                 url=next_url,  # next_url changes each iteration
                 payload={"params": params},
-                time_out=timeout
+                time_out=timeout,
             )
 
             if r.status_code != 200:
@@ -249,6 +255,7 @@ class BaseObjectOrm:
                     print(cls)
                     print(cls(**item))
                     import traceback
+
                     traceback.print_exc()
                     raise e
 
@@ -275,8 +282,8 @@ class BaseObjectOrm:
                 loaders=cls.LOADERS,
                 r_type="GET",
                 url=detail_url,
-                payload={"params": filters},#neede to pass special serializer
-                time_out=timeout
+                payload={"params": filters},  # neede to pass special serializer
+                time_out=timeout,
             )
 
             if r.status_code == 404:
@@ -322,14 +329,11 @@ class BaseObjectOrm:
             new_data[key] = new_value
         return new_data
 
-
     @classmethod
     def create(cls, timeout=None, files=None, *args, **kwargs):
         base_url = cls.get_object_url()
         data = cls.serialize_for_json(kwargs)
-        payload = {
-            "json": data
-        }
+        payload = {"json": data}
         if files:
             payload["files"] = files
         r = make_request(
@@ -338,7 +342,7 @@ class BaseObjectOrm:
             r_type="POST",
             url=f"{base_url}/",
             payload=payload,
-            time_out=timeout
+            time_out=timeout,
         )
         if r.status_code not in [201]:
             raise Exception(r.text)
@@ -356,7 +360,7 @@ class BaseObjectOrm:
             r_type="POST",
             url=url,
             payload=payload,
-            time_out=timeout
+            time_out=timeout,
         )
         if r.status_code not in [201, 200]:
             raise Exception(r.text)
@@ -372,7 +376,7 @@ class BaseObjectOrm:
             loaders=cls.LOADERS,
             r_type="DELETE",
             url=f"{base_url}/{instance_id}/",
-            payload=payload
+            payload=payload,
         )
         if r.status_code != 204:
             raise Exception(r.text)

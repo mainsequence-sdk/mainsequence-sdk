@@ -1,4 +1,4 @@
-def transform_frequency_to_seconds(frequency_id:str)->int:
+def transform_frequency_to_seconds(frequency_id: str) -> int:
     if frequency_id in ["1min", "1m"]:
         return 60
     elif frequency_id in ["5min", "5m"]:

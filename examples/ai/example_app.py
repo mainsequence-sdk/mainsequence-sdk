@@ -1,15 +1,13 @@
-from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
-
-from mainsequence.virtualfundbuilder.models import PortfolioConfiguration
-from mainsequence.virtualfundbuilder.utils import get_vfb_logger
-import mainsequence.client as ms_client
-from pydantic import BaseModel
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app
-from mainsequence.reportbuilder.slide_templates import plot_dataframe_line_chart
-from tempfile import TemporaryDirectory
 from pathlib import Path
+from tempfile import TemporaryDirectory
+
 import pandas as pd
 from pydantic import BaseModel, Field
+
+import mainsequence.client as ms_client
+from mainsequence.reportbuilder.slide_templates import plot_dataframe_line_chart
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseApp, register_app
+from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
@@ -19,22 +17,23 @@ class ExampleAppConfiguration(BaseModel):
     name: str = Field("Daniel Garber", description="User name")
 
 
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import( BaseApp,
-                                                                          register_app)
 @register_app()
 class ExampleApp(BaseApp):
     configuration_class = ExampleAppConfiguration
 
     def run(self) -> None:
-        logger.info(f"This tool is been used by {self.configuration.name} "
-                    f"whom is {self.configuration.age}")
+        logger.info(
+            f"This tool is been used by {self.configuration.name} "
+            f"whom is {self.configuration.age}"
+        )
         df = pd.DataFrame(
             {
                 "Sales 2025": [150, 200, 250, 300, 400],
                 "Sales 2024": [120, 180, 220, 260, 310],
             },
-            index=pd.Index(["Jan", "Feb", "Mar", "Apr", "May"], name="month"),)
-        plotly_html=plot_dataframe_line_chart(df)
+            index=pd.Index(["Jan", "Feb", "Mar", "Apr", "May"], name="month"),
+        )
+        plotly_html = plot_dataframe_line_chart(df)
         with TemporaryDirectory() as tmpdir:
             output_html_path = Path(tmpdir) / "chart.html"
             output_html_path.write_text(plotly_html, encoding="utf-8")
@@ -44,7 +43,7 @@ class ExampleApp(BaseApp):
                 filepath=str(output_html_path),
                 name="test_valuer",
                 created_by_resource_name=self.__class__.__name__,
-                bucket_name="Test Bucket"
+                bucket_name="Test Bucket",
             )
         self.add_output(html_artifact)
 

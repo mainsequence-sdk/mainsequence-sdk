@@ -1,5 +1,4 @@
 # pricing_models/indices.py
-# -*- coding: utf-8 -*-
 """
 Index factory for QuantLib (identifier-driven).
 
@@ -23,20 +22,19 @@ Notes
 from __future__ import annotations
 
 import datetime
-from typing import Dict, Tuple, Union, Optional
-
-import QuantLib as ql
 from functools import lru_cache
 
+import QuantLib as ql
+
+from mainsequence.client import Constant as _C
 from mainsequence.instruments.data_interface import data_interface
 from mainsequence.instruments.utils import to_py_date, to_ql_date
-from mainsequence.client import Constant as _C
 
 # ----------------------------- Cache (ONLY by identifier + date) ----------------------------- #
 
 # key: (index_identifier, target_date_py)
-_IndexCacheKey = Tuple[str, datetime.date]
-_INDEX_CACHE: Dict[_IndexCacheKey, ql.Index] = {}
+_IndexCacheKey = tuple[str, datetime.date]
+_INDEX_CACHE: dict[_IndexCacheKey, ql.Index] = {}
 
 
 def clear_index_cache() -> None:
@@ -47,7 +45,7 @@ def clear_index_cache() -> None:
 # Put every supported identifier here with its curve + index construction config.
 # No tenor tokens; we store the QuantLib Period directly.
 
-INDEX_CONFIGS: Dict[str, Dict] = {
+INDEX_CONFIGS: dict[str, dict] = {
     _C.get_value(name="REFERENCE_RATE__TIIE_28"): dict(
         curve_uid=_C.get_value(name="ZERO_CURVE__VALMER_TIIE_28"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
@@ -109,7 +107,6 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.Following,  # “next banking business day” => Following
         end_of_month=False,  # Irrelevant when scheduling by days
     ),
-
     _C.get_value(name="REFERENCE_RATE__CETE_182"): dict(
         curve_uid=_C.get_value(name="ZERO_CURVE__BANXICO_M_BONOS_OTR"),
         calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
@@ -120,8 +117,6 @@ INDEX_CONFIGS: Dict[str, Dict] = {
         bdc=ql.Following,  # “next banking business day” => Following
         end_of_month=False,  # Irrelevant when scheduling by days
     ),
-
-
     _C.get_value(name="REFERENCE_RATE__USD_SOFR"): dict(
         curve_uid=_C.get_value(name="ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"),
         calendar=ql.UnitedStates(ql.UnitedStates.FederalReserve),
@@ -137,9 +132,8 @@ INDEX_CONFIGS: Dict[str, Dict] = {
 
 # ----------------------------- Utilities ----------------------------- #
 
-def _ensure_py_date(
-    d: Union[datetime.date, datetime.datetime, ql.Date]
-) -> datetime.date:
+
+def _ensure_py_date(d: datetime.date | datetime.datetime | ql.Date) -> datetime.date:
     """Return a Python date; target_date is REQUIRED and must not be None."""
     if d is None:
         raise ValueError("target_date is required and cannot be None.")
@@ -153,8 +147,9 @@ def _ensure_py_date(
 
 # ----------------------------- Zero-curve builder (kept) ----------------------------- #
 
+
 def build_zero_curve(
-    target_date: Union[datetime.date, datetime.datetime],
+    target_date: datetime.date | datetime.datetime,
     index_identifier: str,
 ) -> ql.YieldTermStructureHandle:
     """
@@ -175,8 +170,10 @@ def build_zero_curve(
     nodes = data_interface.get_historical_discount_curve(curve_uid, target_date)
 
     base = to_ql_date(target_date)
-    base_py = target_date if isinstance(target_date, datetime.datetime) else datetime.datetime.combine(
-        target_date, datetime.time()
+    base_py = (
+        target_date
+        if isinstance(target_date, datetime.datetime)
+        else datetime.datetime.combine(target_date, datetime.time())
     )
 
     dates = [base]
@@ -212,18 +209,23 @@ def build_zero_curve(
 
 
 @lru_cache(maxsize=256)
-def _default_curve_cached(index_identifier: str, date_key: datetime.date) -> ql.YieldTermStructureHandle:
+def _default_curve_cached(
+    index_identifier: str, date_key: datetime.date
+) -> ql.YieldTermStructureHandle:
     """Small cache for default curves, keyed only by (identifier, date)."""
     target_dt = datetime.datetime.combine(date_key, datetime.time())
     return build_zero_curve(target_dt, index_identifier)
 
 
-def _default_curve(index_identifier: str, target_date: Union[datetime.date, datetime.datetime, ql.Date]) -> ql.YieldTermStructureHandle:
+def _default_curve(
+    index_identifier: str, target_date: datetime.date | datetime.datetime | ql.Date
+) -> ql.YieldTermStructureHandle:
     dk = _ensure_py_date(target_date)
     return _default_curve_cached(index_identifier, dk)
 
 
 # ----------------------------- Historical fixings hydration ----------------------------- #
+
 
 def add_historical_fixings(target_date: ql.Date, ibor_index: ql.IborIndex):
     """
@@ -240,9 +242,7 @@ def add_historical_fixings(target_date: ql.Date, ibor_index: ql.IborIndex):
     uid = ibor_index.familyName()
 
     historical_fixings = data_interface.get_historical_fixings(
-        reference_rate_uid=uid,
-        start_date=start_date,
-        end_date=end_date
+        reference_rate_uid=uid, start_date=start_date, end_date=end_date
     )
 
     if not historical_fixings:
@@ -268,19 +268,20 @@ def add_historical_fixings(target_date: ql.Date, ibor_index: ql.IborIndex):
 
 # ----------------------------- Index construction ----------------------------- #
 
-def _make_index_from_config(index_identifier: str,
-                            curve: ql.YieldTermStructureHandle,
-                            *,
-                            override_settlement_days: Optional[int] = None) -> ql.IborIndex:
+
+def _make_index_from_config(
+    index_identifier: str,
+    curve: ql.YieldTermStructureHandle,
+    *,
+    override_settlement_days: int | None = None,
+) -> ql.IborIndex:
     """
     Build a ql.IborIndex using the exact spec stored in INDEX_CONFIGS[index_identifier].
     No tenor tokens. Period comes from config.
     """
     cfg = INDEX_CONFIGS.get(index_identifier)
     if cfg is None:
-        raise KeyError(
-            f"No index config for {index_identifier!r}. Add an entry to INDEX_CONFIGS."
-        )
+        raise KeyError(f"No index config for {index_identifier!r}. Add an entry to INDEX_CONFIGS.")
 
     cal: ql.Calendar = cfg["calendar"]
     ccy: ql.Currency = cfg["currency"]
@@ -288,31 +289,26 @@ def _make_index_from_config(index_identifier: str,
     period: ql.Period = cfg["period"]
     bdc: ql.BusinessDayConvention = cfg["bdc"]
     eom: bool = cfg["end_of_month"]
-    settle: int = override_settlement_days if override_settlement_days is not None else cfg["settlement_days"]
+    settle: int = (
+        override_settlement_days if override_settlement_days is not None else cfg["settlement_days"]
+    )
 
     # IMPORTANT: we set the QuantLib index **name** to the UID
     return ql.IborIndex(
-        index_identifier,  # name == UID
-        period,
-        settle,
-        ccy,
-        cal,
-        bdc,
-        eom,
-        dc,
-        curve
+        index_identifier, period, settle, ccy, cal, bdc, eom, dc, curve  # name == UID
     )
 
 
 # ----------------------------- Public API ----------------------------- #
 
+
 def get_index(
-        index_identifier: str,
-        target_date: Union[datetime.date, datetime.datetime, ql.Date],
-        *,
-        forwarding_curve: Optional[ql.YieldTermStructureHandle] = None,
-        hydrate_fixings: bool = True,
-        settlement_days: Optional[int] = None
+    index_identifier: str,
+    target_date: datetime.date | datetime.datetime | ql.Date,
+    *,
+    forwarding_curve: ql.YieldTermStructureHandle | None = None,
+    hydrate_fixings: bool = True,
+    settlement_days: int | None = None,
 ) -> ql.Index:
     """
     Return a QuantLib index instance based ONLY on a stable index_identifier and a target_date.
@@ -352,9 +348,7 @@ def get_index(
 
     # Build the index exactly as configured
     idx = _make_index_from_config(
-        index_identifier=index_identifier,
-        curve=use_curve,
-        override_settlement_days=settlement_days
+        index_identifier=index_identifier, curve=use_curve, override_settlement_days=settlement_days
     )
 
     # Optional: hydrate fixings up to (but not including) target_date

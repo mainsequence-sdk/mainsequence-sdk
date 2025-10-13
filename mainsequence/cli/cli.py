@@ -6,11 +6,10 @@ import os
 import pathlib
 import platform
 import re
-import shlex
 import shutil
 import subprocess
 import sys
-from typing import Optional
+import time
 
 import typer
 
@@ -22,19 +21,18 @@ from .api import (
     deep_find_repo_url,
     fetch_project_env_text,
     get_current_user_profile,
+    get_project_token,
     get_projects,
-    login as api_login,
     repo_name_from_git_url,
     safe_slug,
-get_project_token
 )
+from .api import login as api_login
 from .ssh_utils import (
     ensure_key_for_repo,
     open_folder,
     open_signed_terminal,
     start_agent_and_add_key,
 )
-import time
 
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
@@ -46,14 +44,17 @@ app.add_typer(settings, name="settings")
 
 # ---------- helpers ----------
 
+
 def _projects_root(base_dir: str, org_slug: str) -> pathlib.Path:
     p = pathlib.Path(base_dir).expanduser()
     return p / org_slug / "projects"
+
 
 def _org_slug_from_profile() -> str:
     prof = get_current_user_profile()
     name = prof.get("organization") or "default"
     return re.sub(r"[^a-z0-9-_]+", "-", name.lower()).strip("-") or "default"
+
 
 def _determine_repo_url(p: dict) -> str:
     repo = (p.get("git_ssh_url") or "").strip()
@@ -61,9 +62,14 @@ def _determine_repo_url(p: dict) -> str:
         repo = ""
     if not repo:
         extra = (p.get("data_source") or {}).get("related_resource", {}) or {}
-        extra = extra.get("extra_arguments") or (p.get("data_source") or {}).get("extra_arguments") or {}
+        extra = (
+            extra.get("extra_arguments")
+            or (p.get("data_source") or {}).get("extra_arguments")
+            or {}
+        )
         repo = deep_find_repo_url(extra) or ""
     return repo
+
 
 def _copy_clipboard(txt: str) -> bool:
     try:
@@ -80,8 +86,10 @@ def _copy_clipboard(txt: str) -> bool:
         pass
     return False
 
+
 def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_slug: str) -> str:
     """Return an aligned table with Local status + path (map or default folder guess)."""
+
     def ds(obj, path, default=""):
         try:
             for k in path.split("."):
@@ -92,11 +100,14 @@ def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_sl
 
     rows = []
     for p in items:
-        pid   = str(p.get("id", ""))
-        name  = p.get("project_name") or "(unnamed)"
+        pid = str(p.get("id", ""))
+        name = p.get("project_name") or "(unnamed)"
         dname = ds(p, "data_source.related_resource.display_name", "")
-        klass = ds(p, "data_source.related_resource.class_type",
-                   ds(p, "data_source.related_resource_class_type", ""))
+        klass = ds(
+            p,
+            "data_source.related_resource.class_type",
+            ds(p, "data_source.related_resource_class_type", ""),
+        )
         status = ds(p, "data_source.related_resource.status", "")
 
         # 1) mapping file
@@ -112,24 +123,28 @@ def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_sl
         path_col = local_path or "—"
         rows.append((pid, name, dname, klass, status, local, path_col))
 
-    header = ["ID","Project","Data Source","Class","Status","Local","Path"]
+    header = ["ID", "Project", "Data Source", "Class", "Status", "Local", "Path"]
     if not rows:
         return "No projects."
 
     colw = [max(len(r[i]) for r in rows + [tuple(header)]) for i in range(len(header))]
     fmt = "  ".join("{:<" + str(colw[i]) + "}" for i in range(len(header)))
-    out = [fmt.format(*header), fmt.format(*["-"*len(h) for h in header])]
+    out = [fmt.format(*header), fmt.format(*["-" * len(h) for h in header])]
     for r in rows:
         out.append(fmt.format(*r))
     return "\n".join(out)
 
+
 # ---------- top-level commands ----------
+
 
 @app.command()
 def login(
     email: str = typer.Argument(..., help="Email/username (server expects 'email' field)"),
-    password: Optional[str] = typer.Option(None, prompt=True, hide_input=True, help="Password"),
-    no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login")
+    password: str | None = typer.Option(None, prompt=True, hide_input=True, help="Password"),
+    no_status: bool = typer.Option(
+        False, "--no-status", help="Do not print projects table after login"
+    ),
 ):
     """
     Login to the Main Sequence platform to  set up projects locally. to login: mainsequence login <email>
@@ -142,10 +157,10 @@ def login(
 
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
-    typer.secho(f"Signed in as {res['username']} (Backend: {res['backend']})", fg=typer.colors.GREEN)
+    typer.secho(
+        f"Signed in as {res['username']} (Backend: {res['backend']})", fg=typer.colors.GREEN
+    )
     typer.echo(f"Projects base folder: {base}")
-
-
 
     if not no_status:
         try:
@@ -157,7 +172,9 @@ def login(
         except NotLoggedIn:
             typer.secho("Not logged in.", fg=typer.colors.RED)
 
+
 # ---------- settings group ----------
+
 
 @settings.callback(invoke_without_command=True)
 def settings_cb(ctx: typer.Context):
@@ -166,20 +183,26 @@ def settings_cb(ctx: typer.Context):
         settings_show()
         raise typer.Exit()
 
+
 @settings.command("show")
 def settings_show():
     c = cfg.get_config()
-    typer.echo(json.dumps({
-        "backend_url": c.get("backend_url"),
-        "mainsequence_path": c.get("mainsequence_path")
-    }, indent=2))
+    typer.echo(
+        json.dumps(
+            {"backend_url": c.get("backend_url"), "mainsequence_path": c.get("mainsequence_path")},
+            indent=2,
+        )
+    )
+
 
 @settings.command("set-base")
 def settings_set_base(path: str = typer.Argument(..., help="New projects base folder")):
     out = cfg.set_config({"mainsequence_path": path})
     typer.secho(f"Projects base folder set to: {out['mainsequence_path']}", fg=typer.colors.GREEN)
 
+
 # ---------- project group (require login) ----------
+
 
 @project.callback()
 def project_guard():
@@ -194,6 +217,7 @@ def project_guard():
         typer.secho("Not logged in. Run: mainsequence login <email>", fg=typer.colors.RED)
         raise typer.Exit(1)
 
+
 @project.command("list")
 def project_list():
     """List projects with Local status and path."""
@@ -204,6 +228,7 @@ def project_list():
     items = get_projects()
     links = cfg.get_links()
     typer.echo(_render_projects_table(items, links, base, org_slug))
+
 
 @project.command("open")
 def project_open(project_id: int):
@@ -222,10 +247,14 @@ def project_open(project_id: int):
             if guess.exists():
                 path = str(guess)
     if not path or not pathlib.Path(path).exists():
-        typer.secho("No local folder mapped for this project. Run `set-up-locally` first.", fg=typer.colors.RED)
+        typer.secho(
+            "No local folder mapped for this project. Run `set-up-locally` first.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(1)
     open_folder(path)
     typer.echo(f"Opened: {path}")
+
 
 @project.command("delete-local")
 def project_delete_local(
@@ -239,11 +268,13 @@ def project_delete_local(
     p = pathlib.Path(mapped)
     if p.exists():
         import shutil
+
         shutil.rmtree(mapped, ignore_errors=True)
         typer.secho(f"Deleted: {mapped}", fg=typer.colors.YELLOW)
 
     else:
         typer.echo("Mapping removed; folder already absent.")
+
 
 @project.command("open-signed-terminal")
 def project_open_signed_terminal(project_id: int):
@@ -264,23 +295,30 @@ def project_open_signed_terminal(project_id: int):
                 dir_ = str(guess)
 
     if not dir_ or not pathlib.Path(dir_).exists():
-        typer.secho("No local folder mapped for this project. Run `set-up-locally` first.", fg=typer.colors.RED)
+        typer.secho(
+            "No local folder mapped for this project. Run `set-up-locally` first.",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(1)
 
-    proc = subprocess.run(["git", "-C", dir_, "remote", "get-url", "origin"], text=True, capture_output=True)
+    proc = subprocess.run(
+        ["git", "-C", dir_, "remote", "get-url", "origin"], text=True, capture_output=True
+    )
     origin = (proc.stdout or "").strip().splitlines()[-1] if proc.returncode == 0 else ""
     name = repo_name_from_git_url(origin) or pathlib.Path(dir_).name
     key_path = pathlib.Path.home() / ".ssh" / name
     open_signed_terminal(dir_, key_path, name)
 
+
 @project.command("set-up-locally")
 def project_set_up_locally(
     project_id: int,
-    base_dir: Optional[str] = typer.Option(None, "--base-dir", help="Override base dir (default from settings)")
+    base_dir: str | None = typer.Option(
+        None, "--base-dir", help="Override base dir (default from settings)"
+    ),
 ):
     cfg_obj = cfg.get_config()
     base = base_dir or cfg_obj["mainsequence_path"]
-
 
     org_slug = _org_slug_from_profile()
 
@@ -322,6 +360,7 @@ def project_set_up_locally(
         try:
             if target_dir.exists():
                 import shutil
+
                 shutil.rmtree(target_dir, ignore_errors=True)
         except Exception:
             pass
@@ -335,17 +374,23 @@ def project_set_up_locally(
         env_text = ""
     env_text = (env_text or "").replace("\r", "")
     if any(line.startswith("VFB_PROJECT_PATH=") for line in env_text.splitlines()):
-        lines = [f"VFB_PROJECT_PATH={str(target_dir)}" if line.startswith("VFB_PROJECT_PATH=") else line
-                 for line in env_text.splitlines()]
+        lines = [
+            f"VFB_PROJECT_PATH={str(target_dir)}" if line.startswith("VFB_PROJECT_PATH=") else line
+            for line in env_text.splitlines()
+        ]
         env_text = "\n".join(lines)
     else:
-        if env_text and not env_text.endswith("\n"): env_text += "\n"
+        if env_text and not env_text.endswith("\n"):
+            env_text += "\n"
         env_text += f"VFB_PROJECT_PATH={str(target_dir)}\n"
 
     try:
         project_token = get_project_token(project_id)
     except NotLoggedIn:
-        typer.secho("Session expired or refresh failed. Run: mainsequence login <email>", fg=typer.colors.RED)
+        typer.secho(
+            "Session expired or refresh failed. Run: mainsequence login <email>",
+            fg=typer.colors.RED,
+        )
         raise typer.Exit(1)
     except ApiError as e:
         typer.secho(f"Could not fetch project token: {e}", fg=typer.colors.RED)
@@ -354,12 +399,17 @@ def project_set_up_locally(
     lines = env_text.splitlines()
     if any(line.startswith("MAINSEQUENCE_TOKEN=") for line in lines):
         lines = [
-            (f"MAINSEQUENCE_TOKEN={project_token}" if line.startswith("MAINSEQUENCE_TOKEN=") else line)
+            (
+                f"MAINSEQUENCE_TOKEN={project_token}"
+                if line.startswith("MAINSEQUENCE_TOKEN=")
+                else line
+            )
             for line in lines
         ]
         env_text = "\n".join(lines)
     else:
-        if env_text and not env_text.endswith("\n"): env_text += "\n"
+        if env_text and not env_text.endswith("\n"):
+            env_text += "\n"
         env_text += f"MAINSEQUENCE_TOKEN={project_token}\n"
 
     # ---  ensure TDAG_ENDPOINT points at the current backend URL ---
@@ -371,10 +421,9 @@ def project_set_up_locally(
             for line in lines
         )
     else:
-        if env_text and not env_text.endswith("\n"): env_text += "\n"
+        if env_text and not env_text.endswith("\n"):
+            env_text += "\n"
         env_text += f"TDAG_ENDPOINT={backend}\n"
-
-
 
     # write final .env with both vars present
     (target_dir / ".env").write_text(env_text, encoding="utf-8")
@@ -385,11 +434,13 @@ def project_set_up_locally(
     if copied:
         typer.echo("Public key copied to clipboard.")
 
+
 @app.command("build_and_run")
-def build_and_run(dockerfile: Optional[str] = typer.Argument(
-    None,
-    help="Path to Dockerfile to build & run. If omitted, only lock & export requirements."
-)):
+def build_and_run(
+    dockerfile: str | None = typer.Argument(
+        None, help="Path to Dockerfile to build & run. If omitted, only lock & export requirements."
+    )
+):
     """
     - uv lock
     - uv export --format requirements --no-dev --hashes > requirements.txt
@@ -416,7 +467,8 @@ def build_and_run(dockerfile: Optional[str] = typer.Argument(
     typer.secho("Exporting hashed requirements to requirements.txt", fg=typer.colors.BLUE)
     p = subprocess.run(
         ["uv", "export", "--format", "requirements", "--no-dev", "--hashes"],
-        capture_output=True, text=True
+        capture_output=True,
+        text=True,
     )
     if p.returncode != 0:
         typer.secho("uv export failed:", fg=typer.colors.RED)
@@ -450,7 +502,9 @@ def build_and_run(dockerfile: Optional[str] = typer.Argument(
     tag = os.environ.get("TAG")
     if not tag:
         try:
-            tag = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], text=True).strip()
+            tag = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"], text=True
+            ).strip()
         except Exception:
             tag = time.strftime("%Y%m%d%H%M%S")
 
@@ -469,4 +523,3 @@ def build_and_run(dockerfile: Optional[str] = typer.Argument(
     except subprocess.CalledProcessError as e:
         typer.secho(f"docker run failed (exit {e.returncode}).", fg=typer.colors.RED)
         raise typer.Exit(e.returncode)
-

@@ -1,6 +1,7 @@
-
-
-from mainsequence.virtualfundbuilder.contrib.data_nodes.portfolio_replicator import ETFReplicator, TrackingStrategy, TrackingStrategyConfiguration
+from mainsequence.virtualfundbuilder.contrib.data_nodes.portfolio_replicator import (
+    ETFReplicator,
+    TrackingStrategyConfiguration,
+)
 from mainsequence.virtualfundbuilder.models import AssetsConfiguration, PricesConfiguration
 
 asset_configuration = AssetsConfiguration(
@@ -11,7 +12,7 @@ asset_configuration = AssetsConfiguration(
 ts = ETFReplicator(
     etf_ticker="XLF",
     signal_assets_configuration=asset_configuration,
-    tracking_strategy_configuration=TrackingStrategyConfiguration()
+    tracking_strategy_configuration=TrackingStrategyConfiguration(),
 )
 
 ts.run(debug_mode=True, force_update=True, update_tree=True)

@@ -1,17 +1,18 @@
 """Generate the code reference pages and navigation."""
+
 import copy
 from pathlib import Path
 
 import mkdocs_gen_files
 
 nav = mkdocs_gen_files.Nav()
-project_name="mainsequence"
+project_name = "mainsequence"
 
-prefix=[project_name]
+prefix = [project_name]
 
 root = Path(__file__).parent.parent
 src = root / project_name
-docs_folder= root / "docs"
+docs_folder = root / "docs"
 
 for path in sorted(src.rglob("*.py")):
     module_path = path.relative_to(src).with_suffix("")
@@ -31,7 +32,7 @@ for path in sorted(src.rglob("*.py")):
     nav[parts] = doc_path.as_posix()
 
     with mkdocs_gen_files.open(full_doc_path, "w") as fd:
-        full_path=copy.deepcopy(prefix)
+        full_path = copy.deepcopy(prefix)
         full_path.extend(parts)
         ident = ".".join(full_path)
         fd.write(f"::: {ident}")

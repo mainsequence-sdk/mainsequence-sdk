@@ -1,38 +1,43 @@
 #!/usr/bin/env python3
-import os
 import base64
-from io import BytesIO
+import os
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from io import BytesIO
 
 import pandas as pd
 import plotly.graph_objs as go
-from mainsequence.virtualfundbuilder.utils import get_vfb_logger
-
-# Assuming TDAGAgent is correctly set up and accessible in the execution environment
-from mainsequence.virtualfundbuilder.agent_interface import TDAGAgent
-from pydantic import BaseModel, Field
 from jinja2 import Environment, FileSystemLoader
+from pydantic import BaseModel
 
 from mainsequence.client import AssetCategory
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool
+
+# Assuming TDAGAgent is correctly set up and accessible in the execution environment
+from mainsequence.virtualfundbuilder.agent_interface import TDAGAgent
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
+    BaseAgentTool,
+    regiester_agent_tool,
+)
+from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
 POLYGON_API_KEY = os.getenv("POLYGON_API_KEY")
 
+
 class SentimentReportConfig(BaseModel):
     """Pydantic model defining parameters for the Sentiment Report."""
+
     asset_category_unique_identifier: str = "magnificent_7"
     report_days: int = 14
     report_title: str = "Multi-Ticker News Sentiment & Headlines Report"
-    bucket_name: str = "SentimentReports" # Optional: For artifact storage
+    bucket_name: str = "SentimentReports"  # Optional: For artifact storage
     authors: str = "Automated Analysis (Main Sequence AI)"
     sector: str = "Technology Focus"
     region: str = "Global"
     news_items_per_day_limit: int = 5
-    report_id: Optional[str] = "MS_SentimentReport"
+    report_id: str | None = "MS_SentimentReport"
+
 
 @regiester_agent_tool()
 class SentimentReport(BaseAgentTool):
@@ -42,6 +47,7 @@ class SentimentReport(BaseAgentTool):
     Additionally, fetches the first 100 words of each article (if possible)
     and generates a single combined summary displayed below the combined chart.
     """
+
     configuration_class = SentimentReportConfig
 
     def __init__(self, *args, **kwargs):
@@ -49,18 +55,24 @@ class SentimentReport(BaseAgentTool):
         from polygon import RESTClient
 
         if not POLYGON_API_KEY:
-            raise ValueError("Warning: POLYGON_API_KEY environment variable not set. Data fetching will fail.")
+            raise ValueError(
+                "Warning: POLYGON_API_KEY environment variable not set. Data fetching will fail."
+            )
 
         self.tdag_agent = TDAGAgent()
 
-        logger.info(f"Initializing Sentiment Report with configuration {self.configuration.model_dump()}")
+        logger.info(
+            f"Initializing Sentiment Report with configuration {self.configuration.model_dump()}"
+        )
 
         end_date_dt = datetime.now()
-        start_date_dt = end_date_dt - timedelta(days=self.configuration.report_days -1)
+        start_date_dt = end_date_dt - timedelta(days=self.configuration.report_days - 1)
         self.start_date = start_date_dt.strftime("%Y-%m-%d")
         self.end_date = end_date_dt.strftime("%Y-%m-%d")
 
-        category = AssetCategory.get(unique_identifier=self.configuration.asset_category_unique_identifier)
+        category = AssetCategory.get(
+            unique_identifier=self.configuration.asset_category_unique_identifier
+        )
         self.tickers = [a.ticker for a in category.get_assets()]
         self.category_name = category.display_name
 
@@ -80,7 +92,7 @@ class SentimentReport(BaseAgentTool):
             raise FileNotFoundError(f"Jinja2 report template not found: {report_template_path}")
         self.jinja_env = Environment(loader=FileSystemLoader(template_dir), autoescape=True)
 
-    def _fetch_data(self) -> (Dict[str, pd.DataFrame], Dict[str, Dict[str, List[Dict]]]):
+    def _fetch_data(self) -> (dict[str, pd.DataFrame], dict[str, dict[str, list[dict]]]):
         """
         Fetches sentiment counts and news headlines for configured tickers and date range.
         Returns:
@@ -115,7 +127,9 @@ class SentimentReport(BaseAgentTool):
                     # Fetch news for the day
                     daily_news_response = list(
                         self.polygon_client.list_ticker_news(
-                            ticker=ticker, published_utc=day_str, limit=100 # Limit news fetched per day
+                            ticker=ticker,
+                            published_utc=day_str,
+                            limit=100,  # Limit news fetched per day
                         )
                     )
                 except Exception as e:
@@ -127,17 +141,22 @@ class SentimentReport(BaseAgentTool):
 
                 for article in daily_news_response:
                     # Extract headline and URL for the report list
-                    if hasattr(article, 'title') and hasattr(article, 'article_url'):
-                        daily_news_items_for_report.append({'title': article.title, 'url': article.article_url})
+                    if hasattr(article, "title") and hasattr(article, "article_url"):
+                        daily_news_items_for_report.append(
+                            {"title": article.title, "url": article.article_url}
+                        )
 
                     # Extract sentiment from insights
                     if hasattr(article, "insights") and article.insights:
                         for insight in article.insights:
-                            if hasattr(insight, 'sentiment'):
+                            if hasattr(insight, "sentiment"):
                                 sentiment = insight.sentiment
-                                if sentiment == "positive": daily_sentiment["positive"] += 1
-                                elif sentiment == "negative": daily_sentiment["negative"] += 1
-                                elif sentiment == "neutral":  daily_sentiment["neutral"] += 1
+                                if sentiment == "positive":
+                                    daily_sentiment["positive"] += 1
+                                elif sentiment == "negative":
+                                    daily_sentiment["negative"] += 1
+                                elif sentiment == "neutral":
+                                    daily_sentiment["neutral"] += 1
 
                 sentiment_count.append(daily_sentiment)
 
@@ -156,7 +175,9 @@ class SentimentReport(BaseAgentTool):
             else:
                 # No sentiment data found
                 logger.info(f"    No sentiment data found for {ticker} in the date range.")
-                results[ticker] = pd.DataFrame(index=date_range, columns=['positive','negative','neutral']).fillna(0)
+                results[ticker] = pd.DataFrame(
+                    index=date_range, columns=["positive", "negative", "neutral"]
+                ).fillna(0)
                 all_news[ticker] = {}
 
         return results, all_news
@@ -171,7 +192,7 @@ class SentimentReport(BaseAgentTool):
                 for date_str, articles in date_dict.items():
                     # restrict to 2 items per day
                     for article_info in articles[:articles_per_day]:
-                        url = article_info.get('url')
+                        url = article_info.get("url")
                         if not url:
                             continue
                         try:
@@ -184,48 +205,70 @@ class SentimentReport(BaseAgentTool):
                             if snippet:
                                 article_snippets.append(snippet)
                         except Exception as e:
-                            logger.info(f"    Could not retrieve/parse text from {url} for {ticker} due to: {e}")
+                            logger.info(
+                                f"    Could not retrieve/parse text from {url} for {ticker} due to: {e}"
+                            )
         else:
-            logger.info("\nSkipping article text retrieval (Polygon client or newspaper not available).")
+            logger.info(
+                "\nSkipping article text retrieval (Polygon client or newspaper not available)."
+            )
 
         return article_snippets
 
-    def _generate_plot(self, df_sentiment: pd.DataFrame, chart_title: str) -> Optional[str]:
+    def _generate_plot(self, df_sentiment: pd.DataFrame, chart_title: str) -> str | None:
         """
         Generates a Plotly sentiment chart and returns it as a Base64 encoded PNG string.
         Returns None if no data to plot or if image generation fails.
         """
-        if df_sentiment.empty or (df_sentiment[['positive','negative','neutral']].sum().sum() == 0):
+        if df_sentiment.empty or (
+            df_sentiment[["positive", "negative", "neutral"]].sum().sum() == 0
+        ):
             logger.info(f"    No data to plot for '{chart_title}'. Skipping chart generation.")
             return None
 
         x_axis_data = df_sentiment.index.to_pydatetime()
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=x_axis_data, y=df_sentiment["positive"],
-            mode="lines+markers", name="Positive",
-            line=dict(color="green"), marker=dict(size=5))
+        fig.add_trace(
+            go.Scatter(
+                x=x_axis_data,
+                y=df_sentiment["positive"],
+                mode="lines+markers",
+                name="Positive",
+                line=dict(color="green"),
+                marker=dict(size=5),
+            )
         )
-        fig.add_trace(go.Scatter(
-            x=x_axis_data, y=df_sentiment["negative"],
-            mode="lines+markers", name="Negative",
-            line=dict(color="red"), marker=dict(size=5))
+        fig.add_trace(
+            go.Scatter(
+                x=x_axis_data,
+                y=df_sentiment["negative"],
+                mode="lines+markers",
+                name="Negative",
+                line=dict(color="red"),
+                marker=dict(size=5),
+            )
         )
-        fig.add_trace(go.Scatter(
-            x=x_axis_data, y=df_sentiment["neutral"],
-            mode="lines+markers", name="Neutral",
-            line=dict(color="gray", dash="dash"), marker=dict(size=5))
+        fig.add_trace(
+            go.Scatter(
+                x=x_axis_data,
+                y=df_sentiment["neutral"],
+                mode="lines+markers",
+                name="Neutral",
+                line=dict(color="gray", dash="dash"),
+                marker=dict(size=5),
+            )
         )
 
         fig.update_layout(
             title=f"{chart_title} News Sentiment Over Time",
-            xaxis_title="Date", yaxis_title="Sentiment Count", legend_title="Sentiment",
-            width=850, height=450, margin=dict(l=40, r=40, t=60, b=40),
-            xaxis=dict(
-                type='date',
-                tickformat="%Y-%m-%d"
-            )
+            xaxis_title="Date",
+            yaxis_title="Sentiment Count",
+            legend_title="Sentiment",
+            width=850,
+            height=450,
+            margin=dict(l=40, r=40, t=60, b=40),
+            xaxis=dict(type="date", tickformat="%Y-%m-%d"),
         )
 
         buf = BytesIO()
@@ -237,7 +280,6 @@ class SentimentReport(BaseAgentTool):
         except Exception as e:
             logger.info(f"    Error generating PNG for '{chart_title}': {e}")
             return None
-
 
     def _format_ticker_sections(self, all_sentiment_data, all_news_data):
         ticker_sections_html = ""
@@ -267,18 +309,26 @@ class SentimentReport(BaseAgentTool):
                 for date_str in sorted_dates:
                     news_items = ticker_news[date_str]
                     if news_items:
-                        items_to_show = news_items[:self.configuration.news_items_per_day_limit]
+                        items_to_show = news_items[: self.configuration.news_items_per_day_limit]
                         if items_to_show:
                             news_list_html += f"{date_str}\n<ul class='list-unstyled'>\n"
                             for item in items_to_show:
-                                safe_title = item.get('title', 'No Title').replace('<', '&lt;').replace('>', '&gt;')
-                                url = item.get('url', '#')
+                                safe_title = (
+                                    item.get("title", "No Title")
+                                    .replace("<", "&lt;")
+                                    .replace(">", "&gt;")
+                                )
+                                url = item.get("url", "#")
                                 news_list_html += (
                                     f"  <li><a href='{url}' target='_blank' rel='noopener noreferrer'>"
                                     f"{safe_title}</a></li>\n"
                                 )
                             news_list_html += "</ul>\n"
-                ticker_html += news_list_html if news_list_html else "<p>No recent news headlines found based on limits.</p>\n"
+                ticker_html += (
+                    news_list_html
+                    if news_list_html
+                    else "<p>No recent news headlines found based on limits.</p>\n"
+                )
             else:
                 ticker_html += "<p>No news headlines found for this period.</p>\n"
 
@@ -296,7 +346,9 @@ class SentimentReport(BaseAgentTool):
           5. Render HTML,
           6. Upload artifact.
         """
-        logger.info(f"Running Sentiment Report with configuration: {self.configuration.model_dump()}")
+        logger.info(
+            f"Running Sentiment Report with configuration: {self.configuration.model_dump()}"
+        )
 
         # Step 1: Fetch sentiment and news data
         all_sentiment_data, all_news_data = self._fetch_data()
@@ -341,8 +393,7 @@ class SentimentReport(BaseAgentTool):
             except Exception as e:
                 logger.info(f"    Error generating combined summary: {e}")
                 combined_article_snippets_summary_html = (
-                    "<h3>Summary (AI-Generated)</h3>"
-                    f"<p>Error generating summary: {e}</p><hr>"
+                    "<h3>Summary (AI-Generated)</h3>" f"<p>Error generating summary: {e}</p><hr>"
                 )
         else:
             combined_article_snippets_summary_html = (
@@ -370,7 +421,7 @@ class SentimentReport(BaseAgentTool):
         template_context = {
             "report_title": self.configuration.report_title,
             "report_id": self.configuration.report_id,
-            "current_date": datetime.now().strftime('%Y-%m-%d'),
+            "current_date": datetime.now().strftime("%Y-%m-%d"),
             "authors": self.configuration.authors,
             "sector": self.configuration.sector,
             "region": self.configuration.region,
@@ -387,7 +438,9 @@ class SentimentReport(BaseAgentTool):
         template = self.jinja_env.get_template("report.html")
         rendered_html = template.render(template_context)
 
-        output_html_path = os.path.join(os.path.dirname(__file__), "multi_ticker_sentiment_report.html")
+        output_html_path = os.path.join(
+            os.path.dirname(__file__), "multi_ticker_sentiment_report.html"
+        )
         try:
             with open(output_html_path, "w", encoding="utf-8") as f:
                 f.write(rendered_html)
@@ -402,14 +455,17 @@ class SentimentReport(BaseAgentTool):
                 filepath=output_html_path,
                 name=self.configuration.report_id + f"_{self.category_name}.html",
                 created_by_resource_name=self.__class__.__name__,
-                bucket_name=self.configuration.bucket_name
+                bucket_name=self.configuration.bucket_name,
             )
-            logger.info(f"Artifact uploaded successfully: {html_artifact.id if html_artifact else 'Failed'}")
+            logger.info(
+                f"Artifact uploaded successfully: {html_artifact.id if html_artifact else 'Failed'}"
+            )
         except Exception as e:
             logger.info(f"Error uploading artifact: {e}")
 
         self.add_output(html_artifact)
         return html_artifact
+
 
 # --- Main Execution Guard ---
 if __name__ == "__main__":
@@ -424,7 +480,7 @@ if __name__ == "__main__":
         asset_category_unique_identifier="magnificent_7",
         report_days=7,
         report_title="Magnificent 7 News Sentiment & Headlines Report (Last 7 Days)",
-        report_id="Mag7_SentimentReport_7d"
+        report_id="Mag7_SentimentReport_7d",
     )
 
     # Create the App instance with config

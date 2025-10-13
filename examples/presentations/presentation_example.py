@@ -1,7 +1,6 @@
-
+import json
 
 import mainsequence.client as ms_client
-import json
 
 # Placeholder variables for the example
 PRESENTATION_TITLE = "My Portfolio Factor Analysis"
@@ -52,12 +51,12 @@ slide_body_content = {
     "content": [
         # Add a main title for the slide
         ms_client.TextParagraph.heading("Portfolio Exposure", level=2).model_dump(),
-
         # Embed the chart using its artifact ID
         json.loads(ms_client.AppNode.make_app_node(id=ARTIFACT_ID_FOR_CHART).model_dump_json()),
-
         # Add a descriptive note at the bottom
-        ms_client.TextParagraph.paragraph("Exposures calculated from 2025-07-01 to 2025-07-31").model_dump(),
+        ms_client.TextParagraph.paragraph(
+            "Exposures calculated from 2025-07-01 to 2025-07-31"
+        ).model_dump(),
     ],
 }
 

@@ -1,36 +1,24 @@
-
 # Standard Library Imports
+import datetime
 import gc
 import time
-import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 # Third-Party Library Imports
 import numpy as np
 import pandas as pd
 import structlog.contextvars as cvars
 
-
-
-
 # Client and ORM Models
 import mainsequence.client as ms_client
-import pytz
 from mainsequence.client import UpdateStatistics
 
 # Instrumentation and Logging
-from mainsequence.instrumentation import (
-    tracer,
-    tracer_instrumentator,
-    TracerInstrumentator
-)
+from mainsequence.instrumentation import TracerInstrumentator, tracer
 from mainsequence.instrumentation.utils import Status, StatusCode
 
 # TDAG Core Components and Helpers
 from mainsequence.tdag.data_nodes import build_operations
-
-
-
 
 
 # Custom Exceptions
@@ -40,15 +28,20 @@ class DependencyUpdateError(Exception):
 
 class UpdateRunner:
     """
-       Orchestrates the entire update process for a DataNode instance.
-       It handles scheduling, dependency resolution, execution, and error handling.
-       """
+    Orchestrates the entire update process for a DataNode instance.
+    It handles scheduling, dependency resolution, execution, and error handling.
+    """
 
-    def __init__(self, time_serie: "DataNode", debug_mode: bool = False, force_update: bool = False,
-                 update_tree: bool = True, update_only_tree: bool = False,
-                 remote_scheduler: Optional[ms_client.Scheduler] = None,
-                 override_update_stats:Optional[UpdateStatistics]=None
-                 ):
+    def __init__(
+        self,
+        time_serie: "DataNode",
+        debug_mode: bool = False,
+        force_update: bool = False,
+        update_tree: bool = True,
+        update_only_tree: bool = False,
+        remote_scheduler: ms_client.Scheduler | None = None,
+        override_update_stats: UpdateStatistics | None = None,
+    ):
         self.ts = time_serie
         self.logger = self.ts.logger
         self.debug_mode = debug_mode
@@ -59,8 +52,8 @@ class UpdateRunner:
             self.update_only_tree = False
 
         self.remote_scheduler = remote_scheduler
-        self.scheduler: Optional[ms_client.Scheduler] = None
-        self.override_update_stats=override_update_stats
+        self.scheduler: ms_client.Scheduler | None = None
+        self.override_update_stats = override_update_stats
 
     def _setup_scheduler(self) -> None:
         """Initializes or retrieves the scheduler and starts its heartbeat."""
@@ -73,11 +66,13 @@ class UpdateRunner:
             scheduler_name=f"{name_prefix}{self.ts.data_node_update.id}",
             time_serie_ids=[self.ts.data_node_update.id],
             remove_from_other_schedulers=True,
-            running_in_debug_mode=self.debug_mode
+            running_in_debug_mode=self.debug_mode,
         )
         self.scheduler.start_heart_beat()
 
-    def _pre_update_routines(self, data_node_update: Optional[dict] = None) -> Tuple[Dict[int,ms_client.DataNodeUpdate], Any]:
+    def _pre_update_routines(
+        self, data_node_update: dict | None = None
+    ) -> tuple[dict[int, ms_client.DataNodeUpdate], Any]:
         """
         Prepares the DataNode and its dependencies for an update by fetching the
         latest metadata for the entire dependency graph.
@@ -91,7 +86,9 @@ class UpdateRunner:
             tree (keyed by ID) and the corresponding state data.
         """
         # 1. Synchronize the head node and load its dependency structure.
-        self.ts.local_persist_manager.synchronize_data_node_update(data_node_update=data_node_update)
+        self.ts.local_persist_manager.synchronize_data_node_update(
+            data_node_update=data_node_update
+        )
         self.ts.set_relation_tree()
 
         # The `load_dependencies` logic is now integrated here.
@@ -102,7 +99,9 @@ class UpdateRunner:
         if not self.ts._scheduler_tree_connected and self.update_tree:
             self.logger.debug("Connecting dependency tree to scheduler...")
             if not self.ts.depth_df.empty:
-                all_ids = self.ts.depth_df["data_node_update_id"].to_list() + [self.ts.data_node_update.id]
+                all_ids = self.ts.depth_df["data_node_update_id"].to_list() + [
+                    self.ts.data_node_update.id
+                ]
                 self.scheduler.in_active_tree_connect(local_time_series_ids=all_ids)
             self.ts._scheduler_tree_connected = True
 
@@ -120,30 +119,34 @@ class UpdateRunner:
         update_details_batch = dict(
             error_on_last_update=False,
             active_update_scheduler_id=self.scheduler.id,
-            active_update_status="Q"  # Assuming queue status is always set here
+            active_update_status="Q",  # Assuming queue status is always set here
         )
 
         all_metadatas_response = ms_client.DataNodeUpdate.get_data_nodes_and_set_updates(
             local_time_series_ids=all_ids_in_tree,
             update_details_kwargs=update_details_batch,
-            update_priority_dict=None
+            update_priority_dict=None,
         )
 
         # 5. Process and return the results.
-        state_data = all_metadatas_response['state_data']
+        state_data = all_metadatas_response["state_data"]
         data_node_updates_list = all_metadatas_response["data_node_updates"]
         data_node_updates_map = {m.id: m for m in data_node_updates_list}
 
         self.ts.scheduler = self.scheduler
-        self.ts.update_details_tree = {key: v.run_configuration for key, v in data_node_updates_map.items()}
+        self.ts.update_details_tree = {
+            key: v.run_configuration for key, v in data_node_updates_map.items()
+        }
 
         return data_node_updates_map, state_data
 
-    def _setup_execution_environment(self) -> Dict[int, ms_client.DataNodeUpdate]:
+    def _setup_execution_environment(self) -> dict[int, ms_client.DataNodeUpdate]:
         data_node_updates, state_data = self._pre_update_routines()
         return data_node_updates
 
-    def _start_update(self, use_state_for_update: bool,override_update_stats:Optional[UpdateStatistics]=None) -> [bool,pd.DataFrame]:
+    def _start_update(
+        self, use_state_for_update: bool, override_update_stats: UpdateStatistics | None = None
+    ) -> [bool, pd.DataFrame]:
         """Orchestrates a single DataNode update, including pre/post routines."""
         historical_update = self.ts.local_persist_manager.data_node_update.set_start_of_execution(
             active_update_scheduler_id=self.scheduler.id
@@ -154,7 +157,6 @@ class UpdateRunner:
         # Ensure metadata is fully loaded with relationship details before proceeding.
         self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
-
         if override_update_stats is not None:
 
             self.ts.update_statistics = override_update_stats
@@ -163,14 +165,14 @@ class UpdateRunner:
             # The DataNode defines how to scope its statistics
             self.ts._set_update_statistics(update_statistics)
 
-        updated_df=pd.DataFrame()
+        updated_df = pd.DataFrame()
         error_on_last_update = False
         try:
             if must_update:
                 self.logger.debug(f"Update required for {self.ts}.")
-                updated_df=self._update_local(
+                updated_df = self._update_local(
                     overwrite_latest_value=historical_update.last_time_index_value,
-                    use_state_for_update=use_state_for_update
+                    use_state_for_update=use_state_for_update,
                 )
             else:
                 self.logger.debug(f"Already up-to-date. Skipping update for {self.ts}.")
@@ -179,22 +181,22 @@ class UpdateRunner:
             raise e
         finally:
             self.ts.local_persist_manager.data_node_update.set_end_of_execution(
-                historical_update_id=historical_update.id,
-                error_on_update=error_on_last_update
+                historical_update_id=historical_update.id, error_on_update=error_on_last_update
             )
 
             # Always set last relations details after the run completes.
             self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
             self.ts.run_post_update_routines(error_on_last_update=error_on_last_update)
-            self.ts.local_persist_manager.set_column_metadata(columns_metadata=self.ts.get_column_metadata())
+            self.ts.local_persist_manager.set_column_metadata(
+                columns_metadata=self.ts.get_column_metadata()
+            )
             table_metadata = self.ts.get_table_metadata()
 
-            if self.ts.data_source.related_resource.class_type!=ms_client.DUCK_DB:
+            if self.ts.data_source.related_resource.class_type != ms_client.DUCK_DB:
                 self.ts.local_persist_manager.set_table_metadata(table_metadata=table_metadata)
 
-
-        return error_on_last_update,updated_df
+        return error_on_last_update, updated_df
 
     def _validate_update_dataframe(self, df: pd.DataFrame) -> None:
         """
@@ -211,22 +213,25 @@ class UpdateRunner:
 
         # Check that the time index is a UTC datetime
         time_index = df.index.get_level_values(0)
-        if not pd.api.types.is_datetime64_ns_dtype(time_index) or str(time_index.tz) !=str(datetime.timezone.utc)  :
+        if not pd.api.types.is_datetime64_ns_dtype(time_index) or str(time_index.tz) != str(
+            datetime.timezone.utc
+        ):
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
         # Check for forbidden data types and enforce lowercase columns
-        if self.ts.data_source.related_resource.class_type!=ms_client.DUCK_DB:
+        if self.ts.data_source.related_resource.class_type != ms_client.DUCK_DB:
 
             for col, dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
                     raise ValueError(f"Column name '{col}' must be a lowercase string.")
                 if "datetime64" in str(dtype):
                     raise TypeError(f"Column '{col}' has a forbidden datetime64 dtype.")
+
     @tracer.start_as_current_span("UpdateRunner._update_local")
     def _update_local(
-            self,
-            overwrite_latest_value: Optional[datetime.datetime],
-            use_state_for_update: bool,
+        self,
+        overwrite_latest_value: datetime.datetime | None,
+        use_state_for_update: bool,
     ) -> pd.DataFrame:
         """
         Calculates, validates, and persists the data update for the time series.
@@ -236,9 +241,11 @@ class UpdateRunner:
         if self.update_tree:
             self._verify_tree_is_updated(use_state_for_update)
             if self.update_only_tree:
-                self.logger.info(f'Dependency tree for {self.ts} updated. Halting run as requested.')
+                self.logger.info(
+                    f"Dependency tree for {self.ts} updated. Halting run as requested."
+                )
                 return tmp_df
-       
+
         # 2. Execute the core data calculation
         with tracer.start_as_current_span("Update Calculation") as update_span:
 
@@ -246,7 +253,7 @@ class UpdateRunner:
             if not self.ts.update_statistics:
                 self.logger.debug(f"Performing first-time update for {self.ts}...")
             else:
-                self.logger.debug(f'Calculating update for {self.ts}...')
+                self.logger.debug(f"Calculating update for {self.ts}...")
 
             try:
                 # Call the business logic defined on the DataNode class
@@ -261,7 +268,10 @@ class UpdateRunner:
                     return temp_df
 
                 # In a normal run, filter out data we already have.
-                if overwrite_latest_value is None and ms_client.SessionDataSource.is_local_duck_db ==False:
+                if (
+                    overwrite_latest_value is None
+                    and ms_client.SessionDataSource.is_local_duck_db == False
+                ):
                     temp_df = self.ts.update_statistics.filter_df_by_latest_value(temp_df)
 
                 # If filtering left nothing, we're done.
@@ -273,13 +283,12 @@ class UpdateRunner:
                 self._validate_update_dataframe(temp_df)
 
                 # Persist the validated data
-                self.logger.info(f'Persisting {len(temp_df)} new rows for {self.ts}.')
+                self.logger.info(f"Persisting {len(temp_df)} new rows for {self.ts}.")
                 persisted = self.ts.local_persist_manager.persist_updated_data(
-                    temp_df=temp_df,
-                    overwrite=(overwrite_latest_value is not None)
+                    temp_df=temp_df, overwrite=(overwrite_latest_value is not None)
                 )
                 update_span.set_status(Status(StatusCode.OK))
-                self.logger.info(f'Successfully updated {self.ts}.')
+                self.logger.info(f"Successfully updated {self.ts}.")
                 return temp_df
 
             except Exception as e:
@@ -290,8 +299,8 @@ class UpdateRunner:
 
     @tracer.start_as_current_span("UpdateRunner._verify_tree_is_updated")
     def _verify_tree_is_updated(
-            self,
-            use_state_for_update: bool,
+        self,
+        use_state_for_update: bool,
     ) -> None:
         """
         Ensures all dependencies in the tree are updated before the head node.
@@ -305,25 +314,31 @@ class UpdateRunner:
         """
         # 1. Ensure the dependency graph is built in the backend
         declared_dependencies = self.ts.dependencies() or {}
-        deps_ids=[d.data_node_update.id  if (d.is_api ==False and d.data_node_update is not None) else None  for d in declared_dependencies.values()]
+        deps_ids = [
+            (
+                d.data_node_update.id
+                if (d.is_api == False and d.data_node_update is not None)
+                else None
+            )
+            for d in declared_dependencies.values()
+        ]
 
         # 2. Get the list of dependencies to update
         dependencies_df = self.ts.dependencies_df
 
-        if any([a is None for a in deps_ids]) or any([d not in dependencies_df["data_node_update_id"].to_list() for d in deps_ids]):
-            #Datanode not update set
+        if any([a is None for a in deps_ids]) or any(
+            [d not in dependencies_df["data_node_update_id"].to_list() for d in deps_ids]
+        ):
+            # Datanode not update set
             self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)
 
-
-        if self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked==False:
+        if self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked == False:
             self.logger.info("Dependency tree not set. Building now...")
             start_time = time.time()
             self.ts.set_relation_tree()
             self.logger.debug(f"Tree build took {time.time() - start_time:.2f}s.")
             self.ts.set_dependencies_df()
             dependencies_df = self.ts.dependencies_df
-
-
 
         if dependencies_df.empty:
             self.logger.debug("No dependencies to update.")
@@ -332,11 +347,7 @@ class UpdateRunner:
         # 3. Build a map of dependency instances if needed for debug mode
         update_map = {}
         if self.debug_mode and use_state_for_update:
-            update_map = self._get_update_map(declared_dependencies,
-                                              logger=self.logger
-                                              )
-
-
+            update_map = self._get_update_map(declared_dependencies, logger=self.logger)
 
         # 4. Delegate to the appropriate execution method
         self.logger.debug(f"Starting update for {len(dependencies_df)} dependencies...")
@@ -345,17 +356,21 @@ class UpdateRunner:
         if dependencies_df.empty:
             return
         if self.debug_mode:
-            self._execute_sequential_debug_update(dependencies_df, update_map,)
+            self._execute_sequential_debug_update(
+                dependencies_df,
+                update_map,
+            )
         else:
             self._execute_parallel_distributed_update(dependencies_df)
 
-        self.logger.debug(f'Dependency tree evaluation complete for {self.ts}.')
+        self.logger.debug(f"Dependency tree evaluation complete for {self.ts}.")
 
-
-    def _get_update_map(self,declared_dependencies: Dict[str, 'DataNode'],
-                       logger: object,
-                       dependecy_map: Optional[Dict] = None) -> Dict[
-        Tuple[str, int], Dict[str, Any]]:
+    def _get_update_map(
+        self,
+        declared_dependencies: dict[str, "DataNode"],
+        logger: object,
+        dependecy_map: dict | None = None,
+    ) -> dict[tuple[str, int], dict[str, Any]]:
         """
         Obtains all DataNode objects in the dependency graph by recursively
         calling the dependencies() method.
@@ -392,16 +407,18 @@ class UpdateRunner:
             dependecy_map[key] = {"is_pickle": False, "ts": dependency_ts}
             declared_dependencies = dependency_ts.dependencies() or {}
             # Recursively call get_update_map on the dependency to traverse the entire graph
-            self._get_update_map(declared_dependencies=declared_dependencies,
-                           logger=logger,
-                           dependecy_map=dependecy_map)
+            self._get_update_map(
+                declared_dependencies=declared_dependencies,
+                logger=logger,
+                dependecy_map=dependecy_map,
+            )
 
         return dependecy_map
 
     def _execute_sequential_debug_update(
-            self,
-            dependencies_df: pd.DataFrame,
-            update_map: Dict[Tuple[str, int], Dict],
+        self,
+        dependencies_df: pd.DataFrame,
+        update_map: dict[tuple[str, int], dict],
     ) -> None:
         """Runs dependency updates sequentially in the same process for debugging."""
         self.logger.info("Executing dependency updates in sequential debug mode.")
@@ -410,7 +427,9 @@ class UpdateRunner:
 
         def refresh_update_statistics_of_deps(ts):
             for _, ts_dep in ts.dependencies().items():
-                ts_dep.update_statistics = ts_dep.local_persist_manager.get_update_statistics_for_table()
+                ts_dep.update_statistics = (
+                    ts_dep.local_persist_manager.get_update_statistics_for_table()
+                )
 
         for priority in sorted_priorities:
             priority_df = dependencies_df[dependencies_df["update_priority"] == priority]
@@ -434,7 +453,9 @@ class UpdateRunner:
                         )
 
                     if ts_to_update:
-                        self.logger.debug(f"Running debug update for dependency: {ts_to_update.update_hash}")
+                        self.logger.debug(
+                            f"Running debug update for dependency: {ts_to_update.update_hash}"
+                        )
                         # Each dependency gets its own clean runner
                         dep_runner = UpdateRunner(
                             time_serie=ts_to_update,
@@ -453,9 +474,9 @@ class UpdateRunner:
                     raise e  # Re-raise to halt the entire process on failure
 
         # refresh update statistics of direct dependencies
-        #for edge case of multicolumn self update
+        # for edge case of multicolumn self update
         self.ts.local_persist_manager.synchronize_data_node_update(None)
-        us=self.ts.local_persist_manager.get_update_statistics_for_table()
+        us = self.ts.local_persist_manager.get_update_statistics_for_table()
         self.ts.update_statistics = us
 
         refresh_update_statistics_of_deps(self.ts)
@@ -465,15 +486,15 @@ class UpdateRunner:
 
     @tracer.start_as_current_span("UpdateRunner._execute_parallel_distributed_update")
     def _execute_parallel_distributed_update(
-            self,
-            dependencies_df: pd.DataFrame,
+        self,
+        dependencies_df: pd.DataFrame,
     ) -> None:
-        """
-
-        """
+        """ """
         # 1. Prepare tasks, prioritizing any pre-loaded time series
 
-        raise Exception("This is an Enterprise feature available only in the Main Sequence Platform")
+        raise Exception(
+            "This is an Enterprise feature available only in the Main Sequence Platform"
+        )
 
     def run(self) -> None:
         """
@@ -491,12 +512,16 @@ class UpdateRunner:
         # 1. Set up the scheduler for this run
         try:
 
-            self.ts.verify_and_build_remote_objects()#needed to start sch
+            self.ts.verify_and_build_remote_objects()  # needed to start sch
             self._setup_scheduler()
-            cvars.bind_contextvars(scheduler_name=self.scheduler.name, head_local_ts_hash_id=self.ts.update_hash)
+            cvars.bind_contextvars(
+                scheduler_name=self.scheduler.name, head_local_ts_hash_id=self.ts.update_hash
+            )
 
             # 2. Start the main execution block with tracing
-            with tracer.start_as_current_span(f"Scheduler Head Update: {self.ts.update_hash}") as span:
+            with tracer.start_as_current_span(
+                f"Scheduler Head Update: {self.ts.update_hash}"
+            ) as span:
                 span.set_attribute("time_serie_update_hash", self.ts.update_hash)
                 span.set_attribute("storage_hash", self.ts.storage_hash)
                 span.set_attribute("head_scheduler", self.scheduler.name)
@@ -510,12 +535,11 @@ class UpdateRunner:
                     self.ts.data_node_update.wait_for_update_time()
 
                 # 5. Trigger the core update process
-                error_on_last_update,updated_df=self._start_update(
-                    use_state_for_update=True,
-                override_update_stats=self.override_update_stats
+                error_on_last_update, updated_df = self._start_update(
+                    use_state_for_update=True, override_update_stats=self.override_update_stats
                 )
-                
-                return error_on_last_update,updated_df
+
+                return error_on_last_update, updated_df
 
         except DependencyUpdateError as de:
             self.logger.error("A dependency failed to update, halting the run.", error=de)
@@ -533,7 +557,7 @@ class UpdateRunner:
                 self.scheduler.stop_heart_beat()
 
             # Clean up temporary attributes on the DataNode instance
-            if hasattr(self.ts, 'update_tracker'):
+            if hasattr(self.ts, "update_tracker"):
                 del self.ts.update_tracker
 
             gc.collect()

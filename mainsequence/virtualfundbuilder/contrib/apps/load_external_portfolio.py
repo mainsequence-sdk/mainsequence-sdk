@@ -1,21 +1,25 @@
 import pandas as pd
+from pydantic import BaseModel
 
-from mainsequence.client import Asset, AssetCategory, CONSTANTS
+from mainsequence.client import CONSTANTS, Asset, AssetCategory
+from mainsequence.client.models_tdag import Artifact
 from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import ExternalPrices
 from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
+from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
+    BaseAgentTool,
+    regiester_agent_tool,
+)
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
-from pydantic import BaseModel
-from mainsequence.client.models_tdag import Artifact
-from mainsequence.virtualfundbuilder.resource_factory.app_factory import BaseAgentTool, regiester_agent_tool
-
 logger = get_vfb_logger()
+
 
 class LoadExternalPortfolioConfig(BaseModel):
     bucket_name: str
     artifact_name: str
     portfolio_name: str
     created_asset_category_name: str
+
 
 @regiester_agent_tool()
 class LoadExternalPortfolio(BaseAgentTool):
@@ -24,25 +28,20 @@ class LoadExternalPortfolio(BaseAgentTool):
     def run(self):
 
         # get the data and store it on local storage
-        source_artifact = Artifact.get(bucket__name=self.configuration.bucket_name, name=self.configuration.artifact_name)
+        source_artifact = Artifact.get(
+            bucket__name=self.configuration.bucket_name, name=self.configuration.artifact_name
+        )
         weights_source = pd.read_csv(source_artifact.content)
 
         # validate data
-        expected_cols = [
-            "time_index",
-            "figi",
-            "weight",
-            "price"
-        ]
+        expected_cols = ["time_index", "figi", "weight", "price"]
         if set(weights_source.columns) != set(expected_cols):
             raise ValueError(
                 f"Invalid CSV format: expected columns {expected_cols!r} "
                 f"but got {list(weights_source.columns)!r}"
             )
 
-        weights_source["time_index"] = pd.to_datetime(
-            weights_source["time_index"], utc=True
-        )
+        weights_source["time_index"] = pd.to_datetime(weights_source["time_index"], utc=True)
 
         # create assets from figi in the backend
         assets = []
@@ -64,7 +63,9 @@ class LoadExternalPortfolio(BaseAgentTool):
             display_name=self.configuration.created_asset_category_name,
             source="external",
             description=f"This category contains the assets for the external portfolio {self.configuration.portfolio_name}",
-            unique_identifier=self.configuration.created_asset_category_name.replace(" ", "_").lower(),
+            unique_identifier=self.configuration.created_asset_category_name.replace(
+                " ", "_"
+            ).lower(),
         )
         portfolio_category.append_assets([a.id for a in assets])
 
@@ -72,19 +73,25 @@ class LoadExternalPortfolio(BaseAgentTool):
         external_prices_source = ExternalPrices(
             bucket_name=self.configuration.bucket_name,
             artifact_name=self.configuration.artifact_name,
-            asset_category_unique_id=portfolio_category.unique_identifier
+            asset_category_unique_id=portfolio_category.unique_identifier,
         ).run(debug_mode=True, force_update=True)
 
         # adapt portfolio configuration
         portfolio = PortfolioInterface.load_from_configuration("external_portfolio_template")
         current_template_dict = portfolio.portfolio_config_template
 
-        sw_config = current_template_dict['portfolio_build_configuration']['backtesting_weights_configuration']['signal_weights_configuration']
-        sw_config['bucket_name'] = self.configuration.bucket_name
-        sw_config['artifact_name'] = self.configuration.artifact_name
-        sw_config['assets_category_unique_id'] = portfolio_category.unique_identifier
-        sw_config['signal_assets_configuration']['assets_category_unique_id'] = portfolio_category.unique_identifier
-        current_template_dict['portfolio_markets_configuration']['portfolio_name'] = self.configuration.portfolio_name
+        sw_config = current_template_dict["portfolio_build_configuration"][
+            "backtesting_weights_configuration"
+        ]["signal_weights_configuration"]
+        sw_config["bucket_name"] = self.configuration.bucket_name
+        sw_config["artifact_name"] = self.configuration.artifact_name
+        sw_config["assets_category_unique_id"] = portfolio_category.unique_identifier
+        sw_config["signal_assets_configuration"][
+            "assets_category_unique_id"
+        ] = portfolio_category.unique_identifier
+        current_template_dict["portfolio_markets_configuration"][
+            "portfolio_name"
+        ] = self.configuration.portfolio_name
 
         portfolio = PortfolioInterface(current_template_dict)
 
@@ -95,6 +102,7 @@ class LoadExternalPortfolio(BaseAgentTool):
         # Run the portfolio
         res = portfolio.run(add_portfolio_to_markets_backend=True)
         logger.info(f"Portfolio integrated successfully with results {res.head()}")
+
 
 if __name__ == "__main__":
     app_config = LoadExternalPortfolioConfig(

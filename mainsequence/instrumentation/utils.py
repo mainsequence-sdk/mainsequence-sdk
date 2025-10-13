@@ -1,44 +1,36 @@
-import logging
 import os
-from opentelemetry import trace
-from opentelemetry.trace import (
-    INVALID_SPAN,
-    INVALID_SPAN_CONTEXT,
-    get_current_span,
-    get_tracer_provider,
-    set_tracer_provider,
-    get_tracer,
-    Status,
-    SpanKind,
-    StatusCode,
 
-)
+import structlog
+from opentelemetry import trace
 from opentelemetry.sdk.trace import (
     TracerProvider,
-
 )
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-ConsoleSpanExporter
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.trace import (
+    get_current_span,
+    get_tracer,
+    get_tracer_provider,
+    set_tracer_provider,
 )
-from opentelemetry.trace.propagation.tracecontext import \
-    TraceContextTextMapPropagator
-from typing import Union
-import structlog
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-def is_port_in_use(port: int,agent_host:str) -> bool:
+
+def is_port_in_use(port: int, agent_host: str) -> bool:
     import socket
+
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex((agent_host, port)) == 0
 
-class TracerInstrumentator():
-    __doc__ = f"""
+
+class TracerInstrumentator:
+    __doc__ = """
         Main instrumentator class controlls building and exporting of traces 
     """
 
     def build_tracer(self) -> TraceContextTextMapPropagator:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+
         resource = Resource(attributes={SERVICE_NAME: "tdag"})
         set_tracer_provider(TracerProvider(resource=resource))
 
@@ -46,7 +38,7 @@ class TracerInstrumentator():
 
         if end_point is not None:
             otlp_exporter = OTLPSpanExporter(endpoint=end_point)
-            if  is_port_in_use(4317,agent_host=self.agent_host)== True:
+            if is_port_in_use(4317, agent_host=self.agent_host) == True:
                 get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
             else:
                 get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
@@ -63,9 +55,10 @@ class TracerInstrumentator():
         prop.inject(carrier=telemetry_carrier)
         return telemetry_carrier
 
-    def append_attribute_to_current_span(self,attribute_key,attribute_value):
+    def append_attribute_to_current_span(self, attribute_key, attribute_value):
         current_span = get_current_span()
         current_span.set_attribute(attribute_key, attribute_value)
+
 
 def add_otel_trace_context(logger, method_name, event_dict):
     """
@@ -87,15 +80,16 @@ def add_otel_trace_context(logger, method_name, event_dict):
 
     return event_dict
 
+
 class OTelJSONRenderer(structlog.processors.JSONRenderer):
     """
     A custom JSON renderer that injects OTel trace/span fields
     immediately before serializing to JSON.
     """
+
     def __call__(self, logger, method_name, event_dict):
         # 1) Grab the current active span from OpenTelemetry
-        event_dict=add_otel_trace_context(logger,method_name,event_dict)
+        event_dict = add_otel_trace_context(logger, method_name, event_dict)
 
         # 3) Now call the base JSONRenderer to produce final JSON
         return super().__call__(logger, method_name, event_dict)
-

@@ -1,32 +1,29 @@
 from __future__ import annotations
 
 from enum import Enum
-from pathlib import Path
-from typing import List, Optional, Union, Type, Any,Literal
+from typing import Any, Literal, Union
 
-from pydantic import BaseModel, Field, validator, ValidationError,root_validator
-from jinja2 import Environment
-
-from typing import Callable, Dict
-
-from pydantic import  HttpUrl
-
+from pydantic import BaseModel, Field, HttpUrl, root_validator, validator
 
 # ────────────────────────────── Common enums ──────────────────────────────
+
 
 class HorizontalAlign(str, Enum):
     left = "left"
     center = "center"
     right = "right"
 
+
 class VerticalAlign(str, Enum):
     top = "top"
     center = "center"
     bottom = "bottom"
 
+
 class FontWeight(str, Enum):
     normal = "normal"
     bold = "bold"
+
 
 class Anchor(str, Enum):
     top_left = "top_left"
@@ -35,9 +32,10 @@ class Anchor(str, Enum):
     bottom_right = "bottom_right"
     center = "center"
 
+
 class Size(BaseModel):
-    width:  Optional[str] = None   # "300px", "40%", …
-    height: Optional[str] = None
+    width: str | None = None  # "300px", "40%", …
+    height: str | None = None
 
     @validator("width", "height", pre=True)
     def _coerce_to_str(cls, v):  # noqa: N805
@@ -52,12 +50,13 @@ class Size(BaseModel):
             if val is not None
         )
 
+
 class Position(BaseModel):
-    top:    Optional[str] = None
-    left:   Optional[str] = None
-    right:  Optional[str] = None
-    bottom: Optional[str] = None
-    anchor: Optional[Anchor] = None
+    top: str | None = None
+    left: str | None = None
+    right: str | None = None
+    bottom: str | None = None
+    anchor: Anchor | None = None
 
     @validator("top", "left", "right", "bottom", pre=True)
     def _coerce_to_str(cls, v):
@@ -70,32 +69,36 @@ class Position(BaseModel):
             raise ValueError("Specify either 'anchor' or explicit offsets - not both")
         if self.anchor:
             return {
-                Anchor.top_left:    "top:0;left:0;",
-                Anchor.top_right:   "top:0;right:0;",
+                Anchor.top_left: "top:0;left:0;",
+                Anchor.top_right: "top:0;right:0;",
                 Anchor.bottom_left: "bottom:0;left:0;",
-                Anchor.bottom_right:"bottom:0;right:0;",
-                Anchor.center:      "top:50%;left:50%;transform:translate(-50%,-50%);",
+                Anchor.bottom_right: "bottom:0;right:0;",
+                Anchor.center: "top:50%;left:50%;transform:translate(-50%,-50%);",
             }[self.anchor]
 
         return "".join(
             f"{side}:{val};"
             for side, val in (
-                ("top", self.top), ("left", self.left),
-                ("right", self.right), ("bottom", self.bottom)
+                ("top", self.top),
+                ("left", self.left),
+                ("right", self.right),
+                ("bottom", self.bottom),
             )
             if val is not None
         )
 
+
 class ElementBase(BaseModel):
     id: str = Field(default_factory=lambda: f"elem_{id(object())}")
     z_index: int = 1
-    css_class: Optional[str] = None
+    css_class: str | None = None
 
     class Config:
         arbitrary_types_allowed = True
 
     def render(self) -> str:
         raise NotImplementedError
+
 
 class TextElement(ElementBase):
     text: str
@@ -106,12 +109,12 @@ class TextElement(ElementBase):
     font_weight: FontWeight = FontWeight.normal
     h_align: HorizontalAlign = HorizontalAlign.left
     v_align: VerticalAlign = VerticalAlign.top
-    color: Optional[str] = None
-    line_height: Optional[str] = None
+    color: str | None = None
+    line_height: str | None = None
     size: Size = Field(default_factory=Size)
-    position: Optional[Position] = None
+    position: Position | None = None
 
-    style_theme: Optional[ThemeMode] = None
+    style_theme: ThemeMode | None = None
 
     def render(self, override_theme_mode_if_none) -> str:
         if self.style_theme is None:
@@ -148,9 +151,9 @@ class TextElement(ElementBase):
         tag = self.element_type
 
         return (
-            f'<{tag} id="{self.id}" {class_attr} '
-            f'style="{"".join(style)}">{self.text}</{tag}>'
+            f'<{tag} id="{self.id}" {class_attr} ' f'style="{"".join(style)}">{self.text}</{tag}>'
         )
+
 
 class TextH1(TextElement):
     # force element_type to always be "h1" and disallow overrides
@@ -161,6 +164,7 @@ class TextH1(TextElement):
         data.pop("element_type", None)
         super().__init__(**data)
 
+
 class TextH2(TextElement):
     # force element_type to always be "h1" and disallow overrides
     element_type: Literal["h2"] = Field("h2", literal=True)
@@ -170,15 +174,16 @@ class TextH2(TextElement):
         data.pop("element_type", None)
         super().__init__(**data)
 
+
 class ImageElement(ElementBase):
     src: str
     alt: str = ""
     size: Size = Field(default_factory=lambda: Size(width="100%", height="auto"))
-    position: Optional[Position] = None
+    position: Position | None = None
     object_fit: str = "contain"
-    style_theme: Optional[ThemeMode]=None
+    style_theme: ThemeMode | None = None
 
-    def render(self,override_theme_mode_if_none) -> str:
+    def render(self, override_theme_mode_if_none) -> str:
         if self.style_theme is None:
             self.style_theme = override_theme_mode_if_none
         style = []
@@ -194,9 +199,10 @@ class ImageElement(ElementBase):
             f'style="{"".join(style)}" crossOrigin="anonymous" />'
         )
 
+
 class HtmlElement(ElementBase):
     html: str
-    style_theme: Optional[ThemeMode]=None
+    style_theme: ThemeMode | None = None
 
     def render(self, override_theme_mode_if_none) -> str:
         if self.style_theme is None:
@@ -207,18 +213,23 @@ class HtmlElement(ElementBase):
 
 BaseElements = Union[TextElement, ImageElement, HtmlElement]
 
+
 class GridCell(BaseModel):
     row: int
     col: int
     row_span: int = 1
     col_span: int = 1
     element: BaseElements
-    padding: Optional[str] = None
-    background_color: Optional[str] = None
-    align_self: Optional[str] = None
-    justify_self: Optional[str] = None
-    content_v_align: Optional[VerticalAlign] = None # For vertical alignment of content WITHIN the cell
-    content_h_align: Optional[HorizontalAlign] = None # For horizontal alignment of content WITHIN the cell
+    padding: str | None = None
+    background_color: str | None = None
+    align_self: str | None = None
+    justify_self: str | None = None
+    content_v_align: VerticalAlign | None = (
+        None  # For vertical alignment of content WITHIN the cell
+    )
+    content_h_align: HorizontalAlign | None = (
+        None  # For horizontal alignment of content WITHIN the cell
+    )
 
     @validator("row", "col", "row_span", "col_span", pre=True)
     def _positive(cls, v):
@@ -230,41 +241,47 @@ class GridCell(BaseModel):
 
 
 class GridLayout(BaseModel):
-    row_definitions: List[str] = Field(default_factory=lambda: ["1fr"])
-    col_definitions: List[str] = Field(default_factory=lambda: ["1fr"])
+    row_definitions: list[str] = Field(default_factory=lambda: ["1fr"])
+    col_definitions: list[str] = Field(default_factory=lambda: ["1fr"])
     gap: int = 10
-    cells: List[GridCell]
-    width: Optional[str] = "100%"
-    height: Optional[str] = "100%"
-    style_theme: Optional[ThemeMode] =None
+    cells: list[GridCell]
+    width: str | None = "100%"
+    height: str | None = "100%"
+    style_theme: ThemeMode | None = None
 
-    @validator("gap",pre=True)
-    def _coerce_gap_to_int(cls,v):
-        if isinstance(v,str) and v.endswith("px"):
+    @validator("gap", pre=True)
+    def _coerce_gap_to_int(cls, v):
+        if isinstance(v, str) and v.endswith("px"):
             return int(v[:-2])
-        if isinstance(v,str) and v.isdigit():
+        if isinstance(v, str) and v.isdigit():
             return int(v)
-        if isinstance(v,int):
+        if isinstance(v, int):
             return v
         raise ValueError("gap must be an int or string like '10px'")
 
     @validator("cells", each_item=True)
-    def _within_grid(cls, cell: GridCell, values: Dict[str, Any]) -> GridCell:
+    def _within_grid(cls, cell: GridCell, values: dict[str, Any]) -> GridCell:
         row_defs = values.get("row_definitions")
         col_defs = values.get("col_definitions")
         if row_defs and cell.row + cell.row_span - 1 > len(row_defs):
-            raise ValueError(f"GridCell definition (row={cell.row}, row_span={cell.row_span}) exceeds row count ({len(row_defs)})")
+            raise ValueError(
+                f"GridCell definition (row={cell.row}, row_span={cell.row_span}) exceeds row count ({len(row_defs)})"
+            )
         if col_defs and cell.col + cell.col_span - 1 > len(col_defs):
-            raise ValueError(f"GridCell definition (col={cell.col}, col_span={cell.col_span}) exceeds column count ({len(col_defs)})")
+            raise ValueError(
+                f"GridCell definition (col={cell.col}, col_span={cell.col_span}) exceeds column count ({len(col_defs)})"
+            )
         return cell
 
-    def render(self,) -> str:
+    def render(
+        self,
+    ) -> str:
         grid_style_parts = [
             "display:grid;",
             f"grid-template-columns:{' '.join(self.col_definitions)};",
             f"grid-template-rows:{' '.join(self.row_definitions)};",
             f"gap:{self.gap}px;",
-            "position:relative;"
+            "position:relative;",
         ]
         if self.width:
             grid_style_parts.append(f"width:{self.width};")
@@ -272,7 +289,7 @@ class GridLayout(BaseModel):
             grid_style_parts.append(f"height:{self.height};")
         grid_style = "".join(grid_style_parts)
 
-        html_parts: List[str] = [f'<div class="slide-grid" style="{grid_style}">']
+        html_parts: list[str] = [f'<div class="slide-grid" style="{grid_style}">']
         for cell in self.cells:
             cell_styles_list = [
                 f"grid-column:{cell.col}/span {cell.col_span};",
@@ -324,21 +341,24 @@ class GridLayout(BaseModel):
 
             final_cell_style = "".join(cell_styles_list)
             try:
-                html_parts.append(f'<div style="{final_cell_style}">{cell.element.render(self.style_theme)}</div>')
+                html_parts.append(
+                    f'<div style="{final_cell_style}">{cell.element.render(self.style_theme)}</div>'
+                )
             except Exception as e:
                 raise e
         html_parts.append("</div>")
         return "".join(html_parts)
 
+
 class Slide(BaseModel):
     title: str
     layout: GridLayout
-    notes: Optional[str] = None
+    notes: str | None = None
     include_logo_in_header: bool = True
     footer_info: str = ""
     body_margin_top: int = 5
 
-    style_theme: Optional[StyleSettings] = None
+    style_theme: StyleSettings | None = None
 
     def _section_style(self) -> str:
         # only background color; size determined by container
@@ -352,74 +372,67 @@ class Slide(BaseModel):
         return (
             f'<div class="slide-header">'
             f'  <div class="slide-title {title_class} fw-bold" style="{title_inline_style}">'
-            f'{self.title}</div>'
-            f'{logo_html}'
-            f'</div>'
+            f"{self.title}</div>"
+            f"{logo_html}"
+            f"</div>"
         )
 
     def _render_body(self) -> str:
         style = (
-            f"flex:1; display:flex; flex-direction:column;"
-            f" margin-top:{self.body_margin_top}px;"
+            f"flex:1; display:flex; flex-direction:column;" f" margin-top:{self.body_margin_top}px;"
         )
-        return (
-            f'<div class="slide-body" style="{style}">'
-            f'{self.layout.render()}'
-            f'</div>'
-        )
+        return f'<div class="slide-body" style="{style}">' f"{self.layout.render()}" f"</div>"
 
-    def _render_footer(self, slide_number: int, total: int, ) -> str:
+    def _render_footer(
+        self,
+        slide_number: int,
+        total: int,
+    ) -> str:
         text_style = f"color: {self.style_theme.light_paragraph_color};"
         return (
             f'<div class="slide-footer">'
             f'<div class="slide-date" style="{text_style}">{self.footer_info}</div>'
             f'<div class="slide-number" style="{text_style}">{slide_number} / {total}</div>'
-            f'</div>'
+            f"</div>"
         )
 
-    def _override_theme(self,theme_mode:ThemeMode):
+    def _override_theme(self, theme_mode: ThemeMode):
         if self.style_theme is None:
             self.style_theme = theme_mode
         if self.layout.style_theme is None:
-            self.layout.style_theme=theme_mode
+            self.layout.style_theme = theme_mode
 
-    def render(self, slide_number: int, total: int,
-               override_theme_mode_if_none:ThemeMode
-               ) -> str:
+    def render(self, slide_number: int, total: int, override_theme_mode_if_none: ThemeMode) -> str:
         self._override_theme(override_theme_mode_if_none)
         header = self._render_header()
         body = self._render_body()
-        footer = self._render_footer(slide_number, total, )
+        footer = self._render_footer(
+            slide_number,
+            total,
+        )
         section_style = self._section_style()
 
         return (
             f'<section class="slide" style="{section_style}">'
-            f'{header}{body}{footer}'
-            f'</section>'
+            f"{header}{body}{footer}"
+            f"</section>"
         )
 
+
 class VerticalImageSlide(Slide):
-    image_url: HttpUrl = Field(
-        ..., description="URL for the right-column image"
-    )
+    image_url: HttpUrl = Field(..., description="URL for the right-column image")
     image_width_pct: int = Field(
-        50,
-        ge=0,
-        le=100,
-        description="Percentage width of the right-column image"
+        50, ge=0, le=100, description="Percentage width of the right-column image"
     )
     image_fit: Literal["cover", "contain"] = Field(
-        "cover",
-        description="How the image should fit its container"
+        "cover", description="How the image should fit its container"
     )
 
-    def render(self, slide_number: int, total: int,
-               override_theme_mode_if_none: ThemeMode
-               ) -> str:
+    def render(self, slide_number: int, total: int, override_theme_mode_if_none: ThemeMode) -> str:
         self._override_theme(override_theme_mode_if_none)
         header = self._render_header()
         body = self._render_body()
-        footer = self._render_footer(slide_number, total )
+        footer = self._render_footer(slide_number, total)
 
         # Determine inline widths
         left_pct = 100 - self.image_width_pct
@@ -428,28 +441,26 @@ class VerticalImageSlide(Slide):
         img_style = f"width:100%; height:100%; object-fit:{self.image_fit};"
 
         # Compose columns
-        left_html = (
-            f'<div class="left-column" style="{left_style}">'
-            f'{body}'
-            f'</div>'
-        )
+        left_html = f'<div class="left-column" style="{left_style}">' f"{body}" f"</div>"
         right_html = (
             f'<div class="right-column" style="{right_style}">'
             f'  <img src="{self.image_url}" alt="" style="{img_style}" />'
-            f'</div>'
+            f"</div>"
         )
 
         # Section tag uses both classes and background style
         section_style = self._section_style()
         return (
             f'<section class="slide vertical-image-slide" style="{section_style}">'
-            f'{left_html}{right_html}'
-            f'</section>'
+            f"{left_html}{right_html}"
+            f"</section>"
         )
+
 
 class ThemeMode(str, Enum):
     light = "light"
-    dark  = "dark"
+    dark = "dark"
+
 
 class StyleSettings(BaseModel):
     """
@@ -457,6 +468,7 @@ class StyleSettings(BaseModel):
     Provides a semantic typographic scale (h1–h6, p), separate font families for headings and paragraphs,
     and chart palettes. Colors and palettes are auto-filled based on `mode`.
     """
+
     # theme switch
     mode: ThemeMode = ThemeMode.light
 
@@ -467,7 +479,7 @@ class StyleSettings(BaseModel):
     font_size_h4: int = 20
     font_size_h5: int = 16
     font_size_h6: int = 14
-    font_size_p:  int = 12
+    font_size_p: int = 12
 
     # default font families
     font_family_headings: str = "Montserrat, sans-serif"
@@ -476,44 +488,55 @@ class StyleSettings(BaseModel):
     # layout
     title_column_width: str = "150px"
     chart_label_font_size: int = 12
-    logo_url: Optional[str] = None
+    logo_url: str | None = None
 
     # theme-driven colors (auto-filled)
-    primary_color:       Optional[str] = Field(None)
-    secondary_color:  Optional[str] = Field(None)
-    accent_color_1:   Optional[str] = Field(None)
-    accent_color_2:   Optional[str] = Field(None)
-    heading_color:    Optional[str] = Field(None)
-    paragraph_color:  Optional[str] = Field(None)
-    background_color: Optional[str] = Field(None)
-    light_paragraph_color: Optional[str] = Field(None, description="Paragraph text color on light backgrounds")
+    primary_color: str | None = Field(None)
+    secondary_color: str | None = Field(None)
+    accent_color_1: str | None = Field(None)
+    accent_color_2: str | None = Field(None)
+    heading_color: str | None = Field(None)
+    paragraph_color: str | None = Field(None)
+    background_color: str | None = Field(None)
+    light_paragraph_color: str | None = Field(
+        None, description="Paragraph text color on light backgrounds"
+    )
 
     # chart color palettes
-    chart_palette_sequential:   Optional[List[str]] = Field(None)
-    chart_palette_diverging:    Optional[List[str]] = Field(None)
-    chart_palette_categorical:  Optional[List[str]] = Field(None)
+    chart_palette_sequential: list[str] | None = Field(None)
+    chart_palette_diverging: list[str] | None = Field(None)
+    chart_palette_categorical: list[str] | None = Field(None)
 
     def logo_img_html(self, position: str = "slide-logo") -> str:
-        return f'<div class="{position}"><img src="{self.logo_url}" alt="logo" crossOrigin="anonymous"></div>' if self.logo_url else ""
+        return (
+            f'<div class="{position}"><img src="{self.logo_url}" alt="logo" crossOrigin="anonymous"></div>'
+            if self.logo_url
+            else ""
+        )
 
     @root_validator(pre=True)
-    def _fill_theme_defaults(cls, values: Dict) -> Dict:
+    def _fill_theme_defaults(cls, values: dict) -> dict:
         palettes = {
             ThemeMode.light: {
                 # base colors
-                "primary_color":       "#c0d8fb",
-                "secondary_color":  "#1254ff",
-                "accent_color_1":   "#553ffe",
-                "accent_color_2":   "#aea06c",
-                "heading_color":    "#c0d8fb",
-                "paragraph_color":  "#303238",
+                "primary_color": "#c0d8fb",
+                "secondary_color": "#1254ff",
+                "accent_color_1": "#553ffe",
+                "accent_color_2": "#aea06c",
+                "heading_color": "#c0d8fb",
+                "paragraph_color": "#303238",
                 "background_color": "#FFFFFF",
                 "light_paragraph_color": "#303238",
-
                 # chart palettes
-                "chart_palette_sequential":   ["#f7fbff","#deebf7","#9ecae1","#3182bd"],
-                "chart_palette_diverging":    ["#d7191c","#fdae61","#ffffbf","#abdda4","#2b83ba"],
-                "chart_palette_categorical":  ["#1b9e77","#d95f02","#7570b3","#e7298a","#66a61e"],
+                "chart_palette_sequential": ["#f7fbff", "#deebf7", "#9ecae1", "#3182bd"],
+                "chart_palette_diverging": ["#d7191c", "#fdae61", "#ffffbf", "#abdda4", "#2b83ba"],
+                "chart_palette_categorical": [
+                    "#1b9e77",
+                    "#d95f02",
+                    "#7570b3",
+                    "#e7298a",
+                    "#66a61e",
+                ],
             },
             ThemeMode.dark: {
                 "primary_color": "#E0E0E0",  # light gray for primary text
@@ -524,31 +547,30 @@ class StyleSettings(BaseModel):
                 "paragraph_color": "#E0E0E0",  # slightly muted white for body text
                 "background_color": "#121212",  # deep charcoal
                 "light_paragraph_color": "#E0E0E0",
-
                 "chart_palette_sequential": [
-        "#37474F",  # slate blue-gray
-        "#455A64",
-        "#546E7A",
-        "#607D8B",  # progressively lighter
-        "#78909C"
-    ],
-    "chart_palette_diverging": [
-        "#D32F2F",  # strong red
-        "#F57C00",  # orange
-        "#EEEEEE",  # near-white neutral mid-point
-        "#0288D1",  # bright blue
-        "#1976D2"   # deeper blue
-    ],
-    "chart_palette_categorical": [
-        "#F94144",  # red
-        "#F3722C",  # orange
-        "#F9C74F",  # yellow
-        "#90BE6D",  # green
-        "#577590",  # indigo
-        "#43AA8B",  # teal
-        "#8E44AD"   # purple
-    ],
-            }
+                    "#37474F",  # slate blue-gray
+                    "#455A64",
+                    "#546E7A",
+                    "#607D8B",  # progressively lighter
+                    "#78909C",
+                ],
+                "chart_palette_diverging": [
+                    "#D32F2F",  # strong red
+                    "#F57C00",  # orange
+                    "#EEEEEE",  # near-white neutral mid-point
+                    "#0288D1",  # bright blue
+                    "#1976D2",  # deeper blue
+                ],
+                "chart_palette_categorical": [
+                    "#F94144",  # red
+                    "#F3722C",  # orange
+                    "#F9C74F",  # yellow
+                    "#90BE6D",  # green
+                    "#577590",  # indigo
+                    "#43AA8B",  # teal
+                    "#8E44AD",  # purple
+                ],
+            },
         }
         mode = values.get("mode", ThemeMode.light)
         for field, default in palettes.get(mode, {}).items():
@@ -558,7 +580,7 @@ class StyleSettings(BaseModel):
 
 # ─── instantiate both themes ────────────────────────────────────────────
 light_settings: StyleSettings = StyleSettings(mode=ThemeMode.light)
-dark_settings:  StyleSettings = StyleSettings(mode=ThemeMode.dark)
+dark_settings: StyleSettings = StyleSettings(mode=ThemeMode.dark)
 
 
 def get_theme_settings(mode: ThemeMode) -> StyleSettings:
@@ -589,7 +611,7 @@ def update_settings_from_dict(overrides: dict, mode: ThemeMode) -> None:
 
 class Presentation(BaseModel):
     title: str
-    slides: List[Slide]
+    slides: list[Slide]
     style_theme: ThemeMode = Field(default_factory=lambda: light_settings)
 
     def render(self) -> str:
@@ -601,11 +623,12 @@ class Presentation(BaseModel):
             if slide.style_theme is None:
                 slide.style_theme = self.style_theme
 
-        total = len(self.slides)-1 # do not add the final template slide
+        total = len(self.slides) - 1  # do not add the final template slide
 
-        slides_html += [s.render(i + 1, total,
-                                 override_theme_mode_if_none=s.style_theme
-                                 ) for i, s in enumerate(self.slides)]
+        slides_html += [
+            s.render(i + 1, total, override_theme_mode_if_none=s.style_theme)
+            for i, s in enumerate(self.slides)
+        ]
         return BASE_TEMPLATE.render(
             title=self.title,
             font_family=self.style_theme.font_family_paragraphs,
@@ -621,15 +644,27 @@ class Presentation(BaseModel):
 
         # 2) Twelve columns mixing px and fr
         col_definitions = [
-            "50px", "1fr", "2fr", "100px", "3fr", "1fr",
-            "200px", "2fr", "1fr", "150px", "4fr", "1fr"
+            "50px",
+            "1fr",
+            "2fr",
+            "100px",
+            "3fr",
+            "1fr",
+            "200px",
+            "2fr",
+            "1fr",
+            "150px",
+            "4fr",
+            "1fr",
         ]
 
         # 3) Tutorial cells in row 1:
-        cells: List[GridCell] = [
+        cells: list[GridCell] = [
             # Left tutorial text (cols 1–6) with detailed fr explanation
             GridCell(
-                row=1, col=1, col_span=6,
+                row=1,
+                col=1,
+                col_span=6,
                 element=TextElement(
                     text=(
                         "<strong>Tutorial: How fr Units Are Calculated</strong><br><br>"
@@ -648,17 +683,19 @@ class Presentation(BaseModel):
                     ),
                     font_size=14,
                     h_align=HorizontalAlign.left,
-                    v_align=VerticalAlign.top
+                    v_align=VerticalAlign.top,
                 ),
                 padding="12px",
-                background_color="#f9f9f9"
+                background_color="#f9f9f9",
             ),
             # Right tutorial code (cols 7–12)
             GridCell(
-                row=1, col=7, col_span=6,
+                row=1,
+                col=7,
+                col_span=6,
                 element=TextElement(
                     text=(
-                        "<pre style=\"font-size:12px; white-space:pre-wrap;\">"
+                        '<pre style="font-size:12px; white-space:pre-wrap;">'
                         "row_defs = ['auto', '100px', '2fr', '1fr']\n"
                         "col_defs = ['50px','1fr','2fr','100px','3fr','1fr',\n"
                         "             '200px','2fr','1fr','150px','4fr','1fr']\n\n"
@@ -672,11 +709,11 @@ class Presentation(BaseModel):
                     ),
                     font_size=12,
                     h_align=HorizontalAlign.left,
-                    v_align=VerticalAlign.top
+                    v_align=VerticalAlign.top,
                 ),
                 padding="12px",
-                background_color="#ffffff"
-            )
+                background_color="#ffffff",
+            ),
         ]
 
         # 4) Demo cells for rows 2–4
@@ -691,8 +728,8 @@ class Presentation(BaseModel):
                             text=label,
                             font_size=12,
                             h_align=HorizontalAlign.center,
-                            v_align=VerticalAlign.center
-                        )
+                            v_align=VerticalAlign.center,
+                        ),
                     )
                 )
 
@@ -703,11 +740,10 @@ class Presentation(BaseModel):
             gap="10px",
             cells=cells,
             width="100%",
-            height="100%"
+            height="100%",
         )
 
         return Slide(
             title="Slide Template",
             layout=slide_layout,
-
         )

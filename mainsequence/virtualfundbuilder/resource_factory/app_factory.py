@@ -3,14 +3,19 @@ import json
 import os
 from abc import abstractmethod
 from typing import Any
+
 from pydantic import BaseModel
-import inspect
+
 from mainsequence.client.models_tdag import Artifact, add_created_object_to_jobrun
 from mainsequence.virtualfundbuilder.enums import ResourceType
-from mainsequence.virtualfundbuilder.resource_factory.base_factory import insert_in_registry, BaseResource
+from mainsequence.virtualfundbuilder.resource_factory.base_factory import (
+    BaseResource,
+    insert_in_registry,
+)
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
+
 
 class BaseAgentTool(BaseResource):
     TYPE = ResourceType.APP
@@ -27,15 +32,14 @@ class BaseAgentTool(BaseResource):
 
         if job_id:
             add_created_object_to_jobrun(
-                model_name=output.orm_class,
-                app_label=output.get_app_label(),
-                object_id=output.id
+                model_name=output.orm_class, app_label=output.get_app_label(), object_id=output.id
             )
             logger.info("Output added successfully")
         else:
             logger.info("This is not a Job Run - no output can be added")
+
     @staticmethod
-    def hash_pydantic_object(obj: Any,digest_size: int = 16) -> str:
+    def hash_pydantic_object(obj: Any, digest_size: int = 16) -> str:
         """
         Generate a unique SHA-256 hash for any Pydantic object (including nested dependencies),
         ensuring that lists of objects are deterministically ordered.
@@ -57,7 +61,7 @@ class BaseAgentTool(BaseResource):
                 try:
                     return sorted(
                         serialized_items,
-                        key=lambda x: json.dumps(x, sort_keys=True, separators=(",", ":"))
+                        key=lambda x: json.dumps(x, sort_keys=True, separators=(",", ":")),
                     )
                 except (TypeError, ValueError):
                     return serialized_items
@@ -75,20 +79,26 @@ class BaseAgentTool(BaseResource):
         return h.hexdigest()
 
 
-AGENT_TOOL_REGISTRY = AGENT_TOOL_REGISTRY if 'AGENT_TOOL_REGISTRY' in globals() else {}
+AGENT_TOOL_REGISTRY = AGENT_TOOL_REGISTRY if "AGENT_TOOL_REGISTRY" in globals() else {}
+
+
 def regiester_agent_tool(name=None, register_in_agent=True):
     """
     Decorator to register a model class in the factory.
     If `name` is not provided, the class's name is used as the key.
     """
+
     def decorator(cls):
         return insert_in_registry(AGENT_TOOL_REGISTRY, cls, register_in_agent, name)
+
     return decorator
+
 
 class HtmlApp(BaseAgentTool):
     """
     A base class for apps that generate HTML output.
     """
+
     TYPE = ResourceType.HTML_APP
 
     def __init__(self, *args, **kwargs):
@@ -110,7 +120,9 @@ class HtmlApp(BaseAgentTool):
         If output_name is not provided, a sequential name (e.g., ClassName_1.html) is generated.
         """
         if not isinstance(html_content, str):
-            raise TypeError(f"The 'add_html_output' method of {self.__class__.__name__} must be called with a string of HTML content.")
+            raise TypeError(
+                f"The 'add_html_output' method of {self.__class__.__name__} must be called with a string of HTML content."
+            )
 
         if output_name is None:
             output_name = len(self.created_artifacts)
@@ -122,7 +134,7 @@ class HtmlApp(BaseAgentTool):
                 f.write(html_content)
 
             logger.info(f"[{self.__class__.__name__}] Successfully saved HTML to: {output_name}")
-        except IOError as e:
+        except OSError as e:
             logger.error(f"[{self.__class__.__name__}] Error saving file: {e}")
             raise
 
@@ -134,7 +146,7 @@ class HtmlApp(BaseAgentTool):
                     filepath=output_name,
                     name=output_name,
                     created_by_resource_name=self.__class__.__name__,
-                    bucket_name="HTMLOutput"
+                    bucket_name="HTMLOutput",
                 )
                 if html_artifact:
                     self.created_artifacts.append(html_artifact)
@@ -144,7 +156,6 @@ class HtmlApp(BaseAgentTool):
                     logger.info("Artifact upload failed")
             except Exception as e:
                 logger.info(f"Error uploading artifact: {e}")
-
 
     def __init_subclass__(cls, **kwargs):
         """

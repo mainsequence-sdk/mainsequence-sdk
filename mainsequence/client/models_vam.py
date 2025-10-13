@@ -1,59 +1,185 @@
 import copy
 import datetime
-from multiprocessing.managers import BaseManager
-
-import pytz
-import requests
-from functools import wraps
-import pandas as pd
-from typing import Union,Literal
-from types import SimpleNamespace
-import requests
-import os
 import json
-import time
-
-from enum import IntEnum, Enum
 from decimal import Decimal
+from enum import Enum, IntEnum
+from typing import Any, Optional, Union
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+import pandas as pd
+import pytz
+from pydantic import BaseModel, Field, constr, model_validator, root_validator, validator
+
 from mainsequence.client import DataNodeUpdate
-
-from .base import BasePydanticModel, BaseObjectOrm, MARKETS_CONSTANTS as CONSTANTS, TDAG_ENDPOINT, API_ENDPOINT, HtmlSaveException
-from .utils import AuthLoaders, make_request, DoesNotExist, request_to_datetime, DATE_FORMAT
-from typing import List, Optional, Dict, Any, Tuple
-from pydantic import BaseModel, Field, validator,root_validator,constr,model_validator
-
 from mainsequence.logconf import logger
-from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
+from .base import (
+    MARKETS_CONSTANTS as CONSTANTS,
+)
+from .base import (
+    TDAG_ENDPOINT,
+    BaseObjectOrm,
+    BasePydanticModel,
+    HtmlSaveException,
+)
+from .utils import DATE_FORMAT, DoesNotExist, make_request
 
-
-CRYPTO_EXCHANGE_CODE = ["abts","acxi","alcn","bbit","bbox","bbsp","bcex","bequ","bfly","bfnx","bfrx","bgon",
-                        "binc","bitc","bitz","bjex","bl3p","blc2","blcr","bnbd","bnce","bndx","bnf8","bnus",
-                        "bopt","bpnd","bt38","btba","btbu","btby","btca","btcb","btcc","bthb","btma","btmx",
-                        "btrk","btrx","btsh","btso","bull","bxth","bybt","cbse","ccck","ccex","cexi","cflr",
-                        "cflx","cnex","cngg","cnhd","cnmt","cone","crco","crfl","crtw","crv2","cucy","curv",
-                        "delt","drbt","dydx","eris","ethx","etrx","exxa","ftxu","ftxx","gacn","gate","gmni",
-                        "hbdm","hitb","huob","inch","indr","itbi","kcon","korb","krkn","lclb","lgom","lmax",
-                        "merc","mexc","mtgx","ngcs","nova","nvdx","okcn","okex","oslx","pksp","polo","qsp2",
-                        "qsp3","quon","sghd","stmp","sush"]
+CRYPTO_EXCHANGE_CODE = [
+    "abts",
+    "acxi",
+    "alcn",
+    "bbit",
+    "bbox",
+    "bbsp",
+    "bcex",
+    "bequ",
+    "bfly",
+    "bfnx",
+    "bfrx",
+    "bgon",
+    "binc",
+    "bitc",
+    "bitz",
+    "bjex",
+    "bl3p",
+    "blc2",
+    "blcr",
+    "bnbd",
+    "bnce",
+    "bndx",
+    "bnf8",
+    "bnus",
+    "bopt",
+    "bpnd",
+    "bt38",
+    "btba",
+    "btbu",
+    "btby",
+    "btca",
+    "btcb",
+    "btcc",
+    "bthb",
+    "btma",
+    "btmx",
+    "btrk",
+    "btrx",
+    "btsh",
+    "btso",
+    "bull",
+    "bxth",
+    "bybt",
+    "cbse",
+    "ccck",
+    "ccex",
+    "cexi",
+    "cflr",
+    "cflx",
+    "cnex",
+    "cngg",
+    "cnhd",
+    "cnmt",
+    "cone",
+    "crco",
+    "crfl",
+    "crtw",
+    "crv2",
+    "cucy",
+    "curv",
+    "delt",
+    "drbt",
+    "dydx",
+    "eris",
+    "ethx",
+    "etrx",
+    "exxa",
+    "ftxu",
+    "ftxx",
+    "gacn",
+    "gate",
+    "gmni",
+    "hbdm",
+    "hitb",
+    "huob",
+    "inch",
+    "indr",
+    "itbi",
+    "kcon",
+    "korb",
+    "krkn",
+    "lclb",
+    "lgom",
+    "lmax",
+    "merc",
+    "mexc",
+    "mtgx",
+    "ngcs",
+    "nova",
+    "nvdx",
+    "okcn",
+    "okex",
+    "oslx",
+    "pksp",
+    "polo",
+    "qsp2",
+    "qsp3",
+    "quon",
+    "sghd",
+    "stmp",
+    "sush",
+]
 
 COMPOSITE_TO_ISO = {
-    'AR': 'XBUE', 'AU': 'XASX', 'BZ': 'BVMF', 'CN': 'XTSE', 'CB': 'XBOG',
-    'CH': 'XSHG', 'CI': 'XSGO', 'CP': 'XPRA', 'DC': 'XCSE', 'FH': 'XHEL',
-    'FP': 'XPAR', 'GA': 'ASEX', 'GR': 'XFRA', 'HK': 'XHKG', 'IE': 'XDUB',
-    'IM': 'XMIL', 'IN': 'XBOM', 'IT': 'XTAE', 'JP': 'XTKS', 'KS': 'XKRX',
-    'KZ': 'AIXK', 'LN': 'XLON', 'MM': 'XMEX', 'MK': 'XKLS', 'NA': 'XAMS',
-    'PL': 'XLIS', 'PM': 'XPHS', 'PW': 'XWAR', 'RO': 'XBSE', 'SA': 'XSAU',
-    'SM': 'XMAD', 'SS': 'XSTO', 'SW': 'XSWX', 'TH': 'XBKK', 'TI': 'XIST',
-    'TT': 'XTAI', 'US': 'XNYS', 'AT': 'XWBO', 'BB': 'XBRU',
+    "AR": "XBUE",
+    "AU": "XASX",
+    "BZ": "BVMF",
+    "CN": "XTSE",
+    "CB": "XBOG",
+    "CH": "XSHG",
+    "CI": "XSGO",
+    "CP": "XPRA",
+    "DC": "XCSE",
+    "FH": "XHEL",
+    "FP": "XPAR",
+    "GA": "ASEX",
+    "GR": "XFRA",
+    "HK": "XHKG",
+    "IE": "XDUB",
+    "IM": "XMIL",
+    "IN": "XBOM",
+    "IT": "XTAE",
+    "JP": "XTKS",
+    "KS": "XKRX",
+    "KZ": "AIXK",
+    "LN": "XLON",
+    "MM": "XMEX",
+    "MK": "XKLS",
+    "NA": "XAMS",
+    "PL": "XLIS",
+    "PM": "XPHS",
+    "PW": "XWAR",
+    "RO": "XBSE",
+    "SA": "XSAU",
+    "SM": "XMAD",
+    "SS": "XSTO",
+    "SW": "XSWX",
+    "TH": "XBKK",
+    "TI": "XIST",
+    "TT": "XTAI",
+    "US": "XNYS",
+    "AT": "XWBO",
+    "BB": "XBRU",
 }
+
+
 def validator_for_string(value):
     if isinstance(value, str):
         # Parse the string to a datetime object
         try:
             return datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
         except ValueError:
-            raise ValueError(f"Invalid datetime format: {value}. Expected format is 'YYYY-MM-DDTHH:MM:SSZ'.")
+            raise ValueError(
+                f"Invalid datetime format: {value}. Expected format is 'YYYY-MM-DDTHH:MM:SSZ'."
+            )
 
 
 def get_model_class(model_class: str):
@@ -61,7 +187,6 @@ def get_model_class(model_class: str):
     Reverse look from model class by name
     """
     MODEL_CLASS_MAP = {
-
         "Asset": Asset,
         "AssetCurrencyPair": AssetCurrencyPair,
         "AssetFutureUSDM": AssetFutureUSDM,
@@ -73,7 +198,7 @@ def get_model_class(model_class: str):
     return MODEL_CLASS_MAP[model_class]
 
 
-def create_from_serializer_with_class(asset_list: List[dict]):
+def create_from_serializer_with_class(asset_list: list[dict]):
     new_list = []
     for a in asset_list:
         AssetClass = get_model_class(a["AssetClass"])
@@ -82,17 +207,15 @@ def create_from_serializer_with_class(asset_list: List[dict]):
     return new_list
 
 
-def resolve_asset(asset_dict:dict):
-    asset=create_from_serializer_with_class([asset_dict])[0]
+def resolve_asset(asset_dict: dict):
+    asset = create_from_serializer_with_class([asset_dict])[0]
     return asset
 
 
-
-
-class Calendar(BaseObjectOrm,BasePydanticModel):
-    id: Optional[int] = None
+class Calendar(BaseObjectOrm, BasePydanticModel):
+    id: int | None = None
     name: str
-    calendar_dates:Optional[dict]=None
+    calendar_dates: dict | None = None
 
     def __str__(self):
         return self.name
@@ -100,22 +223,25 @@ class Calendar(BaseObjectOrm,BasePydanticModel):
     def __repr__(self) -> str:
         return self.name
 
+
 class Organization(BaseModel):
     id: int
     uid: str
     name: str
-    url: Optional[str]  # URL can be None
+    url: str | None  # URL can be None
+
 
 class Group(BaseModel):
     id: int
     name: str
-    permissions: List[Any]  # Adjust the type for permissions as needed
+    permissions: list[Any]  # Adjust the type for permissions as needed
 
-class User(BaseObjectOrm,BasePydanticModel):
+
+class User(BaseObjectOrm, BasePydanticModel):
 
     first_name: str
     last_name: str
-    is_active:bool
+    is_active: bool
     date_joined: datetime.datetime
     role: str
     username: str
@@ -124,10 +250,10 @@ class User(BaseObjectOrm,BasePydanticModel):
     api_request_limit: int
     mfa_enabled: bool
     organization: Organization
-    plan: Optional[Any]  # Use a specific model if plan details are available
-    groups: List[Group]
-    user_permissions: List[Any]  # Adjust as necessary for permission structure
-    phone_number:Optional[str]=None
+    plan: Any | None  # Use a specific model if plan details are available
+    groups: list[Group]
+    user_permissions: list[Any]  # Adjust as necessary for permission structure
+    phone_number: str | None = None
 
     @classmethod
     def get_object_url(cls):
@@ -138,7 +264,12 @@ class User(BaseObjectOrm,BasePydanticModel):
     @classmethod
     def get_authenticated_user_details(cls):
         url = f"{cls.get_object_url()}/get_user_details/"
-        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="GET", url=url,)
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+        )
         if r.status_code not in [200, 201]:
             raise Exception(f" {r.text()}")
 
@@ -146,39 +277,35 @@ class User(BaseObjectOrm,BasePydanticModel):
 
 
 class AssetSnapshot(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = None
+    id: int | None = None
     asset: Union["AssetMixin", int]
 
     # Validity window
     effective_from: datetime.datetime = Field(
-       
         description="Date at which this snapshot became effective"
     )
-    effective_to: Optional[datetime.datetime] = Field(
-        None,
-        description="Date at which this snapshot was superseded (null if current)"
+    effective_to: datetime.datetime | None = Field(
+        None, description="Date at which this snapshot was superseded (null if current)"
     )
 
     # Mutable fields
     name: constr(max_length=255) = Field(
         ..., description="Security name as recorded in the FIGI database"
     )
-    ticker: Optional[constr(max_length=50)] = Field(
-        None,
-        description="FIGI ticker field (often shorter symbol used by OpenFIGI)"
+    ticker: constr(max_length=50) | None = Field(
+        None, description="FIGI ticker field (often shorter symbol used by OpenFIGI)"
     )
-    exchange_code: Optional[constr(max_length=50)] = Field(
-        None,
-        description="Exchange/market MIC code (e.g. XNYS, XNAS) or composite code"
+    exchange_code: constr(max_length=50) | None = Field(
+        None, description="Exchange/market MIC code (e.g. XNYS, XNAS) or composite code"
     )
-    asset_ticker_group_id: Optional[constr(max_length=12)] = Field(
-        None,
-        description="Highest aggregation level for share class grouping"
+    asset_ticker_group_id: constr(max_length=12) | None = Field(
+        None, description="Highest aggregation level for share class grouping"
     )
-    venue_specific_properties: Optional[Dict[str, Any]] = Field(
-        None,
-        description="Exchange-specific metadata"
+    venue_specific_properties: dict[str, Any] | None = Field(
+        None, description="Exchange-specific metadata"
     )
+
+
 def _set_query_param_on_url(url: str, key: str, value) -> str:
     """
     Add or replace a query parameter in a URL without disturbing others (e.g., offset/page).
@@ -190,60 +317,56 @@ def _set_query_param_on_url(url: str, key: str, value) -> str:
     new_query = urlencode(q, doseq=True)
     return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
 
+
 class AssetPricingDetail(BasePydanticModel):
-    instrument_dump:dict
-    pricing_details_date:datetime.datetime
+    instrument_dump: dict
+    pricing_details_date: datetime.datetime
+
 
 class AssetMixin(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = None
+    id: int | None = None
 
     # Immutable identifiers
     unique_identifier: constr(max_length=255)
-    figi: Optional[constr(max_length=12)] = Field(
+    figi: constr(max_length=12) | None = Field(
         None,
-        description="FIGI identifier (unique to a specific instrument on a particular market/exchange)"
+        description="FIGI identifier (unique to a specific instrument on a particular market/exchange)",
     )
-    composite: Optional[constr(max_length=12)] = Field(
+    composite: constr(max_length=12) | None = Field(
         None,
-        description="Composite FIGI identifier (aggregates multiple local listings within one market)"
+        description="Composite FIGI identifier (aggregates multiple local listings within one market)",
     )
-    share_class: Optional[constr(max_length=12)] = Field(
+    share_class: constr(max_length=12) | None = Field(
         None,
-        description="Share class designation (e.g. 'Common', 'Class A', 'Preferred') as per FIGI"
-    )
-
-    isin: Optional[constr(max_length=12)] = Field(
-        None,
-        description="International Securities Identification Number"
+        description="Share class designation (e.g. 'Common', 'Class A', 'Preferred') as per FIGI",
     )
 
-    security_type: Optional[constr(max_length=50)] = Field(
-        None,
-        description="Instrument type (e.g. 'CS' for common stock, 'PS' for preferred)"
-    )
-    security_type_2: Optional[constr(max_length=50)] = Field(
-        None,
-        description="OpenFIGI Security Type 2"
-    )
-    security_market_sector: Optional[constr(max_length=50)] = Field(
-        None,
-        description="High-level sector classification (e.g. 'Equity', 'Corporate Bond') as per FIGI"
+    isin: constr(max_length=12) | None = Field(
+        None, description="International Securities Identification Number"
     )
 
+    security_type: constr(max_length=50) | None = Field(
+        None, description="Instrument type (e.g. 'CS' for common stock, 'PS' for preferred)"
+    )
+    security_type_2: constr(max_length=50) | None = Field(
+        None, description="OpenFIGI Security Type 2"
+    )
+    security_market_sector: constr(max_length=50) | None = Field(
+        None,
+        description="High-level sector classification (e.g. 'Equity', 'Corporate Bond') as per FIGI",
+    )
 
     is_custom_by_organization: bool = Field(
         default=False,
-        description="Flag indicating if this asset was custom-created by the organization"
+        description="Flag indicating if this asset was custom-created by the organization",
     )
 
     # Snapshot relationship
-    current_snapshot: Optional[AssetSnapshot] = Field(
-        None,
-        description="Latest active snapshot (effective_to is null)"
+    current_snapshot: AssetSnapshot | None = Field(
+        None, description="Latest active snapshot (effective_to is null)"
     )
-    current_pricing_detail:Optional[AssetPricingDetail]=Field(
-        None,
-        description="details for instrument pricing"
+    current_pricing_detail: AssetPricingDetail | None = Field(
+        None, description="details for instrument pricing"
     )
 
     def __repr__(self) -> str:
@@ -259,7 +382,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         if ipd is not None:
             # Be tolerant: coerce to a dict if necessary.
             try:
-                ipd.instrument_dump["instrument"]['main_sequence_asset_id'] = self.id
+                ipd.instrument_dump["instrument"]["main_sequence_asset_id"] = self.id
             except Exception as e:
                 self.clear_asset_pricing_details()
                 raise e
@@ -283,12 +406,12 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         return self.current_snapshot.asset_ticker_group_id
 
     @classmethod
-    def _translate_query_params(cls, query_params: Dict[str, Any]):
+    def _translate_query_params(cls, query_params: dict[str, Any]):
         translation_map = {
             "ticker": "current_snapshot__ticker",
             "name": "current_snapshot__name",
             "exchange_code": "current_snapshot__exchange_code",
-            "asset_ticker_group_id": "current_snapshot__asset_ticker_group_id"
+            "asset_ticker_group_id": "current_snapshot__asset_ticker_group_id",
         }
 
         translated_params = {}
@@ -311,7 +434,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         return translated_params
 
     @classmethod
-    def query(cls, timeout=None, per_page: int = None,  **kwargs):
+    def query(cls, timeout=None, per_page: int = None, **kwargs):
         """
         POST-based filtering for large requests that don't fit in the URL.
 
@@ -329,7 +452,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
 
         # Choose which page-size param(s) to set
         # If not specified, we try the common ones in order.
-        page_size_params =  ["limit", "page_size"]
+        page_size_params = ["limit", "page_size"]
 
         only_fields = "fields" in body  # your existing flag
 
@@ -372,12 +495,15 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
                     item["orm_class"] = cls.__name__
                     try:
 
-                        accumulated.append(cls(**item) if issubclass(cls, BasePydanticModel) else item)
+                        accumulated.append(
+                            cls(**item) if issubclass(cls, BasePydanticModel) else item
+                        )
                     except Exception as e:
                         print(item)
                         print(cls)
                         print(cls(**item))
                         import traceback
+
                         traceback.print_exc()
                         raise e
 
@@ -400,12 +526,9 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         """
         transformed_kwargs = cls._translate_query_params(kwargs)
         return super().get(*args, **transformed_kwargs)
-    
 
-        
-    
     def get_calendar(self):
-        if self.current_snapshot.exchange_code  in COMPOSITE_TO_ISO.keys():
+        if self.current_snapshot.exchange_code in COMPOSITE_TO_ISO.keys():
             return Calendar(name=COMPOSITE_TO_ISO[self.current_snapshot.exchange_code])
         elif self.security_type == CONSTANTS.FIGI_SECURITY_TYPE_CRYPTO:
             return Calendar(name="24/7")
@@ -415,7 +538,6 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
             return Calendar(name="24/7")
         else:
             return Calendar(name="XNYS")
-
 
     def pretty_print(self) -> None:
         """
@@ -442,34 +564,26 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
             print(f"{name:<{max_name_len}} | {val}")
 
     @classmethod
-    def register_asset_from_figi(cls,figi:str,timeout=None):
-        base_url = cls.get_object_url()+"/register_asset_from_figi/"
-        payload = {"json": {"figi":figi} }
+    def register_asset_from_figi(cls, figi: str, timeout=None):
+        base_url = cls.get_object_url() + "/register_asset_from_figi/"
+        payload = {"json": {"figi": figi}}
         s = cls.build_session()
 
         r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=base_url,
-            payload=payload,
-            time_out=timeout
+            s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
 
-        if r.status_code not in [200,201]:
+        if r.status_code not in [200, 201]:
             raise Exception(r.text)
 
         return cls(**r.json())
+
     @classmethod
     def filter_with_asset_class(
-            cls,
-            timeout=None,
-            include_relationship_details_depth=None,
-            *args,
-            **kwargs
+        cls, timeout=None, include_relationship_details_depth=None, *args, **kwargs
     ):
         """
-           Filters assets and returns instances with their correct asset class,
+        Filters assets and returns instances with their correct asset class,
         """
 
         from .models_helpers import create_from_serializer_with_class
@@ -496,7 +610,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
                 r_type="GET",
                 url=url,
                 payload=request_kwargs,
-                time_out=timeout
+                time_out=timeout,
             )
 
             if r.status_code != 200:
@@ -528,8 +642,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         # Convert the accumulated raw data into asset instances with correct classes
         return create_from_serializer_with_class(all_results)
 
-
-    def clear_asset_pricing_details(self,timeout=None):
+    def clear_asset_pricing_details(self, timeout=None):
         base_url = self.get_object_url()  # e.g., https://api.example.com/assets
         url = f"{base_url}/{self.id}/clear-asset-pricing-details/"
         r = make_request(
@@ -543,25 +656,22 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         if r.status_code not in (200, 201):
             raise Exception(r.text)
 
+    def add_instrument_pricing_details_from_ms_instrument(
+        self, instrument, pricing_details_date: datetime.datetime, timeout=None
+    ):
 
-    def add_instrument_pricing_details_from_ms_instrument(self,instrument,
-                                                          pricing_details_date:datetime.datetime,
-                                                          timeout=None):
+        data = instrument.serialize_for_backend()
+        data = json.loads(data)
+        data["instrument"]["main_sequence_asset_id"] = self.id
+        data["pricing_details_date"] = pricing_details_date.timestamp()
 
-
-        data=instrument.serialize_for_backend()
-        data=json.loads(data)
-        data["instrument"]["main_sequence_asset_id"]=self.id
-        data["pricing_details_date"]=pricing_details_date.timestamp()
-
-        return self.add_instrument_pricing_details(instrument_pricing_details=data,timeout=timeout)
-
+        return self.add_instrument_pricing_details(instrument_pricing_details=data, timeout=timeout)
 
     def add_instrument_pricing_details(
-            self,
-            instrument_pricing_details: Dict[str, Any],
-            timeout: Optional[float] = None,
-    ) -> Dict[str, Any]:
+        self,
+        instrument_pricing_details: dict[str, Any],
+        timeout: float | None = None,
+    ) -> dict[str, Any]:
         """
         POST /assets/{self.id}/set-asset-pricing-detail/
 
@@ -589,7 +699,9 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json": instrument_pricing_details},  # raw body (no 'dump', no 'organization_id')
+            payload={
+                "json": instrument_pricing_details
+            },  # raw body (no 'dump', no 'organization_id')
             time_out=timeout,
         )
 
@@ -610,25 +722,20 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         data = r.json()
 
         data.get("instrument_pricing_detail")
-        when=data["pricing_details_date"]
-        self.current_pricing_detail = AssetPricingDetail(instrument_dump=data["instrument_dump"],
-                                                            pricing_details_date=datetime.datetime.utcfromtimestamp(when).replace(tzinfo=pytz.utc)
-                                                            )
+        when = data["pricing_details_date"]
+        self.current_pricing_detail = AssetPricingDetail(
+            instrument_dump=data["instrument_dump"],
+            pricing_details_date=datetime.datetime.utcfromtimestamp(when).replace(tzinfo=pytz.utc),
+        )
 
 
-
-
-
-        
 class AssetCategory(BaseObjectOrm, BasePydanticModel):
     id: int
     unique_identifier: str
     display_name: str
-    source: str
-    assets: List[Union[int,"Asset"]]
-    organization_owner_uid: str
-    description: Optional[str]=None
-    
+    assets: list[Union[int, "Asset"]]
+    description: str | None = None
+
     def __repr__(self):
         return f"{self.display_name} source: {self.source}, {len(self.assets)} assets"
 
@@ -637,30 +744,37 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
             raise ValueError(f"No assets in Asset Category {self.display_name}")
         return Asset.filter(id__in=self.assets)
 
-    def update_assets(self, asset_ids: List[int]):
+    def update_assets(self, asset_ids: list[int]):
         self.remove_assets(self.assets)
         self.append_assets(asset_ids)
 
-    def append_assets(self, asset_ids: List[int]) -> "AssetCategory":
+    def append_assets(
+        self, asset_ids: list[int] | None = None, assets: AssetMixin | None = None
+    ) -> "AssetCategory":
         """
         Append the given asset IDs to this category.
         Expects a payload: {"assets": [<asset_id1>, <asset_id2>, ...]}
         """
+        assert asset_ids is not None or assets is not None, "asset_ids or assets must be provided"
+
         url = f"{self.get_object_url()}/{self.id}/append-assets/"
+        if assets is not None:
+            asset_ids = [a.id for a in assets]
         payload = {"assets": asset_ids}
         r = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json":payload}
+            payload={"json": payload},
         )
         if r.status_code not in [200, 201]:
             raise Exception(f"Error appending assets: {r.text()}")
         # Return a new instance of AssetCategory built from the response JSON.
-        return AssetCategory(**r.json())
+        cat = AssetCategory(**r.json())
+        self.assets = cat.assets
 
-    def remove_assets(self, asset_ids:List[int]) -> "AssetCategory":
+    def remove_assets(self, asset_ids: list[int]) -> "AssetCategory":
         """
         Remove the given asset IDs from this category.
         Expects a payload: {"assets": [<asset_id1>, <asset_id2>, ...]}
@@ -672,7 +786,7 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json": payload}
+            payload={"json": payload},
         )
         if r.status_code not in [200, 201]:
             raise Exception(f"Error removing assets: {r.text()}")
@@ -684,11 +798,7 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
         url = f"{cls.get_object_url()}/get-or-create/"
         payload = {"json": kwargs}
         r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload
+            s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload
         )
         if r.status_code not in [200, 201]:
             raise Exception(f"Error appending creating: {r.text}")
@@ -696,36 +806,59 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
         return AssetCategory(**r.json())
 
 
-
 class TranslationError(RuntimeError):
     """Raised when no translation rule (or more than one) matches an asset."""
 
+
 class AssetFilter(BaseModel):
-    security_type: Optional[str] = None
-    security_market_sector: Optional[str] = None
+    security_type: str | None = None
+    security_market_sector: str | None = None
 
     def filter_triggered(self, asset: "Asset") -> bool:
         if self.security_type and asset.security_type != self.security_type:
             return False
-        if self.security_market_sector and asset.security_market_sector != self.security_market_sector:
+        if (
+            self.security_market_sector
+            and asset.security_market_sector != self.security_market_sector
+        ):
             return False
         return True
+
 
 class AssetTranslationRule(BaseModel):
     asset_filter: AssetFilter
     markets_time_serie_unique_identifier: str
-    target_exchange_code: Optional[str] = None
+    target_exchange_code: str | None = None
 
     def is_asset_in_rule(self, asset: "Asset") -> bool:
         return self.asset_filter.filter_triggered(asset)
+
 
 class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
     """
     Mirrors the Django model 'AssetTranslationTableModel' in the backend.
     """
+
     id: int = None
     unique_identifier: str
-    rules: List[AssetTranslationRule] = Field(default_factory=list)
+    rules: list[AssetTranslationRule] = Field(default_factory=list)
+
+    @classmethod
+    def get_or_create(
+        cls,
+        translation_table_identifier,
+        rules,
+    ):
+        translation_table = cls.get_or_none(unique_identifier=translation_table_identifier)
+        rules_serialized = [r.model_dump() for r in rules]
+
+        if translation_table is None:
+            translation_table = AssetTranslationTable.create(
+                unique_identifier=translation_table_identifier,
+                rules=rules_serialized,
+            )
+        else:
+            translation_table.add_rules(rules)
 
     def evaluate_asset(self, asset):
         for rule in self.rules:
@@ -737,7 +870,7 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
 
         raise TranslationError(f"No rules for asset {asset} found")
 
-    def add_rules(self, rules: List[AssetTranslationRule], open_for_everyone=False) -> None:
+    def add_rules(self, rules: list[AssetTranslationRule], open_for_everyone=False) -> None:
         """
         Add each rule to the translation table by calling the backend's 'add_rule' endpoint.
         Prevents local duplication. If the server also rejects a duplicate,
@@ -747,10 +880,11 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
         for new_rule in rules:
             # 1) Check for local duplicates
             if any(
-                    r.asset_filter == new_rule.asset_filter
-                    and r.markets_time_serie_unique_identifier == new_rule.markets_time_serie_unique_identifier
-                    and r.target_exchange_code == new_rule.target_exchange_code
-                    for r in self.rules
+                r.asset_filter == new_rule.asset_filter
+                and r.markets_time_serie_unique_identifier
+                == new_rule.markets_time_serie_unique_identifier
+                and r.target_exchange_code == new_rule.target_exchange_code
+                for r in self.rules
             ):
                 # Already in local table, skip adding
                 logger.debug(f"Rule {new_rule} already present - skipping")
@@ -777,7 +911,7 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
             elif r.status_code not in (200, 201):
                 raise Exception(f"Error adding rule: {r.text}")
 
-    def remove_rules(self, rules: List[AssetTranslationRule]) -> None:
+    def remove_rules(self, rules: list[AssetTranslationRule]) -> None:
         """
         Remove each rule from the translation table by calling the backend's 'remove_rule' endpoint.
         Once successfully removed on the server, remove it from the local list `self.rules`.
@@ -787,10 +921,12 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
         for rule_to_remove in rules:
             # 1) Check if we even have it locally
             matching_local = [
-                r for r in self.rules
+                r
+                for r in self.rules
                 if r.asset_filter == rule_to_remove.asset_filter
-                   and r.markets_time_serie_unique_identifier == rule_to_remove.markets_time_serie_unique_identifier
-                   and r.target_exchange_code == rule_to_remove.target_exchange_code
+                and r.markets_time_serie_unique_identifier
+                == rule_to_remove.markets_time_serie_unique_identifier
+                and r.target_exchange_code == rule_to_remove.target_exchange_code
             ]
             if not matching_local:
                 # Not in local rules, skip
@@ -822,9 +958,7 @@ class Asset(AssetMixin, BaseObjectOrm):
 
     @classmethod
     def create_or_update_index_asset_from_portfolios(
-            cls,
-            reference_portfolio: int,
-            timeout = None
+        cls, reference_portfolio: int, timeout=None
     ) -> "PortfolioIndexAsset":
         url = f"{cls.get_object_url()}/create_or_update_index_asset_from_portfolios/"
         payload = {
@@ -838,53 +972,53 @@ class Asset(AssetMixin, BaseObjectOrm):
             r_type="POST",
             url=url,
             payload=payload,
-            time_out=timeout
+            time_out=timeout,
         )
-        if r.status_code not in [200,201]:
+        if r.status_code not in [200, 201]:
             raise Exception(f"{r.text}")
 
         return PortfolioIndexAsset(**r.json())
 
     @classmethod
-    def get_or_register_from_isin(cls,isin: str,exchange_code:str,timeout=None,) -> "Asset":
+    def get_or_register_from_isin(
+        cls,
+        isin: str,
+        exchange_code: str,
+        timeout=None,
+    ) -> "Asset":
 
         base_url = cls.get_object_url() + "/get_or_register_from_isin/"
-        payload = {"json": {"isin":isin,"exchange_code":exchange_code}}
+        payload = {"json": {"isin": isin, "exchange_code": exchange_code}}
         s = cls.build_session()
 
         r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=base_url,
-            payload=payload,
-            time_out=timeout
+            s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
         if r.status_code not in (200, 201):
             raise Exception(f"Error registering asset: {r.text}")
         return cls(**r.json())
 
-
     @classmethod
-    def get_or_register_custom_asset(cls, timeout=None, **kwargs,):
+    def get_or_register_custom_asset(
+        cls,
+        timeout=None,
+        **kwargs,
+    ):
         base_url = cls.get_object_url() + "/get_or_register_custom_asset/"
         payload = {"json": kwargs}
         s = cls.build_session()
 
         r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=base_url,
-            payload=payload,
-            time_out=timeout
+            s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
         if r.status_code not in (200, 201):
             raise Exception(f"Error registering asset: {r.text}")
         return cls(**r.json())
 
     @classmethod
-    def batch_get_or_register_custom_assets(cls, assets_data: List[Dict], timeout=None) -> List["Asset"]:
+    def batch_get_or_register_custom_assets(
+        cls, assets_data: list[dict], timeout=None
+    ) -> list["Asset"]:
         """
         Calls the batch endpoint to get or register multiple custom assets.
 
@@ -901,12 +1035,7 @@ class Asset(AssetMixin, BaseObjectOrm):
         s = cls.build_session()
 
         r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=base_url,
-            payload=payload,
-            time_out=timeout
+            s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
 
         if r.status_code != 200:
@@ -914,16 +1043,18 @@ class Asset(AssetMixin, BaseObjectOrm):
 
         return [cls(**data) for data in r.json()]
 
+
 class PortfolioIndexAsset(Asset):
-    reference_portfolio : Union["Portfolio",int]
+    reference_portfolio: Union["Portfolio", int]
 
     @property
     def reference_portfolio_details_url(self):
         return f"{TDAG_ENDPOINT}/dashboards/portfolio-detail/?target_portfolio_id={self.reference_portfolios.id}"
 
+
 class AssetCurrencyPair(AssetMixin, BasePydanticModel):
-    base_asset: Union[AssetMixin, int]
-    quote_asset: Union[AssetMixin, int]
+    base_asset: AssetMixin | int
+    quote_asset: AssetMixin | int
 
     def get_spot_reference_asset_unique_identifier(self):
         return self.base_asset.unique_identifier
@@ -931,13 +1062,13 @@ class AssetCurrencyPair(AssetMixin, BasePydanticModel):
     def get_ms_share_class(self):
         return self.base_asset.get_ms_share_class()
 
+
 class FutureUSDMMixin(AssetMixin, BasePydanticModel):
     maturity_code: str = Field(..., max_length=50)
-    last_trade_time: Optional[datetime.datetime] = None
-    currency_pair:AssetCurrencyPair
+    last_trade_time: datetime.datetime | None = None
+    currency_pair: AssetCurrencyPair
 
     def get_spot_reference_asset_unique_identifier(self):
-
 
         base_asset_symbol = self.currency_pair.base_asset.unique_identifier
         if self.execution_venue_symbol == CONSTANTS.BINANCE_FUTURES_EV_SYMBOL:
@@ -945,20 +1076,20 @@ class FutureUSDMMixin(AssetMixin, BasePydanticModel):
             return base_asset_symbol.replace("1000SHIB", "SHIB")
         return base_asset_symbol
 
+
 class AssetFutureUSDM(FutureUSDMMixin, BaseObjectOrm):
     pass
 
 
 class AccountPortfolioScheduledRebalance(BaseObjectOrm, BasePydanticModel):
     id: int
-    target_account_portfolio: Optional[dict] = None
+    target_account_portfolio: dict | None = None
     scheduled_time: str = None
-    received_in_execution_engine : bool = False
-    executed : bool = False
-    execution_start: Optional[str] = None
-    execution_end: Optional[datetime.datetime] = None
-    execution_message: Optional[str] = None
-
+    received_in_execution_engine: bool = False
+    executed: bool = False
+    execution_start: str | None = None
+    execution_end: datetime.datetime | None = None
+    execution_message: str | None = None
 
 
 class AccountExecutionConfiguration(BasePydanticModel):
@@ -967,54 +1098,56 @@ class AccountExecutionConfiguration(BasePydanticModel):
     minimum_notional_for_a_rebalance: float = Field(15.00, ge=0)
     max_latency_in_cdc_seconds: float = Field(60.00, ge=0)
     force_market_order_on_execution_remaining_balances: bool = Field(False)
-    orders_execution_configuration: Dict[str, Any]
-    cooldown_configuration: Dict[str, Any]
+    orders_execution_configuration: dict[str, Any]
+    cooldown_configuration: dict[str, Any]
+
 
 class AccountPortfolioPosition(BasePydanticModel):
-    id: Optional[int]
-    parent_positions: Optional[int]
+    id: int | None
+    parent_positions: int | None
     target_asset: int
-    weight_notional_exposure: Optional[float]=0.0
-    constant_notional_exposure: Optional[float]=0.0
-    single_asset_quantity: Optional[float]=0.0
+    weight_notional_exposure: float | None = 0.0
+    constant_notional_exposure: float | None = 0.0
+    single_asset_quantity: float | None = 0.0
+
 
 class AccountPortfolioHistoricalPositions(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int]
+    id: int | None
     positions_date: datetime.datetime
-    comments: Optional[str]
+    comments: str | None
     positions: list[AccountPortfolioPosition]
 
 
-
 class AccountPortfolio(BaseObjectOrm, BasePydanticModel):
-    id:int
-    related_account:Optional[int]
-    latest_positions:Optional[AccountPortfolioHistoricalPositions]=None
-    model_portfolio_name:Optional[str]=None
-    model_portfolio_description:Optional[str]=None
+    id: int
+    related_account: int | None
+    latest_positions: AccountPortfolioHistoricalPositions | None = None
+    model_portfolio_name: str | None = None
+    model_portfolio_description: str | None = None
+
     @property
     def unique_identifier(self):
         return self.related_account_id
 
 
-
 class AccountMixin(BasePydanticModel):
-    id: Optional[int] = None
-    uuid:str
-    execution_venue: Union["ExecutionVenue",int]
+    id: int | None = None
+    uuid: str
+    execution_venue: Union["ExecutionVenue", int]
     account_is_active: bool
-    account_name: Optional[str] = None
+    account_name: str | None = None
     is_paper: bool
-    account_target_portfolio: Optional[AccountPortfolio]=None # can be none on creation without holdings
-    latest_holdings: Union["AccountLatestHoldings",None]=None
-
+    account_target_portfolio: AccountPortfolio | None = (
+        None  # can be none on creation without holdings
+    )
+    latest_holdings: Union["AccountLatestHoldings", None] = None
 
     def build_rebalance(
-            self,
-            latest_holdings: "AccountHistoricalHoldings",
-            tolerance: float,
-            change_cash_asset_to_currency_asset: Union[Asset, None] = None,
-        ):
+        self,
+        latest_holdings: "AccountHistoricalHoldings",
+        tolerance: float,
+        change_cash_asset_to_currency_asset: Asset | None = None,
+    ):
         nav = self.get_nav()
         nav, nav_date = nav["nav"], nav["nav_date"]
         related_expected_asset_exposure_df = latest_holdings.related_expected_asset_exposure_df
@@ -1022,36 +1155,54 @@ class AccountMixin(BasePydanticModel):
 
         # extract expected holdings
         try:
-            implicit_holdings_df = related_expected_asset_exposure_df.groupby("aid") \
-                .aggregate({"holding": "sum", "price": "last", "expected_holding_in_fund": "sum"}) \
+            implicit_holdings_df = (
+                related_expected_asset_exposure_df.groupby("aid")
+                .aggregate({"holding": "sum", "price": "last", "expected_holding_in_fund": "sum"})
                 .rename(columns={"expected_holding_in_fund": "expected_holding"})
+            )
         except Exception as e:
             raise e
         implicit_holdings_df["difference"] = (
-                    implicit_holdings_df["expected_holding"] - implicit_holdings_df["holding"])
-        implicit_holdings_df["relative_w"] = (implicit_holdings_df["difference"] * implicit_holdings_df["price"]) / nav
+            implicit_holdings_df["expected_holding"] - implicit_holdings_df["holding"]
+        )
+        implicit_holdings_df["relative_w"] = (
+            implicit_holdings_df["difference"] * implicit_holdings_df["price"]
+        ) / nav
         implicit_holdings_df["tolerance_flag"] = implicit_holdings_df["relative_w"].apply(
-            lambda x: 1 if x >= tolerance else 0)
-        implicit_holdings_df["difference"] = implicit_holdings_df["difference"] * implicit_holdings_df[
-            "tolerance_flag"]
-        implicit_holdings_df["expected_holding"] = implicit_holdings_df["holding"] + implicit_holdings_df[
-            "difference"]
+            lambda x: 1 if x >= tolerance else 0
+        )
+        implicit_holdings_df["difference"] = (
+            implicit_holdings_df["difference"] * implicit_holdings_df["tolerance_flag"]
+        )
+        implicit_holdings_df["expected_holding"] = (
+            implicit_holdings_df["holding"] + implicit_holdings_df["difference"]
+        )
 
-        implicit_holdings = implicit_holdings_df[["expected_holding", "price"]] \
-            .rename(columns={"expected_holding": "holding"}).T.to_dict()
+        implicit_holdings = (
+            implicit_holdings_df[["expected_holding", "price"]]
+            .rename(columns={"expected_holding": "holding"})
+            .T.to_dict()
+        )
 
-        implicit_holdings_df["reference_notional"] = implicit_holdings_df["price"] * implicit_holdings_df["difference"]
-        rebalance = implicit_holdings_df[["difference", "reference_notional", "price"]] \
-            .rename(columns={"difference": "quantity", "price": "reference_price"}).T.to_dict()
+        implicit_holdings_df["reference_notional"] = (
+            implicit_holdings_df["price"] * implicit_holdings_df["difference"]
+        )
+        rebalance = (
+            implicit_holdings_df[["difference", "reference_notional", "price"]]
+            .rename(columns={"difference": "quantity", "price": "reference_price"})
+            .T.to_dict()
+        )
 
         all_assets = implicit_holdings.keys()
         new_rebalance, new_implicit_holdings = {}, {}
         # build_asset_switch
         asset_switch_map = Asset.switch_cash_in_asset_list(
             asset_id_list=[c for c in all_assets if c != change_cash_asset_to_currency_asset.id],
-            target_currency_asset_id=int(change_cash_asset_to_currency_asset.id))
-        asset_switch_map[
-            str(change_cash_asset_to_currency_asset.id)] = change_cash_asset_to_currency_asset.serialized_config
+            target_currency_asset_id=int(change_cash_asset_to_currency_asset.id),
+        )
+        asset_switch_map[str(change_cash_asset_to_currency_asset.id)] = (
+            change_cash_asset_to_currency_asset.serialized_config
+        )
 
         for a_id in all_assets:
             try:
@@ -1059,103 +1210,130 @@ class AccountMixin(BasePydanticModel):
             except Exception as e:
                 raise e
             if rebalance[a_id]["quantity"] != 0.0:
-                new_rebalance[new_a.id] = {"rebalance": rebalance[a_id],
-                                               "asset": new_a}
+                new_rebalance[new_a.id] = {"rebalance": rebalance[a_id], "asset": new_a}
             try:
                 new_implicit_holdings[new_a.id] = implicit_holdings[a_id]
             except Exception as e:
                 raise e
         not_rebalanced_by_tolerance = implicit_holdings_df[implicit_holdings_df["difference"] != 0]
-        not_rebalanced_by_tolerance = not_rebalanced_by_tolerance[not_rebalanced_by_tolerance["tolerance_flag"] == 0][
-            "relative_w"]
+        not_rebalanced_by_tolerance = not_rebalanced_by_tolerance[
+            not_rebalanced_by_tolerance["tolerance_flag"] == 0
+        ]["relative_w"]
         not_rebalanced_by_tolerance = {"tolerance": not_rebalanced_by_tolerance.to_dict()}
         return new_rebalance, new_implicit_holdings, not_rebalanced_by_tolerance
-
 
     def get_latest_holdings(self):
         base_url = self.get_object_url()
         url = f"{base_url}/{self.id}/latest_holdings/"
-        r = make_request(s=self.build_session(),loaders=self.LOADERS, r_type="GET", url=url)
+        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url)
         if r.status_code != 200:
             raise Exception("Error Syncing funds in account")
         return AccountHistoricalHoldings(**r.json())
-    
-    def get_missing_assets_in_exposure(self,asset_list_ids,timeout=None)->list[Asset]:
+
+    def get_missing_assets_in_exposure(self, asset_list_ids, timeout=None) -> list[Asset]:
         base_url = self.get_object_url()
         url = f"{base_url}/{self.id}/get_missing_assets_in_exposure/"
-        payload = {"json": {"asset_list_ids":asset_list_ids,}}
-        
-        r = make_request(s=self.build_session(),payload=payload, loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout)
+        payload = {
+            "json": {
+                "asset_list_ids": asset_list_ids,
+            }
+        }
+
+        r = make_request(
+            s=self.build_session(),
+            payload=payload,
+            loaders=self.LOADERS,
+            r_type="GET",
+            url=url,
+            time_out=timeout,
+        )
         if r.status_code != 200:
             raise Exception(r.text)
-        
+
         asset_list = []
         for a in r.json():
             asset_list.append(resolve_asset(a))
-        
-        return  asset_list
+
+        return asset_list
+
 
 class RebalanceTargetPosition(BasePydanticModel):
     target_portfolio_id: int
     weight_notional_exposure: float
 
+
 class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
 
     @classmethod
-    def get_or_create(cls,
-                      create_without_holdings=False,
-                      timeout=None,**kwargs,):
+    def get_or_create(
+        cls,
+        create_without_holdings=False,
+        timeout=None,
+        **kwargs,
+    ):
         base_url = cls.get_object_url()
         url = f"{base_url}/get-or-create/"
-        kwargs["create_without_holdings"]=create_without_holdings
+        kwargs["create_without_holdings"] = create_without_holdings
         payload = {"json": kwargs}
 
-        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url,
-                         payload=payload,
-                         time_out=timeout)
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
         if r.status_code not in [200, 201]:
             raise Exception(f"Error geting or creating account {r.text}")
         return cls(**r.json())
 
-    def set_account_target_portfolio_from_asset_holdings(self,timeout=None):
+    def set_account_target_portfolio_from_asset_holdings(self, timeout=None):
         base_url = self.get_object_url()
         url = f"{base_url}/{self.id}/set_account_target_portfolio_from_asset_holdings/"
-        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url,
-                         time_out=timeout)
+        r = make_request(
+            s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
+        )
         if r.status_code != 200:
-            raise Exception(f"Error set_account_target_portfolio_from_asset_holdings in account {r.text}")
-    def snapshot_account(self,timeout=None):
+            raise Exception(
+                f"Error set_account_target_portfolio_from_asset_holdings in account {r.text}"
+            )
+
+    def snapshot_account(self, timeout=None):
 
         base_url = self.get_object_url()
         url = f"{base_url}/{self.id}/snapshot_account/"
-        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url,
-                         time_out=timeout)
+        r = make_request(
+            s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
+        )
         if r.status_code != 200:
             raise Exception(f"Error Getting NAV in account {r.text}")
-
 
     def get_tracking_error_details(self, timeout=None):
 
         base_url = self.get_object_url()
         url = f"{base_url}/{self.id}/get_tracking_error_details/"
-        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url,
-                         time_out=timeout)
+        r = make_request(
+            s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
+        )
         if r.status_code != 200:
             raise Exception(f"Error Getting NAV in account {r.text}")
         result = r.json()
-        return result['fund_summary'],result['account_tracking_error']
+        return result["fund_summary"], result["account_tracking_error"]
 
     def rebalance(
         self,
-        target_positions: List[RebalanceTargetPosition],
-        scheduled_time: Optional[datetime.datetime] = None,
-            timeout=None
+        target_positions: list[RebalanceTargetPosition],
+        scheduled_time: datetime.datetime | None = None,
+        timeout=None,
     ) -> AccountPortfolioScheduledRebalance:
 
         parsed_target_positions = {}
         for target_position in target_positions:
             if target_position.target_portfolio_id in parsed_target_positions:
-                raise ValueError(f"Duplicate target portfolio id: {target_position.target_portfolio_id} not allowed")
+                raise ValueError(
+                    f"Duplicate target portfolio id: {target_position.target_portfolio_id} not allowed"
+                )
 
             parsed_target_positions[target_position.target_portfolio_id] = {
                 "weight_notional_exposure": target_position.weight_notional_exposure,
@@ -1168,9 +1346,12 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
             scheduled_time=scheduled_time,
         )
 
-
-    def get_historical_holdings(self,start_date:Optional[datetime.datetime]=None,
-                                end_date:Optional[datetime.datetime]=None,timeout=None)->pd.DataFrame:
+    def get_historical_holdings(
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        timeout=None,
+    ) -> pd.DataFrame:
         """
         Retrieves historical holdings data for the account over a specified date range.
 
@@ -1197,23 +1378,21 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
         2025-05-30 09:43:26+00:00      62376               False        1.0   1000000.0
         """
 
-
-
-        filter_search=dict(related_account__id=self.id)
+        filter_search = dict(related_account__id=self.id)
         if start_date is not None:
             if isinstance(start_date, datetime.datetime):
                 if start_date.tzinfo is None:
                     start_date_timestamp = start_date.replace(tzinfo=pytz.utc)
-                filter_search['holdings_date__gte'] = start_date_timestamp.isoformat()
+                filter_search["holdings_date__gte"] = start_date_timestamp.isoformat()
 
         if end_date is not None:
             if isinstance(end_date, datetime.datetime):
                 if end_date.tzinfo is None:
                     end_date = end_date.replace(tzinfo=pytz.utc)
-            filter_search['holdings_date__lte'] = end_date.isoformat()
+            filter_search["holdings_date__lte"] = end_date.isoformat()
 
         holdings = AccountHistoricalHoldings.filter(**filter_search)
-        if len(holdings)==0:
+        if len(holdings) == 0:
             return pd.DataFrame()
         positions_df = []
         for holding in holdings:
@@ -1228,31 +1407,35 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
 
                 positions_df.append(pos)
 
-        positions_df = pd.DataFrame(positions_df).rename(
-            columns={"asset": "asset_id"}).set_index(["time_index", "asset_id"])
+        positions_df = (
+            pd.DataFrame(positions_df)
+            .rename(columns={"asset": "asset_id"})
+            .set_index(["time_index", "asset_id"])
+        )
         return positions_df
 
-class AccountPositionDetail(BaseObjectOrm,BasePydanticModel):
-    id: Optional[int] = None
-    asset:Union[Asset,int] = None
-    missing_price :bool=False
+
+class AccountPositionDetail(BaseObjectOrm, BasePydanticModel):
+    id: int | None = None
+    asset: Asset | int = None
+    missing_price: bool = False
     price: float
-    quantity : float
-    parents_holdings: Optional[int]=None
-    extra_details:Optional[dict]=None
+    quantity: float
+    parents_holdings: int | None = None
+    extra_details: dict | None = None
+
 
 class AccountHistoricalHoldingsMixin:
-    id: Optional[int] = Field(None, primary_key=True)
+    id: int | None = Field(None, primary_key=True)
     holdings_date: datetime.datetime
-    comments: Optional[str] = Field(None, max_length=150)
-    nav: Optional[float] = None
+    comments: str | None = Field(None, max_length=150)
+    nav: float | None = None
 
     is_trade_snapshot: bool = Field(default=False)
-    target_trade_time: Optional[datetime.datetime] = None
-    related_expected_asset_exposure_df: Optional[List[Dict[str, Any]]] = None
+    target_trade_time: datetime.datetime | None = None
+    related_expected_asset_exposure_df: list[dict[str, Any]] | None = None
 
-    holdings: List[AccountPositionDetail]
-
+    holdings: list[AccountPositionDetail]
 
     def get_nav(self):
         base_url = self.get_object_url()
@@ -1263,81 +1446,97 @@ class AccountHistoricalHoldingsMixin:
         return r.json()
 
 
-
-class AccountLatestHoldings(AccountHistoricalHoldingsMixin,BaseObjectOrm,BasePydanticModel):
+class AccountLatestHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, BasePydanticModel):
     """
     Same as Account HistoricalHoldings but Does not include related account
 
     """
+
     ...
 
 
+class AccountHistoricalHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, BasePydanticModel):
 
-class AccountHistoricalHoldings(AccountHistoricalHoldingsMixin,BaseObjectOrm,BasePydanticModel):
-
-
-    related_account: Union[int,"Account"]
+    related_account: Union[int, "Account"]
 
     @classmethod
-    def destroy_holdings_before_date(cls,target_date:datetime.datetime,
-                                     keep_trade_snapshots:bool):
+    def destroy_holdings_before_date(
+        cls, target_date: datetime.datetime, keep_trade_snapshots: bool
+    ):
         base_url = cls.get_object_url()
-        payload = {"json": {"target_date":target_date.strftime(DATE_FORMAT),
-                            "keep_trade_snapshots":keep_trade_snapshots}}
-
+        payload = {
+            "json": {
+                "target_date": target_date.strftime(DATE_FORMAT),
+                "keep_trade_snapshots": keep_trade_snapshots,
+            }
+        }
 
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="POST",
             url=f"{base_url}/destroy_holdings_before_date/",
-            payload=payload
+            payload=payload,
         )
         if r.status_code != 204:
             raise Exception(r.text)
 
     @classmethod
-    def  create_with_holdings(cls,position_list:List[AccountPositionDetail],
-                                                   holdings_date:int,
-                                                   related_account:int,
-                              extra_details: dict = None,
-                              timeout=None
-                                                   ):
+    def create_with_holdings(
+        cls,
+        position_list: list[AccountPositionDetail],
+        holdings_date: int,
+        related_account: int,
+        extra_details: dict = None,
+        timeout=None,
+    ):
 
         base_url = cls.get_object_url()
-        payload = {"json": {"position_list": [{k:v for k,v in p.model_dump().items() if k not in ["orm_class","id","parents_holdings"]} for p in position_list],
-                            "holdings_date": holdings_date,
-                            "related_account":related_account,
-                            }}
+        payload = {
+            "json": {
+                "position_list": [
+                    {
+                        k: v
+                        for k, v in p.model_dump().items()
+                        if k not in ["orm_class", "id", "parents_holdings"]
+                    }
+                    for p in position_list
+                ],
+                "holdings_date": holdings_date,
+                "related_account": related_account,
+            }
+        }
 
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="POST",
             url=f"{base_url}/create_with_holdings/",
-            payload=payload,time_out=timeout
+            payload=payload,
+            time_out=timeout,
         )
         if r.status_code != 201:
             raise Exception(r.text)
         return cls(**r.json())
 
 
-
-class AccountRiskFactors(BaseObjectOrm,BasePydanticModel):
-    related_holdings: Union[int,AccountHistoricalHoldings]
+class AccountRiskFactors(BaseObjectOrm, BasePydanticModel):
+    related_holdings: int | AccountHistoricalHoldings
     account_balance: float
 
 
 class FundingFeeTransaction(BaseObjectOrm):
     pass
 
+
 class AccountPortfolioHistoricalWeights(BaseObjectOrm):
     pass
+
 
 class WeightPosition(BaseObjectOrm, BasePydanticModel):
     # id: Optional[int] = None
     # parent_weights: int
-    asset: Union[AssetMixin, int]
+    asset: AssetMixin | int
     weight_notional_exposure: float
 
     @property
@@ -1347,17 +1546,16 @@ class WeightPosition(BaseObjectOrm, BasePydanticModel):
     @root_validator(pre=True)
     def resolve_assets(cls, values):
         # Check if 'asset' is a dict and determine its type
-        if isinstance(values.get('asset'), dict):
-            asset=values.get('asset')
-            asset=resolve_asset(asset_dict=asset)
-            values['asset']=asset
-         
+        if isinstance(values.get("asset"), dict):
+            asset = values.get("asset")
+            asset = resolve_asset(asset_dict=asset)
+            values["asset"] = asset
+
         return values
 
 
-
-class ExecutionVenue(BaseObjectOrm,BasePydanticModel):
-    id: Optional[int] = None
+class ExecutionVenue(BaseObjectOrm, BasePydanticModel):
+    id: int | None = None
     symbol: str
     name: str
 
@@ -1366,56 +1564,64 @@ class ExecutionVenue(BaseObjectOrm,BasePydanticModel):
         return f"{self.symbol}"
 
 
-
 class TradeSide(IntEnum):
     SELL = -1
     BUY = 1
 
-class Trade(BaseObjectOrm,BasePydanticModel):
-    id: Optional[int] =None
+
+class Trade(BaseObjectOrm, BasePydanticModel):
+    id: int | None = None
 
     # Use a default_factory to set the default trade_time to now (with UTC timezone)
     trade_time: datetime.datetime
     trade_side: TradeSide
-    asset: Optional[Union[AssetMixin,int]]
+    asset: AssetMixin | int | None
     quantity: float
     price: float
-    commission: Optional[float]
-    commission_asset: Optional[Union[AssetMixin,int]]
+    commission: float | None
+    commission_asset: AssetMixin | int | None
 
-    related_fund: Optional[Union["VirtualFund",int]]
-    related_account: Optional[Union[Account,int]]
-    related_order: Optional[Union["Order",int]]
+    related_fund: Union["VirtualFund", int] | None
+    related_account: Account | int | None
+    related_order: Union["Order", int] | None
 
-    settlement_cost:Optional[float]
-    settlement_asset: Optional[Union[AssetMixin,int]]
+    settlement_cost: float | None
+    settlement_asset: AssetMixin | int | None
 
-    comments: Optional[str]
-    venue_specific_properties: Optional[Dict]
+    comments: str | None
+    venue_specific_properties: dict | None
 
     @classmethod
-    def create_or_update(cls, trade_kwargs,timeout=None) -> None:
+    def create_or_update(cls, trade_kwargs, timeout=None) -> None:
         url = f"{cls.get_object_url()}/create_or_update/"
         data = cls.serialize_for_json(trade_kwargs)
         payload = {"json": data}
-        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout)
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
         if r.status_code in [200] == False:
             raise Exception(f" {r.text()}")
         return cls(**r.json())
+
 
 class OrdersExecutionConfiguration(BaseModel):
     broker_class: str
     broker_configuration: dict
 
 
-
 class PortfolioTags(BasePydanticModel):
-    id:Optional[int]=None
-    name:str
-    color:str
+    id: int | None = None
+    name: str
+    color: str
+
 
 from typing import TypedDict
+
 
 class PortfolioAbout(TypedDict):
     description: str
@@ -1425,22 +1631,22 @@ class PortfolioAbout(TypedDict):
 
 
 class PortfolioMixin:
-    id: Optional[int] = None
+    id: int | None = None
     is_active: bool = False
-    data_node_update: Optional['DataNodeUpdate']
-    signal_data_node_update: Optional['DataNodeUpdate']
+    data_node_update: Optional["DataNodeUpdate"]
+    signal_data_node_update: Optional["DataNodeUpdate"]
     follow_account_rebalance: bool = False
-    comparable_portfolios: Optional[List[int]] = None
-    backtest_table_price_column_name: Optional[str] = Field(None, max_length=20)
-    tags: Optional[List['PortfolioTags']] = None
-    calendar: Optional['Calendar']
+    comparable_portfolios: list[int] | None = None
+    backtest_table_price_column_name: str | None = Field(None, max_length=20)
+    tags: list["PortfolioTags"] | None = None
+    calendar: Optional["Calendar"]
     index_asset: PortfolioIndexAsset
 
     def pretty_print(self) -> str:
         def format_field(name, value):
             if isinstance(value, list):
-                val = ', '.join(str(v) for v in value)
-            elif hasattr(value, '__str__'):
+                val = ", ".join(str(v) for v in value)
+            elif hasattr(value, "__str__"):
                 val = str(value)
             else:
                 val = repr(value)
@@ -1452,16 +1658,16 @@ class PortfolioMixin:
 
     @classmethod
     def create_from_time_series(
-            cls,
-            portfolio_name: str,
-            data_node_update_id: int,
-            signal_data_node_update_id: int,
-            is_active: bool,
-            calendar_name: str,
-            target_portfolio_about: PortfolioAbout,
-            backtest_table_price_column_name: str,
-            tags: Optional[list] = None,
-            timeout=None
+        cls,
+        portfolio_name: str,
+        data_node_update_id: int,
+        signal_data_node_update_id: int,
+        is_active: bool,
+        calendar_name: str,
+        target_portfolio_about: PortfolioAbout,
+        backtest_table_price_column_name: str,
+        tags: list | None = None,
+        timeout=None,
     ) -> "Portfolio":
         url = f"{cls.get_object_url()}/create_from_time_series/"
         # Build the payload with the required arguments.
@@ -1477,41 +1683,54 @@ class PortfolioMixin:
             "tags": tags,
         }
 
-        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url,
-                         payload={"json": payload_data}, time_out=timeout)
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": payload_data},
+            time_out=timeout,
+        )
         if r.status_code not in [201]:
             raise Exception(f" {r.text}")
         response = r.json()
 
-        return cls(**response["portfolio"]), PortfolioIndexAsset(**response["portfolio_index_asset"])
+        return cls(**response["portfolio"]), PortfolioIndexAsset(
+            **response["portfolio_index_asset"]
+        )
 
     @property
     def portfolio_name(self) -> str:
         return self.index_asset.current_snapshot.name
+
     @property
-    def portfolio_ticker(self)->str:
+    def portfolio_ticker(self) -> str:
         return self.index_asset.current_snapshot.ticker
 
     def add_venue(self, venue_id) -> None:
         url = f"{self.get_object_url()}/{self.id}/add_venue/"
         payload = {"json": {"venue_id": venue_id}}
-        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload)
+        r = make_request(
+            s=self.build_session(), loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload
+        )
         if r.status_code in [200] == False:
             raise Exception(f" {r.text()}")
 
-    def get_latest_weights(self,timeout=None)->Dict[str, float]:
+    def get_latest_weights(self, timeout=None) -> dict[str, float]:
         url = f"{self.get_object_url()}/{self.id}/get_latest_weights/"
-        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url,
-                         time_out=timeout
-                         )
+        r = make_request(
+            s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
+        )
         if r.status_code in [200] == False:
             raise Exception(f" {r.text()}")
-        results=r.json()
-        return results["weights"],datetime.datetime.utcfromtimestamp(results["weights_date"]).replace(tzinfo=pytz.utc)
+        results = r.json()
+        return results["weights"], datetime.datetime.utcfromtimestamp(
+            results["weights_date"]
+        ).replace(tzinfo=pytz.utc)
 
-    def get_historical_weights(self,
-                               start_date_timestamp:float,end_date_timestamp:float,
-                               timeout=None)->Dict[str, float]:
+    def get_historical_weights(
+        self, start_date_timestamp: float, end_date_timestamp: float, timeout=None
+    ) -> dict[str, float]:
         if self.data_node_update is None:
             print("this portfolio does not have a weights table")
         self.data_node_update
@@ -1526,31 +1745,45 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
     unique_identifier: str
     display_name: str
     source: str
-    portfolios: List[Union[int, "Portfolio"]]
-    description: Optional[str] = None
+    portfolios: list[Union[int, "Portfolio"]]
+    description: str | None = None
 
     def __repr__(self):
         return f"{self.display_name} ({self.unique_identifier}), {len(self.portfolios)} portfolios"
 
     @classmethod
-    def get_or_create(cls,unique_identifier:str,display_name:str,portfolio_ids:List[int],source:Optional[str]=None,
-
-                      description:Optional[str]=None,timeout=None):
+    def get_or_create(
+        cls,
+        unique_identifier: str,
+        display_name: str,
+        portfolio_ids: list[int],
+        source: str | None = None,
+        description: str | None = None,
+        timeout=None,
+    ):
         url = f"{cls.get_object_url()}/get_or_create/"
-        payload = {"json": {"display_name": display_name,
-                            "source": source,
-                            "unique_identifier":unique_identifier,
-                            "portfolios": portfolio_ids,
-                            "description": description,
-                            }}
-        r = make_request(s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout
-                         )
-        if r.status_code not in [201,200]:
+        payload = {
+            "json": {
+                "display_name": display_name,
+                "source": source,
+                "unique_identifier": unique_identifier,
+                "portfolios": portfolio_ids,
+                "description": description,
+            }
+        }
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if r.status_code not in [201, 200]:
             raise Exception(f" {r.text}")
         return cls(**r.json())
 
-    def append_portfolios(self, portfolio_ids: List[int]) -> "PortfolioGroup":
+    def append_portfolios(self, portfolio_ids: list[int]) -> "PortfolioGroup":
         """
         Appends portfolios to the group by calling the custom API action.
 
@@ -1571,7 +1804,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json": payload}
+            payload={"json": payload},
         )
 
         if r.status_code != 200:
@@ -1584,7 +1817,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
         return self
 
-    def remove_portfolios(self, portfolio_ids: List[int]) -> "PortfolioGroup":
+    def remove_portfolios(self, portfolio_ids: list[int]) -> "PortfolioGroup":
         """
         Removes portfolios from the group by calling the custom API action.
 
@@ -1605,7 +1838,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json": payload}
+            payload={"json": payload},
         )
 
         if r.status_code != 200:
@@ -1619,41 +1852,42 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
         return self
 
 
-
 class VirtualFundPositionDetail(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = None
-    asset: Union[Asset,AssetFutureUSDM,int]
+    id: int | None = None
+    asset: Asset | AssetFutureUSDM | int
     price: float
     quantity: float
-    parents_holdings: Union[int,"VirtualFundHistoricalHoldings"]
+    parents_holdings: Union[int, "VirtualFundHistoricalHoldings"]
 
     @property
     def asset_id(self):
-        return self.asset if isinstance(self.asset,int) else self.asset.id
+        return self.asset if isinstance(self.asset, int) else self.asset.id
 
     @root_validator(pre=True)
     def resolve_assets(cls, values):
         # Check if 'asset' is a dict and determine its type
-        if isinstance(values.get('asset'), dict):
-            asset = values.get('asset')
+        if isinstance(values.get("asset"), dict):
+            asset = values.get("asset")
             asset = resolve_asset(asset_dict=asset)
-            values['asset'] = asset
+            values["asset"] = asset
 
         return values
 
+
 class VirtualFundHistoricalHoldings(BaseObjectOrm, BasePydanticModel):
-    related_fund: Union["VirtualFund",int]  # assuming VirtualFund is another Pydantic model
-    target_trade_time: Optional[datetime.datetime] = None
-    target_weights: Optional[dict] = Field(default=None)
+    related_fund: Union["VirtualFund", int]  # assuming VirtualFund is another Pydantic model
+    target_trade_time: datetime.datetime | None = None
+    target_weights: dict | None = Field(default=None)
     is_trade_snapshot: bool = Field(default=False)
     fund_account_target_exposure: float = Field(default=0)
-    fund_account_units_exposure: Optional[float] = Field(default=None)
-    holdings:list[VirtualFundPositionDetail]
+    fund_account_units_exposure: float | None = Field(default=None)
+    holdings: list[VirtualFundPositionDetail]
+
 
 class ExecutionQuantity(BaseModel):
-    asset: Union[Asset,AssetFutureUSDM,  int]
+    asset: Asset | AssetFutureUSDM | int
     quantity: float
-    reference_price:Union[None,float]
+    reference_price: None | float
 
     def __repr__(self):
         return f"{self.__class__.__name__}(asset={self.asset}, quantity={self.quantity})"
@@ -1661,33 +1895,35 @@ class ExecutionQuantity(BaseModel):
     @root_validator(pre=True)
     def resolve_assets(cls, values):
         # Check if 'asset' is a dict and determine its type
-        if isinstance(values.get('asset'), dict):
-            asset = values.get('asset')
+        if isinstance(values.get("asset"), dict):
+            asset = values.get("asset")
             asset = resolve_asset(asset_dict=asset)
-            values['asset'] = asset
+            values["asset"] = asset
 
         return values
 
+
 class TargetRebalance(BaseModel):
     # target_execution_positions: ExecutionPositions
-    execution_target: List[ExecutionQuantity]
+    execution_target: list[ExecutionQuantity]
 
     @property
     def rebalance_asset_map(self):
-        return  {e.asset.id: e.asset for e in self.execution_target}
+        return {e.asset.id: e.asset for e in self.execution_target}
+
 
 class VirtualFund(BaseObjectOrm, BasePydanticModel):
-    id: Optional[float] = None
-    target_portfolio: Union[int,"Portfolio"]
+    id: float | None = None
+    target_portfolio: Union[int, "Portfolio"]
     target_account: AccountMixin
     notional_exposure_in_account: float
     latest_holdings: "VirtualFundHistoricalHoldings" = None
-    latest_rebalance: Optional[datetime.datetime] = None
+    latest_rebalance: datetime.datetime | None = None
     fund_nav: float = Field(default=0)
-    fund_nav_date: Optional[datetime.datetime] = None
+    fund_nav_date: datetime.datetime | None = None
     requires_nav_adjustment: bool = Field(default=False)
-    target_portfolio_weight_in_account: Optional[float] = None
-    last_trade_time: Optional[datetime.datetime] = None
+    target_portfolio_weight_in_account: float | None = None
+    last_trade_time: datetime.datetime | None = None
 
     # def sanitize_target_weights_for_execution_venue(self,target_weights:dict):
     #     """
@@ -1770,17 +2006,17 @@ class VirtualFund(BaseObjectOrm, BasePydanticModel):
     #                                        )
     #     return target_rebalance
 
-    @validator('last_trade_time', pre=True, always=True)
+    @validator("last_trade_time", pre=True, always=True)
     def parse_last_trade_time(cls, value):
         value = validator_for_string(value)
         return value
 
-    @validator('fund_nav_date', pre=True, always=True)
+    @validator("fund_nav_date", pre=True, always=True)
     def parse_fund_nav_date(cls, value):
         value = validator_for_string(value)
         return value
 
-    @validator('latest_rebalance', pre=True, always=True)
+    @validator("latest_rebalance", pre=True, always=True)
     def parse_latest_rebalance(cls, value):
         value = validator_for_string(value)
         return value
@@ -1791,8 +2027,7 @@ class VirtualFund(BaseObjectOrm, BasePydanticModel):
 
     def get_latest_trade_snapshot_holdings(self):
         url = f"{self.get_object_url()}/{int(self.id)}/get_latest_trade_snapshot_holdings/"
-        r = make_request(s=self.build_session(),
-                         loaders=self.LOADERS, r_type="GET", url=url)
+        r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url)
 
         if r.status_code != 200:
             raise HtmlSaveException(r.text)
@@ -1800,46 +2035,54 @@ class VirtualFund(BaseObjectOrm, BasePydanticModel):
             return None
         return VirtualFundHistoricalHoldings(**r.json())
 
+
 class OrderStatus(str, Enum):
     LIVE = "live"
     FILLED = "filled"
     PARTIALLY_FILLED = "partially_filled"
     CANCELED = "canceled"
     NOT_PLACED = "not_placed"
+
+
 class OrderTimeInForce(str, Enum):
     GOOD_TILL_CANCELED = "gtc"
+
+
 class OrderSide(IntEnum):
     SELL = -1
     BUY = 1
+
 
 class OrderType(str, Enum):
     MARKET = "market"
     LIMIT = "limit"
     NOT_PLACED = "not_placed"
 
+
 class Order(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = Field(None, primary_key=True)
+    id: int | None = Field(None, primary_key=True)
     order_remote_id: str
     client_order_id: str
     order_type: OrderType
     order_time: datetime.datetime
-    expires_time: Optional[datetime.datetime]=None
+    expires_time: datetime.datetime | None = None
     order_side: OrderSide  # Use int for choices (-1: SELL, 1: BUY)
     quantity: float
     status: OrderStatus = OrderStatus.NOT_PLACED
-    filled_quantity: Optional[float] = 0.0
-    filled_price: Optional[float] = None
+    filled_quantity: float | None = 0.0
+    filled_price: float | None = None
     order_manager: Union[int, "OrderManager"] = None  # Assuming foreign key ID is used
     asset: int  # Assuming foreign key ID is used
-    related_fund: Optional[int] = None  # Assuming foreign key ID is used
+    related_fund: int | None = None  # Assuming foreign key ID is used
     related_account: int  # Assuming foreign key ID is used
     time_in_force: str
-    comments: Optional[str] = None
+    comments: str | None = None
 
     class Config:
         use_enum_values = True  # This allows using enum values directly
+
     @classmethod
-    def create_or_update(cls,order_time_stamp:float,*args,**kwargs):
+    def create_or_update(cls, order_time_stamp: float, *args, **kwargs):
         """
 
         Args:
@@ -1851,38 +2094,38 @@ class Order(BaseObjectOrm, BasePydanticModel):
 
         """
         url = f"{cls.get_object_url()}/create_or_update/"
-        kwargs['order_time'] = order_time_stamp
-        payload = { "json": kwargs }
+        kwargs["order_time"] = order_time_stamp
+        payload = {"json": kwargs}
 
         r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload
+            s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload
         )
 
-        if r.status_code not in  [200,201]:
+        if r.status_code not in [200, 201]:
             raise r.text
         return cls(**r.json())
+
+
 class MarketOrder(Order):
     pass
+
 
 class LimitOrder(Order):
     limit_price: float
 
+
 class OrderManagerTargetQuantity(BaseModel):
-    asset: Union[int, Asset]
+    asset: int | Asset
     quantity: Decimal
 
+
 class OrderManager(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = None
+    id: int | None = None
     target_time: datetime.datetime
     target_rebalance: list[OrderManagerTargetQuantity]
-    order_received_time: Optional[datetime.datetime] = None
-    execution_end: Optional[datetime.datetime] = None
-    related_account: Union[Account, int]  # Representing the ForeignKey field with the related account ID
-
+    order_received_time: datetime.datetime | None = None
+    execution_end: datetime.datetime | None = None
+    related_account: Account | int  # Representing the ForeignKey field with the related account ID
 
     @staticmethod
     def serialize_for_json(kwargs):
@@ -1892,7 +2135,7 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
             if isinstance(value, datetime.datetime):
                 new_value = str(value)
             elif key == "target_rebalance":
-                new_value=[json.loads(c.model_dump_json()) for c in value]
+                new_value = [json.loads(c.model_dump_json()) for c in value]
             new_data[key] = new_value
         return new_data
 
@@ -1910,7 +2153,7 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
             loaders=cls.LOADERS,
             r_type="POST",
             url=f"{base_url}/destroy_before_date/",
-            payload=payload
+            payload=payload,
         )
 
         if r.status_code != 204:
@@ -1920,6 +2163,7 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
 # ------------------------------
 # ALPACA
 # ------------------------------
+
 
 class AlpacaAccountRiskFactors(AccountRiskFactors):
     total_initial_margin: float
@@ -1931,11 +2175,14 @@ class AlpacaAccountRiskFactors(AccountRiskFactors):
     long_market_value: float
     non_marginable_buying_power: float
     options_buying_power: float
-    portfolio_value:float
+    portfolio_value: float
     regt_buying_power: float
     sma: float
 
-class AlpacaAccount(AccountMixin,):
+
+class AlpacaAccount(
+    AccountMixin,
+):
     api_key: str
     secret_key: str
 
@@ -1950,7 +2197,6 @@ class AlpacaAccount(AccountMixin,):
     trading_blocked: bool
     transfers_blocked: bool
     shorting_enabled: bool
-
 
 
 # ------------------------------
@@ -1968,12 +2214,12 @@ class BinanceFuturesAccountRiskFactors(AccountRiskFactors):
     available_balance: float
     max_withdraw_amount: float
 
+
 class BaseFuturesAccount(Account):
-    api_key :str
-    secret_key :str
+    api_key: str
+    secret_key: str
 
     multi_assets_margin: bool = False
     fee_burn: bool = False
     can_deposit: bool = False
     can_withdraw: bool = False
-

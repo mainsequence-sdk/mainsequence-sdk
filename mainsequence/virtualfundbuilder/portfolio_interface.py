@@ -1,25 +1,34 @@
 import copy
-from mainsequence.tdag.utils import write_yaml
 import os
-from typing import Dict, Any, List, Union, Optional, Tuple
-import yaml
 import re
 
-from .config_handling import configuration_sanitizer
-from .data_nodes import PortfolioStrategy, PortfolioFromDF
-from mainsequence.client import Asset, AssetFutureUSDM, MARKETS_CONSTANTS as CONSTANTS, Portfolio, PortfolioIndexAsset
+import pandas as pd
+import yaml
 
+from mainsequence.client import (
+    Portfolio,
+    PortfolioIndexAsset,
+)
+from mainsequence.tdag.utils import write_yaml
+
+from .config_handling import configuration_sanitizer
+from .data_nodes import PortfolioFromDF, PortfolioStrategy
 from .models import PortfolioConfiguration
 from .utils import get_vfb_logger
 
 
-class PortfolioInterface():
+class PortfolioInterface:
     """
     Manages the overall strategy of investing. It initializes the tree and runs it either within the scheduler or
     directly with a full tree update.
     """
-    def __init__(self, portfolio_config_template: dict,
-                 configuration_name: str=None,is_portfolio_from_df=False):
+
+    def __init__(
+        self,
+        portfolio_config_template: dict,
+        configuration_name: str = None,
+        is_portfolio_from_df=False,
+    ):
         """
         Initializes the portfolio strategy with the necessary configurations.
         """
@@ -45,41 +54,73 @@ class PortfolioInterface():
         return self.__str__()
 
     @classmethod
-    def build_and_run_portfolio_from_df(cls,portfolio_node:PortfolioFromDF,
-                                        debug_mode=True,
-                                        force_update=True,
-                                        update_tree=True,
-                                        portfolio_tags: List[str] = None,
-                                        add_portfolio_to_markets_backend=False,
-                                        ):
-        assert isinstance(portfolio_node, PortfolioFromDF)
+    def run_from_portfolio_node(
+        cls,
+        portfolio_node: PortfolioStrategy,
+        debug_mode=True,
+        force_update=True,
+        update_tree=True,
+        portfolio_tags: list[str] = None,
+        add_portfolio_to_markets_backend=True,
+    ) -> pd.DataFrame:
+        assert isinstance(portfolio_node, PortfolioStrategy)
+        interface = cls(portfolio_config_template=None, is_portfolio_from_df=True)
+        interface._is_initialized = True
+        interface.portfolio_strategy_data_node = portfolio_node
 
-        interface=cls(portfolio_config_template=None,is_portfolio_from_df=True)
-        interface._is_initialized=True
-        interface.portfolio_strategy_data_node=portfolio_node
-
-
-
-        interface.run( patch_build_configuration=False,
+        res = interface.run(
+            patch_build_configuration=False,
             debug_mode=debug_mode,
             force_update=force_update,
             update_tree=update_tree,
-            portfolio_tags = portfolio_tags,
-            add_portfolio_to_markets_backend=False,)
+            portfolio_tags=portfolio_tags,
+            add_portfolio_to_markets_backend=add_portfolio_to_markets_backend,
+        )
+        return res
 
+    @classmethod
+    def build_and_run_portfolio_from_df(
+        cls,
+        portfolio_node: PortfolioFromDF,
+        debug_mode=True,
+        force_update=True,
+        update_tree=True,
+        portfolio_tags: list[str] = None,
+        add_portfolio_to_markets_backend=False,
+    ):
+        assert isinstance(portfolio_node, PortfolioFromDF)
+
+        interface = cls(portfolio_config_template=None, is_portfolio_from_df=True)
+        interface._is_initialized = True
+        interface.portfolio_strategy_data_node = portfolio_node
+
+        interface.run(
+            patch_build_configuration=False,
+            debug_mode=debug_mode,
+            force_update=force_update,
+            update_tree=update_tree,
+            portfolio_tags=portfolio_tags,
+            add_portfolio_to_markets_backend=False,
+        )
 
         ## manualely
-        target_portfolio = Portfolio.get_or_none(data_node_update__id=portfolio_node.data_node_update.id)
-        standard_kwargs = dict(portfolio_name=portfolio_node.portfolio_name,
-                               data_node_update_id=portfolio_node.data_node_update.id,
-                               signal_data_node_update_id=None,
-                               is_active=True,
-                               calendar_name=portfolio_node.calendar_name,
-                               target_portfolio_about=dict(description=portfolio_node.target_portfolio_about,
-                                                           signal_name=None,
-                                                           signal_description=None,
-                                                           rebalance_strategy_name=None),
-                               backtest_table_price_column_name="close")
+        target_portfolio = Portfolio.get_or_none(
+            data_node_update__id=portfolio_node.data_node_update.id
+        )
+        standard_kwargs = dict(
+            portfolio_name=portfolio_node.portfolio_name,
+            data_node_update_id=portfolio_node.data_node_update.id,
+            signal_data_node_update_id=None,
+            is_active=True,
+            calendar_name=portfolio_node.calendar_name,
+            target_portfolio_about=dict(
+                description=portfolio_node.target_portfolio_about,
+                signal_name=None,
+                signal_description=None,
+                rebalance_strategy_name=None,
+            ),
+            backtest_table_price_column_name="close",
+        )
         if target_portfolio is None:
             target_portfolio, index_asset = Portfolio.create_from_time_series(**standard_kwargs)
         else:
@@ -89,15 +130,16 @@ class PortfolioInterface():
             index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
         return target_portfolio, index_asset
 
-    def _initialize_nodes(self,patch_build_configuration=True) -> None:
+    def _initialize_nodes(self, patch_build_configuration=True) -> None:
         """
         Initializes the portfolio strategy for backtesting and for live prediction.
         Also, forces an update of the build configuration in tdag to guarantee that assets are properly rebuilt
         patch_build_configuration:defaults to True as we want to patch the configuration while we test but for production can be set to False
         """
         patch = os.environ.get("PATCH_BUILD_CONFIGURATION", "False")
-        os.environ[
-            "PATCH_BUILD_CONFIGURATION"] = "True"  if patch_build_configuration else "False" # It always needs to be true as we always want to overwrite the build
+        os.environ["PATCH_BUILD_CONFIGURATION"] = (
+            "True" if patch_build_configuration else "False"
+        )  # It always needs to be true as we always want to overwrite the build
         self.portfolio_strategy_data_node = PortfolioStrategy(
             portfolio_build_configuration=copy.deepcopy(self.portfolio_build_configuration)
         )
@@ -105,7 +147,9 @@ class PortfolioInterface():
         os.environ["PATCH_BUILD_CONFIGURATION"] = patch
         self._is_initialized = True
 
-    def build_target_portfolio_in_backend(self, portfolio_tags=None) -> Tuple[Portfolio, PortfolioIndexAsset]:
+    def build_target_portfolio_in_backend(
+        self, portfolio_tags=None
+    ) -> tuple[Portfolio, PortfolioIndexAsset]:
         """
         This method creates a portfolio in VAM with configm file settings.
 
@@ -121,17 +165,21 @@ class PortfolioInterface():
             signal_weights_ts = ts.signal_weights
 
             # timeseries can be running in local lake so need to request the id
-            standard_kwargs = dict(local_time_serie_id=ts.data_node_update.id,
-                                   is_active=True,
-                                   signal_local_time_serie_id=signal_weights_ts.data_node_update.id,
-                                   )
+            standard_kwargs = dict(
+                local_time_serie_id=ts.data_node_update.id,
+                is_active=True,
+                signal_local_time_serie_id=signal_weights_ts.data_node_update.id,
+            )
 
             user_kwargs = self.portfolio_markets_config.model_dump()
             user_kwargs.pop("front_end_details", None)
 
             standard_kwargs.update(user_kwargs)
-            standard_kwargs["calendar_name"] = self.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_configuration[
-                                                        "calendar"]
+            standard_kwargs["calendar_name"] = (
+                self.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_configuration[
+                    "calendar"
+                ]
+            )
 
             if portfolio_tags is not None:
                 standard_kwargs["tags"] = portfolio_tags
@@ -151,36 +199,38 @@ class PortfolioInterface():
             else:
                 # patch timeserie of portfolio to guaranteed recreation
                 target_portfolio.patch(**standard_kwargs)
-                self.logger.debug(f"Target portfolio {target_portfolio.portfolio_ticker} for local time serie {ts.data_node_update.update_hash} already exists in Backend")
+                self.logger.debug(
+                    f"Target portfolio {target_portfolio.portfolio_ticker} for local time serie {ts.data_node_update.update_hash} already exists in Backend"
+                )
                 index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
 
             return target_portfolio, index_asset
 
-        target_portfolio, index_asset = build_markets_portfolio(portfolio_ts, portfolio_tags=portfolio_tags)
+        target_portfolio, index_asset = build_markets_portfolio(
+            portfolio_ts, portfolio_tags=portfolio_tags
+        )
 
         self.index_asset = index_asset
         self.target_portfolio = target_portfolio
         return target_portfolio, index_asset
 
     def run(
-            self,
-            patch_build_configuration=True,
-            debug_mode=True,
-            force_update=True,
-            update_tree=True,
-            portfolio_tags:List[str] = None,
-            add_portfolio_to_markets_backend=False,
-            *args, **kwargs
-    ):
+        self,
+        patch_build_configuration=True,
+        debug_mode=True,
+        force_update=True,
+        update_tree=True,
+        portfolio_tags: list[str] = None,
+        add_portfolio_to_markets_backend=False,
+        *args,
+        **kwargs,
+    ) -> pd.DataFrame:
 
         if not self._is_initialized or patch_build_configuration == True:
             self._initialize_nodes(patch_build_configuration=patch_build_configuration)
 
         self.portfolio_strategy_data_node.run(
-            debug_mode=debug_mode,
-            update_tree=update_tree,
-            force_update=force_update,
-            **kwargs
+            debug_mode=debug_mode, update_tree=update_tree, force_update=force_update, **kwargs
         )
         if add_portfolio_to_markets_backend:
             self.build_target_portfolio_in_backend(portfolio_tags=portfolio_tags)
@@ -203,10 +253,10 @@ class PortfolioInterface():
 
     @staticmethod
     def check_valid_configuration_name(s: str) -> bool:
-        if not bool(re.match(r'^[A-Za-z0-9_]+$', s)):
+        if not bool(re.match(r"^[A-Za-z0-9_]+$", s)):
             raise ValueError(f"Name {s} not valid")
 
-    def store_configuration(self, configuration_name: Optional[str] = None):
+    def store_configuration(self, configuration_name: str | None = None):
         """
         Stores the current configuration as a YAML file under the configuration_name
         """
@@ -220,30 +270,34 @@ class PortfolioInterface():
             )
 
         config_file = os.path.join(
-            self.configuration_folder_path,
-            f"{self.configuration_name}.yaml"
+            self.configuration_folder_path, f"{self.configuration_name}.yaml"
         )
 
         write_yaml(dict_file=self.portfolio_config_template, path=config_file)
         self.logger.info(f"Configuration stored under {config_file}")
         return config_file
 
-
     @classmethod
     def load_configuration(cls, configuration_name) -> PortfolioConfiguration:
         config_file = os.path.join(cls.configuration_folder_path, f"{configuration_name}.yaml")
-        portfolio_config = PortfolioConfiguration.read_portfolio_configuration_from_yaml(config_file)
+        portfolio_config = PortfolioConfiguration.read_portfolio_configuration_from_yaml(
+            config_file
+        )
         return PortfolioConfiguration(**portfolio_config)
 
     @classmethod
-    def load_from_configuration(cls, configuration_name, config_file: Optional[str] = None):
+    def load_from_configuration(cls, configuration_name, config_file: str | None = None):
         if config_file is None:
             config_file = os.path.join(cls.configuration_folder_path, f"{configuration_name}.yaml")
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Configuration file '{config_file}' does not exist.")
 
-        portfolio_config = PortfolioConfiguration.read_portfolio_configuration_from_yaml(config_file)
-        portfolio = cls(portfolio_config_template=portfolio_config, configuration_name=configuration_name)
+        portfolio_config = PortfolioConfiguration.read_portfolio_configuration_from_yaml(
+            config_file
+        )
+        portfolio = cls(
+            portfolio_config_template=portfolio_config, configuration_name=configuration_name
+        )
         return portfolio
 
     @classmethod
@@ -265,7 +319,9 @@ class PortfolioInterface():
         """
         if not self.configuration_name:
             raise ValueError("No configuration name set. Cannot delete an unnamed configuration.")
-        config_file = os.path.join(self.configuration_folder_path, f"{self.configuration_name}.yaml")
+        config_file = os.path.join(
+            self.configuration_folder_path, f"{self.configuration_name}.yaml"
+        )
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Configuration file '{config_file}' does not exist.")
         os.remove(config_file)

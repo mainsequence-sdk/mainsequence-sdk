@@ -21,12 +21,42 @@ classifiers = [
 # PEP 621 dependencies (published requirements)
 
 dependencies = [
-  "cloudpickle", "cryptography", "fire", "google-auth", "joblib", "matplotlib", "nbconvert", "numexpr",
-  "opentelemetry-api", "opentelemetry-exporter-otlp", "opentelemetry-sdk", "pandas", "pandas-market-calendars",
-  "psutil", "pyarrow", "pydantic", "python-binance", "python-dotenv", "python-logstash",
-  "pyyaml", "s3fs", "scikit-learn", "scipy", "structlog", "tqdm", "colorama", "kaleido", "newspaper3k",
-  "lxml-html-clean", "docstring-parser", "concurrent-log-handler", "duckdb", "plotly", "typer",
-  "QuantLib",  # ← renamed from `quantlib`
+  "cloudpickle",
+  "cryptography",
+  "fire",
+  "google-auth",
+  "joblib",
+  "matplotlib",
+  "nbconvert",
+  "numexpr",
+  "opentelemetry-api",
+  "opentelemetry-exporter-otlp",
+  "opentelemetry-sdk",
+  "pandas",
+  "pandas-market-calendars",
+  "psutil",
+  "pyarrow",
+  "pydantic",
+  "python-binance",
+  "python-dotenv",
+  "python-logstash",
+  "pyyaml",
+  "s3fs",
+  "scikit-learn",
+  "scipy",
+  "structlog",
+  "tqdm",
+  "colorama",
+  "kaleido",
+  "newspaper3k",
+  "lxml-html-clean",
+  "docstring-parser",
+  "concurrent-log-handler",
+  "duckdb",
+  "plotly",
+  "typer",
+  "QuantLib", # ← renamed from `quantlib`
+
 ]
 
 [project.urls]
@@ -40,7 +70,9 @@ mainsequence = "mainsequence.cli.cli:app"
 dev = [
   "mkdocs", "mkdocs-material", "mkdocs-gen-files", "mkdocs-literate-nav", "mkdocs-autorefs",
   "mkdocstrings[python]", "mkdocs-mermaid2-plugin", "pymdown-extensions", "pipdeptree",
-  "pytest", "pytest-freezegun", "twine", "streamlit","IPython"
+  "pytest", "pytest-freezegun", "twine", "streamlit","IPython",
+      "ruff>=0.14.0",
+  "black>=25.9.0","pre-commit"
 ]
 
 # Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])
@@ -57,3 +89,28 @@ name = "testpypi"
 url = "https://test.pypi.org/simple/"
 publish-url = "https://test.pypi.org/legacy/"
 explicit = true
+
+
+# --------------------
+# Formatting (Black)
+# --------------------
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+# --------------------
+# Linting & import sort (Ruff)
+# --------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"]
+fix = true                    # <-- move fix here
+
+[tool.ruff.lint]
+# E/F: pycodestyle/pyflakes, I: import order, B: bugbear, UP: pyupgrade
+select = ["E", "F", "I", "B", "UP"]
+ignore = ["E203", "E501"]     # let Black handle these
+
+[tool.ruff.lint.isort]
+known-first-party = ["mainsequence"]

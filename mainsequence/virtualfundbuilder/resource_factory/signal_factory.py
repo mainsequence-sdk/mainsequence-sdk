@@ -1,17 +1,18 @@
 import ast
 import inspect
+from datetime import timedelta
+
+import numpy as np
+import pandas as pd
 
 from mainsequence.tdag.data_nodes import DataNode
-from datetime import datetime, timedelta
-import numpy as np
-import pytz
-
 from mainsequence.virtualfundbuilder.enums import ResourceType
-from mainsequence.virtualfundbuilder.resource_factory.base_factory import BaseResource, BaseFactory, insert_in_registry
 from mainsequence.virtualfundbuilder.models import AssetsConfiguration
-
-import pandas as pd
-from mainsequence.client import (Asset)
+from mainsequence.virtualfundbuilder.resource_factory.base_factory import (
+    BaseFactory,
+    BaseResource,
+    insert_in_registry,
+)
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
@@ -20,9 +21,7 @@ logger = get_vfb_logger()
 class WeightsBase(BaseResource):
     TYPE = ResourceType.SIGNAL_WEIGHTS_STRATEGY
 
-    def __init__(self,
-                 signal_assets_configuration: AssetsConfiguration,
-                 *args, **kwargs):
+    def __init__(self, signal_assets_configuration: AssetsConfiguration, *args, **kwargs):
         """
         Base Class for all signal weights
 
@@ -52,34 +51,44 @@ class WeightsBase(BaseResource):
         """
         # get values between new index
         try:
-            weights = self.get_df_between_dates(start_date=new_index.min(), end_date=new_index.max())
+            weights = self.get_df_between_dates(
+                start_date=new_index.min(), end_date=new_index.max()
+            )
         except Exception as e:
             raise e
-        
-        # if we need more data before to interpolate first value of new_index
-        if len(weights) == 0: # or (weights.index.get_level_values("time_index").min() > new_index.min()):
 
-            unique_identifier_range_map = {a: {"start_date": d} for a, d in self.update_statistics.asset_time_statistics.items()}
-            last_observation = self.get_df_between_dates(unique_identifier_range_map=unique_identifier_range_map)
+        # if we need more data before to interpolate first value of new_index
+        if (
+            len(weights) == 0
+        ):  # or (weights.index.get_level_values("time_index").min() > new_index.min()):
+
+            unique_identifier_range_map = {
+                a: {"start_date": d}
+                for a, d in self.update_statistics.asset_time_statistics.items()
+            }
+            last_observation = self.get_df_between_dates(
+                unique_identifier_range_map=unique_identifier_range_map
+            )
             if last_observation is None or last_observation.empty:
                 return pd.DataFrame()
             last_date = last_observation.index.get_level_values("time_index")[0]
 
             if last_date < new_index.min():
-                self.logger.warning(f"No weights data at start of the portfolio at {new_index.min()}"
-                                    f" will use last available weights {last_date}")
+                self.logger.warning(
+                    f"No weights data at start of the portfolio at {new_index.min()}"
+                    f" will use last available weights {last_date}"
+                )
                 weights = self.get_df_between_dates(start_date=last_date, end_date=new_index.max())
 
-        if len(weights) == 0 :
-            self.logger.warning(f"No weights data in index interpolation")
+        if len(weights) == 0:
+            self.logger.warning("No weights data in index interpolation")
             return pd.DataFrame()
 
-
-
-        weights_pivot = weights.reset_index().pivot(
-            index="time_index",
-            columns=[ "unique_identifier"],
-            values="signal_weight").fillna(0)
+        weights_pivot = (
+            weights.reset_index()
+            .pivot(index="time_index", columns=["unique_identifier"], values="signal_weight")
+            .fillna(0)
+        )
         weights_pivot["last_weights"] = weights_pivot.index.get_level_values(level="time_index")
 
         # combine existing index with new index
@@ -89,10 +98,14 @@ class WeightsBase(BaseResource):
 
         # check which dates are outside of valid forward filling range
         weights_reindex["last_weights"] = weights_reindex["last_weights"].ffill()
-        weights_reindex["diff_to_last_weights"] = weights_reindex.index.get_level_values(level="time_index") - \
-                                                  weights_reindex["last_weights"]
+        weights_reindex["diff_to_last_weights"] = (
+            weights_reindex.index.get_level_values(level="time_index")
+            - weights_reindex["last_weights"]
+        )
 
-        invalid_forward_fills = weights_reindex["diff_to_last_weights"] >= self.maximum_forward_fill()  # source_frequency is the duration a weight is valid
+        invalid_forward_fills = (
+            weights_reindex["diff_to_last_weights"] >= self.maximum_forward_fill()
+        )  # source_frequency is the duration a weight is valid
         weights_reindex.drop(columns=["last_weights", "diff_to_last_weights"], inplace=True)
 
         # forward fill and set dates that are outside of valid range to nan
@@ -100,17 +113,15 @@ class WeightsBase(BaseResource):
         weights_reindex[invalid_forward_fills] = np.nan
 
         if weights_reindex.isna().values.any():
-            self.logger.info(f"Could not fully interpolate for signal weights")
+            self.logger.info("Could not fully interpolate for signal weights")
 
         weights_reindex = weights_reindex.loc[new_index]
         weights_reindex.index.name = "time_index"
 
-
-
         return weights_reindex
 
+
 def _get_class_source_code(cls):
-    import ast
     import inspect
     import sys
 
@@ -133,12 +144,14 @@ def _get_class_source_code(cls):
                 # Get the lines corresponding to the class definition
                 lines = source.splitlines()
                 # Get the lines for the class definition
-                class_source_lines = lines[node.lineno - 1: node.end_lineno]
-                class_source_code = '\n'.join(class_source_lines)
+                class_source_lines = lines[node.lineno - 1 : node.end_lineno]
+                class_source_code = "\n".join(class_source_lines)
                 break
 
         if not class_source_code:
-            logger.warning(f"Class definition for {cls.__name__} not found in module {cls.__module__}")
+            logger.warning(
+                f"Class definition for {cls.__name__} not found in module {cls.__module__}"
+            )
             return None
 
         return class_source_code
@@ -148,16 +161,22 @@ def _get_class_source_code(cls):
         return None
 
 
-SIGNAL_CLASS_REGISTRY = SIGNAL_CLASS_REGISTRY if 'SIGNAL_CLASS_REGISTRY' in globals() else {}
+SIGNAL_CLASS_REGISTRY = SIGNAL_CLASS_REGISTRY if "SIGNAL_CLASS_REGISTRY" in globals() else {}
+
+
 def register_signal_class(name=None, register_in_agent=True):
     """
     Decorator to register a model class in the factory.
     If `name` is not provided, the class's name is used as the key.
     """
+
     def decorator(cls):
         code = inspect.getsource(cls)
         attributes = {"code": code}
-        return insert_in_registry(SIGNAL_CLASS_REGISTRY, cls, register_in_agent, attributes=attributes)
+        return insert_in_registry(
+            SIGNAL_CLASS_REGISTRY, cls, register_in_agent, attributes=attributes
+        )
+
     return decorator
 
 
@@ -178,6 +197,5 @@ class SignalWeightsFactory(BaseFactory):
         Scans the given directory for Python files, imports the classes,
         and returns all classes that are subclasses of WeightsBase.
         """
-        import mainsequence.virtualfundbuilder.contrib.data_nodes # get default strategies
         SignalWeightsFactory.import_module("data_nodes")
         return SIGNAL_CLASS_REGISTRY

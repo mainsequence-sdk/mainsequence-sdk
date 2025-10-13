@@ -1,77 +1,81 @@
-from mainsequence.tdag.data_nodes import DataNode, APIDataNode, WrapperDataNode
-from mainsequence.client import CONSTANTS, Asset, AssetTranslationTable, AssetTranslationRule, AssetFilter, DoesNotExist
+from datetime import timedelta
+from typing import Union
 
-from datetime import datetime, timedelta, tzinfo
-from typing import Optional, List, Union, Dict
-
-import pandas as pd
-import pytz
-
-from mainsequence.tdag.data_nodes import DataNode
-from mainsequence.client import CONSTANTS, Asset, AssetCategory
-
-from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase, register_signal_class
-from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 import numpy as np
+import pandas as pd
 from pydantic import BaseModel
 
-class SymbolWeight(VFBConfigBaseModel):
-    execution_venue_symbol: str = CONSTANTS.ALPACA_EV_SYMBOL
-    symbol: str
+import mainsequence.client as msc
+from mainsequence.client import (
+    Asset,
+    AssetCategory,
+    AssetTranslationTable,
+    DoesNotExist,
+)
+from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
+from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+    WeightsBase,
+    register_signal_class,
+)
+from mainsequence.virtualfundbuilder.utils import TIMEDELTA
+
+
+class AUIDWeight(VFBConfigBaseModel):
+    unique_identifier: str
     weight: float
+
 
 @register_signal_class(register_in_agent=True)
 class FixedWeights(WeightsBase, DataNode):
 
-    def __init__(self, asset_symbol_weights: List[SymbolWeight], *args, **kwargs):
+    def __init__(self, asset_unique_identifier_weights: list[AUIDWeight], *args, **kwargs):
         """
         Args:
             asset_symbol_weights (List[SymbolWeight]): List of SymbolWeights that map asset symbols to weights
         """
         super().__init__(*args, **kwargs)
-        self.asset_symbol_weights = asset_symbol_weights
+        self.asset_unique_identifier_weights = asset_unique_identifier_weights
 
     def maximum_forward_fill(self):
         return timedelta(days=200 * 365)  # Always forward-fill to avoid filling the DB
 
+    def get_asset_list(self) -> None | list:
+        asset_list = msc.Asset.filter(
+            unique_identifier__in=[
+                w.unique_identifier for w in self.asset_unique_identifier_weights
+            ]
+        )
+        return asset_list
+
     def get_explanation(self):
-        max_rows = 10
-        symbols = [w.symbol for w in self.asset_symbol_weights]
-        weights = [w.weight for w in self.asset_symbol_weights]
-        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p><div style='display: flex;'>"
 
-        for i in range(0, len(symbols), max_rows):
-            info += "<table border='1' style='border-collapse: collapse; margin-right: 20px;'><tr>"
-            info += ''.join(f"<th>{sym}</th>" for sym in symbols[i:i + max_rows])
-            info += "</tr><tr>"
-            info += ''.join(f"<td>{wgt}</td>" for wgt in weights[i:i + max_rows])
-            info += "</tr></table>"
-
-        info += "</div>"
+        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
         return info
 
-    def update(self, latest_value: Union[datetime, None], *args, **kwargs) -> pd.DataFrame:
-        if latest_value is not None:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
+        return {}
+
+    def update(self) -> pd.DataFrame:
+        us: msc.UpdateStatistics = self.update_statistics
+        if self.update_statistics.is_empty == False:
             return pd.DataFrame()  # No need to store more than one constant weight
-        latest_value = latest_value or datetime(1985, 1, 1).replace(tzinfo=pytz.utc)
 
-        df = pd.DataFrame([m.model_dump() for m in self.asset_symbol_weights]).rename(columns={'symbol': 'asset_symbol',
-                                                                                               'weight': 'signal_weight'})
-        df = df.set_index(['asset_symbol', 'execution_venue_symbol'])
+        df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(
+            columns={"weight": "signal_weight"}
+        )
+        df = df.set_index(["unique_identifier"])
 
-        signals_weights = pd.concat(
-            [df],
-            axis=0,
-            keys=[latest_value]
-        ).rename_axis(["time_index", "asset_symbol", "execution_venue_symbol"])
+        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START]).rename_axis(
+            ["time_index", "unique_identifier"]
+        )
 
         signals_weights = signals_weights.dropna()
         return signals_weights
 
 
-class AssetMistMatch(Exception):
-    ...
+class AssetMistMatch(Exception): ...
+
 
 class VolatilityControlConfiguration(BaseModel):
     target_volatility: float = 0.1
@@ -81,14 +85,18 @@ class VolatilityControlConfiguration(BaseModel):
 
 @register_signal_class(register_in_agent=True)
 class MarketCap(WeightsBase, DataNode):
-    def __init__(self,
-                 volatility_control_configuration: Optional[VolatilityControlConfiguration],
-                 minimum_atvr_ratio: float = .1,
-                 rolling_atvr_volume_windows: List[int] = [60, 360],
-                 frequency_trading_percent: float = .9,
-                 source_frequency: str = "1d",
-                 min_number_of_assets: int = 3,
-                 num_top_assets: Optional[int] = None, *args, **kwargs):
+    def __init__(
+        self,
+        volatility_control_configuration: VolatilityControlConfiguration | None,
+        minimum_atvr_ratio: float = 0.1,
+        rolling_atvr_volume_windows: list[int] = [60, 360],
+        frequency_trading_percent: float = 0.9,
+        source_frequency: str = "1d",
+        min_number_of_assets: int = 3,
+        num_top_assets: int | None = None,
+        *args,
+        **kwargs,
+    ):
         """
         Signal Weights using weighting by Market Capitalization or Equal Weights
 
@@ -117,13 +125,13 @@ class MarketCap(WeightsBase, DataNode):
     def maximum_forward_fill(self):
         return timedelta(days=1) - TIMEDELTA
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {"historical_market_cap_ts": self.historical_market_cap_ts}
 
     def get_explanation(self):
         # Convert the asset universe filter (assumed to be stored in self.asset_universe.asset_filter)
         # to a formatted JSON string for display.
-        import json
+
         windows_str = ", ".join(str(window) for window in self.rolling_atvr_volume_windows)
         if self.volatility_control_configuration is not None:
             volatility_details = self.volatility_control_configuration
@@ -134,27 +142,21 @@ class MarketCap(WeightsBase, DataNode):
         explanation = (
             "### 1. Dynamic Asset Universe Selection\n\n"
             f"This strategy dynamically selects assets using a predefined category {self.assets_configuration.assets_category_unique_id} :\n\n"
-
             "### 2. Market Capitalization Filtering\n\n"
             f"The strategy retrieves historical market capitalization data and restricts the universe to the top **{self.num_top_assets}** assets. "
             "This ensures that only the largest and most influential market participants are considered.\n\n"
-
             "### 3. Liquidity Filtering via Annualized Traded Value Ratio (ATVR)\n\n"
             f"Liquidity is assessed using the Annualized Traded Value Ratio (ATVR), which compares an asset's annualized median trading volume to its market capitalization. "
             f"To obtain a robust measure of liquidity, ATVR is computed over multiple rolling windows: **[{windows_str}]** days. "
             f"An asset must achieve an ATVR of at least **{self.minimum_atvr_ratio:.2f}** in each of these windows to be considered liquid enough.\n\n"
-
             "### 4. Trading Frequency Filter\n\n"
             f"In addition, the strategy applies a trading frequency filter over the longest period defined by the rolling windows. "
             f"Only assets with trading activity on at least **{self.frequency_trading_percent:.2f}** of the days (i.e., {self.frequency_trading_percent * 100:.1f}%) in the longest window are retained.\n\n"
-
             "### 5. Portfolio Weight Construction\n\n"
             "After filtering based on market capitalization, liquidity, and trading frequency, the market capitalizations of the remaining assets are normalized on a daily basis. "
             "This normalization converts raw market values into portfolio weights, which serve as the signal for trading decisions.\n\n"
-
             "### 6. Data Source Frequency\n\n"
             f"The strategy uses market data that is updated at a **'{self.source_frequency}'** frequency. This ensures that the signals are generated using the most recent market conditions.\n\n"
-
             "### 7. Volatility Target\n\n"
             f"{vol_message}\n\n"
             "**Summary:**\n"
@@ -165,8 +167,10 @@ class MarketCap(WeightsBase, DataNode):
 
         return explanation
 
-    def get_asset_list(self) -> Union[None, list]:
-        asset_category = AssetCategory.get(unique_identifier=self.assets_configuration.assets_category_unique_id)
+    def get_asset_list(self) -> None | list:
+        asset_category = AssetCategory.get(
+            unique_identifier=self.assets_configuration.assets_category_unique_id
+        )
 
         asset_list = Asset.filter(id__in=asset_category.assets)
         return asset_list
@@ -181,34 +185,42 @@ class MarketCap(WeightsBase, DataNode):
         """
         asset_list = self.update_statistics.asset_list
         if len(asset_list) < self.min_number_of_assets:
-            raise AssetMistMatch(f"only {len(asset_list)} in asset_list minum are {self.min_number_of_assets} ")
+            raise AssetMistMatch(
+                f"only {len(asset_list)} in asset_list minum are {self.min_number_of_assets} "
+            )
 
         unique_identifier_range_market_cap_map = {
             a.unique_identifier: {
                 "start_date": self.update_statistics[a.unique_identifier],
-                "start_date_operand": ">"
+                "start_date_operand": ">",
             }
             for a in asset_list
         }
         # Start Loop on unique identifier
 
-        ms_asset_list = Asset.filter_with_asset_class(exchange_code=None,
-                                                      asset_ticker_group_id__in=[
-                                                          a.asset_ticker_group_id
-                                                          for a in
-                                                          self.update_statistics.asset_list
-                                                      ])
+        ms_asset_list = Asset.filter_with_asset_class(
+            exchange_code=None,
+            asset_ticker_group_id__in=[
+                a.asset_ticker_group_id for a in self.update_statistics.asset_list
+            ],
+        )
 
-        ms_asset_list = {a.asset_ticker_group_id:a for a in ms_asset_list}
-        asset_list_to_share_class = {a.asset_ticker_group_id:a for a in self.update_statistics.asset_list}
+        ms_asset_list = {a.asset_ticker_group_id: a for a in ms_asset_list}
+        asset_list_to_share_class = {
+            a.asset_ticker_group_id: a for a in self.update_statistics.asset_list
+        }
 
         market_cap_uid_range_map = {
-            ms_asset.get_spot_reference_asset_unique_identifier(): unique_identifier_range_market_cap_map[asset_list_to_share_class[ms_share_class].unique_identifier]
+            ms_asset.get_spot_reference_asset_unique_identifier(): unique_identifier_range_market_cap_map[
+                asset_list_to_share_class[ms_share_class].unique_identifier
+            ]
             for ms_share_class, ms_asset in ms_asset_list.items()
         }
 
         market_cap_uid_to_asset_uid = {
-            ms_asset.get_spot_reference_asset_unique_identifier(): asset_list_to_share_class[ms_share_class].unique_identifier
+            ms_asset.get_spot_reference_asset_unique_identifier(): asset_list_to_share_class[
+                ms_share_class
+            ].unique_identifier
             for ms_share_class, ms_asset in ms_asset_list.items()
         }
 
@@ -216,7 +228,7 @@ class MarketCap(WeightsBase, DataNode):
             unique_identifier_range_map=market_cap_uid_range_map,
             great_or_equal=False,
         )
-        mc = mc[~mc.index.duplicated(keep='first')]
+        mc = mc[~mc.index.duplicated(keep="first")]
 
         if mc.shape[0] == 0:
             self.logger.info("No data in Market Cap historical market cap")
@@ -229,7 +241,9 @@ class MarketCap(WeightsBase, DataNode):
         unique_in_mc = mc.index.get_level_values("unique_identifier").unique().shape[0]
 
         if unique_in_mc != len(asset_list):
-            self.logger.warning("Market Cap and asset_list does not match missing assets will be set to 0")
+            self.logger.warning(
+                "Market Cap and asset_list does not match missing assets will be set to 0"
+            )
 
         # If there is no market cap data, return an empty DataFrame.
         if mc.shape[0] == 0:
@@ -252,7 +266,7 @@ class MarketCap(WeightsBase, DataNode):
             rolling_median = dollar_volume_df.rolling(window=window, min_periods=1).median()
 
             # Annualize: assume 252 trading days per year.
-            annual_factor = 252 # todo fix when prices are not daily
+            annual_factor = 252  # todo fix when prices are not daily
             annualized_traded_value = rolling_median * annual_factor
             # Align with market cap dates.
             annualized_traded_value = annualized_traded_value.reindex(mc_raw.index).ffill().bfill()
@@ -261,12 +275,15 @@ class MarketCap(WeightsBase, DataNode):
 
         # 6. Create a liquidity mask that requires the ATVR to be above the minimum threshold
         #    for every rolling window.
-        atvr_masks = [atvr_dict[window] >= self.minimum_atvr_ratio for window in self.rolling_atvr_volume_windows]
+        atvr_masks = [
+            atvr_dict[window] >= self.minimum_atvr_ratio
+            for window in self.rolling_atvr_volume_windows
+        ]
         # Combine the masks elementwise and re-wrap the result as a DataFrame with the same index/columns as mc_raw.
         combined_atvr_mask = pd.DataFrame(
             np.logical_and.reduce([mask.values for mask in atvr_masks]),
             index=mc_raw.index,
-            columns=mc_raw.volume.columns
+            columns=mc_raw.volume.columns,
         )
 
         # 7. Compute the trading frequency mask.
@@ -297,8 +314,9 @@ class MarketCap(WeightsBase, DataNode):
         if self.volatility_control_configuration is not None:
             log_returns = (np.log(mc_raw["price"])).diff()
 
-            ewm_vol = (log_returns * weights).sum(axis=1).ewm(span=self.volatility_control_configuration.ewm_span,
-                                                              adjust=False).std() * np.sqrt(self.volatility_control_configuration.ann_factor)
+            ewm_vol = (log_returns * weights).sum(axis=1).ewm(
+                span=self.volatility_control_configuration.ewm_span, adjust=False
+            ).std() * np.sqrt(self.volatility_control_configuration.ann_factor)
 
             scaling_factor = self.volatility_control_configuration.target_volatility / ewm_vol
             scaling_factor = scaling_factor.clip(upper=1.0)

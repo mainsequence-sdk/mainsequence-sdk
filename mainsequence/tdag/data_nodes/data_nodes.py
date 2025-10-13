@@ -1,58 +1,54 @@
+import copy
 import datetime
+import inspect
+import json
+import logging
 import os
+import tempfile
 from abc import ABC, abstractmethod
+from dataclasses import asdict
+from functools import wraps
+from typing import Any, Union
 
+import cloudpickle
 import numpy as np
 import pandas as pd
-from typing import Dict, Any, List, Optional, Tuple, Callable
-import json
-import time
-import traceback
 import pytz
-import inspect
-import logging
-import copy
-import cloudpickle
-from dataclasses import asdict
-from mainsequence.client import  Scheduler
-from mainsequence.instrumentation import tracer
-from mainsequence.tdag.config import (
-    ogm
-)
-import tempfile
 import structlog.contextvars as cvars
-from structlog.stdlib import BoundLogger
-
-from mainsequence.logconf import logger
-
-from mainsequence.tdag.data_nodes.persist_managers import PersistManager, APIPersistManager
-from mainsequence.client.models_tdag import (DataSource,
-                                             UpdateStatistics, UniqueIdentifierRangeMap, ColumnMetaData,      )
-
-
-from abc import ABC
-
-from typing import Union
-
-from mainsequence.client import DataNodeUpdate,  CONSTANTS, \
-    DynamicTableDataSource, AssetTranslationTable
-
-from functools import wraps
 
 import mainsequence.client as ms_client
-import mainsequence.tdag.data_nodes.run_operations as run_operations
 import mainsequence.tdag.data_nodes.build_operations as build_operations
-
-
+import mainsequence.tdag.data_nodes.run_operations as run_operations
+from mainsequence.client import (
+    CONSTANTS,
+    AssetTranslationTable,
+    DataNodeUpdate,
+    DynamicTableDataSource,
+    Scheduler,
+)
+from mainsequence.client.models_tdag import (
+    ColumnMetaData,
+    DataSource,
+    UniqueIdentifierRangeMap,
+    UpdateStatistics,
+)
+from mainsequence.instrumentation import tracer
+from mainsequence.logconf import logger
+from mainsequence.tdag.config import ogm
+from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
 
 def get_data_source_from_orm() -> Any:
     from mainsequence.client import SessionDataSource
+
     if SessionDataSource.data_source.related_resource is None:
         raise Exception("This Pod does not have a default data source")
     return SessionDataSource.data_source
 
-def get_latest_update_by_assets_filter(asset_symbols: Optional[list], last_update_per_asset: dict) -> datetime.datetime:
+
+def get_latest_update_by_assets_filter(
+    asset_symbols: list | None, last_update_per_asset: dict
+) -> datetime.datetime:
     """
     Gets the latest update timestamp for a list of asset symbols.
 
@@ -64,17 +60,21 @@ def get_latest_update_by_assets_filter(asset_symbols: Optional[list], last_updat
         The latest update timestamp.
     """
     if asset_symbols is not None:
-        last_update_in_table = np.max([timestamp for unique_identifier, timestamp in last_update_per_asset.items()
-                                       if unique_identifier in asset_symbols
-                                       ])
+        last_update_in_table = np.max(
+            [
+                timestamp
+                for unique_identifier, timestamp in last_update_per_asset.items()
+                if unique_identifier in asset_symbols
+            ]
+        )
     else:
         last_update_in_table = np.max(last_update_per_asset.values)
     return last_update_in_table
 
 
-
-def last_update_per_unique_identifier(unique_identifier_list: Optional[list],
-                                      last_update_per_asset: dict) -> datetime.datetime:
+def last_update_per_unique_identifier(
+    unique_identifier_list: list | None, last_update_per_asset: dict
+) -> datetime.datetime:
     """
     Gets the earliest last update time for a list of unique identifiers.
 
@@ -87,18 +87,20 @@ def last_update_per_unique_identifier(unique_identifier_list: Optional[list],
     """
     if unique_identifier_list is not None:
         last_update_in_table = min(
-            [t for a in last_update_per_asset.values() for t in a.values() if a in unique_identifier_list])
+            [
+                t
+                for a in last_update_per_asset.values()
+                for t in a.values()
+                if a in unique_identifier_list
+            ]
+        )
     else:
         last_update_in_table = min([t for a in last_update_per_asset.values() for t in a.values()])
     return last_update_in_table
 
 
-
-
-
 class DependencyUpdateError(Exception):
     pass
-
 
 
 class DataAccessMixin:
@@ -109,10 +111,13 @@ class DataAccessMixin:
             local_id = self.data_node_update.id
         except:
             local_id = 0
-        repr = self.__class__.__name__ + f" {os.environ['TDAG_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
+        repr = (
+            self.__class__.__name__
+            + f" {os.environ['TDAG_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
+        )
         return repr
 
-    def get_last_observation(self,asset_list:List[ms_client.AssetMixin]):
+    def get_last_observation(self, asset_list: list[ms_client.AssetMixin]):
         update_statistics = self.get_update_statistics()
         update_statistics = update_statistics.update_assets(asset_list=asset_list)
         update_range_map = update_statistics.get_update_range_map_great_or_equal()
@@ -120,13 +125,12 @@ class DataAccessMixin:
         return last_observation
 
     def get_pickle_path_from_time_serie(self) -> str:
-        path = build_operations.get_pickle_path(update_hash=self.update_hash,
-                               data_source_id=self.data_source_id,
-                               is_api=self.is_api
-                               )
+        path = build_operations.get_pickle_path(
+            update_hash=self.update_hash, data_source_id=self.data_source_id, is_api=self.is_api
+        )
         return path
 
-    def persist_to_pickle(self, overwrite: bool = False) -> Tuple[str, str]:
+    def persist_to_pickle(self, overwrite: bool = False) -> tuple[str, str]:
         """
         Persists the DataNode object to a pickle file using an atomic write.
 
@@ -145,12 +149,14 @@ class DataAccessMixin:
         # 2. Type-Specific Logic: Run pre-dump actions only for standard DataNode
         if not self.is_api:
             self.logger.debug(f"Patching source code and git hash for {self.storage_hash}")
-            self.local_persist_manager.update_git_and_code_in_backend(time_serie_class=self.__class__)
+            self.local_persist_manager.update_git_and_code_in_backend(
+                time_serie_class=self.__class__
+            )
             # Prepare for pickling by removing the unpicklable ThreadLock
             self._local_persist_manager = None
 
         # 3. Common Logic: Persist the data source if needed
-        data_source_id = getattr(self.data_source, 'id', self.data_source_id)
+        data_source_id = getattr(self.data_source, "id", self.data_source_id)
         data_source_path = build_operations.data_source_pickle_path(data_source_id)
         if not os.path.isfile(data_source_path) or overwrite:
             self.data_source.persist_to_pickle(data_source_path)
@@ -178,7 +184,7 @@ class DataAccessMixin:
         fd, tmp_path = tempfile.mkstemp(prefix=f"{fname}~", dir=dir_)
         os.close(fd)
         try:
-            with open(tmp_path, 'wb') as handle:
+            with open(tmp_path, "wb") as handle:
                 cloudpickle.dump(self, handle)
             # Atomic replace is safer than a direct write
             os.replace(tmp_path, path)
@@ -191,11 +197,12 @@ class DataAccessMixin:
                 pass
             raise
 
-
-    def get_logger_context_variables(self) -> Dict[str, Any]:
-        return dict(update_hash=self.update_hash,
-                    local_hash_id_data_source=self.data_source_id,
-                    api_time_series=self.__class__.__name__ == "APIDataNode")
+    def get_logger_context_variables(self) -> dict[str, Any]:
+        return dict(
+            update_hash=self.update_hash,
+            local_hash_id_data_source=self.data_source_id,
+            api_time_series=self.__class__.__name__ == "APIDataNode",
+        )
 
     @property
     def logger(self) -> logging.Logger:
@@ -206,12 +213,13 @@ class DataAccessMixin:
         #                      api_time_series=True,)
         global logger
         if hasattr(self, "_logger") == False:
-            cvars.bind_contextvars(**self.get_logger_context_variables() )
+            cvars.bind_contextvars(**self.get_logger_context_variables())
             self._logger = logger
 
         return self._logger
+
     @staticmethod
-    def set_context_in_logger(logger_context: Dict[str, Any]) -> None:
+    def set_context_in_logger(logger_context: dict[str, Any]) -> None:
         """
         Binds context variables to the global logger.
 
@@ -227,13 +235,13 @@ class DataAccessMixin:
 
     def get_df_between_dates(
         self,
-        start_date: Optional[datetime.datetime] = None,
-        end_date: Optional[datetime.datetime] = None,
-        unique_identifier_list: Optional[list] = None,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        unique_identifier_list: list | None = None,
         great_or_equal: bool = True,
         less_or_equal: bool = True,
-        unique_identifier_range_map: Optional[UniqueIdentifierRangeMap] = None,
-        columns:Optional[List[str]] = None
+        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
+        columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
         Retrieve rows from this DataNode whose `time_index` (and optional `unique_identifier`) fall within the specified date ranges.
@@ -295,13 +303,11 @@ class DataAccessMixin:
             columns=columns,
         )
 
-
-
-
-
-    def get_ranged_data_per_asset(self, range_descriptor: Optional[UniqueIdentifierRangeMap],
-                                  columns=None,
-                                  ) -> pd.DataFrame:
+    def get_ranged_data_per_asset(
+        self,
+        range_descriptor: UniqueIdentifierRangeMap | None,
+        columns=None,
+    ) -> pd.DataFrame:
         """
         Gets data based on a range descriptor.
 
@@ -311,12 +317,16 @@ class DataAccessMixin:
         Returns:
             A DataFrame with the ranged data.
         """
-        return  self.get_df_between_dates(unique_identifier_range_map=range_descriptor,
-                                          columns=columns,
-                                          )
-    def get_ranged_data_per_asset_great_or_equal(self, range_descriptor: Optional[UniqueIdentifierRangeMap],
-                                  columns=None,
-                                  ) -> pd.DataFrame:
+        return self.get_df_between_dates(
+            unique_identifier_range_map=range_descriptor,
+            columns=columns,
+        )
+
+    def get_ranged_data_per_asset_great_or_equal(
+        self,
+        range_descriptor: UniqueIdentifierRangeMap | None,
+        columns=None,
+    ) -> pd.DataFrame:
         """
         Gets data based on a range descriptor.
 
@@ -327,56 +337,53 @@ class DataAccessMixin:
             A DataFrame with the ranged data.
         """
 
-        for k,v in range_descriptor.items():
-            v["start_date_operand"]="=>"
-        return  self.get_df_between_dates(unique_identifier_range_map=range_descriptor,
-                                          columns=columns,
-                                          )
+        for k, v in range_descriptor.items():
+            v["start_date_operand"] = "=>"
+        return self.get_df_between_dates(
+            unique_identifier_range_map=range_descriptor,
+            columns=columns,
+        )
 
     def filter_by_assets_ranges(self, asset_ranges_map: dict) -> pd.DataFrame:
         """
-               Filters data by asset ranges.
+        Filters data by asset ranges.
 
-               Args:
-                   asset_ranges_map: A dictionary mapping assets to their date ranges.
+        Args:
+            asset_ranges_map: A dictionary mapping assets to their date ranges.
 
-               Returns:
-                   A DataFrame with the filtered data.
-               """
+        Returns:
+            A DataFrame with the filtered data.
+        """
         return self.local_persist_manager.filter_by_assets_ranges(asset_ranges_map)
 
 
 class APIDataNode(DataAccessMixin):
 
-
     @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
-        return cls(data_source_id=source_table.data_source.id,
-                   storage_hash=source_table.storage_hash
-                   )
+        return cls(
+            data_source_id=source_table.data_source.id, storage_hash=source_table.storage_hash
+        )
 
     @classmethod
     def build_from_table_id(cls, table_id: str) -> "APIDataNode":
         table = ms_client.DataNodeStorage.get(id=table_id)
-        ts = cls(
-            data_source_id=table.data_source.id,
-            storage_hash=table.storage_hash
-        )
+        ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
         return ts
 
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
 
         table = ms_client.DataNodeStorage.get(identifier=identifier)
-        ts = cls(
-            data_source_id=table.data_source.id,
-            storage_hash=table.storage_hash
-        )
+        ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
         return ts
 
-    def __init__(self,
-                 data_source_id: int, storage_hash: str,
-                 data_source_local_lake: Optional[DataSource] = None):
+    def __init__(
+        self,
+        data_source_id: int,
+        storage_hash: str,
+        data_source_local_lake: DataSource | None = None,
+    ):
         """
         Initializes an APIDataNode.
 
@@ -386,7 +393,9 @@ class APIDataNode(DataAccessMixin):
             data_source_local_lake: Optional local data source for the lake.
         """
         if data_source_local_lake is not None:
-            assert data_source_local_lake.data_type in CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE, "data_source_local_lake should be of type CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE"
+            assert (
+                data_source_local_lake.data_type in CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE
+            ), "data_source_local_lake should be of type CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE"
 
         assert isinstance(data_source_id, int)
         self.data_source_id = data_source_id
@@ -397,8 +406,10 @@ class APIDataNode(DataAccessMixin):
 
     def __repr__(self) -> str:
 
-
-        repr = self.__class__.__name__ + f" {os.environ['TDAG_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self.data_source_id}"
+        repr = (
+            self.__class__.__name__
+            + f" {os.environ['TDAG_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self.data_source_id}"
+        )
         return repr
 
     @property
@@ -407,17 +418,18 @@ class APIDataNode(DataAccessMixin):
 
     @staticmethod
     def _get_update_hash(storage_hash):
-        return "API_"+f"{storage_hash}"
+        return "API_" + f"{storage_hash}"
+
     @property
     def update_hash(self):
-        return  self._get_update_hash(storage_hash=self.storage_hash)
+        return self._get_update_hash(storage_hash=self.storage_hash)
 
-    def __getstate__(self) -> Dict[str, Any]:
+    def __getstate__(self) -> dict[str, Any]:
         """Prepares the state for pickling."""
         state = self.__dict__.copy()
         # Remove unpicklable/transient state specific to APIDataNode
         names_to_remove = [
-            "_local_persist_manager", # APIPersistManager instance
+            "_local_persist_manager",  # APIPersistManager instance
         ]
         cleaned_state = {k: v for k, v in state.items() if k not in names_to_remove}
         return cleaned_state
@@ -438,6 +450,7 @@ class APIDataNode(DataAccessMixin):
         pod_source = os.environ.get("POD_DEFAULT_DATA_SOURCE", None)
         if pod_source != None:
             from mainsequence.client import models as models
+
             pod_source = json.loads(pod_source)
             ModelClass = pod_source["tdag_orm_class"]
             pod_source.pop("tdag_orm_class", None)
@@ -445,7 +458,7 @@ class APIDataNode(DataAccessMixin):
             pod_source = ModelClass(**pod_source)
             self.data_source = pod_source
 
-    def build_data_source_from_configuration(self, data_config: Dict[str, Any]) -> DataSource:
+    def build_data_source_from_configuration(self, data_config: dict[str, Any]) -> DataSource:
         """
         Builds a data source object from a configuration dictionary.
 
@@ -455,21 +468,22 @@ class APIDataNode(DataAccessMixin):
         Returns:
             A DataSource object.
         """
-        ModelClass = DynamicTableDataSource.get_class(data_config['data_type'])
+        ModelClass = DynamicTableDataSource.get_class(data_config["data_type"])
         pod_source = ModelClass.get(data_config["id"])
         return pod_source
 
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
-        self._local_persist_manager = APIPersistManager(storage_hash=self.storage_hash, data_source_id=self.data_source_id)
+        self._local_persist_manager = APIPersistManager(
+            storage_hash=self.storage_hash, data_source_id=self.data_source_id
+        )
         data_node_storage = self._local_persist_manager.data_node_storage
 
         assert data_node_storage is not None, f"Verify that the table {self.storage_hash} exists "
 
-
-
-
-    def get_update_statistics(self, asset_symbols: Optional[list] = None) -> Tuple[Optional[datetime.datetime], Optional[Dict[str, datetime.datetime]]]:
+    def get_update_statistics(
+        self, asset_symbols: list | None = None
+    ) -> tuple[datetime.datetime | None, dict[str, datetime.datetime] | None]:
         """
         Gets update statistics from the database.
 
@@ -480,10 +494,13 @@ class APIDataNode(DataAccessMixin):
             A tuple containing the last update time for the table and a dictionary of last update times per asset.
         """
 
-        return  self.local_persist_manager.data_node_storage.sourcetableconfiguration.get_data_updates()
+        return (
+            self.local_persist_manager.data_node_storage.sourcetableconfiguration.get_data_updates()
+        )
 
-    def get_earliest_updated_asset_filter(self, unique_identifier_list: list,
-                                          last_update_per_asset: dict) -> datetime.datetime:
+    def get_earliest_updated_asset_filter(
+        self, unique_identifier_list: list, last_update_per_asset: dict
+    ) -> datetime.datetime:
         """
         Gets the earliest last update time for a list of unique identifiers.
 
@@ -496,9 +513,17 @@ class APIDataNode(DataAccessMixin):
         """
         if unique_identifier_list is not None:
             last_update_in_table = min(
-                [t for a in last_update_per_asset.values() for t in a.values() if a in unique_identifier_list])
+                [
+                    t
+                    for a in last_update_per_asset.values()
+                    for t in a.values()
+                    if a in unique_identifier_list
+                ]
+            )
         else:
-            last_update_in_table = min([t for a in last_update_per_asset.values() for t in a.values()])
+            last_update_in_table = min(
+                [t for a in last_update_per_asset.values() for t in a.values()]
+            )
         return last_update_in_table
 
     def update(self, *args, **kwargs) -> pd.DataFrame:
@@ -506,22 +531,21 @@ class APIDataNode(DataAccessMixin):
         pass
 
 
-
-class DataNode(DataAccessMixin,ABC):
+class DataNode(DataAccessMixin, ABC):
     """
     Base DataNode class
     """
+
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
     _ARGS_IGNORE_IN_STORAGE_HASH = []
 
-
     # --- Dunder & Serialization Methods ---
 
-    def __setstate__(self, state: Dict[str, Any]) -> None:
+    def __setstate__(self, state: dict[str, Any]) -> None:
         # Restore instance attributes (i.e., filename and lineno).
         self.__dict__.update(state)
 
-    def __getstate__(self) -> Dict[str, Any]:
+    def __getstate__(self) -> dict[str, Any]:
         # Copy the object's state from self.__dict__ which contains
         # all our instance attributes. Always use the dict.copy()
         # method to avoid modifying the original state.
@@ -531,11 +555,12 @@ class DataNode(DataAccessMixin,ABC):
         return state
 
     def __init__(
-            self,
-            init_meta: Optional[build_operations.TimeSerieInitMeta] = None,
-            build_meta_data: Union[dict, None] = None,
-            *args,
-            **kwargs):
+        self,
+        init_meta: build_operations.TimeSerieInitMeta | None = None,
+        build_meta_data: dict | None = None,
+        *args,
+        **kwargs,
+    ):
         """
         Initializes the DataNode object with the provided data_node_storage and configurations. For extension of the method
 
@@ -568,7 +593,6 @@ class DataNode(DataAccessMixin,ABC):
             Additional keyword arguments.
         """
 
-
         self.init_meta = init_meta
 
         self.build_meta_data = build_meta_data or {}
@@ -577,11 +601,11 @@ class DataNode(DataAccessMixin,ABC):
         self.build_meta_data = build_meta_data
 
         self.pre_load_routines_run = False
-        self._data_source: Optional[DynamicTableDataSource] = None # is set later
-        self._local_persist_manager: Optional[PersistManager] = None
+        self._data_source: DynamicTableDataSource | None = None  # is set later
+        self._local_persist_manager: PersistManager | None = None
 
         self._scheduler_tree_connected = False
-        self.update_statistics=None
+        self.update_statistics = None
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -613,7 +637,7 @@ class DataNode(DataAccessMixin,ABC):
 
             for cls_to_inspect in classes_to_inspect:
                 # Only inspect the __init__ defined on the class itself.
-                if '__init__' in cls_to_inspect.__dict__:
+                if "__init__" in cls_to_inspect.__dict__:
                     sig = inspect.signature(cls_to_inspect.__init__)
                     try:
                         # Use bind_partial as the full set of args might not match this specific signature.
@@ -621,23 +645,25 @@ class DataNode(DataAccessMixin,ABC):
                         bound_args.apply_defaults()
 
                         current_args = bound_args.arguments
-                        current_args.pop('self', None)
+                        current_args.pop("self", None)
 
                         # If the signature has **kwargs, it collects extraneous arguments. Unpack them.
-                        if 'kwargs' in current_args:
-                            final_kwargs.update(current_args.pop('kwargs'))
+                        if "kwargs" in current_args:
+                            final_kwargs.update(current_args.pop("kwargs"))
 
                         # Update the final arguments. Overwrites parent args with child args.
                         final_kwargs.update(current_args)
                     except TypeError:
-                        logger.warning(f"Could not bind arguments for {cls_to_inspect.__name__}.__init__; skipping for config.")
+                        logger.warning(
+                            f"Could not bind arguments for {cls_to_inspect.__name__}.__init__; skipping for config."
+                        )
                         continue
 
             # Remove `args` as it collects un-named positional arguments which are not part of the config hash.
-            final_kwargs.pop('args', None)
-
+            final_kwargs.pop("args", None)
 
             # 3. Run the post-initialization routines
+            self.build_configuration = final_kwargs
             logger.debug(f"Running post-init routines for {self.__class__.__name__}")
             self._initialize_configuration(init_kwargs=final_kwargs)
 
@@ -647,12 +673,12 @@ class DataNode(DataAccessMixin,ABC):
 
             self.run_after_post_init_routines()
 
-            #requirements for graph update
-            self.dependencies_df: Optional[pd.DataFrame] = None
-            self.depth_df: Optional[pd.DataFrame] = None
+            # requirements for graph update
+            self.dependencies_df: pd.DataFrame | None = None
+            self.depth_df: pd.DataFrame | None = None
 
-            self.scheduler : Optional[Scheduler] = None
-            self.update_details_tree :Optional[Dict[str,Any]] =None
+            self.scheduler: Scheduler | None = None
+            self.update_details_tree: dict[str, Any] | None = None
 
             self._patch_build_from_env()
             logger.debug(f"Post-init routines for {self.__class__.__name__} complete.")
@@ -666,13 +692,13 @@ class DataNode(DataAccessMixin,ABC):
 
         init_kwargs["time_series_class_import_path"] = {
             "module": self.__class__.__module__,
-            "qualname": self.__class__.__qualname__
+            "qualname": self.__class__.__qualname__,
         }
 
         config = build_operations.create_config(
             arguments_to_ignore_from_storage_hash=self._ARGS_IGNORE_IN_STORAGE_HASH,
             kwargs=init_kwargs,
-            ts_class_name=self.__class__.__name__
+            ts_class_name=self.__class__.__name__,
         )
 
         for field_name, value in asdict(config).items():
@@ -700,19 +726,15 @@ class DataNode(DataAccessMixin,ABC):
                 remote_build_metadata=self.remote_build_metadata,
             )
 
-
     # --- Core Properties ---
-
 
     @property
     def is_api(self):
         return False
 
-
     @property
     def data_source_id(self) -> int:
         return self.data_source.id
-
 
     @property
     def data_node_update(self) -> DataNodeUpdate:
@@ -722,7 +744,6 @@ class DataNode(DataAccessMixin,ABC):
     @property
     def metadata(self) -> "DataNodeStorage":
         return self.local_persist_manager.metadata
-
 
     @property
     def local_persist_manager(self) -> PersistManager:
@@ -741,9 +762,12 @@ class DataNode(DataAccessMixin,ABC):
     # --- Persistence & Backend Methods ---
 
     @tracer.start_as_current_span("TS: set_state_with_sessions")
-    def _set_state_with_sessions(self, include_vam_client_objects: bool = True,
-                                graph_depth_limit: int = 1000,
-                                graph_depth: int = 0) -> None:
+    def _set_state_with_sessions(
+        self,
+        include_vam_client_objects: bool = True,
+        graph_depth_limit: int = 1000,
+        graph_depth: int = 0,
+    ) -> None:
         """
         Sets the state of the DataNode after loading from pickle, including sessions.
 
@@ -761,7 +785,9 @@ class DataNode(DataAccessMixin,ABC):
 
         if graph_depth_limit < minimum_required_depth_for_update and graph_depth == 0:
             graph_depth_limit = minimum_required_depth_for_update
-            self.logger.warning(f"Graph depth limit overwritten to {minimum_required_depth_for_update}")
+            self.logger.warning(
+                f"Graph depth limit overwritten to {minimum_required_depth_for_update}"
+            )
 
         # if the data source is not local then the de-serialization needs to happend after setting the local persist manager
         # to guranteed a proper patch in the back-end
@@ -777,14 +803,14 @@ class DataNode(DataAccessMixin,ABC):
             data_source_id=self.data_source.id,
             include_vam_client_objects=include_vam_client_objects,
             graph_depth_limit=graph_depth_limit,
-            graph_depth=graph_depth + 1
+            graph_depth=graph_depth + 1,
         )
 
         self.__dict__.update(state)
 
         self.local_persist_manager.synchronize_data_node_update(data_node_update=None)
 
-    def _prepare_state_for_pickle(self, state: Dict[str, Any]) -> Dict[str, Any]:
+    def _prepare_state_for_pickle(self, state: dict[str, Any]) -> dict[str, Any]:
         """
         Prepares the object's state for pickling by serializing and removing unpicklable entries.
 
@@ -821,10 +847,12 @@ class DataNode(DataAccessMixin,ABC):
             properties.pop(n, None)
 
         return properties
-    def _set_local_persist_manager(self, update_hash: str,
-                                  data_node_update: Union[None, dict] = None,
 
-                                  ) -> None:
+    def _set_local_persist_manager(
+        self,
+        update_hash: str,
+        data_node_update: None | dict = None,
+    ) -> None:
         """
         Initializes the local persistence manager for the time series. It sets up
         the necessary configurations and checks for existing metadata. If the metadata doesn't
@@ -842,12 +870,10 @@ class DataNode(DataAccessMixin,ABC):
             update_hash=update_hash,
             class_name=self.__class__.__name__,
             data_node_update=data_node_update,
-            data_source=self.data_source
+            data_source=self.data_source,
         )
 
-
-    def set_data_source(self,
-                        data_source: Optional[object] = None) -> None:
+    def set_data_source(self, data_source: object | None = None) -> None:
         """
         Sets the data source for the time series.
 
@@ -866,7 +892,9 @@ class DataNode(DataAccessMixin,ABC):
         """
         # Use self.owner to get properties from the DataNode instance
         owner_class = self.__class__
-        time_serie_source_code_git_hash = build_operations.get_data_node_source_code_git_hash(owner_class)
+        time_serie_source_code_git_hash = build_operations.get_data_node_source_code_git_hash(
+            owner_class
+        )
         time_serie_source_code = build_operations.get_data_node_source_code(owner_class)
 
         # The call to the low-level persist manager is encapsulated here
@@ -879,8 +907,8 @@ class DataNode(DataAccessMixin,ABC):
             data_source=self.data_source,
             build_configuration_json_schema=self.build_configuration_json_schema,
         )
-    def set_relation_tree(self):
 
+    def set_relation_tree(self):
         """Sets the node relationships in the backend by calling the dependencies() method."""
 
         if self.local_persist_manager.data_node_update is None:
@@ -897,7 +925,6 @@ class DataNode(DataAccessMixin,ABC):
             if is_api == False:
                 dependency_ts.verify_and_build_remote_objects()
 
-
             self.local_persist_manager.depends_on_connect(dependency_ts, is_api=is_api)
 
             # Recursively set the relation tree for the dependency
@@ -905,13 +932,13 @@ class DataNode(DataAccessMixin,ABC):
 
         self.local_persist_manager.set_ogm_dependencies_linked()
 
-
     def set_dependencies_df(self):
         depth_df = self.local_persist_manager.get_all_dependencies_update_priority()
         self.depth_df = depth_df
         if not depth_df.empty:
             self.dependencies_df = depth_df[
-                depth_df["data_node_update_id"] != self.data_node_update.id].copy()
+                depth_df["data_node_update_id"] != self.data_node_update.id
+            ].copy()
         else:
             self.dependencies_df = pd.DataFrame()
 
@@ -920,8 +947,8 @@ class DataNode(DataAccessMixin,ABC):
         This method always queries last state
         """
         return self.metadata.sourcetableconfiguration.get_data_updates()
-    def _set_update_statistics(self,
-                              update_statistics: UpdateStatistics) -> UpdateStatistics:
+
+    def _set_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """
          UpdateStatistics provides the last-ingested positions:
           - For a single-index series (time_index only), `update_statistics.max_time` is either:
@@ -950,30 +977,30 @@ class DataNode(DataAccessMixin,ABC):
         self.update_statistics = update_statistics
 
     # --- Public API ---
-    
+
     def run(
-            self,
-            debug_mode: bool,
-            *,
-            update_tree: bool = True,
-            force_update: bool = False,
-            update_only_tree: bool = False,
-            remote_scheduler: Union[object, None] = None,
-            override_update_stats:Optional[UpdateStatistics] = None
+        self,
+        debug_mode: bool,
+        *,
+        update_tree: bool = True,
+        force_update: bool = False,
+        update_only_tree: bool = False,
+        remote_scheduler: object | None = None,
+        override_update_stats: UpdateStatistics | None = None,
     ):
 
-        update_runner = run_operations.UpdateRunner(time_serie=self,
-                     debug_mode=debug_mode,
-                     force_update=force_update,
-                     update_tree=update_tree,
-                     update_only_tree=update_only_tree,
-                     remote_scheduler=remote_scheduler,
-                                                    override_update_stats=override_update_stats
-                     )
-        error_on_last_update, updated_df=        update_runner.run()
+        update_runner = run_operations.UpdateRunner(
+            time_serie=self,
+            debug_mode=debug_mode,
+            force_update=force_update,
+            update_tree=update_tree,
+            update_only_tree=update_only_tree,
+            remote_scheduler=remote_scheduler,
+            override_update_stats=override_update_stats,
+        )
+        error_on_last_update, updated_df = update_runner.run()
 
-        return  error_on_last_update,updated_df
-
+        return error_on_last_update, updated_df
 
     # --- Optional Hooks for Customization ---
     def run_after_post_init_routines(self) -> None:
@@ -985,15 +1012,14 @@ class DataNode(DataAccessMixin,ABC):
         """
         return 0
 
-    def get_table_metadata(self,)->Optional[ms_client.TableMetaData]:
-        """Provides the metadata configuration for a market time series.
-
-         """
-
+    def get_table_metadata(
+        self,
+    ) -> ms_client.TableMetaData | None:
+        """Provides the metadata configuration for a market time series."""
 
         return None
 
-    def get_column_metadata(self) -> Optional[List[ColumnMetaData]]:
+    def get_column_metadata(self) -> list[ColumnMetaData] | None:
         """
         This Method should return a list for ColumnMetaData to add extra context to each time series
         Examples:
@@ -1021,7 +1047,7 @@ class DataNode(DataAccessMixin,ABC):
         """
         return None
 
-    def get_asset_list(self) -> Optional[List["Asset"]]:
+    def get_asset_list(self) -> list["Asset"] | None:
         """
         Provide the list of assets that this DataNode should include when updating.
 
@@ -1045,12 +1071,15 @@ class DataNode(DataAccessMixin,ABC):
 
         return None
 
-    def run_post_update_routines(self, error_on_last_update: bool, ) -> None:
-        """ Should be overwritten by subclass """
+    def run_post_update_routines(
+        self,
+        error_on_last_update: bool,
+    ) -> None:
+        """Should be overwritten by subclass"""
         pass
 
     @abstractmethod
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         """
         Subclasses must implement this method to explicitly declare their upstream dependencies.
 
@@ -1089,7 +1118,6 @@ class DataNode(DataAccessMixin,ABC):
         raise NotImplementedError
 
 
-
 class WrapperDataNode(DataNode):
     """A wrapper class for managing multiple DataNode objects."""
 
@@ -1107,14 +1135,14 @@ class WrapperDataNode(DataNode):
             Returns the appropriate bar time series based on the asset list and source.
             """
             from mainsequence.client import DoesNotExist
+
             try:
                 metadata = ms_client.DataNodeStorage.get(identifier=table_identifier)
 
             except DoesNotExist as e:
                 raise e
             api_ts = APIDataNode(
-                data_source_id=metadata.data_source.id,
-                storage_hash=metadata.storage_hash
+                data_source_id=metadata.data_source.id, storage_hash=metadata.storage_hash
             )
             return api_ts
 
@@ -1123,15 +1151,20 @@ class WrapperDataNode(DataNode):
         self.api_ts_map = {}
         for rule in translation_table.rules:
             if rule.markets_time_serie_unique_identifier not in self.api_ts_map:
-                self.api_ts_map[rule.markets_time_serie_unique_identifier] = get_time_serie_from_markets_unique_id(
-                    table_identifier=rule.markets_time_serie_unique_identifier)
+                self.api_ts_map[rule.markets_time_serie_unique_identifier] = (
+                    get_time_serie_from_markets_unique_id(
+                        table_identifier=rule.markets_time_serie_unique_identifier
+                    )
+                )
 
         self.translation_table = translation_table
 
-    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return self.api_ts_map
 
-    def get_ranged_data_per_asset(self, range_descriptor: Optional[UniqueIdentifierRangeMap]) -> pd.DataFrame:
+    def get_ranged_data_per_asset(
+        self, range_descriptor: UniqueIdentifierRangeMap | None
+    ) -> pd.DataFrame:
         """
         Gets data based on a range descriptor.
 
@@ -1142,15 +1175,15 @@ class WrapperDataNode(DataNode):
             A DataFrame with the ranged data.
         """
         return self.get_df_between_dates(unique_identifier_range_map=range_descriptor)
-    
+
     def get_df_between_dates(
-            self,
-            start_date: Optional[datetime.datetime] = None,
-            end_date: Optional[datetime.datetime] = None,
-            unique_identifier_list: Optional[list] = None,
-            great_or_equal: bool = True,
-            less_or_equal: bool = True,
-            unique_identifier_range_map: Optional[UniqueIdentifierRangeMap] = None,
+        self,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        unique_identifier_list: list | None = None,
+        great_or_equal: bool = True,
+        less_or_equal: bool = True,
+        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
     ) -> pd.DataFrame:
         """
         Retrieves a DataFrame of time series data between specified dates, handling asset translation.
@@ -1181,19 +1214,21 @@ class WrapperDataNode(DataNode):
 
         # evaluate the rules for each asset
         from mainsequence.client import Asset
+
         assets = Asset.filter(unique_identifier__in=list(wanted_src_uids))
-        #assets that i want to get pricces
+        # assets that i want to get pricces
 
         asset_translation_dict = {}
         for asset in assets:
-            asset_translation_dict[asset.unique_identifier] = self.translation_table.evaluate_asset(asset)
+            asset_translation_dict[asset.unique_identifier] = self.translation_table.evaluate_asset(
+                asset
+            )
 
         # we grouped the assets for the same rules together and now query all assets that have the same target
         translation_df = pd.DataFrame.from_dict(asset_translation_dict, orient="index")
         try:
             grouped = translation_df.groupby(
-                ["markets_time_serie_unique_identifier", "exchange_code"],
-                dropna=False
+                ["markets_time_serie_unique_identifier", "exchange_code"], dropna=False
             )
         except Exception as e:
             raise e
@@ -1206,27 +1241,28 @@ class WrapperDataNode(DataNode):
             # figure out which assets belong to this group
             grouped_unique_ids = group_df.index.tolist()
             source_assets = [
-                a for a in assets
-                if a.unique_identifier in grouped_unique_ids
-            ] # source the ones we want to have
+                a for a in assets if a.unique_identifier in grouped_unique_ids
+            ]  # source the ones we want to have
 
             # get correct target assets based on the share classes
             asset_ticker_group_ides = [a.asset_ticker_group_id for a in assets]
-            asset_query = dict(
-                asset_ticker_group_id__in=asset_ticker_group_ides
-            )
+            asset_query = dict(asset_ticker_group_id__in=asset_ticker_group_ides)
             if not pd.isna(target_exchange_code):
                 asset_query["exchange_code"] = target_exchange_code
 
-            target_assets = Asset.filter(**asset_query) #the assets that have the same group
+            target_assets = Asset.filter(**asset_query)  # the assets that have the same group
 
             target_asset_unique_ids = [a.asset_ticker_group_id for a in target_assets]
             if len(asset_ticker_group_ides) > len(target_asset_unique_ids):
-                raise Exception(f"Not all assets were found in backend for translation table: {set(asset_ticker_group_ides) - set(target_asset_unique_ids)}")
+                raise Exception(
+                    f"Not all assets were found in backend for translation table: {set(asset_ticker_group_ides) - set(target_asset_unique_ids)}"
+                )
 
             if len(asset_ticker_group_ides) < len(target_asset_unique_ids):
-                #this will blow the proper selection of assets
-                raise Exception(f"Too many assets were found in backend for translation table: {set(target_asset_unique_ids) - set(asset_ticker_group_ides)}")
+                # this will blow the proper selection of assets
+                raise Exception(
+                    f"Too many assets were found in backend for translation table: {set(target_asset_unique_ids) - set(asset_ticker_group_ides)}"
+                )
 
             # create the source-target mapping
             ticker_group_to_uid_map = {}
@@ -1246,13 +1282,15 @@ class WrapperDataNode(DataNode):
                 # create the correct unique identifier range map
                 unique_identifier_range_map_target = {}
                 for a_unique_identifier, asset_range in unique_identifier_range_map.items():
-                    if a_unique_identifier not in source_target_map.keys(): continue
+                    if a_unique_identifier not in source_target_map.keys():
+                        continue
                     target_key = source_target_map[a_unique_identifier]
                     unique_identifier_range_map_target[target_key] = asset_range
 
                 if not unique_identifier_range_map_target:
                     self.logger.warning(
-                        f"Unique identifier map is empty for group assets {source_assets} and unique_identifier_range_map {unique_identifier_range_map}")
+                        f"Unique identifier map is empty for group assets {source_assets} and unique_identifier_range_map {unique_identifier_range_map}"
+                    )
                     continue
 
                 tmp_data = api_ts.get_df_between_dates(
@@ -1284,7 +1322,7 @@ class WrapperDataNode(DataNode):
         return data_df
 
     def update(self, update_statistics):
-        """ WrapperTimeSeries does not update """
+        """WrapperTimeSeries does not update"""
         pass
 
 

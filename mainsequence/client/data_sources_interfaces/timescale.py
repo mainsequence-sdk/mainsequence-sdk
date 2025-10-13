@@ -1,42 +1,32 @@
-from importlib.metadata import metadata
-
-import pandas as pd
-
-import tempfile
-import tqdm
-
-from concurrent.futures import ThreadPoolExecutor
-import itertools
 import csv
+import datetime
+import itertools
+import json
+import os
+import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
-from tqdm import tqdm  # Import tqdm for progress bar
 
 import numpy as np
-import json
-
-from typing import Dict, List, Union,Optional
-import datetime
+import pandas as pd
+import tqdm
+from tqdm import tqdm  # Import tqdm for progress bar
 
 from mainsequence.logconf import logger
+
 from ..utils import DATE_FORMAT, make_request, set_types_in_table
-import os
 
 
 def import_psycopg2():
-    import psycopg2
-    from psycopg2 import errors
-    from psycopg2.extras import execute_batch
-    from pgcopy import CopyManager
-    from psycopg2.extras import execute_values
+    pass
+
 
 def read_sql_tmpfile(query, time_series_orm_uri_db_connection: str):
     with tempfile.TemporaryFile() as tmpfile:
-        copy_sql = "COPY ({query}) TO STDOUT WITH CSV {head}".format(
-            query=query, head="HEADER"
-        )
+        copy_sql = "COPY ({query}) TO STDOUT WITH CSV {head}".format(query=query, head="HEADER")
         # conn = db_engine.raw_connection()
         # cur = conn.cursor()
-        with  psycopg2.connect(time_series_orm_uri_db_connection) as conn:
+        with psycopg2.connect(time_series_orm_uri_db_connection) as conn:
             # TEMP FOR FUCKED UP BELOW
             # cur = session.connection().connection.cursor()
             cur = conn.cursor()
@@ -71,7 +61,7 @@ def filter_by_assets_ranges(table_name, asset_ranges_map, index_names, data_sour
 
     # Build query dynamically based on the asset_ranges_map dictionary
     for symbol, range_dict in asset_ranges_map.items():
-        if range_dict['end_date'] is not None:
+        if range_dict["end_date"] is not None:
             tmp_query = (
                 f" (asset_symbol = '{symbol}' AND "
                 f"time_index BETWEEN '{range_dict['start_date']}' AND '{range_dict['end_date']}') "
@@ -87,7 +77,9 @@ def filter_by_assets_ranges(table_name, asset_ranges_map, index_names, data_sour
     full_query = query_base + " OR ".join(query_parts)
 
     # Execute the query and load results into a Pandas DataFrame
-    df = read_sql_tmpfile(full_query, time_series_orm_uri_db_connection=data_source.get_connection_uri())
+    df = read_sql_tmpfile(
+        full_query, time_series_orm_uri_db_connection=data_source.get_connection_uri()
+    )
 
     # set correct types for values
     df = set_types_in_table(df, column_types)
@@ -98,14 +90,17 @@ def filter_by_assets_ranges(table_name, asset_ranges_map, index_names, data_sour
     return df
 
 
-def direct_data_from_db(data_node_update: "DataNodeUpdate", connection_uri: str,
-                        start_date: Union[datetime.datetime, None] = None,
-                        great_or_equal: bool = True, less_or_equal: bool = True,
-                        end_date: Union[datetime.datetime, None] = None,
-                        columns: Union[list, None] = None,
-                        unique_identifier_list: Union[list, None] = None,
-                        unique_identifier_range_map:Optional[dict] = None
-                        ):
+def direct_data_from_db(
+    data_node_update: "DataNodeUpdate",
+    connection_uri: str,
+    start_date: datetime.datetime | None = None,
+    great_or_equal: bool = True,
+    less_or_equal: bool = True,
+    end_date: datetime.datetime | None = None,
+    columns: list | None = None,
+    unique_identifier_list: list | None = None,
+    unique_identifier_range_map: dict | None = None,
+):
     """
     Connects directly to the DB without passing through the ORM to speed up calculations.
 
@@ -132,13 +127,18 @@ def direct_data_from_db(data_node_update: "DataNodeUpdate", connection_uri: str,
         Data from the table as a pandas DataFrame, optionally filtered by date range.
     """
     import_psycopg2()
-    data_node_storage=data_node_update.data_node_storage
-    def fast_table_dump(connection_config, table_name, ):
+    data_node_storage = data_node_update.data_node_storage
+
+    def fast_table_dump(
+        connection_config,
+        table_name,
+    ):
         query = f"COPY {table_name} TO STDOUT WITH CSV HEADER"
 
-        with psycopg2.connect(connection_config['connection_details']) as connection:
+        with psycopg2.connect(connection_config["connection_details"]) as connection:
             with connection.cursor() as cursor:
                 import io
+
                 buffer = io.StringIO()
                 cursor.copy_expert(query, buffer)
                 buffer.seek(0)
@@ -160,7 +160,9 @@ def direct_data_from_db(data_node_update: "DataNodeUpdate", connection_uri: str,
 
     if unique_identifier_list:
         helper_symbol = "','"
-        where_clauses.append(f"unique_identifier IN ('{helper_symbol.join(unique_identifier_list)}')")
+        where_clauses.append(
+            f"unique_identifier IN ('{helper_symbol.join(unique_identifier_list)}')"
+        )
 
     # Combine WHERE clauses
     where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
@@ -185,11 +187,16 @@ def direct_data_from_db(data_node_update: "DataNodeUpdate", connection_uri: str,
     return data
 
 
-def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_frame: pd.DataFrame, overwrite: bool,
-                        grouped_dates,
-                         table_is_empty: bool,
-                        time_series_orm_db_connection: Union[str, None] = None,
-                        use_chunks: bool = True, num_threads: int = 4):
+def direct_table_update(
+    data_node_storage: "DataNodeStorage",
+    serialized_data_frame: pd.DataFrame,
+    overwrite: bool,
+    grouped_dates,
+    table_is_empty: bool,
+    time_series_orm_db_connection: str | None = None,
+    use_chunks: bool = True,
+    num_threads: int = 4,
+):
     """
     Updates the database table with the given DataFrame.
 
@@ -207,9 +214,10 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
     import_psycopg2()
     columns = serialized_data_frame.columns.tolist()
 
-    index_names=data_node_storage.sourcetableconfiguration.index_names
-    table_name=data_node_storage.table_name
-    time_index_name=data_node_storage.sourcetableconfiguration.time_index_name
+    index_names = data_node_storage.sourcetableconfiguration.index_names
+    table_name = data_node_storage.table_name
+    time_index_name = data_node_storage.sourcetableconfiguration.time_index_name
+
     def drop_indexes(table_name, table_index_names):
         # Use a separate connection for index management
         with psycopg2.connect(time_series_orm_db_connection) as conn:
@@ -224,11 +232,11 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
 
         # Drop indexes before insertion
 
-   
-
     # do not drop indices this is only done on inception
-    if data_node_storage._drop_indices==True:
-        table_index_names=data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
+    if data_node_storage._drop_indices == True:
+        table_index_names = (
+            data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
+        )
         drop_indexes(table_name, table_index_names)
 
     if overwrite and not table_is_empty:
@@ -241,31 +249,35 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
 
                     if len(index_names) > 1:
 
-                        grouped_dates = grouped_dates.rename(columns={"min": "start_time", "max": "end_time"})
+                        grouped_dates = grouped_dates.rename(
+                            columns={"min": "start_time", "max": "end_time"}
+                        )
                         grouped_dates = grouped_dates.reset_index()
                         grouped_dates = grouped_dates.to_dict("records")
 
                         # Build the DELETE query
                         delete_conditions = []
                         for item in grouped_dates:
-                            unique_identifier = item['unique_identifier']
-                            start_time = item['start_time']
-                            end_time = item['end_time']
+                            unique_identifier = item["unique_identifier"]
+                            start_time = item["start_time"]
+                            end_time = item["end_time"]
 
                             # Format timestamps as strings
-                            start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S%z')
-                            end_time_str = end_time.strftime('%Y-%m-%d %H:%M:%S%z')
+                            start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S%z")
+                            end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S%z")
 
                             # Escape single quotes
                             unique_identifier = unique_identifier.replace("'", "''")
 
                             # Build the condition string
-                            condition = f"({time_index_name} >= '{start_time_str}' AND {time_index_name} <= '{end_time_str}' " \
-                                        f"AND unique_identifier = '{unique_identifier}')"
+                            condition = (
+                                f"({time_index_name} >= '{start_time_str}' AND {time_index_name} <= '{end_time_str}' "
+                                f"AND unique_identifier = '{unique_identifier}')"
+                            )
                             delete_conditions.append(condition)
 
                         # Combine all conditions using OR
-                        where_clause = ' OR '.join(delete_conditions)
+                        where_clause = " OR ".join(delete_conditions)
                         delete_query = f"DELETE FROM public.{table_name} WHERE {where_clause};"
 
                         # Execute the DELETE query
@@ -289,7 +301,7 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
         # Generator to yield chunks without copying data
         def get_dataframe_chunks(df, chunk_size):
             for start_row in range(0, df.shape[0], chunk_size):
-                yield df.iloc[start_row:start_row + chunk_size]
+                yield df.iloc[start_row : start_row + chunk_size]
 
         # Progress bar for chunks
         total_chunks = int(np.ceil(total_rows / chunk_size))
@@ -302,7 +314,9 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
                         data_generator = chunk_df.itertuples(index=False, name=None)
 
                         total_records = len(chunk_df)
-                        with tqdm(total=total_records, desc="Inserting records", leave=False) as pbar:
+                        with tqdm(
+                            total=total_records, desc="Inserting records", leave=False
+                        ) as pbar:
                             while True:
                                 batch = list(itertools.islice(data_generator, buffer_size))
                                 if not batch:
@@ -326,8 +340,15 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
                 raise
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
-            list(tqdm(executor.map(insert_chunk, get_dataframe_chunks(serialized_data_frame, chunk_size)),
-                      total=total_chunks, desc="Processing chunks"))
+            list(
+                tqdm(
+                    executor.map(
+                        insert_chunk, get_dataframe_chunks(serialized_data_frame, chunk_size)
+                    ),
+                    total=total_chunks,
+                    desc="Processing chunks",
+                )
+            )
 
     else:
         # Single insert using the same optimized method
@@ -361,7 +382,9 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
     # do not rebuild  indices this is only done on inception
     if data_node_storage._rebuild_indices:
         logger.info("Rebuilding indices...")
-        extra_indices = data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
+        extra_indices = (
+            data_node_storage.sourcetableconfiguration.get_time_scale_extra_table_indices()
+        )
 
         with psycopg2.connect(time_series_orm_db_connection) as conn:
             with conn.cursor() as cur:
@@ -372,7 +395,9 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
                     if index_type not in ("INDEX", "UNIQUE INDEX"):
                         raise Exception(f"Unknown index type: {index_type}")
 
-                    sql_create_index = f"CREATE {index_type} {index_name} ON public.{table_name} {index_query}"
+                    sql_create_index = (
+                        f"CREATE {index_type} {index_name} ON public.{table_name} {index_query}"
+                    )
                     logger.info(f"Executing SQL: {sql_create_index}")
                     cur.execute(sql_create_index)
 
@@ -388,16 +413,14 @@ def direct_table_update(data_node_storage:"DataNodeStorage", serialized_data_fra
 
 
 def process_and_update_table(
-        serialized_data_frame,
-        data_node_update: "DataNodeUpdate",
-        grouped_dates: List,
-        data_source: object,
-        index_names: List[str],
-        time_index_name: str,
-        overwrite: bool = False,
-        JSON_COMPRESSED_PREFIX: List[str] = None,
-
-
+    serialized_data_frame,
+    data_node_update: "DataNodeUpdate",
+    grouped_dates: list,
+    data_source: object,
+    index_names: list[str],
+    time_index_name: str,
+    overwrite: bool = False,
+    JSON_COMPRESSED_PREFIX: list[str] = None,
 ):
     """
     Process a serialized DataFrame, handle overwriting, and update a database table.
@@ -416,13 +439,15 @@ def process_and_update_table(
         None
     """
     import_psycopg2()
-    JSON_COMPRESSED_PREFIX=JSON_COMPRESSED_PREFIX or []
-    data_node_storage=data_node_update.data_node_storage
+    JSON_COMPRESSED_PREFIX = JSON_COMPRESSED_PREFIX or []
+    data_node_storage = data_node_update.data_node_storage
     if "unique_identifier" in serialized_data_frame.columns:
-        serialized_data_frame['unique_identifier'] = serialized_data_frame['unique_identifier'].astype(str)
+        serialized_data_frame["unique_identifier"] = serialized_data_frame[
+            "unique_identifier"
+        ].astype(str)
 
     TDAG_ENDPOINT = f"{os.environ.get('TDAG_ENDPOINT')}"
-    base_url = TDAG_ENDPOINT + "/orm/api/dynamic_table" #metadata.get("root_url")
+    base_url = TDAG_ENDPOINT + "/orm/api/dynamic_table"  # metadata.get("root_url")
     serialized_data_frame = serialized_data_frame.replace({np.nan: None})
 
     # Validate JSON-compressed columns
@@ -433,22 +458,28 @@ def process_and_update_table(
     # Encode JSON-compressed columns
     for c in serialized_data_frame.columns:
         if any([t in c for t in JSON_COMPRESSED_PREFIX]):
-            serialized_data_frame[c] = serialized_data_frame[c].apply(lambda x: json.dumps(x).encode())
+            serialized_data_frame[c] = serialized_data_frame[c].apply(
+                lambda x: json.dumps(x).encode()
+            )
 
     # Handle overwrite and decompress chunks if required
     recompress = False
     if overwrite:
         url = f"{base_url}/{data_node_storage.id}/decompress_chunks/"
         from ..models_vam import BaseObject
+
         s = BaseObject.build_session()
 
         r = make_request(
-            s=s, loaders=BaseObject.LOADERS,
+            s=s,
+            loaders=BaseObject.LOADERS,
             r_type="POST",
             url=url,
             payload={
                 "json": {
-                    "start_date": serialized_data_frame[time_index_name].min().strftime(DATE_FORMAT),
+                    "start_date": serialized_data_frame[time_index_name]
+                    .min()
+                    .strftime(DATE_FORMAT),
                     "end_date": serialized_data_frame[time_index_name].max().strftime(DATE_FORMAT),
                 }
             },

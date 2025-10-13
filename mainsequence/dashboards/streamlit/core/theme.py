@@ -1,9 +1,11 @@
 from __future__ import annotations
+
 from pathlib import Path
+
 import streamlit as st
 
-
 # --------------------- small theme helpers ---------------------
+
 
 def inject_css_for_dark_accents():
     st.markdown(
@@ -14,8 +16,9 @@ def inject_css_for_dark_accents():
         div[data-testid="stMetricDelta"] svg { display: none; } /* clean deltas, hide the arrow */
         </style>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
+
 
 def explain_theming():
     st.info(
@@ -26,8 +29,10 @@ def explain_theming():
 
 # --------------------- spinner frame loader (runs once on import) ---------------------
 
+
 def _read_txt(p: Path) -> str:
     return p.read_text(encoding="utf-8").strip()
+
 
 def _load_spinner_frames_for_this_template() -> list[str]:
     """
@@ -71,16 +76,21 @@ def _load_spinner_frames_for_this_template() -> list[str]:
         return frames
 
     # Fallback: 1x1 transparent PNG
-    transparent_png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
-                       "/w8AAn8B9p7u3t8AAAAASUVORK5CYII=")
+    transparent_png = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/w8AAn8B9p7u3t8AAAAASUVORK5CYII="
+    )
     return [transparent_png] * 5
+
 
 try:
     _SPINNER_FRAMES_RAW = _load_spinner_frames_for_this_template()
 except Exception:
     # Never break import due to spinner assets
-    transparent_png = ("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
-                       "/w8AAn8B9p7u3t8AAAAASUVORK5CYII=")
+    transparent_png = (
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/w8AAn8B9p7u3t8AAAAASUVORK5CYII="
+    )
     _SPINNER_FRAMES_RAW = [transparent_png] * 5
 
 # Public constants (used only within this module, but left as globals for clarity)
@@ -89,12 +99,13 @@ IMAGE_1_B64, IMAGE_2_B64, IMAGE_3_B64, IMAGE_4_B64, IMAGE_5_B64 = _SPINNER_FRAME
 
 # --------------------- spinner override (CSS only) ---------------------
 
+
 def override_spinners(
     hide_deploy_button: bool = False,
     *,
     # Sizes
-    top_px: int = 20,          # top-right toolbar spinner size
-    inline_px: int = 96,       # inline/status spinner size
+    top_px: int = 20,  # top-right toolbar spinner size
+    inline_px: int = 96,  # inline/status spinner size
     # Timing
     duration_ms: int = 900,
     # Toolbar micro-positioning
@@ -124,7 +135,8 @@ def override_spinners(
     i4 = as_data_uri(IMAGE_4_B64)
     i5 = as_data_uri(IMAGE_5_B64)
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
 <style>
 /* ===== 5-frame animation (fixed: do NOT use '0%%') ===== */
 @keyframes st-fiveframe {{
@@ -228,7 +240,10 @@ header [data-testid="stSpinner"] svg {{
   z-index: calc(var(--st-overlay-z) + 1);
 }}
 </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
+
 
 def remove_deploy_button() -> None:
     """
@@ -257,4 +272,3 @@ def remove_deploy_button() -> None:
         """,
         unsafe_allow_html=True,
     )
-
