@@ -154,6 +154,11 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
 
         return data
 
+    def get_signal_weights_instance(self):
+        return self._signal_weights_instance
+    def get_rebalancer_instance(self):
+        return self._rebalance_strategy_instance
+
     @model_validator(mode="before")
     def parse_signal_weights_configuration(cls, values):
         if isinstance(
@@ -205,7 +210,7 @@ class PortfolioMarketsConfig(VFBConfigBaseModel):
     """
 
     portfolio_name: str = "Portfolio Strategy Title"
-    front_end_details: FrontEndDetails | None = None
+    front_end_details: FrontEndDetails | None  = None
 
 
 class AssetMixinOverwrite(VFBConfigBaseModel):

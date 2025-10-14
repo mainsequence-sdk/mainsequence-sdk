@@ -1,10 +1,11 @@
 import datetime
+from typing import Any, Literal, Union
 
 from pydantic import BaseModel, Field, PositiveInt
 
-from .base import MARKETS_CONSTANTS
 from .models_tdag import POD_PROJECT
 from .models_vam import *
+from .utils import MARKETS_CONSTANTS
 
 
 def get_right_account_class(account: Account):
@@ -19,14 +20,14 @@ def get_right_account_class(account: Account):
 
 
 class Slide(BasePydanticModel):
-    id: Optional[int] = None
+    id: int | None = None
 
     number: PositiveInt = Field(
         ...,
         description="1-based position of the slide within its presentation",
         example=3,
     )
-    body: Optional[str] = Field(
+    body: str | None = Field(
         default=None,
         description="Raw slide content in markdown/HTML/etc.",
     )
@@ -43,14 +44,14 @@ class Slide(BasePydanticModel):
 
 
 class Presentation(BaseObjectOrm, BasePydanticModel):
-    id: Optional[int] = None
+    id: int | None = None
     title: str = Field(..., max_length=255)
     description: str = Field("", description="Free-form description of the deck")
-    slides: List[Slide]
+    slides: list[Slide]
 
     # These come from the DB and are read-only in normal create/update requests
-    created_at: Optional[datetime.datetime] = None
-    updated_at: Optional[datetime.datetime] = None
+    created_at: datetime.datetime | None = None
+    updated_at: datetime.datetime | None = None
 
 
 class FileResource(BaseModel):
@@ -71,15 +72,15 @@ class AppResource(BaseModel):
     """An app to be used by a job."""
 
     name: str = Field(..., min_length=1, description="The name of the app.")
-    configuration: Dict[str, Any] = Field(
+    configuration: dict[str, Any] = Field(
         default_factory=dict, description="Key-value configuration for the app configuration."
     )
 
 
 Resource = Union[
-    Dict[Literal["script"], ScriptResource],
-    Dict[Literal["notebook"], NotebookResource],
-    Dict[Literal["app"], AppResource],
+    dict[Literal["script"], ScriptResource],
+    dict[Literal["notebook"], NotebookResource],
+    dict[Literal["app"], AppResource],
 ]
 
 
@@ -87,7 +88,7 @@ class CrontabSchedule(BaseModel):
     """A schedule defined by a standard crontab expression."""
 
     type: Literal["crontab"]
-    start_time: Optional[datetime.datetime] = None
+    start_time: datetime.datetime | None = None
     expression: str = Field(
         ..., min_length=1, description="A valid cron string, e.g., '0 5 * * 1-5'."
     )
@@ -97,7 +98,7 @@ class IntervalSchedule(BaseModel):
     """A schedule that repeats at a fixed interval."""
 
     type: Literal["interval"]
-    start_time: Optional[datetime.datetime] = None
+    start_time: datetime.datetime | None = None
     every: PositiveInt = Field(..., description="The frequency of the interval (must be > 0).")
     period: Literal["seconds", "minutes", "hours", "days"]
 
@@ -110,7 +111,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
     name: str = Field(..., min_length=1, description="A human-readable name for the job.")
     resource: Resource
-    schedule: Optional[Schedule] = Field(default=None, description="The job's execution schedule.")
+    schedule: Schedule | None = Field(default=None, description="The job's execution schedule.")
 
     @classmethod
     def create_from_configuration(cls, job_configuration):
@@ -129,4 +130,4 @@ class ProjectConfiguration(BaseModel):
     """The root model for the entire project configuration."""
 
     name: str = Field(..., min_length=1, description="The name of the project.")
-    jobs: List[Job]
+    jobs: list[Job]

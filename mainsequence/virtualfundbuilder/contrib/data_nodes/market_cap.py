@@ -58,7 +58,7 @@ class FixedWeights(WeightsBase, DataNode):
 
     def update(self) -> pd.DataFrame:
         us: msc.UpdateStatistics = self.update_statistics
-        if self.update_statistics.is_empty == False:
+        if self.update_statistics.is_empty() == False:
             return pd.DataFrame()  # No need to store more than one constant weight
 
         df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(

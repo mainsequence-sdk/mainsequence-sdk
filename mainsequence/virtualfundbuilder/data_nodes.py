@@ -166,21 +166,26 @@ class PortfolioStrategy(DataNode):
         )
 
         self.signal_weights_name = self.backtesting_weights_config.signal_weights_name
-        SignalWeightClass = SignalWeightsFactory.get_signal_weights_strategy(
-            signal_weights_name=self.signal_weights_name
-        )
 
-        self.signal_weights = SignalWeightClass.build_and_parse_from_configuration(
-            **self.full_signal_weight_config
-        )
+        self.signal_weights=self.backtesting_weights_config.get_signal_weights_instance()
+        if self.signal_weights is None:
+            SignalWeightClass = SignalWeightsFactory.get_signal_weights_strategy(
+                signal_weights_name=self.signal_weights_name
+            )
+            self.signal_weights = SignalWeightClass.build_and_parse_from_configuration(
+                **self.full_signal_weight_config
+            )
 
         self.rebalance_strategy_name = self.backtesting_weights_config.rebalance_strategy_name
-        RebalanceClass = RebalanceFactory.get_rebalance_strategy(
-            rebalance_strategy_name=self.rebalance_strategy_name
-        )
-        self.rebalancer = RebalanceClass(
-            **self.backtesting_weights_config.rebalance_strategy_configuration
-        )
+
+        self.rebalancer=self.backtesting_weights_config.get_rebalancer_instance()
+        if self.rebalancer is None:
+            RebalanceClass = RebalanceFactory.get_rebalance_strategy(
+                rebalance_strategy_name=self.rebalance_strategy_name
+            )
+            self.rebalancer = RebalanceClass(
+                **self.backtesting_weights_config.rebalance_strategy_configuration
+            )
 
         self.rebalancer_explanation = ""  # TODO: Add rebalancer explanation
 
@@ -672,7 +677,7 @@ rebalance details:"""
 
     def get_table_metadata(self) -> ms_client.TableMetaData | None:
         asset = ms_client.PortfolioIndexAsset.get_or_none(
-            reference_portfolio__local_time_serie__update_hash=self.data_node_update.update_hash
+            reference_portfolio__data_node_update__update_hash=self.data_node_update.update_hash
         )
         if asset is not None:
             identifier = asset.unique_identifier

@@ -10,19 +10,17 @@ import pandas as pd
 import pytz
 from pydantic import BaseModel, Field, constr, model_validator, root_validator, validator
 
-from mainsequence.client import DataNodeUpdate
 from mainsequence.logconf import logger
 
-from .base import (
-    MARKETS_CONSTANTS as CONSTANTS,
-)
 from .base import (
     TDAG_ENDPOINT,
     BaseObjectOrm,
     BasePydanticModel,
     HtmlSaveException,
 )
+from .models_tdag import DataNodeUpdate
 from .utils import DATE_FORMAT, DoesNotExist, make_request
+from .utils import MARKETS_CONSTANTS as CONSTANTS
 
 CRYPTO_EXCHANGE_CODE = [
     "abts",

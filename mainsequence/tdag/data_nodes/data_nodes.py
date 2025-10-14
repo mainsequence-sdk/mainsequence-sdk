@@ -37,6 +37,8 @@ from mainsequence.logconf import logger
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
+from .persist_managers import get_data_node_source_code
+
 
 def get_data_source_from_orm() -> Any:
     from mainsequence.client import SessionDataSource
@@ -895,7 +897,7 @@ class DataNode(DataAccessMixin, ABC):
         time_serie_source_code_git_hash = build_operations.get_data_node_source_code_git_hash(
             owner_class
         )
-        time_serie_source_code = build_operations.get_data_node_source_code(owner_class)
+        time_serie_source_code = get_data_node_source_code(owner_class)
 
         # The call to the low-level persist manager is encapsulated here
         self.local_persist_manager.local_persist_exist_set_config(

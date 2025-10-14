@@ -479,15 +479,15 @@ class PersistManager:
     @property
     def source_table_configuration(self) -> dict | None:
         """Returns the source table configuration from the remote metadata."""
-        if "sourcetableconfiguration" in self.metadata.keys():
-            return self.metadata["sourcetableconfiguration"]
+        if "sourcetableconfiguration" in self.data_node_storage.keys():
+            return self.data_node_storage["sourcetableconfiguration"]
         return None
 
     def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
         """
         Updates the source code and git hash for the remote table.
         """
-        self.data_node_update.data_node_storage = self.metadata.patch(
+        self.data_node_update.data_node_storage = self.data_node_storage.patch(
             time_serie_source_code_git_hash=git_hash_id,
             time_serie_source_code=source_code,
         )
@@ -501,13 +501,13 @@ class PersistManager:
     def persist_size(self) -> int:
         """Returns the size of the persisted table, or 0 if not available."""
         try:
-            return self.metadata["table_size"]
+            return self.data_node_storage["table_size"]
         except KeyError:
             return 0
 
     def time_serie_exist(self) -> bool:
         """Checks if the remote metadata for the time series exists."""
-        if hasattr(self, "metadata"):
+        if hasattr(self, "data_node_storage"):
             return True
         return False
 
@@ -711,22 +711,22 @@ class PersistManager:
 
     def patch_table(self, **kwargs) -> None:
         """Patches the remote metadata table with the given keyword arguments."""
-        self.metadata.patch(**kwargs)
+        self.data_node_storage.patch(**kwargs)
 
     def protect_from_deletion(self, protect_from_deletion: bool = True) -> None:
         """Sets the 'protect_from_deletion' flag on the remote metadata."""
-        self.metadata.patch(protect_from_deletion=protect_from_deletion)
+        self.data_node_storage.patch(protect_from_deletion=protect_from_deletion)
 
     def open_for_everyone(self, open_for_everyone: bool = True) -> None:
         """Sets the 'open_for_everyone' flag on local, remote, and source table configurations."""
         if not self.data_node_update.open_for_everyone:
             self.data_node_update.patch(open_for_everyone=open_for_everyone)
 
-        if not self.metadata.open_for_everyone:
-            self.metadata.patch(open_for_everyone=open_for_everyone)
+        if not self.data_node_storage.open_for_everyone:
+            self.data_node_storage.patch(open_for_everyone=open_for_everyone)
 
-        if not self.metadata.sourcetableconfiguration.open_for_everyone:
-            self.metadata.sourcetableconfiguration.patch(open_for_everyone=open_for_everyone)
+        if not self.data_node_storage.sourcetableconfiguration.open_for_everyone:
+            self.data_node_storage.sourcetableconfiguration.patch(open_for_everyone=open_for_everyone)
 
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         """

@@ -13,7 +13,7 @@ from mainsequence.tdag.utils import write_yaml
 
 from .config_handling import configuration_sanitizer
 from .data_nodes import PortfolioFromDF, PortfolioStrategy
-from .models import PortfolioConfiguration
+from .models import PortfolioConfiguration, PortfolioMarketsConfig
 from .utils import get_vfb_logger
 
 
@@ -56,7 +56,7 @@ class PortfolioInterface:
     @classmethod
     def run_from_portfolio_node(
         cls,
-        portfolio_node: PortfolioStrategy,
+        portfolio_node: PortfolioStrategy,portfolio_markets_config:PortfolioMarketsConfig,
         debug_mode=True,
         force_update=True,
         update_tree=True,
@@ -67,6 +67,7 @@ class PortfolioInterface:
         interface = cls(portfolio_config_template=None, is_portfolio_from_df=True)
         interface._is_initialized = True
         interface.portfolio_strategy_data_node = portfolio_node
+        interface.portfolio_markets_config=portfolio_markets_config
 
         res = interface.run(
             patch_build_configuration=False,

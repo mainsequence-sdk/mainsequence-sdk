@@ -1342,7 +1342,7 @@ class UpdateStatistics(BaseModel):
 
     asset_time_statistics: dict[str, datetime.datetime | None | dict] | None = None
 
-    max_time_index_value: datetime.datetime | None = None  # does not include fitler
+    max_time_index_value: datetime.datetime | None = None  # does not include filter applicable for 1d index
     asset_list: list | None = None
     limit_update_time: datetime.datetime | None = None  # flag to limit the update of data node
     _max_time_in_update_statistics: datetime.datetime | None = None  # include filter
@@ -1441,8 +1441,6 @@ class UpdateStatistics(BaseModel):
         print(f"  max_time_index_value: {self.max_time_index_value}")
         print(f"  _max_time_in_update_statistics: {self._max_time_in_update_statistics}")
 
-    def is_empty(self):
-        return self.asset_time_statistics is None and self.max_time_index_value is None
 
     def asset_identifier(self):
         return list(self.asset_time_statistics.keys())
@@ -1717,7 +1715,7 @@ class UpdateStatistics(BaseModel):
         return du
 
     def is_empty(self):
-        return self.max_time_index_value is None
+        return self.max_time_index_value is None and self._max_time_in_update_statistics is None
 
     def __getitem__(self, key: str) -> Any:
         if self.asset_time_statistics is None:

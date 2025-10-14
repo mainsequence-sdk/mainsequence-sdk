@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import structlog.contextvars as cvars
+from opentelemetry.trace import Status, StatusCode
 
 # Client and ORM Models
 import mainsequence.client as ms_client
@@ -15,7 +16,6 @@ from mainsequence.client import UpdateStatistics
 
 # Instrumentation and Logging
 from mainsequence.instrumentation import TracerInstrumentator, tracer
-from mainsequence.instrumentation.utils import Status, StatusCode
 
 # TDAG Core Components and Helpers
 from mainsequence.tdag.data_nodes import build_operations
