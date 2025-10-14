@@ -54,30 +54,18 @@ class PortfolioInterface:
         return self.__str__()
 
     @classmethod
-    def run_from_portfolio_node(
+    def build_from_portfolio_node(
         cls,
         portfolio_node: PortfolioStrategy,portfolio_markets_config:PortfolioMarketsConfig,
-        debug_mode=True,
-        force_update=True,
-        update_tree=True,
-        portfolio_tags: list[str] = None,
-        add_portfolio_to_markets_backend=True,
     ) -> pd.DataFrame:
         assert isinstance(portfolio_node, PortfolioStrategy)
         interface = cls(portfolio_config_template=None, is_portfolio_from_df=True)
         interface._is_initialized = True
         interface.portfolio_strategy_data_node = portfolio_node
         interface.portfolio_markets_config=portfolio_markets_config
+        interface.portfolio_build_configuration=portfolio_node.portfolio_build_configuration
 
-        res = interface.run(
-            patch_build_configuration=False,
-            debug_mode=debug_mode,
-            force_update=force_update,
-            update_tree=update_tree,
-            portfolio_tags=portfolio_tags,
-            add_portfolio_to_markets_backend=add_portfolio_to_markets_backend,
-        )
-        return res
+        return interface
 
     @classmethod
     def build_and_run_portfolio_from_df(
@@ -167,9 +155,9 @@ class PortfolioInterface:
 
             # timeseries can be running in local lake so need to request the id
             standard_kwargs = dict(
-                local_time_serie_id=ts.data_node_update.id,
+                data_node_update_id=ts.data_node_update.id,
                 is_active=True,
-                signal_local_time_serie_id=signal_weights_ts.data_node_update.id,
+                signal_data_node_update_id=signal_weights_ts.data_node_update.id,
             )
 
             user_kwargs = self.portfolio_markets_config.model_dump()
@@ -178,7 +166,7 @@ class PortfolioInterface:
             standard_kwargs.update(user_kwargs)
             standard_kwargs["calendar_name"] = (
                 self.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_configuration[
-                    "calendar"
+                    "calendar_key"
                 ]
             )
 
@@ -194,7 +182,7 @@ class PortfolioInterface:
 
             standard_kwargs["backtest_table_price_column_name"] = "close"
 
-            target_portfolio = Portfolio.get_or_none(local_time_serie__id=ts.data_node_update.id)
+            target_portfolio = Portfolio.get_or_none(data_node_update__id=ts.data_node_update.id)
             if target_portfolio is None:
                 target_portfolio, index_asset = Portfolio.create_from_time_series(**standard_kwargs)
             else:

@@ -1,5 +1,6 @@
 import datetime
 import logging
+import os
 from typing import Any, ClassVar
 
 import pandas as pd
@@ -93,6 +94,10 @@ def register_rebalance_class(name=None, register_in_agent=True):
     """
 
     def decorator(cls):
+        if os.environ.get("IGNORE_MS_AGENT", "false").lower() == "true":
+            logger.info("Ignoring MS agent registration")
+            return cls
+
         return insert_in_registry(REBALANCE_CLASS_REGISTRY, cls, register_in_agent, name)
 
     return decorator

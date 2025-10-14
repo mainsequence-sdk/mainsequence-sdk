@@ -1,5 +1,6 @@
 import ast
 import inspect
+import os
 from datetime import timedelta
 
 import numpy as np
@@ -171,6 +172,9 @@ def register_signal_class(name=None, register_in_agent=True):
     """
 
     def decorator(cls):
+        if os.environ.get("IGNORE_MS_AGENT", "false").lower() == "true":
+            logger.info("Ignoring MS agent registration")
+            return cls
         code = inspect.getsource(cls)
         attributes = {"code": code}
         return insert_in_registry(

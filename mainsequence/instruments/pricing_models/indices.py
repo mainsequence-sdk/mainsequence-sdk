@@ -22,7 +22,9 @@ Notes
 from __future__ import annotations
 
 import datetime
-from functools import lru_cache
+from collections.abc import Callable, Mapping
+from functools import cache, lru_cache
+from typing import Any
 
 import QuantLib as ql
 
@@ -45,89 +47,148 @@ def clear_index_cache() -> None:
 # Put every supported identifier here with its curve + index construction config.
 # No tenor tokens; we store the QuantLib Period directly.
 
-INDEX_CONFIGS: dict[str, dict] = {
-    _C.get_value(name="REFERENCE_RATE__TIIE_28"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__VALMER_TIIE_28"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),
-        currency=(ql.MXNCurrency() if hasattr(ql, "MXNCurrency") else ql.USDCurrency()),
-        period=ql.Period(28, ql.Days),
-        settlement_days=1,
-        bdc=ql.ModifiedFollowing,
-        end_of_month=False,
-    ),
-    _C.get_value(name="REFERENCE_RATE__TIIE_91"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__VALMER_TIIE_28"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),
-        currency=ql.MXNCurrency(),
-        period=ql.Period(91, ql.Days),
-        settlement_days=1,
-        bdc=ql.ModifiedFollowing,
-        end_of_month=False,
-    ),
-    _C.get_value(name="REFERENCE_RATE__TIIE_182"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__VALMER_TIIE_28"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),
-        currency=ql.MXNCurrency(),
-        period=ql.Period(182, ql.Days),
-        settlement_days=1,
-        bdc=ql.ModifiedFollowing,
-        end_of_month=False,
-    ),
-    # Add more identifiers here as needed.
-    _C.get_value(name="REFERENCE_RATE__TIIE_OVERNIGHT"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__VALMER_TIIE_28"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),
-        currency=ql.MXNCurrency(),
-        period=ql.Period(1, ql.Days),
-        settlement_days=1,
-        bdc=ql.ModifiedFollowing,
-        end_of_month=False,
-    ),
-    _C.get_value(name="REFERENCE_RATE__CETE_28"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__BANXICO_M_BONOS_OTR"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),  # BONOS accrue on Act/360
-        currency=ql.MXNCurrency(),
-        period=ql.Period(28, ql.Days),  # Coupons every 28 days
-        settlement_days=1,  # T+1 in Mexico since May 27–28, 2024
-        bdc=ql.Following,  # “next banking business day” => Following
-        end_of_month=False,  # Irrelevant when scheduling by days
-    ),
-    _C.get_value(name="REFERENCE_RATE__CETE_91"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__BANXICO_M_BONOS_OTR"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),  # BONOS accrue on Act/360
-        currency=ql.MXNCurrency(),
-        period=ql.Period(91, ql.Days),  # Coupons every 28 days
-        settlement_days=1,  # T+1 in Mexico since May 27–28, 2024
-        bdc=ql.Following,  # “next banking business day” => Following
-        end_of_month=False,  # Irrelevant when scheduling by days
-    ),
-    _C.get_value(name="REFERENCE_RATE__CETE_182"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__BANXICO_M_BONOS_OTR"),
-        calendar=(ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()),
-        day_counter=ql.Actual360(),  # BONOS accrue on Act/360
-        currency=ql.MXNCurrency(),
-        period=ql.Period(182, ql.Days),  # Coupons every 182 days
-        settlement_days=1,  # T+1 in Mexico since May 27–28, 2024
-        bdc=ql.Following,  # “next banking business day” => Following
-        end_of_month=False,  # Irrelevant when scheduling by days
-    ),
-    _C.get_value(name="REFERENCE_RATE__USD_SOFR"): dict(
-        curve_uid=_C.get_value(name="ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"),
+# ----------------------------- Lazy + memoized constant resolver --------------------------- #
+
+@cache
+def _const(name: str) -> str:
+    """Resolve a named constant (UID) once per process."""
+    return _C.get_value(name=name)
+
+
+# ----------------------------- Tiny helpers (keep it DRY) --------------------------------- #
+
+def _mx_calendar() -> ql.Calendar:
+    return ql.Mexico() if hasattr(ql, "Mexico") else ql.TARGET()
+
+def _mx_currency() -> ql.Currency:
+    return ql.MXNCurrency() if hasattr(ql, "MXNCurrency") else ql.USDCurrency()
+
+
+# ----------------------------- Config templates (no API calls here) ----------------------- #
+# Each template is a factory returning the final dict when invoked.
+
+def _tiie(period_days: int) -> Callable[[], dict[str, Any]]:
+    def factory() -> dict[str, Any]:
+        return dict(
+            curve_uid=_const("ZERO_CURVE__VALMER_TIIE_28"),
+            calendar=_mx_calendar(),
+            day_counter=ql.Actual360(),
+            currency=_mx_currency(),
+            period=ql.Period(period_days, ql.Days),
+            settlement_days=1,
+            bdc=ql.ModifiedFollowing,
+            end_of_month=False,
+        )
+    return factory
+
+def _cete(period_days: int) -> Callable[[], dict[str, Any]]:
+    def factory() -> dict[str, Any]:
+        return dict(
+            curve_uid=_const("ZERO_CURVE__BANXICO_M_BONOS_OTR"),
+            calendar=_mx_calendar(),
+            day_counter=ql.Actual360(),     # BONOS accrue on Act/360
+            currency=_mx_currency(),
+            period=ql.Period(period_days, ql.Days),
+            settlement_days=1,              # T+1
+            bdc=ql.Following,               # “next banking business day”
+            end_of_month=False,             # Irrelevant for day-based schedules
+        )
+    return factory
+
+_INDEX_TEMPLATES: dict[str, Callable[[], dict[str, Any]]] = {
+    # Symbolic name  -> factory (resolved lazily)
+    "REFERENCE_RATE__TIIE_28": _tiie(28),
+    "REFERENCE_RATE__TIIE_91": _tiie(91),
+    "REFERENCE_RATE__TIIE_182": _tiie(182),
+    "REFERENCE_RATE__TIIE_OVERNIGHT": _tiie(1),
+
+    "REFERENCE_RATE__CETE_28": _cete(28),
+    "REFERENCE_RATE__CETE_91": _cete(91),
+    "REFERENCE_RATE__CETE_182": _cete(182),
+
+    "REFERENCE_RATE__USD_SOFR": lambda: dict(
+        curve_uid=_const("ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"),
         calendar=ql.UnitedStates(ql.UnitedStates.FederalReserve),
         day_counter=ql.Actual360(),
         currency=ql.USDCurrency(),
-        period=ql.Period(6, ql.Months),  # Semiannual coupons
-        settlement_days=1,  # T+1
+        period=ql.Period(6, ql.Months),   # Semiannual coupons
+        settlement_days=1,                # T+1
         bdc=ql.ModifiedFollowing,
-        end_of_month=False,  # Irrelevant when scheduling by days
+        end_of_month=False,
     ),
 }
+
+
+# ----------------------------- Lazy, dict-like view over configs -------------------------- #
+
+class _LazyIndexConfigs(Mapping[str, dict[str, Any]]):
+    """
+    Read-only mapping that resolves entries on demand and caches results.
+
+    - External keys (Mapping interface): resolved UIDs (the values of _C.get_value(...)).
+    - Convenience access: .get_by_name("REFERENCE_RATE__...") also supported.
+    - Iteration materializes all entries once (still avoids import-time API calls).
+    """
+    def __init__(self, templates: dict[str, Callable[[], dict[str, Any]]]):
+        self._templates = templates
+        self._uid_by_name: dict[str, str] = {}      # symbolic name -> UID
+        self._cfg_by_uid: dict[str, dict[str, Any]] = {}
+
+    def _materialize_by_name(self, name: str) -> tuple[str, dict[str, Any]]:
+        # Resolve UID once
+        uid = self._uid_by_name.get(name)
+        if uid is None:
+            uid = _const(name)                       # single API call per name (memoized)
+            self._uid_by_name[name] = uid
+
+        # Build config once
+        cfg = self._cfg_by_uid.get(uid)
+        if cfg is None:
+            cfg = self._templates[name]()            # may resolve other constants (also memoized)
+            self._cfg_by_uid[uid] = cfg
+        return uid, cfg
+
+    # ----- Public helpers -----
+
+    def get_by_name(self, name: str) -> dict[str, Any]:
+        """Fetch config by symbolic name (no need to call _C.get_value at site)."""
+        _, cfg = self._materialize_by_name(name)
+        return cfg
+
+    # ----- Mapping interface (keys are UIDs) -----
+
+    def __getitem__(self, uid: str) -> dict[str, Any]:
+        # Fast path: already cached by UID
+        cfg = self._cfg_by_uid.get(uid)
+        if cfg is not None:
+            return cfg
+
+        # Otherwise, resolve templates until we find the matching UID
+        for name in self._templates:
+            # Skip names that already resolved to a different UID
+            known_uid = self._uid_by_name.get(name)
+            if known_uid is not None:
+                if known_uid == uid:
+                    return self._cfg_by_uid[uid]
+                continue
+            resolved_uid, cfg = self._materialize_by_name(name)
+            if resolved_uid == uid:
+                return cfg
+        raise KeyError(uid)
+
+    def __iter__(self):
+        # Realize all on-demand for full iteration
+        for name in self._templates:
+            self._materialize_by_name(name)
+        return iter(self._cfg_by_uid)
+
+    def __len__(self) -> int:
+        return len(self._templates)
+
+
+# ----------------------------- Exported (drop-in) mapping --------------------------------- #
+
+INDEX_CONFIGS = _LazyIndexConfigs(_INDEX_TEMPLATES)
 
 
 # ----------------------------- Utilities ----------------------------- #

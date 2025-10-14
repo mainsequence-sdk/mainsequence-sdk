@@ -6,7 +6,9 @@ from pathlib import Path
 
 from mainsequence.virtualfundbuilder.__main__ import get_pod_configuration
 
+from .utils import get_vfb_logger
 
+logger = get_vfb_logger()
 def load_env():
 
     assert (
@@ -50,4 +52,7 @@ if RUNS_IN_JOB:
     pass
 
 if runs_in_main_process():
-    get_pod_configuration()
+    if not os.environ.get("IGNORE_MS_AGENT","false").lower() == "true":
+        get_pod_configuration()
+    else:
+        logger.info("Ignoring MS agent registration")

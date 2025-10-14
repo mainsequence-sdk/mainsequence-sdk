@@ -2256,6 +2256,9 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
     is_production: bool
     pod: int
 
+    @classmethod
+    def create(self,*args, **kwargs):
+        return super().create(*args, **kwargs)
 
 def create_configuration_for_strategy(json_payload: dict, timeout=None):
     url = TDAG_ENDPOINT + "/orm/api/tdag-gpt/create_configuration_for_strategy/"

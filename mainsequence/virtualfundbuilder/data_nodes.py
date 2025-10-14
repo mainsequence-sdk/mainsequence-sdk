@@ -145,7 +145,7 @@ class PortfolioStrategy(DataNode):
                 including assets, execution parameters, and backtesting weights.
             is_live (bool): Flag indicating whether the strategy is running in live mode.
         """
-
+        self.portfolio_build_configuration=portfolio_build_configuration
         self.execution_configuration = portfolio_build_configuration.execution_configuration
         self.backtesting_weights_config = (
             portfolio_build_configuration.backtesting_weights_configuration
