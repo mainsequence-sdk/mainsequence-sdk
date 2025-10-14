@@ -295,6 +295,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         if result["asset_time_statistics"] is not None:
             result["asset_time_statistics"] = _recurse_to_datetime(result["asset_time_statistics"])
 
+
         hu = LocalTimeSeriesHistoricalUpdate(
             **result["historical_update"],
             update_statistics=UpdateStatistics(
@@ -1345,8 +1346,10 @@ class UpdateStatistics(BaseModel):
     max_time_index_value: datetime.datetime | None = None  # does not include filter applicable for 1d index
     asset_list: list | None = None
     limit_update_time: datetime.datetime | None = None  # flag to limit the update of data node
+
     _max_time_in_update_statistics: datetime.datetime | None = None  # include filter
     _initial_fallback_date: datetime.datetime | None = None
+
 
     # when working with DuckDb and column based storage we want to have also stats by  column
     multi_index_column_stats: dict[str, Any] | None = None
@@ -1440,6 +1443,7 @@ class UpdateStatistics(BaseModel):
         # Other attributes
         print(f"  max_time_index_value: {self.max_time_index_value}")
         print(f"  _max_time_in_update_statistics: {self._max_time_in_update_statistics}")
+
 
 
     def asset_identifier(self):
@@ -1686,6 +1690,7 @@ class UpdateStatistics(BaseModel):
     ):
         self.asset_list = asset_list
         new_update_statistics = self.asset_time_statistics
+
         if asset_list is not None or unique_identifier_list is not None:
             new_update_statistics, _max_time_in_asset_time_statistics = self._get_update_statistics(
                 unique_identifier_list=unique_identifier_list,
@@ -1704,6 +1709,8 @@ class UpdateStatistics(BaseModel):
                 if k in new_update_statistics.keys()
             }
 
+
+
         du = UpdateStatistics(
             asset_time_statistics=new_update_statistics,
             max_time_index_value=self.max_time_index_value,
@@ -1714,8 +1721,7 @@ class UpdateStatistics(BaseModel):
         du._initial_fallback_date = init_fallback_date
         return du
 
-    def is_empty(self):
-        return self.max_time_index_value is None and self._max_time_in_update_statistics is None
+
 
     def __getitem__(self, key: str) -> Any:
         if self.asset_time_statistics is None:
@@ -1759,8 +1765,8 @@ class UpdateStatistics(BaseModel):
         return self.asset_time_statistics.items()
 
     def filter_df_by_latest_value(self, df: pd.DataFrame) -> pd.DataFrame:
-        if self.is_empty():
-            return df
+
+
 
             # Single-index time series fallback
         if (

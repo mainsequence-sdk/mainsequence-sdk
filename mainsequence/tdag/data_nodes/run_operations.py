@@ -276,7 +276,7 @@ class UpdateRunner:
 
                 # If filtering left nothing, we're done.
                 if temp_df.empty:
-                    self.logger.info(f"No new data to persist for {self.ts} after filtering.")
+                    self.logger.warning(f"No new data to persist for {self.ts} after filtering.")
                     return temp_df
 
                 # Validate the structure and content of the DataFrame

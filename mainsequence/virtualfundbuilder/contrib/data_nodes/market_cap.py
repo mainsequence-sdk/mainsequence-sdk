@@ -1,3 +1,4 @@
+import datetime
 from datetime import timedelta
 from typing import Union
 
@@ -58,15 +59,18 @@ class FixedWeights(WeightsBase, DataNode):
 
     def update(self) -> pd.DataFrame:
         us: msc.UpdateStatistics = self.update_statistics
-        if self.update_statistics.is_empty() == False:
+
+
+
+        if self.get_df_between_dates().empty == False:
             return pd.DataFrame()  # No need to store more than one constant weight
 
         df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(
             columns={"weight": "signal_weight"}
         )
         df = df.set_index(["unique_identifier"])
-
-        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START]).rename_axis(
+        #offset 1 day to avoid last filter
+        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START+datetime.timedelta(days=1)]).rename_axis(
             ["time_index", "unique_identifier"]
         )
 
