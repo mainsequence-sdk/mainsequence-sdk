@@ -64,7 +64,7 @@ class PortfolioInterface:
         interface.portfolio_strategy_data_node = portfolio_node
         interface.portfolio_markets_config=portfolio_markets_config
         interface.portfolio_build_configuration=portfolio_node.portfolio_build_configuration
-
+        interface.logger = get_vfb_logger()
         return interface
 
     @classmethod
@@ -82,7 +82,7 @@ class PortfolioInterface:
         interface = cls(portfolio_config_template=None, is_portfolio_from_df=True)
         interface._is_initialized = True
         interface.portfolio_strategy_data_node = portfolio_node
-
+        interface.logger = get_vfb_logger()
         interface.run(
             patch_build_configuration=False,
             debug_mode=debug_mode,
