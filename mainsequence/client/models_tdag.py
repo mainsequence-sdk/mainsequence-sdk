@@ -21,7 +21,6 @@ import yaml
 from cachetools import TTLCache, cachedmethod
 from pydantic import BaseModel, Field, field_validator
 
-from mainsequence.client import exceptions
 from mainsequence.logconf import logger
 
 from .base import TDAG_ENDPOINT, BaseObjectOrm, BasePydanticModel
@@ -198,12 +197,7 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
         return self.__class__.patch_by_id(id, *args, **kwargs)
 
 
-class ColumnMetaData(BasePydanticModel):
-    source_config_id: int | None = Field(None, description="FK to SourceTableConfiguration")
-    column_name: str = Field(..., max_length=63, description="Name of the column")
-    dtype: str = Field(..., max_length=100, description="Data type of the column")
-    label: str = Field(..., max_length=255, description="Human-readable label")
-    description: str = Field(..., description="Detailed description")
+
 
 
 class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
@@ -444,7 +438,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
 
         depth_df = pd.DataFrame(r.json())
 
-        if depth_df.empty == False:
+        if not depth_df.empty:
             # hot fix for compatiblity with backend
             depth_df = depth_df.rename(columns={"local_time_serie_id": "data_node_update_id"})
 
@@ -702,7 +696,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def _break_pandas_dataframe(cls, data_frame: pd.DataFrame, time_index_name: str | None = None):
-        if time_index_name == None:
+        if time_index_name is  None:
             time_index_name = data_frame.index.names[0]
             if time_index_name is None:
                 time_index_name = "time_index"
@@ -766,7 +760,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
             grouped_dates=grouped_dates,
         )
 
-        min_d, last_time_index_value = (
+        _, last_time_index_value = (
             global_stats["_GLOBAL_"]["min"],
             global_stats["_GLOBAL_"]["max"],
         )
@@ -1030,10 +1024,12 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                     metadata_id=self.id,
                 )
                 self.sourcetableconfiguration = stc
-            except AlreadyExist:
-
+            except AlreadyExist as err:
                 if not overwrite:
-                    raise NotImplementedError("TODO Needs to remove values per asset")
+                    # Feature not implemented yet → make the causal link explicit
+                    raise NotImplementedError(
+                        "Removing values per asset when overwrite=False is not implemented yet."
+                    ) from err
                     # Filter the data based on time_index_name and last_time_index_value
 
     def get_data_between_dates_from_api(
@@ -1092,7 +1088,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
 
         unique_identifier_range_map = copy.deepcopy(unique_identifier_range_map)
         if unique_identifier_range_map is not None:
-            for unique_identifier, date_info in unique_identifier_range_map.items():
+            for _, date_info in unique_identifier_range_map.items():
                 # Convert start_date if present
                 if "start_date" in date_info and isinstance(
                     date_info["start_date"], datetime.datetime
@@ -1254,11 +1250,11 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
 
     def is_scheduler_running_in_process(self):
         # test call
-        if self.is_running == True and hasattr(self, "api_address"):
+        if self.is_running and hasattr(self, "api_address"):
             # verify  scheduler host is the same
             if (
                 self.api_address == get_network_ip()
-                and is_process_running(self.running_process_pid) == True
+                and is_process_running(self.running_process_pid)
             ):
                 return True
         return False
@@ -1289,7 +1285,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
             # add a cancellation event, we can check it in smaller intervals
             for _ in range(run_interval):
                 # could check for a stop event here if not daemon
-                if self._stop_heart_beat == True:
+                if self._stop_heart_beat:
                     return
                 time.sleep(1)
 
@@ -1379,7 +1375,7 @@ class UpdateStatistics(BaseModel):
                 else value.replace(tzinfo=datetime.timezone.utc)
             )
 
-        if isinstance(value, (int, float)):
+        if isinstance(value, (int| float)):
             v = float(value)
             # seconds / ms / µs / ns heuristics by magnitude
             if v > 1e17:  # ns
@@ -1450,7 +1446,7 @@ class UpdateStatistics(BaseModel):
         return list(self.asset_time_statistics.keys())
 
     def get_max_time_in_update_statistics(self):
-        if hasattr(self, "_max_time_in_update_statistics") == False:
+        if not hasattr(self, "_max_time_in_update_statistics") :
             self._max_time_in_update_statistics = (
                 self.max_time_index_value or self._initial_fallback_date
             )
@@ -1487,7 +1483,6 @@ class UpdateStatistics(BaseModel):
                 dt = dt + extra_time_delta
             return dt
 
-        target_cols = fallback.keys() if column_filter is None else column_filter
 
         range_map = {
             col: {
@@ -2076,7 +2071,6 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
 
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
-        data = r.json()
 
         return cls(**r.json())
 
@@ -2104,8 +2098,9 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
             stc = kwargs["data_node_update"].data_node_storage.sourcetableconfiguration
 
             df = TimeScaleInterface.direct_data_from_db(
-                connection_uri=self.related_resource.get_connection_uri(),
                 *args,
+                connection_uri=self.related_resource.get_connection_uri(),
+
                 **kwargs,
             )
             df = set_types_in_table(df, stc.column_dtypes_map)
@@ -2116,8 +2111,9 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
     def insert_data_into_table(self, *args, **kwargs):
         if self.has_direct_postgres_connection():
             TimeScaleInterface.process_and_update_table(
-                data_source=self.related_resource,
                 *args,
+                data_source=self.related_resource,
+
                 **kwargs,
             )
 
@@ -2226,7 +2222,6 @@ class TimeScaleDB(DataSource):
         unique_identifier_list: list[str] | None = None,
     ) -> pd.DataFrame:
 
-        metadata = data_node_update.data_node_storage
 
         df = data_node_update.get_data_between_dates_from_api(
             start_date=start_date,
@@ -2335,7 +2330,7 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):
-        bucket_name if bucket_name else "default_bucket"
+        bucket_name=bucket_name if bucket_name else "default_bucket"
         return cls.get_or_create(
             filepath=filepath,
             name=name,
@@ -2447,7 +2442,7 @@ def _norm_value(v: Any) -> Any:
         return getattr(v, "id", v)
 
     # Common iterables → sorted tuples to ignore order in queries like name__in
-    if isinstance(v, (set, list, tuple)):
+    if isinstance(v, (set| list| tuple)):
         # Convert nested items too, just in case
         return tuple(sorted(_norm_value(x) for x in v))
 
@@ -2463,7 +2458,7 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
     items = []
     for k, v in kwargs.items():
         # Special-case a big `name__in` so you don’t produce huge keys.
-        if k == "name__in" and isinstance(v, (list, tuple, set)):
+        if k == "name__in" and isinstance(v, (list | tuple | set)):
             items.append((k, tuple(sorted(str(x) for x in v))))
         else:
             items.append((k, _norm_value(v)))

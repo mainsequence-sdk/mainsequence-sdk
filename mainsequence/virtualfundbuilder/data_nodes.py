@@ -1,3 +1,4 @@
+import ast
 import copy
 import json
 import os
@@ -10,7 +11,7 @@ import pytz
 
 import mainsequence.client as msc
 from mainsequence.client import Asset, AssetCategory
-from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
+from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
 from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
@@ -92,40 +93,53 @@ class PortfolioFromDF(DataNode):
         if df.empty:
             return pd.DataFrame()
 
-        assert all([c in All_PORTFOLIO_COLUMNS for c in df.columns])
-        if self.update_statistics.max_time_index_value is not None:
-            df = df[df.index >= self.update_statistics.max_time_index_value]
-        if df.empty:
-            return pd.DataFrame()
+        # Ensure columns are known
+        assert all(c in All_PORTFOLIO_COLUMNS for c in df.columns)
 
-        for c in WEIGHTS_TO_PORTFOLIO_COLUMNS.keys():
+        # Optional time filter
+        mti = getattr(self.update_statistics, "max_time_index_value", None)
+        if mti is not None:
+            df = df[df.index >= mti]
+            if df.empty:
+                return pd.DataFrame()
 
-            def _to_json_dict(v):
-                # Normalize missing to empty dict
-                if v is None or (isinstance(v, float) and np.isnan(v)):
+        # Normalizer: value -> canonical JSON string of a dict
+        def _to_json_dict(v, colname):
+            # Normalize missing/empty
+            if pd.isna(v):
+                v = {}
+            elif isinstance(v, str):
+                s = v.strip()
+                if s == "":
                     v = {}
-
-                # If already a JSON string, parse; if a Python-literal string, literal_eval
-                if isinstance(v, str):
+                else:
+                    # Try JSON first, then Python literal
                     try:
-                        v = json.loads(v)
-                    except Exception:
+                        v = json.loads(s)
+                    except json.JSONDecodeError:
                         try:
-                            v = ast.literal_eval(v)
-                        except Exception:
-                            raise ValueError(f"Value in '{col}' is not JSON/dict: {v!r}")
+                            v = ast.literal_eval(s)
+                        except (ValueError, SyntaxError) as err:
+                            # Preserve the original cause for clearer tracebacks
+                            raise ValueError(
+                                f"Value in '{colname}' is not JSON/dict: {v!r}"
+                            ) from err
 
-                if not isinstance(v, dict):
-                    raise ValueError(
-                        f"Value in '{col}' is not a dict after normalization (got {type(v)})."
-                    )
+            if not isinstance(v, dict):
+                raise ValueError(
+                    f"Value in '{colname}' is not a dict after normalization (got {type(v)})."
+                )
 
-                # Dump to canonical JSON (and verify round-trip)
-                s = json.dumps(v, ensure_ascii=False, sort_keys=True)
-                json.loads(s)  # will raise if invalid
-                return s
+            # Canonical JSON + round-trip sanity check
+            out = json.dumps(v, ensure_ascii=False, sort_keys=True)
+            json.loads(out)
+            return out
 
-            df[c] = df[c].apply(_to_json_dict)
+        # Apply to expected weight columns
+        for c in WEIGHTS_TO_PORTFOLIO_COLUMNS.keys():
+            if c not in df.columns:
+                raise KeyError(f"Missing expected column '{c}' in DataFrame.")
+            df[c] = df[c].apply(lambda v, col=c: _to_json_dict(v, col))
 
         return df
 
@@ -425,7 +439,6 @@ rebalance details:"""
             pd.DataFrame: Updated portfolio values with and without fees and returns.
         """
         last_portfolio = 1
-        last_portfolio_minus_fees = 1
         if self.update_statistics.max_time_index_value is not None:
             last_obs = self.get_df_between_dates(
                 start_date=self.update_statistics.max_time_index_value

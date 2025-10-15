@@ -60,11 +60,10 @@ class FixedWeights(WeightsBase, DataNode):
         return {}
 
     def update(self) -> pd.DataFrame:
-        us: msc.UpdateStatistics = self.update_statistics
 
 
 
-        if self.get_df_between_dates().empty == False:
+        if not self.get_df_between_dates().empty:
             return pd.DataFrame()  # No need to store more than one constant weight
 
         df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(
@@ -95,7 +94,7 @@ class MarketCap(WeightsBase, DataNode):
         self,
         volatility_control_configuration: VolatilityControlConfiguration | None,
         minimum_atvr_ratio: float = 0.1,
-        rolling_atvr_volume_windows: list[int] = [60, 360],
+        rolling_atvr_volume_windows: list[int] | None = None,
         frequency_trading_percent: float = 0.9,
         source_frequency: str = "1d",
         min_number_of_assets: int = 3,
@@ -110,6 +109,9 @@ class MarketCap(WeightsBase, DataNode):
             source_frequency (str): Frequency of market cap source.
             num_top_assets (Optional[int]): Number of largest assets by market cap to use for signals. Leave empty to include all assets.
         """
+        if rolling_atvr_volume_windows is None:
+            rolling_atvr_volume_windows=[60, 360]
+
         super().__init__(*args, **kwargs)
         self.source_frequency = source_frequency
         self.num_top_assets = num_top_assets or 50000

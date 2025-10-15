@@ -76,8 +76,9 @@ class InstrumentModel(BaseModel, JSONMixin):
         if isinstance(data, str):
             try:
                 data = json.loads(data)
-            except Exception as e:
-                raise ValueError(f"Invalid JSON for instrument: {e}")
+            except json.JSONDecodeError as err:
+                # Keep the original cause so stacktraces show *why* parsing failed
+                raise ValueError("Invalid JSON for instrument.") from err
 
         if not isinstance(data, dict):
             raise ValueError("Instrument payload must be dict or JSON string.")
