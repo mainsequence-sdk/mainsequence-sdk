@@ -309,7 +309,7 @@ class PortfolioStrategy(DataNode):
             pd.DataFrame: Prepared backtesting weights.
         """
         # Filter for dates after latest_value
-        if self.update_statistics.is_empty() == False:
+        if self.update_statistics.max_time_index_value is not None:
             weights = weights[weights.index > self.update_statistics.max_time_index_value]
         if weights.empty:
             return pd.DataFrame()
@@ -329,7 +329,7 @@ class PortfolioStrategy(DataNode):
             ]
 
         # Prepare the weights before by using the last weights used for the portfolio and the new weights
-        if self.update_statistics.is_empty() == False:
+        if self.update_statistics.max_time_index_value is not None:
             last_weights = self._get_last_weights()
             weights = pd.concat([last_weights, weights], axis=0).fillna(0)
 
@@ -426,7 +426,7 @@ rebalance details:"""
         """
         last_portfolio = 1
         last_portfolio_minus_fees = 1
-        if self.update_statistics.is_empty() == False:
+        if self.update_statistics.max_time_index_value is not None:
             last_obs = self.get_df_between_dates(
                 start_date=self.update_statistics.max_time_index_value
             )
@@ -605,7 +605,7 @@ rebalance details:"""
             ),
         )
 
-        if self.update_statistics.is_empty() == False:
+        if self.update_statistics.max_time_index_value is not None:
             interpolated_prices = interpolated_prices[
                 interpolated_prices.index.get_level_values("time_index")
                 > self.update_statistics.max_time_index_value
@@ -639,7 +639,7 @@ rebalance details:"""
         portfolio = self._calculate_portfolio_values(portfolio_returns)
 
         # prepare for storage
-        if len(portfolio) > 0 and self.update_statistics.is_empty() == False:
+        if len(portfolio) > 0 and self.update_statistics.max_time_index_value is not None:
             portfolio = portfolio[portfolio.index > self.update_statistics.max_time_index_value]
 
         portfolio = self._add_serialized_weights(portfolio, weights)
@@ -691,9 +691,9 @@ rebalance details:"""
         if len(portfolio) == 0:
             return portfolio
 
-        calendar_schedule = self.rebalancer.calendar.schedule(
-            portfolio.index.min(), portfolio.index.max()
-        )
+        # calendar_schedule = self.rebalancer.calendar.schedule(
+        #     portfolio.index.min(), portfolio.index.max()
+        # )
         portfolio.index = pd.to_datetime(portfolio.index)
         portfolio["close_time"] = portfolio.index.strftime("%Y-%m-%d %H:%M:%S")
         portfolio = (

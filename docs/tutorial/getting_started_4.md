@@ -1,5 +1,5 @@
 
-# Getting Started 4: Hydrating the Platform
+# Getting Started 4: Hydrating the Platform Markets-I
 
 After you sign up, the Main Sequence platform starts **empty**. Its power comes from building **data workflows at scale**, so one of the first tasks is to **integrate your data sources**.
 

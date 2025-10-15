@@ -1628,13 +1628,11 @@ class PortfolioAbout(TypedDict):
     rebalance_strategy_name: str
 
 
-class PortfolioMixin:
+
+class Portfolio(BaseObjectOrm, BasePydanticModel):
     id: int | None = None
-    is_active: bool = False
     data_node_update: Optional["DataNodeUpdate"]
     signal_data_node_update: Optional["DataNodeUpdate"]
-    follow_account_rebalance: bool = False
-    comparable_portfolios: list[int] | None = None
     backtest_table_price_column_name: str | None = Field(None, max_length=20)
     tags: list["PortfolioTags"] | None = None
     calendar: Optional["Calendar"]
@@ -1660,7 +1658,6 @@ class PortfolioMixin:
         portfolio_name: str,
         data_node_update_id: int,
         signal_data_node_update_id: int,
-        is_active: bool,
         calendar_name: str,
         target_portfolio_about: PortfolioAbout,
         backtest_table_price_column_name: str,
@@ -1671,7 +1668,6 @@ class PortfolioMixin:
         # Build the payload with the required arguments.
         payload_data = {
             "portfolio_name": portfolio_name,
-            "is_active": is_active,
             "data_node_update_id": data_node_update_id,
             "signal_data_node_update_id": signal_data_node_update_id,
             # Using the same ID for local_signal_time_serie_id as specified.
@@ -1732,11 +1728,6 @@ class PortfolioMixin:
         if self.data_node_update is None:
             print("this portfolio does not have a weights table")
         self.data_node_update
-
-
-class Portfolio(PortfolioMixin, BaseObjectOrm, BasePydanticModel):
-    pass
-
 
 class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
     id: int

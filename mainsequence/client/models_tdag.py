@@ -1768,11 +1768,15 @@ class UpdateStatistics(BaseModel):
 
 
 
-            # Single-index time series fallback
-        if (
-            self.asset_time_statistics is None or "unique_identifier" not in df.index.names
-        ) and self.max_time_index_value is not None:
-            return df[df.index >= self.max_time_index_value]
+        # Single-index time series fallback
+        if "unique_identifier" not in df.index.names:
+            if self.max_time_index_value is not None:
+                df = df[df.index > self.max_time_index_value]
+                return df
+            else:
+                return df
+
+
 
         names = df.index.names
         time_level = names[0]

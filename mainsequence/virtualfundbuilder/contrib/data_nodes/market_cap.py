@@ -41,6 +41,11 @@ class FixedWeights(WeightsBase, DataNode):
     def maximum_forward_fill(self):
         return timedelta(days=200 * 365)  # Always forward-fill to avoid filling the DB
 
+    def get_explanation(self):
+        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
+        return info
+
+
     def get_asset_list(self) -> None | list:
         asset_list = msc.Asset.filter(
             unique_identifier__in=[
@@ -49,10 +54,7 @@ class FixedWeights(WeightsBase, DataNode):
         )
         return asset_list
 
-    def get_explanation(self):
 
-        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
-        return info
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
