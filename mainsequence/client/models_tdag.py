@@ -1762,7 +1762,7 @@ class UpdateStatistics(BaseModel):
     def filter_df_by_latest_value(self, df: pd.DataFrame) -> pd.DataFrame:
 
 
-
+        a=5
         # Single-index time series fallback
         if "unique_identifier" not in df.index.names:
             if self.max_time_index_value is not None:
