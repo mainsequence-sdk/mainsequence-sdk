@@ -1899,6 +1899,9 @@ class TargetRebalance(BaseModel):
     def rebalance_asset_map(self):
         return {e.asset.id: e.asset for e in self.execution_target}
 
+class InstrumentsConfiguration(BaseObjectOrm,BasePydanticModel):
+    discount_curves_storage_node:int
+    reference_rates_fixings_storage_node:int
 
 class VirtualFund(BaseObjectOrm, BasePydanticModel):
     id: float | None = None
@@ -2211,3 +2214,5 @@ class BaseFuturesAccount(Account):
     fee_burn: bool = False
     can_deposit: bool = False
     can_withdraw: bool = False
+
+
