@@ -24,7 +24,7 @@ class SimulatedPrices(DataNode):
     def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
         """
         Args:
-            asset_list (ModelList): List of asset objects.
+            simulation_config (PriceSimulConfig): Configuration for the price simulation.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
@@ -82,9 +82,9 @@ Visual Studio Code will usually help you auto-import missing dependencies and un
 Notice that we **ignore** `asset_list` when computing the **storage hash** with `ignore_from_storage_hash=True`. This is intentional: you often want **all prices**—even from different update processes—to be stored in the **same table**.
 
 ---
-## Lets Dive Deeper into the  DataNode code:
+## Lets dive deeper into the DataNode code:
 
-## Two Important Methods
+### Two Important Methods
 
 ### 1) `get_table_metadata`
 
