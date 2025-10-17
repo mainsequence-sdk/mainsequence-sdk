@@ -158,22 +158,35 @@ class _LazyIndexConfigs(Mapping[str, dict[str, Any]]):
     # ----- Mapping interface (keys are UIDs) -----
 
     def __getitem__(self, uid: str) -> dict[str, Any]:
-        # Fast path: already cached by UID
+        # Fast path
         cfg = self._cfg_by_uid.get(uid)
         if cfg is not None:
             return cfg
 
-        # Otherwise, resolve templates until we find the matching UID
         for name in self._templates:
-            # Skip names that already resolved to a different UID
             known_uid = self._uid_by_name.get(name)
             if known_uid is not None:
                 if known_uid == uid:
-                    return self._cfg_by_uid[uid]
+                    # make sure the cfg is materialized
+                    cfg = self._cfg_by_uid.get(uid)
+                    if cfg is None:
+                        # build now in case only the UID was cached
+                        _, cfg = self._materialize_by_name(name)
+                    return cfg
                 continue
-            resolved_uid, cfg = self._materialize_by_name(name)
+
+            # NEW: guard per-template resolution so one bad template
+            # doesn’t abort the entire scan for a different UID
+            try:
+                resolved_uid, cfg = self._materialize_by_name(name)
+            except KeyError:
+                # e.g., missing constant for this template; skip it
+                continue
+
             if resolved_uid == uid:
                 return cfg
+
+        # not found among templates
         raise KeyError(uid)
 
     def __iter__(self):

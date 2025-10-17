@@ -119,6 +119,7 @@ class BaseObjectOrm:
         "MarketsTimeSeriesDetails": "data_sources/markets-time-series-details",
         "AssetCategory": "assets/asset-category",
         "AssetTranslationTable": "assets/asset-translation-tables",
+        "InstrumentsConfiguration":"assets/instruments-configuration",
         # TDAG
         "Scheduler": "ts_manager/scheduler",
         "MultiIndexMetadata": "orm/multi_index_metadata",

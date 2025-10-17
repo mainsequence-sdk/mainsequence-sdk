@@ -8,7 +8,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import asdict
 from functools import wraps
-from typing import Any, Union
+from typing import Any, Union,Optional
 
 import cloudpickle
 import numpy as np
@@ -119,9 +119,10 @@ class DataAccessMixin:
         )
         return repr
 
-    def get_last_observation(self, asset_list: list[ms_client.AssetMixin]):
+    def get_last_observation(self, asset_list: Optional[list[ms_client.AssetMixin]]=None):
         update_statistics = self.get_update_statistics()
-        update_statistics = update_statistics.update_assets(asset_list=asset_list)
+        if asset_list is not None:
+            update_statistics = update_statistics.update_assets(asset_list=asset_list)
         update_range_map = update_statistics.get_update_range_map_great_or_equal()
         last_observation = self.get_ranged_data_per_asset(update_range_map)
         return last_observation

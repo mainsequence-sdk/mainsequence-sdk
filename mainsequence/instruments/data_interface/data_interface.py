@@ -324,7 +324,10 @@ class MSInterface:
         from mainsequence.tdag import APIDataNode
         instrument_configuration=msc.InstrumentsConfiguration.filter()[0]
 
-        data_node = APIDataNode.build_from_identifier(identifier=DISCOUNT_CURVES_TABLE)
+        if instrument_configuration.discount_curves_storage_node is None:
+            raise Exception("discount_curves_storage_node needs to be set in https://main-sequence.app/instruments/config/")
+
+        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.discount_curves_storage_node)
 
         # for test purposes only get lats observations
         use_last_observation = (
@@ -375,10 +378,13 @@ class MSInterface:
         from mainsequence.logconf import logger
         from mainsequence.tdag import APIDataNode
 
-        data_node = APIDataNode.build_from_identifier(identifier=REFERENCE_RATES_FIXING_TABLE)
+        instrument_configuration = msc.InstrumentsConfiguration.filter()[0]
+        if instrument_configuration.reference_rates_fixings_storage_node is None:
+            raise Exception("reference_rates_fixings_storage_node needs to be set in https://main-sequence.app/instruments/config/")
 
-        start_date = datetime.datetime(2024, 9, 10, tzinfo=pytz.utc)
-        end_date = datetime.datetime(2025, 9, 17, tzinfo=pytz.utc)
+        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.reference_rates_fixings_storage_node)
+
+
 
         fixings_df = data_node.get_ranged_data_per_asset(
             range_descriptor={
