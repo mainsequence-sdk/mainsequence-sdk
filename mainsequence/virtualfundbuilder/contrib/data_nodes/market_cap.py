@@ -1,3 +1,4 @@
+import datetime
 from datetime import timedelta
 from typing import Union
 
@@ -40,6 +41,11 @@ class FixedWeights(WeightsBase, DataNode):
     def maximum_forward_fill(self):
         return timedelta(days=200 * 365)  # Always forward-fill to avoid filling the DB
 
+    def get_explanation(self):
+        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
+        return info
+
+
     def get_asset_list(self) -> None | list:
         asset_list = msc.Asset.filter(
             unique_identifier__in=[
@@ -48,25 +54,24 @@ class FixedWeights(WeightsBase, DataNode):
         )
         return asset_list
 
-    def get_explanation(self):
 
-        info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
-        return info
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
 
     def update(self) -> pd.DataFrame:
-        us: msc.UpdateStatistics = self.update_statistics
-        if self.update_statistics.is_empty() == False:
+
+
+
+        if not self.get_df_between_dates().empty:
             return pd.DataFrame()  # No need to store more than one constant weight
 
         df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(
             columns={"weight": "signal_weight"}
         )
         df = df.set_index(["unique_identifier"])
-
-        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START]).rename_axis(
+        #offset 1 day to avoid last filter
+        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START+datetime.timedelta(days=1)]).rename_axis(
             ["time_index", "unique_identifier"]
         )
 
@@ -89,7 +94,7 @@ class MarketCap(WeightsBase, DataNode):
         self,
         volatility_control_configuration: VolatilityControlConfiguration | None,
         minimum_atvr_ratio: float = 0.1,
-        rolling_atvr_volume_windows: list[int] = [60, 360],
+        rolling_atvr_volume_windows: list[int] | None = None,
         frequency_trading_percent: float = 0.9,
         source_frequency: str = "1d",
         min_number_of_assets: int = 3,
@@ -104,6 +109,9 @@ class MarketCap(WeightsBase, DataNode):
             source_frequency (str): Frequency of market cap source.
             num_top_assets (Optional[int]): Number of largest assets by market cap to use for signals. Leave empty to include all assets.
         """
+        if rolling_atvr_volume_windows is None:
+            rolling_atvr_volume_windows=[60, 360]
+
         super().__init__(*args, **kwargs)
         self.source_frequency = source_frequency
         self.num_top_assets = num_top_assets or 50000

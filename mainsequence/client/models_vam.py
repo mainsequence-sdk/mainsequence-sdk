@@ -3,7 +3,7 @@ import datetime
 import json
 from decimal import Decimal
 from enum import Enum, IntEnum
-from typing import Any, Optional, Union
+from typing import Any, Optional, TypedDict, Union
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
@@ -174,10 +174,10 @@ def validator_for_string(value):
         # Parse the string to a datetime object
         try:
             return datetime.datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ")
-        except ValueError:
+        except ValueError as err:
             raise ValueError(
-                f"Invalid datetime format: {value}. Expected format is 'YYYY-MM-DDTHH:MM:SSZ'."
-            )
+                f"Invalid datetime format: {value!r}. Expected format is 'YYYY-MM-DDTHH:MM:SSZ'."
+            ) from err
 
 
 def get_model_class(model_class: str):
@@ -1147,7 +1147,7 @@ class AccountMixin(BasePydanticModel):
         change_cash_asset_to_currency_asset: Asset | None = None,
     ):
         nav = self.get_nav()
-        nav, nav_date = nav["nav"], nav["nav_date"]
+        nav, _ = nav["nav"], nav["nav_date"]
         related_expected_asset_exposure_df = latest_holdings.related_expected_asset_exposure_df
         # extract Target Rebalance
 
@@ -1602,7 +1602,7 @@ class Trade(BaseObjectOrm, BasePydanticModel):
             payload=payload,
             time_out=timeout,
         )
-        if r.status_code in [200] == False:
+        if r.status_code !=200:
             raise Exception(f" {r.text()}")
         return cls(**r.json())
 
@@ -1618,7 +1618,7 @@ class PortfolioTags(BasePydanticModel):
     color: str
 
 
-from typing import TypedDict
+
 
 
 class PortfolioAbout(TypedDict):
@@ -1628,13 +1628,11 @@ class PortfolioAbout(TypedDict):
     rebalance_strategy_name: str
 
 
-class PortfolioMixin:
+
+class Portfolio(BaseObjectOrm, BasePydanticModel):
     id: int | None = None
-    is_active: bool = False
     data_node_update: Optional["DataNodeUpdate"]
     signal_data_node_update: Optional["DataNodeUpdate"]
-    follow_account_rebalance: bool = False
-    comparable_portfolios: list[int] | None = None
     backtest_table_price_column_name: str | None = Field(None, max_length=20)
     tags: list["PortfolioTags"] | None = None
     calendar: Optional["Calendar"]
@@ -1660,7 +1658,6 @@ class PortfolioMixin:
         portfolio_name: str,
         data_node_update_id: int,
         signal_data_node_update_id: int,
-        is_active: bool,
         calendar_name: str,
         target_portfolio_about: PortfolioAbout,
         backtest_table_price_column_name: str,
@@ -1671,7 +1668,6 @@ class PortfolioMixin:
         # Build the payload with the required arguments.
         payload_data = {
             "portfolio_name": portfolio_name,
-            "is_active": is_active,
             "data_node_update_id": data_node_update_id,
             "signal_data_node_update_id": signal_data_node_update_id,
             # Using the same ID for local_signal_time_serie_id as specified.
@@ -1711,15 +1707,15 @@ class PortfolioMixin:
         r = make_request(
             s=self.build_session(), loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload
         )
-        if r.status_code in [200] == False:
-            raise Exception(f" {r.text()}")
+        if r.status_code != 200:
+            raise RuntimeError(f"PATCH {url} failed: {r.status_code} {r.text}")
 
     def get_latest_weights(self, timeout=None) -> dict[str, float]:
         url = f"{self.get_object_url()}/{self.id}/get_latest_weights/"
         r = make_request(
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
-        if r.status_code in [200] == False:
+        if r.status_code  !=200:
             raise Exception(f" {r.text()}")
         results = r.json()
         return results["weights"], datetime.datetime.utcfromtimestamp(
@@ -1731,12 +1727,6 @@ class PortfolioMixin:
     ) -> dict[str, float]:
         if self.data_node_update is None:
             print("this portfolio does not have a weights table")
-        self.data_node_update
-
-
-class Portfolio(PortfolioMixin, BaseObjectOrm, BasePydanticModel):
-    pass
-
 
 class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
     id: int

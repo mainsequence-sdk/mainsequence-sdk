@@ -1,5 +1,6 @@
 # src/instruments/base_instrument.py
 import datetime
+import inspect
 import json
 from collections.abc import Mapping
 from typing import Any, ClassVar
@@ -26,6 +27,16 @@ class InstrumentModel(BaseModel, JSONMixin):
 
     _DEFAULT_REGISTRY: ClassVar[dict[str, type["InstrumentModel"]]] = {}
 
+    def __init_subclass__(cls, **kwargs):
+        """Auto-register concrete subclasses for rebuild()."""
+        super().__init_subclass__(**kwargs)
+        if cls is InstrumentModel:
+            return  # don't register the base itself
+        # Skip abstract classes (like Bond once we mark it ABC)
+        if inspect.isabstract(cls):
+            return
+        name = cls.__name__
+        InstrumentModel._DEFAULT_REGISTRY[name] = cls
     # public read access (still not serialized)
     @property
     def valuation_date(self) -> datetime.datetime | None:
@@ -60,12 +71,14 @@ class InstrumentModel(BaseModel, JSONMixin):
         Optional `registry` maps instrument_type -> InstrumentModel subclass.
         Falls back to InstrumentModel._DEFAULT_REGISTRY.
         """
+        import mainsequence.instruments as msi
         # Parse JSON if needed
         if isinstance(data, str):
             try:
                 data = json.loads(data)
-            except Exception as e:
-                raise ValueError(f"Invalid JSON for instrument: {e}")
+            except json.JSONDecodeError as err:
+                # Keep the original cause so stacktraces show *why* parsing failed
+                raise ValueError("Invalid JSON for instrument.") from err
 
         if not isinstance(data, dict):
             raise ValueError("Instrument payload must be dict or JSON string.")
@@ -81,6 +94,8 @@ class InstrumentModel(BaseModel, JSONMixin):
             effective_registry.update(registry)
 
         target_cls = effective_registry.get(t)
+        if target_cls is None:
+            target_cls = getattr(msi, t,None)
         if target_cls is None:
             raise ValueError(f"Unknown instrument type: {t}")
         if not hasattr(target_cls, "from_json"):

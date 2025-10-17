@@ -86,8 +86,48 @@ def _copy_clipboard(txt: str) -> bool:
         pass
     return False
 
+def _canonical_project_dir(base_dir: str, org_slug: str, project_id: int | str, project_name: str) -> pathlib.Path:
+    slug = safe_slug(project_name or "project")
+    return _projects_root(base_dir, org_slug) / f"{slug}-{project_id}"
 
-def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_slug: str) -> str:
+
+def _legacy_project_dir(base_dir: str, org_slug: str, project_name: str) -> pathlib.Path:
+    slug = safe_slug(project_name or "project")
+    return _projects_root(base_dir, org_slug) / slug
+
+
+def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, project_name: str | None = None) -> str | None:
+    """
+    Find a local directory for a project id by folder structure only.
+    Preference order:
+      1) <slug>-<id>
+      2) <slug> (legacy fallback; only used if #1 missing and name is provided)
+    """
+    # 1) Try canonical <slug>-<id> without needing the name by scanning the root
+    root = _projects_root(base_dir, org_slug)
+    if root.exists():
+        suffix = f"-{project_id}"
+        # Fast exact path (when we know the name) is cheaper than scanning; but scanning also works
+        if project_name:
+            cand = _canonical_project_dir(base_dir, org_slug, project_id, project_name)
+            if cand.exists():
+                return str(cand)
+        # Fallback: scan once in case name changed or we don't have it on hand
+        try:
+            for d in root.iterdir():
+                if d.is_dir() and d.name.endswith(suffix):
+                    return str(d)
+        except FileNotFoundError:
+            pass
+
+    # 2) Legacy <slug> fallback (requires a name)
+    if project_name:
+        legacy = _legacy_project_dir(base_dir, org_slug, project_name)
+        if legacy.exists():
+            return str(legacy)
+    return None
+
+def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> str:
     """Return an aligned table with Local status + path (map or default folder guess)."""
 
     def ds(obj, path, default=""):
@@ -110,15 +150,7 @@ def _render_projects_table(items: list[dict], links: dict, base_dir: str, org_sl
         )
         status = ds(p, "data_source.related_resource.status", "")
 
-        # 1) mapping file
-        mapped = links.get(pid)
-        local_path = mapped if mapped and pathlib.Path(mapped).exists() else None
-        # 2) guess default location if mapping is absent
-        if not local_path:
-            guess = _projects_root(base_dir, org_slug) / safe_slug(name)
-            if guess.exists():
-                local_path = str(guess)
-
+        local_path = _find_local_dir_by_id(base_dir, org_slug, pid, name)
         local = "Local" if local_path else "—"
         path_col = local_path or "—"
         rows.append((pid, name, dname, klass, status, local, path_col))
@@ -165,10 +197,9 @@ def login(
     if not no_status:
         try:
             items = get_projects()
-            links = cfg.get_links()
             org_slug = _org_slug_from_profile()
             typer.echo("\nProjects:")
-            typer.echo(_render_projects_table(items, links, base, org_slug))
+            typer.echo(_render_projects_table(items, base, org_slug))
         except NotLoggedIn:
             typer.secho("Not logged in.", fg=typer.colors.RED)
 
@@ -226,26 +257,19 @@ def project_list():
     org_slug = _org_slug_from_profile()
 
     items = get_projects()
-    links = cfg.get_links()
-    typer.echo(_render_projects_table(items, links, base, org_slug))
+
+    typer.echo(_render_projects_table(items, base, org_slug))
 
 
 @project.command("open")
 def project_open(project_id: int):
     """Open the local folder in the OS file manager."""
-    links = cfg.get_links()
-    path = links.get(str(project_id))
-    if not path or not pathlib.Path(path).exists():
-        # also try default guess
-        cfg_obj = cfg.get_config()
-        base = cfg_obj["mainsequence_path"]
-        org_slug = _org_slug_from_profile()
-        items = get_projects()
-        p = next((x for x in items if str(x.get("id")) == str(project_id)), None)
-        if p:
-            guess = _projects_root(base, org_slug) / safe_slug(p.get("project_name") or "")
-            if guess.exists():
-                path = str(guess)
+    cfg_obj = cfg.get_config()
+    base = cfg_obj["mainsequence_path"]
+    org_slug = _org_slug_from_profile()
+    items = get_projects()
+    p = next((x for x in items if str(x.get("id")) == str(project_id)), None)
+    path = _find_local_dir_by_id(base, org_slug, project_id, p.get("project_name") if p else None)
     if not path or not pathlib.Path(path).exists():
         typer.secho(
             "No local folder mapped for this project. Run `set-up-locally` first.",
@@ -260,39 +284,47 @@ def project_open(project_id: int):
 def project_delete_local(
     project_id: int,
 ):
-    """Unlink the mapped folder, optionally delete it."""
-    mapped = cfg.remove_link(project_id)
-    if not mapped:
-        typer.echo("No mapping found.")
+    """Delete the local folder for this project id based on folder structure."""
+    cfg_obj = cfg.get_config()
+    base = cfg_obj["mainsequence_path"]
+    org_slug = _org_slug_from_profile()
+
+    # Pure folder-structure resolution: <slug>-<id>, or legacy <slug> if needed
+    items = get_projects()
+    pinfo = next((x for x in items if str(x.get("id")) == str(project_id)), None)
+    project_name = pinfo.get("project_name") if pinfo else None
+    found = _find_local_dir_by_id(base, org_slug, project_id, project_name)
+    if not found:
+        typer.echo("No local folder found for this project.")
         return
-    p = pathlib.Path(mapped)
+    p = pathlib.Path(found)
+
+    # Safety: delete only inside projects root
+    projects_root = _projects_root(base, org_slug).resolve()
+    try:
+        p.resolve().relative_to(projects_root)
+    except Exception:
+        typer.secho(f"Refusing to delete outside projects root: {p}", fg=typer.colors.RED)
+        return
     if p.exists():
         import shutil
 
-        shutil.rmtree(mapped, ignore_errors=True)
-        typer.secho(f"Deleted: {mapped}", fg=typer.colors.YELLOW)
+        shutil.rmtree(str(p), ignore_errors=True)
+        typer.secho(f"Deleted: {str(p)}", fg=typer.colors.YELLOW)
 
     else:
-        typer.echo("Mapping removed; folder already absent.")
+        typer.echo("Folder already absent.")
 
 
 @project.command("open-signed-terminal")
 def project_open_signed_terminal(project_id: int):
     """Open a terminal window in the project directory with ssh-agent started and the repo's key added."""
-    links = cfg.get_links()
-    dir_ = links.get(str(project_id))
-
-    if not dir_ or not pathlib.Path(dir_).exists():
-        # also try default guess
-        cfg_obj = cfg.get_config()
-        base = cfg_obj["mainsequence_path"]
-        org_slug = _org_slug_from_profile()
-        items = get_projects()
-        p = next((x for x in items if str(x.get("id")) == str(project_id)), None)
-        if p:
-            guess = _projects_root(base, org_slug) / safe_slug(p.get("project_name") or "")
-            if guess.exists():
-                dir_ = str(guess)
+    cfg_obj = cfg.get_config()
+    base = cfg_obj["mainsequence_path"]
+    org_slug = _org_slug_from_profile()
+    items = get_projects()
+    p = next((x for x in items if str(x.get("id")) == str(project_id)), None)
+    dir_ = _find_local_dir_by_id(base, org_slug, project_id, p.get("project_name") if p else None)
 
     if not dir_ or not pathlib.Path(dir_).exists():
         typer.secho(
@@ -335,7 +367,8 @@ def project_set_up_locally(
 
     name = safe_slug(p.get("project_name") or f"project-{project_id}")
     projects_root = _projects_root(base, org_slug)
-    target_dir = projects_root / name
+    # canonical path avoids collisions (no mapping file)
+    target_dir = projects_root / f"{name}-{project_id}"
     projects_root.mkdir(parents=True, exist_ok=True)
 
     key_path, pub_path, pub = ensure_key_for_repo(repo)
@@ -439,7 +472,6 @@ def project_set_up_locally(
 
     # write final .env with both vars present
     (target_dir / ".env").write_text(env_text, encoding="utf-8")
-    cfg.set_link(project_id, str(target_dir))
 
     typer.secho(f"Local folder: {target_dir}", fg=typer.colors.GREEN)
     typer.echo(f"Repo URL: {repo}")

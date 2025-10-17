@@ -61,6 +61,8 @@ class Bond(InstrumentModel):
     _bond: ql.Bond | None = PrivateAttr(default=None)
     _with_yield: float | None = PrivateAttr(default=None)
 
+    def get_bond(self):
+        return self._bond
     # ---- valuation lifecycle ----
     def _on_valuation_date_set(self) -> None:
         self._bond = None

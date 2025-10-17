@@ -744,8 +744,8 @@ class DataNode(DataAccessMixin, ABC):
         return self.local_persist_manager.data_node_update
 
     @property
-    def metadata(self) -> "DataNodeStorage":
-        return self.local_persist_manager.metadata
+    def data_node_storage(self) -> "DataNodeStorage":
+        return self.local_persist_manager.data_node_storage
 
     @property
     def local_persist_manager(self) -> PersistManager:
@@ -948,7 +948,7 @@ class DataNode(DataAccessMixin, ABC):
         """
         This method always queries last state
         """
-        return self.metadata.sourcetableconfiguration.get_data_updates()
+        return self.data_node_storage.sourcetableconfiguration.get_data_updates()
 
     def _set_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """
