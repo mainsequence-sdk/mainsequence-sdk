@@ -24,7 +24,7 @@ class SimulatedPrices(DataNode):
     def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
         """
         Args:
-            simulation_config (PriceSimulConfig): Configuration for the price simulation.
+            simulation_config (PriceSimulConfig): Configuration containing the asset list.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
