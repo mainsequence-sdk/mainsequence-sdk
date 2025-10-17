@@ -1,5 +1,5 @@
 # mainsequence/__main__.py
-from .cli import app
+from mainsequence.cli import app
 
 
 def main():

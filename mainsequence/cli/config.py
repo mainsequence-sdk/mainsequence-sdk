@@ -37,7 +37,7 @@ DEFAULTS = {
 def read_json(path: pathlib.Path, default):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as e:
         return default
 
 
