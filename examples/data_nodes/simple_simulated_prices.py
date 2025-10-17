@@ -208,7 +208,7 @@ class SimulatedPrices(DataNode):
     def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
         """
         Args:
-            asset_list (ModelList): List of asset objects.
+            simulation_config (PriceSimulConfig): Configuration containing the asset list.
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
