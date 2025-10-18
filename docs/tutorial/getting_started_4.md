@@ -44,7 +44,7 @@ We’ll source the data from **polygon.io**.
 
 A complete `DataNode` implementation lives in the public data connectors repo:  
 https://github.com/mainsequence-sdk/data-connectors  
-Look under `data_connectors/prices/polygon/data_node.py`.
+Look under `data_connectors/prices/polygon/data_nodes.py`.
 
 ```python
 class PolygonUSTCMTYields(PolygonEconomyNode):
@@ -62,6 +62,7 @@ In earlier examples, `get_asset_list` simply returned assets that already existe
 Here, you’ll **create the assets on the fly** if they’re missing.
 We also attach optional properties such as `security_market_sector`, 
 `security_type`, and `security_type_2` to enable richer filtering on the platform.
+You can find `build_assets` method in the same file as above:
 
 ```python
 def build_assets(self) -> List[msc.Asset]:
@@ -82,15 +83,81 @@ def build_assets(self) -> List[msc.Asset]:
 def get_asset_list(self) -> List[msc.Asset]:
     return self.build_assets()
 ```
-As in the previous tutorial, you can copy code from **data connectors** into your tutorial project 
-and create a **run endpoint** to update the data for the first time.
-Even better, you can **fork the full repo** into a new project so you have all connectors available.
+As in the previous tutorial, you can copy code files and snippets from **data connectors** repository into your tutorial project and adjust the imports making sure they point to the correct locations to ensure that `PolygonUSTCMTYields` works correctly and create a **run endpoint** to update the data for the first time.
 
-> TODO: Add step‑by‑step instructions to fork the public repo and keep a remote pointing to `main-sequence` public.
+But if you not sure how to do it, you can go with simple approach described below.
+1. Open you PowerShell or terminal and navigate to some temporary folder outside of your tutorial project.
+2. Clone the data-connectors repository there:
+```bash
+git clone https://github.com/mainsequence-sdk/data-connectors.git
+```
+3. Use your file explorer to open the cloned `data-connectors` folder.
+4. Copy the whole `data_connectors/` you can find inside the cloned folder to the `src/` folder of your tutorial project.
+5. Now you can delete the cloned before `data-connectors` folder as you already copied necessary code to your tutorial project.
+6. IMPORTANT: back to your tutorial project in VS Code and make sure all imports in the copied files are correct and point to `src.data_connectors...` instead of `data_connectors...` as now the `data_connectors` folder is inside the `src` folder of your tutorial project.
+7. Now you are ready to run the `PolygonUSTCMTYields` data node in your tutorial project.
 
-After running the node, you should see the table in the platform:
+So after you copied code from `data-connectors` repository for the `PolygonUSTCMTYields` class you need to create a new runner file in `scripts` folder with a name `run_ust_cmt_yields.py` and add this code to it:
 
-![img.png](img.png)
+```python
+from src.data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields
+from mainsequence.client import Constant as _C
+
+data_node = PolygonUSTCMTYields()
+data_node.run(debug_mode=True, force_update=True)
+```
+
+Now you need is to get your API key from polygon.io and add it as environment variable `POLYGON_API_KEY` in the `.env` file in the root of your project.
+
+Register and request your API key here [https://polygon.io/](https://polygon.io/)
+
+```env
+POLYGON_API_KEY="your_polygon_api_key_here"
+```
+
+
+After that you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then back to `run_ust_cmt_yields.py` file and run it from the Run and Debug dropdown at the top right (near the play button), same way as you done it in previous parts of the tutorial.
+
+After running the node, you should see the table in the platform: [https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=](https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=)
+
+> Note: it also possible to simply fork whole `data-connectors` project on MainSequence platform and handle it as a separate project completely independent from your tutorial project, but we recommend to stick to instructions above to keep your tutorial project clean and simple and available to reference later. So next instructions are just for your information if you want to try it out.
+To fork the repo into new project:
+1. Go to [https://main-sequence.app/projects/](https://main-sequence.app/projects/)
+2. Find project with "data_connectors" name and click on it
+3. In the top right corner you see three dots menu, open it and  click on "Fork Project" button, assing it name like "my_data_connectors" and click on "Fork".
+4. Than you can set up new project locally as you done before in previous parts of tutorial and work with this new project afterwards e. g. add `run_ust_cmt_yields.py` file and new entry in `.vscode/launch.json` to run it.
+5. Don't forget to add your polygon API key as environment variable `POLYGON_API_KEY` in the `.env` file in the root of your new project, then follow this tutorial.
 
 
 ## From CMT Yields to a Zero Curve
