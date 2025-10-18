@@ -10,7 +10,7 @@ import math
 import os
 import time
 from threading import RLock
-from typing import Any, ClassVar
+from typing import Any, ClassVar,Optional
 
 import numpy as np
 import pandas as pd
@@ -88,8 +88,8 @@ class SourceTableConfigurationDoesNotExist(Exception):
 
 
 class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
-    source_config_id: int = Field(
-        ...,
+    source_config_id: Optional[int] = Field(
+        None,
         alias="source_config",
         description="Primary key of the related SourceTableConfiguration",
     )
