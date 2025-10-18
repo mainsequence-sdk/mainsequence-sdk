@@ -53,7 +53,7 @@ The most important fields are **`data_node_update`** and **`signal_data_node_upd
 
 For this tutorial dashboard, we’ll build a **mock portfolio** with **no signal**—just a `data_node_update`.
 
-You can find the code under `dashboards/helpers/mock.py`:
+You can find and copy the full code under `dashboards/helpers/mock.py`:
 
 ```python
 class TestFixedIncomePortfolio(PortfolioFromDF):
@@ -166,7 +166,7 @@ def build_test_portfolio(portfolio_name:str):
                                                        add_portfolio_to_markets_backend=True)
 ```
 
-Key pieces to notice:
+**Key pieces to notice:**
 
 ```python
 assets = msc.Asset.batch_get_or_register_custom_assets([payload_item])
@@ -191,6 +191,52 @@ PortfolioInterface.build_and_run_portfolio_from_df(portfolio_node=node,
 ```
 
 Here we use the `PortfolioInterface` to **build and run** the portfolio. This differs slightly from running a plain `DataNode`: the interface populates portfolio‑specific objects in the platform (for example, creating a `PortfolioIndexAsset` linked to this portfolio).
+
+### Running the Portfolio Node
+
+You can run `mock.py` file directly from VS Code using two options. 
+1. Add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+```json
+// (Windows)
+{
+    "name": "Debug mock portfolio",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\dashboards\\helpers\\mock.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+// (Linux/Mac)
+{
+    "name": "Debug mock portfolio",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/dashboards/helpers/mock.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then run it from the Run and Debug tab in VS Code.
+
+2. Also you can run directly file from terminal:
+
+```bash
+# set environment variables from .env file in root of project before running the script
+$env:MAINSEQUENCE_TOKEN="your_token_here"  # Windows PowerShell
+$env:TDAG_ENDPOINT="https://main-sequence.app" # Windows PowerShell (custom endpoint, if needed)
+# or
+set -a && source .env && set +a  # Linux/Mac
+# now run the script
+python dashboards/helpers/mock.py
+```
 
 After running the node through the `PortfolioInterface`, you’ll see a few things in the platform:
 
