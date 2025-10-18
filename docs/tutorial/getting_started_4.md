@@ -94,8 +94,7 @@ git clone https://github.com/mainsequence-sdk/data-connectors.git
 3. Use your file explorer to open the cloned `data-connectors` folder.
 4. Copy the whole `data_connectors/` you can find inside the cloned folder to the `src/` folder of your tutorial project.
 5. Now you can delete the cloned before `data-connectors` folder as you already copied necessary code to your tutorial project.
-6. IMPORTANT: back to your tutorial project in VS Code and make sure all imports in the copied files are correct and point to `src.data_connectors...` instead of `data_connectors...` as now the `data_connectors` folder is inside the `src` folder of your tutorial project.
-7. Now you are ready to run the `PolygonUSTCMTYields` data node in your tutorial project.
+6. Now you are ready to run the `PolygonUSTCMTYields` data node in your tutorial project.
 
 So after you copied code from `data-connectors` repository for the `PolygonUSTCMTYields` class you need to create a new runner file in `scripts` folder with a name `run_ust_cmt_yields.py` and add this code to it:
 
@@ -196,23 +195,43 @@ class DiscountCurves(DataNode):
 ```
 The method above is **generic**. What you need is a registry entry that points a **curve identifier** to a **build function**.
 
-Create it in `data_connectors/interest_rates/registries/discount_curves.py` like this:
+Because we previously copied the `data_connectors` folder into your tutorial project, you already have the curve registry implemented, but it still need to be adjusted.
+
+Make sure that `data_connectors/interest_rates/registries/discount_curves.py` exists and looks exactly like this, and adjust code if necessary:
 
 ```python
-"""
-Signature for each zero‑curve function should be:
+from __future__ import annotations
 
-def bootstrap_cmt_curve(update_statistics, curve_unique_identifier: str, base_node_curve_points: APIDataNode) -> pd.DataFrame
+from typing import Callable, Dict, Mapping
 
-It must return a DataFrame with:
-  - MultiIndex: ("time_index", "unique_identifier")
-  - Column "curve": dict[days_to_maturity] -> zero_rate (percent)
-
-Where "unique_identifier" is the name of the zero curve. We recommend exposing a constant in the backend
-to retrieve this specific curve.
-"""
+# Provider builders / constants
 from mainsequence.client import Constant as _C
 
+# UST CMT (Polygon) — keep source-specific UID in its own settings module
+from data_connectors.prices.polygon.builders import bootstrap_cmt_curve
+
+def _merge_unique(*maps: Mapping[str, Callable]) -> Dict[str, Callable]:
+    out: Dict[str, Callable] = {}
+    for m in maps:
+        for k, v in m.items():
+            if k in out and out[k] is not v:
+                raise ValueError(f"Duplicate registry key with different builder: {k}")
+            out[k] = v
+    return out
+
+# Base maps per source (explicit so adding/removing sources is easy)
+
+"""
+signtaure for each zero curfe function should be like the one bellow
+def bootstrap_cmt_curve(update_statistics, curve_unique_identifier: str, base_node_curve_points:APIDataNode):
+and should 
+ Returns one dataframe with:
+         - MultiIndex ("time_index", "unique_identifier")
+         - Column "curve": dict[days_to_maturity] → zero_rate (percent)
+
+where unique_identifier is the name of this zero_curve, we recommend that you 
+build a constant in the backend to retrieve this specific curve
+"""
 _POLYGON_CURVES = {
     _C.get_value(name="ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"): bootstrap_cmt_curve,
 }
@@ -249,41 +268,77 @@ _C.create_constants_if_not_exist(constants_to_create)
 
 So far, we’ve used the `zero_curve` registry helper from `data_connectors` to model future cash flows. However, with most pricing libraries — including QuantLib — we also need past fixing dates to price cash flows whose fixings occurred in the past.
 
-Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED).
+Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED) - `FixingRatesNode`.
 
-Take the code below and run it in your tutorial project.
-
+Create a new runner file in `scripts` folder with a name `run_fred_fixings.py` and add this code to it:
 
 ```python
-def run_fred_fixing():
-    from src.data_nodes.interest_rates.nodes import FixingRatesNode, FixingRateConfig, RateConfig
-    from mainsequence.client import Constant as _C
+from src.data_connectors.prices.fred.data_nodes import FixingRatesNode, FixingRateConfig, RateConfig
+from mainsequence.client import Constant as _C
 
-    USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
-    USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
-    USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
-    fixing_config = FixingRateConfig(rates_config_list=[
-    RateConfig(unique_identifier=USD_SOFR,
-               name=f"Secured Overnight Financing Rate "),
-    RateConfig(unique_identifier=USD_EFFR,
-               name=f"Effective Federal Funds Rate "),
-    RateConfig(unique_identifier=USD_OBFR,
-               name=f"Overnight Bank Funding Rate"),
-        ])
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
-
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
-
+USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
+USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
+USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
+fixing_config = FixingRateConfig(rates_config_list=[
+RateConfig(unique_identifier=USD_SOFR,
+            name=f"Secured Overnight Financing Rate "),
+RateConfig(unique_identifier=USD_EFFR,
+            name=f"Effective Federal Funds Rate "),
+RateConfig(unique_identifier=USD_OBFR,
+            name=f"Overnight Bank Funding Rate"),
+    ])
+ts = FixingRatesNode(rates_config=fixing_config)
+ts.run(debug_mode=True, force_update=True)
 ```
 
-Important: Don’t forget to copy the interest_rate folder from data_connectors.
+
+Now you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Before you be able to run this you need to get an API key from FRED and add it as environment variable `FRED_API_KEY` in the `.env` file in the root of your project.
+```env
+FRED_API_KEY="your_fred_api_key_here"
+```
+
+Register and request your API key here:
+
+[https://fredaccount.stlouisfed.org/apikeys](https://fredaccount.stlouisfed.org/apikeys)
+
+
+Then back to `run_fred_fixings.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug fred_fixings` configuration.
 
 
 ## One‑Shot Runner
 
-Here’s how everything looks if you want to run it all at once:
+Here’s how everything looks if you want to run it all at once in single script:
 
 ```python
 from data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields
@@ -300,4 +355,20 @@ config = CurveConfig(
 )
 node = DiscountCurves(curve_config=config)
 node.run(debug_mode=True, force_update=True)
-```
+
+from data_connectors.prices.fred.data_nodes import FixingRatesNode, FixingRateConfig, RateConfig
+from mainsequence.client import Constant as _C
+
+USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
+USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
+USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
+fixing_config = FixingRateConfig(rates_config_list=[
+    RateConfig(unique_identifier=USD_SOFR,
+                name=f"Secured Overnight Financing Rate "),
+    RateConfig(unique_identifier=USD_EFFR,
+                name=f"Effective Federal Funds Rate "),
+    RateConfig(unique_identifier=USD_OBFR,
+                name=f"Overnight Bank Funding Rate"),
+])
+ts = FixingRatesNode(rates_config=fixing_config)
+ts.run(debug_mode=True, force_update=True)
