@@ -44,7 +44,7 @@ We’ll source the data from **polygon.io**.
 
 A complete `DataNode` implementation lives in the public data connectors repo:  
 https://github.com/mainsequence-sdk/data-connectors  
-Look under `data_connectors/prices/polygon/data_node.py`.
+Look under `data_connectors/prices/polygon/data_nodes.py`.
 
 ```python
 class PolygonUSTCMTYields(PolygonEconomyNode):
@@ -62,6 +62,7 @@ In earlier examples, `get_asset_list` simply returned assets that already existe
 Here, you’ll **create the assets on the fly** if they’re missing.
 We also attach optional properties such as `security_market_sector`, 
 `security_type`, and `security_type_2` to enable richer filtering on the platform.
+You can find `build_assets` method in the same file as above:
 
 ```python
 def build_assets(self) -> List[msc.Asset]:
@@ -82,15 +83,80 @@ def build_assets(self) -> List[msc.Asset]:
 def get_asset_list(self) -> List[msc.Asset]:
     return self.build_assets()
 ```
-As in the previous tutorial, you can copy code from **data connectors** into your tutorial project 
-and create a **run endpoint** to update the data for the first time.
-Even better, you can **fork the full repo** into a new project so you have all connectors available.
+As in the previous tutorial, you can copy code files and snippets from **data connectors** repository into your tutorial project and adjust the imports making sure they point to the correct locations to ensure that `PolygonUSTCMTYields` works correctly and create a **run endpoint** to update the data for the first time.
 
-> TODO: Add step‑by‑step instructions to fork the public repo and keep a remote pointing to `main-sequence` public.
+But if you not sure how to do it, you can go with simple approach described below.
+1. Open you PowerShell or terminal and navigate to some temporary folder outside of your tutorial project.
+2. Clone the data-connectors repository there:
+```bash
+git clone https://github.com/mainsequence-sdk/data-connectors.git
+```
+3. Use your file explorer to open the cloned `data-connectors` folder.
+4. Copy the whole `data_connectors/` you can find inside the cloned folder to the `src/` folder of your tutorial project.
+5. Now you can delete the cloned before `data-connectors` folder as you already copied necessary code to your tutorial project.
+6. Now you are ready to run the `PolygonUSTCMTYields` data node in your tutorial project.
 
-After running the node, you should see the table in the platform:
+So after you copied code from `data-connectors` repository for the `PolygonUSTCMTYields` class you need to create a new runner file in `scripts` folder with a name `run_ust_cmt_yields.py` and add this code to it:
 
-![img.png](img.png)
+```python
+from src.data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields
+from mainsequence.client import Constant as _C
+
+data_node = PolygonUSTCMTYields()
+data_node.run(debug_mode=True, force_update=True)
+```
+
+Now you need is to get your API key from polygon.io and add it as environment variable `POLYGON_API_KEY` in the `.env` file in the root of your project.
+
+Register and request your API key here [https://polygon.io/](https://polygon.io/)
+
+```env
+POLYGON_API_KEY="your_polygon_api_key_here"
+```
+
+
+After that you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug ust_cmt_yields",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_ust_cmt_yields.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then back to `run_ust_cmt_yields.py` file and run it from the Run and Debug dropdown at the top right (near the play button), same way as you done it in previous parts of the tutorial.
+
+After running the node, you should see the table in the platform: [https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=](https://main-sequence.app/dynamic-table-metadatas/?search=polygonustcmtyields_&storage_hash=&identifier=)
+
+> Note: it also possible to simply fork whole `data-connectors` project on MainSequence platform and handle it as a separate project completely independent from your tutorial project, but we recommend to stick to instructions above to keep your tutorial project clean and simple and available to reference later. So next instructions are just for your information if you want to try it out.
+To fork the repo into new project:
+1. Go to [https://main-sequence.app/projects/](https://main-sequence.app/projects/)
+2. Find project with "data_connectors" name and click on it
+3. In the top right corner you see three dots menu, open it and  click on "Fork Project" button, assing it name like "my_data_connectors" and click on "Fork".
+4. Than you can set up new project locally as you done before in previous parts of tutorial and work with this new project afterwards e. g. add `run_ust_cmt_yields.py` file and new entry in `.vscode/launch.json` to run it.
+5. Don't forget to add your polygon API key as environment variable `POLYGON_API_KEY` in the `.env` file in the root of your new project, then follow this tutorial.
 
 
 ## From CMT Yields to a Zero Curve
@@ -129,23 +195,43 @@ class DiscountCurves(DataNode):
 ```
 The method above is **generic**. What you need is a registry entry that points a **curve identifier** to a **build function**.
 
-Create it in `data_connectors/interest_rates/registries/discount_curves.py` like this:
+Because we previously copied the `data_connectors` folder into your tutorial project, you already have the curve registry implemented, but it still need to be adjusted.
+
+Make sure that `data_connectors/interest_rates/registries/discount_curves.py` exists and looks exactly like this, and adjust code if necessary:
 
 ```python
-"""
-Signature for each zero‑curve function should be:
+from __future__ import annotations
 
-def bootstrap_cmt_curve(update_statistics, curve_unique_identifier: str, base_node_curve_points: APIDataNode) -> pd.DataFrame
+from typing import Callable, Dict, Mapping
 
-It must return a DataFrame with:
-  - MultiIndex: ("time_index", "unique_identifier")
-  - Column "curve": dict[days_to_maturity] -> zero_rate (percent)
-
-Where "unique_identifier" is the name of the zero curve. We recommend exposing a constant in the backend
-to retrieve this specific curve.
-"""
+# Provider builders / constants
 from mainsequence.client import Constant as _C
 
+# UST CMT (Polygon) — keep source-specific UID in its own settings module
+from data_connectors.prices.polygon.builders import bootstrap_cmt_curve
+
+def _merge_unique(*maps: Mapping[str, Callable]) -> Dict[str, Callable]:
+    out: Dict[str, Callable] = {}
+    for m in maps:
+        for k, v in m.items():
+            if k in out and out[k] is not v:
+                raise ValueError(f"Duplicate registry key with different builder: {k}")
+            out[k] = v
+    return out
+
+# Base maps per source (explicit so adding/removing sources is easy)
+
+"""
+signtaure for each zero curfe function should be like the one bellow
+def bootstrap_cmt_curve(update_statistics, curve_unique_identifier: str, base_node_curve_points:APIDataNode):
+and should 
+ Returns one dataframe with:
+         - MultiIndex ("time_index", "unique_identifier")
+         - Column "curve": dict[days_to_maturity] → zero_rate (percent)
+
+where unique_identifier is the name of this zero_curve, we recommend that you 
+build a constant in the backend to retrieve this specific curve
+"""
 _POLYGON_CURVES = {
     _C.get_value(name="ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"): bootstrap_cmt_curve,
 }
@@ -182,41 +268,77 @@ _C.create_constants_if_not_exist(constants_to_create)
 
 So far, we’ve used the `zero_curve` registry helper from `data_connectors` to model future cash flows. However, with most pricing libraries — including QuantLib — we also need past fixing dates to price cash flows whose fixings occurred in the past.
 
-Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED).
+Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED) - `FixingRatesNode`.
 
-Take the code below and run it in your tutorial project.
-
+Create a new runner file in `scripts` folder with a name `run_fred_fixings.py` and add this code to it:
 
 ```python
-def run_fred_fixing():
-    from src.data_nodes.interest_rates.nodes import FixingRatesNode, FixingRateConfig, RateConfig
-    from mainsequence.client import Constant as _C
+from src.data_connectors.prices.fred.data_nodes import FixingRatesNode, FixingRateConfig, RateConfig
+from mainsequence.client import Constant as _C
 
-    USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
-    USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
-    USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
-    fixing_config = FixingRateConfig(rates_config_list=[
-    RateConfig(unique_identifier=USD_SOFR,
-               name=f"Secured Overnight Financing Rate "),
-    RateConfig(unique_identifier=USD_EFFR,
-               name=f"Effective Federal Funds Rate "),
-    RateConfig(unique_identifier=USD_OBFR,
-               name=f"Overnight Bank Funding Rate"),
-        ])
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
-
-    ts = FixingRatesNode(rates_config=fixing_config)
-    ts.run(debug_mode=True, force_update=True)
-
+USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
+USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
+USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
+fixing_config = FixingRateConfig(rates_config_list=[
+RateConfig(unique_identifier=USD_SOFR,
+            name=f"Secured Overnight Financing Rate "),
+RateConfig(unique_identifier=USD_EFFR,
+            name=f"Effective Federal Funds Rate "),
+RateConfig(unique_identifier=USD_OBFR,
+            name=f"Overnight Bank Funding Rate"),
+    ])
+ts = FixingRatesNode(rates_config=fixing_config)
+ts.run(debug_mode=True, force_update=True)
 ```
 
-Important: Don’t forget to copy the interest_rate folder from data_connectors.
+
+Now you can add a new entry to your `.vscode\launch.json` file in `configurations` list:
+
+(Windows):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug fred_fixings",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_fred_fixings.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Before you be able to run this you need to get an API key from FRED and add it as environment variable `FRED_API_KEY` in the `.env` file in the root of your project.
+```env
+FRED_API_KEY="your_fred_api_key_here"
+```
+
+Register and request your API key here:
+
+[https://fredaccount.stlouisfed.org/apikeys](https://fredaccount.stlouisfed.org/apikeys)
+
+
+Then back to `run_fred_fixings.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug fred_fixings` configuration.
 
 
 ## One‑Shot Runner
 
-Here’s how everything looks if you want to run it all at once:
+Here’s how everything looks if you want to run it all at once in single script:
 
 ```python
 from data_connectors.prices.polygon.data_nodes import PolygonUSTCMTYields

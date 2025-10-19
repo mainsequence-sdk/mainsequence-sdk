@@ -140,6 +140,9 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   echo ".ipynb_checkpoints" > "$ROOT_PROJECT_PATH/.gitignore"
   echo ".env" >> "$ROOT_PROJECT_PATH/.gitignore"
   echo ".venv" >> "$ROOT_PROJECT_PATH/.gitignore"
+  echo "__pycache__/" >> "$ROOT_PROJECT_PATH/.gitignore"
+  echo "*.pyc" >> "$ROOT_PROJECT_PATH/.gitignore"
+  echo ".DS_Store" >> "$ROOT_PROJECT_PATH/.gitignore"
 
   # Render root files from templates (create-only by default)
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PYPROJECT_TEMPLATE" "$ROOT_PROJECT_PATH/pyproject.toml" "${OVERWRITE_TEMPLATES:-false}"
