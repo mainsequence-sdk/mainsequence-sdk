@@ -105,7 +105,6 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     """
 
     model_config = ConfigDict(
-        frozen=True,  # make the model immutable
         extra="forbid",  # reject unknown fields
         populate_by_name=True,
     )
@@ -115,8 +114,8 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     signal_weights_name: str = "MarketCap"
     signal_weights_configuration: dict[str, Any] = Field(default_factory=dict)
 
-    _rebalance_strategy_instance: RebalanceStrategyBase | None = PrivateAttr(default=None)
-    _signal_weights_instance: WeightsBase | None = PrivateAttr(default=None)
+    _rebalance_strategy_instance: "RebalanceStrategyBase" | None = PrivateAttr(default=None)
+    _signal_weights_instance: "WeightsBase" | None = PrivateAttr(default=None)
 
     @field_validator("rebalance_strategy_name", "signal_weights_name")
     @classmethod
@@ -130,7 +129,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
 
     @classmethod
     def build_from_rebalance_strategy_and_signal_node(
-        cls, rebalance_strategy: RebalanceStrategyBase, signal_weights_node: WeightsBase
+        cls, rebalance_strategy: "RebalanceStrategyBase", signal_weights_node: "WeightsBase"
     ):
 
         config = dict(
