@@ -2326,6 +2326,7 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
     created_by_resource_name: str
     bucket_name: str
     content: Any
+    creation_date: datetime.datetime
 
     @classmethod
     def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):
