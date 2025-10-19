@@ -1,0 +1,1969 @@
+<!-- Bundle generated 2025-10-19 18:52:34 -->
+# AI Instructions
+
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_general_instructions.md
+--------------------------------------------------------------------------------
+
+You are “Main Sequence Helper GPT.” You answer with concise, copyable steps and code for developers working on the Main Sequence platform.
+
+ALWAYS CONSULT THE RIGHT LOCAL FILE FIRST
+You have six local reference files attached to this GPT. Route every question to the one primary file below; if needed, consult one secondary file after the primary.
+
+1) Getting Started, repo layout, uv, Docker parity  → gpt_instructions_getting_started.md
+2) CLI (login, settings, project list/set-up/open/signed terminal, build_and_run) → gpt_instructions_cli.md
+3) Streamlit dashboards (scaffold, PageConfig/run_page, data_nodes registration, components) → gpt_instructions_dashboards.md
+4) DataNodes (MUST/SHOULD rules, index rules, UpdateStatistics patterns, template) → gpt_instructions_data_nodes.md
+5) Python client “ms_client” (assets, accounts, portfolios, holdings) → gpt_instructions_ms_client.md
+6) Presentations (theme-first, Plotly → HTML artifact → slide) → gpt_instructions_presentations.md
+
+ROUTING DECISIONS (quick)
+- Mentions “Streamlit”, “page”, “scaffold”, “components” → Dashboards (3).
+- Mentions “DataNode”, “time_index”, “MultiIndex”, “UpdateStatistics” → DataNodes (4).
+- Mentions “login”, “project set-up-locally”, “open-signed-terminal”, “build_and_run” → CLI (2).
+- Mentions “assets/accounts/portfolios/holdings”, “filter”, “get_or_create”, FIGI → ms_client (5).
+- Mentions “presentation/slide/theme/Plotly/Artifact” → Presentations (6).
+- Asks “how do I start / repo layout / dependencies” → Getting Started (1).
+
+ANSWER FORMAT (use this structure)
+- Quick answer: 2–5 bullets with the exact steps.
+- Do it: commands / code block the user can paste.
+- Notes: 1–2 bullets with gotchas / why this way.
+- Troubleshooting (only if likely).
+
+DOMAIN GUARDRAILS (enforce these verbatim)
+Dashboards
+- Always `import mainsequence.client as msc`.
+- Start every file with `run_page(PageConfig(...))`.
+- Idempotently register required `data_nodes` once per session BEFORE any platform queries.
+
+DataNodes
+- MUST implement `dependencies()` (return `{}` if none) and `update()`.
+- Index rules: single-index `DatetimeIndex` named `time_index` (UTC) OR MultiIndex whose first two levels are `("time_index","unique_identifier")` (UTC).
+- No datetime columns; columns lowercase and ≤63 chars.
+- Do NOT self‑validate/sanitize inside `update()`; the base class does this when you return the DataFrame.
+- Use the provided incremental update patterns via `UpdateStatistics`.
+
+CLI
+- Run via module entrypoint only: `python -m mainsequence ...`.
+- Core verbs to expose: `login`, `settings [show|set-base]`, `project [list|set-up-locally|open|open-signed-terminal|delete-local]`, `build_and_run [Dockerfile]`.
+- Mention token/SSH key basics only when relevant.
+
+ms_client
+- Use only cookbook methods shown in the docs (e.g., `Asset.filter`, `Asset.register_figi_as_asset_in_main_sequence_venue`, `Account.get_or_create`, `AccountHistoricalHoldings.create_with_holdings`, `Account.get_historical_holdings`, `Portfolio.filter`, `Portfolio.get_latest_weights`).
+- Show minimal, working snippets; never invent API names.
+
+Presentations
+- Apply the Theme BEFORE creating any Plotly figures.
+- Export Plotly to HTML with: `full_html=False`, `include_plotlyjs="cdn"`, and `config={"responsive": True, "displayModeBar": False}`.
+- Upload HTML as an Artifact, then add a slide and `patch(body=...)` with the structured JSON.
+
+Getting Started
+- Create project in GUI; set it up locally with the CLI.
+- Keep default repo layout (`dashboards/`, `src/data_nodes/`, `scripts/`, `pyproject.toml`, `Dockerfile`).
+- Use `uv` with a committed lockfile; generate `requirements.txt` from the lock when required.
+- Use the provided Dockerfile for runtime parity.
+
+STYLE
+- Be brief and actionable. Prefer bullets over prose.
+- Output safe defaults. If an input is unknown (IDs, names), show the placeholder and how to fill it.
+- Never output secrets. If a token is needed, tell the user how to obtain/set it.
+
+WHEN UNSURE
+- If a question spans multiple areas, answer from the primary file and add one concise note from the most relevant secondary file. Do not cite more than two files in one answer.
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_cli.md
+--------------------------------------------------------------------------------
+
+# MainSequence CLI — Usage Guide
+
+> Run every command via the module entrypoint:  
+> `mainsequence …`
+
+This CLI helps you sign in, view and set up projects locally (with SSH keys generated & added automatically), open mapped folders, and optionally build/run containers from a project.
+
+---
+
+## Quick start
+
+```powershell
+# 1) Sign in (prompts for password)
+mainsequence login you@example.com
+
+# 2) See your current settings
+mainsequence settings
+
+# 3) List projects you have access to
+mainsequence project list
+
+# 4) Clone & link a project locally (creates SSH keys, starts ssh-agent, writes .env)
+mainsequence project set-up-locally 123
+
+# 5) Open the mapped folder in File Explorer
+mainsequence project open 123
+
+# 6) Open a PowerShell terminal pre-wired with ssh-agent & the project's key
+mainsequence project open-signed-terminal 123
+```
+
+---
+
+## Prerequisites
+
+- **Python** and **git** available on PATH.
+- **OpenSSH** (included in Windows 10/11) and **ssh-agent** service available.
+- For clipboard copy of the public key (optional): Windows clipboard is handled automatically. On macOS/Linux, requires `pbcopy` (macOS) or `wl-copy`/`xclip` (Linux).
+- For `build_and_run`:  
+  - **uv** (`pip install uv`)  
+  - **Docker Desktop** (if you use the Docker part).
+
+---
+
+## Configuration & files
+
+- **Config directory**
+  - **Windows:** `%APPDATA%\MainSequenceCLI`  
+    (typically: `C:\Users\YourName\AppData\Roaming\MainSequenceCLI`)
+  - **macOS:** `~/Library/Application Support/MainSequenceCLI`
+  - **Linux:** `~/.config/mainsequence`
+- **Files**
+  - `config.json` — stores `backend_url` and `mainsequence_path`
+  - `token.json` — stores `{ username, access, refresh, ts }`
+  - `project-links.json` — maps project IDs to absolute local paths
+
+**Defaults**
+- Backend: `https://main-sequence.app/` (override with `MAIN_SEQUENCE_BACKEND_URL`)
+- Projects base: 
+  - **Windows:** `C:\Users\YourName\mainsequence`
+  - **macOS/Linux:** `~/mainsequence`
+
+---
+
+## Environment variables
+
+- `MAIN_SEQUENCE_BACKEND_URL` – set before running the CLI to point at a different backend.
+- `MAIN_SEQUENCE_USER_TOKEN` – access token; `login --export` prints a shell-ready export line.
+
+---
+
+## Top-level commands
+
+### `login`
+Obtain and store tokens, set `MAIN_SEQUENCE_USER_TOKEN` for the current process, and (by default) print a projects table.
+
+```powershell
+mainsequence login <email>
+# options:
+#   --export      Print: export MAIN_SEQUENCE_USER_TOKEN="…"
+#   --no-status   Do not print the projects table after login
+```
+
+**Examples**
+
+**Windows PowerShell:**
+```powershell
+# The CLI prints a POSIX export line, but you need to set it manually in PowerShell
+mainsequence login you@example.com --export
+# Copy the token from output, then:
+$env:MAIN_SEQUENCE_USER_TOKEN = "<paste token here>"
+```
+
+**macOS/Linux (bash/zsh):**
+```bash
+# Set token env var for the current shell
+eval "$(mainsequence login you@example.com --export)"
+```
+
+---
+
+### `settings`
+Show or change local settings.
+
+```powershell
+# `settings` with no subcommand == `settings show`
+mainsequence settings
+mainsequence settings show
+
+# Change the projects base folder (created if missing)
+# Windows:
+mainsequence settings set-base "D:\Work\mainsequence"
+mainsequence settings set-base "C:\Users\YourName\Projects\mainsequence"
+
+# macOS/Linux:
+# mainsequence settings set-base ~/work/mainsequence
+```
+
+Output of `show` is JSON, e.g.:
+
+**Windows:**
+```json
+{
+  "backend_url": "https://main-sequence.app/",
+  "mainsequence_path": "C:\\Users\\YourName\\mainsequence"
+}
+```
+
+**macOS/Linux:**
+```json
+{
+  "backend_url": "https://main-sequence.app/",
+  "mainsequence_path": "/home/alex/mainsequence"
+}
+```
+
+---
+
+### `project` (requires login)
+
+#### `project list`
+List projects with local mapping status and guessed path.
+
+```powershell
+mainsequence project list
+```
+
+Output columns:
+- **ID, Project, Data Source, Class, Status, Local, Path**  
+`Local` is **Local** if a mapping exists or a default folder is present; otherwise `—`.
+
+#### `project set-up-locally <project_id>`
+End-to-end local setup:
+1. Figures out the repository SSH URL (from `git_ssh_url` or nested data source hints).
+2. Creates a dedicated SSH key in the `.ssh` directory (if missing):
+   - **Windows:** `C:\Users\YourName\.ssh\<repo-name>`
+   - **macOS/Linux:** `~/.ssh/<repo-name>`
+3. Tries to register the public key as a **deploy key** on the server.
+4. Starts `ssh-agent` and adds that key.
+5. Clones into:  
+   - **Windows:** `<base>\<org-slug>\projects\<safe-project-name>`
+   - **macOS/Linux:** `<base>/<org-slug>/projects/<safe-project-name>`
+6. Fetches environment text from the backend and writes `.env` (ensuring `VFB_PROJECT_PATH=<local-path>`).
+
+```powershell
+mainsequence project set-up-locally 123
+
+# Optional: override base dir for this one command
+# Windows:
+mainsequence project set-up-locally 123 --base-dir "D:\my-projects"
+# macOS/Linux:
+# mainsequence project set-up-locally 123 --base-dir ~/my-projects
+```
+
+**Exit codes**
+- `1` – project not found/visible, or repo URL missing
+- `2` – target folder already exists
+- `3` – `git clone` failed
+
+#### `project open <project_id>`
+Opens the mapped/guessed folder in your OS file manager.
+
+```powershell
+mainsequence project open 123
+```
+
+If no mapping exists yet, the CLI tries the default path:
+- **Windows:** `<base>\<org-slug>\projects\<safe-project-name>`
+- **macOS/Linux:** `<base>/<org-slug>/projects/<safe-project-name>`
+
+#### `project delete-local <project_id> [--permanent]`
+Unlink the local mapping; optionally **delete** the folder.
+
+```powershell
+# just unlink the mapping (keeps folder)
+mainsequence project delete-local 123
+
+# unlink and remove the folder (dangerous)
+mainsequence project delete-local 123 --permanent
+```
+
+#### `project open-signed-terminal <project_id>`
+Opens a new terminal window **in the project directory** with `ssh-agent` started and the repo key added.  
+- **Windows:** PowerShell window; tries to enable the `ssh-agent` service.  
+- **macOS:** opens **Terminal.app** with a ready shell.  
+- **Linux:** opens the first available emulator (e.g. `gnome-terminal`, `konsole`, etc.).
+
+```powershell
+mainsequence project open-signed-terminal 123
+```
+
+---
+
+### `build_and_run [DOCKERFILE]`
+Project packaging helper:
+
+1) `uv lock`  
+2) `uv export --format requirements --no-dev --hashes > requirements.txt`  
+3) If `DOCKERFILE` provided: `docker build …` then `docker run -it` the image.
+
+```powershell
+# Only lock & export requirements.txt (no Docker)
+mainsequence build_and_run
+
+# Build & run with a specific Dockerfile
+# Windows:
+mainsequence build_and_run .\Dockerfile
+# macOS/Linux:
+# mainsequence build_and_run ./Dockerfile
+```
+
+**Requirements & behavior**
+- Fails early if `uv` is missing or `pyproject.toml` isn't present.
+- Image name defaults to `<cwd-name>-img` (override with `IMAGE_NAME`).
+- Tag defaults to short `git` SHA, else a timestamp (override with `TAG`).
+
+---
+
+## Typical workflow
+
+```powershell
+# sign in
+mainsequence login you@example.com
+
+# pick a project to set up
+mainsequence project list
+
+# set it up locally (creates SSH key, clones, writes .env, links the folder)
+mainsequence project set-up-locally 456
+
+# open the folder to browse files
+mainsequence project open 456
+
+# open a ready-to-use terminal for git operations over SSH
+mainsequence project open-signed-terminal 456
+```
+
+---
+
+## Troubleshooting
+
+- **"Not logged in."**  
+  Run `mainsequence login <email>` again. Tokens live in `token.json`.
+
+- **Token refresh / 401**  
+  The CLI will auto-refresh once. If it still fails, re-login.
+
+- **No project repo URL found**  
+  The CLI looks at `git_ssh_url` then digs into `data_source.related_resource.extra_arguments`.  
+  If your project truly lacks a repo, ask an admin to attach one.
+
+- **`git clone` failed**  
+  Likely SSH access. The CLI generates an SSH key and tries to add it as a deploy key.  
+  - **Windows:** Key is at `C:\Users\YourName\.ssh\<repo-name>`
+  - **macOS/Linux:** Key is at `~/.ssh/<repo-name>`
+  
+  You may need to add that **public key** to your Git host manually. Re-run after access is granted.
+
+- **ssh-agent service not running (Windows)**  
+  Open PowerShell as Administrator and run:
+  ```powershell
+  Set-Service ssh-agent -StartupType Automatic
+  Start-Service ssh-agent
+  ```
+
+- **Clipboard didn't copy the public key**  
+  - **Windows:** Clipboard should work automatically
+  - **macOS:** Install `pbcopy` (usually pre-installed)
+  - **Linux:** Install `wl-copy` or `xclip`
+  
+  Or manually open the `.pub` file and copy the contents.
+
+- **Linux: "No terminal emulator found"** when opening a signed terminal  
+  Install one of: `x-terminal-emulator`, `gnome-terminal`, `konsole`, `xfce4-terminal`, `tilix`, `mate-terminal`, `alacritty`, `kitty`, or `xterm`.
+
+- **Change backend URL**  
+  
+  **Windows PowerShell:**
+  ```powershell
+  $env:MAIN_SEQUENCE_BACKEND_URL = "https://staging.main-sequence.app"
+  mainsequence project list
+  ```
+  
+  **macOS/Linux (bash/zsh):**
+  ```bash
+  export MAIN_SEQUENCE_BACKEND_URL="https://staging.main-sequence.app"
+  mainsequence project list
+  ```
+  
+  Or edit `config.json` directly in your config directory.
+
+---
+
+## Help
+
+```powershell
+mainsequence --help
+mainsequence login --help
+mainsequence settings --help
+mainsequence project --help
+mainsequence build_and_run --help
+```
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_dashboards.md
+--------------------------------------------------------------------------------
+
+# MainSequence Streamlit Dashboards — Authoring Guide (Scaffold + Examples)
+
+> **GOLDEN RULES (must‑follow)**
+>
+> 1) **Always integrate with the MainSequence platform**. Import the client as:
+>    ```python
+>    import mainsequence.client as msc
+>    ```
+> 2) **Always register required `data_nodes`** once per session (idempotent) **before** any portfolio/asset/trade operations.
+> 3) **Always use the provided Streamlit scaffold** (`run_page(PageConfig(...))`) at the top of *every* page.
+
+This guide shows how to create new dashboards that stay consistent with `mainsequence.dashboards` scaffolding and remain fully integrated with the MainSequence platform (assets, portfolios, accounts, trades, etc.).
+
+---
+
+## 0) What you get from the scaffold
+
+- `mainsequence.dashboards.streamlit.scaffold`:
+  - `PageConfig` — declarative page config.
+  - `run_page(cfg)` — sets page config, injects theme/CSS, initializes session, builds context, and renders header.
+  - Automatic first‑run bootstrap of `.streamlit/config.toml` (theme) next to your app.
+  - Helper CSS (`inject_css_for_dark_accents`, `override_spinners`) to keep a unified look & feel.
+
+- Theme defaults (dark) shipped at `mainsequence.dashboards.streamlit/assets/config.toml`.
+
+- Opinionated UX helpers in the example app:
+  - **Engine HUD** (`dashboards/components/engine_status.py`)
+  - **Portfolio/Asset selectors** (`dashboards/components/portfolio_select.py`, `dashboards/components/asset_select.py`)
+  - **Curve bump controls** (`dashboards/components/curve_bump.py`)
+  - **Date selector** (`dashboards/components/date_selector.py`)
+  - **Position yield overlay** (`dashboards/components/position_yield_overlay.py`)
+  - **Position JSON I/O** (`dashboards/components/positions_io.py`)
+  - **Mermaid graph renderer** (see *Data Nodes — Dependencies* page)
+
+---
+
+## 1) Project layout (recommended)
+
+Use Streamlit’s single‑app + multipage structure:
+
+```shell
+your_dashboard/
+app.py
+pages/
+01_<feature_a>.py
+02_<feature_b>.py
+99_<utility_pages>.py
+```
+
+
+You **do not** need to copy the scaffold files; import them from the package:
+```python
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+```
+
+## 2) Bootstrapping a new app
+
+Create app.py with the scaffold and mandatory MainSequence integration:
+
+```python
+# app.py
+from __future__ import annotations
+import streamlit as st
+import mainsequence.client as msc  # ← ALWAYS import the MS client as `msc`
+
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+from dashboards.core.data_nodes import get_app_data_nodes  # your app helper (provide one if missing)
+
+def _ensure_data_nodes_once() -> None:
+    """Register all external dependency names this app expects (idempotent)."""
+    if st.session_state.get("_deps_bootstrapped_root"):
+        return
+    deps = get_app_data_nodes()
+    # Example registrations — adjust to your app needs
+    try:
+        deps.get("instrument_pricing_table_id")
+    except KeyError:
+        deps.register(instrument_pricing_table_id="vector_de_precios_valmer")
+    # Add more app-level nodes here (examples):
+    # deps.register(positions_table_id="positions_current")
+    # deps.register(trades_table_id="trades_live")
+    st.session_state["_deps_bootstrapped_root"] = True
+
+cfg = PageConfig(
+    title="My MS Dashboard",
+    hide_streamlit_multipage_nav=False,
+    use_wide_layout=True,
+    inject_theme_css=True,
+)
+
+# Initialize page and theme; returns a context dict if you supply build_context
+ctx = run_page(cfg)
+
+# Ensure data_nodes are registered for the whole app
+_ensure_data_nodes_once()
+
+st.markdown("> Welcome! Use the left sidebar to navigate pages.")
+
+
+
+```
+Why this matters
+
+msc import ensures you can call platform models (e.g., msc.Asset, msc.PortfolioIndexAsset, msc.Trade, msc.Account, etc.).
+
+_ensure_data_nodes_once() ensures downstream components (pricing/curves/positions) have the identifiers they need.
+
+## 3) Making a new page (template)
+
+Every page must start with run_page(PageConfig(...)) and must ensure data nodes are registered before querying the platform.
+
+```python
+# pages/01_Portfolio_Overview.py
+from __future__ import annotations
+import streamlit as st
+import mainsequence.client as msc  # ← REQUIRED
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+from dashboards.core.data_nodes import get_app_data_nodes
+
+# 1) Standard page boot
+ctx = run_page(PageConfig(
+    title="Portfolio Overview",
+    use_wide_layout=True,
+    inject_theme_css=True,
+))
+
+# 2) Ensure data_nodes (safe if repeated)
+def _ensure_data_nodes() -> None:
+    if st.session_state.get("_deps_bootstrapped_01"):
+        return
+    deps = get_app_data_nodes()
+    try:
+        deps.get("instrument_pricing_table_id")
+    except KeyError:
+        deps.register(instrument_pricing_table_id="vector_de_precios_valmer")
+    st.session_state["_deps_bootstrapped_01"] = True
+
+_ensure_data_nodes()
+
+# 3) Use the MS client (msc) to query platform objects
+st.sidebar.text_input("Search portfolios", key="q_port")
+q = (st.session_state.get("q_port") or "").strip()
+if len(q) >= 3:
+    with st.spinner("Searching portfolios..."):
+        results = msc.PortfolioIndexAsset.filter(current_snapshot__name__contains=q)
+else:
+    results = []
+
+st.title("Portfolio Overview")
+if not results:
+    st.info("Type at least 3 characters to search portfolios.")
+else:
+    # Render basic list
+    for p in results:
+        name = getattr(getattr(p, "current_snapshot", None), "name", "—")
+        st.write(f"- **{name}** (id={getattr(p,'id','?')})")
+
+```
+
+Checklist for every new page
+
+ * import mainsequence.client as msc
+
+ * Call run_page(PageConfig(...)) first
+
+ * Ensure data_nodes registered (idempotent)
+
+ * Use cached queries (@st.cache_data) for expensive platform calls when appropriate
+
+ * Handle errors gracefully (.get_or_none, try/except, user messages)
+
+## 4) PageConfig contract (what you can customize)
+
+* title: str — page window title and default header.
+
+* build_context: Optional[Callable[[MutableMapping], Any]] — build a context object from st.session_state (optional).
+
+* render_header: Optional[Callable[[Any], None]] — custom header renderer if you want more than a title.
+
+* init_session: Optional[Callable[[MutableMapping], None]] — set default values in session_state.
+
+* logo_path, page_icon_path — override default brand assets.
+
+* use_wide_layout: bool — default True.
+
+* hide_streamlit_multipage_nav: bool — hide the native sidebar nav if you render your own.
+
+* inject_theme_css: bool — whether to apply small accent tweaks (theme itself comes from .streamlit/config.toml).
+
+The scaffold auto‑creates .streamlit/config.toml on first run if missing and triggers one safe rerun to apply the theme.
+
+## 5) Reusing the example app patterns
+### A) Data Nodes — Dependencies (Mermaid)
+
+Use a data → Mermaid text → HTML/JS iframe pattern:
+
+* Build Mermaid text with sanitized node IDs and styles.
+
+* Render via components.html(...) importing Mermaid ESM:
+
+  * securityLevel: 'loose' to enable click callbacks.
+
+* Provide a click handler to show node details in a modal.
+
+Use case: show lineage across local nodes and remote API nodes (e.g., API_26, API_41).
+
+### B) Curve, Stats & Positions
+
+* Sidebar:
+
+Valuation date (date_selector)
+
+Portfolio search/select (sidebar_portfolio_multi_select)
+
+Curve bumps per family (curve_bump_controls_ex)
+
+* Core flow:
+
+Ensure data nodes (e.g., instrument_pricing_table_id) exist.
+
+Build curves (base & bumped), compute NPVs and carry.
+
+Overlay position YTMs onto par yield curves with Plotly.
+
+Paginated positions table via PortfoliosOperations.
+
+## C) Asset Detail
+
+Accept query params: id or unique_identifier (exclusively one).
+
+Fetch with msc.Asset.get_or_none(...).
+
+Rebuild instrument (mainsequence.instruments) from pricing_detail.instrument_dump to compute cashflows.
+
+Offer CSV download.
+
+## 6) Platform access with msc (cookbook)
+# Find assets by name / UID
+assets_by_name = msc.Asset.filter(current_snapshot__name__contains="BONOS")
+assets_by_uid  = msc.Asset.filter(unique_identifier__contains="MXN:")
+
+# Load a single asset or portfolio safely
+asset = msc.Asset.get_or_none(id=1234)
+port  = msc.PortfolioIndexAsset.get_or_none(id=5678)
+
+# Trades & accounts (examples; adapt filters to your schema)
+recent_trades = msc.Trade.filter(executed_at__gte="2025-01-01")
+accounts      = msc.Account.filter(name__contains="ALM")
+
+# Defensive accessors for optional nested fields
+uid = getattr(asset, "unique_identifier", None)
+snap_name = getattr(getattr(asset, "current_snapshot", None), "name", None)
+
+Caching tip
+
+```python
+import streamlit as st
+
+@st.cache_data(show_spinner=False)
+def search_portfolios(q: str):
+    return msc.PortfolioIndexAsset.filter(current_snapshot__name__contains=q) if len(q)>=3 else []
+```
+
+## 7) Registering data_nodes (always do this)
+
+Use your get_app_data_nodes() helper (or provide a similar registry) and register the identifiers your app expects.
+
+```python
+def ensure_nodes(flag_key: str = "_deps_bootstrapped_any") -> None:
+    import streamlit as st
+    from dashboards.core.data_nodes import get_app_data_nodes
+    if st.session_state.get(flag_key): return
+    deps = get_app_data_nodes()
+
+    # Example registrations (add your own):
+    try:
+        deps.get("instrument_pricing_table_id")
+    except KeyError:
+        deps.register(instrument_pricing_table_id="vector_de_precios_valmer")
+
+    # If your pages use trades, accounts, or positions tables, register those too:
+    # deps.register(trades_table_id="trades_live")
+    # deps.register(positions_table_id="positions_current")
+    # deps.register(accounts_table_id="accounts_master")
+
+    st.session_state[flag_key] = True
+
+```
+
+## 8) Ready‑made components you can drop in
+
+Portfolio picker (sidebar):
+```
+from dashboards.components.portfolio_select import sidebar_portfolio_multi_select
+selected_instances = sidebar_portfolio_multi_select(min_chars=3, key_prefix="my_port")
+```
+
+Asset picker (sidebar):
+```python
+
+
+from dashboards.components.asset_select import sidebar_asset_single_select
+asset = sidebar_asset_single_select(min_chars=3, key_prefix="my_asset")
+```
+
+Date selector (sticky valuation date in session):
+```python
+
+
+from dashboards.components.date_selector import date_selector
+val_date = date_selector(label="Valuation date", session_cfg_key="cfg", cfg_field="valuation_date")
+```
+
+Curve bumps (family‑aware):
+```python
+
+from dashboards.components.curve_bump import curve_bump_controls_ex
+spec, changed = curve_bump_controls_ex(available_tenors=["1Y","2Y","5Y"], key="kr")
+
+```
+
+Pricing Engine HUD:
+
+```python
+
+
+from dashboards.components.engine_status import render_engine_status, publish_engine_meta_summary
+publish_engine_meta_summary(reference_date=val_date, currency="MXN")
+render_engine_status(meta={}, title="Pricing engine", mode="sticky_bar", open=False)
+```
+
+Position overlay (Plotly traces only):
+
+```python
+
+from dashboards.components.position_yield_overlay import st_position_yield_overlay
+traces = st_position_yield_overlay(position=position, valuation_date=val_date)
+# add to your Plotly figure: for tr in traces: fig.add_trace(tr)
+
+```
+
+9) Minimal “Position from Portfolio” page (end‑to‑end)
+```python
+
+# pages/02_Position_From_Portfolio.py
+from __future__ import annotations
+import datetime as dt
+import streamlit as st
+import QuantLib as ql
+import mainsequence.client as msc
+
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+from dashboards.components.date_selector import date_selector
+from dashboards.components.portfolio_select import sidebar_portfolio_multi_select
+from dashboards.components.position_yield_overlay import st_position_yield_overlay
+from dashboards.services.portfolios import PortfoliosOperations
+from dashboards.services.positions import PositionOperations
+from dashboards.services.curves import build_curves_for_ui, keyrate_grid_for_index, curve_family_key, BumpSpec
+from dashboards.plots.curves import plot_par_yield_curves_by_family
+from dashboards.core.ql import qld
+from dashboards.core.data_nodes import get_app_data_nodes
+from dashboards.components.curve_bump import curve_bump_controls_ex
+from dashboards.core.formatters import fmt_ccy
+
+# 1) Boot page
+ctx = run_page(PageConfig(title="Position from Portfolio"))
+
+# 2) Ensure data_nodes
+def _ensure_nodes():
+    if st.session_state.get("_deps_bootstrapped_p2"): return
+    deps = get_app_data_nodes()
+    try:
+        deps.get("instrument_pricing_table_id")
+    except KeyError:
+        deps.register(instrument_pricing_table_id="vector_de_precios_valmer")
+    st.session_state["_deps_bootstrapped_p2"] = True
+_ensure_nodes()
+
+# 3) Sidebar: valuation date + portfolio search + curve bumps
+val_date = date_selector(label="Valuation date", session_cfg_key="pos_cfg", cfg_field="valuation_date")
+selected = sidebar_portfolio_multi_select(min_chars=3, key_prefix="pos_from_port")
+st.sidebar.markdown("---")
+fam_spec, _ = curve_bump_controls_ex(available_tenors=["1Y","2Y","3Y","5Y","7Y","10Y"], key="fam_bumps")
+
+if not selected:
+    st.info("Pick a portfolio in the sidebar.")
+    st.stop()
+
+active_port = selected[0].reference_portfolio
+po = PortfoliosOperations(portfolio_list=[active_port])
+notional = float(st.session_state.get("portfolio_notional", 1_000_000.0))
+
+with st.spinner("Building position…"):
+    _, pos_map = po.get_all_portfolios_as_positions(portfolio_notional=notional)
+position_template = list(pos_map.values())[0]
+
+# 4) Curves (toy build via available indices in position)
+def _indices_from_position(p):
+    return sorted({getattr(ln.instrument, "floating_rate_index_name", None)
+                   for ln in (p.lines or []) if getattr(ln.instrument, "floating_rate_index_name", None)})
+
+indices = _indices_from_position(position_template)
+base_curves = {}
+bump_curves = {}
+for idx in indices:
+    fam = curve_family_key(idx)
+    kr = fam_spec.get(fam, {}).get("keyrate_bp", {})
+    par = float(fam_spec.get(fam, {}).get("parallel_bp", 0.0))
+    spec = BumpSpec(keyrate_bp=kr, parallel_bp=par, key_rate_grid={idx: tuple(keyrate_grid_for_index(idx))})
+    ts_base, ts_bump, _, _ = build_curves_for_ui(qld(val_date), spec, index_identifier=idx)
+    base_curves[idx] = ts_base; bump_curves[idx] = ts_bump
+
+# 5) Instantiate positions and compute stats
+ql.Settings.instance().evaluationDate = qld(val_date)
+ops = PositionOperations.from_position(position_template, base_curves_by_index=base_curves, valuation_date=val_date)
+base_pos = ops.instantiate_base()
+ops.set_curves(bumped_curves_by_index=bump_curves)
+bumped_pos = ops.instantiate_bumped()
+ops.compute_and_apply_z_spreads_from_dirty_price(base_position=base_pos, bumped_position=bumped_pos)
+
+# 6) Plot + overlay
+fig = plot_par_yield_curves_by_family(base_curves, bump_curves, max_years=30, step_months=3,
+                                      title="Par yield curves — Base vs Bumped")
+for tr in st_position_yield_overlay(position=base_pos, valuation_date=val_date): fig.add_trace(tr)
+st.plotly_chart(fig, width="stretch")
+
+# 7) Quick stats
+stats = PositionOperations.portfolio_style_stats(base_position=base_pos, bumped_position=bumped_pos,
+                                                 valuation_date=val_date, cutoff=val_date + dt.timedelta(days=365))
+c1, c2, c3 = st.columns(3)
+c1.metric("NPV (base)", fmt_ccy(stats["npv_base"]), delta=fmt_ccy(stats["npv_delta"]))
+c2.metric("Carry (base)", fmt_ccy(stats["carry_base"]), delta=fmt_ccy(stats["carry_delta"]))
+c3.metric("NPV (bumped)", fmt_ccy(stats["npv_bumped"]))
+
+```
+
+## 10) Data Nodes — Dependencies page (copy‑ready)
+Use this when you want an interactive lineage diagram with click‑to‑details. Adapt the stub graph to your real nodes/edges payload from MS.
+
+See example: pages/02_data_nodes_dependencies.py
+
+Key ideas you can reuse:
+
+Sanitize node IDs for Mermaid.
+
+Determine label and color per node; compute legible text color.
+
+For clicks, expose window._mmdNodeClick(id) and open a modal.
+
+## 11) Useful UX touches from the scaffold
+
+Accents CSS: inject_css_for_dark_accents() gives subtle visual polish for metrics.
+
+Spinner override: override_spinners() replaces default spinners with a clean inline animation, dims backdrop during long tasks.
+
+Hide native nav: Set hide_streamlit_multipage_nav=True if you render your own navigation.
+
+12) Prompt recipe so an AI helper can generate new pages correctly
+
+Copy this into your AI assistant as instructions it must always follow when generating code:
+
+Always start each Streamlit file with:
+
+import mainsequence.client as msc
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+ctx = run_page(PageConfig(title="<PAGE TITLE>", use_wide_layout=True, inject_theme_css=True))
+
+
+Always ensure and idempotently register app data_nodes before querying the platform:
+```python
+
+
+from dashboards.core.data_nodes import get_app_data_nodes
+import streamlit as st
+if not st.session_state.get("_deps_bootstrapped"):
+    deps = get_app_data_nodes()
+    try: deps.get("instrument_pricing_table_id")
+    except KeyError: deps.register(instrument_pricing_table_id="vector_de_precios_valmer")
+    # register any other tables your page needs here
+    st.session_state["_deps_bootstrapped"] = True
+
+```
+
+
+Always query platform objects through msc (e.g., msc.Asset, msc.PortfolioIndexAsset, msc.Trade, msc.Account).
+
+Prefer cached queries for searches (@st.cache_data(show_spinner=False)).
+
+Never hard‑code secrets/URLs; rely on the configured MainSequence client.
+
+Name pages with numeric prefixes: 01_*.py, 02_*.py, etc., and keep page code self‑contained.
+
+When plotting, reuse provided components (curve bump, overlay, positions table) and keep valuation date in st.session_state.
+
+Gracefully handle missing data with get_or_none, st.info, st.warning, and download buttons for raw payloads.
+
+Keep UI responsive with with st.spinner("…"): and small status chips (Engine HUD if available).
+
+Checklist the AI should ask/confirm (or default)
+
+Page title and goal
+
+Which MS objects to retrieve (assets, portfolios, trades, accounts)
+
+Which data_nodes to register (list of keys → identifiers)
+
+Whether curves/pricing are needed (and for which indices/families)
+
+Desired outputs (tables, charts, downloads)
+
+
+## 14) Do’s & Don’ts
+
+✅ Do import mainsequence.client as msc in every page/module that touches platform data.
+
+✅ Do register data_nodes once per session and before any pricing/curve/portfolio operations.
+
+✅ Do call run_page(PageConfig(...)) at the top of every page.
+
+✅ Do guard platform calls and show actionable messages to users.
+
+❌ Don’t bypass the scaffold (no st.set_page_config directly unless inside the scaffold).
+
+❌ Don’t assume data nodes exist — register them explicitly and idempotently.
+
+❌ Don’t rely on unstored UI state for valuation date or selections; persist in st.session_state.
+
+## 15) Troubleshooting
+
+“Asset/portfolio not found”: Use .get_or_none and surface the ID/UID you searched for. Confirm you’re registered against the right snapshot/table nodes.
+
+“pricing_detail.instrument_dump missing”: Warn the user and short‑circuit cashflow rebuild; offer raw JSON download for support.
+
+Mermaid graph too small: Increase the iframe height or compute it from len(nodes).
+
+Theme not applied: Remove existing .streamlit/config.toml or set MS_APP_DIR and rerun so the scaffold can copy the packaged theme once.
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_data_nodes.md
+--------------------------------------------------------------------------------
+
+# DataNodes — Authoring Guide (Complete & Correct)
+
+> This is the canonical guide for building **DataNodes** in MainSequence.  
+> It clearly separates **MUST** vs **SHOULD**, supports **single-index** *or* **MultiIndex** tables, and includes a practical, copy‑pasteable template.  
+> **Note:** the base `DataNode` already performs **index/column validation and sanitization after `update()`** — do **not** call your own validators or sanitizers inside `update()`.
+
+---
+
+## What is a DataNode?
+
+A **DataNode** is a unit of computation in the MainSequence DAG. Each node:
+
+- Declares its **dependencies()** on other nodes.
+- Computes and returns a **`pandas.DataFrame`** in **`update()`**.
+- Optionally exposes **metadata** for better discovery & documentation.
+- Follows strict index/column rules so storage and downstream nodes stay consistent.
+
+---
+
+## MUST (Hard Requirements)
+
+1. **Implement `dependencies()` and `update()`**.  
+   If there are no dependencies, **return `{}`** (do **not** use `pass`).
+
+2. **Output index** (pick one):  
+   - **Single-index**: `pandas.DatetimeIndex` named **`time_index`** (timezone-aware **UTC**).  
+   - **MultiIndex**: first level **`time_index`** (UTC), second level **`unique_identifier`**; any deeper levels are allowed but **must be named**.
+
+3. **No datetime columns** in the DataFrame (dates live only in the index).
+
+4. **Columns** must be **lowercase**, **≤ 63 characters**, and reasonably stable (avoid renaming).
+
+5. **Deterministic identity & hashing**:  
+   - Constructor args define the node’s identity (storage/update hashes).  
+   - Use **`_ARGS_IGNORE_IN_STORAGE_HASH`** for args that should **not** affect the storage hash (e.g., transient inputs).
+
+6. **Do not validate/sanitize manually** inside `update()`; the base class does this automatically when your DataFrame returns.
+
+---
+
+## SHOULD (Best Practices)
+
+- **Docstrings & typing**: Give every class/method a clear docstring; add type hints for public APIs.
+- **Idempotent `update()`**: For the same input window, produce the same output (seed randomness if needed).
+- **Incremental updates**: Use `UpdateStatistics` to compute only the new slice (examples below).
+- **Early exits**: If nothing to do (e.g., `start > end` or empty ranges), return an **empty DataFrame**.
+- **Logging**: Log high-level progress only (avoid noisy per-row logs).
+- **Small helpers**: Use small private helpers for repetitive fetch/transform logic.
+- **Stable schemas**: Prefer additive changes (new columns) over breaking changes (renames/drops).
+- **Pre-filter when >2 levels**: If your MultiIndex has deeper levels, call `update_statistics.filter_assets_by_level(...)` at the **start** of `update()` to keep updates consistent across levels.
+- **Batch IO**: When possible, fetch dependency data **once** using a **range descriptor**, not in per-asset loops.
+
+---
+
+## `UpdateStatistics` — How to Use It (Field & Method Guide)
+
+`self.update_statistics` describes **what** to update (assets, levels) and **from when**. You will use it to compute only the necessary slice.
+
+**Common fields**
+- `max_time_index_value` — last stored timestamp for **single-index** outputs. Use `last + 1` as the next start.
+- `asset_list` — the assets included in this update batch (for MultiIndex tables).
+- `asset_time_statistics` — “last time updated” mapping per asset (and deeper levels if present).
+
+**Handy methods**
+- `get_update_range_map_great_or_equal()`  
+  Returns a **range descriptor** suitable for fetching all prior observations per asset in **one call** (e.g., everything with `>= last_seen`).
+- `get_asset_earliest_multiindex_update(asset)`  
+  Returns the last timestamp for that asset; often you’ll start at `last + 1 hour` or `last + 1 day`.
+- `filter_assets_by_level(level, filters)`  
+  For MultiIndex with **>2 levels**, restrict the update to a consistent subset at a deeper level (e.g., feature configs). Call this **at the beginning** of `update()`.
+
+---
+
+## `UpdateStatistics` — Patterns by Example
+
+Below are distilled patterns adapted from the examples. Adjust as needed.
+
+### A) Single-index series (daily) — start from `last + 1 day`
+
+Use `max_time_index_value` to compute the next start. Generate through “yesterday 00:00 UTC”. Return a **single** `DatetimeIndex` named `time_index`.
+
+```python
+class SingleIndexTS(DataNode):
+    """A simple daily time series with a single DatetimeIndex named 'time_index'."""
+    OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
+
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {}
+
+    def update(self) -> pd.DataFrame:
+        import numpy as np
+        today_utc = datetime.datetime.now(tz=pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        us = self.update_statistics
+
+        start_date = self.OFFSET_START if us.max_time_index_value is None else us.max_time_index_value + datetime.timedelta(days=1)
+        if start_date > today_utc:
+            return pd.DataFrame()
+
+        num_days = (today_utc - start_date).days + 1
+        idx = pd.date_range(start=start_date, periods=num_days, freq="D", tz=pytz.utc, name="time_index")
+        return pd.DataFrame({"random_number": np.random.rand(num_days)}, index=idx)
+```
+
+### B) MultiIndex (2 levels) — per-asset simulation using prior observations
+
+* Use get_update_range_map_great_or_equal() to fetch prior observations once.
+* For each asset in asset_list, start at get_asset_earliest_multiindex_update(asset) + 1h and generate through “yesterday 00:00 UTC”.
+* Reshape to long and set index to `("time_index","unique_identifier")`.
+
+```python
+class SimulatedPricesManager:
+    """Helper/manager that performs the per-asset simulation for a DataNode owner."""
+    def __init__(self, owner: DataNode):
+        self.owner = owner
+
+    @staticmethod
+    def _get_last_price(obs_df: pd.DataFrame, unique_id: str, fallback: float) -> float:
+        """Return last close for `unique_id` from obs_df (time_index, unique_identifier), or fallback."""
+        if obs_df is None or obs_df.empty:
+            return fallback
+        try:
+            series = (
+                obs_df
+                .reset_index()
+                .sort_values(["unique_identifier", "time_index"])
+                .set_index(["time_index", "unique_identifier"])["close"]
+            )
+            last = series.xs(unique_id, level="unique_identifier").dropna()
+            if len(last) == 0:
+                return fallback
+            return float(last.iloc[-1])
+        except Exception:
+            return fallback
+
+    def update(self) -> pd.DataFrame:
+        import numpy as np, pytz
+        us = self.owner.update_statistics
+
+        # 1) One-shot fetch of prior observations
+        range_descriptor = us.get_update_range_map_great_or_equal()
+        last_obs = self.owner.get_ranged_data_per_asset(range_descriptor=range_descriptor)
+
+        # 2) Target end (yesterday 00:00 UTC)
+        yday = datetime.datetime.now(pytz.utc).replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=1)
+
+        # 3) Simulate per asset
+        frames = []
+        for asset in us.asset_list:
+            start_time = us.get_asset_earliest_multiindex_update(asset=asset) + datetime.timedelta(hours=1)
+            if start_time > yday:
+                continue
+
+            idx = pd.date_range(start=start_time, end=yday, freq="D")
+            if len(idx) == 0:
+                continue
+
+            seed_price = self._get_last_price(last_obs, unique_id=asset.unique_identifier, fallback=100.0)
+            steps = np.random.lognormal(mean=0.0, sigma=0.01, size=len(idx))
+            path = seed_price * np.cumprod(steps)
+
+            tmp = pd.DataFrame({asset.unique_identifier: path}, index=idx)
+            tmp.index.name = "time_index"
+            frames.append(tmp)
+
+        if not frames:
+            return pd.DataFrame()
+
+        # 4) Long-form with MultiIndex
+        wide = pd.concat(frames, axis=1)
+        long = wide.melt(ignore_index=False, var_name="unique_identifier", value_name="close")
+        long = long.set_index("unique_identifier", append=True)  # -> index: (time_index, unique_identifier)
+        return long
+
+```
+
+### C) MultiIndex (>2 levels) — pre-filter deeper level, compute TA features
+Call filter_assets_by_level(level=2, filters=[...]) at the start of update() to restrict to a consistent set of deeper-level keys (e.g., TA configs, JSON-serialized).
+
+Build a per-asset asset_range_descriptor with start_date = last_update - lookback.
+
+Fetch all prices once with get_ranged_data_per_asset(range_descriptor=asset_range_descriptor).
+
+Pivot to wide, compute TA (e.g., with pandas_ta), then reshape back to long.
+
+```python
+class FeatureStoreTA(DataNode):
+    """Derives TA features from a dependent price series (MultiIndex with >2 levels)."""
+
+    def __init__(self, asset_list: List[ms_client.Asset], ta_feature_config: List[dict], *args, **kwargs):
+        self.asset_list = asset_list
+        self.ta_feature_config = ta_feature_config  # e.g., [{"kind":"SMA","length":28}, {"kind":"RSI","length":21}]
+        self.prices_time_serie = SimulatedPrices(asset_list=asset_list, *args, **kwargs)
+        super().__init__(*args, **kwargs)
+
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {"prices_time_serie": self.prices_time_serie}
+
+    def update(self) -> pd.DataFrame:
+        import numpy as np, json, copy, pandas_ta as ta
+
+        # (0) REQUIRED for >2 levels: pre-filter deeper level (e.g., by encoded TA config)
+        self.update_statistics.filter_assets_by_level(
+            level=2,
+            filters=[json.dumps(c) for c in self.ta_feature_config]
+        )
+
+        us = self.update_statistics
+        SIM_OFFSET = datetime.timedelta(days=50)
+
+        # (1) Lookback window large enough for all TA configs
+        max_len = int(np.max([c["length"] for c in self.ta_feature_config]).item())
+        rolling_window = datetime.timedelta(days=max_len + 1)
+
+        # (2) Build per-asset range descriptor
+        asset_range_descriptor = {}
+        for asset in us.asset_list:
+            last_update = us.get_asset_earliest_multiindex_update(asset) - SIM_OFFSET
+            start_date = last_update - rolling_window
+            asset_range_descriptor[asset.unique_identifier] = {
+                "start_date": start_date,
+                "start_date_operand": ">=",
+            }
+
+        # (3) Fetch base prices in a single call
+        prices_df = self.prices_time_serie.get_ranged_data_per_asset(range_descriptor=asset_range_descriptor)
+        if prices_df is None or prices_df.empty:
+            return pd.DataFrame()
+
+        # (4) Wide for TA → then long features
+        pivot = prices_df.reset_index().pivot(index="time_index", columns="unique_identifier", values="close")
+        features = []
+        for conf in self.ta_feature_config:
+            conf_copy = copy.deepcopy(conf)          # keep original intact
+            kind = conf_copy.pop("kind").lower()     # e.g., "sma", "rsi"
+            func = getattr(ta, kind)                 # pandas_ta.sma, pandas_ta.rsi, ...
+            wide = pivot.apply(lambda col: func(col, **conf_copy))
+
+            # long: (time, uid) → one feature column keyed by the config
+            feature_name = json.dumps(conf, sort_keys=True)
+            long = pd.DataFrame({feature_name: wide.stack(dropna=False)})
+            features.append(long)
+
+        out = pd.concat(features, axis=1)  # columns are encoded feature configs
+        # Base class will sanitize names & validate index. Return long or pivot to wide as your contract requires.
+        return out
+
+```
+
+## Dependencies
+Only nodes returned by dependencies() are traversed & updated as part of the DAG:
+
+* Return a dict mapping short aliases to the dependency instances, e.g.:
+
+  * return {"prices_time_serie": self.prices_time_serie}
+
+  * If none, return {}.
+
+## Optional Hooks
+
+Override these to enrich metadata or control the asset universe:
+
+* get_table_metadata(self) -> Optional[ms_client.TableMetaData]
+Provide a globally unique identifier, data_frequency_id, and a concise description.
+
+* get_asset_list(self) -> List[ms_client.Asset]
+Define the assets dynamically (e.g., pull from a category or registry).
+
+* get_column_metadata(self) -> List[ColumnMetaData]
+Describe columns (dtype, label, description) for UI and docs.
+
+* run_post_update_routines(self, error_on_last_update: bool)
+Optional post-update side effects (e.g., building translation tables, artifacts).
+
+## Hashing & Constructor Notes
+Constructor arguments determine the identity of a node instance (its storage/update hash).
+
+Put any non-identity or transient args in _ARGS_IGNORE_IN_STORAGE_HASH to avoid unnecessary duplication.
+Example: SimulatedPrices ignores "asset_list" in its storage hash.
+
+## Canonical Template (copy/paste)
+Minimal working skeleton. Choose whether you output single-index or MultiIndex in update().
+
+```python
+from typing import Dict, Union, List, Optional
+import datetime, pytz, pandas as pd
+import mainsequence.client as ms_client
+from mainsequence.tdag import DataNode, APIDataNode
+from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
+
+UTC = pytz.utc
+
+class MyDataNode(DataNode):
+    """One-line purpose. Longer description of inputs/outputs & assumptions.
+
+    Output:
+        Either:
+          - Single-index: DatetimeIndex named "time_index" (UTC), or
+          - MultiIndex: ("time_index","unique_identifier", [level_2, ...])
+        Columns are lowercase (≤63 chars). No datetime columns.
+    """
+
+    _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list"]  # adjust as needed
+
+    def __init__(self, asset_list: Optional[List[ms_client.Asset]] = None, *args, **kwargs):
+        self.asset_list = asset_list or []
+        super().__init__(*args, **kwargs)
+
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {}  # e.g., {"prices": self.prices_ts}
+
+    def get_asset_list(self) -> List[ms_client.Asset]:
+        # Optional: dynamically supply the asset universe
+        return self.asset_list
+
+    def get_column_metadata(self) -> List[ColumnMetaData]:
+        return [ColumnMetaData(
+            column_name="my_value",
+            dtype="float",
+            label="My Value",
+            description="Example metric"
+        )]
+
+    def get_table_metadata(self) -> Optional[ms_client.TableMetaData]:
+        return ms_client.TableMetaData(
+            identifier="my_timeseries_identifier",
+            data_frequency_id=ms_client.DataFrequency.one_d,
+            description="Explain what this series represents"
+        )
+
+    def update(self) -> pd.DataFrame:
+        us: UpdateStatistics = self.update_statistics
+
+        # 1) Compute the update window
+        start = (us.max_time_index_value or datetime.datetime(2024, 1, 1, tzinfo=UTC)).replace(tzinfo=UTC)
+        start = (start + datetime.timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+        end = datetime.datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0) - datetime.timedelta(days=1)
+        if start > end:
+            return pd.DataFrame()
+
+        # 2) Example: MultiIndex output for assets in this batch
+        idx = pd.date_range(start=start, end=end, freq="D", tz=UTC, name="time_index")
+        frames = []
+        for asset in us.asset_list:
+            tmp = pd.DataFrame({"my_value": 0.0}, index=idx)
+            tmp["unique_identifier"] = asset.unique_identifier
+            frames.append(tmp.set_index("unique_identifier", append=True))
+
+        return pd.concat(frames) if frames else pd.DataFrame()
+
+```
+
+## Common Pitfalls
+* Wrong index names/order: For MultiIndex, the first two must be ("time_index","unique_identifier").
+
+* Naive datetimes: The time_index must be timezone-aware UTC.
+
+* Datetime columns: Don’t put datetimes in columns — only in the index.
+
+* dependencies() using pass: If there are no dependencies, return {}.
+
+* Empty updates: If there’s nothing to compute, return an empty DataFrame (don’t raise or write partials).
+
+* Randomness: Seed or derive from deterministic inputs if you need reproducibility.
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_getting_started.md
+--------------------------------------------------------------------------------
+
+# Getting Started with the Main Sequence Platform
+
+## 1. Create a New Project
+
+To get started with the Main Sequence Platform, first create a project via the GUI.
+
+1. Go to https://main-sequence.app/projects/ and click the **Create New Project** button in the top-right corner.
+2. Select **Create in Cloud Platform**.
+3. Enter the project name. For now, keep **Data Source** as **Default**.
+4. Leave **Environment Variables** empty; you can change them later.
+5. Click **Create**.
+
+Your new project is being linked and set up on the platform. You’re ready to start developing.
+
+## 2. Set Up Your Project Locally
+
+Now let’s set up your local environment to communicate with the Main Sequence Platform. You can do this using the CLI; see the [CLI instructions](./gpt_instructions_cli.md) for details.
+
+You should now have your project set up locally.
+
+## 3. Developing on the Main Sequence Platform: Core Concepts
+
+Your project automatically creates a GitHub repository with a branch. Everything you push to this branch becomes available to the platform’s compute engine immediately.
+
+A newly created project’s structure looks like this:
+
+```
+REPO_NAME/
+├─ dashboards/
+├─ src/
+│  └─ data_nodes/
+├─ scripts/
+├─ requirements.txt
+├─ pyproject.toml
+├─ Readme.md
+
+```
+
+### Repository conventions
+
+- **Can I change the structure?** Yes—but we recommend keeping the default layout so projects stay consistent across teams and tooling.
+
+- **Project vs. library.** This repository is meant to be run as a project, not published as a library. You don’t need packaging or installation steps like `setup.py` or `pip install .`.  
+  *Note:* `pyproject.toml` is primarily for tooling/config in this template, not for packaging to PyPI.
+
+- **Dashboards.** Keep the `dashboards/` directory so dashboards are discovered and integrated automatically. For details, see the [dashboard instructions](./gpt_dashboards_instructions.md).
+
+- **Dependencies (UV recommended).** We use **uv** for dependency and environment management.
+  - Declare dependencies in `pyproject.toml`.
+  - Commit the `uv.lock` file for reproducible builds.
+  - If your CI or the platform requires a `requirements.txt`, generate it **from the lockfile** (do not hand-edit). This keeps one source of truth while still producing a pinned `requirements.txt` when needed.
+
+- **Runtime parity.** Use the provided `Dockerfile` to run the project locally; it matches the image used by the platform to run your jobs, minimizing “works on my machine” drift.
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_instruments.md
+--------------------------------------------------------------------------------
+
+# `mainsequence.instruments` — Instructions & Reference
+
+> **Import pattern**
+>
+> ```python
+> import mainsequence.instruments as msi
+> # Optional: import specific classes so they are registered for rebuild()
+> from mainsequence.instruments.bond import FixedRateBond, FloatingRateBond
+> from mainsequence.instruments.interest_rate_swap import InterestRateSwap
+> from mainsequence.instruments.vanilla_fx_option import VanillaFXOption
+> from mainsequence.instruments.knockout_fx_option import KnockOutFXOption
+> from mainsequence.instruments.european_option import EuropeanOption
+> ```
+>
+> Classes auto‑register at import time. Importing the modules above ensures
+> `msi.Instrument.rebuild(...)` can locate the types.
+
+---
+
+## 0) What this submodule provides
+
+- **Instrument models (Pydantic)** wrapping QuantLib with a clean `.price()` API and JSON helpers.
+- **Positions API** to aggregate instruments, PVs, cashflows, and greeks.
+- **Index & curve factory** keyed by **client‑side UIDs** (no hardcoded IDs in code).
+- **Data interface** that can read from your platform tables or from a local/mock backend.
+
+Runtime requirements: Python 3.10+, QuantLib 1.29+.
+
+---
+
+## 1) Available instruments (exhaustive)
+
+All models inherit from `msi.Instrument` (Pydantic + JSON mixin). Dates are Python
+`date`/`datetime`. QuantLib types are handled by custom serializers.
+
+### 1.1 Bonds
+
+#### `FixedRateBond`  *(in `mainsequence.instruments.bond`)*
+**Fields**
+- `face_value: float`
+- `issue_date: date`
+- `maturity_date: date`
+- `coupon_rate: float`
+- `coupon_frequency: ql.Period`  (e.g., `"6M"`)
+- `day_count: ql.DayCounter`  (e.g., `"Thirty360_USA"`, `"Actual365Fixed"`)
+- `calendar: ql.Calendar`  (serialized as `{"name": "<Calendar::name()>"}`)
+- `business_day_convention: ql.BusinessDayConvention`  (e.g., `"Following"`)
+- `settlement_days: int = 2`
+- `schedule: ql.Schedule | None`
+- `benchmark_rate_index_name: str | None`  *(optional tag for mapping/analytics)*
+
+**API**
+- `.set_valuation_date(dt)`
+- `.price(with_yield: float | None = None) -> float`
+  - If `with_yield` is given, builds a flat curve at that YTM.
+  - Else, uses any curve provided via `.reset_curve(handle)`.
+- `.analytics(with_yield: float | None = None) -> dict` → `clean_price`, `dirty_price`, `accrued_amount`
+- `.get_cashflows() -> dict` → `{"fixed":[...], "redemption":[...]}` (future only)
+- `.get_yield(override_clean_price: float | None = None) -> float`
+- `.get_ql_bond(build_if_needed=True, with_yield: float | None = None) -> ql.Bond`
+
+**Notes**
+- If the provided `schedule` has no remaining periods as of valuation date, the bond auto‑degrades to
+  a `ZeroCouponBond` (redemption‑only) for robust pricing.
+
+---
+
+#### `FloatingRateBond`  *(in `mainsequence.instruments.bond`)*
+**Fields (extends Bond)**
+- `floating_rate_index_name: str`  **(index UID; see §3 & §4)**
+- `spread: float = 0.0`
+- (inherits `issue_date`, `maturity_date`, `coupon_frequency`, `day_count`, `calendar`, etc.)
+
+**API**
+- `.set_valuation_date(dt)`
+- `.price(with_yield: float | None = None) -> float`
+- `.reset_curve(curve_handle)` — relinks a custom forwarding/discount curve for the index.
+- `.get_cashflows() -> dict` → `{"floating":[...], "redemption":[...]}` with fixing dates, rate, spread, amounts.
+- `.get_index_curve()` — returns the linked forwarding term structure.
+
+**Notes**
+- By default, both **forecasting and discounting** use the index curve returned by the index factory.
+- Past fixings are hydrated automatically (see §3.3).
+
+---
+
+### 1.2 Interest‑rate swap
+
+#### `InterestRateSwap`  *(in `mainsequence.instruments.interest_rate_swap`)*
+**Fields**
+- Core: `notional: float`, `start_date: date`, `maturity_date: date`, `fixed_rate: float`
+- Fixed leg: `fixed_leg_tenor: Period`, `fixed_leg_convention: BDC`, `fixed_leg_daycount: DayCounter`
+- Float leg: `float_leg_tenor: Period`, `float_leg_spread: float`, `float_leg_index_name: str` **(UID)**
+- Alternative: `tenor: ql.Period | None` → if set, maturity = spot‑start + tenor (T+1 on index calendar)
+
+**API**
+- `.set_valuation_date(dt)`
+- `.price() -> float`
+- `.get_cashflows() -> dict` → `{"fixed":[...], "floating":[...]}` (future only)
+- `.get_net_cashflows() -> pd.Series` (payment‑date index)
+- `.reset_curve(curve)` — rebuilds on a different forwarding/discount curve while keeping conventions.
+
+**Factory**
+- `InterestRateSwap.from_tiie(notional, start_date, fixed_rate, float_leg_spread=0.0, tenor=None, maturity_date=None)`  
+  Builds a **TIIE(28D)** IRS with standard conventions (both legs 28D, ACT/360, ModifiedFollowing).
+
+**Notes**
+- Fixings ≤ valuation date are **backfilled** from storage; same‑day coupons are **seeded** from the curve
+  when necessary so pricing is stable at T. See §3.3.
+
+---
+
+### 1.3 Options
+
+#### `EuropeanOption` (equity, Black–Scholes–Merton)
+**Fields**: `underlying: str`, `strike: float`, `maturity: date`, `option_type: "call"|"put"`  
+**API**: `.price()`, `.get_greeks()`  
+**Data**: pulls spot/vol/rate/dividend from the **equities_daily** data interface (mock or platform).
+
+#### `VanillaFXOption` (Garman–Kohlhagen)
+**Fields**: `currency_pair: str` (e.g., `"EURUSD"`), `strike`, `maturity`, `option_type`, `notional`  
+**API**: `.price()` (NPV × notional), `.get_greeks()`, `.get_market_info()`
+
+#### `KnockOutFXOption` (barrier; analytic → MC fallback)
+**Fields**: `currency_pair`, `strike`, `barrier`, `barrier_type: "up_and_out"|"down_and_out"`, `maturity`, `option_type`, `notional`, `rebate=0.0`  
+**API**: `.price()` (NPV × notional), `.get_greeks()`, `.get_barrier_info()`  
+**Notes**: Validates barrier vs spot; uses analytic engines when available, else MC engine.
+
+---
+
+## 2) JSON serialization & rebuild
+
+Every instrument inherits a JSON mixin:
+
+- `obj.to_json_dict()` → Python dict (QuantLib fields serialized to compact tokens)
+- `obj.to_json()` → canonical JSON string (sorted keys; stable for hashing)
+- `obj.content_hash()` / `msi.Instrument.hash_payload(payload)` → stable content hash
+- `msi.Instrument.rebuild(data)` — rebuilds from `{"instrument_type": "...", "instrument": {...}}` or a JSON string.
+
+### 2.1 Field encoders (what JSON looks like)
+- **Period** → `"28D"`, `"3M"`, `"6M"`, `"2Y"` …
+- **DayCounter** → `"Actual360"`, `"Actual365Fixed"`, `"Thirty360_USA"` …
+- **BusinessDayConvention** → `"Following"`, `"ModifiedFollowing"`, `"Unadjusted"` …
+- **Calendar** → `{"name": "<Calendar::name()>"}` using the QuantLib **display name** (e.g., `"TARGET"`, `"Mexican stock exchange"`). A factory resolves it back.
+- **Schedule** → explicit `{"dates":[...], ...}` (with true calendar name embedded).
+- **IborIndex (when serialized ad‑hoc)** → `{"family":"USDLibor","tenor":"3M"}`; TIIE indices are handled by the central factory (see §3).
+
+> **Tip:** Ensure you import the modules that define the instrument classes before calling `Instrument.rebuild(...)`
+> so the runtime registry already contains the types.
+
+### 2.2 Position serialization
+`Position.to_json_dict()` returns:
+```json
+{
+  "lines": [
+    {"instrument_type":"FixedRateBond","instrument":{...},"units":5.0,"extra_market_info":null},
+    {"instrument_type":"InterestRateSwap","instrument":{...},"units":-2.0}
+  ]
+}
+```
+…and `Position.from_json_dict(...)` rebuilds each instrument via the same registry.
+
+---
+
+## 3) Indices & curves — registration and resolution
+
+This package **never hardcodes** production IDs. Instead, it asks the client to provide **Constants** (names → values) once, and then uses those values everywhere.
+
+### 3.1 How an index is built
+- Call `get_index(index_identifier, target_date, forwarding_curve=None, hydrate_fixings=True)`.
+- We look up `INDEX_CONFIGS[index_identifier]` to get:
+  - `curve_uid` (which discount curve to use),
+  - `calendar`, `day_counter`, `period`, `settlement_days`, `bdc`, `end_of_month`.
+- We construct a `ql.IborIndex` **whose QuantLib name is exactly your `index_identifier`** (the stable UID).
+- If `forwarding_curve` is not provided, we call `build_zero_curve(target_date, index_identifier)` (see below).
+
+### 3.2 How the zero curve is built
+- Using `curve_uid` from the index config, we fetch curve **nodes** for the valuation date:
+  `[{ "days_to_maturity": <int>, "zero": <decimal> }, ...]`.
+- We convert (day, zero) to discount factors assuming **simple** accrual on the configured day counter (e.g., ACT/360 for VALMER TIIE zeros):
+  `df = 1 / (1 + zero * T)` with `T = DC.yearFraction(asof, asof + days)`.
+- We build a `ql.DiscountCurve` (extrapolation enabled) and return a `ql.YieldTermStructureHandle`.
+
+### 3.3 How historical fixings are hydrated
+- `add_historical_fixings(target_date, ibor_index)` loads fixings by **UID** (taken from `index.familyName()` / the name we set).
+- We filter to valid fixing dates on the index calendar and to strictly `< target_date`, then `index.addFixings(...)` in bulk.
+- For coupons with fixing dates on/before valuation that still lack a stored fixing, we **seed** a forward from the same curve.
+
+### 3.4 What you must register (Constants → your UIDs)
+Provide values for these **symbolic names** in your Constants store (once):
+
+**Reference rate identifiers (index UIDs)**
+- `REFERENCE_RATE__TIIE_28`
+- `REFERENCE_RATE__TIIE_91`
+- `REFERENCE_RATE__TIIE_182`
+- `REFERENCE_RATE__TIIE_OVERNIGHT`
+- `REFERENCE_RATE__CETE_28`
+- `REFERENCE_RATE__CETE_91`
+- `REFERENCE_RATE__CETE_182`
+- `REFERENCE_RATE__USD_SOFR`
+
+**Curve identifiers (curve UIDs used by the indices above)**
+- `ZERO_CURVE__VALMER_TIIE_28`
+- `ZERO_CURVE__BANXICO_M_BONOS_OTR`
+- `ZERO_CURVE__UST_CMT_ZERO_CURVE_UID`  *(example mapping for SOFR/UST)*
+
+Keep these **values stable** over time. Instruments and positions rebuilt later will still resolve to the same index/curve.
+
+---
+
+## 4) Production storage — tables you must set **client‑side**
+
+When `MSI_DATA_BACKEND=mainsequence` (default), curves and fixings are read from the tables you select in the platform’s **Instruments → Config** page.
+
+You **must** set both:
+- **Discount curves storage node** → table that stores your discount curves (serialized day→zero map per curve UID and date).
+- **Reference rates fixings storage node** → table with index fixings by reference rate UID.
+
+If these are missing, explicit runtime errors are raised (with a link to the configuration page).
+
+**Optional environment switches**
+- `MSI_DATA_BACKEND=mock` to use the bundled mock readers (no platform calls).
+- For the mock **TIIE zero** curve CSV, set:  
+  `export TIIE_ZERO_CSV=/absolute/path/to/MEXDERSWAP_IRSTIIEPR.csv`
+
+**Defaults file (for reference)**  
+`instruments.default.toml` shows friendly default names like:  
+`DISCOUNT_CURVES_TABLE="discount_curves"`, `REFERENCE_RATES_FIXING_TABLE="fixing_rates_1d"` — but the **actual** production reads are governed by the table IDs you set in the configuration screen above.
+
+---
+
+## 5) Positions API
+
+### 5.1 Core types
+- `PositionLine(instrument: Instrument, units: float, extra_market_info: dict | None = None)`
+- `Position(lines: list[PositionLine], position_date: datetime | None = None)`
+
+### 5.2 Aggregations
+- `.price()` → Σ units × instrument.price()
+- `.price_breakdown()` → list of `{instrument, units, unit_price, market_value}`
+- `.get_cashflows(aggregate=False)` → merges each instrument’s `.get_cashflows()`; scales amounts by units.
+- `.get_greeks()` → sums keys across instruments that expose `.get_greeks()`.
+- `.agg_net_cashflows()` → DataFrame of combined (coupon + redemption) by date.
+- `.position_total_npv()` and `.position_carry_to_cutoff(valuation_date, cutoff)`.
+- Helpers: `npv_table(npv_base, npv_bumped, units)`, `portfolio_stats(position, bumped_position, valuation_date, cutoff)`.
+
+### 5.3 JSON I/O
+- `Position.to_json_dict()` / `Position.from_json_dict(...)` for round‑trip persistence.
+
+---
+
+## 6) Quick examples
+
+### 6.1 TIIE‑28D IRS (2Y) priced off your configured curve
+```python
+import datetime as dt, QuantLib as ql
+import mainsequence.instruments as msi
+from mainsequence.instruments.interest_rate_swap import InterestRateSwap
+
+val = dt.date.today()
+ql.Settings.instance().evaluationDate = ql.Date(val.day, val.month, val.year)
+
+swap = InterestRateSwap.from_tiie(
+    notional=100_000_000,
+    start_date=val,
+    fixed_rate=0.095,
+    float_leg_spread=0.0000,
+    tenor=ql.Period("2Y"),
+)
+swap.set_valuation_date(val)
+print("PV:", swap.price())
+print("Cashflows:", swap.get_cashflows())
+```
+
+### 6.2 Serialize → rebuild → price
+```python
+from mainsequence.instruments.bond import FixedRateBond
+import json, datetime as dt, QuantLib as ql
+
+val = dt.date.today()
+b = FixedRateBond(
+    face_value=1_000_000,
+    issue_date=val,
+    maturity_date=val.replace(year=val.year+5),
+    coupon_rate=0.05,
+    coupon_frequency=ql.Period("6M"),
+    day_count=ql.Thirty360(ql.Thirty360.USA),
+    calendar=ql.TARGET(),
+)
+b.set_valuation_date(val)
+payload = {"instrument_type": type(b).__name__, "instrument": b.to_json_dict()}
+
+rebuilt = msi.Instrument.rebuild(payload)  # class auto‑discovered if module imported
+rebuilt.set_valuation_date(val)
+print(rebuilt.price(with_yield=0.051))
+```
+
+### 6.3 Position aggregation
+```python
+from mainsequence.instruments import Position, PositionLine
+from mainsequence.instruments.vanilla_fx_option import VanillaFXOption
+import datetime as dt
+
+val = dt.date.today()
+opt = VanillaFXOption(currency_pair="EURUSD", strike=1.10,
+                      maturity=val.replace(year=val.year+1),
+                      option_type="call", notional=1_000_000)
+opt.set_valuation_date(val)
+
+pos = Position(lines=[PositionLine(instrument=opt, units=-3.0)])
+print(pos.price())
+print(pos.price_breakdown())
+print(pos.get_cashflows(aggregate=True))
+```
+
+---
+
+## 7) Utilities & settings
+
+- `to_ql_date(py_date: date) -> ql.Date`  
+- `to_py_date(qld: ql.Date) -> datetime.datetime` (UTC)
+
+Environment:
+- `MSI_DATA_BACKEND` (default: `mainsequence`; set to `mock` for local demos).
+- `TIIE_ZERO_CSV` for the mock TIIE zeros file (when using mock backend).
+
+---
+
+## 8) Troubleshooting & tips
+
+- **“Unknown instrument type” on rebuild** → Import the module that defines the class so the registry contains it.
+- **Fixings not found** → Ensure the *Reference rates fixings storage node* is set in Instruments → Config and the index UID matches your Constant.
+- **Wrong calendar applied** → The calendar serializer uses QuantLib’s `Calendar::name()`. Ensure your wheel exposes the required calendar classes (falls back to TARGET when missing).
+- **Pricing at T** → Same‑day coupons on floaters/swaps may need seeded forwards; this module already does it for you when fixings are missing on/before valuation.
+
+---
+
+*Happy pricing with `mainsequence.instruments`!*
+
+
+--------------------------------------------------------------------------------
+## examples/ai/instructions/gpt_instructions_ms_client.md
+--------------------------------------------------------------------------------
+
+### LLM Assistant Guide for `mainsequence.client`
+
+This guide provides instructions and code examples for interacting with the Main Sequence platform using the `ms_client` Python library.
+
+---
+
+### **1. Asset Management**
+
+This section covers how to find, register, and categorize assets.
+
+#### **Querying Assets**
+
+To find existing assets, use the `ms_client.Asset.filter()` method. You can filter by any attribute of the `Asset` model, such as `ticker`, or `security_type`.
+
+* **Method:** `ms_client.Asset.filter(**kwargs)`
+* **Example:** Find all assets with tickers 'BTCUSDT' or 'ETHUSDT' on the Binance execution venue.
+    ```python
+    import mainsequence.client as ms_client
+
+    crypto_assets = ms_client.Asset.filter(
+        ticker__in=["BTCUSDT", "ETHUSDT"],
+    )
+
+    for asset in crypto_assets:
+        print(f"Found: {asset.ticker} (ID: {asset.id})")
+    ```
+
+#### **Registering New Assets**
+
+If an asset does not exist in the system, you can add it using its FIGI identifier.
+
+* **Method:** `ms_client.Asset.register_figi_as_asset_in_main_sequence_venue(figi)`
+* **Example:** Register an asset using its FIGI.
+    ```python
+    import mainsequence.client as ms_client
+
+    # This FIGI corresponds to NVIDIA on the Toronto Stock Exchange.
+    nvda_figi = "BBG014T46NC0"
+
+    try:
+        registered_asset = ms_client.Asset.register_figi_as_asset_in_main_sequence_venue(figi=nvda_figi)
+        print(f"Successfully registered asset: {registered_asset.name}")
+        registered_asset.pretty_print()
+    except Exception as e:
+        print(f"Could not register asset (it might already exist): {e}")
+    ```
+
+#### **Managing Asset Categories**
+
+Group assets into categories for easier management and analysis.
+
+* **Method:** `ms_client.AssetCategory.get_or_create(display_name, source, assets)`
+* **Parameters:**
+    * `display_name`: A human-readable name for the category.
+    * `source`: The origin of the category (e.g., 'user\_defined').
+    * `assets`: A list of integer asset IDs to include in the category.
+* **Example:** Create a category named "My Favorite Cryptos".
+    ```python
+    import mainsequence.client as ms_client
+
+    # Prerequisite: Get the IDs of the assets you want to categorize.
+    btc_asset = ms_client.Asset.get(ticker="BTCUSDT", exchange_code=ms_client.MARKETS_CONSTANTS.BINANCE_EV_SYMBOL)
+    eth_asset = ms_client.Asset.get(ticker="ETHUSDT", exchange_code=ms_client.MARKETS_CONSTANTS.BINANCE_EV_SYMBOL)
+    asset_ids = [btc_asset.id, eth_asset.id]
+
+    fav_crypto_category = ms_client.AssetCategory.get_or_create(
+        display_name="My Favorite Cryptos",
+        source="user_defined",
+        assets=asset_ids
+    )
+    print(f"Category '{fav_crypto_category.display_name}' now contains {len(fav_crypto_category.assets)} assets.")
+    ```
+
+---
+
+### **2. Account Management**
+
+This section explains how to manage user accounts, including creating them, managing their holdings, and analyzing their performance.
+
+#### **Querying Accounts**
+
+Use `ms_client.Account.filter()` to find accounts based on specific criteria.
+
+* **Method:** `ms_client.Account.filter(**kwargs)`
+* **Example:** Find all active paper trading accounts.
+    ```python
+    import mainsequence.client as ms_client
+
+    active_paper_accounts = ms_client.Account.filter(
+        account_is_active=True,
+        is_paper=True
+    )
+    print(f"Found {len(active_paper_accounts)} active paper accounts.")
+    ```
+
+#### **Creating and Retrieving Accounts**
+
+Use `ms_client.Account.get_or_create()` to create a new account or retrieve an existing one safely.
+
+* **Method:** `ms_client.Account.get_or_create(account_name, execution_venue, cash_asset, **kwargs)`
+* **Example:** Create a paper account on the Main Sequence execution venue with USD as the cash asset.
+    ```python
+    import mainsequence.client as ms_client
+
+    # Prerequisites: Get the execution venue and cash asset objects.
+    venue = ms_client.ExecutionVenue.get(symbol=ms_client.MARKETS_CONSTANTS.MAIN_SEQUENCE_EV)
+    cash = ms_client.Asset.get(ticker="USD", execution_venue=venue.id)
+
+    my_account = ms_client.Account.get_or_create(
+        account_name="My LLM Paper Account",
+        execution_venue=venue.id,
+        cash_asset=cash.id,
+        is_paper=True,
+        account_is_active=True
+    )
+    print(f"Successfully retrieved/created account: '{my_account.account_name}'")
+    ```
+
+#### **Creating Holdings Snapshots**
+
+To load an account's state at a specific point in time, use the `ms_client.AccountHistoricalHoldings.create_with_holdings` method. This is essential for initializing an account's positions.
+
+* **Method:** `ms_client.AccountHistoricalHoldings.create_with_holdings(position_list, holdings_date, related_account)`
+* **Parameters:**
+    * `position_list`: A list of `ms_client.AccountPositionDetail` objects. Each object must contain an `asset` (as an integer ID), `quantity`, and `price`.
+    * `holdings_date`: A UNIX timestamp representing the date of the snapshot.
+    * `related_account`: The integer ID of the account to which the holdings belong.
+* **Example:**
+    ```python
+    import mainsequence.client as ms_client
+    import datetime
+
+    # Prerequisite: You must have the integer IDs for your assets and the target account.
+    asset_id_1 = 12345  # Placeholder ID
+    asset_id_2 = 67890  # Placeholder ID
+    target_account_id = 101 # Placeholder ID
+
+    positions = [
+        ms_client.AccountPositionDetail(asset=asset_id_1, quantity=100, price=175.50),
+        ms_client.AccountPositionDetail(asset=asset_id_2, quantity=50, price=250.00)
+    ]
+
+    snapshot_timestamp = datetime.datetime.now(datetime.timezone.utc).timestamp()
+
+    new_holdings = ms_client.AccountHistoricalHoldings.create_with_holdings(
+        position_list=positions,
+        holdings_date=snapshot_timestamp,
+        related_account=target_account_id
+    )
+    print(f"Created holdings snapshot with ID: {new_holdings.id}")
+    ```
+
+#### **Syncing and Snapshotting an Account**
+
+After loading holdings, you can align the account's target composition with its current state and create a snapshot for analysis.
+
+* **Methods:**
+    * `my_account.set_account_target_portfolio_from_asset_holdings()`: Sets the account's target portfolio to match the most recent holdings.
+    * `my_account.snapshot_account()`: Creates a snapshot for risk and tracking error analysis.
+* **Example:**
+    ```python
+    # Prerequisite: `my_account` is an existing ms_client.Account object.
+    my_account.set_account_target_portfolio_from_asset_holdings()
+    my_account.snapshot_account()
+    print("Account target synced and snapshot created.")
+    ```
+
+#### **Retrieving Historical Holdings as a DataFrame**
+
+For analysis, you can fetch an account's holdings over a specified date range as a pandas DataFrame. If no holdings are found for the range, an empty DataFrame is returned.
+
+* **Method:** `my_account.get_historical_holdings(start_date=None, end_date=None)`
+* **Parameters:**
+    * `start_date` (`datetime`, optional): The start datetime (UTC) for filtering holdings. If omitted, the query starts from the earliest available data.
+    * `end_date` (`datetime`, optional): The end datetime (UTC) for filtering holdings. If omitted, the query includes data up to the most recent record.
+* **Returns:** A pandas DataFrame indexed by a multi-index of `time_index` (UTC datetime) and `asset_id` (int). It contains the following columns:
+    * `price` (float): The price of the asset at the time of the holding.
+    * `quantity` (float): The quantity of the asset held.
+    * `missing_price` (bool): `True` if the price for the asset was missing on that date.
+* **Example:** Get holdings since June 1, 2025, and add asset names to the DataFrame.
+    ```python
+    import mainsequence.client as ms_client
+    import datetime
+
+    # Prerequisite: `my_account` is an existing ms_client.Account object.
+    # It's best practice to use timezone-aware datetimes for queries.
+    start_of_june = datetime.datetime(2025, 6, 1, tzinfo=datetime.timezone.utc)
+
+    holdings_df = my_account.get_historical_holdings(start_date=start_of_june)
+
+    if not holdings_df.empty:
+        # The DataFrame index contains asset IDs. We can fetch asset details in bulk.
+        asset_ids = holdings_df.index.get_level_values("asset_id").unique().tolist()
+        assets_in_holdings = ms_client.Asset.filter(id__in=asset_ids)
+        
+        # Create a mapping from asset ID to name for easy lookup.
+        id_to_name_map = {asset.id: asset.name for asset in assets_in_holdings}
+        holdings_df["asset_name"] = holdings_df.index.get_level_values("asset_id").map(id_to_name_map)
+        
+        print("Enriched Historical Holdings DataFrame:")
+        print(holdings_df.head())
+    else:
+        print("No holdings found for the specified period.")
+    ```
+
+---
+
+### **3. Portfolio Management**
+
+This section covers how to query portfolios and inspect their composition.
+
+#### **Querying Portfolios**
+
+Use `ms_client.Portfolio.filter()` to find portfolios.
+
+* **Method:** `ms_client.Portfolio.filter(**kwargs)`
+* **Example:** Find a portfolio by its `portfolio_ticker`.
+    ```python
+    import mainsequence.client as ms_client
+
+    # Use a ticker for a portfolio you know exists.
+    portfolio_ticker = "portfo446B" 
+    portfolios = ms_client.Portfolio.filter(portfolio_ticker=portfolio_ticker)
+
+    if portfolios:
+        my_portfolio = portfolios[0]
+        print(f"Found portfolio: '{my_portfolio.portfolio_name}'")
+    ```
+
+#### **Getting Latest Portfolio Weights**
+
+Retrieve the most recent weights of a portfolio's assets.
+
+* **Method:** `my_portfolio.get_latest_weights()`
+* **Returns:** A dictionary of `{asset_unique_identifier: weight}`.
+* **Example:**
+    ```python
+    # Prerequisite: `my_portfolio` is an existing ms_client.Portfolio object.
+    latest_weights = my_portfolio.get_latest_weights()
+
+    if latest_weights:
+        print("Top 5 portfolio weights:")
+        for i, (asset_uid, weight) in enumerate(latest_weights.items()):
+            if i >= 5: break
+            print(f"  - {asset_uid}: {weight:.4f}")
+    ```

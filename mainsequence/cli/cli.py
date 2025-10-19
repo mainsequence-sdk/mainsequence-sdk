@@ -42,6 +42,130 @@ settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 app.add_typer(project, name="project")
 app.add_typer(settings, name="settings")
 
+
+
+# ---------- AI instructions utilities ----------
+
+INSTR_REL_PATH = pathlib.Path("examples") / "ai" / "instructions"
+
+
+def _git_root() -> pathlib.Path | None:
+    """Return the git repo root (if any), else None."""
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"], text=True
+        ).strip()
+        if out:
+            return pathlib.Path(out)
+    except Exception:
+        pass
+    return None
+
+
+def _find_instructions_dir(
+    start: pathlib.Path | None = None,
+    rel_path: pathlib.Path = INSTR_REL_PATH,
+) -> pathlib.Path | None:
+    """
+    Starting at CWD (or 'start'), walk upward and return the first '<ancestor>/examples/ai/instructions'.
+    """
+    start = start or pathlib.Path.cwd()
+    for base in [start] + list(start.parents):
+        cand = base / rel_path
+        if cand.is_dir():
+            return cand
+    # If the caller passed the folder directly
+    if start.is_dir() and start.name == rel_path.name:
+        return start
+    return None
+
+
+def _natural_key(p: pathlib.Path):
+    # Natural sort so "10-..." comes after "2-..."
+    return [int(s) if s.isdigit() else s.lower() for s in re.split(r"(\d+)", p.name)]
+
+
+def _collect_markdown_files(
+    d: pathlib.Path, recursive: bool = False
+) -> list[pathlib.Path]:
+    patterns = ["*.md", "*.markdown", "*.mdx"]
+    files: list[pathlib.Path] = []
+    if recursive:
+        for pat in patterns:
+            files.extend(d.rglob(pat))
+    else:
+        for pat in patterns:
+            files.extend(d.glob(pat))
+    # Dedupe + natural order
+    seen: set[pathlib.Path] = set()
+    uniq: list[pathlib.Path] = []
+    for f in files:
+        if f not in seen:
+            uniq.append(f)
+            seen.add(f)
+    return sorted(uniq, key=_natural_key)
+
+
+def _bundle_markdown(
+    files: list[pathlib.Path],
+    title: str | None = "AI Instructions Bundle",
+    repo_root: pathlib.Path | None = None,
+) -> str:
+    repo_root = repo_root or _git_root()
+    now = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+    parts: list[str] = [f"<!-- Bundle generated {now} -->\n"]
+    if title:
+        parts.append(f"# {title}\n\n")
+    for f in files:
+        try:
+            rel = f.relative_to(repo_root) if repo_root else f
+        except Exception:
+            rel = f
+        header = "\n\n" + ("-" * 80) + f"\n## {rel}\n" + ("-" * 80) + "\n\n"
+        parts.append(header)
+        try:
+            txt = f.read_text(encoding="utf-8")
+        except Exception:
+            txt = f.read_text(encoding="utf-8", errors="replace")
+        # normalize newlines, avoid trailing blank bloat
+        parts.append(txt.replace("\r\n", "\n").replace("\r", "\n").rstrip() + "\n")
+    return "".join(parts)
+
+
+def copy_instructions_to_clipboard(
+    instructions_dir: str | os.PathLike[str] | None = None,
+    recursive: bool = False,
+    also_write_to: str | None = None,
+) -> bool:
+    """
+    Collect all markdown under 'examples/ai/instructions' (or a provided folder),
+    bundle them with clear file headers, copy to clipboard, and optionally write to disk.
+
+    Returns True if the clipboard copy succeeded; False otherwise.
+    """
+    base = pathlib.Path(instructions_dir).expanduser().resolve() if instructions_dir else _find_instructions_dir()
+    if not base or not base.is_dir():
+        raise RuntimeError(
+            "Instructions folder not found. Pass a valid path or run from inside your repo."
+        )
+
+    files = _collect_markdown_files(base, recursive=recursive)
+    if not files:
+        raise RuntimeError(f"No markdown files found in: {base}")
+
+    bundle = _bundle_markdown(files, title="AI Instructions", repo_root=_git_root())
+
+    if also_write_to:
+        pathlib.Path(also_write_to).write_text(bundle, encoding="utf-8")
+
+    ok = _copy_clipboard(bundle)
+    if not ok:
+        # Provide a useful fallback
+        alt = pathlib.Path.cwd() / "ai_instructions.txt"
+        alt.write_text(bundle, encoding="utf-8")
+    return ok
+
+
 # ---------- helpers ----------
 
 
@@ -72,19 +196,115 @@ def _determine_repo_url(p: dict) -> str:
 
 
 def _copy_clipboard(txt: str) -> bool:
+    """
+    Cross‑platform clipboard copy with robust Linux handling:
+
+      - Windows:   PowerShell Set-Clipboard (preferred) or clip.exe
+      - macOS:     pbcopy
+      - Wayland:   wl-copy (also sets --primary)
+      - X11:       xclip/xsel; write to BOTH CLIPBOARD and PRIMARY
+                   and keep the helper alive in background so paste works
+      - WSL:       use Windows clip.exe
+
+    Returns True iff a backend was invoked and did not immediately fail.
+    """
     try:
+        # --- Windows ---
+        if sys.platform == "win32":
+            for ps in ("powershell.exe", "pwsh.exe"):
+                if shutil.which(ps):
+                    p = subprocess.run(
+                        [ps, "-NoProfile", "-Command",
+                         "Set-Clipboard -Value ([Console]::In.ReadToEnd())"],
+                        input=txt, text=True, capture_output=True
+                    )
+                    if p.returncode == 0:
+                        return True
+            if shutil.which("clip.exe"):
+                p = subprocess.run(["clip.exe"], input=txt, text=True, capture_output=True)
+                return p.returncode == 0
+            return False
+
+        # --- macOS ---
         if sys.platform == "darwin":
-            p = subprocess.run(["pbcopy"], input=txt, text=True)
+            p = subprocess.run(["pbcopy"], input=txt, text=True, capture_output=True)
             return p.returncode == 0
-        elif shutil.which("wl-copy"):
-            p = subprocess.run(["wl-copy"], input=txt, text=True)
+
+        # --- Linux / *nix (including WSL) ---
+        # WSL → Windows clipboard
+        if os.environ.get("WSL_DISTRO_NAME") and shutil.which("clip.exe"):
+            p = subprocess.run(["clip.exe"], input=txt, text=True, capture_output=True)
             return p.returncode == 0
-        elif shutil.which("xclip"):
-            p = subprocess.run(["xclip", "-selection", "clipboard"], input=txt, text=True)
-            return p.returncode == 0
+
+        wayland = os.environ.get("WAYLAND_DISPLAY")
+        x11 = os.environ.get("DISPLAY")
+
+        # Wayland (only if a Wayland display exists)
+        if wayland and shutil.which("wl-copy"):
+            ok1 = subprocess.run(["wl-copy"], input=txt, text=True, capture_output=True).returncode == 0
+            # Also set primary selection (best-effort)
+            if shutil.which("wl-copy"):
+                subprocess.run(["wl-copy", "--primary"], input=txt, text=True, capture_output=True)
+            return ok1
+
+        # X11
+        if x11:
+            # Prefer xclip if available
+            if shutil.which("xclip"):
+                try:
+                    procs = []
+                    for sel in ("clipboard", "primary"):
+                        proc = subprocess.Popen(
+                            ["xclip", "-selection", sel, "-in", "-quiet"],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            close_fds=True,
+                            start_new_session=True,
+                        )
+                        assert proc.stdin is not None
+                        proc.stdin.write(txt)
+                        proc.stdin.close()
+                        procs.append(proc)
+                    # Give xclip a moment to claim ownership; detect immediate failure
+                    time.sleep(0.05)
+                    immediate_fail = all(p.poll() is not None and p.returncode != 0 for p in procs)
+                    return not immediate_fail
+                except Exception:
+                    pass
+
+            # Fallback: xsel
+            if shutil.which("xsel"):
+                try:
+                    procs = []
+                    for args in (["--clipboard", "--input"], ["--primary", "--input"]):
+                        proc = subprocess.Popen(
+                            ["xsel", *args],
+                            stdin=subprocess.PIPE,
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            text=True,
+                            close_fds=True,
+                            start_new_session=True,
+                        )
+                        assert proc.stdin is not None
+                        proc.stdin.write(txt)
+                        proc.stdin.close()
+                        procs.append(proc)
+                    time.sleep(0.05)
+                    immediate_fail = all(p.poll() is not None and p.returncode != 0 for p in procs)
+                    return not immediate_fail
+                except Exception:
+                    pass
+
+        # Nothing suitable
+        return False
+
     except Exception:
-        pass
-    return False
+        return False
+
+
 
 def _canonical_project_dir(base_dir: str, org_slug: str, project_id: int | str, project_name: str) -> pathlib.Path:
     slug = safe_slug(project_name or "project")
@@ -619,3 +839,65 @@ def build_and_run(
     except subprocess.CalledProcessError as e:
         typer.secho(f"docker run failed (exit {e.returncode}).", fg=typer.colors.RED)
         raise typer.Exit(e.returncode)
+
+
+@app.command("copy-llm-instructions")
+def copy_llm_instructions(
+    dir: str | None = typer.Option(
+        None,
+        "--dir",
+        "-d",
+        help="Path to the 'examples/ai/instructions' folder. If omitted, we search upward from CWD.",
+    ),
+    recursive: bool = typer.Option(
+        False, "--recursive", "-r", help="Include nested subfolders."
+    ),
+    out: str | None = typer.Option(
+        None, "--out", "-o", help="Also write the bundle to this file."
+    ),
+    print_: bool = typer.Option(
+        False, "--print", help="Print the bundle to stdout instead of copying."
+    ),
+):
+    """
+    Collect all markdowns in examples/ai/instructions and copy the full bundle to the clipboard.
+    """
+    try:
+        base = pathlib.Path(dir).expanduser().resolve() if dir else None
+        if print_:
+            # If printing, just emit to stdout
+            found = base or _find_instructions_dir()
+            if not found:
+                typer.secho(
+                    "Instructions folder not found. Pass --dir PATH or run from inside your repo.",
+                    fg=typer.colors.RED,
+                )
+                raise typer.Exit(1)
+            files = _collect_markdown_files(found, recursive=recursive)
+            if not files:
+                typer.secho(f"No markdown files found in: {found}", fg=typer.colors.RED)
+                raise typer.Exit(1)
+            bundle = _bundle_markdown(files, title="AI Instructions", repo_root=_git_root())
+            if out:
+                pathlib.Path(out).write_text(bundle, encoding="utf-8")
+                typer.echo(f"Wrote bundle to: {out}")
+            typer.echo(bundle)
+            return
+
+        ok = copy_instructions_to_clipboard(
+            instructions_dir=str(base) if base else None,
+            recursive=recursive,
+            also_write_to=out,
+        )
+        if ok:
+            typer.secho("Instructions copied to clipboard.", fg=typer.colors.GREEN)
+        else:
+            alt = out or (pathlib.Path.cwd() / "ai_instructions.txt")
+            typer.secho(
+                f"Clipboard unavailable. Wrote bundle to: {alt}",
+                fg=typer.colors.YELLOW,
+            )
+            raise typer.Exit(2)
+    except RuntimeError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1)
