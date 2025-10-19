@@ -96,23 +96,74 @@ def _legacy_project_dir(base_dir: str, org_slug: str, project_name: str) -> path
     return _projects_root(base_dir, org_slug) / slug
 
 
-def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, project_name: str | None = None) -> str | None:
+def _find_local_dir_by_id(
+    base_dir: str,
+    org_slug: str,
+    project_id: int | str,
+    project_name: str | None = None,
+) -> str | None:
     """
     Find a local directory for a project id by folder structure only.
     Preference order:
-      1) <slug>-<id>
+      0) Hints:
+         - Current working directory (or any parent) under the projects root whose
+           name ends with '-<id>'.
+         - $VFB_PROJECT_PATH if it points under the projects root and ends with '-<id>'.
+      1) <slug>-<id> (canonical)
+      1b) Scan projects root for any folder ending with '-<id>' (in case name changed)
       2) <slug> (legacy fallback; only used if #1 missing and name is provided)
     """
-    # 1) Try canonical <slug>-<id> without needing the name by scanning the root
+
+    # --- Normalize id to a clean string like "57"
+    def _clean_id(val: int | str) -> str:
+        s = str(val).strip()
+        try:
+            # drop leading zeros / spaces, handle accidental string ids
+            s = str(int(s))
+        except Exception:
+            # keep best-effort string if it can't be int-cast
+            pass
+        return s
+
+    pid = _clean_id(project_id)
+    suffix = f"-{pid}"
     root = _projects_root(base_dir, org_slug)
+
     if root.exists():
-        suffix = f"-{project_id}"
-        # Fast exact path (when we know the name) is cheaper than scanning; but scanning also works
+        # 0a) Environment hint
+        env_path = os.environ.get("VFB_PROJECT_PATH", "").strip()
+        if env_path:
+            try:
+                p = pathlib.Path(env_path).expanduser().resolve()
+                # only trust paths under our projects root
+                p.relative_to(root)
+                if p.is_dir() and p.name.endswith(suffix):
+                    return str(p)
+            except Exception:
+                pass
+
+        # 0b) CWD hint: if we're inside the project folder, prefer that
+        try:
+            cwd = pathlib.Path.cwd().resolve()
+            for parent in [cwd] + list(cwd.parents):
+                try:
+                    parent.relative_to(root)
+                except Exception:
+                    # walked above projects root
+                    continue
+                if parent.is_dir() and parent.name.endswith(suffix):
+                    return str(parent)
+        except Exception:
+            # Don't let a filesystem quirk break normal resolution
+            pass
+
+        # 1) Canonical <slug>-<id>, if we know the name
         if project_name:
-            cand = _canonical_project_dir(base_dir, org_slug, project_id, project_name)
+            cand = _canonical_project_dir(base_dir, org_slug, pid, project_name)
             if cand.exists():
                 return str(cand)
-        # Fallback: scan once in case name changed or we don't have it on hand
+
+        # 1b) Fallback: single scan in case name changed or we didn't have it
         try:
             for d in root.iterdir():
                 if d.is_dir() and d.name.endswith(suffix):
@@ -125,6 +176,7 @@ def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, p
         legacy = _legacy_project_dir(base_dir, org_slug, project_name)
         if legacy.exists():
             return str(legacy)
+
     return None
 
 def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> str:
