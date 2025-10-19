@@ -48,6 +48,12 @@ APP_TARGET="$ROOT_PROJECT_PATH/dashboards/sample_app/app.py"
 NODE_TEMPLATE="${SCRIPT_DIR}/template_node_file.py"
 NODES_TARGET="$ROOT_PROJECT_PATH/src/data_nodes/nodes.py"
 
+
+# Pre-commit config template + target
+# (note: filename kept exactly as provided: pre-commit-config.tempalte.yml)
+PRECOMMIT_TEMPLATE="${SCRIPT_DIR}/pre-commit-config.tempalte.yml"
+PRECOMMIT_TARGET="$ROOT_PROJECT_PATH/.pre-commit-config.yaml"
+
 if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   echo "File ${ROOT_PROJECT_PATH}/requirements.txt does not exist. Cloning repo..."
 
@@ -138,6 +144,7 @@ if [ ! -f "${ROOT_PROJECT_PATH}/requirements.txt" ]; then
   # Render root files from templates (create-only by default)
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PYPROJECT_TEMPLATE" "$ROOT_PROJECT_PATH/pyproject.toml" "${OVERWRITE_TEMPLATES:-false}"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$README_TEMPLATE"    "$ROOT_PROJECT_PATH/README.md"      "${OVERWRITE_TEMPLATES:-false}"
+  PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PRECOMMIT_TEMPLATE" "$PRECOMMIT_TARGET"                 "${OVERWRITE_TEMPLATES:-false}"
 
    # Render dashboards/sample_app/app.py from app.sample.py (create-only by default)
    mkdir -p "$(dirname "$APP_TARGET")"
@@ -164,6 +171,7 @@ else
   [ -f "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py" ] || echo '__all__ = []' > "$ROOT_PROJECT_PATH/src/data_nodes/__init__.py"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PYPROJECT_TEMPLATE" "$ROOT_PROJECT_PATH/pyproject.toml" "${OVERWRITE_TEMPLATES:-false}"
   PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$README_TEMPLATE"    "$ROOT_PROJECT_PATH/README.md"      "${OVERWRITE_TEMPLATES:-false}"
+  PROJECT_NAME="$PROJECT_NAME" ensure_file_from_template "$PRECOMMIT_TEMPLATE" "$PRECOMMIT_TARGET"                 "${OVERWRITE_TEMPLATES:-false}"
   git add -A
   if ! git diff --cached --quiet; then
     git commit -m "chore: ensure README.md and pyproject.toml from templates"
