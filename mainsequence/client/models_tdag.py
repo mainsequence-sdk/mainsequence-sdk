@@ -1458,6 +1458,28 @@ class UpdateStatistics(BaseModel):
 
         return self._max_time_in_update_statistics
 
+    @property
+    def is_any_asset_on_fallback_date(self)->bool:
+        """"
+        return true if any of the assets in asset_time_statistics equals _initial_fallback_date
+        """
+
+
+        for k,v in self.asset_time_statistics.items():
+            if v==self._initial_fallback_date:
+                return True
+        return False
+    @property
+    def are_all_assets_on_fallback_date(self)->bool:
+        """"
+             return true if all assets in asset_time_statistics equals _initial_fallback_date
+             """
+        for k,v in self.asset_time_statistics.items():
+            if v!=self._initial_fallback_date:
+                return False
+        return True
+
+
     def get_update_range_map_great_or_equal_columnar(
         self,
         extra_time_delta: datetime.timedelta | None = None,
@@ -2327,6 +2349,7 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
     created_by_resource_name: str
     bucket_name: str
     content: Any
+    creation_date: datetime.datetime
 
     @classmethod
     def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):

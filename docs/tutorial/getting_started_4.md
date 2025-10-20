@@ -241,7 +241,7 @@ DISCOUNT_CURVE_BUILD_REGISTRY: Dict[str, Callable] = _merge_unique(
     _POLYGON_CURVES
 )
 ```
-### Constants: A Cross‑Project Contract
+### Constants: 
 
 Notice the import of `mainsequence.client.Constant`. As you build multiple applications across 
 data nodes and projects, it’s useful to fetch **constants** via the API. 
@@ -355,20 +355,36 @@ config = CurveConfig(
 )
 node = DiscountCurves(curve_config=config)
 node.run(debug_mode=True, force_update=True)
+```
 
-from data_connectors.prices.fred.data_nodes import FixingRatesNode, FixingRateConfig, RateConfig
-from mainsequence.client import Constant as _C
+## Instruments Configuration
 
-USD_SOFR = _C.get_value(name="REFERENCE_RATE__USD_SOFR")
-USD_EFFR = _C.get_value(name="REFERENCE_RATE__USD_EFFR")
-USD_OBFR = _C.get_value(name="REFERENCE_RATE__USD_OBFR")
-fixing_config = FixingRateConfig(rates_config_list=[
-    RateConfig(unique_identifier=USD_SOFR,
-                name=f"Secured Overnight Financing Rate "),
-    RateConfig(unique_identifier=USD_EFFR,
-                name=f"Effective Federal Funds Rate "),
-    RateConfig(unique_identifier=USD_OBFR,
-                name=f"Overnight Bank Funding Rate"),
-])
-ts = FixingRatesNode(rates_config=fixing_config)
-ts.run(debug_mode=True, force_update=True)
+Before moving on to the next part of the tutorial, let’s look back at the two *DataNodes* referenced in the `data_connectors.interest_rates.get_table_metadata` methods. As with any other DataNode, we assign identifiers to these two tables. This matters because we’ll use them in our instrument settings when pricing fixed-income instruments.
+
+To prepare for the next section:
+
+1. Open `https://main-sequence.app/instruments/config/`.
+2. Make sure the configurations for **Discount Curves Storage Node** and **Reference Rates Fixings Storage Node** are set.
+
+
+![img.png](img.png)
+
+```python
+
+class DiscountCurves(DataNode):
+    
+    def get_table_metadata(self) -> msc.TableMetaData:
+        return msc.TableMetaData(
+            identifier=DISCOUNT_CURVES_TABLE_NAME,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description="Collection of Discount Curves"
+        )
+
+class FixingRatesNode(DataNode):
+    def get_table_metadata(self) -> msc.TableMetaData:
+        return msc.TableMetaData(
+            identifier=FIXING_RATES_1D_TABLE_NAME,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description=f"Daily fixing rates ",
+        )
+```

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "3.1.7"
+version = "3.1.12"
 description = "Main Sequence SDK"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -103,7 +103,7 @@ target-version = ["py310"]
 # --------------------
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 extend-exclude = ["build", "dist", ".venv", ".tox", ".mypy_cache", ".ruff_cache"]
 fix = true                    # <-- move fix here
 

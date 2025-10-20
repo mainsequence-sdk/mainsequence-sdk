@@ -76,15 +76,15 @@ def configuration_sanitizer(configuration: dict) -> PortfolioConfiguration:
         )
 
     if (
-        "calendar"
+        "calendar_key"
         not in portfolio_build_config["backtesting_weights_configuration"][
             "rebalance_strategy_configuration"
         ]
         or not portfolio_build_config["backtesting_weights_configuration"][
             "rebalance_strategy_configuration"
-        ]["calendar"]
+        ]["calendar_key"]
     ):
-        raise Exception("Missing 'calendar' in 'rebalance_strategy_configuration'")
+        raise Exception("Missing 'calendar_key' in 'rebalance_strategy_configuration'")
 
     if (
         "signal_weights_configuration"

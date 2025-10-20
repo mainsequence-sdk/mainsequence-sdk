@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # Use the uv version you want — example below matches their docs as of Oct 17, 2025
+    rev: 0.9.4
+    hooks:
+      # Keep the lockfile current if pyproject changes
+      - id: uv-lock
+        files: ^pyproject\.toml$
+      # Export a fresh requirements.txt from uv.lock
+      - id: uv-export
+        files: ^(uv\.lock|pyproject\.toml)$
+        pass_filenames: false
+        # Optional args:
+        # --frozen  : don’t re-resolve; use the current lockfile exactly
+        # --output-file: write to a specific file name
+        # --format  : be explicit about "requirements-txt" format
+        args: ["--frozen", "--output-file=requirements.txt"]

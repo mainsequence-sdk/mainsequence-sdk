@@ -1900,8 +1900,8 @@ class TargetRebalance(BaseModel):
         return {e.asset.id: e.asset for e in self.execution_target}
 
 class InstrumentsConfiguration(BaseObjectOrm,BasePydanticModel):
-    discount_curves_storage_node:int
-    reference_rates_fixings_storage_node:int
+    discount_curves_storage_node:Optional[int]
+    reference_rates_fixings_storage_node:Optional[int]
 
 class VirtualFund(BaseObjectOrm, BasePydanticModel):
     id: float | None = None

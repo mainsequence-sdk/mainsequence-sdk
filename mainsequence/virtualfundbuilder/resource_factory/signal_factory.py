@@ -63,6 +63,10 @@ class WeightsBase(BaseResource):
             len(weights) == 0
         ):  # or (weights.index.get_level_values("time_index").min() > new_index.min()):
 
+            if self.update_statistics.asset_time_statistics is None:
+                raise Exception("Signal has not been updated")
+
+
             unique_identifier_range_map = {
                 a: {"start_date": d}
                 for a, d in self.update_statistics.asset_time_statistics.items()
