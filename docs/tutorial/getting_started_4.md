@@ -363,7 +363,7 @@ Before moving on to the next part of the tutorial, let’s look back at the two 
 
 To prepare for the next section:
 
-1. Open `https://main-sequence.app/instruments/config/`.
+1. Open [https://main-sequence.app/instruments/config/](https://main-sequence.app/instruments/config/).
 2. Make sure the configurations for **Discount Curves Storage Node** and **Reference Rates Fixings Storage Node** are set.
 
 

@@ -159,27 +159,139 @@ payload_item = {
 
 ### 1.2 Simulating Prices
 
-To run any interesting analysis, we need simulated prices for our assets. Ensure you have the `SimulatedDailyClosePrices` class in your data nodes.
+Before we can build a portfolio, we need price data for our test assets.
+Since this tutorial doesn’t use live market data, we’ll generate simulated daily prices with a new DataNode.
 
-Drop the existing table (so we can alter the shape) and add the following at the end of the `update` method to store **daily bars** instead of closes only:
+1. Create a new file: `src/data_nodes/simulated_daily_close_prices.py`
+
+2. Paste the `SimulatedDailyClosePrices` class below.
+
+
 ```python
-wide = pd.concat(frames, axis=1)                        # columns = unique_identifiers
-long = wide.melt(ignore_index=False, var_name="unique_identifier", value_name="close")
-long = long.set_index("unique_identifier", append=True) # -> (time_index, unique_identifier)
-long["open"]=long["close"]
-long["high"]=long["close"]
-long["low"]=long["close"]
-long["volume"] = 0.0
-long["duration"]=6.5
-long["duration"] = 6.5
-long["open_time"]=long.reset_index()["time_index"].view("int64").values
-long["first_trade_time"] = long["open_time"]
-long["last_trade_time"] = long["open_time"]
+# SimulatedDailyClosePrices: generates fake daily OHLCV data for assets
+import datetime, pytz, numpy as np, pandas as pd
+import mainsequence.client as msc
+from mainsequence.tdag import DataNode
+from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
 
-return long
+UTC = pytz.utc
+
+class SimulatedDailyClosePrices(DataNode):
+    def __init__(self, asset_list, *args, **kwargs):
+        self.asset_list = asset_list
+        super().__init__(*args, **kwargs)
+
+    def dependencies(self): return {}
+    def get_asset_list(self): return self.asset_list
+
+    def get_table_metadata(self):
+        return msc.TableMetaData(
+            identifier="simulated_daily_closes_tutorial",
+            description="Simulated daily OHLCV bars for tutorial assets",
+        )
+
+    def get_column_metadata(self):
+        return [
+            ColumnMetaData(column_name="close", dtype="float", description="Simulated close price", label="Close Price"),
+            ColumnMetaData(column_name="open", dtype="float", description="Simulated open price", label="Open Price"),
+            ColumnMetaData(column_name="high", dtype="float", description="Simulated high price", label="High Price"),
+            ColumnMetaData(column_name="low", dtype="float", description="Simulated low price", label="Low Price"),
+            ColumnMetaData(column_name="volume", dtype="float", description="Simulated volume", label="Volume"),
+            ColumnMetaData(column_name="duration", dtype="float", description="Simulated duration", label="Duration"),
+            ColumnMetaData(column_name="open_time", dtype="int", description="Simulated open time", label="Open Time"),
+            ColumnMetaData(column_name="first_trade_time", dtype="int", description="Simulated first trade time", label="First Trade Time"),
+            ColumnMetaData(column_name="last_trade_time", dtype="int", description="Simulated last trade time", label="Last Trade Time"),
+        ]
+
+    def update(self) -> pd.DataFrame:
+        us: UpdateStatistics = self.update_statistics
+        today = datetime.datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+        yday = today - datetime.timedelta(days=1)
+
+        start = (us.max_time_index_value or datetime.datetime(2024, 1, 1, tzinfo=UTC))
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
+        if start > yday:
+            return pd.DataFrame()
+
+        idx = pd.date_range(start=start, end=yday, freq="D", tz=UTC, name="time_index")
+        frames = []
+        for asset in self.asset_list:
+            base_price = 100.0
+            shocks = np.random.lognormal(mean=0, sigma=0.01, size=len(idx))
+            prices = base_price * np.cumprod(shocks)
+            tmp = pd.DataFrame({"close": prices}, index=idx)
+            tmp["unique_identifier"] = asset.unique_identifier
+            frames.append(tmp.set_index("unique_identifier", append=True))
+
+        long = pd.concat(frames)
+        long["open"] = long["close"]
+        long["high"] = long["close"]
+        long["low"] = long["close"]
+        long["volume"] = 0.0
+        long["duration"] = 6.5
+        long["open_time"] = long.reset_index()["time_index"].view("int64").values
+        long["first_trade_time"] = long["open_time"]
+        long["last_trade_time"] = long["open_time"]
+
+        return long
 ```
 
----
+This **DataNode**:
+
+ - Accepts a list of assets (`asset_list`).
+
+ - Produces one simulated daily OHLCV record per asset.
+
+ - Stores the result in a table named `simulated_daily_closes_tutorial`.
+
+
+Now lets run this DataNode to populate the prices table.
+
+Create a new runner script: `scripts/run_simulated_prices.py` with the following code:
+
+```python
+from src.helpers_mock import ensure_test_assets
+from src.data_nodes.simulated_daily_close_prices import SimulatedDailyClosePrices
+
+assets = ensure_test_assets() # Ensure test assets exist
+# Instantiate and update the DataNode (platform would orchestrate this)
+prices_node = SimulatedDailyClosePrices(asset_list=assets)
+prices_node.run(debug_mode=True, force_update=True)
+```
+
+Than add a new entry to the `.vscode/launch.json` to the `configurations` array to run this script:
+
+(Windows):
+```json
+{
+    "name": "Debug simulated_daily_close_prices",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_simulated_prices.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug simulated_daily_close_prices",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_simulated_prices.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then back to `run_simulated_prices.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug simulated_prices` configuration.
+
 
 ## 2) Building an Asset Category
 
