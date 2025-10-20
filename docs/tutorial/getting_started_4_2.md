@@ -25,21 +25,14 @@ Go to your tutorial project and, under `src/`, create a file named `helpers_mock
 As before, we’ll register **custom fixed‑income assets** and attach pricing details so they can be priced later.
 
 ```python
-import mainsequence.client as msc
-import mainsequence.instruments as msi
+import datetime
 import pytz
-from mainsequence.virtualfundbuilder.data_nodes import PortfolioFromDF, All_PORTFOLIO_COLUMNS, \
-    WEIGHTS_TO_PORTFOLIO_COLUMNS
-from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
-from mainsequence.tdag import DataNode, APIDataNode
-from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
-
 import numpy as np
 import pandas as pd
-import re
-import json
-import datetime
-import QuantLib as ql
+import mainsequence.client as msc
+from mainsequence.tdag import DataNode
+from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
+
 UTC = pytz.utc
 
 
@@ -245,7 +238,8 @@ This **DataNode**:
  - Stores the result in a table named `simulated_daily_closes_tutorial`.
 
 
-Now lets run this DataNode to populate the prices table.
+Now lets create initial script to run this DataNode to populate the prices table.
+We will update it all along the tutorial to build the portfolio step by step and finally run everything end to end.
 
 Create a new runner script: `scripts/run_simulated_prices.py` with the following code:
 
@@ -258,40 +252,6 @@ assets = ensure_test_assets() # Ensure test assets exist
 prices_node = SimulatedDailyClosePrices(asset_list=assets)
 prices_node.run(debug_mode=True, force_update=True)
 ```
-
-Than add a new entry to the `.vscode/launch.json` to the `configurations` array to run this script:
-
-(Windows):
-```json
-{
-    "name": "Debug simulated_daily_close_prices",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}\\scripts\\run_simulated_prices.py",
-    "console": "integratedTerminal",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
-}
-```
-(macOS/Linux):
-```json
-{
-    "name": "Debug simulated_daily_close_prices",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}/scripts/run_simulated_prices.py",
-    "console": "integratedTerminal",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}/.venv/bin/python"
-}
-```
-
-Then back to `run_simulated_prices.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug simulated_prices` configuration.
-
 
 ## 2) Building an Asset Category
 
@@ -314,37 +274,44 @@ asset_category=msc.AssetCategory.get_or_create(display_name="Mock Category Asset
     asset_category.append_assets(assets=assets)
 ```
 
-Now let’s sketch the function that will create our portfolio. (Adjust module paths to match your project.)
+Now let’s update our `scripts/run_simulated_prices.py` to also create our portfolio with Asset Category.
 
 ```python
-def build_test_portfolio_with_signals():
-    from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import FixedWeights, AUIDWeight
-    from mainsequence.virtualfundbuilder.models import (AssetsConfiguration,
-                                                        PricesConfiguration,PortfolioBuildConfiguration,
-                                                        BacktestingWeightsConfig,PortfolioExecutionConfiguration,
-                                                        PortfolioMarketsConfig
-                                                        )
-    from mainsequence.virtualfundbuilder.data_nodes import PortfolioStrategy
-    from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
+from src.helpers_mock import ensure_test_assets
+from src.data_nodes.simulated_daily_close_prices import SimulatedDailyClosePrices
+import mainsequence.client as msc
 
-    assets = ensure_test_assets()
-    # Instantiate and update the DataNode (platform would orchestrate this)
-    prices_node = SimulatedDailyClosePrices(asset_list=assets)
-    prices_node.run(debug_mode=True, force_update=True)
-    
-    # Get or create the asset category
-    asset_category=msc.AssetCategory.get_or_create(display_name="Mock Category Assets Tutorial",
-                                    unique_identifier="mock_category_assets_tutorial",
-                                    )
-    #add assets to the category
-    asset_category.append_assets(assets=assets)
+assets = ensure_test_assets()
+# Instantiate and update the DataNode (platform would orchestrate this)
+prices_node = SimulatedDailyClosePrices(asset_list=assets)
+prices_node.run(debug_mode=True, force_update=True)
+
+# Get or create the asset category
+asset_category=msc.AssetCategory.get_or_create(display_name="Mock Category Assets Tutorial",
+                                unique_identifier="mock_category_assets_tutorial",
+                                )
+#add assets to the category
+asset_category.append_assets(assets=assets)
 ```
+
+Perfect! You learned how to create an asset category and populate it with assets.
 
 ---
 
 ## 3) Building a Translation Table
 
-With assets, an asset category, and a Data Node that produces daily bars, the next step is to build a **translation table**—a set of rules that route assets to the **correct** Data Node based on their characteristics.
+Now that you have:
+
+- Assets registered (ensure_test_assets)
+
+- A simulated prices node (SimulatedDailyClosePrices)
+
+- An asset category (mock_category_assets_tutorial)
+
+…you’re ready to build an Asset Translation Table.
+This table defines rules that map asset properties → to a DataNode providing prices.
+
+A **translation table**—a set of rules that route assets to the **correct** Data Node based on their characteristics.
 
 Translation tables let you compose backtests from multiple Data Nodes. For example, you might use one source for `security_type=Equity` and a different one for `security_type=Comdty`. While you can hard‑code this in a node’s `dependencies()`, translation tables make it **extensible** and **data‑driven**.
 
@@ -402,22 +369,29 @@ class WrapperDataNode(DataNode):
 Add the following rule **after** creating the asset category:
 
 ```python
-#add assets to the category
-asset_category.append_assets(assets=assets)
+# Create Translation Table to link assets to pricing table
+translation_table = msc.AssetTranslationTable.get_or_create(
+    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
+    rules=[
+            msc.AssetTranslationRule(
+                asset_filter=msc.AssetFilter(
+                    security_type=SECURITY_TYPE_MOCK,
+                ),
+                markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
+            ),
 
-
-#Craate Translation Table to link assets to pricing table
-translation_table=msc.AssetTranslationTable.get_or_create(translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
-                  rules=[
-                            msc.AssetTranslationRule(
-                                asset_filter=msc.AssetFilter(
-                                    security_type=SECURITY_TYPE_MOCK,
-                                ),
-                                markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
-                            ),
-
-                        ]
+        ]
+)
 ```
+
+And also update imports at the top of the file:
+
+```python
+from src.helpers_mock import ensure_test_assets, SECURITY_TYPE_MOCK, SIMULATED_PRICES_TABLE, TRANSLATION_TABLE_IDENTIFIER
+
+```
+
+Now you have a translation table that maps all assets with `security_type=MOCK_ASSET` to the `simulated_daily_closes_tutorial` prices table.
 
 ---
 
@@ -459,20 +433,31 @@ from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import FixedW
 
 ### 4.1 Building Portfolio Signal Nodes (Optional)
 
-You can skip this if you’re importing `FixedWeights`. If you plan to build your own signals and portfolios, read on.
+You can skip this and just import `FixedWeights` from SDK and use it in your project. If you plan to build your own signals and portfolios, read on.
 
 A signal Data Node follows the usual node pattern and also implements **two additional methods**:
 
 - **`maximum_forward_fill`**: the longest period a portfolio may forward‑fill your signal’s weights (e.g., a weekly signal with a daily backtest may allow seven days).  
 - **`get_explanation`** *(optional)*: human‑readable description used in the UI.
 
+For example, here’s a stripped implementation of a fixed‑weights signal:
+
 ```python
-class WeightsBase(BaseResource):
-   
 
-    def __init__(self, signal_assets_configuration: AssetsConfiguration, *args, **kwargs):
+from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+    WeightsBase,
+    register_signal_class,
+)
+from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from datetime import timedelta
 
-@register_signal_class(register_in_agent=True)
+
+class AUIDWeight(VFBConfigBaseModel):
+    unique_identifier: str
+    weight: float
+
+
 @register_signal_class(register_in_agent=True)
 class FixedWeights(WeightsBase, DataNode):
 
@@ -495,6 +480,8 @@ class FixedWeights(WeightsBase, DataNode):
 ### 4.2 Virtual Fund Builder Models
 
 The Virtual Fund Builder ships a set of Pydantic models that configure **assets, prices, signals, weights, execution,** and the final **portfolio build**.
+
+All those models will be used to build the portfolio in the next section. Hrere’s a quick overview of the key models.
 
 #### PricesConfiguration
 
@@ -616,123 +603,181 @@ class PortfolioBuildConfiguration(VFBConfigBaseModel):
 ```
 
 ### 4.3 Putting It All Together
+Now you’re ready to build the portfolio using the models above and all code you’ve written.
 
-Build the portfolios and a group:
+Update your `scripts/run_simulated_prices.py` file to look like this:
 
 ```python
-def build_test_portfolio_with_signals():
-    from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import FixedWeights, AUIDWeight
-    from mainsequence.virtualfundbuilder.models import (AssetsConfiguration,
-                                                        PricesConfiguration,PortfolioBuildConfiguration,
-                                                        BacktestingWeightsConfig,PortfolioExecutionConfiguration,
-                                                        PortfolioMarketsConfig
-                                                        )
-    from mainsequence.virtualfundbuilder.data_nodes import PortfolioStrategy
-    from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
+from src.helpers_mock import (
+    ensure_test_assets,
+    SECURITY_TYPE_MOCK,
+    SIMULATED_PRICES_TABLE,
+    TRANSLATION_TABLE_IDENTIFIER
+)
+from src.data_nodes.simulated_daily_close_prices import SimulatedDailyClosePrices
+import mainsequence.client as msc
 
-    assets = ensure_test_assets()
-    # Instantiate and update the DataNode (platform would orchestrate this)
-    prices_node = SimulatedDailyClosePrices(asset_list=assets)
-    prices_node.run(debug_mode=True, force_update=True)
-
-    # Get or create the asset category
-    asset_category=msc.AssetCategory.get_or_create(display_name="Mock Category Assets Tutorial",
-                                    unique_identifier="mock_category_assets_tutorial",
-                                    )
-    #add assets to the category
-    asset_category.append_assets(assets=assets)
-
-
-    #Craate Translation Table to link assets to pricing table
-    translation_table=msc.AssetTranslationTable.get_or_create(translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
-                      rules=[
-                                msc.AssetTranslationRule(
-                                    asset_filter=msc.AssetFilter(
-                                        security_type=SECURITY_TYPE_MOCK,
-                                    ),
-                                    markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
-                                ),
-
-                            ]
-                                                              )
-
-    # build Fixed Weights Portfolio Data Node
-    weights= [.4, .6]
-    node_weights_input_1,node_weights_input_2 =[], []
-    for c, a in enumerate(assets):
-        node_weights_input_1.append(AUIDWeight(unique_identifier=a.unique_identifier,
-                                               weight=weights[c]))
-        node_weights_input_2.append(AUIDWeight(unique_identifier=a.unique_identifier,
-                                               weight=weights[c]*1.05))
+from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import (
+    FixedWeights,
+    AUIDWeight,
+)
+from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
+from mainsequence.virtualfundbuilder.models import (
+    AssetsConfiguration,
+    PricesConfiguration,
+    PortfolioBuildConfiguration,
+    BacktestingWeightsConfig,
+    PortfolioExecutionConfiguration,
+    PortfolioMarketsConfig
+)
+from mainsequence.virtualfundbuilder.data_nodes import PortfolioStrategy
+from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
 
 
+assets = ensure_test_assets()
+# Instantiate and update the DataNode (platform would orchestrate this)
+prices_node = SimulatedDailyClosePrices(asset_list=assets)
+prices_node.run(debug_mode=True, force_update=True)
+
+# Get or create the asset category
+asset_category = msc.AssetCategory.get_or_create(
+    display_name="Mock Category Assets Tutorial",
+    unique_identifier="mock_category_assets_tutorial",
+)
+#add assets to the category
+asset_category.append_assets(assets=assets)
+
+#Create Translation Table to link assets to pricing table
+translation_table = msc.AssetTranslationTable.get_or_create(
+    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
+    rules=[
+            msc.AssetTranslationRule(
+                asset_filter=msc.AssetFilter(
+                    security_type=SECURITY_TYPE_MOCK,
+                ),
+                markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
+            ),
+        ]
+)
+
+# build Fixed Weights Portfolio Data Node
+weights = [.4, .6]
+node_weights_input_1, node_weights_input_2 = [], []
+for c, a in enumerate(assets):
+    node_weights_input_1.append(AUIDWeight(unique_identifier=a.unique_identifier,
+                                            weight=weights[c]))
+    node_weights_input_2.append(AUIDWeight(unique_identifier=a.unique_identifier,
+                                            weight=weights[c]*1.05))
+
+#assets configuration
+prices_configuration = PricesConfiguration(
+    bar_frequency_id="1d",
+    upsample_frequency_id="1d",
+    intraday_bar_interpolation_rule="ffill",
+    is_live=False,
+    translation_table_unique_id=TRANSLATION_TABLE_IDENTIFIER,
+    forward_fill_to_now=False
+)
+
+assets_configuration = AssetsConfiguration(
+    assets_category_unique_id="mock_category_assets_tutorial",
+    price_type="close",
+    prices_configuration=prices_configuration,
+)
+
+signal_weights_node_1 = FixedWeights(
+    asset_unique_identifier_weights=node_weights_input_1,
+    signal_assets_configuration=assets_configuration,
+)
+signal_weights_node_2 = FixedWeights(
+    asset_unique_identifier_weights=node_weights_input_2,
+    signal_assets_configuration=assets_configuration,
+)
 
 
-    prices_configuration=PricesConfiguration(bar_frequency_id = "1d",
-                                            upsample_frequency_id = "1d",
-                                            intraday_bar_interpolation_rule = "ffill",
-                                            is_live = False,
-                                            translation_table_unique_id = TRANSLATION_TABLE_IDENTIFIER,
-                                            forward_fill_to_now = False)
+#portfolio
+def build_portfolio(portfolio_name, signal_node):
+    portfolio_execution_configuration = PortfolioExecutionConfiguration(commission_fee=0.0)
+    rebalance_strategy = ImmediateSignal(calendar="SIFMAUS")  # US bond market (SIFMA) calendar
 
-    assets_configuration=AssetsConfiguration(assets_category_unique_id="mock_category_assets_tutorial",
-                        price_type="close",
-                        prices_configuration=prices_configuration,
-                        )
+    backtest_weight_configuration = BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(
+        rebalance_strategy=rebalance_strategy,
+        signal_weights_node=signal_node,
+)
 
+    portfolio_build_configuration = PortfolioBuildConfiguration(
+        assets_configuration=assets_configuration,
+        portfolio_prices_frequency="1d",
+        execution_configuration=portfolio_execution_configuration,
+        backtesting_weights_configuration=backtest_weight_configuration
+    )
 
-    signal_weights_node_1 = FixedWeights(asset_unique_identifier_weights=node_weights_input_1,
-                        signal_assets_configuration=assets_configuration,
-                        )
-    signal_weights_node_2 = FixedWeights(asset_unique_identifier_weights=node_weights_input_2,
-                        signal_assets_configuration=assets_configuration,
-                        )
-
-
-
-    #portfolio
-    def build_portfolio(portfolio_name,signal_node):
-        portfolio_execution_configuration=PortfolioExecutionConfiguration(commission_fee=0.0)
-        rebalance_strategy=ImmediateSignal(calendar="SIFMAUS") # US bond market (SIFMA) calendar
-
-        backtest_weight_configuration=BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(rebalance_strategy=rebalance_strategy,
-                                                                                     signal_weights_node=signal_node,
-                                                                                     )
-
-        portfolio_build_configuration=PortfolioBuildConfiguration(assets_configuration=assets_configuration,
-                                                                  portfolio_prices_frequency="1d",
-                                                                  execution_configuration=portfolio_execution_configuration,
-                                                                  backtesting_weights_configuration=backtest_weight_configuration
-                                                                  )
-
-        portfolio_data_node=PortfolioStrategy(portfolio_build_configuration=portfolio_build_configuration,)
-        portfolio_markets_config=PortfolioMarketsConfig(portfolio_name=portfolio_name,
-                                                        )
+    portfolio_data_node = PortfolioStrategy(portfolio_build_configuration=portfolio_build_configuration,)
+    portfolio_markets_config = PortfolioMarketsConfig(portfolio_name=portfolio_name)
 
 
-        interface=PortfolioInterface.build_from_portfolio_node(portfolio_node=portfolio_data_node,portfolio_markets_config=portfolio_markets_config)
+    interface = PortfolioInterface.build_from_portfolio_node(portfolio_node=portfolio_data_node, portfolio_markets_config=portfolio_markets_config)
 
-        res = interface.run(
-            patch_build_configuration=False,
-            debug_mode=True,
-            portfolio_tags=None,
-            add_portfolio_to_markets_backend=True,
-        )
+    res = interface.run(
+        patch_build_configuration=False,
+        debug_mode=True,
+        portfolio_tags=None,
+        add_portfolio_to_markets_backend=True,
+    )
 
-        return interface.target_portfolio
+    return interface.target_portfolio
 
-    portfolio_1=build_portfolio(portfolio_name="Mock Portfolio 1 With Signals Tutorial",
-                                     signal_node=signal_weights_node_1
-                                     )
+portfolio_1=build_portfolio(
+    portfolio_name="Mock Portfolio 1 With Signals Tutorial",
+    signal_node=signal_weights_node_1
+)
 
-    portfolio_2 = build_portfolio(portfolio_name="Mock Portfolio 2 With Signals Tutorial",
-                                       signal_node=signal_weights_node_2
-                                       )
+portfolio_2 = build_portfolio(
+    portfolio_name="Mock Portfolio 2 With Signals Tutorial",
+    signal_node=signal_weights_node_2
+)
 
-    portfolio_group = msc.PortfolioGroup.get_or_create(display_name="Mock Bond Portfolio with Signals Group",
-                                                       unique_identifier="mock_portfolio_signal_group",
-                                                       portfolio_ids=[portfolio_1.id, portfolio_2.id],
-                                                       description="Mock Portfolio Group for Tutorial")
+portfolio_group = msc.PortfolioGroup.get_or_create(
+    display_name="Mock Bond Portfolio with Signals Group",
+    unique_identifier="mock_portfolio_signal_group",
+    portfolio_ids=[portfolio_1.id, portfolio_2.id],
+    description="Mock Portfolio Group for Tutorial"
+)
 ```
+
+Finally, we are ready to run the script and build the portfolios.
+
+Add a new entry to the `.vscode/launch.json` to the `configurations` array to run this script:
+
+(Windows):
+```json
+{
+    "name": "Debug simulated_daily_close_prices",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}\\scripts\\run_simulated_prices.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+}
+```
+(macOS/Linux):
+```json
+{
+    "name": "Debug simulated_daily_close_prices",
+    "type": "debugpy",
+    "request": "launch",
+    "program": "${workspaceFolder}/scripts/run_simulated_prices.py",
+    "console": "integratedTerminal",
+    "env": {
+        "PYTHONPATH": "${workspaceFolder}"
+    },
+    "python": "${workspaceFolder}/.venv/bin/python"
+}
+```
+
+Then back to `run_simulated_prices.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug simulated_daily_close_prices` configuration.
 
 You’re now ready to use these portfolios in dashboards and deeper analyses.
