@@ -10,7 +10,7 @@ Before scheduling anything, make sure your environment is consistent and your la
 
    Windows PowerShell:
    ```powershell
-   .\venv\Scripts\Activate
+   .\.venv\Scripts\Activate
    ```
    Linux/macOS:
    ```bash
