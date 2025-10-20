@@ -68,6 +68,12 @@ import datetime
 import QuantLib as ql
 
 
+UTC = pytz.utc
+SECURITY_TYPE_MOCK="MOCK_ASSET"
+SIMULATED_PRICES_TABLE="simulated_daily_closes_tutorial"
+TRANSLATION_TABLE_IDENTIFIER = "prices_translation_table_1d"
+
+
 class TestFixedIncomePortfolio(PortfolioFromDF):
     def get_portfolio_df(self):
 

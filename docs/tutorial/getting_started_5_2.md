@@ -21,27 +21,38 @@ Everything below uses the **Main Sequence SDK/API** against objects in your tena
 
 ## Repository layout (current)
 
+You need to recreate this structure under your project’s `dashboards/` folder:
+
 ```
 dashboards/
-└─ apps/
-   └─ bond_portfolio_analysis/
-      ├─ .streamlit/config.toml
-      ├─ app.py
-      ├─ settings.py
-      └─ pages/
-         ├─ 01_curve_and_positions.py       # “Curve, Stats & Positions”
-         ├─ 02_data_nodes_dependencies.py    # Data‑node graph (Mermaid)
-         └─ 99_asset_detail.py               # Per‑asset JSON + cashflows
+  └─ bond_portfolio_analysis/
+    ├─ .streamlit/config.toml
+    ├─ app.py
+    ├─ settings.py
+    └─ pages/
+        ├─ 01_curve_and_positions.py       # “Curve, Stats & Positions”
+        ├─ 02_data_nodes_dependencies.py    # Data‑node graph (Mermaid)
+        └─ 99_asset_detail.py               # Per‑asset JSON + cashflows
 ```
+
+**IMPORTANT** Beside this - you need to bring other required folders from `dashboards/` folder in repo: `components/`, `core/`, `plots/`, `services/` to recreate same structure in your project. Best way is to clone whole repo somewhere on your computer and copy required folders to your project.
+
 
 > **Quick‑link note:** `app.py` creates buttons linking to `pages/01_Curve_Stats_Positions` and `pages/02_Data_Nodes_Graph`. Your actual files are `01_curve_and_positions.py` and `02_data_nodes_dependencies.py`. Either rename the files to match the links **or** adjust the two link targets in `app.py`. Streamlit will still show the pages in the sidebar either way.
 
 ---
 
+## Code walkthrough
+Explore the key parts of each file below and print this code to your dashboard app from example repo: https://github.com/mainsequence-sdk/ExampleDashboards/tree/main/dashboards/apps/bond_portfolio_analysis
+
+## Let’s dive in!
+
 ## 1) Theme & app shell
 
 - **`.streamlit/config.toml`** sets your dark theme (primary/background/text colors, font) and enables headless/XSFR protection.  
-- **`app.py`** registers the theme, sets the page config (`page_title="Fixed Income Position Dashboard"`), and provides quick links to the app pages. It also explains that all pages live under `pages/` and that no registry is required (native Streamlit multipage routing).
+- **`app.py`** registers the theme, sets the page config (`page_title="Fixed Income Position Dashboard"`), and provides quick links to the app pages. It also explains that all pages live under `pages/` and that no registry is required (native Streamlit multipage routing). This file has custom theme injection: 
+`from dashboards.core.theme import register_theme`
+ and `register_theme()`, you can remove this lines from it, or bring required code to `dashboards/core/theme.py` as per your project structure from repository.
 
 ---
 
@@ -50,7 +61,10 @@ dashboards/
 **File:** `settings.py`
 
 ```python
-PRICES_TABLE_NAME="simulated_daily_closes_f1_v1" #vector_de_precios_valmer
+from dashboards.helpers.mock import SIMULATED_PRICES_TABLE
+
+
+PRICES_TABLE_NAME=SIMULATED_PRICES_TABLE
 ```
 
 The page `01_curve_and_positions.py` calls a small bootstrap (`_ensure_data_nodes()`) that registers this table under the app’s data‑node registry so the services can retrieve each asset’s **dirty price** from the platform.
@@ -128,10 +142,15 @@ For each selected portfolio (one **tab** per id):
 
 ## 6) Run it on the platform
 
-1) Commit and push to the branch your project deploys from.  
-2) In the platform UI, open **Dashboards → Fixed Income Position Dashboard**.  
-3) Pick a **Valuation date**, (optionally) **build the mock portfolio**, and select portfolios or groups.  
-4) Bump the curve and inspect **ΔNPV**/**carry**; drill down into assets as needed.
+1) Commit and push to the branch your project deploys from using `mainsequence project open-signed-terminal <PROJECT_ID>` and run: 
+```bash
+git add .
+git commit -m "Add Fixed Income Position Dashboard"
+git push
+```
+3) In the platform UI, open your project and in **Dashboards → bond_portfolio_analysis → View**.  
+4) Pick a **Valuation date**, (optionally) **build the mock portfolio**, and select portfolios or groups.  
+5) Bump the curve and inspect **ΔNPV**/**carry**; drill down into assets as needed.
 
 ---
 
