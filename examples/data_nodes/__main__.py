@@ -5,7 +5,7 @@ from examples.data_nodes.simple_simulated_prices import (
     test_features_from_prices_local_storage,
     test_simulated_prices,
 )
-
+import mainsequence.client as msc
 
 def main():
 
