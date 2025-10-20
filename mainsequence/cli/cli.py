@@ -306,6 +306,7 @@ def _copy_clipboard(txt: str) -> bool:
 
 
 
+
 def _canonical_project_dir(base_dir: str, org_slug: str, project_id: int | str, project_name: str) -> pathlib.Path:
     slug = safe_slug(project_name or "project")
     return _projects_root(base_dir, org_slug) / f"{slug}-{project_id}"
