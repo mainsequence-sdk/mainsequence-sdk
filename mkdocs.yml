@@ -11,6 +11,7 @@ theme:
   favicon: "img/favico.ico" # Optional: Add a favicon
   palette:
     scheme: slate  # This makes dark mode the default scheme
+    primary: black
     toggle:
       icon: material/weather-sunny
       name: Switch to light mode
