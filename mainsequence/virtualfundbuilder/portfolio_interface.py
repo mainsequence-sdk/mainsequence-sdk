@@ -100,7 +100,6 @@ class PortfolioInterface:
             portfolio_name=portfolio_node.portfolio_name,
             data_node_update_id=portfolio_node.data_node_update.id,
             signal_data_node_update_id=None,
-            is_active=True,
             calendar_name=portfolio_node.calendar_name,
             target_portfolio_about=dict(
                 description=portfolio_node.target_portfolio_about,

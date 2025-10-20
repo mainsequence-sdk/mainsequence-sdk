@@ -20,7 +20,7 @@ If you want to see the end result, check the example repository: https://github.
 
 ## Building a Dashboard
 
-For the platform to detect your dashboards, place them inside the `dashboards/` folder in your repo, and name the file that initializes the app **`app.py`**. The platform will discover and deploy it automatically.
+For the platform to detect your dashboards, place them inside the `dashboards/` folder in your repo, and name the file that initializes the app **`app.py`**. The platform will discover and deploy it automatically. You already may find an example dashboard in your tutorial project under `dashboards/sample_app/app.py`. So you can create a new folder for this tutorial dashboard: `dashboards/tutorial/` and add your `app.py` file there.
 
 ## Interest‑Rate Portfolio Exposure Example
 
@@ -56,6 +56,24 @@ For this tutorial dashboard, we’ll build a **mock portfolio** with **no signal
 You can find the code under `dashboards/helpers/mock.py`:
 
 ```python
+import mainsequence.client as msc
+import mainsequence.instruments as msi
+import pytz
+from mainsequence.virtualfundbuilder.data_nodes import PortfolioFromDF
+from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
+
+import pandas as pd
+import json
+import datetime
+import QuantLib as ql
+
+
+UTC = pytz.utc
+SECURITY_TYPE_MOCK="MOCK_ASSET"
+SIMULATED_PRICES_TABLE="simulated_daily_closes_tutorial"
+TRANSLATION_TABLE_IDENTIFIER = "prices_translation_table_1d"
+
+
 class TestFixedIncomePortfolio(PortfolioFromDF):
     def get_portfolio_df(self):
 
@@ -91,8 +109,6 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
                     bond = msi.FloatingRateBond(
                         **common_kwargs,  # Unpack the common arguments
                         floating_rate_index_name="UST",
-                        issue_date=time_idx.date(),
-
                     )
                 else:  # Implies a FixedRateBond
                     bond = msi.FixedRateBond(
@@ -159,11 +175,20 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
 
 
 def build_test_portfolio(portfolio_name:str):
-    node = TestFixedIncomePortfolio(portfolio_name=portfolio_name, calendar_name="24/7",
-                         target_portfolio_about="Test")
+    node = TestFixedIncomePortfolio(
+        portfolio_name=portfolio_name,
+        calendar_name="24/7",
+        target_portfolio_about="Test"
+    )
 
-    PortfolioInterface.build_and_run_portfolio_from_df(portfolio_node=node,
-                                                       add_portfolio_to_markets_backend=True)
+    PortfolioInterface.build_and_run_portfolio_from_df(
+        portfolio_node=node,
+        add_portfolio_to_markets_backend=True,
+    )
+
+if __name__ == "__main__":
+    portfolio_name="TestFixedIncomePortfolio"
+    build_test_portfolio(portfolio_name=portfolio_name)
 ```
 
 Key pieces to notice:
@@ -176,46 +201,62 @@ This ensures the custom assets you want are **registered** on the platform.
 
 ```python
 asset.add_instrument_pricing_details_from_ms_instrument(
-                    instrument=bond,pricing_details_date=time_idx
-                    )
+    instrument=bond, pricing_details_date=time_idx
+)
 ```
 
 This attaches **instrument pricing details** to the asset.
 
 ```python
-node = TestFixedIncomePortfolio(portfolio_name=portfolio_name, calendar_name="24/7",
-                         target_portfolio_about="Test")
+node = TestFixedIncomePortfolio(
+    portfolio_name=portfolio_name,          
+    calendar_name="24/7",
+    target_portfolio_about="Test",
+)
 
-PortfolioInterface.build_and_run_portfolio_from_df(portfolio_node=node,
-                                                       add_portfolio_to_markets_backend=True)
+PortfolioInterface.build_and_run_portfolio_from_df(
+    portfolio_node=node,
+    add_portfolio_to_markets_backend=True
+)
 ```
 
 Here we use the `PortfolioInterface` to **build and run** the portfolio. This differs slightly from running a plain `DataNode`: the interface populates portfolio‑specific objects in the platform (for example, creating a `PortfolioIndexAsset` linked to this portfolio).
 
+Now you can run this script to create the portfolio and assets in the platform. Make sure you have correct environment variables set to connect to your tutorial project’s platform instance. Open `.env` file and look on values inside to run next commands in your terminal:
+
+(Windows)
+```powershell
+$env:MAINSEQUENCE_TOKEN="your_api_key"
+$env:TDAG_ENDPOINT="your_tdag_endpoint"
+.\.venv\Scripts\Activate
+python .\dashboards\helpers\mock.py
+```
+(Linux/Mac)
+```bash
+export MAINSEQUENCE_TOKEN="your_api_key"
+export TDAG_ENDPOINT="your_tdag_endpoint"
+source .venv/bin/activate
+python dashboards/helpers/mock.py
+```
+
 After running the node through the `PortfolioInterface`, you’ll see a few things in the platform:
 
 1) **Target Portfolios**:
-   `https://www.main-sequence.app/target-portfolios/` — you should see the new portfolio with the name you provided.
+   https://main-sequence.app/target-portfolios/ — you should see the new portfolio with the name you provided `TestFixedIncomePortfolio`.
 
-![img.png](img.png)
 
 2) **Tables** (portfolio details stored by the data node):
-   `https://www.main-sequence.app/dynamic-table-metadatas/?search=testfixed&storage_hash=&identifier=`
+   https://main-sequence.app/dynamic-table-metadatas/?search=testfixed&storage_hash=&identifier=
 
 3) **Assets** (the two newly created assets):
-   `https://www.main-sequence.app/asset/?search=TEST_&unique_identifier=&figi=&security_type=&security_market_sector=&ticker=`
+   https://main-sequence.app/asset/?search=TEST_&unique_identifier=&figi=&security_type=&security_market_sector=&ticker=
    Click either asset to explore the **current pricing details** created from the snapshot.
 
-![img.png](img.png)
 
 ## Pre‑work Simulating Asset Prices Closes, 
 
 For our dashboards we want also to include the latest price for each asset. We will need a data_node containing closing
 prices. You can reuse your price simulator from the previoys tutorial
-
-
-
-
 
 Now you have pricing details for these assets that you can use to rebuild the instruments with QuantLib—unlocking deeper analysis and richer dashboards.
 
