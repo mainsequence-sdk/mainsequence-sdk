@@ -1465,7 +1465,7 @@ class UpdateStatistics(BaseModel):
         """
 
 
-        for k,v in self.asset_time_statistics.items():
+        for _,v in self.asset_time_statistics.items():
             if v==self._initial_fallback_date:
                 return True
         return False
@@ -1474,7 +1474,7 @@ class UpdateStatistics(BaseModel):
         """"
              return true if all assets in asset_time_statistics equals _initial_fallback_date
              """
-        for k,v in self.asset_time_statistics.items():
+        for _,v in self.asset_time_statistics.items():
             if v!=self._initial_fallback_date:
                 return False
         return True
@@ -1784,7 +1784,6 @@ class UpdateStatistics(BaseModel):
     def filter_df_by_latest_value(self, df: pd.DataFrame) -> pd.DataFrame:
 
 
-        a=5
         # Single-index time series fallback
         if "unique_identifier" not in df.index.names:
             if self.max_time_index_value is not None:
