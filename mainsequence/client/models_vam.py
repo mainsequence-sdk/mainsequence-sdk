@@ -1716,7 +1716,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
         if r.status_code  !=200:
-            raise Exception(f" {r.text()}")
+            raise Exception(f" {r.text}")
         results = r.json()
         return results["weights"], datetime.datetime.utcfromtimestamp(
             results["weights_date"]
