@@ -146,7 +146,7 @@ git commit -m "Add Fixed Income Position Dashboard"
 git push
 ```
 3) In the platform UI, open your project and in **Dashboards → bond_portfolio_analysis → View**.  
-4) Pick a **Valuation date**, (optionally) **build the mock portfolio**, and select portfolios or groups.  
+4) Pick a **Valuation date**, (optionally) **build the mock portfolio**, and in the Portfolio groups search by `Mock Bond Portfolio with Signals Group` then in dropdown select it and click "Load Selected".  
 5) Bump the curve and inspect **ΔNPV**/**carry**; drill down into assets as needed.
 
 ---
