@@ -25,7 +25,6 @@ CFG_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_JSON = CFG_DIR / "config.json"
 TOKENS_JSON = CFG_DIR / "token.json"  # {username, access, refresh, ts}
-LINKS_JSON = CFG_DIR / "project-links.json"  # {"<id>": "/abs/path"}
 
 DEFAULTS = {
     "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", "https://main-sequence.app/"),
@@ -43,8 +42,10 @@ def read_json(path: pathlib.Path, default):
 
 def write_json(path: pathlib.Path, obj) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, indent=2), encoding="utf-8")
-
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(obj, indent=2), encoding="utf-8")
+    # atomic on POSIX and Windows (moves/overwrites safely)
+    os.replace(tmp, path)
 
 def get_config() -> dict:
     cfg = DEFAULTS | read_json(CONFIG_JSON, {})
@@ -60,21 +61,7 @@ def set_config(updates: dict) -> dict:
     return cfg
 
 
-def get_links() -> dict:
-    return read_json(LINKS_JSON, {})
 
-
-def set_link(project_id: int | str, path: str) -> None:
-    links = get_links()
-    links[str(project_id)] = path
-    write_json(LINKS_JSON, links)
-
-
-def remove_link(project_id: int | str) -> str | None:
-    links = get_links()
-    prev = links.pop(str(project_id), None)
-    write_json(LINKS_JSON, links)
-    return prev
 
 
 def get_tokens() -> dict:

@@ -10,13 +10,6 @@ import QuantLib as ql
 import mainsequence.client as msc
 from mainsequence.instruments.utils import to_ql_date
 
-DISCOUNT_CURVES_TABLE = msc.Constant.get_value(name="DISCOUNT_CURVES_TABLE")
-REFERENCE_RATES_FIXING_TABLE = msc.Constant.get_value(name="REFERENCE_RATES_FIXING_TABLE")
-
-assert DISCOUNT_CURVES_TABLE is not None, "DISCOUNT_CURVES_TABLE not found in constants"
-assert (
-    REFERENCE_RATES_FIXING_TABLE is not None
-), "REFERENCE_RATES_FIXING_TABLE not found in constants"
 
 
 class DateInfo(TypedDict, total=False):
@@ -329,8 +322,12 @@ class MSInterface:
     def get_historical_discount_curve(self, curve_name, target_date):
         from mainsequence.logconf import logger
         from mainsequence.tdag import APIDataNode
+        instrument_configuration=msc.InstrumentsConfiguration.filter()[0]
 
-        data_node = APIDataNode.build_from_identifier(identifier=DISCOUNT_CURVES_TABLE)
+        if instrument_configuration.discount_curves_storage_node is None:
+            raise Exception("discount_curves_storage_node needs to be set in https://main-sequence.app/instruments/config/")
+
+        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.discount_curves_storage_node)
 
         # for test purposes only get lats observations
         use_last_observation = (
@@ -381,10 +378,13 @@ class MSInterface:
         from mainsequence.logconf import logger
         from mainsequence.tdag import APIDataNode
 
-        data_node = APIDataNode.build_from_identifier(identifier=REFERENCE_RATES_FIXING_TABLE)
+        instrument_configuration = msc.InstrumentsConfiguration.filter()[0]
+        if instrument_configuration.reference_rates_fixings_storage_node is None:
+            raise Exception("reference_rates_fixings_storage_node needs to be set in https://main-sequence.app/instruments/config/")
 
-        start_date = datetime.datetime(2024, 9, 10, tzinfo=pytz.utc)
-        end_date = datetime.datetime(2025, 9, 17, tzinfo=pytz.utc)
+        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.reference_rates_fixings_storage_node)
+
+
 
         fixings_df = data_node.get_ranged_data_per_asset(
             range_descriptor={

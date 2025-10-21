@@ -339,30 +339,32 @@ Click the **storage hash**, then in the table's context menu (the **…** button
 Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the following to `src\data_nodes\example_nodes.py`:
 
 ```python
-class DailyRandomAdditionAPI(DataNode):
-    def __init__(self,mean:float,std:float,
-                 dependency_identifier:int,
-                 *args, **kwargs):
-        self.mean=mean
-        self.std=std
-
-        self.daily_random_number_data_node=APIDataNode.build_from_identifier(identifier=dependency_identifier)
+class DailyRandomAddition(DataNode):
+    def __init__(self, mean: float, std: float, *args, **kwargs):
+        self.mean = mean
+        self.std = std
+        self.daily_random_number_data_node = DailyRandomNumber(
+            *args, node_configuration=RandomDataNodeConfig(mean=0.0), **kwargs
+        )
         super().__init__(*args, **kwargs)
+
     def dependencies(self):
-        return {"number_generator":self.daily_random_number_data_node}
+        return {"number_generator": self.daily_random_number_data_node}
+
     def update(self) -> pd.DataFrame:
         """Draw daily samples from N(mean, std) since last run (UTC days)."""
         today = pd.Timestamp.now("UTC").normalize()
         last = self.update_statistics.max_time_index_value
         if last is not None and last >= today:
             return pd.DataFrame()
-        random_number=np.random.normal(self.mean, self.std)
-        dependency_noise=self.daily_random_number_data_node.\
-                get_df_between_dates(start_date=today, great_or_equal=True).iloc[0]["random_number"]
+        random_number = np.random.normal(self.mean, self.std)
+        dependency_noise = self.daily_random_number_data_node.get_df_between_dates(
+            start_date=today, great_or_equal=True
+        ).iloc[0]["random_number"]
         self.logger.info(f"random_number={random_number} dependency_noise={dependency_noise}")
 
         return pd.DataFrame(
-            {"random_number": [random_number+dependency_noise]},
+            {"random_number": [random_number + dependency_noise]},
             index=pd.DatetimeIndex([today], name="time_index", tz="UTC"),
         )
 ```
@@ -379,7 +381,38 @@ daily_node = DailyRandomAddition(mean=0.0, std=1.0)
 daily_node.run(debug_mode=True, force_update=True)
 ```
 
-Run it, then return to the Dynamic Table Metadatas page:
+Now to run this launcher, add a new debug configuration to your `.vscode/launch.json` in `configurations` list (or duplicate the existing config and change the program path and name).
+
+
+(Windows): 
+```json
+        {
+            "name": "Debug random_daily_addition_launcher",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}\\scripts\\random_daily_addition_launcher.py",
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            },
+            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
+        }
+```
+(macOS/Linux): 
+```json
+{ 
+            "name": "Debug random_daily_addition_launcher", 
+            "type": "debugpy", 
+            "request": "launch", 
+            "program": "${workspaceFolder}/scripts/random_daily_addition_launcher.py", 
+            "console": "integratedTerminal", 
+            "env": { 
+                "PYTHONPATH": "${workspaceFolder}" 
+            }, 
+            "python": "${workspaceFolder}/.venv/bin/python" 
+        }
+```
+Then back to the `random_daily_addition_launcher.py` file and run the configuration from the Run/Debug dropdown at the top-right, choose "Debug random_daily_addition_launcher” and then choose new configuration with "Debug random_daily_addition_launcher" name. After it runs, return to the Dynamic Table Metadatas page to see the new table:
 
 https://main-sequence.app/dynamic-table-metadatas/?search=dailyrandom&storage_hash=&identifier=
 
@@ -405,6 +438,32 @@ To support both, each `DataNode` uses two identifiers:
 
 Why do this? Sometimes you want to store data from different processes in a single table. While the simple example here is contrived, this pattern becomes very useful with multi-index tables.
 
-Now update your **daily random number launcher** to run two update processes with different volatility configurations but the **same** storage. You'll still see **two update processes**, but they'll write to the **same underlying table** for the daily random number node.
+Now update your **daily random number launcher** to run two update processes with different volatility configurations but the **same** storage. 
+
+To do this, modify `scripts\random_number_launcher.py` to be as follows:
+
+```python
+from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig, VolatilityConfig
+
+low_vol = VolatilityConfig(center=0.5, skew=False)
+high_vol = VolatilityConfig(center=2.0, skew=True)
+
+
+daily_node_low = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0, std=low_vol))
+daily_node_high = DailyRandomNumber(
+    node_configuration=RandomDataNodeConfig(mean=0.0, std=high_vol)
+)
+
+daily_node_low.run(debug_mode=True, force_update=True)
+daily_node_high.run(debug_mode=True, force_update=True)
+```
+
+Here we create two `DailyRandomNumber` nodes with different `std` (Volatility) configurations but the same `mean`. Since we set `ignore_from_storage_hash=True` for the `std` field in `RandomDataNodeConfig`, both nodes will write to the same underlying table.
+
+Run the updated launcher in VS Code as before. After it runs, return to the Dynamic Table Metadatas page to see the table for `DailyRandomNumber`.
+
+You'll see that you have a single table with three different update processes (you just added two new processes by running the modified launcher):
 
 ![img.png](../img/tutorial/update_vs_storage.png)
+
+Congratulations! You've built your first Data Nodes in Main Sequence. In the next part of the tutorial, we'll explore scheduling and automating these nodes and more.

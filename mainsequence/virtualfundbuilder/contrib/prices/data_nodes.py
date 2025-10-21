@@ -14,6 +14,7 @@ from mainsequence.client import (
     AssetCategory,
     AssetTranslationTable,
 )
+import mainsequence.client as msc
 from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
@@ -758,6 +759,8 @@ class InterpolatedPrices(DataNode):
         """
         Updates the series from the source based on the latest value.
         """
+        us:msc.UpdateStatistics=self.update_statistics
+
         self.asset_calendar_map = {
             a.unique_identifier: a.get_calendar() for a in self.update_statistics.asset_list
         }
@@ -765,7 +768,7 @@ class InterpolatedPrices(DataNode):
         if prices.shape[0] == 0:
             return pd.DataFrame()
 
-        if self.update_statistics.is_empty() == False:
+        if us.are_all_assets_on_fallback_date:
             TARGET_COLS = ["open", "close", "high", "low", "volume", "open_time"]
             assert prices[[c for c in prices.columns if c in TARGET_COLS]].isnull().sum().sum() == 0
 

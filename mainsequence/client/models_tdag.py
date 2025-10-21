@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from mainsequence.logconf import logger
 
+from . import exceptions
 from .base import TDAG_ENDPOINT, BaseObjectOrm, BasePydanticModel
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
@@ -88,8 +89,8 @@ class SourceTableConfigurationDoesNotExist(Exception):
 
 
 class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
-    source_config_id: int = Field(
-        ...,
+    source_config_id: int | None = Field(
+        None,
         alias="source_config",
         description="Primary key of the related SourceTableConfiguration",
     )
@@ -1369,9 +1370,9 @@ class UpdateStatistics(BaseModel):
 
         if isinstance(value, datetime.datetime):
             return (
-                value.astimezone(datetime.timezone.utc)
+                value.astimezone(datetime.UTC)
                 if value.tzinfo
-                else value.replace(tzinfo=datetime.timezone.utc)
+                else value.replace(tzinfo=datetime.UTC)
             )
 
         if isinstance(value, (int| float)):
@@ -1383,7 +1384,7 @@ class UpdateStatistics(BaseModel):
                 v /= 1e6
             elif v > 1e11:  # ms
                 v /= 1e3
-            return datetime.datetime.fromtimestamp(v, tz=datetime.timezone.utc)
+            return datetime.datetime.fromtimestamp(v, tz=datetime.UTC)
 
         if isinstance(value, str):
             s = value.strip()
@@ -1392,9 +1393,9 @@ class UpdateStatistics(BaseModel):
             try:
                 dt = datetime.datetime.fromisoformat(s)
                 return (
-                    dt.astimezone(datetime.timezone.utc)
+                    dt.astimezone(datetime.UTC)
                     if dt.tzinfo
-                    else dt.replace(tzinfo=datetime.timezone.utc)
+                    else dt.replace(tzinfo=datetime.UTC)
                 )
             except ValueError:
                 return value
@@ -1456,6 +1457,28 @@ class UpdateStatistics(BaseModel):
             self._max_time_in_update_statistics = _max_time_in_asset_time_statistics
 
         return self._max_time_in_update_statistics
+
+    @property
+    def is_any_asset_on_fallback_date(self)->bool:
+        """"
+        return true if any of the assets in asset_time_statistics equals _initial_fallback_date
+        """
+
+
+        for k,v in self.asset_time_statistics.items():
+            if v==self._initial_fallback_date:
+                return True
+        return False
+    @property
+    def are_all_assets_on_fallback_date(self)->bool:
+        """"
+             return true if all assets in asset_time_statistics equals _initial_fallback_date
+             """
+        for k,v in self.asset_time_statistics.items():
+            if v!=self._initial_fallback_date:
+                return False
+        return True
+
 
     def get_update_range_map_great_or_equal_columnar(
         self,
@@ -1976,7 +1999,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                     adjusted_end.year,
                     adjusted_end.month,
                     adjusted_end.day,
-                    tzinfo=datetime.timezone.utc,
+                    tzinfo=datetime.UTC,
                 )
                 for v in unique_identifier_range_map.values():
                     v["end_date"] = adjusted_end
@@ -2125,6 +2148,7 @@ class Project(BasePydanticModel, BaseObjectOrm):
     project_name: str
     data_source: DynamicTableDataSource
     git_ssh_url: str | None = None
+    resources_visible_to_light_users: bool
 
     @classmethod
     def get_user_default_project(cls):
@@ -2326,6 +2350,7 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
     created_by_resource_name: str
     bucket_name: str
     content: Any
+    creation_date: datetime.datetime
 
     @classmethod
     def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):

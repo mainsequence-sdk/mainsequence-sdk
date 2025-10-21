@@ -100,7 +100,6 @@ class PortfolioInterface:
             portfolio_name=portfolio_node.portfolio_name,
             data_node_update_id=portfolio_node.data_node_update.id,
             signal_data_node_update_id=None,
-            is_active=True,
             calendar_name=portfolio_node.calendar_name,
             target_portfolio_about=dict(
                 description=portfolio_node.target_portfolio_about,
@@ -156,7 +155,6 @@ class PortfolioInterface:
             # timeseries can be running in local lake so need to request the id
             standard_kwargs = dict(
                 data_node_update_id=ts.data_node_update.id,
-                is_active=True,
                 signal_data_node_update_id=signal_weights_ts.data_node_update.id,
             )
 
