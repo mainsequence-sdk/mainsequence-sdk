@@ -35,7 +35,7 @@ dashboards/
         └─ 99_asset_detail.py               # Per‑asset JSON + cashflows
 ```
 
-**IMPORTANT** Beside this - you need to bring other required folders from `dashboards/` folder in repo: `components/`, `core/`, `plots/`, `services/` to recreate same structure in your project. Best way is to clone whole repo somewhere on your computer and copy required folders to your project.
+**IMPORTANT** Beside this - you need to bring other required folders from `dashboards/` folder in repo to `dashboards/` folder in your project: `components/`, `core/`, `plots/`, `services/` to recreate same structure in your project. Best way is to clone whole repo somewhere on your computer and copy required folders to your project.
 
 
 > **Quick‑link note:** `app.py` creates buttons linking to `pages/01_Curve_Stats_Positions` and `pages/02_Data_Nodes_Graph`. Your actual files are `01_curve_and_positions.py` and `02_data_nodes_dependencies.py`. Either rename the files to match the links **or** adjust the two link targets in `app.py`. Streamlit will still show the pages in the sidebar either way.
@@ -50,10 +50,7 @@ Explore the key parts of each file below and print this code to your dashboard a
 ## 1) Theme & app shell
 
 - **`.streamlit/config.toml`** sets your dark theme (primary/background/text colors, font) and enables headless/XSFR protection.  
-- **`app.py`** registers the theme, sets the page config (`page_title="Fixed Income Position Dashboard"`), and provides quick links to the app pages. It also explains that all pages live under `pages/` and that no registry is required (native Streamlit multipage routing). This file has custom theme injection: 
-`from dashboards.core.theme import register_theme`
- and `register_theme()`, you can remove this lines from it, or bring required code to `dashboards/core/theme.py` as per your project structure from repository.
-
+- **`app.py`** registers the theme, sets the page config (`page_title="Fixed Income Position Dashboard"`), and provides quick links to the app pages. It also explains that all pages live under `pages/` and that no registry is required (native Streamlit multipage routing). This file has custom theme injection from `dashboards/core/theme.py`.
 ---
 
 ## 2) Tell the app which **prices** table to read
@@ -149,7 +146,7 @@ git commit -m "Add Fixed Income Position Dashboard"
 git push
 ```
 3) In the platform UI, open your project and in **Dashboards → bond_portfolio_analysis → View**.  
-4) Pick a **Valuation date**, (optionally) **build the mock portfolio**, and select portfolios or groups.  
+4) In the sidebar pick a **Valuation date**, click on **Build mock portfolios**, and in the **Portfolio groups** search by `Mock Bond Portfolio with Signals Group` then in dropdown select it and click "Load Selected".  
 5) Bump the curve and inspect **ΔNPV**/**carry**; drill down into assets as needed.
 
 ---
