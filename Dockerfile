@@ -76,14 +76,10 @@ RUN pip install --no-cache-dir jupyterlab
 RUN pip install --no-cache-dir ipywidgets
 
 # Now install your requirements purely with pip in this venv
-RUN pip install --no-cache-dir git+https://github.com/mainsequence-sdk/mainsequence-sdk
+RUN pip install --no-cache-dir mainsequence
+
 # Create requirements.txt, excluding mainsequence to avoid the commit hash, then add it back without the hash to always use latest
-RUN pip freeze | grep -v "mainsequence" > ${CODE_DIR}/mainsequence-sdk/requirements.txt && \
-    echo "mainsequence" >> ${CODE_DIR}/mainsequence-sdk/requirements.txt
-RUN pip uninstall -y mainsequence
-# We can probably optimize to preinstall mainsequence, there seems to be some issue
-# that re-installing the requirements.txt in the container leads to deleting the old libs
-# and installing again
+RUN pip freeze > ${CODE_DIR}/mainsequence-sdk/requirements.txt
 
 # Make scripts executable, if you need them
 RUN chmod +x ${CODE_DIR}/mainsequence-sdk/scripts/get_git_and_run.sh
