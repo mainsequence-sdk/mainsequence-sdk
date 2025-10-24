@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_PATH="/tmp/repo"
-export VFB_PROJECT_PATH="$REPO_PATH/$PROJECT_LIBRARY_NAME"
+export VFB_PROJECT_PATH="$REPO_PATH"
 
 # Source our new utils
 source "$(dirname "$0")/utils.sh"
