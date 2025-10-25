@@ -11,7 +11,6 @@ import mainsequence.client as msc
 from mainsequence.instruments.utils import to_ql_date
 
 
-
 class DateInfo(TypedDict, total=False):
     """Defines the date range for a data query."""
 
@@ -331,7 +330,7 @@ class MSInterface:
 
         # for test purposes only get lats observations
         use_last_observation = (
-            os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+            os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "false").lower() == "true"
         )
         if use_last_observation:
             update_statistics = data_node.get_update_statistics()
@@ -399,7 +398,7 @@ class MSInterface:
         if fixings_df.empty:
 
             use_last_observation = (
-                os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "true").lower() == "true"
+                os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "false").lower() == "true"
             )
             if use_last_observation:
                 logger.warning("Fixings are using last observation and filled forward")

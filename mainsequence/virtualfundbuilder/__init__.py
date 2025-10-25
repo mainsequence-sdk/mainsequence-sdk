@@ -42,9 +42,7 @@ def register_default_strategies():
     import mainsequence.virtualfundbuilder.contrib.rebalance_strategies
 
 
-if os.getenv("PROJECT_LIBRARY_NAME") is None:
-    # TODO workaround for now to make local execution work
-    os.environ["PROJECT_LIBRARY_NAME"] = Path(os.environ.get("VFB_PROJECT_PATH")).name
+
 
 RUNS_IN_JOB = os.getenv("JOB_ID", None)
 if RUNS_IN_JOB:

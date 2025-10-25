@@ -93,7 +93,7 @@ def run_script(execution_object):
 
     logger = get_vfb_logger()
     logger.info(f"Run script {execution_object}")
-    python_file_path = Path(os.getenv("VFB_PROJECT_PATH")).parent / execution_object
+    python_file_path = Path(os.getenv("VFB_PROJECT_PATH")) / execution_object
     runpy.run_path(python_file_path, run_name="__main__")
 
 
@@ -110,7 +110,7 @@ def get_pod_configuration():
     # todo register nodes by running the tree
 
     project_path = os.getenv("VFB_PROJECT_PATH")
-    repo_path = os.path.dirname(project_path)
+    repo_path = os.getenv("VFB_PROJECT_PATH")
 
     # Gather all submodules in data_nodes
     # data_nodes_package = f"{project_library}.data_nodes"
@@ -195,6 +195,7 @@ def prerun_routines():
     data = update_job_status("RUNNING")
     env_update = data.get("environment_update", {})
     for key, val in env_update.items():
+        print(f"{key}: {val}")
         os.environ[key] = val
 
 

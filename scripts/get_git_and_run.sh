@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO_PATH="/tmp/repo"
-export VFB_PROJECT_PATH="$REPO_PATH/$PROJECT_LIBRARY_NAME"
+export VFB_PROJECT_PATH="$REPO_PATH"
 
 # Source our new utils
 source "$(dirname "$0")/utils.sh"
@@ -60,3 +60,5 @@ fi
 if [ "${AUTHENTICATION_METHOD:-ssh}" != "api" ] && [ -n "${SSH_KEY_FILE:-}" ] && [ -f "$SSH_KEY_FILE" ]; then
   rm -f "$SSH_KEY_FILE"
 fi
+
+echo ">> VFB_PROJECT_PATH: $VFB_PROJECT_PATH"
