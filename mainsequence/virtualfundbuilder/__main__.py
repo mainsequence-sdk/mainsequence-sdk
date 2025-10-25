@@ -110,7 +110,7 @@ def get_pod_configuration():
     # todo register nodes by running the tree
 
     project_path = os.getenv("VFB_PROJECT_PATH")
-    repo_path = os.path.dirname(project_path)
+    repo_path = os.getenv("VFB_PROJECT_PATH")
 
     # Gather all submodules in data_nodes
     # data_nodes_package = f"{project_library}.data_nodes"
