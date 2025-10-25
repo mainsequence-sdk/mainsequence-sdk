@@ -93,7 +93,7 @@ def run_script(execution_object):
 
     logger = get_vfb_logger()
     logger.info(f"Run script {execution_object}")
-    python_file_path = Path(os.getenv("VFB_PROJECT_PATH")).parent / execution_object
+    python_file_path = Path(os.getenv("VFB_PROJECT_PATH")) / execution_object
     runpy.run_path(python_file_path, run_name="__main__")
 
 
