@@ -60,3 +60,5 @@ fi
 if [ "${AUTHENTICATION_METHOD:-ssh}" != "api" ] && [ -n "${SSH_KEY_FILE:-}" ] && [ -f "$SSH_KEY_FILE" ]; then
   rm -f "$SSH_KEY_FILE"
 fi
+
+echo ">> VFB_PROJECT_PATH: $VFB_PROJECT_PATH"
