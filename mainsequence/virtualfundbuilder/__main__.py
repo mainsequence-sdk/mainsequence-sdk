@@ -195,6 +195,7 @@ def prerun_routines():
     data = update_job_status("RUNNING")
     env_update = data.get("environment_update", {})
     for key, val in env_update.items():
+        print(f"{key}: {val}")
         os.environ[key] = val
 
 
