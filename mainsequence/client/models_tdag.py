@@ -10,7 +10,7 @@ import math
 import os
 import time
 from threading import RLock
-from typing import Any, ClassVar,Optional
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -89,7 +89,7 @@ class SourceTableConfigurationDoesNotExist(Exception):
 
 
 class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
-    source_config_id: Optional[int] = Field(
+    source_config_id: int | None = Field(
         None,
         alias="source_config",
         description="Primary key of the related SourceTableConfiguration",
@@ -1370,9 +1370,9 @@ class UpdateStatistics(BaseModel):
 
         if isinstance(value, datetime.datetime):
             return (
-                value.astimezone(datetime.timezone.utc)
+                value.astimezone(datetime.UTC)
                 if value.tzinfo
-                else value.replace(tzinfo=datetime.timezone.utc)
+                else value.replace(tzinfo=datetime.UTC)
             )
 
         if isinstance(value, (int| float)):
@@ -1384,7 +1384,7 @@ class UpdateStatistics(BaseModel):
                 v /= 1e6
             elif v > 1e11:  # ms
                 v /= 1e3
-            return datetime.datetime.fromtimestamp(v, tz=datetime.timezone.utc)
+            return datetime.datetime.fromtimestamp(v, tz=datetime.UTC)
 
         if isinstance(value, str):
             s = value.strip()
@@ -1393,9 +1393,9 @@ class UpdateStatistics(BaseModel):
             try:
                 dt = datetime.datetime.fromisoformat(s)
                 return (
-                    dt.astimezone(datetime.timezone.utc)
+                    dt.astimezone(datetime.UTC)
                     if dt.tzinfo
-                    else dt.replace(tzinfo=datetime.timezone.utc)
+                    else dt.replace(tzinfo=datetime.UTC)
                 )
             except ValueError:
                 return value
@@ -1465,7 +1465,7 @@ class UpdateStatistics(BaseModel):
         """
 
 
-        for k,v in self.asset_time_statistics.items():
+        for _,v in self.asset_time_statistics.items():
             if v==self._initial_fallback_date:
                 return True
         return False
@@ -1474,7 +1474,7 @@ class UpdateStatistics(BaseModel):
         """"
              return true if all assets in asset_time_statistics equals _initial_fallback_date
              """
-        for k,v in self.asset_time_statistics.items():
+        for _,v in self.asset_time_statistics.items():
             if v!=self._initial_fallback_date:
                 return False
         return True
@@ -1784,7 +1784,6 @@ class UpdateStatistics(BaseModel):
     def filter_df_by_latest_value(self, df: pd.DataFrame) -> pd.DataFrame:
 
 
-        a=5
         # Single-index time series fallback
         if "unique_identifier" not in df.index.names:
             if self.max_time_index_value is not None:
@@ -1999,7 +1998,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                     adjusted_end.year,
                     adjusted_end.month,
                     adjusted_end.day,
-                    tzinfo=datetime.timezone.utc,
+                    tzinfo=datetime.UTC,
                 )
                 for v in unique_identifier_range_map.values():
                     v["end_date"] = adjusted_end
@@ -2148,6 +2147,7 @@ class Project(BasePydanticModel, BaseObjectOrm):
     project_name: str
     data_source: DynamicTableDataSource
     git_ssh_url: str | None = None
+    resources_visible_to_light_users: bool
 
     @classmethod
     def get_user_default_project(cls):

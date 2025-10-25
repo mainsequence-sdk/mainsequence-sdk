@@ -228,6 +228,7 @@ Now you can run this script to create the portfolio and assets in the platform. 
 ```powershell
 $env:MAINSEQUENCE_TOKEN="your_api_key"
 $env:TDAG_ENDPOINT="your_tdag_endpoint"
+$env:VFB_PROJECT_PATH="your_vfb_project_path"
 .\.venv\Scripts\Activate
 python .\dashboards\helpers\mock.py
 ```
@@ -235,6 +236,7 @@ python .\dashboards\helpers\mock.py
 ```bash
 export MAINSEQUENCE_TOKEN="your_api_key"
 export TDAG_ENDPOINT="your_tdag_endpoint"
+export VFB_PROJECT_PATH="your_vfb_project_path"
 source .venv/bin/activate
 python dashboards/helpers/mock.py
 ```
