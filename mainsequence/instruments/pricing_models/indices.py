@@ -241,7 +241,7 @@ def build_zero_curve(
     calendar: ql.Calendar = cfg["calendar"]
     curve_uid: str = cfg["curve_uid"]
 
-    nodes = data_interface.get_historical_discount_curve(curve_uid, target_date)
+    nodes,effective_curve_date = data_interface.get_historical_discount_curve(curve_uid, target_date)
 
     base = to_ql_date(target_date)
     base_py = (
@@ -279,7 +279,7 @@ def build_zero_curve(
 
     ts = ql.DiscountCurve(dates, discounts, dc, calendar)
     ts.enableExtrapolation()
-    return ql.YieldTermStructureHandle(ts)
+    return ql.YieldTermStructureHandle(ts),effective_curve_date
 
 
 @lru_cache(maxsize=256)
