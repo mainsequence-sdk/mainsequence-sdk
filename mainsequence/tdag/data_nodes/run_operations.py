@@ -258,7 +258,7 @@ class UpdateRunner:
             try:
                 # Call the business logic defined on the DataNode class
                 temp_df = self.ts.update()
-
+                overwrite_latest_value =overwrite_latest_value if not hasattr(self.ts,"overwrite_latest_value") else self.ts.overwrite_latest_value
                 if temp_df is None:
                     raise Exception(f" {self.ts} update(...) method needs to return a data frame")
 

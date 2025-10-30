@@ -540,6 +540,7 @@ class DataNode(DataAccessMixin, ABC):
     """
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
+    OPEN_TO_PUBLIC=False # flag for enterprise data providers that want to open their data nmodes
     _ARGS_IGNORE_IN_STORAGE_HASH = []
 
     # --- Dunder & Serialization Methods ---
@@ -909,6 +910,7 @@ class DataNode(DataAccessMixin, ABC):
             time_serie_source_code=time_serie_source_code,
             data_source=self.data_source,
             build_configuration_json_schema=self.build_configuration_json_schema,
+            open_to_public=self.OPEN_TO_PUBLIC
         )
 
     def set_relation_tree(self):
@@ -983,7 +985,7 @@ class DataNode(DataAccessMixin, ABC):
 
     def run(
         self,
-        debug_mode: bool,
+        debug_mode: bool=True,
         *,
         update_tree: bool = True,
         force_update: bool = False,

@@ -575,6 +575,7 @@ class PersistManager:
         time_serie_source_code_git_hash: str,
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
+            open_to_public:bool
     ) -> None:
         """
         Ensures local and remote persistence objects exist and sets their configurations.
@@ -605,6 +606,7 @@ class PersistManager:
                     data_source=data_source.model_dump(),
                     build_meta_data=remote_build_metadata,
                     build_configuration_json_schema=build_configuration_json_schema,
+                    open_to_public=open_to_public
                 )
 
                 dtd_metadata = DataNodeStorage.get_or_create(**kwargs)
@@ -800,7 +802,7 @@ class PersistManager:
 
             self._data_node_update_cached = self.data_node_update.upsert_data_into_table(
                 data=temp_df,
-                data_source=self.data_source,
+                data_source=self.data_source,overwrite=overwrite
             )
 
             persisted = True

@@ -91,7 +91,7 @@ class SourceTableConfigurationDoesNotExist(Exception):
 class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
     source_config_id: int | None = Field(
         None,
-        alias="source_config",
+
         description="Primary key of the related SourceTableConfiguration",
     )
     column_name: str = Field(
@@ -186,6 +186,8 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
         )
         if r.status_code not in [200, 201]:
             raise Exception(r.text)
+
+
         return r.json()
 
     def patch(self, *args, **kwargs):
@@ -719,7 +721,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     def upsert_data_into_table(
         self,
         data: pd.DataFrame,
-        data_source: DynamicTableDataSource,
+        data_source: DynamicTableDataSource,overwrite:bool
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
@@ -750,8 +752,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         column_names = [c for c in data.columns if c not in index_names]
         for c in column_names:
             multi_index_column_stats[c] = global_stats["_PER_ASSET_"]
-
-        data_source.insert_data_into_table(
+        data_source.related_resource.insert_data_into_table(
             serialized_data_frame=data,
             data_node_update=self,
             overwrite=overwrite,
@@ -795,9 +796,11 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
             time_to_wait = max(0, time_to_wait)
         return time_to_wait, next_update
 
-    def wait_for_update_time(
-        self,
-    ):
+    def wait_for_update_time(        self,    ):
+
+        if self.update_details.error_on_last_update == True or self.update_details.last_update is None:
+            return None
+
         time_to_wait, next_update = self.get_node_time_to_wait()
         if time_to_wait > 0:
 
@@ -2129,17 +2132,7 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
         else:
             return self.related_resource.get_data_by_time_index(*args, **kwargs)
 
-    def insert_data_into_table(self, *args, **kwargs):
-        if self.has_direct_postgres_connection():
-            TimeScaleInterface.process_and_update_table(
-                *args,
-                data_source=self.related_resource,
 
-                **kwargs,
-            )
-
-        else:
-            self.related_resource.insert_data_into_table(*args, **kwargs)
 
 
 class Project(BasePydanticModel, BaseObjectOrm):
