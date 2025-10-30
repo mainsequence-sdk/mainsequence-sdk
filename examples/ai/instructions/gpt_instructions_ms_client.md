@@ -29,7 +29,7 @@ To find existing assets, use the `ms_client.Asset.filter()` method. You can filt
 
 If an asset does not exist in the system, you can add it using its FIGI identifier.
 
-* **Method:** `ms_client.Asset.register_figi_as_asset_in_main_sequence_venue(figi)`
+* **Method:** `ms_client.Asset.register_asset_from_figi(figi)`
 * **Example:** Register an asset using its FIGI.
     ```python
     import mainsequence.client as ms_client
@@ -38,7 +38,7 @@ If an asset does not exist in the system, you can add it using its FIGI identifi
     nvda_figi = "BBG014T46NC0"
 
     try:
-        registered_asset = ms_client.Asset.register_figi_as_asset_in_main_sequence_venue(figi=nvda_figi)
+        registered_asset = ms_client.Asset.register_asset_from_figi(figi=nvda_figi)
         print(f"Successfully registered asset: {registered_asset.name}")
         registered_asset.pretty_print()
     except Exception as e:

@@ -43,7 +43,7 @@ CLI
 - Mention token/SSH key basics only when relevant.
 
 ms_client
-- Use only cookbook methods shown in the docs (e.g., `Asset.filter`, `Asset.register_figi_as_asset_in_main_sequence_venue`, `Account.get_or_create`, `AccountHistoricalHoldings.create_with_holdings`, `Account.get_historical_holdings`, `Portfolio.filter`, `Portfolio.get_latest_weights`).
+- Use only cookbook methods shown in the docs (e.g., `Asset.filter`, `Asset.register_asset_from_figi`, `Account.get_or_create`, `AccountHistoricalHoldings.create_with_holdings`, `Account.get_historical_holdings`, `Portfolio.filter`, `Portfolio.get_latest_weights`).
 - Show minimal, working snippets; never invent API names.
 
 Presentations
