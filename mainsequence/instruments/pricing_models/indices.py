@@ -368,9 +368,14 @@ def _make_index_from_config(
     )
 
     # IMPORTANT: we set the QuantLib index **name** to the UID
-    return ql.IborIndex(
-        index_identifier, period, settle, ccy, cal, bdc, eom, dc, curve  # name == UID
-    )
+    try:
+        index= ql.IborIndex(
+            index_identifier, period, settle, ccy, cal, bdc, eom, dc, curve  # name == UID
+        )
+    except Exception as e:
+        raise e
+
+    return index
 
 
 # ----------------------------- Public API ----------------------------- #

@@ -1710,6 +1710,9 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         if r.status_code != 200:
             raise RuntimeError(f"PATCH {url} failed: {r.status_code} {r.text}")
 
+
+
+
     def get_latest_weights(self, timeout=None) -> dict[str, float]:
         url = f"{self.get_object_url()}/{self.id}/get_latest_weights/"
         r = make_request(

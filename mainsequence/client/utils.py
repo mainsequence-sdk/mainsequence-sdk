@@ -18,6 +18,7 @@ DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 class DataFrequency(str, Enum):
     one_m = "1m"
+    one_min="1m"
     five_m = "5m"
     one_d = "1d"
     one_w = "1w"

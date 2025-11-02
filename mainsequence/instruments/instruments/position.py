@@ -30,7 +30,7 @@ Instrument._DEFAULT_REGISTRY = {
 }
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=False)
 class PositionLine:
     """
     A single position: an instrument and the number of units held.

@@ -120,12 +120,16 @@ class DataAccessMixin:
         return repr
 
     def get_last_observation(self, asset_list: Optional[list[ms_client.AssetMixin]]=None):
-        update_statistics = self.get_update_statistics()
-        if asset_list is not None:
-            update_statistics = update_statistics.update_assets(asset_list=asset_list)
-        update_range_map = update_statistics.get_update_range_map_great_or_equal()
-        last_observation = self.get_ranged_data_per_asset(update_range_map)
-        return last_observation
+        # update_statistics = self.get_update_statistics()
+        # if asset_list is not None:
+        #     update_statistics = update_statistics.update_assets(asset_list=asset_list)
+        # update_range_map = update_statistics.get_update_range_map_great_or_equal()
+        # last_observation = self.get_ranged_data_per_asset(update_range_map)
+        # return last_observation
+        return self.local_persist_manager.get_last_observation(
+            asset_list=asset_list,
+        )
+
 
     def get_pickle_path_from_time_serie(self) -> str:
         path = build_operations.get_pickle_path(

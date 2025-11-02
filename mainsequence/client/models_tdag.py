@@ -1035,6 +1035,39 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                     ) from err
                     # Filter the data based on time_index_name and last_time_index_value
 
+    def get_last_observation(self,unique_identifier_list:List[str],timeout=None):
+        base_url = self.get_object_url()
+        payload = {"json": {"unique_identifier_list":unique_identifier_list}}
+        s = self.build_session()
+        url = f"{base_url}/{self.id}/get_last_observation/"
+        r = make_request(
+            r_type="POST",
+            url=url,
+            payload=payload,
+            s=s,
+            loaders=self.LOADERS,
+        )
+        if r.status_code != 200:
+            raise Exception(f"Error in request {r.text}")
+        df=pd.DataFrame(r.json())
+        stc = self.sourcetableconfiguration
+        try:
+            df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format="ISO8601")
+        except Exception as e:
+            raise e
+        columns_to_loop =stc.column_dtypes_map.keys()
+        for c, c_type in stc.column_dtypes_map.items():
+            if c not in columns_to_loop:
+                continue
+            if c != stc.time_index_name:
+                if c_type == "object":
+                    c_type = "str"
+                df[c] = df[c].astype(c_type)
+        df = df.set_index(stc.index_names)
+        return df
+
+
+
     def get_data_between_dates_from_api(
         self,
         start_date: datetime.datetime = None,

@@ -3,7 +3,7 @@ import inspect
 import json
 import threading
 from concurrent.futures import Future
-
+from typing import Optional, List
 import pandas as pd
 
 import mainsequence.client as ms_client
@@ -130,6 +130,14 @@ class APIPersistManager:
         finally:
             # Remove the future from the global registry once done.
             future_registry.remove_future(self._data_node_storage_future)
+
+
+    def get_last_observation(self,asset_list:Optional[List["Asset"]]):
+        unique_identifier_list=[]
+        if asset_list is not None:
+            unique_identifier_list=[a.unique_identifier for a in asset_list]
+        last_observation=self.data_node_storage.get_last_observation(unique_identifier_list=unique_identifier_list)
+        return last_observation
 
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         """
@@ -738,6 +746,13 @@ class PersistManager:
             data_node_update=self.data_node_update, *args, **kwargs
         )
         return filtered_data
+    def get_last_observation(self,asset_list:Optional[List["Asset"]]):
+        unique_identifier_list=[]
+        if asset_list is not None:
+            unique_identifier_list=[a.unique_identifier for a in asset_list]
+        last_observation=self.data_node_storage.get_last_observation(unique_identifier_list=unique_identifier_list)
+        return last_observation
+
 
     def set_column_metadata(self, columns_metadata: list[ms_client.ColumnMetaData] | None) -> None:
         if self.data_node_storage:
