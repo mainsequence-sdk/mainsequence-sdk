@@ -32,6 +32,9 @@ from mainsequence.client import Constant as _C
 from mainsequence.instruments.data_interface import data_interface
 from mainsequence.instruments.utils import to_py_date, to_ql_date
 
+
+
+
 # ----------------------------- Cache (ONLY by identifier + date) ----------------------------- #
 
 # key: (index_identifier, target_date_py)
@@ -95,6 +98,20 @@ def _cete(period_days: int) -> Callable[[], dict[str, Any]]:
         )
     return factory
 
+def _mx_gov_overnight(period_days: int) -> Callable[[], dict[str, Any]]:
+    def factory() -> dict[str, Any]:
+        return dict(
+            curve_uid=_const("ZERO_CURVE__BANXICO_M_BONOS_OTR"),  # <- gov curve you requested
+            calendar=_mx_calendar(),
+            day_counter=ql.Actual360(),
+            currency=_mx_currency(),
+            period=ql.Period(period_days, ql.Days),               # 1-day index period
+            settlement_days=1,
+            bdc=ql.ModifiedFollowing,                             # overnight/OIS-style
+            end_of_month=False,
+        )
+    return factory
+
 _INDEX_TEMPLATES: dict[str, Callable[[], dict[str, Any]]] = {
     # Symbolic name  -> factory (resolved lazily)
     "REFERENCE_RATE__TIIE_28": _tiie(28),
@@ -105,6 +122,9 @@ _INDEX_TEMPLATES: dict[str, Callable[[], dict[str, Any]]] = {
     "REFERENCE_RATE__CETE_28": _cete(28),
     "REFERENCE_RATE__CETE_91": _cete(91),
     "REFERENCE_RATE__CETE_182": _cete(182),
+    "REFERENCE_RATE__CETE_1": _cete(1),
+
+    "REFERENCE_RATE__TIIE_OVERNIGHT_BONDES":_mx_gov_overnight(1),
 
     "REFERENCE_RATE__USD_SOFR": lambda: dict(
         curve_uid=_const("ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"),
@@ -288,7 +308,8 @@ def _default_curve_cached(
 ) -> ql.YieldTermStructureHandle:
     """Small cache for default curves, keyed only by (identifier, date)."""
     target_dt = datetime.datetime.combine(date_key, datetime.time())
-    return build_zero_curve(target_dt, index_identifier)
+    zero_curve,effective_curve_date=build_zero_curve(target_dt, index_identifier)
+    return zero_curve
 
 
 def _default_curve(
