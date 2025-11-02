@@ -122,9 +122,7 @@ _INDEX_TEMPLATES: dict[str, Callable[[], dict[str, Any]]] = {
     "REFERENCE_RATE__CETE_28": _cete(28),
     "REFERENCE_RATE__CETE_91": _cete(91),
     "REFERENCE_RATE__CETE_182": _cete(182),
-    "REFERENCE_RATE__CETE_1": _cete(1),
 
-    "REFERENCE_RATE__TIIE_OVERNIGHT_BONDES":_mx_gov_overnight(1),
 
     "REFERENCE_RATE__USD_SOFR": lambda: dict(
         curve_uid=_const("ZERO_CURVE__UST_CMT_ZERO_CURVE_UID"),
