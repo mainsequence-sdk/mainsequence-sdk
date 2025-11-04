@@ -38,6 +38,9 @@ BOND_CACHE_PER_INSTRUMENT_LIMIT = 256
 _BOND_CACHE_LOCK = threading.RLock()
 _BOND_PRICE_CACHE: dict[str, "OrderedDict[str, float]"] = {}
 _BOND_ZSPREAD_CACHE: dict[str, "OrderedDict[str, float]"] = {}
+_BOND_DURATION_CACHE: dict[str, "OrderedDict[str, float]"] = {}  # <- NEW
+
+
 
 def clear_global_bond_cache() -> None:
     with _BOND_CACHE_LOCK:
@@ -723,6 +726,235 @@ class Bond(InstrumentModel):
                 "with_yield=...) to build it."
             )
         return self._bond
+
+    def duration(
+        self,
+        with_yield: float | None = None,
+        *,
+        duration_type = ql.Duration.Modified,
+    ) -> float:
+        """
+        Return bond duration (default: Modified) and cache it using the same
+        hashed context design as price()/z_spread().
+
+        Notes
+        -----
+        - Zero-coupon bonds: for Modified duration we follow the provided guide and
+          return time-to-maturity in year fractions (0 if matured).
+        - Coupon-bearing bonds: we compute YTM from the current clean price and then
+          call QuantLib's BondFunctions.duration(..).
+        - Cache key includes the instrument hash and the pricing context (flat yield
+          or default curve + version ticks + valuation date), plus the duration type.
+        """
+
+        if self.valuation_date is None:
+            raise ValueError("Set valuation_date before computing duration: set_valuation_date(dt).")
+
+        # ---------- build cache keys ----------
+        inst_key = self._instrument_cache_key()
+
+        # Build a context key. For zero-coupon we may not need a curve; avoid raising if none.
+        try:
+            ctx_key = self._price_context_key(with_yield)
+        except Exception:
+            # e.g. zero-coupon duration with no curve/yield doesn't need a curve context;
+            # still include valuation date to remain stable across time.
+            ctx_key = f"val:{self._val_ordinal()}"
+
+        # Tag the duration type to avoid collisions if caller requests different types.
+        if duration_type == ql.Duration.Modified:
+            dtype_str = "Modified"
+        elif duration_type == ql.Duration.Macaulay:
+            dtype_str = "Macaulay"
+        elif duration_type == ql.Duration.Simple:
+            dtype_str = "Simple"
+        elif duration_type == ql.Duration.Effective:
+            dtype_str = "Effective"
+        else:
+            dtype_str = f"Type{int(duration_type)}"
+
+        dur_key = f"dur|{ctx_key}|dtype:{dtype_str}"
+
+        # ---------- cache hit ----------
+        with _BOND_CACHE_LOCK:
+            bucket = _BOND_DURATION_CACHE.get(inst_key)
+            if bucket is not None and dur_key in bucket:
+                val = bucket[dur_key]
+                bucket.move_to_end(dur_key)  # LRU promote
+                return val
+
+        # ---------- compute ----------
+        # Special-case ZeroCouponBond per your guide
+        if isinstance(self, ZeroCouponBond) and duration_type == ql.Duration.Modified:
+            # Build only the instrument (no engine needed)
+            self._ensure_instrument()
+
+            vd = self.valuation_date
+            mty = self.maturity_date
+            if mty <= vd:
+                dur_val = 0.0
+            else:
+                dcc: ql.DayCounter = self.day_count
+                dur_val = max(0.0, dcc.yearFraction(to_ql_date(vd), to_ql_date(mty)))
+
+        else:
+            # Coupon-bearing bonds (and any non-default type): use QL functions
+            # Ensure pricer so cleanPrice/settlementDate/etc. are available
+            self._setup_pricer(with_yield=with_yield)
+            qb: ql.Bond = self._bond  # type: ignore[assignment]
+            dcc: ql.DayCounter = self.day_count
+
+            # Frequency: use instrument's coupon frequency if available; else NoFrequency
+            try:
+                freq: ql.Frequency = self.coupon_frequency.frequency()  # Fixed & Floating have this
+            except Exception:
+                freq = ql.NoFrequency
+
+            comp = ql.Compounded
+            bp = ql.BondPrice(float(qb.cleanPrice()), ql.BondPrice.Clean)
+            settle = qb.settlementDate()
+            ytm = qb.bondYield(bp, dcc, comp, freq, settle)
+
+            try:
+                dur_val = float(
+                    ql.BondFunctions.duration(qb, ytm, dcc, comp, freq, duration_type)
+                )
+            except Exception as e:
+                # Stay robust (consistent with your guide)
+                print(e)
+                dur_val = 0.0
+
+        # ---------- store in cache ----------
+        with _BOND_CACHE_LOCK:
+            bucket = _BOND_DURATION_CACHE.setdefault(inst_key, OrderedDict())
+            bucket[dur_key] = float(dur_val)
+            bucket.move_to_end(dur_key)
+            while len(bucket) > BOND_CACHE_PER_INSTRUMENT_LIMIT:
+                bucket.popitem(last=False)
+
+        return float(dur_val)
+
+    def carry_roll_down(
+            self,
+            horizon: ql.Period | int | datetime.timedelta | datetime.date,
+            *,
+            clean: bool = False,
+    ) -> dict[str, float]:
+        """
+        Compute carry + roll-down over a horizon using the already-built engine & curve.
+        - Uses self.analytics(...) for today's clean/dirty/accrued (no rebuild if engine is set).
+        - No relinks, no engine setup here. Raises if the bond wasn't priced first.
+
+        Returns per-100 (except *_ccy which are currency):
+          p0_dirty_per100, p0_clean_per100,
+          p1_dirty_per100_unchanged_curve, p1_dirty_per100_const_yield,
+          cr_dirty, carry_const_dirty, roll_down_dirty,
+          coupons_between_ccy, cr_plus_coupons_dirty,
+          and (if clean=True) clean-price counterparts and accrued at horizon.
+        """
+        # ---- Preconditions: must already be priced and linked to a curve/yield ----
+        if self.valuation_date is None:
+            raise ValueError("Set valuation_date before carry_roll_down().")
+        if self._bond is None or self._engine is None or self._last_discount_curve_handle is None:
+            raise RuntimeError("Price the bond first (price() or analytics()) before carry_roll_down().")
+
+        qb: ql.Bond = self._bond
+        h = self._last_discount_curve_handle
+        scale = 100.0 / float(self.face_value)
+
+        # --- Today's prices via your analytics() (uses existing engine; no rebuild if with_yield unchanged) ---
+        an = self.analytics(with_yield=self._with_yield)
+        p0_clean = float(an["clean_price"])
+        p0_dirty = float(an["dirty_price"])
+        a0_ccy = float(an["accrued_amount"])
+
+        # Settlement today (uses current QL Settings already set when you priced)
+        s0: ql.Date = qb.settlementDate()
+
+        # Current YTM from today's clean (for constant-yield carry)
+        dcc: ql.DayCounter = self.day_count
+        try:
+            freq: ql.Frequency = self.coupon_frequency.frequency()
+        except Exception:
+            freq = ql.NoFrequency
+        comp = ql.Compounded
+        ytm0 = qb.bondYield(ql.BondPrice(p0_clean, ql.BondPrice.Clean), dcc, comp, freq, s0)
+
+        # ---- Horizon valuation date and settlement (no global Settings change) ----
+        asof_qld = to_ql_date(self.valuation_date)
+        if isinstance(horizon, ql.Period):
+            vd1 = self.calendar.advance(asof_qld, horizon, self.business_day_convention)
+        elif isinstance(horizon, int):
+            vd1 = self.calendar.advance(asof_qld, ql.Period(int(horizon), ql.Days), self.business_day_convention)
+        elif isinstance(horizon, datetime.timedelta):
+            vd1 = to_ql_date(self.valuation_date + horizon)
+        elif isinstance(horizon, datetime.date):
+            vd1 = to_ql_date(horizon)
+        else:
+            raise ValueError("Unsupported horizon type. Use ql.Period | int(days) | timedelta | date.")
+
+        s1 = self.calendar.advance(vd1, ql.Period(self.settlement_days, ql.Days), ql.Following)
+        if s1 <= s0:
+            raise ValueError("Horizon/settlement must be after today's settlement date.")
+
+        # ---- Unchanged-curve forward dirty at horizon: sum DF(t0,T)*CF / DF(t0,S1) ----
+        def _df(d: ql.Date) -> float:
+            return float(h.discount(d))
+
+        pv_after_s1 = 0.0
+        coupons_between_ccy = 0.0
+        for cf in qb.cashflows():
+            d = cf.date()
+            amt = float(cf.amount())
+            if d > s1:
+                pv_after_s1 += amt * _df(d)
+            elif d > s0:  # cashflows received in (s0, s1]
+                coupons_between_ccy += amt
+
+        df_s1 = _df(s1)
+        p1_dirty_curve = 0.0 if df_s1 == 0.0 else (pv_after_s1 / df_s1) * scale
+
+        # ---- Constant-yield dirty at horizon (no engine; BondFunctions) ----
+        try:
+            p1_clean_const = float(ql.BondFunctions.cleanPrice(qb, ytm0, dcc, comp, freq, s1))
+        except Exception:
+            p1_clean_const = 0.0
+        try:
+            a1_ccy = float(ql.BondFunctions.accruedAmount(qb, s1))
+        except Exception:
+            a1_ccy = 0.0
+        p1_dirty_const = p1_clean_const + a1_ccy * scale
+
+        # ---- Returns (per 100) ----
+        cr_dirty = p1_dirty_curve - p0_dirty  # carry + roll (ex-coupon)
+        carry_const_dirty = p1_dirty_const - p0_dirty  # constant-yield carry (ex-coupon)
+        roll_down_dirty = p1_dirty_curve - p1_dirty_const  # roll-down
+
+        out: dict[str, float] = {
+            "p0_dirty_per100": p0_dirty,
+            "p0_clean_per100": p0_clean,
+            "p1_dirty_per100_unchanged_curve": p1_dirty_curve,
+            "p1_dirty_per100_const_yield": p1_dirty_const,
+            "cr_dirty": cr_dirty,
+            "carry_const_dirty": carry_const_dirty,
+            "roll_down_dirty": roll_down_dirty,
+            "coupons_between_ccy": coupons_between_ccy,
+            "cr_plus_coupons_dirty": cr_dirty + coupons_between_ccy * scale,
+        }
+
+        if clean:
+            p1_clean_curve = p1_dirty_curve - a1_ccy * scale
+            out.update({
+                "accrued0_ccy": a0_ccy,
+                "accrued1_ccy": a1_ccy,
+                "accrued1_per100": a1_ccy * scale,
+                "p1_clean_per100_unchanged_curve": p1_clean_curve,
+                "p1_clean_per100_const_yield": p1_clean_const,
+                "cr_clean": p1_clean_curve - p0_clean,
+                "carry_const_clean": p1_clean_const - p0_clean,
+            })
+
+        return out
 
 
 class FixedRateBond(Bond):
