@@ -651,7 +651,7 @@ def project_set_up_locally(
         host = platform.node()
         add_deploy_key(project_id, host, pub)
     except Exception:
-        pass
+        raise Exception("Error getting host name")
 
     agent_env = start_agent_and_add_key(key_path)
 

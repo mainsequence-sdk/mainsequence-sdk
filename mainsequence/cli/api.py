@@ -197,14 +197,13 @@ def fetch_project_env_text(project_id: int | str) -> str:
 
 
 def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> None:
-    try:
-        authed(
-            "POST",
-            f"/orm/api/pods/projects/{project_id}/add_deploy_key/",
-            {"key_title": key_title, "public_key": public_key},
-        )
-    except Exception:
-        pass
+
+    r=authed(
+        "POST",
+        f"/orm/api/pods/projects/{project_id}/add_deploy_key/",
+        {"key_title": key_title, "public_key": public_key},
+    )
+    r.raise_for_status()
 
 
 def get_project_token(project_id: int | str) -> str:
