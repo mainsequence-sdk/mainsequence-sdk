@@ -525,6 +525,28 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         transformed_kwargs = cls._translate_query_params(kwargs)
         return super().get(*args, **transformed_kwargs)
 
+    @property
+    def ms_instrument(self):
+        if hasattr(self, "_ms_instrument"):
+            return self._ms_instrument
+        self.set_ms_instrument()
+        return self._ms_instrument
+    def set_ms_instrument(self):
+        """
+        Delicate function that mixes functionality it only works with pricing details from
+        Main Sequence
+        Returns
+        -------
+
+        """
+        import mainsequence.instruments as msi
+        if self.current_pricing_detail:
+            if hasattr(self.current_pricing_detail, "instrument_dump"):
+                self._ms_instrument=msi.Instrument.rebuild(self.current_pricing_detail.instrument_dump)
+                return None
+        raise Exception("Instrument does not have Main Sequence Current Pricing Details")
+
+
     def get_calendar(self):
         if self.current_snapshot.exchange_code in COMPOSITE_TO_ISO.keys():
             return Calendar(name=COMPOSITE_TO_ISO[self.current_snapshot.exchange_code])

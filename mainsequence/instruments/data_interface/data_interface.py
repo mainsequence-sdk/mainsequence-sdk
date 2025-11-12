@@ -101,7 +101,7 @@ class MSInterface:
         )
 
         if curve.empty:
-            raise Exception(f"{target_date} is empty.")
+            raise Exception(f"{target_date} is empty. If you want to  use the latest curve available set USE_LAST_OBSERVATION_MS_INSTRUMENT=true")
         zeros = self.decompress_string_to_curve(curve["curve"].iloc[0])
         zeros = pd.Series(zeros).reset_index()
         zeros["index"] = pd.to_numeric(zeros["index"])
