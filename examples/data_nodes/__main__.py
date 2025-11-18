@@ -8,6 +8,7 @@ from examples.data_nodes.simple_simulated_prices import (
 import mainsequence.client as msc
 
 def main():
+    curves=msc.DataNodeStorage.get_data_between_dates_from_node_identifier(node_identifier="discount_curves")
 
     parser = argparse.ArgumentParser(
         description="Run data node functions: simulated prices or test time series."

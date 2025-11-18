@@ -1066,40 +1066,52 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
         df = df.set_index(stc.index_names)
         return df
 
-
-
-    def get_data_between_dates_from_api(
-        self,
-        start_date: datetime.datetime = None,
-        end_date: datetime.datetime = None,
-        great_or_equal: bool = None,
-        less_or_equal: bool = None,
-        unique_identifier_list: list = None,
-        columns: list = None,
-        unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
-        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-    ):
-        """Helper function to make a single batch request (or multiple paged requests if next_offset)."""
+    @classmethod
+    def _get_data_between_dates_common(
+            cls,
+            url: str,
+            start_date: datetime.datetime = None,
+            end_date: datetime.datetime = None,
+            great_or_equal: bool = None,
+            less_or_equal: bool = None,
+            unique_identifier_list: list = None,
+            columns: list = None,
+            unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
+            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+            node_identifier: str | None = None,
+    ) -> pd.DataFrame:
+        """Internal shared implementation for fetching data between dates."""
 
         def fetch_one_batch(chunk_range_map):
             all_results_chunk = []
             offset = 0
+
             while True:
-                payload = {
-                    "json": {
-                        "start_date": start_date.timestamp() if start_date else None,
-                        "end_date": end_date.timestamp() if end_date else None,
-                        "great_or_equal": great_or_equal,
-                        "less_or_equal": less_or_equal,
-                        "unique_identifier_list": unique_identifier_list,
-                        "columns": columns,
-                        "offset": offset,  # pagination offset
-                        "unique_identifier_range_map": chunk_range_map,
-                    }
+                payload_json = {
+                    "start_date": start_date.timestamp() if start_date else None,
+                    "end_date": end_date.timestamp() if end_date else None,
+                    "great_or_equal": great_or_equal,
+                    "less_or_equal": less_or_equal,
+                    "unique_identifier_list": unique_identifier_list,
+                    "columns": columns,
+                    "offset": offset,  # pagination offset
+                    "unique_identifier_range_map": chunk_range_map,
+                    # "column_range_descriptor": column_range_descriptor,  # if/when needed
                 }
 
+                if node_identifier is not None:
+                    payload_json["node_identifier"] = node_identifier
+
+                payload = {"json": payload_json}
+
                 # Perform the POST request
-                r = make_request(s=s, loaders=self.LOADERS, payload=payload, r_type="POST", url=url)
+                r = make_request(
+                    s=s,
+                    loaders=cls.LOADERS,
+                    payload=payload,
+                    r_type="POST",
+                    url=url,
+                )
                 if r.status_code != 200:
                     logger.warning(f"Error in request: {r.text}")
                     return []
@@ -1119,28 +1131,34 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
 
             return all_results_chunk
 
-        s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/get_data_between_dates_from_remote/"
+        s = cls.build_session()
 
+        # Deep copy & convert date fields in unique_identifier_range_map
         unique_identifier_range_map = copy.deepcopy(unique_identifier_range_map)
         if unique_identifier_range_map is not None:
             for _, date_info in unique_identifier_range_map.items():
                 # Convert start_date if present
                 if "start_date" in date_info and isinstance(
-                    date_info["start_date"], datetime.datetime
+                        date_info["start_date"], datetime.datetime
                 ):
-                    date_info["start_date"] = int(date_info["start_date"].timestamp())
+                    date_info["start_date"] = int(
+                        date_info["start_date"].timestamp()
+                    )
 
                 # Convert end_date if present
-                if "end_date" in date_info and isinstance(date_info["end_date"], datetime.datetime):
-                    date_info["end_date"] = int(date_info["end_date"].timestamp())
+                if "end_date" in date_info and isinstance(
+                        date_info["end_date"], datetime.datetime
+                ):
+                    date_info["end_date"] = int(
+                        date_info["end_date"].timestamp()
+                    )
 
         all_results = []
         if unique_identifier_range_map:
             keys = list(unique_identifier_range_map.keys())
             chunk_size = 100
             for start_idx in range(0, len(keys), chunk_size):
-                key_chunk = keys[start_idx : start_idx + chunk_size]
+                key_chunk = keys[start_idx: start_idx + chunk_size]
 
                 # Build sub-dictionary for this chunk
                 chunk_map = {k: unique_identifier_range_map[k] for k in key_chunk}
@@ -1154,6 +1172,65 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             all_results.extend(chunk_results)
 
         return pd.DataFrame(all_results)
+
+    def get_data_between_dates_from_api(
+            self,
+            start_date: datetime.datetime = None,
+            end_date: datetime.datetime = None,
+            great_or_equal: bool = None,
+            less_or_equal: bool = None,
+            unique_identifier_list: list = None,
+            columns: list = None,
+            unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
+            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+    ):
+        """Public helper for /{id}/get_data_between_dates_from_remote/."""
+        url = self.get_object_url() + f"/{self.id}/get_data_between_dates_from_remote/"
+
+        return self._get_data_between_dates_common(
+            url=url,
+            start_date=start_date,
+            end_date=end_date,
+            great_or_equal=great_or_equal,
+            less_or_equal=less_or_equal,
+            unique_identifier_list=unique_identifier_list,
+            columns=columns,
+            unique_identifier_range_map=unique_identifier_range_map,
+            column_range_descriptor=column_range_descriptor,
+            node_identifier=None,
+        )
+
+    @classmethod
+    def get_data_between_dates_from_node_identifier(
+            cls,
+            node_identifier: str,
+            start_date: datetime.datetime = None,
+            end_date: datetime.datetime = None,
+            great_or_equal: bool = None,
+            less_or_equal: bool = None,
+            unique_identifier_list: list = None,
+            columns: list = None,
+            unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
+            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+    ):
+        """
+        Same behaviour as get_data_between_dates_from_api,
+        but calls the node-identifier endpoint and includes node_identifier in payload.
+        """
+        url = cls.get_object_url() + "/get_data_between_dates_from_node_identifier/"
+
+        return cls._get_data_between_dates_common(
+            url=url,
+            start_date=start_date,
+            end_date=end_date,
+            great_or_equal=great_or_equal,
+            less_or_equal=less_or_equal,
+            unique_identifier_list=unique_identifier_list,
+            columns=columns,
+            unique_identifier_range_map=unique_identifier_range_map,
+            column_range_descriptor=column_range_descriptor,
+            node_identifier=node_identifier,
+        )
 
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
