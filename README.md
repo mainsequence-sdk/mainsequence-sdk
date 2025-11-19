@@ -20,5 +20,49 @@ data nodes, and agentic tools built on top of the platform.
 
 ---
 
-## Main Sequence SDK Data Layer
+## Developing with the Main Sequence SDK & Platform
+To make it easy to work on Main Sequence projects from your local environment, you have two options:
 
+1. **Use the MainSequence CLI directly in your terminal**, or  
+2. **Use the Main Sequence VS Code extension** (recommended if you already work in VS Code).
+
+The VS Code extension provides a more visual, editor-integrated workflow on top of what the CLI offers.
+
+
+### Visual Studio Code Extension
+
+1. **Open the Extensions view in VS Code**
+
+   - **macOS:** Press `Cmd` + `Shift` + `X`  
+   - **Windows/Linux:** Press `Ctrl` + `Shift` + `X`  
+   - Or click the **Extensions** icon in the Activity Bar on the left side of the window.
+
+2. **Search for the extension**
+
+   In the Extensions search box, type:
+
+
+![img.png](/docs/img/vs_code_extension.png)
+
+### MainSequence CLI
+
+MainSequence CLI is a small helper tool to:
+
+- Authenticate against the Main Sequence backend
+- Manage your local project checkouts (clone, open, delete)
+- Set up SSH deploy keys for project repos
+- Generate and maintain a `.env` file with project-specific tokens and endpoints
+- Build & run your project in Docker (via `uv` + `docker`)
+- Bundle and copy AI/LLM instruction markdowns to the clipboard
+
+The CLI is implemented with [Typer](https://typer.tiangolo.com/) and exposes a `mainsequence` command.
+
+---
+
+## Installation & Invocation
+
+How you install the CLI depends on how this repository is packaged, but assuming it’s installed in your environment and provides the `mainsequence` entry point:
+
+```bash
+# General form
+mainsequence --help
