@@ -1,10 +1,16 @@
 # DataNodes — Authoring Guide (Complete & Correct)
 
-> This is the canonical guide for building **DataNodes** in MainSequence.  
+> This is the canonical guide for building **DataNodes** in MainSequence with the mainsequence library.  
 > It clearly separates **MUST** vs **SHOULD**, supports **single-index** *or* **MultiIndex** tables, and includes a practical, copy‑pasteable template.  
 > **Note:** the base `DataNode` already performs **index/column validation and sanitization after `update()`** — do **not** call your own validators or sanitizers inside `update()`.
 
 ---
+
+## Importing a DataNode
+
+```python
+from mainsequence.tdag import DataNode
+```
 
 ## What is a DataNode?
 
@@ -26,15 +32,40 @@ A **DataNode** is a unit of computation in the MainSequence DAG. Each node:
    - **Single-index**: `pandas.DatetimeIndex` named **`time_index`** (timezone-aware **UTC**).  
    - **MultiIndex**: first level **`time_index`** (UTC), second level **`unique_identifier`**; any deeper levels are allowed but **must be named**.
 
-3. **No datetime columns** in the DataFrame (dates live only in the index).
+3. **No datetime columns** in the DataFrame (dates live only in the index) for date information store them as timestamps.
 
 4. **Columns** must be **lowercase**, **≤ 63 characters**, and reasonably stable (avoid renaming).
 
 5. **Deterministic identity & hashing**:  
    - Constructor args define the node’s identity (storage/update hashes).  
    - Use **`_ARGS_IGNORE_IN_STORAGE_HASH`** for args that should **not** affect the storage hash (e.g., transient inputs).
+   - When a DataNode configuration is extensive and make sense the `__init__` constructor can also accept pydantic models. It is recommended to follow this path to build most of the data nodes.
+   - To separate args that should **not** affect the storage hash while using pydantic models as arguments user can set the property ` ignore_from_storage_hash` bellow is an example
+   ```python
+   from pydantic import BaseModel
+   from pydantic import BaseModel, Field
+   from mainsequence.tdag import DataNode
+   class VolatilityConfig(BaseModel):
+        ...
+   class RandomDataNodeConfig(BaseModel):
+    mean: float = Field(..., ignore_from_storage_hash=False, title="Mean",
+                        description="Mean for the random normal distribution generator")
+    std: VolatilityConfig = Field(VolatilityConfig(center=1, skew=True), ignore_from_storage_hash=True,
+                                  title="Vol Config",
+                                  description="Vol Configuration")
+   class DailyRandomNumber(DataNode):
+    """
+    Example Data Node that generates one random number every day
+    """
+
+    def __init__(self, node_configuration: RandomDataNodeConfig, *args, **kwargs):
+        ...
+   ```
+   - Try to maximize the usage of the Field model by always include a title, description and examples if possible.
 
 6. **Do not validate/sanitize manually** inside `update()`; the base class does this automatically when your DataFrame returns.
+
+7. The name of the first index level must always be `time_index`, and it is strongly recommended that it represents the observation time of the time series. For example, if the DataFrame stores time bars, `time_index` should represent the moment the bar is observed, not when the bar started.
 
 ---
 
@@ -106,6 +137,7 @@ class SingleIndexTS(DataNode):
 * Use get_update_range_map_great_or_equal() to fetch prior observations once.
 * For each asset in asset_list, start at get_asset_earliest_multiindex_update(asset) + 1h and generate through “yesterday 00:00 UTC”.
 * Reshape to long and set index to `("time_index","unique_identifier")`.
+* **Important** it is never guaranteed that every asset in update_statistics.asset_list has the same last update time. Therefore,it is encouraged to always loop per asset by user the already fitlered update_statistics.asset_list.
 
 ```python
 class SimulatedPricesManager:
@@ -255,6 +287,24 @@ Only nodes returned by dependencies() are traversed & updated as part of the DAG
 
   * If none, return {}.
 
+* **Always** declare the dependency nodes first in the constructor. **Never** pass other DataNodes as arguments.
+Below is an example of how to create a dependency. 
+```python
+class PricesConfig:
+    asset_list: List[ms_client.Asset]
+class PricesDataNode(DataNode):
+    def __init__(self, prices_config:PricesConfig, *args, **kwargs):
+        self.prices_config = prices_config
+        super().__init__(*args, **kwargs)
+
+class MyDataNode(DataNode):
+    def __init__(self, prices_nodes_config:PricesConfig,*args, **kwargs):
+        self.prices_ts = PRicesDataNode(prices_config=prices_nodes_config)
+        super().__init__(*args, **kwargs)
+    def dependencies(self) -> Dict[str, Union["DataNode", "APIDataNode"]]:
+        return {"prices_ts": self.prices_ts}
+```
+
 ## Optional Hooks
 
 Override these to enrich metadata or control the asset universe:
@@ -274,7 +324,7 @@ Optional post-update side effects (e.g., building translation tables, artifacts)
 ## Hashing & Constructor Notes
 Constructor arguments determine the identity of a node instance (its storage/update hash).
 
-Put any non-identity or transient args in _ARGS_IGNORE_IN_STORAGE_HASH to avoid unnecessary duplication.
+Put any non-identity or transient args in _ARGS_IGNORE_IN_STORAGE_HASH to avoid unnecessary duplication or by setting the Field property `ignore_in_storage_hash=True`.
 Example: SimulatedPrices ignores "asset_list" in its storage hash.
 
 ## Canonical Template (copy/paste)
@@ -349,6 +399,24 @@ class MyDataNode(DataNode):
 
 ```
 
+## Runing Data Nodes
+
+When prompted to test or run a data node, the best practice is to create a launcher file only for this node  in `/scripts` or `/tests
+for example
+
+```python
+from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig
+
+def main():
+    daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
+    daily_node.run()
+
+if __name__ == "__main__":
+    main()
+```
+
+*When prompted to create a node be sure that all the constructor arguments are provided
+
 ## Common Pitfalls
 * Wrong index names/order: For MultiIndex, the first two must be ("time_index","unique_identifier").
 
@@ -361,3 +429,5 @@ class MyDataNode(DataNode):
 * Empty updates: If there’s nothing to compute, return an empty DataFrame (don’t raise or write partials).
 
 * Randomness: Seed or derive from deterministic inputs if you need reproducibility.
+
+* Always be strict import libraries from mainsequence errors should be raised if the libary is not present

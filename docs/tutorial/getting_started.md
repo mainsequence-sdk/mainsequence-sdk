@@ -28,6 +28,39 @@ On the **Project Details** page you'll see:
 We'll use **Visual Studio Code** for the tutorial. If you don't have it, download it from the official site.
 Also make sure you have Python 3.11 or later installed or download it from the official site and follow the installation instructions.
 
+### Setting up via VS Code Extension (Recommended)
+
+The recommended way to work with Main Sequence projects is via the VS Code extension (it just makes things smoother), so first install the extension:
+
+1. **Open the Extensions view in VS Code**
+
+   - **macOS:** Press `Cmd` + `Shift` + `X`  
+   - **Windows/Linux:** Press `Ctrl` + `Shift` + `X`  
+   - Or click the **Extensions** icon in the Activity Bar on the left side of the window.
+
+2. **Search for the extension**
+
+   In the Extensions search box, type `Main Sequence` and press `Enter`.
+
+   ![VS Code Extensions view showing Main Sequence](./docs/img/vs_code_extension.png)
+
+If you don’t find the extension, you can install it directly from the marketplace:  
+[Main Sequence VS Code Extension – VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=MainSequenceGmbH.vscode-mainsequence)
+
+Once the extension is installed, log in to your account. You should see your project in the **Projects** view.  
+Click **Set up project locally** and wait a few seconds for the project to be mapped locally.
+
+![Set up project locally in Main Sequence extension](./docs/img/setup_project_extension.png)
+
+After a few seconds, refresh the **Projects** view and you should see your project mapped locally (in blue).  
+Open the project’s context menu and select **Open Folder**. This will open a VS Code window with your project mapped locally.
+
+You should see now your project in the current project panel
+
+![img.png](../img/tutorial/current_project.png)
+
+### Setting up via CLI
+
 Open **PowerShell** terminal (Windows) or your preferred terminal (macOS/Linux) and enter the next commands.
 
 First, install the Main Sequence Python package in your environment:
@@ -167,6 +200,17 @@ $env:VFB_PROJECT_PATH = "C:\Users\YourName\mainsequence\my_organization\projects
 export VFB_PROJECT_PATH="/home/user/mainsequence/my_organization/projects/tutorial-project"
 ```
 
+## Set up a local environment
+
+Your new project comes already pre-configured with the latest version of the Main Sequence SDK and with other
+helpful libraries. Set as default or by your Engineering team. 
+
+To quickly set up the environment pres `cmd+shift+p` and type `Tasks: Run Task` and select `Set environment`.
+The next step is Visual Studio havnt done this automatically is setup the new environment as the standard
+type agains `cmd+shift+p` and type `Python: Select Interpreter` and select `USe Python from  python.defaultinterpreterPath`
+
+![img.png](../img/select_interpreter_vscode.png)
+
 ## 3. Build Your First Data Nodes
 
 **Key concepts:** data DAGs, `DataNode`, dependencies, `update_hash`, and `storage_hash`.
@@ -263,22 +307,39 @@ To create a data node we must follow the same recipe every time:
 The update method has only one requirement: it should return a `pandas.DataFrame` with the following characteristics:
 
 * Update method always needs to return a `pd.DataFrame()`
-* Your first index should always be of type `datetime.datetime(timezone="UTC")` and should not have duplicates
-* Your columns should always be lowercase and no more than 63 characters
-* Your column types are only allowed to be float, int, str; for dates you need to transform to int or float
-* The DataFrame should not be empty; if there is no new data to return, return `pd.DataFrame()`
+##### Data Frame Structure Requirements
+* The first index level must always be of type `datetime.datetime(timezone="UTC")`.
+* All column names in the DataFrame must be lowercase and no more than 63 characters long.
+* Column data types are only allowed to be `float`, `int`, or `str`. Any date information must be transformed to `int` or `float`.
+* The DataFrame must not be empty. If there is no new data to return, an empty `pd.DataFrame()` must be returned.
+* A MultiIndex DataFrame is only allowed when the first index level is of type `datetime.datetime(timezone="UTC")`, the second index level is of type `str`, and its name is `unique_identifier`.
+* For a single-index DataFrame, the index must not contain duplicate values. For a MultiIndex DataFrame, there must be no duplicate combinations of `(time_index, unique_identifier)`.
+* The name of the first index level must always be `time_index`, and it is strongly recommended that it represents the observation time of the time series. For example, if the DataFrame stores time bars, `time_index` should represent the moment the bar is observed, not when the bar started.
+* If dates are stored in columns, they must be represented as timestamps.
+
 
 Next, create `scripts\random_number_launcher.py` to run the node:
 
 ```python
-from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig
+from src.data_nodes.example_nodes import DailyRandomNumber
 
+def main():
+    daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
+    daily_node.run()
 
-daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
-daily_node.run(debug_mode=True, force_update=True)
+if __name__ == "__main__":
+    main()
 ```
 
 To run and debug in VS Code, you can configure a launch file at `.vscode\launch.json`:
+
+you can also just as copilot or your ai assitant
+
+```text
+Build me a debug launcher called "Debug random_number_launcher" 
+for my file src/random_number_launcher
+```
+
 
 **Windows:**
 ```json

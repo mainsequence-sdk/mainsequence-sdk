@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "3.3.9"
+version = "3.3.10"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.10"
@@ -56,6 +56,7 @@ dependencies = [
   "plotly",
   "typer",
   "QuantLib", # ← renamed from `quantlib`
+  "streamlit"
 
 ]
 

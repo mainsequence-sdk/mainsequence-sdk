@@ -22,7 +22,9 @@ Before scheduling anything, make sure your environment is consistent and your la
    ```powershell
    uv pip compile pyproject.toml --universal -o requirements.txt
    ```
-
+   
+    **Note** you can do this by clicking "Compile/Freeze Environment" button in the current project panel in the vs code extension
+    ![img.png](../img/tutorial/compile_env.png)
 3. **Commit your changes:**
 
    ```powershell

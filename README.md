@@ -39,7 +39,7 @@ The VS Code extension provides a more visual, editor-integrated workflow on top 
 
 2. **Search for the extension**
 
-   In the Extensions search box, type:
+   In the Extensions search box, type Main Sequence and press Enter.:
 
 
 ![img.png](/docs/img/vs_code_extension.png)
