@@ -1,19 +1,60 @@
 
 # Getting Started 4: Hydrating the Platform Markets-I
 
-After you sign up, the Main Sequence platform starts **empty**. Its power comes from building **data workflows at scale**, so one of the first tasks is to **integrate your data sources**.
+In the previous part of the tutorial, we focused on the data layer, introducing DataNodes and how to work with them.
+In this part, we’ll shift to the financial layer and explore how to integrate financial systems using the investment management module.
 
-In this part of the tutorial, you’ll implement a few data nodes to start building data and financial applications.
+## Main Sequence Markets
 
-## Assets in Main Sequence
 
-Before moving forward, let’s recap the concept of an **asset**. Main Sequence is built not only to unify data sources, but also to unify how data relates to **financial instruments**.
+Main Sequence is built not only to unify data sources, but also to unify how data relates to **financial instruments**.
+
+To accomplish this, the Main Sequence platform comes with an integrated **Investment Management System** that lets us map financial objects such as:
+
+* Assets  
+* Accounts  
+* Portfolios  
+* Funds  
+* Trades  
+* Execution Venues  
+* Orders  
+
+and many more from other financial systems.
+
+This enables us to build robust connection layers between our existing systems and our **DataWorkflows**. This information is accessible via the [Main Sequence API](https://main-sequence.app/docs/vam-api-reference) and through the client library by importing the Main Sequence client:
+
+[ADD Markets SCREENSHOT]
+
+
+```python
+import mainsequence.client as msc
+```
+
+### Assets in Main Sequence
+
+
+One of the first financial objects we’ll use to build richer data workflows are **financial assets**. A common problem in data-driven finance is the lack of a universal asset master list. As finance has evolved, different service providers have built their own asset masters. While there are well-known identifiers like tickers or ISINs, these are usually a time-specific representation of a security and may not capture its full history or the requirements of a particular institution.
+
+To address this, the Main Sequence platform makes two architectural decisions that provide both unification and flexibility to integrate any asset master and any financial system:
+
+1. The Main Sequence platform uses a public asset master list that identifies each asset via its [FIGI](https://www.openfigi.com/).
+2. The Main Sequence platform allows users to:
+   a) Create custom pricing details for each public asset in the master list where a FIGI exists.  
+   b) Create custom assets as part of a private master list and map them to the public master list.
+
+
 
 The platform is already hydrated with information about many publicly traded assets. You can review the full list of asset attributes here:
 
 https://github.com/mainsequence-sdk/mainsequence-sdk/blob/f3b42bd4f4478574b7375508b1b7441ca5c8d297/mainsequence/client/models_vam.py#L197
 
-For this tutorial, focus on the most important fields when integrating with data nodes:
+For this tutorial, focus on the most important field of an `msc.Asset` when integrating with `DataNode`s: the `unique_identifier`.
+
+In the public master list, `unique_identifier` maps directly to the asset’s **FIGI**. In the private master list, this value is defined by the user.
+
+It is important to note that the user is responsible for populating all attributes of any asset created in the private master list, as well as maintaining them over time.
+
+
 
 ```python
 class AssetMixin(BaseObjectOrm, BasePydanticModel):
@@ -21,10 +62,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
 
     # Immutable identifiers
     unique_identifier: constr(max_length=255)
-    is_custom_by_organization: bool = Field(
-        default=False,
-        description="Flag indicating if this asset was custom-created by the organization"
-    )
+  
 ```
 As you saw earlier, `unique_identifier` lets you identify an asset as a **secondary index** in your tables.
 For most assets this will be the FIGI. However, some assets won’t exist on https://www.openfigi.com.
@@ -32,6 +70,9 @@ In those cases, use the `is_custom_by_organization` flag to register a custom as
 
 You’re not limited to classic “assets.” You can also create assets that represent **indices**,
 **interest-rate curves**, or any other **unique identifier** for time‑series data.
+
+
+## Example: Hydrating with AlgoAlgoSeek
 
 ## Example: Hydrating with U.S. Treasury Constant-Maturity Yields
 
