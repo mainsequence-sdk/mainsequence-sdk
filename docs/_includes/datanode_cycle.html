@@ -1,4 +1,4 @@
-<div id="datanode-process-diagram" style="width: 100%; font-family: inherit; color: inherit; box-sizing: border-box;">
+<div id="datanode-process-diagram" style="width: 100%; font-family: inherit; color: inherit; box-sizing: border-box; background-color: transparent;">
     <style>
         /* Scoped CSS for DataNode Diagram */
         #datanode-process-diagram * {
@@ -7,13 +7,16 @@
 
         #datanode-process-diagram .dn-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            /* Crucial Fix: auto-fit adapts to parent width.
+               minmax(240px, 1fr) ensures columns never get smaller than 240px,
+               wrapping instead of overflowing.
+            */
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 12px;
             width: 100%;
         }
 
         #datanode-process-diagram .dn-card {
-            /* Material Dark style: slightly lighter than background via transparency */
             background-color: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
             border-radius: 6px;
@@ -22,6 +25,9 @@
             flex-direction: column;
             position: relative;
             transition: background-color 0.2s ease;
+
+            /* Crucial Fix: Allows flex/grid child to shrink past content size */
+            min-width: 0;
         }
 
         #datanode-process-diagram .dn-card:hover {
@@ -40,20 +46,23 @@
             justify-content: space-between;
         }
 
-        /* Method Name (Code style) */
+        /* Method Name */
         #datanode-process-diagram .dn-method {
             font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
             font-size: 0.85rem;
             font-weight: 600;
-            color: #e2e8f0; /* High contrast light text */
+            color: #e2e8f0;
             background-color: rgba(0, 0, 0, 0.3);
             padding: 6px 8px;
             border-radius: 4px;
             border: 1px solid rgba(255, 255, 255, 0.1);
             margin-bottom: 8px;
+
+            /* Text Truncation Logic */
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+            max-width: 100%; /* Ensures it respects the parent card width */
         }
 
         /* Description */
@@ -62,13 +71,9 @@
             line-height: 1.4;
             opacity: 0.8;
             margin: 0;
-        }
 
-        /* Mobile Responsive */
-        @media (max-width: 768px) {
-            #datanode-process-diagram .dn-grid {
-                grid-template-columns: 1fr;
-            }
+            /* Optional: prevent desc from blowing out width if long words exist */
+            overflow-wrap: break-word;
         }
     </style>
 
@@ -123,7 +128,7 @@
 
         <div class="dn-card">
             <div class="dn-step-num">09 &mdash; Post</div>
-            <div class="dn-method">run_post_update...()</div>
+            <div class="dn-method">run_post_update_routines()</div>
             <p class="dn-desc">Execute cleanup/post routines.</p>
         </div>
     </div>
