@@ -2,7 +2,7 @@
 
 This tutorial walks you through creating a project, setting it up on your Windows machine, and building your first data nodes. The goal is to make each step clear and actionable while preserving all the examples and screenshots from your original guide.
 
-you can see the final repository here: https://github.com/mainsequence-sdk/tutorial-project/blob/main/README.md 
+you can see the final repository here: https://github.com/mainsequence-sdk/TutorialProject
 
 ## 1. Create a Project
 

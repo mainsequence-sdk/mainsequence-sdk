@@ -214,7 +214,7 @@ class UpdateRunner:
         # Check that the time index is a UTC datetime
         time_index = df.index.get_level_values(0)
         if not pd.api.types.is_datetime64_ns_dtype(time_index) or str(time_index.tz) != str(
-            datetime.timezone.utc
+            datetime.UTC
         ):
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
@@ -249,11 +249,9 @@ class UpdateRunner:
         # 2. Execute the core data calculation
         with tracer.start_as_current_span("Update Calculation") as update_span:
 
-            # Add specific log message for the initial run
-            if not self.ts.update_statistics:
-                self.logger.debug(f"Performing first-time update for {self.ts}...")
-            else:
-                self.logger.debug(f"Calculating update for {self.ts}...")
+
+
+            self.logger.debug(f"Calculating update for {self.ts}...")
 
             try:
                 # Call the business logic defined on the DataNode class
@@ -295,7 +293,11 @@ class UpdateRunner:
                 self.logger.exception("Failed during update calculation or persistence.")
                 update_span.set_status(Status(StatusCode.ERROR, description=str(e)))
                 raise e
-        return tmp_df
+            finally:
+                self.ts.local_persist_manager.synchronize_data_node_update(None)
+                us = self.ts.local_persist_manager.get_update_statistics_for_table()
+                self.ts.update_statistics = us
+
 
     @tracer.start_as_current_span("UpdateRunner._verify_tree_is_updated")
     def _verify_tree_is_updated(
@@ -474,10 +476,6 @@ class UpdateRunner:
                     raise e  # Re-raise to halt the entire process on failure
 
         # refresh update statistics of direct dependencies
-        # for edge case of multicolumn self update
-        self.ts.local_persist_manager.synchronize_data_node_update(None)
-        us = self.ts.local_persist_manager.get_update_statistics_for_table()
-        self.ts.update_statistics = us
 
         refresh_update_statistics_of_deps(self.ts)
 

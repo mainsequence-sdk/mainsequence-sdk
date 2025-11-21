@@ -51,6 +51,10 @@ extra_css:
   - stylesheets/custom.css
 
 markdown_extensions:
+  - attr_list # (Optional but recommended) Allows adding CSS classes to elements
+  - md_in_html # (Optional but recommended) Allows Markdown parsing inside HTML tags
+  - pymdownx.snippets: # <--- THIS IS THE KEY EXTENSION YOU ASKED FOR
+      check_paths: true
   - pymdownx.superfences:
         # make exceptions to highlighting of code:
       custom_fences:

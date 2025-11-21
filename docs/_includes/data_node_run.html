@@ -1,0 +1,130 @@
+<div id="datanode-process-diagram" style="width: 100%; font-family: inherit; color: inherit; box-sizing: border-box;">
+    <style>
+        /* Scoped CSS for DataNode Diagram */
+        #datanode-process-diagram * {
+            box-sizing: border-box;
+        }
+
+        #datanode-process-diagram .dn-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            width: 100%;
+        }
+
+        #datanode-process-diagram .dn-card {
+            /* Material Dark style: slightly lighter than background via transparency */
+            background-color: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            transition: background-color 0.2s ease;
+        }
+
+        #datanode-process-diagram .dn-card:hover {
+            background-color: rgba(255, 255, 255, 0.06);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Step Number */
+        #datanode-process-diagram .dn-step-num {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            opacity: 0.5;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        /* Method Name (Code style) */
+        #datanode-process-diagram .dn-method {
+            font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #e2e8f0; /* High contrast light text */
+            background-color: rgba(0, 0, 0, 0.3);
+            padding: 6px 8px;
+            border-radius: 4px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Description */
+        #datanode-process-diagram .dn-desc {
+            font-size: 0.85rem;
+            line-height: 1.4;
+            opacity: 0.8;
+            margin: 0;
+        }
+
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            #datanode-process-diagram .dn-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+
+    <div class="dn-grid">
+        <div class="dn-card">
+            <div class="dn-step-num">01 &mdash; Init</div>
+            <div class="dn-method">StorageNode Check</div>
+            <p class="dn-desc">Ensure <code>StorageNode</code> exists.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">02 &mdash; Init</div>
+            <div class="dn-method">NodeUpdate Check</div>
+            <p class="dn-desc">Ensure <code>NodeUpdate</code> process exists.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">03 &mdash; Sync</div>
+            <div class="dn-method">Sync DataNode</div>
+            <p class="dn-desc">Pull data from storage. Populate <code>update_statistics</code>.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">04 &mdash; Prep</div>
+            <div class="dn-method">get_asset_list()</div>
+            <p class="dn-desc">Set target assets in <code>update_statistics</code>.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">05 &mdash; Execute</div>
+            <div class="dn-method">update()</div>
+            <p class="dn-desc">Run the primary update logic.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">06 &mdash; Save</div>
+            <div class="dn-method">Persist Data</div>
+            <p class="dn-desc">Write results to <code>StorageNode</code>.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">07 &mdash; Meta</div>
+            <div class="dn-method">get_column_metadata()</div>
+            <p class="dn-desc">Update column definitions.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">08 &mdash; Meta</div>
+            <div class="dn-method">get_table_metadata()</div>
+            <p class="dn-desc">Update table definitions.</p>
+        </div>
+
+        <div class="dn-card">
+            <div class="dn-step-num">09 &mdash; Post</div>
+            <div class="dn-method">run_post_update...()</div>
+            <p class="dn-desc">Execute cleanup/post routines.</p>
+        </div>
+    </div>
+</div>
