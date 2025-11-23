@@ -6,6 +6,7 @@
 
 ## 0) Core principles (apply to every page)
 
+
 1. **Use the MainSequence client** everywhere platform data is touched:
    ```python
    import mainsequence.client as msc
@@ -18,6 +19,12 @@
 3. **Register required data dependencies once per session** (idempotent) *before* querying the platform. Keep identifiers in a settings module; do **not** hard‑code them in pages.
 
 These three rules keep pages consistent, portable, and safe to evolve across environments.
+
+4. **Use the proper folder structure** for each dashboard. This means that each dashboard should be inside `dashboards/apps`, and the name of the dashboard will be the name of the folder. For example, `dashboards/apps/my_dashboard` will create a `my_dashboard` dashboard. All dashboards require an `app.py` file, which is the root of the dashboard.
+
+When prompted to create a dashboard, separate the logic between Streamlit components (visualizations) and services. Place the Streamlit components inside a folder called `components` and Mainsequence services inside a folder called `services`. For example, if the user asks for a dropdown to select assets, create all the UI logic inside the `components` folder and import it inside the `app.py` file. Implement the request logic that imports from `mainsequence.client as msc` and uses `msc.Assets` inside the `services` folder.
+
+
 
 ---
 
