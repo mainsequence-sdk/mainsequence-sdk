@@ -74,6 +74,9 @@ You'll see a confirmation toast in the top‑right corner:
 
 5. Click the job to view its **Job Runs**. Wait for the run to complete to see the results.
 
+
+![img.png](../img/tutorial/manual_job.png)
+
 ### Frozen Jobs with Images
 
 One important concept in building strong systems is being able to guarantee that they will run even when we make modifications
@@ -81,8 +84,8 @@ to our code. To ensure this, we have included in each job creation the possibili
 project in a Docker image and using this image to run that job—or any other job. This allows us to guarantee that the job will run
 the same way every time, no matter what changes we make to our repository or dependencies.
 
+All your images will be stored at the project level in the tab **Images**.
 
-![img.png](../img/tutorial/manual_job.png)
 
 ### 2.2 Automatic Schedule
 
