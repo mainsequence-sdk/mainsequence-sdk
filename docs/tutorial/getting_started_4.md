@@ -1,5 +1,5 @@
 
-# Getting Started 4: Hydrating the Platform Markets-I
+# Getting Started 4 - Markets: Equities example with Algoseek
 
 In the previous part of the tutorial, we focused on the data layer, introducing DataNodes and how to work with them.
 In this part, we’ll shift to the financial layer and explore how to integrate financial systems using the investment management module.

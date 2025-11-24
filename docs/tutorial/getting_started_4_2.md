@@ -1,4 +1,4 @@
-# Getting Started 4: Hydrating the Platform — Markets II
+# Getting Started 4: Markets — Portfolios and Virtual Funds
 
 In the previous part, you created and updated **assets** and learned how **Data Nodes** relate to assets. This chapter goes deeper into Main Sequence’s **Markets** features and shows, end‑to‑end, how to create a portfolio that the platform understands.
 

@@ -1,5 +1,5 @@
 
-# Getting Started 4: Hydrating the Platform Markets-I- A Fixed Income Example
+# Getting Started 4 - Markets: Fixed Income Custom Assets
 
 
 
