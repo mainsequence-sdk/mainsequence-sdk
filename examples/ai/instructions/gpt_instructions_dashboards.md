@@ -2,6 +2,8 @@
 
 > **Scope**: This guide is intentionally **general**. It describes how to author Streamlit dashboards that integrate with the MainSequence platform **without prescribing page‑specific controls or domain logic**. It focuses on structure, imports, scaffold usage, state, caching, and safe platform access. It follows the same scaffold and import patterns recommended for MainSequence dashboards.  
 
+
+
 ---
 
 ## 0) Core principles (apply to every page)
@@ -24,7 +26,9 @@ These three rules keep pages consistent, portable, and safe to evolve across env
 
 When prompted to create a dashboard, separate the logic between Streamlit components (visualizations) and services. Place the Streamlit components inside a folder called `components` and Mainsequence services inside a folder called `services`. For example, if the user asks for a dropdown to select assets, create all the UI logic inside the `components` folder and import it inside the `app.py` file. Implement the request logic that imports from `mainsequence.client as msc` and uses `msc.Assets` inside the `services` folder.
 
-
+for streamlit remember
+`use_container_width` will be removed after 2025-12-31.
+For `use_container_width=True`, use `width='stretch'`. For `use_container_width=False`, use `width='content'` or specify an integer width
 
 ---
 
