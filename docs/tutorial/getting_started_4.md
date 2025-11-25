@@ -2,14 +2,14 @@
 # Getting Started 4 - Markets: Equities example with Algoseek
 
 In the previous part of the tutorial, we focused on the data layer, introducing DataNodes and how to work with them.
-In this part, we’ll shift to the financial layer and explore how to integrate financial systems using the investment management module.
+In this part, we’ll shift to the financial layer and explore how to integrate financial systems using the Markets platform.
 
 ## Main Sequence Markets
 
 
 Main Sequence is built not only to unify data sources, but also to unify how data relates to **financial instruments**.
 
-To accomplish this, the Main Sequence platform comes with an integrated **Investment Management System** that lets us map financial objects such as:
+To accomplish this, the Main Sequence platform comes with an integrated **Markets Platform** that lets us map financial objects such as:
 
 * Assets  
 * Accounts  
