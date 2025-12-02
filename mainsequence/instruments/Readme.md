@@ -64,7 +64,7 @@ src/
 
 ### A. New market data source
 
-1. Add a new branch in `APIDataNode.get_historical_data(...)` (e.g., `elif table_name == "ois_quotes": ...`).
+1. Add a new branch in `APIDataNode.get_historical_data(...)` (e.g., ` "ois_quotes": ...`).
 2. Return a minimal, typed structure that your pricer expects (lists of nodes/quotes).
 3. For fixings, implement `get_historical_fixings(index_name, start, end)` with the right calendar filter.
 

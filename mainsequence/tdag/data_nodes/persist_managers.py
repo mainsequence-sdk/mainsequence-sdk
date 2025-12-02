@@ -3,7 +3,7 @@ import inspect
 import json
 import threading
 from concurrent.futures import Future
-from typing import Optional, List
+
 import pandas as pd
 
 import mainsequence.client as ms_client
@@ -132,7 +132,7 @@ class APIPersistManager:
             future_registry.remove_future(self._data_node_storage_future)
 
 
-    def get_last_observation(self,asset_list:Optional[List["Asset"]]):
+    def get_last_observation(self,asset_list:list["Asset"] | None):
         unique_identifier_list=[]
         if asset_list is not None:
             unique_identifier_list=[a.unique_identifier for a in asset_list]
@@ -746,7 +746,7 @@ class PersistManager:
             data_node_update=self.data_node_update, *args, **kwargs
         )
         return filtered_data
-    def get_last_observation(self,asset_list:Optional[List["Asset"]]):
+    def get_last_observation(self,asset_list:list["Asset"] | None):
         unique_identifier_list=[]
         if asset_list is not None:
             unique_identifier_list=[a.unique_identifier for a in asset_list]
@@ -858,5 +858,5 @@ class TimeScaleLocalPersistManager(PersistManager):
     Main Controler to interacti with backend
     """
 
-    def get_table_schema(self, table_name):
+    def get_table_schema(self, _):
         return self.data_node_storage["sourcetableconfiguration"]["column_dtypes_map"]

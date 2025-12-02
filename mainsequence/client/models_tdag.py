@@ -853,9 +853,7 @@ class TableMetaData(BaseModel):
 class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
     id: int = Field(None, description="Primary key, auto-incremented ID")
     storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
-    table_name: str | None = Field(
-        None, max_length=63, description="Max length of PostgreSQL table name"
-    )
+
     creation_date: datetime.datetime = Field(..., description="Creation timestamp")
     created_by_user: int | None = Field(None, description="Foreign key reference to User")
     organization_owner: int = Field(None, description="Foreign key reference to Organization")
@@ -980,7 +978,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             and self.data_source.related_resource.class_type == DUCK_DB
         ):
             db_interface = DuckDBInterface()
-            db_interface.drop_table(self.table_name)
+            db_interface.drop_table(self.storage_hash)
 
         self.delete()
 
@@ -2050,7 +2048,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
         if self.class_type == DUCK_DB:
             DuckDBInterface().upsert(
-                df=serialized_data_frame, table=data_node_update.data_node_storage.table_name
+                df=serialized_data_frame, table=data_node_update.data_node_storage.storage_hash
             )
         else:
             DataNodeUpdate.post_data_frame_in_chunks(
@@ -2097,7 +2095,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
         if self.class_type == DUCK_DB:
             db_interface = DuckDBInterface()
-            table_name = data_node_update.data_node_storage.table_name
+            table_name = data_node_update.data_node_storage.storage_hash
 
             adjusted_start, adjusted_end, adjusted_uirm, _ = db_interface.constrain_read(
                 table=table_name,
@@ -2310,30 +2308,21 @@ class TimeScaleDB(DataSource):
     def filter_by_assets_ranges(
         self, asset_ranges_map: dict, metadata: dict, update_hash: str, has_direct_connection: bool
     ):
-        table_name = metadata.table_name
-        index_names = metadata.sourcetableconfiguration.index_names
-        column_types = metadata.sourcetableconfiguration.column_dtypes_map
-        if has_direct_connection:
-            df = TimeScaleInterface.filter_by_assets_ranges(
-                table_name=table_name,
-                asset_ranges_map=asset_ranges_map,
-                index_names=index_names,
-                data_source=self,
-                column_types=column_types,
-            )
-        else:
-            df = DataNodeUpdate.get_data_between_dates_from_api(
-                update_hash=update_hash,
-                data_source_id=self.id,
-                start_date=None,
-                end_date=None,
-                great_or_equal=True,
-                less_or_equal=True,
-                asset_symbols=None,
-                columns=None,
-                execution_venue_symbols=None,
-                symbol_range_map=asset_ranges_map,  # <-- key for applying ranges
-            )
+
+
+
+        df = DataNodeUpdate.get_data_between_dates_from_api(
+            update_hash=update_hash,
+            data_source_id=self.id,
+            start_date=None,
+            end_date=None,
+            great_or_equal=True,
+            less_or_equal=True,
+            asset_symbols=None,
+            columns=None,
+            execution_venue_symbols=None,
+            symbol_range_map=asset_ranges_map,  # <-- key for applying ranges
+        )
         return df
 
     def get_data_by_time_index(
@@ -2523,7 +2512,7 @@ class PodDataSource:
         remote_node_storages = DataNodeStorage.filter(
             data_source__id=duckdb_dynamic_data_source.id, list_tables=True
         )
-        remote_table_names = [t.table_name for t in remote_node_storages]
+        remote_table_names = [t.storage_hash for t in remote_node_storages]
         from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
 
         db_interface = DuckDBInterface()
@@ -2536,8 +2525,8 @@ class PodDataSource:
 
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
         for remote_table in remote_node_storages:
-            if remote_table.table_name in tables_to_delete_remotely:
-                logger.debug(f"Deleting table remotely {remote_table.table_name}")
+            if remote_table.storage_hash in tables_to_delete_remotely:
+                logger.debug(f"Deleting table remotely {remote_table.storage_hash}")
                 if remote_table.protect_from_deletion:
                     remote_table.patch(protect_from_deletion=False)
 
