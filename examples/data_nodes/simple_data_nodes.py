@@ -145,6 +145,8 @@ class DailyRandomAdditionAPI(DataNode):
 
 
 def build_test_time_series():
+
+
     daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
     daily_node.run(debug_mode=True, force_update=True)
 

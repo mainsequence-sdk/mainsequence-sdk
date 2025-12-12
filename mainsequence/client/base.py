@@ -138,6 +138,7 @@ class BaseObjectOrm:
         "Artifact": "pods/artifact",
         "Job": "pods/job",
         "Constant": "pods/constant",
+        "Secret": "pods/secret",
         # ReportBuilder
         "Presentation": "reports/presentations",
         "Folder": "reports/folder",

@@ -2248,7 +2248,7 @@ class Project(BasePydanticModel, BaseObjectOrm):
     project_name: str
     data_source: DynamicTableDataSource
     git_ssh_url: str | None = None
-    resources_visible_to_light_users: bool
+    project_visible: bool
 
     @classmethod
     def get_user_default_project(cls):
@@ -2578,6 +2578,11 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
         else:
             items.append((k, _norm_value(v)))
     return tuple(sorted(items))
+
+class Secret(BasePydanticModel, BaseObjectOrm):
+    id: int | None
+    name: str = Field(..., description="Secret name")
+    value: str = Field(..., description="Secret value ")
 
 
 class Constant(BasePydanticModel, BaseObjectOrm):
