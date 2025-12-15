@@ -67,19 +67,34 @@ WEIGHTS_TO_PORTFOLIO_COLUMNS = {
     "volume_at_last_rebalance": "volume_before",
 }
 
-All_PORTFOLIO_COLUMNS = []
-All_PORTFOLIO_COLUMNS.extend(list(WEIGHTS_TO_PORTFOLIO_COLUMNS.keys()))
-All_PORTFOLIO_COLUMNS.extend(["last_rebalance_date", "close", "return"])
+POSITIONS_PORTFOLIO_COLUMNS = {
+    "rebalance_positions": "positions_current",
+    "rebalance_price": "price_current",
+    "volume": "volume_current",
+    "positions_at_last_rebalance": "positions_before",
+    "price_at_last_rebalance": "price_before",
+    "volume_at_last_rebalance": "volume_before",
+
+}
+
+All_PORTFOLIO_COLUMNS_WEIGHTS,All_PORTFOLIO_COLUMNS_POSITIONS = [], []
+All_PORTFOLIO_COLUMNS_WEIGHTS.extend(list(WEIGHTS_TO_PORTFOLIO_COLUMNS.keys()))
+All_PORTFOLIO_COLUMNS_WEIGHTS.extend(["last_rebalance_date", "close", "return"])
+
+All_PORTFOLIO_COLUMNS_POSITIONS.extend(list(POSITIONS_PORTFOLIO_COLUMNS.keys()))
+All_PORTFOLIO_COLUMNS_POSITIONS.extend(["last_rebalance_date", "close", "return"])
 
 
 class PortfolioFromDF(DataNode):
 
     def __init__(
-        self, portfolio_name: str, calendar_name: str, target_portfolio_about: str, *args, **kwargs
+        self, portfolio_name: str, calendar_name: str, target_portfolio_about: str,
+            builds_from_target_weights=True,*args, **kwargs
     ):
         self.portfolio_name = portfolio_name
         self.calendar_name = calendar_name
         self.target_portfolio_about = target_portfolio_about
+        self.builds_from_target_weights=builds_from_target_weights
         super().__init__(*args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
@@ -88,13 +103,18 @@ class PortfolioFromDF(DataNode):
     def get_portfolio_df(self):
         raise NotImplementedError()
 
+
+
     def update(self):
         df = self.get_portfolio_df()
         if df.empty:
             return pd.DataFrame()
 
         # Ensure columns are known
-        assert all(c in All_PORTFOLIO_COLUMNS for c in df.columns)
+        if   self.builds_from_target_weights:
+            assert all(c in All_PORTFOLIO_COLUMNS_WEIGHTS for c in df.columns)
+        else:
+            assert all(c in All_PORTFOLIO_COLUMNS_POSITIONS for c in df.columns)
 
         # Optional time filter
         mti = getattr(self.update_statistics, "max_time_index_value", None)
@@ -136,7 +156,10 @@ class PortfolioFromDF(DataNode):
             return out
 
         # Apply to expected weight columns
-        for c in WEIGHTS_TO_PORTFOLIO_COLUMNS.keys():
+
+        target_dict=WEIGHTS_TO_PORTFOLIO_COLUMNS if self.builds_from_target_weights else POSITIONS_PORTFOLIO_COLUMNS
+
+        for c in target_dict.keys():
             if c not in df.columns:
                 raise KeyError(f"Missing expected column '{c}' in DataFrame.")
             df[c] = df[c].apply(lambda v, col=c: _to_json_dict(v, col))

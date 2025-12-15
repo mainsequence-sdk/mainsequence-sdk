@@ -1,6 +1,8 @@
 import copy
 import datetime
 import json
+import math
+from collections.abc import Iterable
 from decimal import Decimal
 from enum import Enum, IntEnum
 from typing import Any, Optional, TypedDict, Union
@@ -354,6 +356,9 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         description="High-level sector classification (e.g. 'Equity', 'Corporate Bond') as per FIGI",
     )
 
+    is_tradable:bool = Field(
+        default=True, description="Flag indicating if this asset is tradable "
+    )
     is_custom_by_organization: bool = Field(
         default=False,
         description="Flag indicating if this asset was custom-created by the organization",
@@ -1444,6 +1449,11 @@ class AccountPositionDetail(BaseObjectOrm, BasePydanticModel):
     parents_holdings: int | None = None
     extra_details: dict | None = None
 
+    @validator("price")
+    def price_must_be_finite(cls, v: float) -> float:
+        if isinstance(v, float) and (math.isnan(v) or math.isinf(v)):
+            raise ValueError("price must be a finite number (not NaN/Infinity)")
+        return v
 
 class AccountHistoricalHoldingsMixin:
     id: int | None = Field(None, primary_key=True)
@@ -1478,6 +1488,68 @@ class AccountLatestHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, BaseP
 class AccountHistoricalHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, BasePydanticModel):
 
     related_account: Union[int, "Account"]
+
+    @classmethod
+    def filter(
+            cls,
+            *,
+            # related_account__id: ["in", "exact"]
+            related_account__id: int | None = None,
+            related_account__id__in: Iterable[int] | None = None,
+
+            # target_trade_time: ["in", "exact", "gte", "lte"]
+            target_trade_time: datetime.datetime | str | None = None,
+            target_trade_time__in: Iterable[datetime.datetime | str] | None = None,
+            target_trade_time__gte: datetime.datetime | str | None = None,
+            target_trade_time__lte: datetime.datetime | str | None = None,
+
+            # is_trade_snapshot: ["exact"]
+            is_trade_snapshot: bool | None = None,
+
+            # holdings_date: ["gte", "lte", "exact"]
+            holdings_date: datetime.datetime | str | None = None,
+            holdings_date__gte: datetime.datetime | str | None = None,
+            holdings_date__lte: datetime.datetime | str | None = None,
+
+            **kwargs: Any,
+    ):
+        def to_iso(v: Any) -> str:
+            if isinstance(v, (datetime.datetime, datetime.date)):
+                return v.isoformat()
+            return str(v)
+
+        def to_csv(values: Iterable[Any], *, iso: bool = False) -> str:
+            if iso:
+                return ",".join(to_iso(x) for x in values)
+            return ",".join(str(x) for x in values)
+
+        params: dict[str, Any] = {}
+
+        if related_account__id is not None:
+            params["related_account__id"] = related_account__id
+        if related_account__id__in is not None:
+            params["related_account__id__in"] = to_csv(related_account__id__in)
+
+        if target_trade_time is not None:
+            params["target_trade_time"] = to_iso(target_trade_time)
+        if target_trade_time__in is not None:
+            params["target_trade_time__in"] = to_csv(target_trade_time__in, iso=True)
+        if target_trade_time__gte is not None:
+            params["target_trade_time__gte"] = to_iso(target_trade_time__gte)
+        if target_trade_time__lte is not None:
+            params["target_trade_time__lte"] = to_iso(target_trade_time__lte)
+
+        if is_trade_snapshot is not None:
+            params["is_trade_snapshot"] = str(is_trade_snapshot).lower()  # "true"/"false"
+
+        if holdings_date is not None:
+            params["holdings_date"] = to_iso(holdings_date)
+        if holdings_date__gte is not None:
+            params["holdings_date__gte"] = to_iso(holdings_date__gte)
+        if holdings_date__lte is not None:
+            params["holdings_date__lte"] = to_iso(holdings_date__lte)
+
+        return super().filter(**params, **kwargs)
 
     @classmethod
     def destroy_holdings_before_date(
@@ -1659,6 +1731,8 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     tags: list["PortfolioTags"] | None = None
     calendar: Optional["Calendar"]
     index_asset: PortfolioIndexAsset
+    builds_from_target_weights: bool =True
+    builds_from_target_positions:bool=False
 
     def pretty_print(self) -> str:
         def format_field(name, value):
@@ -1925,8 +1999,8 @@ class TargetRebalance(BaseModel):
         return {e.asset.id: e.asset for e in self.execution_target}
 
 class InstrumentsConfiguration(BaseObjectOrm,BasePydanticModel):
-    discount_curves_storage_node:Optional[int]
-    reference_rates_fixings_storage_node:Optional[int]
+    discount_curves_storage_node:int | None
+    reference_rates_fixings_storage_node:int | None
 
 class VirtualFund(BaseObjectOrm, BasePydanticModel):
     id: float | None = None
