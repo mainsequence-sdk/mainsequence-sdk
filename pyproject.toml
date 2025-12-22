@@ -46,10 +46,6 @@ dependencies = [
   "scipy",
   "structlog",
   "tqdm",
-  "colorama",
-  "kaleido",
-  "newspaper3k",
-  "lxml-html-clean",
   "docstring-parser",
   "concurrent-log-handler",
   "duckdb",
@@ -57,7 +53,6 @@ dependencies = [
   "typer",
   "QuantLib", # ← renamed from `quantlib`
   "streamlit"
-
 ]
 
 [project.urls]
