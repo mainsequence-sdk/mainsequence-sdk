@@ -58,7 +58,7 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     # do initial request when on logger initialization
     headers = CaseInsensitiveDict()
     headers["Content-Type"] = "application/json"
-    headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN")
+    headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN","INVALID_TOKEN")
 
     project_info_endpoint = f'{os.getenv("TDAG_ENDPOINT")}/orm/api/pods/job/get_job_startup_state/'
 
