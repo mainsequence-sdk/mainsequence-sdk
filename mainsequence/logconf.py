@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import logging.config
 import os
@@ -13,8 +15,10 @@ from .instrumentation import OTelJSONRenderer
 logger = None
 import inspect
 import sys
+from collections.abc import Mapping
 from typing import Any
 
+from structlog.contextvars import bind_contextvars, unbind_contextvars
 from structlog.stdlib import BoundLogger
 
 
@@ -50,6 +54,109 @@ class CustomConsoleRenderer(ConsoleRenderer):
         return rendered
 
 
+def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
+    """
+    Fetch startup state from backend using current env vars (token, endpoint, command_id).
+    Safe to call later after auth (when MAINSEQUENCE_TOKEN becomes available).
+    """
+    headers = CaseInsensitiveDict()
+    headers["Content-Type"] = "application/json"
+    headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN", "INVALID_TOKEN")
+
+    endpoint = f'{os.getenv("TDAG_ENDPOINT")}/orm/api/pods/job/get_job_startup_state/'
+
+    command_id = os.getenv("COMMAND_ID")
+    params: dict[str, Any] = {}
+    if command_id:
+        params["command_id"] = command_id
+
+    resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
+    if resp.status_code != 200:
+        # don't crash logger setup; return empty-ish state
+        try:
+            body = resp.text
+        except Exception:
+            body = "<unreadable>"
+        print(f"Got Status Code {resp.status_code} with response {body}")
+        return {}
+
+    try:
+        return resp.json()
+    except Exception:
+        return {}
+
+
+def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
+    extra = startup_state.get("additional_environment")
+    if isinstance(extra, dict):
+        for k, v in extra.items():
+            os.environ[str(k)] = str(v)
+
+
+def _build_backend_bindings(
+    startup_state: Mapping[str, Any],
+    *,
+    command_id: str | None = None,
+) -> dict[str, Any]:
+    """
+    Pure function: compute the keys you want to bind on the logger
+    from the backend response + current env.
+    """
+    bindings: dict[str, Any] = {}
+
+    # prefer backend payload, fall back to env if needed
+    project_id = startup_state.get("project_id")
+    if project_id is None and "project_id" in os.environ:
+        project_id = os.environ.get("project_id")
+
+    if project_id is not None:
+        bindings["project_id"] = project_id
+        bindings["data_source_id"] = startup_state.get("data_source_id")
+        bindings["job_run_id"] = startup_state.get("job_run_id")
+
+        if command_id is None:
+            command_id = os.getenv("COMMAND_ID")
+        bindings["command_id"] = int(command_id) if command_id else None
+    else:
+        # your existing behavior: bind job_run_id to user_id in local-ish mode
+        if "user_id" in startup_state:
+            bindings["job_run_id"] = startup_state.get("user_id")
+        else:
+            bindings["local_mode"] = "no_app"
+
+    # drop None values
+    return {k: v for k, v in bindings.items() if v is not None}
+
+
+def _bind_runtime(logger_: BoundLogger, **bindings: Any) -> BoundLogger:
+    """
+    Bind to BOTH:
+      - contextvars (so all loggers see it)
+      - this logger instance (nice for dumping/restoring)
+    """
+    clean = {k: v for k, v in bindings.items() if v is not None}
+    if not clean:
+        return logger_
+
+    # will appear on every log because you have merge_contextvars configured
+    structlog.contextvars.bind_contextvars(**clean)
+    return logger_.bind(**clean)
+
+
+def apply_startup_state_bindings(
+    logger_: BoundLogger,
+    startup_state: Mapping[str, Any],
+    *,
+    command_id: str | None = None,
+) -> BoundLogger:
+    """
+    Apply env + bindings derived from startup_state to the given logger.
+    """
+    _apply_additional_environment(startup_state)
+    binds = _build_backend_bindings(startup_state, command_id=command_id)
+    return _bind_runtime(logger_, **binds)
+
+
 def build_application_logger(application_name: str = "ms-sdk", **metadata):
     """
     Create a logger that logs to console and file in JSON format.
@@ -58,37 +165,16 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     """
 
     # do initial request when on logger initialization
-    headers = CaseInsensitiveDict()
-    headers["Content-Type"] = "application/json"
-    headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN","INVALID_TOKEN")
-
-    project_info_endpoint = f'{os.getenv("TDAG_ENDPOINT")}/orm/api/pods/job/get_job_startup_state/'
-
     command_id = os.getenv("COMMAND_ID")
-    params = {}
-    if command_id:
-        params["command_id"] = command_id
-
-    response = requests.get(project_info_endpoint, headers=headers, params=params)
-
-    if response.status_code != 200:
-        print(f"Got Status Code {response.status_code} with response {response.text}")
-
-    json_response = response.json()
-
-
-
+    json_response = _request_job_startup_state()
 
     # set additional args from backend
-    if "additional_environment" in json_response:
-        for key, value in json_response["additional_environment"].items():
-            os.environ[key] = value
+    _apply_additional_environment(json_response)
 
     # Get logger path in home directory if no path is set in environemnt
     tdag_base_path = Path(os.getenv("TDAG_ROOT_PATH", Path.home() / ".tdag"))
     default_log_path = tdag_base_path / "logs" / "tdag.log"
     logger_file = os.getenv("LOGGER_FILE_PATH", str(default_log_path))
-
     logger_name = "tdag"
 
     # Define the timestamper and pre_chain processors
@@ -186,26 +272,41 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
 
     try:
 
+        backend_binds = _build_backend_bindings(json_response, command_id=command_id)
+        logger = _bind_runtime(logger, **backend_binds)
 
 
 
-        if "project_id" in os.environ:
-            logger = logger.bind(project_id=json_response["project_id"], **metadata)
-            logger = logger.bind(data_source_id=json_response["data_source_id"], **metadata)
-            logger = logger.bind(job_run_id=json_response["job_run_id"], **metadata)
-            logger = logger.bind(command_id=int(command_id) if command_id else None, **metadata)
-        else:
-            logger = logger.bind(job_run_id=json_response["user_id"], **metadata)
+    except Exception:
 
-
-    except Exception as e:
-
-        logger.exception(f"Logger could not be binded running in local mode{e}")
+        logger.exception("Logger could not be binded running in local mode")
         logger = logger.bind(local_mode="no_app", **metadata)
 
     logger = logger.bind()
     return logger
 
+def refresh_application_logger_bindings(*, timeout_s: float = 10.0) -> BoundLogger:
+    """
+    Importable helper: call this AFTER the user authenticates / token exists.
+    It re-fetches backend state and binds the same keys as build_application_logger().
+    """
+    global logger
+
+    command_id = os.getenv("COMMAND_ID")
+    json_response = _request_job_startup_state(timeout_s=timeout_s)
+
+    # set additional args from backend
+    _apply_additional_environment(json_response)
+
+    backend_binds = _build_backend_bindings(json_response, command_id=command_id)
+
+    # if somebody calls this super early
+    if logger is None:
+        logger = build_application_logger()
+        return logger
+
+    logger = _bind_runtime(logger, **backend_binds)
+    return logger
 
 def dump_structlog_bound_logger(logger: BoundLogger) -> dict[str, Any]:
     """
@@ -277,6 +378,27 @@ logger = build_application_logger()
 
 # create a new system exection hook to also log terminating exceptions
 original_hook = sys.excepthook
+
+
+def set_local_run_app(local_model: str) -> BoundLogger:
+    """
+    Make `local_model` show up on every log event at runtime.
+
+    Uses contextvars (global/per-async-task) + rebinds the module-level `logger`.
+    """
+    global logger
+
+    # This will be merged into logs because you already have merge_contextvars configured.
+    bind_contextvars(local_model=local_model)
+
+    # Also bind on the module-level logger object (nice for future imports / dump_structlog_bound_logger).
+    logger = logger.bind(local_model=local_model)
+    return logger
+
+
+def clear_local_run_app() -> None:
+    """Remove the local_model key from the logging context."""
+    unbind_contextvars("local_model")
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
