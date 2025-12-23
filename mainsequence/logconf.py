@@ -53,6 +53,8 @@ class CustomConsoleRenderer(ConsoleRenderer):
 def build_application_logger(application_name: str = "ms-sdk", **metadata):
     """
     Create a logger that logs to console and file in JSON format.
+    This routine also scafoldgs the interaction with the Main Sequence platform by setting environment variables at
+    run time
     """
 
     # do initial request when on logger initialization
@@ -73,8 +75,9 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
         print(f"Got Status Code {response.status_code} with response {response.text}")
 
     json_response = response.json()
-    if "project_id" not in json_response:
-        raise ValueError(f"Project ID not found, server response {json_response}")
+
+
+
 
     # set additional args from backend
     if "additional_environment" in json_response:
@@ -182,9 +185,13 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     logger = logger.bind(application_name=application_name, **metadata)
 
     try:
-        logger = logger.bind(project_id=json_response["project_id"], **metadata)
-        logger = logger.bind(data_source_id=json_response["data_source_id"], **metadata)
-        logger = logger.bind(job_run_id=json_response["job_run_id"], **metadata)
+
+        if "project_id" in os.environ:
+            logger = logger.bind(project_id=json_response["project_id"], **metadata)
+            logger = logger.bind(data_source_id=json_response["data_source_id"], **metadata)
+            logger = logger.bind(job_run_id=json_response["job_run_id"], **metadata)
+        else:
+            logger = logger.bind(job_run_id=json_response["user_id"], **metadata)
         logger = logger.bind(command_id=int(command_id) if command_id else None, **metadata)
 
     except Exception as e:
