@@ -186,17 +186,22 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
 
     try:
 
+
+
+
         if "project_id" in os.environ:
             logger = logger.bind(project_id=json_response["project_id"], **metadata)
             logger = logger.bind(data_source_id=json_response["data_source_id"], **metadata)
             logger = logger.bind(job_run_id=json_response["job_run_id"], **metadata)
+            logger = logger.bind(command_id=int(command_id) if command_id else None, **metadata)
         else:
             logger = logger.bind(job_run_id=json_response["user_id"], **metadata)
-        logger = logger.bind(command_id=int(command_id) if command_id else None, **metadata)
+
 
     except Exception as e:
-        logger.exception(f"Could not retrive pod project {e}")
-        raise e
+
+        logger.exception(f"Logger could not be binded running in local mode{e}")
+        logger = logger.bind(local_mode="no_app", **metadata)
 
     logger = logger.bind()
     return logger
