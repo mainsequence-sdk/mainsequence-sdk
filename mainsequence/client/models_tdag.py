@@ -1095,6 +1095,9 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             node_identifier: str | None = None,
     ) -> pd.DataFrame:
         """Internal shared implementation for fetching data between dates."""
+        return_storage_node=False
+        if "get_data_between_dates_from_node_identifier" in url:
+            return_storage_node=True
 
         def fetch_one_batch(chunk_range_map):
             all_results_chunk = []
@@ -1143,7 +1146,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                 # Update offset for the next iteration
                 offset = next_offset
 
-            return all_results_chunk
+            return all_results_chunk,response_data
 
         s = cls.build_session()
 
@@ -1178,14 +1181,16 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                 chunk_map = {k: unique_identifier_range_map[k] for k in key_chunk}
 
                 # Fetch data (including any pagination via next_offset)
-                chunk_results = fetch_one_batch(chunk_map)
+                chunk_results,response_data = fetch_one_batch(chunk_map)
                 all_results.extend(chunk_results)
         else:
             # If unique_identifier_range_map is None, do a single batch with offset-based pagination.
-            chunk_results = fetch_one_batch(None)
+            chunk_results,response_data = fetch_one_batch(None)
             all_results.extend(chunk_results)
-
-        return pd.DataFrame(all_results)
+        if return_storage_node ==False:
+            return pd.DataFrame(all_results)
+        else:
+            return pd.DataFrame(all_results),cls(**response_data['storage_node'])
 
     def get_data_between_dates_from_api(
             self,
@@ -1226,7 +1231,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             columns: list = None,
             unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
             column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-    ):
+    )->[pd.DataFrame,DataNodeStorage]:
         """
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.

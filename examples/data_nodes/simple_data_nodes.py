@@ -145,8 +145,7 @@ class DailyRandomAdditionAPI(DataNode):
 
 
 def build_test_time_series():
-
-
+    # data,data_node_storage = msc.DataNodeStorage.get_data_between_dates_from_node_identifier("algoseek_daily_ohlc_DEMO")
     daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
     daily_node.run(debug_mode=True, force_update=True)
 
