@@ -1034,7 +1034,24 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                     ) from err
                     # Filter the data based on time_index_name and last_time_index_value
 
-    def get_last_observation(self,unique_identifier_list:List[str],timeout=None):
+
+    @staticmethod
+    def map_columns_to_df(df,
+                          column_dtypes_map:dict,time_index_name:str,
+                          index_names:list[str],
+                          )->pd.DataFrame:
+        columns_to_loop = column_dtypes_map.keys()
+        for c, c_type in column_dtypes_map.items():
+            if c not in columns_to_loop:
+                continue
+            if c != time_index_name:
+                if c_type == "object":
+                    c_type = "str"
+                df[c] = df[c].astype(c_type)
+        df = df.set_index(index_names)
+        return df
+
+    def get_last_observation(self,unique_identifier_list:list[str],timeout=None):
         base_url = self.get_object_url()
         payload = {"json": {"unique_identifier_list":unique_identifier_list}}
         s = self.build_session()
@@ -1054,15 +1071,13 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format="ISO8601")
         except Exception as e:
             raise e
-        columns_to_loop =stc.column_dtypes_map.keys()
-        for c, c_type in stc.column_dtypes_map.items():
-            if c not in columns_to_loop:
-                continue
-            if c != stc.time_index_name:
-                if c_type == "object":
-                    c_type = "str"
-                df[c] = df[c].astype(c_type)
-        df = df.set_index(stc.index_names)
+
+        df=self.map_columns_to_df(df=df,column_dtypes_map=stc.column_dtypes_map,
+                                  time_index_name=stc.time_index_name,
+                                  index_names=stc.index_names,
+                                  )
+
+
         return df
 
     @classmethod
