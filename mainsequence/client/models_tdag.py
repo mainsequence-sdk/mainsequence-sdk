@@ -1131,7 +1131,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                 )
                 if r.status_code != 200:
                     logger.warning(f"Error in request: {r.text}")
-                    return []
+                    return [] ,None
 
                 response_data = r.json()
                 # Accumulate results
@@ -1190,7 +1190,8 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
         if return_storage_node ==False:
             return pd.DataFrame(all_results)
         else:
-            return pd.DataFrame(all_results),cls(**response_data['storage_node'])
+            storage_node=cls(**response_data['storage_node']) if response_data is not None else None
+            return pd.DataFrame(all_results),storage_node
 
     def get_data_between_dates_from_api(
             self,
