@@ -194,13 +194,6 @@ def get_constants_vam():
     return r.json()
 
 
-def get_binance_constants():
-    url = f"{os.getenv('TDAG_ENDPOINT')}/orm/api/binance/constants"
-    loaders = AuthLoaders()
-    s = build_session()
-    s.headers.update(loaders.auth_headers)
-    r = make_request(s=s, loaders=loaders, r_type="GET", url=url)
-    return r.json()
 
 
 class LazyConstants(dict):
@@ -213,8 +206,6 @@ class LazyConstants(dict):
             self.CONSTANTS_METHOD = get_constants_tdag
         elif constant_type == "vam":
             self.CONSTANTS_METHOD = get_constants_vam
-        elif constant_type == "binance":
-            self.CONSTANTS_METHOD = get_binance_constants
         else:
             raise NotImplementedError(f"{constant_type} not implemented")
         self._initialized = False
@@ -261,8 +252,6 @@ if "TDAG_CONSTANTS" not in locals():
 if "MARKETS_CONSTANTS" not in locals():
     MARKETS_CONSTANTS = LazyConstants("vam")
 
-if "BINANCE_CONSTANTS" not in locals():
-    BINANCE_CONSTANTS = LazyConstants("binance")
 
 
 def get_rest_token_header():
