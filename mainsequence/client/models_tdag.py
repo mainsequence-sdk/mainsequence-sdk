@@ -945,26 +945,8 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
         if r.status_code != 202:
             raise Exception(f"Error in request {r.text}")
 
-    @classmethod
-    def patch_build_configuration(
-        cls,
-        remote_table_patch: dict | None,
-        build_meta_data: dict,
-        data_source_id: int,
-        local_table_patch: dict,
-    ):
 
-        logger.warning("TODO Fix Patch Build Configuration")
-        # url = cls.get_object_url() + "/patch_build_configuration"
-        # payload = {"json": {"remote_table_patch": remote_table_patch, "local_table_patch": local_table_patch,
-        #                     "build_meta_data": build_meta_data, "data_source_id": data_source_id,
-        #                     }}
-        # s = cls.build_session()
-        # r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-        #
-        #                  )
-        # if r.status_code != 200:
-        #     raise Exception(r.text)
+
 
     def delete_table(self):
         data_source = PodDataSource._get_duck_db()

@@ -84,7 +84,7 @@ class PortfolioInterface:
         interface.portfolio_strategy_data_node = portfolio_node
         interface.logger = get_vfb_logger()
         interface.run(
-            patch_build_configuration=False,
+
             debug_mode=debug_mode,
             force_update=force_update,
             update_tree=update_tree,
@@ -118,21 +118,15 @@ class PortfolioInterface:
             index_asset = PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
         return target_portfolio, index_asset
 
-    def _initialize_nodes(self, patch_build_configuration=True) -> None:
+    def _initialize_nodes(self, ) -> None:
         """
-        Initializes the portfolio strategy for backtesting and for live prediction.
-        Also, forces an update of the build configuration in tdag to guarantee that assets are properly rebuilt
-        patch_build_configuration:defaults to True as we want to patch the configuration while we test but for production can be set to False
+
         """
-        patch = os.environ.get("PATCH_BUILD_CONFIGURATION", "False")
-        os.environ["PATCH_BUILD_CONFIGURATION"] = (
-            "True" if patch_build_configuration else "False"
-        )  # It always needs to be true as we always want to overwrite the build
+
         self.portfolio_strategy_data_node = PortfolioStrategy(
             portfolio_build_configuration=copy.deepcopy(self.portfolio_build_configuration)
         )
 
-        os.environ["PATCH_BUILD_CONFIGURATION"] = patch
         self._is_initialized = True
 
     def build_target_portfolio_in_backend(
@@ -203,7 +197,6 @@ class PortfolioInterface:
 
     def run(
         self,
-        patch_build_configuration=True,
         debug_mode=True,
         force_update=True,
         update_tree=True,
@@ -213,8 +206,8 @@ class PortfolioInterface:
         **kwargs,
     ) -> pd.DataFrame:
 
-        if not self._is_initialized or patch_build_configuration == True:
-            self._initialize_nodes(patch_build_configuration=patch_build_configuration)
+        if not self._is_initialized :
+            self._initialize_nodes()
 
         self.portfolio_strategy_data_node.run(
             debug_mode=debug_mode, update_tree=update_tree, force_update=force_update, **kwargs

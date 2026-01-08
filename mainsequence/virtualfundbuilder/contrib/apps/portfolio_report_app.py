@@ -4,13 +4,14 @@ import pandas as pd
 from pydantic import BaseModel
 
 from mainsequence.client import Portfolio
-from mainsequence.reportbuilder.model import StyleSettings, ThemeMode
-from mainsequence.reportbuilder.slide_templates import generic_plotly_line_chart
 from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
     HtmlApp,
     regiester_agent_tool,
 )
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
+
+from .report_styles.models import StyleSettings, ThemeMode
+from .report_styles.utils import generic_plotly_line_chart
 
 logger = get_vfb_logger()
 
@@ -31,7 +32,7 @@ class PortfolioReport(HtmlApp):
 
     def run(self) -> str:
         styles = StyleSettings(mode=ThemeMode.light)
-        start_date = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(
+        start_date = datetime.datetime.now(datetime.UTC) - datetime.timedelta(
             days=self.configuration.report_days
         )
 

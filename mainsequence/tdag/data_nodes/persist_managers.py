@@ -519,60 +519,7 @@ class PersistManager:
             return True
         return False
 
-    def patch_build_configuration(
-        self, local_configuration: dict, remote_configuration: dict, remote_build_metadata: dict
-    ) -> None:
-        """
-        Asynchronously patches the build configuration for the remote and local tables.
 
-        Args:
-            local_configuration: The build configuration for the local time series.
-            remote_configuration: The build configuration for the remote table.
-            remote_build_metadata: The build metadata for the remote table.
-        """
-        # This ensures that later accesses to data_node_update will block for the new value.
-        with self._data_node_update_lock:
-            self._data_node_update_future = Future()
-            future_registry.add_future(self._data_node_update_future)
-
-        kwargs = dict(
-            build_configuration=remote_configuration,
-        )
-
-        data_node_update_kwargs = dict(
-            update_hash=self.update_hash,
-            build_configuration=local_configuration,
-        )
-
-        patch_future = Future()
-        future_registry.add_future(patch_future)
-
-        # Define the inner helper function.
-        def _patch_build_configuration():
-            """Helper function for patching build configuration asynchronously."""
-            try:
-                # Execute the patch operation; this method is expected to return a DataNodeUpdate-like instance.
-                result = DataNodeStorage.patch_build_configuration(
-                    remote_table_patch=kwargs,
-                    data_source_id=self.data_source.id,
-                    build_meta_data=remote_build_metadata,
-                    local_table_patch=data_node_update_kwargs,
-                )
-                patch_future.set_result(True)  # success
-            except Exception as exc:
-                patch_future.set_exception(exc)
-            finally:
-                # Once the operation is complete (or errors out), remove the future from the global registry.
-                future_registry.remove_future(result)
-
-        thread = threading.Thread(
-            target=_patch_build_configuration,
-            name=f"PatchBuildConfigThread-{self.update_hash}",
-            daemon=False,
-        )
-        thread.start()
-
-        patch_future.add_done_callback(self.set_data_node_update_lazy_callback)
 
     def local_persist_exist_set_config(
         self,

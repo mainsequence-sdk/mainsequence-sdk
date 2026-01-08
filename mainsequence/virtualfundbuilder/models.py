@@ -18,7 +18,7 @@ from pydantic import (
 )
 
 import mainsequence.client as msc
-from mainsequence.client import MARKETS_CONSTANTS, Asset
+from mainsequence.client import Asset
 from mainsequence.tdag.utils import hash_dict, write_yaml
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
@@ -114,8 +114,8 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     signal_weights_name: str = "MarketCap"
     signal_weights_configuration: dict[str, Any] = Field(default_factory=dict)
 
-    _rebalance_strategy_instance: "RebalanceStrategyBase" | None = PrivateAttr(default=None)
-    _signal_weights_instance: "WeightsBase" | None = PrivateAttr(default=None)
+    _rebalance_strategy_instance: RebalanceStrategyBase | None = PrivateAttr(default=None)
+    _signal_weights_instance: WeightsBase | None = PrivateAttr(default=None)
 
     @field_validator("rebalance_strategy_name", "signal_weights_name")
     @classmethod
@@ -129,7 +129,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
 
     @classmethod
     def build_from_rebalance_strategy_and_signal_node(
-        cls, rebalance_strategy: "RebalanceStrategyBase", signal_weights_node: "WeightsBase"
+        cls, rebalance_strategy: RebalanceStrategyBase, signal_weights_node: WeightsBase
     ):
 
         config = dict(
@@ -212,15 +212,7 @@ class PortfolioMarketsConfig(VFBConfigBaseModel):
     front_end_details: FrontEndDetails | None  = None
 
 
-class AssetMixinOverwrite(VFBConfigBaseModel):
-    """
-    The Asset for evaluating the portfolio.
 
-    Attributes:
-        unique_identifier (str): The unique_identifier of the asset.
-    """
-
-    unique_identifier: str = MARKETS_CONSTANTS.UNIQUE_IDENTIFIER_USD
 
 
 class PortfolioBuildConfiguration(VFBConfigBaseModel):

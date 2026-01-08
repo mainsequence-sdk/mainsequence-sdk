@@ -8,7 +8,7 @@ import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import asdict
 from functools import wraps
-from typing import Any, Union,Optional
+from typing import Any, Union
 
 import cloudpickle
 import numpy as np
@@ -119,7 +119,7 @@ class DataAccessMixin:
         )
         return repr
 
-    def get_last_observation(self, asset_list: Optional[list[ms_client.AssetMixin]]=None):
+    def get_last_observation(self, asset_list: list[ms_client.AssetMixin] | None=None):
         # update_statistics = self.get_update_statistics()
         # if asset_list is not None:
         #     update_statistics = update_statistics.update_assets(asset_list=asset_list)
@@ -688,7 +688,6 @@ class DataNode(DataAccessMixin, ABC):
             self.scheduler: Scheduler | None = None
             self.update_details_tree: dict[str, Any] | None = None
 
-            self._patch_build_from_env()
             logger.debug(f"Post-init routines for {self.__class__.__name__} complete.")
 
         # Replace the subclass's __init__ with our new wrapped version
@@ -711,30 +710,6 @@ class DataNode(DataAccessMixin, ABC):
 
         for field_name, value in asdict(config).items():
             setattr(self, field_name, value)
-
-    def _patch_build_from_env(self) -> None:
-        """
-        Checks for the PATCH_BUILD_CONFIGURATION environment variable and,
-        if set, flushes the pickle and patches the build configuration.
-        """
-        patch_build = os.environ.get("PATCH_BUILD_CONFIGURATION", "false").lower() in ["true", "1"]
-        if patch_build:
-            self.logger.warning(f"Patching build configuration for {self.storage_hash}")
-
-            # Ensure dependencies are initialized
-            self.local_persist_manager
-            self.verify_and_build_remote_objects()
-
-            pickle_path = self.get_pickle_path_from_time_serie()
-            build_operations.flush_pickle(pickle_path=pickle_path)
-
-            self.local_persist_manager.patch_build_configuration(
-                local_configuration=self.local_initial_configuration,
-                remote_configuration=self.remote_initial_configuration,
-                remote_build_metadata=self.remote_build_metadata,
-            )
-
-    # --- Core Properties ---
 
     @property
     def is_api(self):

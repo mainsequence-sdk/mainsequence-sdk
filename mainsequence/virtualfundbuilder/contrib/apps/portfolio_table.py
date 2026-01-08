@@ -3,13 +3,13 @@ from enum import Enum
 from pydantic import BaseModel
 
 from mainsequence.client import Portfolio
-from mainsequence.reportbuilder.model import StyleSettings, ThemeMode
-from mainsequence.reportbuilder.slide_templates import generic_plotly_table
 from mainsequence.virtualfundbuilder.resource_factory.app_factory import (
     HtmlApp,
     regiester_agent_tool,
 )
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
+
+from .report_styles.models import StyleSettings, ThemeMode
 
 logger = get_vfb_logger()
 
