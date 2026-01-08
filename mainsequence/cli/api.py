@@ -206,30 +206,37 @@ def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> No
     r.raise_for_status()
 
 
-def get_project_token(project_id: int | str) -> str:
+def get_project_token(project_id: Union[int, str]) -> str:
     """
     Fetch the project's token using the current access token.
     If the access token is expired or missing, authed() will refresh once.
     If refresh also fails, NotLoggedIn is raised so the caller can prompt re-login.
     """
     r = authed("GET", f"/orm/api/pods/projects/{project_id}/get_project_token/")
+
     if not r.ok:
         # authed() already tried refresh on 401;
         # at this point treat as API error with server message.
-        msg = r.text
+        msg = r.text or ""
         try:
-            if r.headers.get("content-type", "").startswith("application/json"):
+            content_type = (r.headers.get("content-type") or "").lower()
+            if "application/json" in content_type:
                 data = r.json()
                 msg = data.get("detail") or data.get("message") or msg
         except Exception:
             pass
-        raise ApiError(f"Project token fetch failed ({r.status_code}). {msg}")
+        raise ApiError(f"Project token fetch failed ({r.status_code}). {msg}".strip())
 
-    token = None
-    if r.headers.get("content-type", "").startswith("application/json"):
+    try:
+        content_type = (r.headers.get("content-type") or "").lower()
+        if "application/json" not in content_type:
+            raise ApiError(f"Project token response was not JSON (content-type: {r.headers.get('content-type')}).")
+
         data = r.json()
-        token = data["development"][0]
+    except ValueError as e:
+        raise ApiError(f"Project token response contained invalid JSON: {e}") from e
 
-    if not token:
-        raise ApiError("Project token response did not include a token.")
+    token = data.get("token")
+    if not token or not isinstance(token, str):
+        raise ApiError("Project token response did not include a valid 'token' string.")
     return token
