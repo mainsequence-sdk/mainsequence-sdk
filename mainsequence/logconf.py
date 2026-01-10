@@ -175,7 +175,7 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     tdag_base_path = Path(os.getenv("TDAG_ROOT_PATH", Path.home() / ".tdag"))
     default_log_path = tdag_base_path / "logs" / "tdag.log"
     logger_file = os.getenv("LOGGER_FILE_PATH", str(default_log_path))
-    logger_name = "tdag"
+    logger_name = "mainsequence"
 
     # Define the timestamper and pre_chain processors
     timestamper = structlog.processors.TimeStamper(

@@ -1821,11 +1821,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             results["weights_date"]
         ).replace(tzinfo=pytz.utc)
 
-    def get_historical_weights(
-        self, start_date_timestamp: float, end_date_timestamp: float, timeout=None
-    ) -> dict[str, float]:
-        if self.data_node_update is None:
-            print("this portfolio does not have a weights table")
+
 
 class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
     id: int
