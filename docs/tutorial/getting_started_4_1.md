@@ -238,7 +238,7 @@ _C.create_constants_if_not_exist(constants_to_create)
 
 So far, we’ve used the `zero_curve` registry helper from `data_connectors` to model future cash flows. However, with most pricing libraries — including QuantLib — we also need past fixing dates to price cash flows whose fixings occurred in the past.
 
-Below, let’s look at `data_connectors/prices/fred/data_nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED) - `FixingRatesNode`.
+Below, let’s look at `data_connectors/interest_rates/nodes.py`. Here we have a data node designed to integrate economic data from the Federal Reserve Bank of St. Louis (FRED) - `FixingRatesNode`.
 
 Create a new runner file in `scripts` folder with a name `run_fred_fixings.py` and add this code to it:
 

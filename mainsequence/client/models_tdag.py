@@ -2481,7 +2481,7 @@ try:
     POD_PROJECT = Project.get_user_default_project()
 except Exception:
     POD_PROJECT = None
-    logger.exception("Could not retrive pod project running in local mode")
+    logger.exception("Could not retrieve pod project running in local mode")
 
 
 @dataclass
@@ -2489,7 +2489,7 @@ class PodDataSource:
     data_source: Any | None = None
     def set_remote_db(self):
         if POD_PROJECT is None:
-            logger.warning("Main Sequence Running in local moda no pod attached")
+            logger.warning("Main Sequence Running in local mode no pod attached")
             return None
 
         self.data_source = POD_PROJECT.data_source
