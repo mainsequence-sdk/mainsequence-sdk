@@ -15,6 +15,7 @@ from .instrumentation import OTelJSONRenderer
 logger = None
 import inspect
 import sys
+import traceback
 from collections.abc import Mapping
 from typing import Any
 
@@ -38,6 +39,7 @@ def add_structlog_event_to_record(logger, method_name, event_dict):
 
 class CustomConsoleRenderer(ConsoleRenderer):
     def __call__(self, logger, name, event_dict):
+        event_dict = event_dict.copy()  # <-- IMPORTANT: don’t mutate shared dict
         # Extract call site parameters
         lineno = event_dict.pop("lineno", None)
         filename = event_dict.pop("filename", None)
@@ -409,14 +411,17 @@ def handle_exception(exc_type, exc_value, exc_traceback):
     """
     A custom exception handler that logs any uncaught exception.
     """
-    if issubclass(exc_type, KeyboardInterrupt):
-        # Let the user interrupt the program without a traceback
-        sys.__excepthook__(exc_type, exc_value, exc_traceback)
-        return
+    tb = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
 
-    # Log the exception using our configured logger
-    logger.error("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
-    # Also call the original hook to print the traceback to the console
+    logger.error(
+        "Uncaught exception",
+        exception_type=getattr(exc_type, "__name__", str(exc_type)),
+        exception_message=str(exc_value),
+        exception_stacktrace=tb,  # <-- guaranteed JSON-serializable
+        # keep this too if you want:
+        exc_info=(exc_type, exc_value, exc_traceback),
+    )
+
     original_hook(exc_type, exc_value, exc_traceback)
 
 
