@@ -176,10 +176,14 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     # Get logger path in home directory if no path is set in environemnt
     tdag_base_path = Path(os.getenv("TDAG_ROOT_PATH", Path.home() / ".tdag"))
     default_log_path = tdag_base_path / "logs" / "tdag.log"
-    logger_file = os.getenv("LOGGER_FILE_PATH", str(default_log_path))
+    # --- decide target ---
+    logger_file_raw = os.getenv("LOGGER_FILE_PATH", str(default_log_path))
+    stream_target = None
+    logger_file = logger_file_raw
 
-    if logger_file in ("/dev/stdout", "/dev/stderr"):
-        logger_file = None
+    if logger_file_raw in ("/dev/stdout", "/dev/stderr"):
+        stream_target = logger_file_raw  # special mode
+        logger_file = None  # do NOT configure rotating file handler
 
     logger_name = "mainsequence"
 
@@ -194,30 +198,38 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
         timestamper,
     ]
 
-    handlers = {
-        "console": {
+    # If LOGGER_FILE_PATH is /dev/stdout or /dev/stderr:
+    # - emit JSON to that stream ONLY
+    # - no colored console
+    # - no rotating file handler
+    handlers = {}
+
+    if stream_target:
+        handlers["stream"] = {
             "class": "logging.StreamHandler",
-            "formatter": "colored",
-            "level": os.getenv("LOG_LEVEL", "DEBUG"),
-        },
-    }
+            "stream": "ext://sys.stdout" if stream_target == "/dev/stdout" else "ext://sys.stderr",
+            "formatter": "plain",  # OTelJSONRenderer()
+            "level": os.getenv("LOG_LEVEL_STDOUT", "INFO"),
+        }
+    else:
+        handlers["console"] = {
+                "class": "logging.StreamHandler",
+                "formatter": "colored",
+                "level": os.getenv("LOG_LEVEL", "DEBUG"),
+        }
+
     if logger_file is not None:
         ensure_dir(logger_file)  # Ensure the directory for the log file exists
-
-        handlers.update(
-            {
-                "file": {
-                    "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
-                    "formatter": "plain",
-                    "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
-                    "filename": logger_file,
-                    "mode": "a",
-                    "delay": True,
-                    "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
-                    "backupCount": 5,  # Keep up to 5 backup files
-                }
-            }
-        )
+        handlers["file"] = {
+                        "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
+                        "formatter": "plain",
+                        "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
+                        "filename": logger_file,
+                        "mode": "a",
+                        "delay": True,
+                        "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
+                        "backupCount": 5,  # Keep up to 5 backup files
+        }
 
     logging_config = {
         "version": 1,
