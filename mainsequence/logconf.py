@@ -65,6 +65,10 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     headers["Content-Type"] = "application/json"
     headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN", "INVALID_TOKEN")
 
+    tdag_endpoint=os.getenv("TDAG_ENDPOINT")
+    if tdag_endpoint is None:
+        raise OSError("TDAG_ENDPOINT is required")
+
     endpoint = f'{os.getenv("TDAG_ENDPOINT")}/orm/api/pods/job/get_job_startup_state/'
 
     command_id = os.getenv("COMMAND_ID")

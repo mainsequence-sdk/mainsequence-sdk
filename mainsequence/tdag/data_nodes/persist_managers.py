@@ -733,8 +733,10 @@ class PersistManager:
             return
 
         # 2. Get or create the MarketsTimeSeriesDetails object in the backend.
-        source_table_id = self.data_node_storage.patch(**table_metadata.model_dump())
-
+        try:
+            source_table_id = self.data_node_storage.patch(**table_metadata.model_dump())
+        except Exception  as e:
+            raise e
     def delete_table(self) -> None:
         if self.data_source.related_resource.class_type == "duck_db":
             from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface

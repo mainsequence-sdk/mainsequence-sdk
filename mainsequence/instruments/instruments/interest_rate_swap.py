@@ -107,7 +107,7 @@ class InterestRateSwap(InstrumentModel):
         self._ensure_index()
         default_curve = build_zero_curve(
             target_date=self.valuation_date,
-            index_identifier=self.float_leg_ibor_index.familyName(),
+            index_identifier=self.float_leg_index_name,
         )
 
         # Call the common swap construction logic.
