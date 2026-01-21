@@ -1,22 +1,16 @@
+import base64
 import datetime
+import gzip
+import json
 import os
-import random
-from pathlib import Path
+from operator import attrgetter
+from threading import RLock
 from typing import Any, TypedDict
 
 import pandas as pd
-import QuantLib as ql
-
-import mainsequence.client as msc
-from mainsequence.instruments.utils import to_ql_date
-import base64
-import gzip
-import json
-from operator import attrgetter
-from threading import RLock
-import os 
 from cachetools import LRUCache, cachedmethod
 
+import mainsequence.client as msc
 
 
 class DateInfo(TypedDict, total=False):
@@ -83,6 +77,7 @@ class MSInterface:
             os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "false").lower() == "true"
         )
         if use_last_observation:
+            original_request_date=target_date
             update_statistics = data_node.get_update_statistics()
             target_date = update_statistics.asset_time_statistics[curve_name]
             logger.warning("Curve is using last observation")
@@ -108,6 +103,9 @@ class MSInterface:
         zeros = zeros.set_index("index")[0]
 
         nodes = [{"days_to_maturity": d, "zero": z} for d, z in zeros.to_dict().items() if d > 0]
+
+        if use_last_observation:
+            target_date=original_request_date
 
         return nodes, target_date
 

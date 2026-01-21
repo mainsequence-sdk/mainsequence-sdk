@@ -413,10 +413,15 @@ class APIDataNode(DataAccessMixin):
 
     def __repr__(self) -> str:
 
-        repr = (
-            self.__class__.__name__
-            + f" {os.environ['TDAG_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self.data_source_id}"
-        )
+
+        try:
+
+            repr = (
+                self.__class__.__name__
+                + f" {os.environ['TDAG_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self._local_persist_manager.data_node_storage.id}"
+            )
+        except  Exception:
+            logger.exception("DataNode has not resolved yet an storage node")
         return repr
 
     @property

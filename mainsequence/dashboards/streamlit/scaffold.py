@@ -230,9 +230,8 @@ def run_page(cfg: PageConfig):
         _minimal_header(cfg.title)
 
     # 7) Create .streamlit/config.toml on first run (reruns once if created)
-    from pathlib import Path
 
-    print(Path.cwd())
+    # print(Path.cwd())
     _bootstrap_theme_from_package()
 
     return ctx
