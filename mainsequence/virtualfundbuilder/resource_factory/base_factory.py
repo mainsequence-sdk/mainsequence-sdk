@@ -239,7 +239,7 @@ def send_resource_to_backend(resource_class, attributes: dict | None = None):
     if merged_definitions:
         final_json_schema["$defs"] = merged_definitions
 
-    resource_config = DynamicResource.create(
+    resource_config = DynamicResource.update_or_create(
         name=resource_class.__name__,
         type=resource_class.TYPE.value,
         object_signature=final_json_schema,

@@ -2689,6 +2689,25 @@ class Constant(BasePydanticModel, BaseObjectOrm):
         return created_constants
 
 
+
+# AI Models
+
+class AgentTool(BasePydanticModel, BaseObjectOrm):
+    """
+    Represents the actual tool metadata that an agent needs to know.
+    """
+    slug: str
+    name: str = Field(max_length=255)
+    description:str= None
+
+    entrypoint: str
+    # JSONFields
+    output_schema: dict[str, Any] | None = None
+    config_schema: dict[str, Any] | None = None
+
+
+
+
 SessionDataSource = PodDataSource()
 SessionDataSource.set_remote_db()
 

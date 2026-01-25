@@ -166,8 +166,7 @@ def _get_class_source_code(cls):
         return None
 
 
-SIGNAL_CLASS_REGISTRY = SIGNAL_CLASS_REGISTRY if "SIGNAL_CLASS_REGISTRY" in globals() else {}
-
+SIGNAL_CLASS_REGISTRY = globals().get("SIGNAL_CLASS_REGISTRY", {})
 
 def register_signal_class(name=None, register_in_agent=True):
     """
