@@ -2696,7 +2696,6 @@ class AgentTool(BasePydanticModel, BaseObjectOrm):
     """
     Represents the actual tool metadata that an agent needs to know.
     """
-    slug: str
     name: str = Field(max_length=255)
     description:str= None
 
@@ -2704,6 +2703,29 @@ class AgentTool(BasePydanticModel, BaseObjectOrm):
     # JSONFields
     output_schema: dict[str, Any] | None = None
     config_schema: dict[str, Any] | None = None
+
+    @classmethod
+    def update_metadata(cls,description,output_schema,config_schema,timeout=None):
+        url = cls.get_object_url() + "/update_metadata/"
+        s = cls.build_session()
+        job_run_id=os.getenv("JOB_RUN_ID")
+        if job_run_id is None:
+            raise Exception("JOB_RUN_ID not found")
+        data = {
+            "description": description,
+            "output_schema": output_schema,
+            "config_schema": config_schema,
+            "job_run_id": os.getenv("JOB_RUN_ID")
+        }
+
+        payload = {"json": data,}
+        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout)
+
+        if r.status_code not in [200]:
+            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
+
+
 
 
 

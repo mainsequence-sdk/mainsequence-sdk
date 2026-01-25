@@ -134,7 +134,6 @@ class BaseObjectOrm:
         "DataSource": "pods/data_source",
         "Project": "pods/projects",
         "SourceTableConfiguration": "ts_manager/source_table_config",
-        "DynamicResource": "tdag-gpt/dynamic_resource",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
         "Constant": "pods/constant",
@@ -144,6 +143,9 @@ class BaseObjectOrm:
         "Folder": "reports/folder",
         "Slide": "reports/slides",
         "Theme": "reports/themes",
+        #AI
+        "AgentTool":"ai/agent_tool"
+
     }
     ROOT_URL = API_ENDPOINT
     LOADERS = loaders

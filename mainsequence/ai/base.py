@@ -220,7 +220,7 @@ class BaseAgentTool(ABC):
     # Tool metadata + schema introspection
     # -----------------------
     @classmethod
-    def agent_tool_payload(cls, attributes: dict[str, Any] | None = None) -> dict[str, Any]:
+    def agent_tool_payload(cls) -> dict[str, Any]:
         """
         Build a dict that matches your backend AgentTool model fields:
           slug, name, description, entrypoint,
@@ -234,13 +234,13 @@ class BaseAgentTool(ABC):
         }
 
     @classmethod
-    def register_to_backend(cls, attributes: dict[str, Any] | None = None) -> None:
+    def register_to_backend(cls) -> None:
         """
         Explicit registration/upsert of this tool metadata.
         (No registries, no automatic side effects.)
         """
-        payload=cls.agent_tool_payload(attributes=attributes)
-        msc.AgentTool.update_or_create(**payload)  # type: ignore
+        payload=cls.agent_tool_payload()
+        msc.AgentTool.update_metadata(**payload)  # type: ignore
 
 
 
@@ -249,6 +249,11 @@ class BaseAgentTool(ABC):
         if isinstance(getattr(cls, "tool_name", None), str) and cls.tool_name:
             return cls.tool_name
         return cls.__name__
+
+    @classmethod
+    def get_tool_description(cls) -> str:
+
+        return cls.tool_description
 
 
 
