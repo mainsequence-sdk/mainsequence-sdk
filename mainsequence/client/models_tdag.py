@@ -2726,6 +2726,24 @@ class AgentTool(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
 
 
+    @classmethod
+    def add_tool_response_to_jobrun(cls,job_run_id:int, envelope:dict,timeout=None):
+        """
+        Adds the envelope response of the job run to
+        """
+        url = cls.get_object_url() + "/add_tool_response_to_jobrun/"
+        s = cls.build_session()
+        data = {
+            "job_run_id": job_run_id,
+            "envelope": envelope,
+
+        }
+        payload = {"json": data, }
+        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout)
+
+        if r.status_code not in [200]:
+            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
 
 
 

@@ -213,7 +213,7 @@ class BaseAgentTool(ABC):
         if job_run_id is None:
             raise Exception("JOB_RUN_ID environment variable not set")
 
-        msc.AgentTool.add_tool_response_to_jobrun(job_run_id=job_run_id, response=envelope)  # type: ignore
+        msc.AgentTool.add_tool_response_to_jobrun(job_run_id=job_run_id, envelope=envelope)  # type: ignore
 
 
     # -----------------------
