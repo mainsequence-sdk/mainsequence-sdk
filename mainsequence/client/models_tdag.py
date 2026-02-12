@@ -2743,7 +2743,7 @@ class AgentTool(BasePydanticModel, BaseObjectOrm):
                          time_out=timeout)
 
         if r.status_code not in [200]:
-            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
+            raise Exception(f"Failed to get add tool response to job run: {r.status_code} - {r.text}")
 
 
 

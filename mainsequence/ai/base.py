@@ -142,6 +142,7 @@ class BaseAgentTool(ABC):
             logger.warning(
                 "[%s] send_to_backend failed: %s", self.__class__.__name__, str(e), exc_info=True
             )
+            raise e
 
         return envelope
 
