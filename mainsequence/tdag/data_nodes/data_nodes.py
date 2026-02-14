@@ -37,6 +37,8 @@ from mainsequence.logconf import logger
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
+from .namespacing import current_hash_namespace
+from .namespacing import hash_namespace as _hash_namespace_cm
 from .persist_managers import get_data_node_source_code
 
 
@@ -632,6 +634,24 @@ class DataNode(DataAccessMixin, ABC):
 
         @wraps(original_init)
         def wrapped_init(self, *args, **kwargs):
+            # ---- tests-only hashing controls (never forwarded to user __init__) ----
+            test_node_flag = bool(kwargs.pop("test_node", False))
+            explicit_namespace = kwargs.pop("hash_namespace", None)
+
+            # Determine namespace:
+            # 1) explicit hash_namespace kwarg wins
+            # 2) test_node=True => "test"
+            # 3) else: context manager namespace (tests)
+            if explicit_namespace is not None:
+                namespace = explicit_namespace
+            elif test_node_flag:
+                namespace = "test"
+            else:
+                namespace = current_hash_namespace()
+
+            namespace = (namespace or "").strip()
+            self._hash_namespace = namespace  # stored, but NOT hashed unless non-empty
+
             # 1. Call the original __init__ of the subclass first
             original_init(self, *args, **kwargs)
 
@@ -675,6 +695,12 @@ class DataNode(DataAccessMixin, ABC):
             # Remove `args` as it collects un-named positional arguments which are not part of the config hash.
             final_kwargs.pop("args", None)
 
+            # ---- the surgical part: only change hashes when namespace is non-empty ----
+            # Backward compatibility guarantee:
+            # - if no test_node + no context => namespace == "" => NOTHING added => hashes identical to old behavior
+            if self._hash_namespace:
+                final_kwargs["hash_namespace"] = self._hash_namespace
+                logger.debug(f"Running on namespace {self._hash_namespace}")
             # 3. Run the post-initialization routines
             self.build_configuration = final_kwargs
             logger.debug(f"Running post-init routines for {self.__class__.__name__}")
@@ -715,6 +741,25 @@ class DataNode(DataAccessMixin, ABC):
 
         for field_name, value in asdict(config).items():
             setattr(self, field_name, value)
+
+    @property
+    def hash_namespace(self) -> str:
+        # Works for old pickles too (attribute may not exist)
+        return getattr(self, "_hash_namespace", "") or ""
+
+    @property
+    def test_node(self) -> bool:
+        # “test node” = any non-empty namespace
+        return bool(self.hash_namespace)
+
+    def get_offset_start(self) -> datetime.datetime:
+        """
+        Hook to allow test nodes to change OFFSET_START without forking update logic.
+        Backward compatible: prod returns OFFSET_START exactly as before.
+        """
+        if self.test_node and hasattr(self, "TEST_OFFSET_START"):
+            return self.TEST_OFFSET_START
+        return self.OFFSET_START
 
     @property
     def is_api(self):
@@ -978,18 +1023,26 @@ class DataNode(DataAccessMixin, ABC):
         override_update_stats: UpdateStatistics | None = None,
     ):
 
-        update_runner = run_operations.UpdateRunner(
-            time_serie=self,
-            debug_mode=debug_mode,
-            force_update=force_update,
-            update_tree=update_tree,
-            update_only_tree=update_only_tree,
-            remote_scheduler=remote_scheduler,
-            override_update_stats=override_update_stats,
-        )
-        error_on_last_update, updated_df = update_runner.run()
+        def _do_run():
+            update_runner = run_operations.UpdateRunner(
+                time_serie=self,
+                debug_mode=debug_mode,
+                force_update=force_update,
+                update_tree=update_tree,
+                update_only_tree=update_only_tree,
+                remote_scheduler=remote_scheduler,
+                override_update_stats=override_update_stats,
+            )
+            return update_runner.run()
 
-        return error_on_last_update, updated_df
+        # IMPORTANT:
+        # If this node is namespaced, make that namespace active for the full run.
+        # That ensures dependencies() calls also create namespaced DataNodes automatically.
+        if self.hash_namespace:
+            with _hash_namespace_cm(self.hash_namespace):
+                return _do_run()
+
+        return _do_run()
 
     # --- Optional Hooks for Customization ---
     def run_after_post_init_routines(self) -> None:

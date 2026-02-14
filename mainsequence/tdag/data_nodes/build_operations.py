@@ -22,6 +22,7 @@ from mainsequence.client.models_helpers import get_model_class
 from mainsequence.instrumentation import tracer, tracer_instrumentator
 from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, bcolors, ogm
 
+from .namespacing import disable_hash_namespace
 from .persist_managers import PersistManager, get_data_node_source_code_git_hash
 
 build_model = lambda model_data: get_model_class(model_data["orm_class"])(**model_data)
@@ -763,7 +764,11 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> "
     )
     time_serie_config["init_meta"] = {}
 
-    re_build_ts = TimeSerieClass(**time_serie_config)
+    # IMPORTANT:
+    # When rebuilding from stored config, ignore any ambient test namespace.
+    # If the stored config includes 'hash_namespace' (test tables), it will still be passed explicitly.
+    with disable_hash_namespace():
+        re_build_ts = TimeSerieClass(**time_serie_config)
 
     return re_build_ts
 

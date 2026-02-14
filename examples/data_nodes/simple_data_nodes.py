@@ -12,7 +12,7 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 import mainsequence.client as msc
-from mainsequence.tdag.data_nodes import APIDataNode, DataNode
+from mainsequence.tdag.data_nodes import APIDataNode, DataNode, hash_namespace
 
 
 class VolatilityConfig(BaseModel):
@@ -61,8 +61,12 @@ class DailyRandomNumber(DataNode):
 
     def get_table_metadata(self) -> msc.TableMetaData:
         TS_ID = f"example_random_number_{self.mean}_{self.std}"
-        meta = msc.TableMetaData(identifier=TS_ID, description="Example Data Node")
 
+        # ✅ ONLY changes identifier when namespaced (tests)
+        if getattr(self, "hash_namespace", ""):
+            TS_ID = f"{self.hash_namespace}__{TS_ID}"
+
+        meta = msc.TableMetaData(identifier=TS_ID, description="Example Data Node")
         return meta
 
     def update(self) -> pd.DataFrame:
@@ -144,20 +148,49 @@ class DailyRandomAdditionAPI(DataNode):
         )
 
 
+def run_graph(label: str):
+    print(f"\n===== {label} =====")
+
+    # 1) Standalone node
+    dn = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
+    print(f"{label} DailyRandomNumber.update_hash  = {dn.update_hash}")
+    print(f"{label} DailyRandomNumber.storage_hash = {dn.storage_hash}")
+    dn.run(debug_mode=True, force_update=True)
+
+    # This is the identifier we will use for the APIDataNode example.
+    # After run(), backend metadata should be patched with get_table_metadata().
+    dep_identifier = dn.get_table_metadata().identifier
+    print(f"{label} dependency identifier = {dep_identifier}")
+
+    # 2) Node with DataNode dependency (will reuse same underlying table if hashes match)
+    add = DailyRandomAddition(mean=0.0, std=1.0)
+    print(f"{label} DailyRandomAddition.update_hash  = {add.update_hash}")
+    print(f"{label} DailyRandomAddition.storage_hash = {add.storage_hash}")
+    print(f"{label}   dep(update_hash) = {add.daily_random_number_data_node.update_hash}")
+    print(f"{label}   dep(storage_hash)= {add.daily_random_number_data_node.storage_hash}")
+    add.run(debug_mode=True, force_update=True)
+
+    # 3) Node with API dependency (identifier-based)
+    api = DailyRandomAdditionAPI(mean=0.0, std=1.0, dependency_identifier=dep_identifier)
+    print(f"{label} DailyRandomAdditionAPI.update_hash  = {api.update_hash}")
+    print(f"{label} DailyRandomAdditionAPI.storage_hash = {api.storage_hash}")
+    api.run(debug_mode=True, force_update=True)
+
+
 def build_test_time_series():
-    # data,data_node_storage = msc.DataNodeStorage.get_data_between_dates_from_node_identifier("algoseek_daily_ohlc_DEMO")
+    # -------------------------
+    # A) NORMAL / PRODUCTION
+    # -------------------------
+    run_graph("PROD(no namespace)")
 
-    daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
-    daily_node.run(debug_mode=True, force_update=True)
-
-    daily_node = DailyRandomAddition(mean=0.0, std=1.0)
-    daily_node.run(debug_mode=True, force_update=True)
-
-    daily_node = DailyRandomAdditionAPI(
-        mean=0.0, std=1.0, dependency_identifier="example_random_number_0.0_center=1.0 skew=True"
-    )
-    daily_node.run(debug_mode=True, force_update=True)
+    # -------------------------
+    # B) TEST / NAMESPACED
+    # -------------------------
+    # Everything created inside gets different update_hash/storage_hash
+    # so it goes to different tables.
+    with hash_namespace("pytest"):
+        run_graph("TEST(namespace=pytest)")
 
 
 if __name__ == "__main__":
-    build_test_time_series()  # Call your main function
+    build_test_time_series()

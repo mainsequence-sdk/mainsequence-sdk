@@ -3,3 +3,4 @@ from .data_nodes import (
     DataNode,
     WrapperDataNode,
 )
+from .namespacing import hash_namespace
