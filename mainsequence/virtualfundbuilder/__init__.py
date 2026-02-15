@@ -4,25 +4,10 @@ import os
 import sys
 from pathlib import Path
 
-
 from .utils import get_vfb_logger
 
 logger = get_vfb_logger()
-def load_env():
 
-    assert (
-        os.environ.get("VFB_PROJECT_PATH", None) is not None
-    ), "VFB_PROJECT_PATH environment variable not set"
-
-    from mainsequence.tdag.config import Configuration
-
-    # this step is needed to assure env variables are passed to ray cluster
-    Configuration.add_env_variables_to_registry(["VFB_PROJECT_PATH"])
-
-    sys.path.append(str(Path(os.environ.get("VFB_PROJECT_PATH")).parent))
-
-
-load_env()
 from mainsequence.virtualfundbuilder.utils import (
     GECKO_SYMBOL_MAPPING,
     TIMEDELTA,
@@ -36,7 +21,6 @@ from mainsequence.virtualfundbuilder.utils import (
 
 def register_default_strategies():
     # Keep this in a function to not clutter the libs namespace
-    import mainsequence.virtualfundbuilder.contrib.apps
     import mainsequence.virtualfundbuilder.contrib.data_nodes
     import mainsequence.virtualfundbuilder.contrib.rebalance_strategies
 

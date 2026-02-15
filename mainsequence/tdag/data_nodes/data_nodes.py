@@ -8,13 +8,14 @@ import tempfile
 from abc import ABC, abstractmethod
 from dataclasses import asdict
 from functools import wraps
-from typing import Any, Union
+from typing import Any, Union, get_args, get_origin
 
 import cloudpickle
 import numpy as np
 import pandas as pd
 import pytz
 import structlog.contextvars as cvars
+from pydantic import BaseModel
 
 import mainsequence.client as ms_client
 import mainsequence.tdag.data_nodes.build_operations as build_operations
@@ -379,6 +380,7 @@ class APIDataNode(DataAccessMixin):
         table = ms_client.DataNodeStorage.get(id=table_id)
         ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
         return ts
+
 
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
@@ -1120,6 +1122,146 @@ class DataNode(DataAccessMixin, ABC):
         """Should be overwritten by subclass"""
         pass
 
+    def insert_records(self, records: list[BaseModel | dict[str, Any]],
+                       overwrite_latest_value=True) -> None:
+        record_model = self.RECORD_MODEL
+        model_fields = record_model.model_fields
+
+        index_columns: list[str] = []
+        time_index_columns: list[str] = []
+        for field_name, field_info in model_fields.items():
+            extra = field_info.json_schema_extra or {}
+
+            is_index_raw = extra.get("is_index", False)
+            is_time_index_raw = extra.get("is_time_index", False)
+            if not isinstance(is_index_raw, bool):
+                raise ValueError(
+                    f"{record_model.__name__}.{field_name} metadata 'is_index' must be bool"
+                )
+            if not isinstance(is_time_index_raw, bool):
+                raise ValueError(
+                    f"{record_model.__name__}.{field_name} metadata 'is_time_index' must be bool"
+                )
+
+            if is_time_index_raw and not is_index_raw:
+                raise ValueError(
+                    f"{record_model.__name__}.{field_name} marked is_time_index=True "
+                    "must also have is_index=True"
+                )
+            if is_index_raw:
+                index_columns.append(field_name)
+            if is_time_index_raw:
+                time_index_columns.append(field_name)
+
+        if not index_columns:
+            raise ValueError(
+                f"{record_model.__name__} must declare at least one index field via is_index=True"
+            )
+        if len(index_columns) > 2:
+            raise ValueError(
+                f"{record_model.__name__} supports at most 2 index fields for now; "
+                "allowed index names are 'time_index' and 'unique_identifier'"
+            )
+        if len(index_columns) == 2:
+            allowed_index_names = {"time_index", "unique_identifier"}
+            if set(index_columns) != allowed_index_names:
+                raise ValueError(
+                    f"{record_model.__name__} with 2 index fields must use exactly "
+                    f"{sorted(allowed_index_names)}; got {sorted(index_columns)}"
+                )
+        if len(time_index_columns) != 1:
+            raise ValueError(
+                f"{record_model.__name__} must declare exactly one field with is_time_index=True; "
+                f"got {time_index_columns!r}"
+            )
+
+        time_index_col = time_index_columns[0]
+
+        time_index_annotation = model_fields[time_index_col].annotation
+        is_datetime_annotation = time_index_annotation is datetime.datetime or (
+                get_origin(time_index_annotation) is not None
+                and any(arg is datetime for arg in get_args(time_index_annotation))
+        )
+        if not is_datetime_annotation:
+            raise ValueError(
+                f"{record_model.__name__}.{time_index_col} with is_time_index=True "
+                "must be annotated as datetime"
+            )
+
+        # Ensure time index is first in the DataFrame index order.
+        index_columns = [time_index_col] + [c for c in index_columns if c != time_index_col]
+
+        validated = [
+            record if isinstance(record, record_model) else record_model.model_validate(record)
+            for record in records
+        ]
+        if not validated:
+            return
+
+        rows: list[dict[str, Any]] = []
+        for record in validated:
+            payload = record.model_dump(mode="python")
+            serialized_payload: dict[str, Any] = {}
+            for key, value in payload.items():
+                if isinstance(value, BaseModel):
+                    value = value.model_dump(mode="python")
+                if isinstance(value, type):
+                    serialized_payload[key] = value.__name__
+                elif isinstance(value, (dict, list, tuple, set)):
+                    serialized_payload[key] = json.dumps(value, default=str, ensure_ascii=True)
+                else:
+                    serialized_payload[key] = value
+            rows.append(serialized_payload)
+
+        records_df = pd.DataFrame(rows)
+        
+        #setup instructions
+        # Explicitly normalize time index to timezone-aware UTC datetime.
+        records_df[time_index_col] = pd.to_datetime(records_df[time_index_col], utc=True, errors="raise")
+
+        # Generic datetime normalization for other datetime-like columns.
+        for col in records_df.columns:
+            if col == time_index_col:
+                continue
+            series = records_df[col]
+            non_null = series.dropna()
+            if non_null.empty:
+                continue
+            if non_null.map(lambda x: isinstance(x, datetime.datetime)).all():
+                records_df[col] = pd.to_datetime(series, utc=True, errors="raise")
+
+        # Generic dtype inference.
+        records_df = records_df.convert_dtypes()
+
+        missing_index_columns = [col for col in index_columns if col not in records_df.columns]
+        if missing_index_columns:
+            raise ValueError(f"Missing index columns in records payload: {missing_index_columns}")
+
+        records_df = records_df.set_index(list(index_columns)).sort_index()
+        
+        #ensure datanode exist
+        self.set_relation_tree()
+        self.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
+        
+        run_operations.UpdateRunner.validate_data_frame(records_df,self.data_source.related_resource.class_type)
+        try:
+            persisted = self.local_persist_manager.persist_updated_data(
+                temp_df=records_df, overwrite=(overwrite_latest_value is not None)
+            )
+        except Exception as e:
+            error_on_last_update = True
+            raise e
+        finally:
+            self.local_persist_manager.set_column_metadata(
+                columns_metadata=self.get_column_metadata()
+            )
+            table_metadata = self.get_table_metadata()
+
+            if self.data_source.related_resource.class_type != ms_client.DUCK_DB:
+                self.local_persist_manager.set_table_metadata(table_metadata=table_metadata)
+
+        
+
     @abstractmethod
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         """
@@ -1158,7 +1300,9 @@ class DataNode(DataAccessMixin, ABC):
             A DataFrame containing only the newly added or updated records.
         """
         raise NotImplementedError
-
+    
+   
+    
 
 class WrapperDataNode(DataNode):
     """A wrapper class for managing multiple DataNode objects."""

@@ -16,7 +16,6 @@ from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
 from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
-    register_signal_class,
 )
 
 
@@ -150,7 +149,7 @@ def rolling_elastic_net(y, X, window, alpha=1.0, l1_ratio=0.5):
     return np.array(betas)
 
 
-@register_signal_class(register_in_agent=True)
+
 class ETFReplicator(WeightsBase, DataNode):
     def __init__(
         self,

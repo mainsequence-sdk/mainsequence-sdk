@@ -9,12 +9,12 @@ import pytz
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
+import mainsequence.client as msc
 from mainsequence.client import (
     Asset,
     AssetCategory,
     AssetTranslationTable,
 )
-import mainsequence.client as msc
 from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
@@ -150,7 +150,8 @@ class UpsampleAndInterpolation:
         obs = bars_df.shape[0] / upsample_frequency_obs
         assert obs > 1.0
 
-        trading_halts = calendar != FULL_CALENDAR
+        calendar_name = getattr(calendar, "name", calendar)
+        trading_halts = calendar_name != FULL_CALENDAR
 
         calendar = mcal.get_calendar(calendar)
 

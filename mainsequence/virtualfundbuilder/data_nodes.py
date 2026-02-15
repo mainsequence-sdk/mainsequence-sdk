@@ -15,8 +15,6 @@ from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
 from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
-from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceFactory
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import SignalWeightsFactory
 
 from .. import client as ms_client
 from .models import PortfolioBuildConfiguration
@@ -206,23 +204,20 @@ class PortfolioStrategy(DataNode):
 
         self.signal_weights=self.backtesting_weights_config.get_signal_weights_instance()
         if self.signal_weights is None:
-            SignalWeightClass = SignalWeightsFactory.get_signal_weights_strategy(
-                signal_weights_name=self.signal_weights_name
-            )
-            self.signal_weights = SignalWeightClass.build_and_parse_from_configuration(
-                **self.full_signal_weight_config
-            )
+            raise RuntimeError(
+                               "Provide a WeightsBase instance via "
+                 "BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(...)."
+                )
 
         self.rebalance_strategy_name = self.backtesting_weights_config.rebalance_strategy_name
 
         self.rebalancer=self.backtesting_weights_config.get_rebalancer_instance()
         if self.rebalancer is None:
-            RebalanceClass = RebalanceFactory.get_rebalance_strategy(
-                rebalance_strategy_name=self.rebalance_strategy_name
-            )
-            self.rebalancer = RebalanceClass(
-                **self.backtesting_weights_config.rebalance_strategy_configuration
-            )
+            raise RuntimeError(
+
+                "Provide a RebalanceStrategyBase instance via "
+                 "BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(...)."
+                )
 
         self.rebalancer_explanation = ""  # TODO: Add rebalancer explanation
 
@@ -275,7 +270,7 @@ class PortfolioStrategy(DataNode):
         """
         # Get last observations for each exchange
         update_statics_from_dependencies = self.bars_ts.update_statistics
-        earliest_last_value = max(update_statics_from_dependencies.asset_time_statistics.values())
+        earliest_last_value = min(update_statics_from_dependencies.asset_time_statistics.values())
 
         if earliest_last_value is None:
             self.logger.warning(

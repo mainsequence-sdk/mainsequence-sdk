@@ -3,7 +3,6 @@ import os
 import re
 
 import pandas as pd
-import yaml
 
 from mainsequence.client import (
     Portfolio,
@@ -11,7 +10,6 @@ from mainsequence.client import (
 )
 from mainsequence.tdag.utils import write_yaml
 
-from .config_handling import configuration_sanitizer
 from .data_nodes import PortfolioFromDF, PortfolioStrategy
 from .models import PortfolioConfiguration, PortfolioMarketsConfig
 from .utils import get_vfb_logger
@@ -25,8 +23,7 @@ class PortfolioInterface:
 
     def __init__(
         self,
-        portfolio_config_template: dict,
-        configuration_name: str = None,
+        portfolio_config:PortfolioConfiguration | None,
         is_portfolio_from_df=False,
     ):
         """
@@ -34,21 +31,16 @@ class PortfolioInterface:
         """
         if is_portfolio_from_df == True:
             return None
-        if configuration_name:
-            self.check_valid_configuration_name(configuration_name)
-        self.portfolio_config_template = portfolio_config_template
-        self.portfolio_config = configuration_sanitizer(portfolio_config_template)
-        self.configuration_name = configuration_name
+
+
+        self.portfolio_config = portfolio_config
 
         self.portfolio_markets_config = self.portfolio_config.portfolio_markets_configuration
         self.portfolio_build_configuration = self.portfolio_config.portfolio_build_configuration
         self.logger = get_vfb_logger()
         self._is_initialized = False
 
-    def __str__(self):
-        configuration_name = self.configuration_name or "-"
-        str_configuration = yaml.dump(self.portfolio_config_template, default_flow_style=False)
-        return f"Configuration Name: {configuration_name}\n{str_configuration}"
+
 
     def __repr__(self):
         return self.__str__()
@@ -220,55 +212,37 @@ class PortfolioInterface:
             res = res.sort_values("time_index")
         return res
 
-    @classmethod
-    @property
-    def configuration_folder_path(self):
-        vfb_project_path = os.getenv("VFB_PROJECT_PATH")
-        if not vfb_project_path:
-            raise ValueError(
-                "VFB_PROJECT_PATH environment variable is not set. "
-                "Please set it before using 'configuration_path'."
-            )
-        return os.path.join(vfb_project_path, "configurations")
+
 
     @staticmethod
     def check_valid_configuration_name(s: str) -> bool:
         if not bool(re.match(r"^[A-Za-z0-9_]+$", s)):
             raise ValueError(f"Name {s} not valid")
 
-    def store_configuration(self, configuration_name: str | None = None):
+    def store_configuration(self, config_file: str):
         """
         Stores the current configuration as a YAML file under the configuration_name
         """
-        if configuration_name and not self.configuration_name:
-            self.configuration_name = configuration_name
 
-        if not self.configuration_name:
-            raise ValueError(
-                "No configuration name was set. Provide a `configuration_name` "
-                "argument or load/set one before storing."
-            )
-
-        config_file = os.path.join(
-            self.configuration_folder_path, f"{self.configuration_name}.yaml"
-        )
+        # config_file = os.path.join(
+        #     self.configuration_folder_path, f"{self.configuration_name}.yaml"
+        # )
 
         write_yaml(dict_file=self.portfolio_config_template, path=config_file)
         self.logger.info(f"Configuration stored under {config_file}")
-        return config_file
+
 
     @classmethod
-    def load_configuration(cls, configuration_name) -> PortfolioConfiguration:
-        config_file = os.path.join(cls.configuration_folder_path, f"{configuration_name}.yaml")
+    def load_configuration(cls, config_file) -> PortfolioConfiguration:
+        config_file = os.path.join(config_file)
         portfolio_config = PortfolioConfiguration.read_portfolio_configuration_from_yaml(
             config_file
         )
         return PortfolioConfiguration(**portfolio_config)
 
     @classmethod
-    def load_from_configuration(cls, configuration_name, config_file: str | None = None):
-        if config_file is None:
-            config_file = os.path.join(cls.configuration_folder_path, f"{configuration_name}.yaml")
+    def load_from_configuration(cls,  config_file: str):
+
         if not os.path.exists(config_file):
             raise FileNotFoundError(f"Configuration file '{config_file}' does not exist.")
 
@@ -276,33 +250,9 @@ class PortfolioInterface:
             config_file
         )
         portfolio = cls(
-            portfolio_config_template=portfolio_config, configuration_name=configuration_name
+            portfolio_config_template=portfolio_config,
         )
         return portfolio
 
-    @classmethod
-    def list_configurations(cls):
-        """
-        Lists all YAML configuration files found in the configuration_path.
-        """
-        if not os.path.exists(cls.configuration_folder_path):
-            return []
 
-        files = os.listdir(cls.configuration_folder_path)
-        yaml_files = [f for f in files if f.endswith(".yaml")]
-        # Strip off the '.yaml' extension to return just the base names
-        return [os.path.splitext(f)[0] for f in yaml_files]
 
-    def delete_stored_configuration(self):
-        """
-        Removes a saved configuration file from the configuration folder
-        """
-        if not self.configuration_name:
-            raise ValueError("No configuration name set. Cannot delete an unnamed configuration.")
-        config_file = os.path.join(
-            self.configuration_folder_path, f"{self.configuration_name}.yaml"
-        )
-        if not os.path.exists(config_file):
-            raise FileNotFoundError(f"Configuration file '{config_file}' does not exist.")
-        os.remove(config_file)
-        self.logger.info(f"Deleted configuration file '{config_file}'.")

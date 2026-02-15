@@ -13,11 +13,9 @@ from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
 )
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
-    register_signal_class,
 )
 
 
-@register_signal_class(register_in_agent=True)
 class IntradayTrend(WeightsBase, DataNode):
 
     def __init__(self, calendar: str, source_frequency: str = "1d", *args, **kwargs):

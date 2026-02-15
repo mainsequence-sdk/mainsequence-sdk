@@ -7,13 +7,11 @@ from pydantic import Field, field_validator, model_validator
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames, RebalanceFrequencyStrategyName
 from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import (
     RebalanceStrategyBase,
-    register_rebalance_class,
 )
 
 _TIME_RE = re.compile(r"^(?:[01]?\d|2[0-3]):[0-5]\d$")
 
 
-@register_rebalance_class(register_in_agent=True)
 class VolumeParticipation(RebalanceStrategyBase):
     """
     This rebalance strategy implies volume participation with no market impact.
@@ -207,7 +205,7 @@ class VolumeParticipation(RebalanceStrategyBase):
         return rebalance_weights
 
 
-@register_rebalance_class(register_in_agent=True)
+
 class TimeWeighted(RebalanceStrategyBase):
     # ---- Fields ----
     rebalance_start: str = Field(
@@ -359,7 +357,7 @@ class TimeWeighted(RebalanceStrategyBase):
         return rebalance_weights
 
 
-@register_rebalance_class(register_in_agent=True)
+
 class ImmediateSignal(RebalanceStrategyBase):
 
     def get_explanation(self):

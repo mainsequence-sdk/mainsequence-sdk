@@ -7,12 +7,10 @@ from mainsequence.client.models_tdag import Artifact
 from mainsequence.tdag.data_nodes import DataNode
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
-    register_signal_class,
 )
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 
-@register_signal_class(register_in_agent=False)
 class ExternalWeights(WeightsBase, DataNode):
     def __init__(self, artifact_name: str, bucket_name: str, *args, **kwargs):
         self.artifact_name = artifact_name

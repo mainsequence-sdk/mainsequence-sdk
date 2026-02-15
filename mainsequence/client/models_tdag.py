@@ -1234,6 +1234,77 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             node_identifier=node_identifier,
         )
 
+    @classmethod
+    def get_data_from_filter(
+            cls,
+            filter_request: SearchRequest,
+            *,
+            batch_limit: int = 14000,
+    ) -> pd.DataFrame:
+        """
+        Fetch data using the get-data-from-filter endpoint with streaming pagination.
+
+        Parameters
+        ----------
+
+        filter_request:
+            SearchRequest instance from the client filter models (data_filters.py).
+        batch_limit:
+            Per-request batch size. The backend may clamp this.
+
+        Returns
+        -------
+        pd.DataFrame
+            Concatenated results from all streamed batches.
+        """
+        url = cls.get_object_url() + "/get-data-from-filter/"
+        s = cls.build_session()
+
+        # start from whatever the caller put, but we will manage it as we stream
+        offset = int(filter_request.offset or 0)
+
+        all_results: list[dict] = []
+        last_response: dict | None = None
+
+        while True:
+            # Copy the request so we don't mutate the caller's object
+            req = filter_request.model_copy(deep=True)
+
+            # backend-controlled streaming knobs (server will clamp anyway)
+            req.limit = int(batch_limit)
+            req.offset = int(offset)
+
+            payload_json = req.model_dump(mode="json")
+
+
+            payload = {"json": payload_json}
+
+            r = make_request(
+                s=s,
+                loaders=cls.LOADERS,
+                payload=payload,
+                r_type="POST",
+                url=url,
+                time_out=60*5,
+            )
+
+            if r.status_code != 200:
+                logger.warning(f"Error in request: {r.text}")
+                return pd.DataFrame([])
+
+            last_response = r.json() or {}
+
+            chunk = last_response.get("results", []) or []
+            all_results.extend(chunk)
+
+            next_offset = last_response.get("next_offset")
+            if not next_offset:
+                break
+
+            offset = int(next_offset)
+
+        return pd.DataFrame(all_results)
+
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     id: int | None = None

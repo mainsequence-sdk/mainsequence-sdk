@@ -317,6 +317,24 @@ def _legacy_project_dir(base_dir: str, org_slug: str, project_name: str) -> path
     return _projects_root(base_dir, org_slug) / slug
 
 
+def _has_mainsequence_token_env(project_dir: pathlib.Path) -> bool:
+    env_path = project_dir / ".env"
+    if not env_path.is_file():
+        return False
+    try:
+        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if line.startswith("export "):
+                line = line[len("export ") :].lstrip()
+            if line.startswith("MAINSEQUENCE_TOKEN="):
+                return True
+    except Exception:
+        return False
+    return False
+
+
 def _find_local_dir_by_id(
     base_dir: str,
     org_slug: str,
@@ -324,12 +342,14 @@ def _find_local_dir_by_id(
     project_name: str | None = None,
 ) -> str | None:
     """
-    Find a local directory for a project id by folder structure only.
+    Find a local directory for a project id by folder structure + project marker.
+
+    A folder is considered a MainSequence project only if it has a `.env` file
+    with a `MAINSEQUENCE_TOKEN=` entry.
+
     Preference order:
-      0) Hints:
-         - Current working directory (or any parent) under the projects root whose
-           name ends with '-<id>'.
-         - $VFB_PROJECT_PATH if it points under the projects root and ends with '-<id>'.
+      0) Current working directory (or any parent) under the projects root whose
+         name ends with '-<id>'.
       1) <slug>-<id> (canonical)
       1b) Scan projects root for any folder ending with '-<id>' (in case name changed)
       2) <slug> (legacy fallback; only used if #1 missing and name is provided)
@@ -351,19 +371,7 @@ def _find_local_dir_by_id(
     root = _projects_root(base_dir, org_slug)
 
     if root.exists():
-        # 0a) Environment hint
-        env_path = os.environ.get("VFB_PROJECT_PATH", "").strip()
-        if env_path:
-            try:
-                p = pathlib.Path(env_path).expanduser().resolve()
-                # only trust paths under our projects root
-                p.relative_to(root)
-                if p.is_dir() and p.name.endswith(suffix):
-                    return str(p)
-            except Exception:
-                pass
-
-        # 0b) CWD hint: if we're inside the project folder, prefer that
+        # 0) CWD hint: if we're inside the project folder, prefer that
         try:
             cwd = pathlib.Path.cwd().resolve()
             for parent in [cwd] + list(cwd.parents):
@@ -372,7 +380,11 @@ def _find_local_dir_by_id(
                 except Exception:
                     # walked above projects root
                     continue
-                if parent.is_dir() and parent.name.endswith(suffix):
+                if (
+                    parent.is_dir()
+                    and parent.name.endswith(suffix)
+                    and _has_mainsequence_token_env(parent)
+                ):
                     return str(parent)
         except Exception:
             # Don't let a filesystem quirk break normal resolution
@@ -381,13 +393,13 @@ def _find_local_dir_by_id(
         # 1) Canonical <slug>-<id>, if we know the name
         if project_name:
             cand = _canonical_project_dir(base_dir, org_slug, pid, project_name)
-            if cand.exists():
+            if cand.is_dir() and _has_mainsequence_token_env(cand):
                 return str(cand)
 
         # 1b) Fallback: single scan in case name changed or we didn't have it
         try:
             for d in root.iterdir():
-                if d.is_dir() and d.name.endswith(suffix):
+                if d.is_dir() and d.name.endswith(suffix) and _has_mainsequence_token_env(d):
                     return str(d)
         except FileNotFoundError:
             pass
@@ -395,7 +407,7 @@ def _find_local_dir_by_id(
     # 2) Legacy <slug> fallback (requires a name)
     if project_name:
         legacy = _legacy_project_dir(base_dir, org_slug, project_name)
-        if legacy.exists():
+        if legacy.is_dir() and _has_mainsequence_token_env(legacy):
             return str(legacy)
 
     return None
@@ -679,16 +691,6 @@ def project_set_up_locally(
     except Exception:
         env_text = ""
     env_text = (env_text or "").replace("\r", "")
-    if any(line.startswith("VFB_PROJECT_PATH=") for line in env_text.splitlines()):
-        lines = [
-            f"VFB_PROJECT_PATH={str(target_dir)}" if line.startswith("VFB_PROJECT_PATH=") else line
-            for line in env_text.splitlines()
-        ]
-        env_text = "\n".join(lines)
-    else:
-        if env_text and not env_text.endswith("\n"):
-            env_text += "\n"
-        env_text += f"VFB_PROJECT_PATH={str(target_dir)}\n"
 
     try:
         project_token = get_project_token(project_id)

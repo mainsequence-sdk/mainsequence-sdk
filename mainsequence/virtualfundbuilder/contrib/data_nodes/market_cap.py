@@ -17,7 +17,6 @@ from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
 from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
-    register_signal_class,
 )
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
@@ -27,7 +26,6 @@ class AUIDWeight(VFBConfigBaseModel):
     weight: float
 
 
-@register_signal_class(register_in_agent=True)
 class FixedWeights(WeightsBase, DataNode):
 
     def __init__(self, asset_unique_identifier_weights: list[AUIDWeight], *args, **kwargs):
@@ -88,7 +86,6 @@ class VolatilityControlConfiguration(BaseModel):
     ann_factor: int = 252
 
 
-@register_signal_class(register_in_agent=True)
 class MarketCap(WeightsBase, DataNode):
     def __init__(
         self,

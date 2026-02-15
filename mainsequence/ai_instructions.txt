@@ -241,7 +241,7 @@ End-to-end local setup:
 5. Clones into:  
    - **Windows:** `<base>\<org-slug>\projects\<safe-project-name>`
    - **macOS/Linux:** `<base>/<org-slug>/projects/<safe-project-name>`
-6. Fetches environment text from the backend and writes `.env` (ensuring `VFB_PROJECT_PATH=<local-path>`).
+
 
 ```powershell
 mainsequence project set-up-locally 123

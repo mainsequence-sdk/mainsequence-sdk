@@ -264,7 +264,8 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     remote_ts_in_db_hash = copy.deepcopy(local_ts_dict_to_hash)
 
     # Add project_id for local hash
-    local_ts_dict_to_hash["project_id"] = POD_PROJECT.id
+    if POD_PROJECT is not None:
+        local_ts_dict_to_hash["project_id"] = POD_PROJECT.id
 
     # Handle remote hash filtering internally
     if "arguments_to_ignore_from_storage_hash" in local_ts_dict_to_hash:
@@ -294,6 +295,7 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     dhash_remote.update(encoded_remote)
 
     return dhash_local.hexdigest(), dhash_remote.hexdigest()
+
 
 
 def rebuild_with_type(value: dict[str, Any], rebuild_function: Callable) -> tuple | Any:

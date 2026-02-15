@@ -1,25 +1,16 @@
-import ast
-import inspect
-import os
 from datetime import timedelta
 
 import numpy as np
 import pandas as pd
 
-from mainsequence.tdag.data_nodes import DataNode
 from mainsequence.virtualfundbuilder.enums import ResourceType
 from mainsequence.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.virtualfundbuilder.resource_factory.base_factory import (
-    BaseFactory,
-    BaseResource,
-    insert_in_registry,
-)
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
 
-class WeightsBase(BaseResource):
+class WeightsBase:
     TYPE = ResourceType.SIGNAL_WEIGHTS_STRATEGY
 
     def __init__(self, signal_assets_configuration: AssetsConfiguration, *args, **kwargs):
@@ -126,83 +117,6 @@ class WeightsBase(BaseResource):
         return weights_reindex
 
 
-def _get_class_source_code(cls):
-    import inspect
-    import sys
-
-    try:
-        # Get the source code of the module where the class is defined
-        module = sys.modules[cls.__module__]
-        source = inspect.getsource(module)
-    except Exception as e:
-        logger.warning(f"Could not get source code for module {cls.__module__}: {e}")
-        return None
-
-    # Parse the module's source code
-    try:
-        module_ast = ast.parse(source)
-        class_source_code = None
-
-        # Iterate through the module's body to find the class definition
-        for node in module_ast.body:
-            if isinstance(node, ast.ClassDef) and node.name == cls.__name__:
-                # Get the lines corresponding to the class definition
-                lines = source.splitlines()
-                # Get the lines for the class definition
-                class_source_lines = lines[node.lineno - 1 : node.end_lineno]
-                class_source_code = "\n".join(class_source_lines)
-                break
-
-        if not class_source_code:
-            logger.warning(
-                f"Class definition for {cls.__name__} not found in module {cls.__module__}"
-            )
-            return None
-
-        return class_source_code
-
-    except Exception as e:
-        logger.warning(f"Could not parse source code for module {cls.__module__}: {e}")
-        return None
 
 
-SIGNAL_CLASS_REGISTRY = globals().get("SIGNAL_CLASS_REGISTRY", {})
 
-def register_signal_class(name=None, register_in_agent=True):
-    """
-    Decorator to register a model class in the factory.
-    If `name` is not provided, the class's name is used as the key.
-    """
-
-    def decorator(cls):
-        if os.environ.get("IGNORE_MS_AGENT", "false").lower() == "true":
-            logger.info("Ignoring MS agent registration")
-            return cls
-        code = inspect.getsource(cls)
-        attributes = {"code": code}
-        return insert_in_registry(
-            SIGNAL_CLASS_REGISTRY, cls, register_in_agent, attributes=attributes
-        )
-
-    return decorator
-
-
-class SignalWeightsFactory(BaseFactory):
-    @staticmethod
-    def get_signal_weights_strategy(signal_weights_name) -> DataNode:
-        """
-        Creates an instance of the appropriate SignalWeights class based on the provided name.
-        """
-        if signal_weights_name not in SIGNAL_CLASS_REGISTRY:
-            SignalWeightsFactory.get_signal_weights_strategies()
-
-        return SIGNAL_CLASS_REGISTRY[signal_weights_name]
-
-    @staticmethod
-    def get_signal_weights_strategies():
-        """
-        Scans the given directory for Python files, imports the classes,
-        and returns all classes that are subclasses of WeightsBase.
-        """
-        SignalWeightsFactory.import_module("data_nodes")
-        return SIGNAL_CLASS_REGISTRY

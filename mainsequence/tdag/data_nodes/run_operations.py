@@ -198,34 +198,40 @@ class UpdateRunner:
 
         return error_on_last_update, updated_df
 
-    def _validate_update_dataframe(self, df: pd.DataFrame) -> None:
+    @staticmethod
+    def validate_data_frame(df:pd.DataFrame,storage_class_type)->None:
         """
-        Performs a series of critical checks on the DataFrame before persistence.
+               Performs a series of critical checks on the DataFrame before persistence.
 
-        Args:
-            df: The DataFrame returned from the DataNode's update method.
+               Args:
+                   df: The DataFrame returned from the DataNode's update method.
 
-        Raises:
-            AssertionError or Exception if any validation check fails.
-        """
+               Raises:
+                   AssertionError or Exception if any validation check fails.
+               """
         # Check for infinite values
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
         # Check that the time index is a UTC datetime
         time_index = df.index.get_level_values(0)
         if not pd.api.types.is_datetime64_ns_dtype(time_index) or str(time_index.tz) != str(
-            datetime.UTC
+                datetime.UTC
         ):
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
         # Check for forbidden data types and enforce lowercase columns
-        if self.ts.data_source.related_resource.class_type != ms_client.DUCK_DB:
+        if storage_class_type != ms_client.DUCK_DB:
 
             for col, dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
                     raise ValueError(f"Column name '{col}' must be a lowercase string.")
                 if "datetime64" in str(dtype):
                     raise TypeError(f"Column '{col}' has a forbidden datetime64 dtype.")
+
+
+
+    def _validate_update_dataframe(self, df: pd.DataFrame) -> None:
+        self.validate_data_frame(df,self.ts.data_source.related_resource.class_type)
 
     @tracer.start_as_current_span("UpdateRunner._update_local")
     def _update_local(

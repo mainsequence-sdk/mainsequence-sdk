@@ -131,7 +131,7 @@ class ETFReplicatorApp(HtmlApp):
 
         # Fetch Portfolio Results in batches to avoid timeouts
         loop_start_date = portfolio.portfolio_strategy_data_node.OFFSET_START
-        final_end_date = datetime.datetime.now(datetime.timezone.utc)
+        final_end_date = datetime.datetime.now(datetime.UTC)
         all_results = []
         current_start = loop_start_date
         while current_start < final_end_date:

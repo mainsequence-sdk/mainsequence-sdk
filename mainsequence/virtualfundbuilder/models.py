@@ -21,6 +21,8 @@ import mainsequence.client as msc
 from mainsequence.client import Asset
 from mainsequence.tdag.utils import hash_dict, write_yaml
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames
+from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceStrategyBase
+from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
@@ -289,11 +291,11 @@ class PortfolioConfiguration(VFBConfigBaseModel):
             return yaml.safe_load(file)
 
     @staticmethod
-    def parse_portfolio_configuration_from_yaml(yaml_path: str, auto_complete=False):
+    def parse_portfolio_configuration_from_yaml(yaml_path: str):
         from mainsequence.virtualfundbuilder.config_handling import configuration_sanitizer
 
         configuration = PortfolioConfiguration.read_portfolio_configuration_from_yaml(yaml_path)
-        return configuration_sanitizer(configuration, auto_complete=auto_complete)
+        return configuration_sanitizer(configuration)
 
     @staticmethod
     def parse_portfolio_configurations(
