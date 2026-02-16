@@ -17,7 +17,7 @@ from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
 )
 
 from .. import client as ms_client
-from .models import PortfolioBuildConfiguration
+from .models import PortfolioConfiguration
 
 
 def translate_to_pandas_freq(custom_freq):
@@ -81,6 +81,68 @@ All_PORTFOLIO_COLUMNS_WEIGHTS.extend(["last_rebalance_date", "close", "return"])
 
 All_PORTFOLIO_COLUMNS_POSITIONS.extend(list(POSITIONS_PORTFOLIO_COLUMNS.keys()))
 All_PORTFOLIO_COLUMNS_POSITIONS.extend(["last_rebalance_date", "close", "return"])
+
+
+def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
+        portfolio_tags=None
+) -> tuple[msc.Portfolio, msc.PortfolioIndexAsset]:
+    """
+    This method creates a portfolio in VAM with configm file settings.
+
+    Returns:
+    """
+
+
+
+    def build_markets_portfolio(ts, portfolio_tags):
+        # when is live target portfolio
+        signal_weights_ts = ts.signal_weights
+
+        # timeseries can be running in local lake so need to request the id
+        standard_kwargs = dict(
+            data_node_update_id=ts.data_node_update.id,
+            signal_data_node_update_id=signal_weights_ts.data_node_update.id,
+        )
+
+        user_kwargs = portfolio_ts.portfolio_markets_config.model_dump()
+        user_kwargs.pop("front_end_details", None)
+
+        standard_kwargs.update(user_kwargs)
+        standard_kwargs["calendar_name"] = (
+            portfolio_ts.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_instance.calendar_key
+        )
+
+        if portfolio_tags is not None:
+            standard_kwargs["tags"] = portfolio_tags
+            # front end details
+        standard_kwargs["target_portfolio_about"] = {
+            "description": ts.get_portfolio_about_text(),
+            "signal_name": ts.backtesting_weights_config.signal_weights_instance.__class__.__name__,
+            "signal_description": ts.signal_weights.get_explanation(),
+            "rebalance_strategy_name": ts.backtesting_weights_config.rebalance_strategy_instance.__class__.__name__,
+        }
+
+        standard_kwargs["backtest_table_price_column_name"] = "close"
+
+        target_portfolio = msc.Portfolio.get_or_none(data_node_update__id=ts.data_node_update.id)
+        if target_portfolio is None:
+            target_portfolio, index_asset = msc.Portfolio.create_from_time_series(**standard_kwargs)
+        else:
+            # patch timeserie of portfolio to guaranteed recreation
+            target_portfolio.patch(**standard_kwargs)
+            portfolio_ts.logger.debug(
+                f"Target portfolio {target_portfolio.portfolio_ticker} for local time serie {ts.data_node_update.update_hash} already exists in Backend"
+            )
+            index_asset = msc.PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
+
+        return target_portfolio, index_asset
+
+    target_portfolio, index_asset = build_markets_portfolio(
+        portfolio_ts, portfolio_tags=portfolio_tags
+    )
+
+    portfolio_ts.index_asset = index_asset
+    portfolio_ts.target_portfolio = target_portfolio
 
 
 class PortfolioFromDF(DataNode):
@@ -164,6 +226,41 @@ class PortfolioFromDF(DataNode):
 
         return df
 
+    def run(self,*args,add_portfolio_to_markets_backend=False,
+            portfolio_tags: list[str] = None,**kwargs):
+        super().run(
+
+            *args,**kwargs
+        )
+
+        ## manualely
+        target_portfolio = msc.Portfolio.get_or_none(
+            data_node_update__id=self.data_node_update.id
+        )
+        standard_kwargs = dict(
+            portfolio_name=self.portfolio_name,
+            data_node_update_id=self.data_node_update.id,
+            signal_data_node_update_id=None,
+            calendar_name=self.calendar_name,
+            target_portfolio_about=dict(
+                description=self.target_portfolio_about,
+                signal_name=None,
+                signal_description=None,
+                rebalance_strategy_name=None,
+            ),
+            backtest_table_price_column_name="close",
+        )
+        if target_portfolio is None:
+            target_portfolio, index_asset = msc.Portfolio.create_from_time_series(**standard_kwargs)
+        else:
+            # patch timeserie of portfolio to guaranteed recreation
+            target_portfolio.patch(**standard_kwargs)
+
+            index_asset = msc.PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
+
+        self.target_portfolio=target_portfolio
+        self.index_asset=index_asset
+
 
 class PortfolioStrategy(DataNode):
     """
@@ -171,7 +268,7 @@ class PortfolioStrategy(DataNode):
     and rebalancing strategies. Calculates portfolio values and returns while accounting for execution-specific fees.
     """
 
-    def __init__(self, portfolio_build_configuration: PortfolioBuildConfiguration, *args, **kwargs):
+    def __init__(self, portfolio_configuration: PortfolioConfiguration, *args, **kwargs):
         """
         Initializes the PortfolioStrategy class with the necessary configurations.
 
@@ -180,12 +277,13 @@ class PortfolioStrategy(DataNode):
                 including assets, execution parameters, and backtesting weights.
             is_live (bool): Flag indicating whether the strategy is running in live mode.
         """
+        portfolio_build_configuration=portfolio_configuration.portfolio_build_configuration
         self.portfolio_build_configuration=portfolio_build_configuration
         self.execution_configuration = portfolio_build_configuration.execution_configuration
         self.backtesting_weights_config = (
             portfolio_build_configuration.backtesting_weights_configuration
         )
-
+        self.portfolio_markets_config=portfolio_configuration.portfolio_markets_configuration
         self.commission_fee = self.execution_configuration.commission_fee
 
         self.portfolio_prices_frequency = portfolio_build_configuration.portfolio_prices_frequency
@@ -196,28 +294,11 @@ class PortfolioStrategy(DataNode):
             self.assets_configuration.prices_configuration.upsample_frequency_id
         )
 
-        self.full_signal_weight_config = copy.deepcopy(
-            self.backtesting_weights_config.signal_weights_configuration
-        )
 
-        self.signal_weights_name = self.backtesting_weights_config.signal_weights_name
+        self.signal_weights=self.backtesting_weights_config.signal_weights_instance
 
-        self.signal_weights=self.backtesting_weights_config.get_signal_weights_instance()
-        if self.signal_weights is None:
-            raise RuntimeError(
-                               "Provide a WeightsBase instance via "
-                 "BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(...)."
-                )
+        self.rebalancer=self.backtesting_weights_config.rebalance_strategy_instance
 
-        self.rebalance_strategy_name = self.backtesting_weights_config.rebalance_strategy_name
-
-        self.rebalancer=self.backtesting_weights_config.get_rebalancer_instance()
-        if self.rebalancer is None:
-            raise RuntimeError(
-
-                "Provide a RebalanceStrategyBase instance via "
-                 "BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(...)."
-                )
 
         self.rebalancer_explanation = ""  # TODO: Add rebalancer explanation
 
@@ -735,3 +816,22 @@ rebalance details:"""
 
     def portfolio_frequency_to_pandas(self):
         return translate_to_pandas_freq(self.portfolio_prices_frequency)
+
+
+
+
+
+
+    def run(self,add_portfolio_to_markets_backend=False,
+            portfolio_tags=False,
+            *args,**kwargs):
+        """
+        We override run  to create
+        """
+
+        super().run(*args, **kwargs)
+
+        if add_portfolio_to_markets_backend:
+            _build_target_portfolio_in_backend(portfolio_ts=self,
+                portfolio_tags=portfolio_tags)
+

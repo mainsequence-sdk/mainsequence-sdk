@@ -29,7 +29,7 @@ Example: join daily_prices with fundamentals on time_index + unique_identifier
 -----------------------------------------------------------------------------
 
     >>> import datetime as dt
-    >>> from data_filters import SearchRequest, JoinSpec, JoinType, JoinKey, F, and_
+    >>> from mainsequence.client.data_filters import SearchRequest, JoinSpec, JoinType, JoinKey, F, and_
     >>> req = SearchRequest(
     ...     node_unique_identifier="daily_prices",
     ...     joins=[
@@ -160,6 +160,7 @@ class JoinType(str, Enum):
     """Join type."""
     inner = "inner"
     left = "left"
+    full = "full"
 
 
 class JoinKey(str, Enum):

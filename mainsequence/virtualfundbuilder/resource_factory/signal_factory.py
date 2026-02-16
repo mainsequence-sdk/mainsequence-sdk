@@ -3,17 +3,15 @@ from datetime import timedelta
 import numpy as np
 import pandas as pd
 
-from mainsequence.virtualfundbuilder.enums import ResourceType
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
 
 class WeightsBase:
-    TYPE = ResourceType.SIGNAL_WEIGHTS_STRATEGY
 
-    def __init__(self, signal_assets_configuration: AssetsConfiguration, *args, **kwargs):
+
+    def __init__(self, signal_assets_configuration: "AssetsConfiguration", *args, **kwargs):
         """
         Base Class for all signal weights
 

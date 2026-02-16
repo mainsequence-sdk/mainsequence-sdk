@@ -541,7 +541,10 @@ def extract_pydantic_fields_from_dict(d: Mapping[str, Any]) -> dict[str, dict[st
     result: dict[str, dict[str, dict[str, Any]]] = {}
     for k, v in d.items():
         if isinstance(v, BaseModel):
-            result[k] = v.model_json_schema()
+            try:
+                result[k] = v.model_json_schema()
+            except Exception as e:
+                raise e
     return result
 
 
@@ -553,8 +556,10 @@ def create_config(
     """
     global logger
 
-    build_configuration_json_schema = extract_pydantic_fields_from_dict(kwargs)
-
+    try:
+        build_configuration_json_schema = extract_pydantic_fields_from_dict(kwargs)
+    except Exception as e:
+        raise e
     # 1. Use the helper to separate meta args from core args.
     core_kwargs, meta_kwargs = prepare_config_kwargs(kwargs)
 

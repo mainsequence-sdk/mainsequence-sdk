@@ -25,6 +25,7 @@ from mainsequence.logconf import logger
 
 from . import exceptions
 from .base import TDAG_ENDPOINT, BaseObjectOrm, BasePydanticModel
+from .data_filters import *
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
 from .utils import (
@@ -1234,6 +1235,109 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             node_identifier=node_identifier,
         )
 
+    @staticmethod
+    def _normalize_dtype_for_pandas(dtype_str: str) -> str:
+        """
+        Convert your stc.column_dtypes_map types into pandas dtypes that can hold NULLs.
+        """
+        t = (dtype_str or "").strip().lower()
+
+        # your map often uses numpy-ish names
+        if t in {"object", "str", "string"}:
+            return "string"
+
+        # integers must be nullable because FULL OUTER JOIN introduces NULLs on either side
+        if t in {"int", "int32", "int64", "int16", "uint32", "uint64", "uint16", "integer"}:
+            return "Int64"
+
+        # bool must be nullable too
+        if t in {"bool", "boolean"}:
+            return "boolean"
+
+        # floats already handle NaN
+        if t in {"float", "float32", "float64", "double"}:
+            return "float64"
+
+        # fallback: try what you got
+        return dtype_str
+
+    @classmethod
+    def _apply_dtypes_from_meta(
+            cls,
+            df: pd.DataFrame,
+            *,
+            data_node_storage_map: dict,
+            filter_request: SearchRequest,
+    ) -> pd.DataFrame:
+        """
+        df columns expected:
+          - time_index (unprefixed)   [later becomes index]
+          - unique_identifier (unprefixed) [later becomes index]
+          - base__<col>
+          - <join_alias>__<col>
+        """
+        if df.empty:
+            return df
+
+        # 1) Parse keys (these exist even in FULL OUTER JOIN)
+        if "time_index" in df.columns:
+            df["time_index"] = pd.to_datetime(df["time_index"], format="ISO8601", errors="coerce", utc=True)
+        if "unique_identifier" in df.columns:
+            df["unique_identifier"] = df["unique_identifier"].astype("string")
+
+        # 2) Cast prefixed columns using each table's SourceTableConfiguration
+        for prefix, meta in (data_node_storage_map or {}).items():
+            stc = getattr(meta, "sourcetableconfiguration", None)
+            if stc is None:
+                continue
+
+            time_col_name = getattr(stc, "time_index_name", None)
+            uid_col_name = getattr(stc, "unique_identifier_name", None) or "unique_identifier"
+
+            dtype_map = getattr(stc, "column_dtypes_map", None) or {}
+
+            for col_name, col_type in dtype_map.items():
+                # We do NOT cast "time_index"/"unique_identifier" via prefixed columns anymore.
+                if col_name in {time_col_name, uid_col_name, "time_index", "unique_identifier"}:
+                    continue
+
+                df_col = f"{prefix}__{col_name}"
+                if df_col not in df.columns:
+                    continue
+
+                try:
+                    # Datetime-ish columns (besides main time_index)
+                    ct = (str(col_type) or "").lower()
+                    if "datetime" in ct:
+                        df[df_col] = pd.to_datetime(df[df_col], format="ISO8601", errors="coerce", utc=True)
+                        continue
+
+                    pandas_dtype = cls._normalize_dtype_for_pandas(str(col_type))
+
+                    # string/object handling
+                    if pandas_dtype in {"string"}:
+                        df[df_col] = df[df_col].astype("string")
+                    else:
+                        df[df_col] = df[df_col].astype(pandas_dtype)
+
+                except Exception:
+                    # last resort: leave as object (do not crash on one bad cast)
+                    pass
+
+        # 3) Set index ONLY when join keys are exactly time_index + unique_identifier for every join
+        join_keys_ok = True
+        if getattr(filter_request, "joins", None):
+            for j in filter_request.joins:
+                on = set(getattr(j, "on", []) or [])
+                if on != {JoinKey.time_index, JoinKey.unique_identifier}:
+                    join_keys_ok = False
+                    break
+
+        if join_keys_ok and {"time_index", "unique_identifier"}.issubset(df.columns):
+            df = df.set_index(["time_index", "unique_identifier"])
+
+        return df
+
     @classmethod
     def get_data_from_filter(
             cls,
@@ -1241,42 +1345,20 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
             *,
             batch_limit: int = 14000,
     ) -> pd.DataFrame:
-        """
-        Fetch data using the get-data-from-filter endpoint with streaming pagination.
-
-        Parameters
-        ----------
-
-        filter_request:
-            SearchRequest instance from the client filter models (data_filters.py).
-        batch_limit:
-            Per-request batch size. The backend may clamp this.
-
-        Returns
-        -------
-        pd.DataFrame
-            Concatenated results from all streamed batches.
-        """
         url = cls.get_object_url() + "/get-data-from-filter/"
         s = cls.build_session()
 
-        # start from whatever the caller put, but we will manage it as we stream
         offset = int(filter_request.offset or 0)
 
         all_results: list[dict] = []
-        last_response: dict | None = None
+        data_node_storage_map_json: dict | None = None
 
         while True:
-            # Copy the request so we don't mutate the caller's object
             req = filter_request.model_copy(deep=True)
-
-            # backend-controlled streaming knobs (server will clamp anyway)
             req.limit = int(batch_limit)
             req.offset = int(offset)
 
-            payload_json = req.model_dump(mode="json")
-
-
+            payload_json = req.model_dump(mode="json", exclude_none=True)
             payload = {"json": payload_json}
 
             r = make_request(
@@ -1285,25 +1367,44 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
                 payload=payload,
                 r_type="POST",
                 url=url,
-                time_out=60*5,
             )
 
             if r.status_code != 200:
                 logger.warning(f"Error in request: {r.text}")
                 return pd.DataFrame([])
 
-            last_response = r.json() or {}
+            response_data = r.json() or {}
 
-            chunk = last_response.get("results", []) or []
+            # capture meta map once (same on every page)
+            if data_node_storage_map_json is None:
+                data_node_storage_map_json = response_data.get("data_node_storage_map") or {}
+
+            chunk = response_data.get("results", []) or []
             all_results.extend(chunk)
 
-            next_offset = last_response.get("next_offset")
+            next_offset = response_data.get("next_offset")
             if not next_offset:
                 break
-
             offset = int(next_offset)
 
-        return pd.DataFrame(all_results)
+        # IMPORTANT: dtype=object prevents pandas from converting big ints to float when NULLs exist
+        df = pd.DataFrame(all_results, dtype=object)
+
+        # Build DataNodeStorage objects from serializer payloads
+        storage_objs = {}
+        for prefix, meta_json in (data_node_storage_map_json or {}).items():
+            try:
+                storage_objs[prefix] = cls(**meta_json)
+            except Exception:
+                # if instantiation fails, keep the raw dict so the method still works
+                storage_objs[prefix] = meta_json
+
+        # If instantiation failed and we only have dicts, dtype parsing would require dict access.
+        # Assuming cls(**meta_json) works in your client models (it should).
+        df = cls._apply_dtypes_from_meta(df, data_node_storage_map=storage_objs, filter_request=filter_request)
+
+        return df
+
 
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):

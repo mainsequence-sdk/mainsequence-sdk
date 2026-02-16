@@ -1,18 +1,15 @@
 import datetime
 import logging
-from typing import Any, ClassVar
+from typing import Any
 
 import pandas as pd
 import pandas_market_calendars as mcal
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-from mainsequence.virtualfundbuilder.enums import ResourceType
-
 logger = logging.getLogger("virtualfundbuilder")
 
 
 class RebalanceStrategyBase(BaseModel):
-    TYPE: ClassVar[ResourceType] = ResourceType.REBALANCE_STRATEGY
 
     calendar_key: str = Field(
         "24/7", description="Trading calendar should match pandas market calendar string"

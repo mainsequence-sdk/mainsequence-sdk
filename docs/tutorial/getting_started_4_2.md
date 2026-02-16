@@ -630,9 +630,8 @@ from mainsequence.virtualfundbuilder.models import (
     PortfolioExecutionConfiguration,
     PortfolioMarketsConfig
 )
-from mainsequence.virtualfundbuilder.data_nodes import PortfolioStrategy
+from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
 from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
-
 
 assets = ensure_test_assets()
 # Instantiate and update the DataNode (platform would orchestrate this)
@@ -644,20 +643,20 @@ asset_category = msc.AssetCategory.get_or_create(
     display_name="Mock Category Assets Tutorial",
     unique_identifier="mock_category_assets_tutorial",
 )
-#add assets to the category
+# add assets to the category
 asset_category.append_assets(assets=assets)
 
-#Create Translation Table to link assets to pricing table
+# Create Translation Table to link assets to pricing table
 translation_table = msc.AssetTranslationTable.get_or_create(
     translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
     rules=[
-            msc.AssetTranslationRule(
-                asset_filter=msc.AssetFilter(
-                    security_type=SECURITY_TYPE_MOCK,
-                ),
-                markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
+        msc.AssetTranslationRule(
+            asset_filter=msc.AssetFilter(
+                security_type=SECURITY_TYPE_MOCK,
             ),
-        ]
+            markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
+        ),
+    ]
 )
 
 # build Fixed Weights Portfolio Data Node
@@ -665,11 +664,11 @@ weights = [.4, .6]
 node_weights_input_1, node_weights_input_2 = [], []
 for c, a in enumerate(assets):
     node_weights_input_1.append(AUIDWeight(unique_identifier=a.unique_identifier,
-                                            weight=weights[c]))
+                                           weight=weights[c]))
     node_weights_input_2.append(AUIDWeight(unique_identifier=a.unique_identifier,
-                                            weight=weights[c]*1.05))
+                                           weight=weights[c] * 1.05))
 
-#assets configuration
+# assets configuration
 prices_configuration = PricesConfiguration(
     bar_frequency_id="1d",
     upsample_frequency_id="1d",
@@ -695,7 +694,7 @@ signal_weights_node_2 = FixedWeights(
 )
 
 
-#portfolio
+# portfolio
 def build_portfolio(portfolio_name, signal_node):
     portfolio_execution_configuration = PortfolioExecutionConfiguration(commission_fee=0.0)
     rebalance_strategy = ImmediateSignal(calendar="SIFMAUS")  # US bond market (SIFMA) calendar
@@ -703,7 +702,7 @@ def build_portfolio(portfolio_name, signal_node):
     backtest_weight_configuration = BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(
         rebalance_strategy=rebalance_strategy,
         signal_weights_node=signal_node,
-)
+    )
 
     portfolio_build_configuration = PortfolioBuildConfiguration(
         assets_configuration=assets_configuration,
@@ -712,11 +711,11 @@ def build_portfolio(portfolio_name, signal_node):
         backtesting_weights_configuration=backtest_weight_configuration
     )
 
-    portfolio_data_node = PortfolioStrategy(portfolio_build_configuration=portfolio_build_configuration,)
+    portfolio_data_node = PortfolioStrategy(portfolio_build_configuration=portfolio_build_configuration, )
     portfolio_markets_config = PortfolioMarketsConfig(portfolio_name=portfolio_name)
 
-
-    interface = PortfolioInterface.build_from_portfolio_node(portfolio_node=portfolio_data_node, portfolio_markets_config=portfolio_markets_config)
+    interface = PortfolioInterface.build_from_portfolio_node(portfolio_node=portfolio_data_node,
+                                                             portfolio_markets_config=portfolio_markets_config)
 
     res = interface.run(
         patch_build_configuration=False,
@@ -727,7 +726,8 @@ def build_portfolio(portfolio_name, signal_node):
 
     return interface.target_portfolio
 
-portfolio_1=build_portfolio(
+
+portfolio_1 = build_portfolio(
     portfolio_name="Mock Portfolio 1 With Signals Tutorial",
     signal_node=signal_weights_node_1
 )

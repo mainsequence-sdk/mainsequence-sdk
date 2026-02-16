@@ -59,7 +59,7 @@ You can find the code under `dashboards/helpers/mock.py`:
 import mainsequence.client as msc
 import mainsequence.instruments as msi
 import pytz
-from mainsequence.virtualfundbuilder.data_nodes import PortfolioFromDF
+from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
 from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
 
 import pandas as pd
@@ -67,10 +67,9 @@ import json
 import datetime
 import QuantLib as ql
 
-
 UTC = pytz.utc
-SECURITY_TYPE_MOCK="MOCK_ASSET"
-SIMULATED_PRICES_TABLE="simulated_daily_closes_tutorial"
+SECURITY_TYPE_MOCK = "MOCK_ASSET"
+SIMULATED_PRICES_TABLE = "simulated_daily_closes_tutorial"
 TRANSLATION_TABLE_IDENTIFIER = "prices_translation_table_1d"
 
 
@@ -81,16 +80,16 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
         time_idx = datetime.datetime(time_idx.year, time_idx.month, time_idx.day, time_idx.hour,
                                      time_idx.minute, tzinfo=pytz.utc, )
 
-        unique_identifiers = ["TEST_FLOATING_BOND_UST","TEST_FIXED_BOND_USD"]
+        unique_identifiers = ["TEST_FLOATING_BOND_UST", "TEST_FIXED_BOND_USD"]
         existing_assets = msc.Asset.query(unique_identifier__in=unique_identifiers)
-        existing_uids={a.unique_identifier:a for a in existing_assets}
+        existing_uids = {a.unique_identifier: a for a in existing_assets}
         for uid in unique_identifiers:
-            build_uid=False
+            build_uid = False
             if uid not in existing_uids.keys():
-                build_uid=True
+                build_uid = True
             else:
                 if existing_uids[uid].current_pricing_detail is None:
-                    build_uid=True
+                    build_uid = True
 
             if build_uid:
                 common_kwargs = {
@@ -100,7 +99,7 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
                     "calendar": ql.UnitedStates(ql.UnitedStates.GovernmentBond),
                     "business_day_convention": ql.Unadjusted,
                     "settlement_days": 0,
-                    "maturity_date" : time_idx.date() + datetime.timedelta(days=365 * 10),
+                    "maturity_date": time_idx.date() + datetime.timedelta(days=365 * 10),
                     "issue_date": time_idx.date()
                 }
 
@@ -124,11 +123,11 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
                     "snapshot": snapshot,
                 }
                 assets = msc.Asset.batch_get_or_register_custom_assets([payload_item])
-                asset=assets[0]
-                #registed the instrument pricing details
+                asset = assets[0]
+                # registed the instrument pricing details
                 asset.add_instrument_pricing_details_from_ms_instrument(
-                    instrument=bond,pricing_details_date=time_idx
-                    )
+                    instrument=bond, pricing_details_date=time_idx
+                )
 
         # ----- build dict-valued columns -----
         keys = unique_identifiers
@@ -142,8 +141,6 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
 
         # everything else set to 1 per asset
         ones_dict = json.dumps({k: 1 for k in keys})
-
-
 
         # Map logical fields to actual DF columns
         col_weights_current = "rebalance_weights"  # "weights_current"
@@ -174,7 +171,7 @@ class TestFixedIncomePortfolio(PortfolioFromDF):
         return portoflio_df
 
 
-def build_test_portfolio(portfolio_name:str):
+def build_test_portfolio(portfolio_name: str):
     node = TestFixedIncomePortfolio(
         portfolio_name=portfolio_name,
         calendar_name="24/7",
@@ -186,8 +183,9 @@ def build_test_portfolio(portfolio_name:str):
         add_portfolio_to_markets_backend=True,
     )
 
+
 if __name__ == "__main__":
-    portfolio_name="TestFixedIncomePortfolio"
+    portfolio_name = "TestFixedIncomePortfolio"
     build_test_portfolio(portfolio_name=portfolio_name)
 ```
 

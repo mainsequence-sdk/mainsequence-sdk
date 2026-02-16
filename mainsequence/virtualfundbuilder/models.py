@@ -1,25 +1,17 @@
 from __future__ import annotations
 
-import copy
-import json
-import os
 from functools import lru_cache
-from typing import Any
+from typing import Annotated, Any
 
-import yaml
 from pydantic import (
     BaseModel,
     ConfigDict,
-    Field,
-    PrivateAttr,
-    field_validator,
-    model_validator,
-    root_validator,
+    WithJsonSchema,
+    field_serializer,
 )
 
 import mainsequence.client as msc
 from mainsequence.client import Asset
-from mainsequence.tdag.utils import hash_dict, write_yaml
 from mainsequence.virtualfundbuilder.enums import PriceTypeNames
 from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceStrategyBase
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
@@ -82,7 +74,7 @@ class AssetsConfiguration(VFBConfigBaseModel):
         prices_configuration (PricesConfiguration): Configuration for price data handling.
     """
 
-    assets_category_unique_id: str
+    assets_category_unique_id: str | None=None
     price_type: PriceTypeNames = PriceTypeNames.CLOSE
     prices_configuration: PricesConfiguration
 
@@ -110,75 +102,27 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
         extra="forbid",  # reject unknown fields
         populate_by_name=True,
     )
-    rebalance_strategy_name: str = "ImmediateSignal"
-    rebalance_strategy_configuration: dict[str, Any] = Field(default_factory=dict)
 
-    signal_weights_name: str = "MarketCap"
-    signal_weights_configuration: dict[str, Any] = Field(default_factory=dict)
 
-    _rebalance_strategy_instance: RebalanceStrategyBase | None = PrivateAttr(default=None)
-    _signal_weights_instance: WeightsBase | None = PrivateAttr(default=None)
+    rebalance_strategy_instance: RebalanceStrategyBase
+    signal_weights_instance: Annotated[
+        WeightsBase,#its also a DataNode so we serialize with its exact configuration json schema
+        WithJsonSchema({"type": "object"})
+    ]
 
-    @field_validator("rebalance_strategy_name", "signal_weights_name")
-    @classmethod
-    def _non_empty_name(cls, v: str) -> str:
-        v = (v or "").strip()
-        if not v:
-            raise ValueError("Names must be non-empty strings.")
-        return v
+    @field_serializer(
+        "signal_weights_instance",
+        when_used="json",
+        return_type=dict[str, Any],  # <- IMPORTANT for schema; replace with your real output type
+    )
+    def ser_signal_weights(self, v: WeightsBase) -> dict[str, Any]:
+        return v.build_configuration_json_schema
 
-    # --- Builders -----------------------------------------------------------
 
-    @classmethod
-    def build_from_rebalance_strategy_and_signal_node(
-        cls, rebalance_strategy: RebalanceStrategyBase, signal_weights_node: WeightsBase
-    ):
 
-        config = dict(
-            rebalance_strategy_name=rebalance_strategy.__class__.__name__,
-            rebalance_strategy_configuration=rebalance_strategy.model_dump(),
-            signal_weights_name=signal_weights_node.__class__.__name__,
-            signal_weights_configuration=signal_weights_node.build_configuration,
-        )
-        instance = cls(**config)
-        instance._rebalance_strategy_instance = rebalance_strategy
-        instance._signal_weights_instance = signal_weights_node
 
-        return instance
 
-    def model_dump(self, **kwargs):
-        signal_weights_configuration = self.signal_weights_configuration
-        data = super().model_dump(**kwargs)
-        data["signal_weights_configuration"]["signal_assets_configuration"] = (
-            signal_weights_configuration["signal_assets_configuration"].model_dump(**kwargs)
-        )
 
-        return data
-
-    def get_signal_weights_instance(self):
-        return self._signal_weights_instance
-    def get_rebalancer_instance(self):
-        return self._rebalance_strategy_instance
-
-    @model_validator(mode="before")
-    def parse_signal_weights_configuration(cls, values):
-        if isinstance(
-            values["signal_weights_configuration"]["signal_assets_configuration"],
-            AssetsConfiguration,
-        ):
-            return values
-
-        asset_configuration = copy.deepcopy(
-            values["signal_weights_configuration"]["signal_assets_configuration"]
-        )
-        if "prices_configuration" not in asset_configuration:
-            logger.info("No Price Configuration in Configuration - Use Default Price Configuration")
-            asset_configuration["prices_configuration"] = PricesConfiguration()
-
-        values["signal_weights_configuration"]["signal_assets_configuration"] = AssetsConfiguration(
-            **asset_configuration
-        )
-        return values
 
 
 class PortfolioExecutionConfiguration(VFBConfigBaseModel):
@@ -249,24 +193,7 @@ class PortfolioBuildConfiguration(VFBConfigBaseModel):
         )
         return data
 
-    @root_validator(pre=True)
-    def parse_assets_configuration(cls, values):
 
-        if (
-            not isinstance(values["assets_configuration"], AssetsConfiguration)
-            and values["assets_configuration"] is not None
-        ):
-            values["assets_configuration"] = AssetsConfiguration(
-                assets_category_unique_id=values["assets_configuration"][
-                    "assets_category_unique_id"
-                ],
-                price_type=PriceTypeNames(values["assets_configuration"]["price_type"]),
-                prices_configuration=PricesConfiguration(
-                    **values["assets_configuration"]["prices_configuration"]
-                ),
-            )
-
-        return values
 
 
 class PortfolioConfiguration(VFBConfigBaseModel):
@@ -285,73 +212,5 @@ class PortfolioConfiguration(VFBConfigBaseModel):
     portfolio_build_configuration: PortfolioBuildConfiguration
     portfolio_markets_configuration: PortfolioMarketsConfig
 
-    @staticmethod
-    def read_portfolio_configuration_from_yaml(yaml_path: str):
-        with open(yaml_path) as file:
-            return yaml.safe_load(file)
 
-    @staticmethod
-    def parse_portfolio_configuration_from_yaml(yaml_path: str):
-        from mainsequence.virtualfundbuilder.config_handling import configuration_sanitizer
 
-        configuration = PortfolioConfiguration.read_portfolio_configuration_from_yaml(yaml_path)
-        return configuration_sanitizer(configuration)
-
-    @staticmethod
-    def parse_portfolio_configurations(
-        portfolio_build_configuration: dict,
-        portfolio_markets_configuration: dict,
-    ):
-        # Parse the individual components
-        backtesting_weights_configuration = BacktestingWeightsConfig(
-            rebalance_strategy_name=portfolio_build_configuration[
-                "backtesting_weights_configuration"
-            ]["rebalance_strategy_name"],
-            rebalance_strategy_configuration=portfolio_build_configuration[
-                "backtesting_weights_configuration"
-            ]["rebalance_strategy_configuration"],
-            signal_weights_name=portfolio_build_configuration["backtesting_weights_configuration"][
-                "signal_weights_name"
-            ],
-            signal_weights_configuration=portfolio_build_configuration[
-                "backtesting_weights_configuration"
-            ]["signal_weights_configuration"],
-        )
-
-        execution_configuration = PortfolioExecutionConfiguration(
-            commission_fee=portfolio_build_configuration["execution_configuration"][
-                "commission_fee"
-            ]
-        )
-
-        portfolio_build_config = PortfolioBuildConfiguration(
-            assets_configuration=portfolio_build_configuration["assets_configuration"],
-            backtesting_weights_configuration=backtesting_weights_configuration,
-            execution_configuration=execution_configuration,
-            portfolio_prices_frequency=portfolio_build_configuration["portfolio_prices_frequency"],
-        )
-
-        portfolio_markets_configuration = PortfolioMarketsConfig(**portfolio_markets_configuration)
-
-        # Combine everything into the final PortfolioConfiguration
-        portfolio_config = PortfolioConfiguration(
-            portfolio_build_configuration=portfolio_build_config,
-            portfolio_markets_configuration=portfolio_markets_configuration,
-        )
-
-        return portfolio_config
-
-    def build_yaml_configuration_file(self):
-        signal_type = (
-            self.portfolio_build_configuration.backtesting_weights_configuration.signal_weights_name
-        )
-        vfb_folder = os.path.join(os.path.expanduser("~"), "VirtualFundBuilder", "configurations")
-        vfb_folder = os.path.join(vfb_folder, signal_type)
-        if not os.path.exists(vfb_folder):
-            os.makedirs(vfb_folder)
-
-        config_hash = hash_dict(self.model_dump_json())
-        config_file_name = f"{vfb_folder}/{config_hash}.yaml"
-
-        write_yaml(dict_file=json.loads(self.model_dump_json()), path=config_file_name)
-        return config_file_name

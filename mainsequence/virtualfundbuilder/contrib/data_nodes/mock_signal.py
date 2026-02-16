@@ -7,6 +7,7 @@ from mainsequence.tdag.data_nodes import DataNode
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
+from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 
 class MockSignal(WeightsBase, DataNode):
@@ -34,7 +35,7 @@ class MockSignal(WeightsBase, DataNode):
         return f"The signal will switch between {self.asset_1.symbol} and {self.asset_2.symbol} randomly every 30 minutes"
 
     def maximum_forward_fill(self):
-        return self.source_frequency
+        return pd.Timedelta(self.source_frequency) - TIMEDELTA
 
     def update(self, latest_value: datetime | None, *args, **kwargs) -> pd.DataFrame:
         """
