@@ -1305,7 +1305,32 @@ class DataNode(DataAccessMixin, ABC):
     
 
 class WrapperDataNode(DataNode):
-    """A wrapper class for managing multiple DataNode objects."""
+    """Route per-asset queries to different underlying time series using an AssetTranslationTable.
+
+    WrapperDataNode is the platform's **data-source router**.
+
+    You ask it for data for a list of *source* asset ``unique_identifier`` values.
+    Internally it:
+
+    1) Evaluates the `AssetTranslationTable` for each asset to pick:
+       - ``markets_time_serie_unique_identifier`` (which DataNodeStorage/MarketsTimeSeries to query)
+       - optional ``exchange_code`` (which share-class listing to use)
+    2) Groups assets by (time series id, exchange_code) to minimize API calls.
+    3) Resolves *target* assets (often a different listing with the same ``asset_ticker_group_id``).
+    4) Queries the correct underlying `APIDataNode`.
+    5) Renames results back into the *source* unique_identifier namespace.
+
+    Why this exists
+    ---------------
+    In production a portfolio/universe may contain assets that must be fetched from different
+    sources (e.g., Alpaca for equities, Binance for crypto). WrapperDataNode makes the caller
+    agnostic to that routing.
+
+    Notes on mutability
+    -------------------
+    The constructor deep-copies the translation table to avoid accidental mutation of the
+    caller's object while building internal dependency maps.
+    """
 
     def __init__(self, translation_table: AssetTranslationTable, *args, **kwargs):
         """
@@ -1431,7 +1456,7 @@ class WrapperDataNode(DataNode):
             ]  # source the ones we want to have
 
             # get correct target assets based on the share classes
-            asset_ticker_group_ides = [a.asset_ticker_group_id for a in assets]
+            asset_ticker_group_ides = [a.asset_ticker_group_id for a in source_assets] #assets?
             asset_query = dict(asset_ticker_group_id__in=asset_ticker_group_ides)
             if not pd.isna(target_exchange_code):
                 asset_query["exchange_code"] = target_exchange_code

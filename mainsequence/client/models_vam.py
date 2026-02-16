@@ -10,7 +10,16 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
 import pytz
-from pydantic import BaseModel, Field, constr, model_validator, root_validator, validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    constr,
+    field_validator,
+    model_validator,
+    root_validator,
+    validator,
+)
 
 from mainsequence.logconf import logger
 
@@ -832,41 +841,168 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
 
 
 class TranslationError(RuntimeError):
-    """Raised when no translation rule (or more than one) matches an asset."""
+    """Raised when an AssetTranslationTable cannot translate an asset deterministically."""
+
 
 
 class AssetFilter(BaseModel):
-    security_type: str | None = None
-    security_market_sector: str | None = None
+    """Client-side mirror of the backend AssetFilter model.
+
+    An AssetFilter is a **pure predicate** over an :class:`~mainsequence.client.Asset` snapshot.
+    It must be deterministic and should only depend on stable asset identity attributes.
+
+    Notes
+    -----
+    - A filter where all fields are ``None`` matches *every* asset (a catch-all).
+    - Filters across rules should be mutually exclusive; overlap is an error.
+    """
+
+    # Backend-mirrored objects should tolerate server-added fields.
+    model_config = ConfigDict(extra="allow")
+
+    security_type: str | None = Field(
+        default=None,
+        description="FIGI security_type to match. If set, assets must have the same security_type.",
+        examples=["COMMON STOCK", "ETP"],
+    )
+    security_market_sector: str | None = Field(
+        default=None,
+        description=(
+            "FIGI security_market_sector to match. If set, assets must have the same market sector."
+        ),
+        examples=["Equity", "Crypto"],
+    )
+
+    # Referenced in your add_rules(open_for_everyone=...) path; keep optional for compatibility.
+    open_for_everyone: bool | None = Field(
+        default=None,
+        description="(Optional; backend-dependent) If true, the filter/rule may be made visible to other orgs.",
+        examples=[True, False],
+    )
 
     def filter_triggered(self, asset: "Asset") -> bool:
+        """Return True if this filter matches the given asset."""
         if self.security_type and asset.security_type != self.security_type:
             return False
-        if (
-            self.security_market_sector
-            and asset.security_market_sector != self.security_market_sector
-        ):
+        if self.security_market_sector and asset.security_market_sector != self.security_market_sector:
             return False
         return True
 
-
 class AssetTranslationRule(BaseModel):
-    asset_filter: AssetFilter
-    markets_time_serie_unique_identifier: str
-    target_exchange_code: str | None = None
+    """
+    A rule that routes assets matching `asset_filter` to a specific markets time series.
+
+    Mirrors server model fields:
+    - asset_filter (FK)
+    - markets_time_serie_unique_identifier (str)
+    - target_exchange_code (nullable)
+    - default_column_name (default 'close')
+    """
+    model_config = ConfigDict(extra="allow")
+
+    # Optional: many backends include rule id in serializer
+    id: int | None = Field(default=None, description="Server-side primary key for this rule.")
+
+    asset_filter: "AssetFilter" = Field(
+        ...,
+        description="Filter predicate used to decide whether this rule applies to an asset.",
+        examples=[{"security_market_sector": "Crypto"}],
+    )
+    markets_time_serie_unique_identifier: str = Field(
+        ...,
+        min_length=1,
+        description="DataNodeStorage identifier (MarketsTimeSeries) to query for matching assets.",
+        examples=["alpaca_1d_bars", "binance_1d_bars"],
+    )
+    target_exchange_code: str | None = Field(
+        default=None,
+        description="Optional exchange_code constraint for selecting the target share-class listing.",
+        examples=["US", None],
+    )
+    default_column_name: str = Field(
+        default="close",
+        description="Default value column for valuation. Server defaults to 'close'.",
+        examples=["close", "vwap", "open"],
+    )
+
+    @field_validator("target_exchange_code", mode="before")
+    @classmethod
+    def _blank_exchange_to_none(cls, v: Any) -> Any:
+        if isinstance(v, str) and v.strip() == "":
+            return None
+        return v
 
     def is_asset_in_rule(self, asset: "Asset") -> bool:
         return self.asset_filter.filter_triggered(asset)
 
 
-class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
-    """
-    Mirrors the Django model 'AssetTranslationTableModel' in the backend.
+class AssetTranslationTable(BaseModel):
+    """Organization-scoped table of translation rules.
+
+    This model mirrors the backend AssetTranslationTable and is used by wrapper nodes
+    (e.g. WrapperDataNode) to route per-asset market data queries.
+
+    Critical invariant (matches backend)
+    ------------------------------------
+    For any evaluated asset, **exactly one** rule must match.
+    - 0 matches => TranslationError
+    - >1 matches => TranslationError
+
+    Notes on `id`
+    -------------
+    `id` is the server-side primary key. It is required for mutation endpoints such as:
+
+    - POST /assettranslationtable/{id}/add_rule/
+    - POST /assettranslationtable/{id}/remove_rule/
+
+    Therefore, fetch the table from backend before calling add/remove methods.
     """
 
-    id: int = None
-    unique_identifier: str
-    rules: list[AssetTranslationRule] = Field(default_factory=list)
+    model_config = ConfigDict(extra="allow")
+
+    id: int | None = Field(
+        default=None,
+        description="Server-side primary key. Required for add/remove rule endpoints.",
+        examples=[123],
+    )
+    unique_identifier: str = Field(
+        ...,
+        min_length=1,
+        description="Organization-scoped unique identifier for the translation table.",
+        examples=["prices_translation_table_1d"],
+    )
+    rules: list[AssetTranslationRule] = Field(
+        default_factory=list,
+        description="Routing rules. Rules must be mutually exclusive so every asset matches exactly one rule.",
+    )
+
+    def evaluate_asset(self, asset: "Asset") -> dict:
+        """
+        Evaluate all rules and return the single mapping that matches this asset.
+
+        Server-compat contract:
+        - 0 matches => error
+        - >1 matches => error
+        - 1 match  => return mapping dict
+        """
+        matched = [rule for rule in self.rules if rule.is_asset_in_rule(asset)]
+
+        if len(matched) == 0:
+            raise TranslationError(f"No rules matched asset {asset}")
+        if len(matched) > 1:
+            raise TranslationError(f"Multiple rules matched asset {asset}: {matched}")
+
+        r = matched[0]
+
+        # best-effort rule pk (client may have `id` from server serializer)
+        rule_pk = getattr(r, "id", None) or getattr(r, "rule_pk", None)
+
+        return {
+            "markets_time_serie_unique_identifier": r.markets_time_serie_unique_identifier,
+            "exchange_code": r.target_exchange_code,
+            "default_column_name_from_rule": getattr(r, "default_column_name", "close"),
+            "rule_pk": rule_pk,
+        }
 
     @classmethod
     def get_or_create(
@@ -884,42 +1020,36 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
             )
         else:
             translation_table.add_rules(rules)
+        return translation_table
+    def _require_server_id(self) -> int:
+        if not getattr(self, "id", None):
+            raise ValueError(
+                "AssetTranslationTable.id is required for add/remove rule endpoints. "
+                "Fetch the table from backend first: AssetTranslationTable.get(unique_identifier=...)"
+            )
+        return self.id
 
-    def evaluate_asset(self, asset):
-        for rule in self.rules:
-            if rule.is_asset_in_rule(asset):
-                return {
-                    "markets_time_serie_unique_identifier": rule.markets_time_serie_unique_identifier,
-                    "exchange_code": rule.target_exchange_code,
-                }
-
-        raise TranslationError(f"No rules for asset {asset} found")
-
-    def add_rules(self, rules: list[AssetTranslationRule], open_for_everyone=False) -> None:
-        """
-        Add each rule to the translation table by calling the backend's 'add_rule' endpoint.
-        Prevents local duplication. If the server also rejects a duplicate,
-        it returns an error which we silently ignore.
-        """
+    def add_rules(self, rules: list[AssetTranslationRule], open_for_everyone: bool = False) -> None:
         base_url = self.get_object_url()
+        self._require_server_id()
+
         for new_rule in rules:
-            # 1) Check for local duplicates
+            # local duplicate guard
             if any(
-                r.asset_filter == new_rule.asset_filter
-                and r.markets_time_serie_unique_identifier
-                == new_rule.markets_time_serie_unique_identifier
-                and r.target_exchange_code == new_rule.target_exchange_code
-                for r in self.rules
+                    r.asset_filter == new_rule.asset_filter
+                    and r.markets_time_serie_unique_identifier == new_rule.markets_time_serie_unique_identifier
+                    and r.target_exchange_code == new_rule.target_exchange_code
+                    for r in self.rules
             ):
-                # Already in local table, skip adding
-                logger.debug(f"Rule {new_rule} already present - skipping")
+                logger.debug(f"Rule {new_rule} already present locally - skipping")
                 continue
 
-            # 2) Post to backend's "add_rule"
             url = f"{base_url}/{self.id}/add_rule/"
-            payload = new_rule.model_dump()
+            payload = new_rule.model_dump(exclude_none=True)
+
             if open_for_everyone:
                 payload["open_for_everyone"] = True
+                payload.setdefault("asset_filter", {})
                 payload["asset_filter"]["open_for_everyone"] = True
 
             r = make_request(
@@ -931,35 +1061,46 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
             )
 
             if r.status_code == 201:
-                # Successfully created on server. Append locally
                 self.rules.append(new_rule)
-            elif r.status_code not in (200, 201):
-                raise Exception(f"Error adding rule: {r.text}")
-
-    def remove_rules(self, rules: list[AssetTranslationRule]) -> None:
-        """
-        Remove each rule from the translation table by calling the backend's 'remove_rule' endpoint.
-        Once successfully removed on the server, remove it from the local list `self.rules`.
-        If a rule is not found on the server, we skip silently.
-        """
-        base_url = self.get_object_url()
-        for rule_to_remove in rules:
-            # 1) Check if we even have it locally
-            matching_local = [
-                r
-                for r in self.rules
-                if r.asset_filter == rule_to_remove.asset_filter
-                and r.markets_time_serie_unique_identifier
-                == rule_to_remove.markets_time_serie_unique_identifier
-                and r.target_exchange_code == rule_to_remove.target_exchange_code
-            ]
-            if not matching_local:
-                # Not in local rules, skip
                 continue
 
-            # 2) Post to backend's "remove_rule"
+            if r.status_code == 400:
+                # Server duplicate guard returns 400 with a "detail" string in your ViewSet.
+                try:
+                    detail = r.json().get("detail", "")
+                except Exception:
+                    detail = getattr(r, "text", "") or ""
+                if "already" in detail.lower() and "present" in detail.lower():
+                    logger.debug(f"Rule rejected as duplicate by server - skipping: {detail}")
+                    continue
+
+            if r.status_code not in (200, 201):
+                raise Exception(f"Error adding rule: {getattr(r, 'text', r)}")
+
+    def remove_rules(self, rules: list[AssetTranslationRule]) -> None:
+        base_url = self.get_object_url()
+        self._require_server_id()
+
+        for rule_to_remove in rules:
+            # 1) Must exist locally to attempt removal
+            matching_local = [
+                r for r in self.rules
+                if r.asset_filter == rule_to_remove.asset_filter
+                   and r.markets_time_serie_unique_identifier == rule_to_remove.markets_time_serie_unique_identifier
+                   and r.target_exchange_code == rule_to_remove.target_exchange_code
+            ]
+            if not matching_local:
+                continue
+
             url = f"{base_url}/{self.id}/remove_rule/"
-            payload = rule_to_remove.model_dump()
+
+            # Prefer rule_id if we have it (server supports this)
+            rule_id = getattr(rule_to_remove, "id", None) or getattr(rule_to_remove, "rule_pk", None)
+            if rule_id:
+                payload = {"rule_id": rule_id}
+            else:
+                payload = rule_to_remove.model_dump(exclude_none=True)
+
             r = make_request(
                 s=self.build_session(),
                 loaders=self.LOADERS,
@@ -969,11 +1110,17 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
             )
 
             if r.status_code == 200:
-                # Successfully removed from server => remove from local
                 for matched in matching_local:
                     self.rules.remove(matched)
-            elif r.status_code not in (200, 204):
-                raise Exception(f"Error removing rule: {r.text()}")
+                continue
+
+            if r.status_code in (204, 404):
+                # 404 means server didn't find it; keep client tolerant
+                for matched in matching_local:
+                    self.rules.remove(matched)
+                continue
+
+            raise Exception(f"Error removing rule: {getattr(r, 'text', r)}")
 
 
 class Asset(AssetMixin, BaseObjectOrm):
