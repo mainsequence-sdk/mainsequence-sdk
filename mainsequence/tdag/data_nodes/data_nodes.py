@@ -1305,31 +1305,37 @@ class DataNode(DataAccessMixin, ABC):
     
 
 class WrapperDataNode(DataNode):
-    """Route per-asset queries to different underlying time series using an AssetTranslationTable.
+    """
+    Composite/virtual time series that routes per-asset queries to different underlying MarketTimeSeries.
 
-    WrapperDataNode is the platform's **data-source router**.
+    Core idea
+    ---------
+    WrapperTimeSeries uses an AssetTranslationTable as a routing configuration.
 
-    You ask it for data for a list of *source* asset ``unique_identifier`` values.
-    Internally it:
+    For each requested source asset unique_identifier:
+      1) Evaluate AssetTranslationTable.evaluate_asset(asset) to obtain:
+         - markets_time_serie_unique_identifier: which backend MarketsTimeSeries to query
+         - exchange_code (optional): which share-class listing to target
+         - default_column_name_from_rule: preferred value column (e.g. close/vwap)
+      2) Group assets by (markets_time_serie_unique_identifier, exchange_code) to minimize backend calls.
+      3) Translate source assets -> target listing assets via asset_ticker_group_id (+ exchange_code constraint).
+      4) Query the corresponding APIDataNode using target unique_identifiers.
+      5) Rename results back into the source unique_identifier namespace.
 
-    1) Evaluates the `AssetTranslationTable` for each asset to pick:
-       - ``markets_time_serie_unique_identifier`` (which DataNodeStorage/MarketsTimeSeries to query)
-       - optional ``exchange_code`` (which share-class listing to use)
-    2) Groups assets by (time series id, exchange_code) to minimize API calls.
-    3) Resolves *target* assets (often a different listing with the same ``asset_ticker_group_id``).
-    4) Queries the correct underlying `APIDataNode`.
-    5) Renames results back into the *source* unique_identifier namespace.
+    Determinism requirements
+    ------------------------
+    AssetTranslationTable must match exactly one rule per asset.
+    - 0 matches => TranslationError
+    - >1 matches => TranslationError
 
-    Why this exists
-    ---------------
-    In production a portfolio/universe may contain assets that must be fetched from different
-    sources (e.g., Alpaca for equities, Binance for crypto). WrapperDataNode makes the caller
-    agnostic to that routing.
+    Share-class translation requirements
+    ------------------------------------
+    If a ticker group has multiple listings, exchange_code must be specified in the matching rule,
+    otherwise target listing resolution becomes ambiguous and the wrapper raises.
 
-    Notes on mutability
-    -------------------
-    The constructor deep-copies the translation table to avoid accidental mutation of the
-    caller's object while building internal dependency maps.
+    Mutability / snapshot behavior
+    ------------------------------
+    WrapperTimeSeries deep-copies the translation table in __init__ to prevent accidental external mutation.
     """
 
     def __init__(self, translation_table: AssetTranslationTable, *args, **kwargs):
