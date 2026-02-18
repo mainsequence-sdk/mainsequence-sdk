@@ -1,40 +1,22 @@
-import copy
 import inspect
 import os
 from datetime import datetime
 
-import requests
 from pydantic import BaseModel, ConfigDict
 
+from mainsequence import logger
+
+from .exceptions import ApiError, raise_for_response
 from .utils import (
+    API_ENDPOINT,
     DATE_FORMAT,
-    AuthLoaders,
     DoesNotExist,
+    loaders,  # shared singleton
     make_request,
     request_to_datetime,
+    serialize_to_json,
+    session,  # shared singleton
 )
-
-TDAG_ENDPOINT = os.environ.get("TDAG_ENDPOINT", "https://main-sequence.app")
-API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
-
-loaders = AuthLoaders()
-
-
-def build_session(loaders):
-    from requests.adapters import HTTPAdapter, Retry
-
-    s = requests.Session()
-    s.headers.update(loaders.auth_headers)
-    retries = Retry(
-        total=2,
-        backoff_factor=2,
-    )
-    s.mount("http://", HTTPAdapter(max_retries=retries))
-    s.headers["Accept-Encoding"] = "gzip"
-    return s
-
-
-session = build_session(loaders=loaders)
 
 
 class HtmlSaveException(Exception):
@@ -51,7 +33,7 @@ class HtmlSaveException(Exception):
         caller_method = inspect.stack()[2].function
 
         # Get the current timestamp
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         # Create the directory to save HTML files if it doesn't exist
         folder_path = "html_exceptions"
@@ -174,10 +156,10 @@ class BaseObjectOrm:
         s = self.build_session()
         return s
 
-    def ___hash__(self):
+    def __hash__(self):
         if hasattr(self, "unique_identifier"):
-            return self.unique_identifier
-        return self.id
+            return hash(self.unique_identifier)
+        return hash(self.id)
 
     def __repr__(self):
         object_id = self.id if hasattr(self, "id") else None
@@ -185,8 +167,28 @@ class BaseObjectOrm:
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
+        # 1) Preferred: model-local endpoint
+        if custom_endpoint_name is None:
+            endpoint = getattr(cls, "ENDPOINT", None)
+            if endpoint:
+                return f"{cls.ROOT_URL.rstrip('/')}/{endpoint.lstrip('/')}"
+
+        # 2) Backwards-compatible: central mapping
         endpoint_name = custom_endpoint_name or cls.class_name()
-        return f"{cls.ROOT_URL}/{cls.END_POINTS[endpoint_name]}"
+
+        try:
+            endpoint = cls.END_POINTS[endpoint_name]
+        except KeyError as e:
+            keys = sorted(cls.END_POINTS.keys())
+            preview = ", ".join(keys[:20]) + ("..." if len(keys) > 20 else "")
+            raise ValueError(
+                f"Endpoint mapping missing for '{endpoint_name}'. "
+                f"Fix: set {cls.__name__}.ENDPOINT = '<path>' "
+                "or add it to BaseObjectOrm.END_POINTS. "
+                f"Known keys (preview): {preview}"
+            ) from e
+
+        return f"{cls.ROOT_URL.rstrip('/')}/{endpoint.lstrip('/')}"
 
     @staticmethod
     def _parse_parameters_filter(parameters):
@@ -198,77 +200,60 @@ class BaseObjectOrm:
         return parameters
 
     @classmethod
-    def filter(cls, timeout=None, **kwargs):
+    def iter_filter(cls, timeout=None, max_items: int | None = None, **kwargs):
         """
-        Fetches *all pages* from a DRF-paginated endpoint.
-        Accumulates results from each page until 'next' is None.
-
-        Returns a list of `cls` objects (not just one page).
-
-        DRF's typical paginated response looks like:
-            {
-              "count": <int>,
-              "next": <str or null>,
-              "previous": <str or null>,
-              "results": [ ...items... ]
-            }
+        Generator variant: yields objects across all pages without accumulating into memory.
         """
-        base_url = cls.get_object_url()  # e.g. "https://api.example.com/assets"
+        base_url = cls.get_object_url()
         params = cls._parse_parameters_filter(kwargs)
 
-        # We'll handle pagination by following the 'next' links from DRF.
-        accumulated = []
-        next_url = f"{base_url}/"  # Start with the main endpoint (list)
+        next_url = f"{base_url}/"
+        yielded = 0
 
         while next_url:
-            # For each page, do a GET request
+            req_payload = {"params": params} if params else {}
             r = make_request(
                 s=cls.build_session(),
                 loaders=cls.LOADERS,
                 r_type="GET",
-                url=next_url,  # next_url changes each iteration
-                payload={"params": params},
+                url=next_url,
+                payload=req_payload,
                 time_out=timeout,
             )
-
-            if r.status_code != 200:
-                # Handle errors or break out
-                if r.status_code == 401:
-                    raise Exception("Unauthorized. Please add credentials to environment.")
-                elif r.status_code == 500:
-                    raise Exception("Server Error.")
-                elif r.status_code == 404:
-                    raise DoesNotExist("Not Found.")
-                else:
-                    raise Exception(f"{r.status_code} - {r.text}")
+            raise_for_response(r, payload=req_payload)
 
             data = r.json()
-            # data should be a dict with "count", "next", "previous", and "results".
 
-            # DRF returns the next page URL in `data["next"]`
-            next_url = data["next"]  # either a URL string or None
+            # DRF paginated: {"results": [...], "next": "..."}
+            if isinstance(data, dict) and "results" in data:
+                results = data.get("results") or []
+                next_url = data.get("next")
+            else:
+                # Non-paginated endpoint: assume list payload
+                results = data
+                next_url = None
 
-            # data["results"] should be a list of objects
-            for item in data["results"]:
-                # Insert "orm_class" if you still need that
-                item["orm_class"] = cls.__name__
-                try:
-                    accumulated.append(cls(**item) if issubclass(cls, BasePydanticModel) else item)
-                except Exception as e:
-                    print(item)
-                    print(cls)
-                    print(cls(**item))
-                    import traceback
+            for item in results:
+                if isinstance(item, dict):
+                    item.setdefault("orm_class", cls.__name__)
+                    obj = cls(**item) if issubclass(cls, BasePydanticModel) else item
+                else:
+                    obj = item
 
-                    traceback.print_exc()
-                    raise e
+                yield obj
+                yielded += 1
+                if max_items is not None and yielded >= max_items:
+                    return
 
-            # We set `params = None` (or empty) after the first loop to avoid appending repeatedly
-            # but only if DRF's `next` doesn't contain the query parameters.
-            # Usually, DRF includes them, so you don't need to do anything special here.
+            # Important: only send params on the first request; DRF `next` already contains querystring
             params = None
 
-        return accumulated
+    @classmethod
+    def filter(cls, timeout=None, **kwargs):
+        """
+        List-returning variant (backwards compatible).
+        """
+        return list(cls.iter_filter(timeout=timeout, **kwargs))
 
     @classmethod
     def get(cls, pk=None, timeout=None, **filters):
@@ -289,15 +274,8 @@ class BaseObjectOrm:
                 payload={"params": filters},  # neede to pass special serializer
                 time_out=timeout,
             )
+            raise_for_response(r)
 
-            if r.status_code == 404:
-                raise DoesNotExist(f"No object found for pk={pk}")
-            elif r.status_code == 401:
-                raise Exception("Unauthorized. Please add credentials to environment.")
-            elif r.status_code == 500:
-                raise Exception("Server Error")
-            elif r.status_code != 200:
-                raise Exception(f"Unexpected status code: {r.status_code}")
 
             data = r.json()
             data["orm_class"] = cls.__name__
@@ -309,10 +287,8 @@ class BaseObjectOrm:
             raise DoesNotExist(f"No {cls.class_name()} found matching {filters}")
 
         if len(candidates) > 1:
-            raise Exception(
-                f"Multiple {cls.class_name()} objects found for filters {filters}. "
-                f"Expected exactly one."
-            )
+            raise ApiError(f"Multiple objects returned for {cls.__name__} with filters={filters}")
+
 
         return candidates[0]
 
@@ -325,13 +301,9 @@ class BaseObjectOrm:
 
     @staticmethod
     def serialize_for_json(kwargs):
-        new_data = {}
-        for key, value in kwargs.items():
-            new_value = copy.deepcopy(value)
-            if isinstance(value, datetime):
-                new_value = str(value)
-            new_data[key] = new_value
-        return new_data
+
+
+        return serialize_to_json(kwargs)
 
     @classmethod
     def create(cls, timeout=None, files=None, *args, **kwargs):
@@ -348,8 +320,8 @@ class BaseObjectOrm:
             payload=payload,
             time_out=timeout,
         )
-        if r.status_code not in [201]:
-            raise Exception(r.text)
+        if r.status_code not in (200, 201):
+            raise_for_response(r, payload=payload)
         return cls(**r.json())
 
     @classmethod
@@ -367,7 +339,8 @@ class BaseObjectOrm:
             time_out=timeout,
         )
         if r.status_code not in [201, 200]:
-            raise Exception(r.text)
+            raise_for_response(r)
+
         return cls(**r.json())
 
     @classmethod
@@ -383,7 +356,7 @@ class BaseObjectOrm:
             payload=payload,
         )
         if r.status_code != 204:
-            raise Exception(r.text)
+            raise_for_response(r)
 
     @classmethod
     def patch_by_id(cls, instance_id, *args, _into=None, **kwargs):
@@ -400,7 +373,7 @@ class BaseObjectOrm:
             payload=payload,
         )
         if r.status_code != 200:
-            raise Exception(r.text)
+            raise_for_response(r)
 
         body = r.json()
 
@@ -418,7 +391,7 @@ class BaseObjectOrm:
                     try:
                         setattr(obj, k, v)
                     except Exception as e:
-                        print(e)
+                        logger.exception(e)
 
             return obj
 

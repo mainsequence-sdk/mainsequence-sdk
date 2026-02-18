@@ -28,18 +28,20 @@ from .base import TDAG_ENDPOINT, BaseObjectOrm, BasePydanticModel
 from .data_filters import *
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
+from .exceptions import raise_for_response
 from .utils import (
     TDAG_CONSTANTS,
-    AuthLoaders,
     DataFrequency,
     DateInfo,
     UniqueIdentifierRangeMap,
     bios_uuid,
     get_network_ip,
     is_process_running,
+    loaders,
     make_request,
     request_to_datetime,
     serialize_to_json,
+    session,
     set_types_in_table,
 )
 
@@ -47,7 +49,7 @@ _default_data_source = None  # Module-level cache
 
 JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 
-loaders = AuthLoaders()
+
 
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
@@ -58,20 +60,7 @@ class AlreadyExist(Exception):
     pass
 
 
-def build_session(loaders):
-    from requests.adapters import HTTPAdapter, Retry
 
-    s = requests.Session()
-    s.headers.update(loaders.auth_headers)
-    retries = Retry(
-        total=2,
-        backoff_factor=2,
-    )
-    s.mount("http://", HTTPAdapter(max_retries=retries))
-    return s
-
-
-session = build_session(loaders=loaders)
 
 
 class SchedulerDoesNotExist(Exception):
@@ -138,7 +127,7 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
         s = self.build_session()
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, accept_gzip=True)
         if r.status_code != 200:
-            raise Exception(r.text)
+            raise_for_response(r)
         data = r.json()
         multi_index_stats = data["multi_index_stats"]
         multi_index_column_stats = data["multi_index_column_stats"]
@@ -167,7 +156,8 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
             url=url,
         )
         if r.status_code != 200:
-            raise Exception(r.text)
+            raise_for_response(r)
+
         return r.json()
 
     def set_or_update_columns_metadata(
@@ -187,8 +177,7 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
             payload={"json": {"columns_metadata": columns_metadata}},
         )
         if r.status_code not in [200, 201]:
-            raise Exception(r.text)
-
+            raise_for_response(r)
 
         return r.json()
 
@@ -235,7 +224,8 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code not in [200, 201]:
-            raise Exception(r.text)
+            raise_for_response(r)
+
         data = r.json()
 
         return cls(**data)
@@ -407,7 +397,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     @classmethod
     def create_historical_update(cls, *args, **kwargs):
         s = cls.build_session()
-        base_url = cls.ENDPOINT["LocalTimeSerieHistoricalUpdate"]
+        base_url = cls.END_POINTS["LocalTimeSerieHistoricalUpdate"]
         data = serialize_to_json(kwargs)
         payload = {
             "json": data,
@@ -526,7 +516,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
             # Optionally, you could retry or break here
             raise e
         if r.status_code not in [200, 204]:
-            raise Exception(r.text)
+            raise_for_response(r)
 
     @classmethod
     def post_data_frame_in_chunks(
@@ -613,7 +603,8 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
                     return
 
                 logger.warning(f"Error in request for chunk {part_label}: {r.text}")
-                raise Exception(r.text)
+                raise_for_response(r, )
+
 
             except requests.exceptions.RequestException as e:
                 logger.exception(f"Network error uploading chunk {part_label}: {e}")
@@ -927,7 +918,8 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code not in [201, 200]:
-            raise Exception(r.text)
+            raise_for_response(r, payload=payload)
+
         data = r.json()
         return cls(**data)
 
@@ -956,7 +948,7 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
         )
         if (
             isinstance(self.data_source, int)
-            and self.data_source.id == duckdb_dynamic_data_source.id
+            and self.data_source == duckdb_dynamic_data_source.id
         ) or (
             not isinstance(self.data_source, int)
             and self.data_source.related_resource.class_type == DUCK_DB
@@ -2438,7 +2430,8 @@ class Project(BasePydanticModel, BaseObjectOrm):
             url=url,
         )
         if r.status_code == 404:
-            raise Exception(r.text)
+            raise_for_response(r,)
+
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
@@ -2555,33 +2548,20 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
     def create(self,*args, **kwargs):
         return super().create(*args, **kwargs)
 
-def create_configuration_for_strategy(json_payload: dict, timeout=None):
-    url = TDAG_ENDPOINT + "/orm/api/tdag-gpt/create_configuration_for_strategy/"
-    from requests.adapters import HTTPAdapter, Retry
-
-    s = requests.Session()
-    s.headers.update(loaders.auth_headers)
-    retries = Retry(total=2, backoff_factor=2)
-    s.mount("http://", HTTPAdapter(max_retries=retries))
-
-    r = make_request(
-        s=s, r_type="POST", url=url, payload={"json": json_payload}, loaders=loaders, time_out=200
-    )
-    return r
 
 
 def query_agent(json_payload: dict, timeout=None):
     url = TDAG_ENDPOINT + "/orm/api/tdag-gpt/query_agent/"
-    from requests.adapters import HTTPAdapter, Retry
-
-    s = requests.Session()
-    s.headers.update(loaders.auth_headers)
-    retries = Retry(total=2, backoff_factor=2)
-    s.mount("http://", HTTPAdapter(max_retries=retries))
-
     r = make_request(
-        s=s, r_type="POST", url=url, payload={"json": json_payload}, loaders=loaders, time_out=200
+        s=session,
+        r_type="POST",
+        url=url,
+        payload={"json": json_payload},
+        loaders=loaders,
+        time_out=(timeout if timeout is not None else 200),
     )
+    from .exceptions import raise_for_response
+    raise_for_response(r, payload={"json": json_payload})
     return r
 
 
@@ -2601,13 +2581,19 @@ def add_created_object_to_jobrun(
         A dictionary representing the created record.
     """
     url = TDAG_ENDPOINT + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
-    s = requests.Session()
     payload = {"json": {"app_label": app_label, "model_name": model_name, "object_id": object_id}}
+
     r = make_request(
-        s=s, loaders=loaders, r_type="POST", url=url, payload=payload, time_out=timeout
+        s=session,
+        loaders=loaders,
+        r_type="POST",
+        url=url,
+        payload=payload,
+        time_out=timeout,
     )
-    if r.status_code not in [200, 201]:
-        raise Exception(f"Failed to add created object: {r.status_code} - {r.text}")
+
+    from .exceptions import raise_for_response
+    raise_for_response(r, payload=payload)
     return r.json()
 
 

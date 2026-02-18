@@ -1,10 +1,12 @@
 # mainsequence/instruments/instruments/bond.py
 import datetime
-import json
 import hashlib
-import threading
-from typing import Any
+import json
 import math
+import threading
+from collections import OrderedDict
+from typing import Any
+
 import QuantLib as ql
 from pydantic import Field, PrivateAttr
 
@@ -15,6 +17,7 @@ from mainsequence.instruments.pricing_models.indices import get_index
 from mainsequence.instruments.utils import to_py_date, to_ql_date
 
 from .base_instrument import InstrumentModel
+from .callability import CallabilityItem, DiscountParameters
 from .ql_fields import (
     QuantLibBDC as QBDC,
 )
@@ -30,7 +33,6 @@ from .ql_fields import (
 from .ql_fields import (
     QuantLibSchedule as QSchedule,
 )
-from collections import OrderedDict
 
 # ---- GLOBAL BOND CACHE ----
 # [bond_key][price_key] -> float (NPV)
@@ -63,6 +65,7 @@ _INDEX_VERSION: dict[int, int] = {}  # index_id -> version
 
 
 
+
 class Bond(InstrumentModel):
     """
     Shared pricing lifecycle for vanilla bonds.
@@ -73,23 +76,85 @@ class Bond(InstrumentModel):
         (return a ql.FixedRateBond or ql.FloatingRateBond, etc. *without* assuming any global state)
     """
 
-    face_value: float = Field(...)
-    issue_date: datetime.date = Field(...)
-    maturity_date: datetime.date = Field(...)
+    face_value: float = Field(...,gt=0,
+        description="Notional (face amount) repaid at maturity. Expressed in currency units.",
+        examples=[100.0, 1000.0, 1_000_000.0],
+        json_schema_extra={
+            "unit": "currency",
+            "semantic_type": "notional",
+            "typical_values": [100, 1000, 1_000_000],
+        },)
+    issue_date: datetime.date = Field(...,
+                                      description="Bond issue/start date. Must be on or before maturity_date.",
+                                      examples=["2024-01-15", "2020-09-01"],
+                                      json_schema_extra={"format": "date", "semantic_type": "issue_date"},
+                                      )
+    maturity_date: datetime.date = Field(...,
+                                         description="Final maturity date when principal is repaid. Must be after issue_date.",
+                                         examples=["2034-01-15", "2030-09-01"],
+                                         json_schema_extra={"format": "date", "semantic_type": "maturity_date"},
+                                         )
 
-    day_count: QDayCounter = Field(...)
-    calendar: QCalendar = Field(default_factory=ql.TARGET)
-    business_day_convention: QBDC = Field(default=ql.Following)
-    settlement_days: int = Field(default=2)
-    schedule: QSchedule | None = Field(None)
-
-    benchmark_rate_index_name: str | None = Field(
-        ...,
-        description="A default index benchmark rate, helpful when doing"
-        "analysis and we want to  map the bond to a bencharmk for example to"
-        "the SOFR Curve or to de US Treasury curve etc",
+    day_count: QDayCounter = Field(...,
+                                   description="Day count convention used for accrual/year fractions (via QuantLib DayCounter).",
+                                   examples=["Actual/360", "30/360", "Actual/Actual (ISDA)"],
+                                   json_schema_extra={"semantic_type": "day_count_convention"},
+                                   )
+    calendar: QCalendar = Field(default_factory=ql.TARGET,
+                                description="Calendar used for date adjustment (schedule generation and/or settlement).",
+                                examples=[{"name": "TARGET"}],
+                                json_schema_extra={"semantic_type": "calendar"},
+                                )
+    business_day_convention: QBDC = Field(default=ql.Following,
+                                          description=(
+                                              "Business day convention used to adjust dates. "
+                                              "Typical values: Following, ModifiedFollowing, Preceding, ModifiedPreceding, Unadjusted."
+                                          ),
+                                          examples=["Following", "ModifiedFollowing", "Unadjusted"],
+                                          json_schema_extra={
+                                              "semantic_type": "business_day_convention",
+                                              "typical_values": ["Following", "ModifiedFollowing"],
+                                          },
+                                          )
+    settlement_days: int = Field(default=2,
+                                 ge=0,
+                                 description="Settlement lag in business days (e.g., T+2).",
+                                 examples=[0, 1, 2, 3],
+                                 json_schema_extra={"semantic_type": "settlement_days"},
+                                 )
+    schedule: QSchedule | None = Field(
+        default=None,
+        description=(
+            "Optional explicit QuantLib Schedule. If provided, it is used as-is. "
+            "If omitted, builders may construct a schedule from dates and other parameters."
+        ),
+        examples=[
+            None,
+            {
+                "dates": ["2026-01-15", "2026-07-15", "2027-01-15"],
+                "calendar": {"name": "TARGET"},
+                "business_day_convention": "Following",
+                "termination_business_day_convention": "Following",
+                "end_of_month": False,
+                "tenor": "6M",
+                "rule": "Forward",
+            },
+        ],
+        json_schema_extra={"semantic_type": "schedule", "nullable": True},
     )
 
+    benchmark_rate_index_name: str | None = Field(
+        default=None,
+        description=(
+            "Optional benchmark index label for analytics/mapping (does not change instrument cashflows by itself). "
+            "Examples: 'SOFR', 'ESTR', 'EURIBOR-3M'."
+        ),
+        examples=["SOFR", "ESTR", "EURIBOR-3M", None],
+        json_schema_extra={
+            "semantic_type": "benchmark_rate",
+            "synonyms": ["benchmark", "index", "reference_rate"],
+        },
+    )
     model_config = {"arbitrary_types_allowed": True}
 
     _bond: ql.Bond | None = PrivateAttr(default=None)
@@ -330,6 +395,10 @@ class Bond(InstrumentModel):
             )
         return default
 
+    def _build_pricing_engine(self, discount_curve: ql.YieldTermStructureHandle) -> ql.PricingEngine:
+        # default for vanilla bonds
+        return ql.DiscountingBondEngine(discount_curve)
+
     def _setup_pricer(self, with_yield: float | None = None) -> None:
         if self.valuation_date is None:
             raise ValueError("Set valuation_date before pricing: set_valuation_date(dt).")
@@ -344,7 +413,7 @@ class Bond(InstrumentModel):
             discount_curve = self._resolve_discount_curve(with_yield)
             bond = self._create_bond(discount_curve)
             # Ensure engine is attached (safe even if subclass already set one)
-            engine=ql.DiscountingBondEngine(discount_curve)
+            engine = self._build_pricing_engine(discount_curve)
             bond.setPricingEngine(engine)
             self._bond = bond
             self._engine = engine
@@ -409,7 +478,7 @@ class Bond(InstrumentModel):
         else:
             if hasattr(self, "get_index_curve"):
                 try:
-                    h = getattr(self, "get_index_curve")()
+                    h = self.get_index_curve()
                 except Exception:
                     h = None
             else:
@@ -959,8 +1028,71 @@ class Bond(InstrumentModel):
 
 class FixedRateBond(Bond):
     """Plain-vanilla fixed-rate bond following the shared Bond lifecycle."""
-    coupon_frequency: QPeriod = Field(...)
-    coupon_rate: float = Field(...)
+    coupon_frequency: QPeriod = Field(
+        ...,
+        description=(
+            "Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None."
+        ),
+        examples=["6M", "1Y"],
+        json_schema_extra={
+            "semantic_type": "coupon_frequency",
+            "quantlib_class": "Period",
+        },
+    )
+
+    coupon_rate: float = Field(
+        ...,
+        description="Fixed annual coupon rate as a decimal (0.05 = 5%).",
+        examples=[0.05, 0.02, 0.0],
+        json_schema_extra={
+            "semantic_type": "coupon_rate",
+            "unit": "rate_decimal",
+            "unit_hint": "0.05 = 5%",
+        },
+    )
+
+    coupons: list[float] | None = Field(
+        default=None,
+        description=(
+            "Optional QuantLib 'coupons' vector. If provided, overrides coupon_rate. "
+            "If omitted, defaults to [coupon_rate]."
+        ),
+        examples=[None, [0.05]],
+    )
+
+    redemption: float = Field(
+        default=100.0,
+        gt=0,
+        description="QuantLib redemption (% of face).",
+        examples=[100.0],
+        json_schema_extra={"unit": "per_100"},
+    )
+
+    payment_convention: QBDC | None = Field(
+        default=None,
+        description=(
+            "QuantLib paymentConvention for FixedRateBond. "
+            "If None, QuantLib default (Following) is used."
+        ),
+        examples=[None, "Following", "ModifiedFollowing"],
+    )
+
+    payment_calendar: QCalendar | None = Field(
+        default=None,
+        description="QuantLib paymentCalendar (optional). If None, QuantLib default Calendar() is used.",
+        examples=[None, {"name": "TARGET"}],
+    )
+
+    ex_coupon_period: QPeriod | None = Field(default=None, description="QuantLib exCouponPeriod.",
+                                             examples=[None, "2D"])
+    ex_coupon_calendar: QCalendar | None = Field(default=None, description="QuantLib exCouponCalendar.",
+                                                 examples=[None, {"name": "TARGET"}])
+    ex_coupon_convention: QBDC | None = Field(default=None, description="QuantLib exCouponConvention.",
+                                              examples=[None, "Unadjusted"])
+    ex_coupon_end_of_month: bool | None = Field(default=None, description="QuantLib exCouponEndOfMonth.",
+                                                examples=[None, False])
+
+
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -1013,8 +1145,154 @@ class FixedRateBond(Bond):
         )
 
 
+class CallableFixedRateBond(Bond):
+    """
+    Callable fixed-rate bond wrapper.
+    Builds ql.CallableFixedRateBond and prices via an overridable engine
+    configured in DiscountParameters.
+    """
+
+    # fixed coupon settings (same idea as FixedRateBond)
+    coupon_rate: float = Field(
+        ...,
+        description="Fixed annual coupon rate as decimal (0.05 = 5%).",
+        examples=[0.05, 0.03],
+        json_schema_extra={"unit_hint": "0.05 = 5%"},
+    )
+    coupon_frequency: QPeriod = Field(
+        ...,
+        description="Coupon tenor (QuantLib Period). Used if schedule is None.",
+        examples=["6M", "1Y"],
+    )
+
+    # QuantLib CallableFixedRateBond requires these explicitly:
+    payment_convention: QBDC | None = Field(
+        default=None,
+        description="Payment convention passed to ql.CallableFixedRateBond. If None, uses business_day_convention.",
+        examples=[None, "Following", "ModifiedFollowing"],
+    )
+    redemption: float = Field(
+        default=100.0,
+        gt=0,
+        description="Redemption (% of face). Passed to ql.CallableFixedRateBond.",
+        examples=[100.0],
+        json_schema_extra={"unit": "per_100"},
+    )
+
+    # call schedule
+    callability: list[CallabilityItem] = Field(
+        ...,
+        min_length=1,
+        description="Call/Put schedule (converted to QuantLib CallabilitySchedule).",
+        examples=[[
+            {"date": "2029-06-15", "type": "Call", "price": 100.0, "price_type": "Clean"},
+            {"date": "2030-06-15", "type": "Call", "price": 100.0, "price_type": "Clean"},
+        ]],
+    )
+
+    # ex-coupon args supported by CallableFixedRateBond signature
+    ex_coupon_period: QPeriod | None = Field(
+        default=None,
+        description="exCouponPeriod passed to ql.CallableFixedRateBond.",
+        examples=[None, "2D"],
+    )
+    ex_coupon_calendar: QCalendar | None = Field(
+        default=None,
+        description="exCouponCalendar passed to ql.CallableFixedRateBond.",
+        examples=[None, {"name": "TARGET"}],
+    )
+    ex_coupon_convention: QBDC | None = Field(
+        default=None,
+        description="exCouponConvention passed to ql.CallableFixedRateBond.",
+        examples=[None, "Unadjusted"],
+    )
+    ex_coupon_end_of_month: bool | None = Field(
+        default=None,
+        description="exCouponEndOfMonth passed to ql.CallableFixedRateBond.",
+        examples=[None, False],
+    )
+
+    # pricing configuration (your requested submodel)
+    discount_parameters: DiscountParameters = Field(
+        default_factory=DiscountParameters,
+        description="Callable pricing engine selection + parameters.",
+    )
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    def _build_schedule(self) -> ql.Schedule:
+        if self.schedule is not None:
+            return self.schedule
+        return ql.Schedule(
+            to_ql_date(self.issue_date),
+            to_ql_date(self.maturity_date),
+            self.coupon_frequency,
+            self.calendar,
+            self.business_day_convention,
+            self.business_day_convention,
+            ql.DateGeneration.Forward,
+            False,
+        )
+
+    def _build_pricing_engine(self, discount_curve: ql.YieldTermStructureHandle) -> ql.PricingEngine:
+        # ✅ your “obvious” override
+        return self.discount_parameters.build_engine(discount_curve)
+
+    def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
+        ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
+        sched = self._build_schedule()
+
+        # Build QuantLib CallabilitySchedule
+        put_call = ql.CallabilitySchedule()
+        for x in self.callability:
+            pt = ql.BondPrice.Clean if x.price_type == "Clean" else ql.BondPrice.Dirty
+            typ = ql.Callability.Call if x.type == "Call" else ql.Callability.Put
+            put_call.append(
+                ql.Callability(
+                    ql.BondPrice(float(x.price), pt),
+                    typ,
+                    to_ql_date(x.date),
+                )
+            )
+
+        pay_conv = int(self.payment_convention) if self.payment_convention is not None else int(self.business_day_convention)
+
+        kwargs: dict[str, Any] = dict(
+            settlementDays=int(self.settlement_days),
+            faceAmount=float(self.face_value),
+            schedule=sched,
+            coupons=[float(self.coupon_rate)],
+            accrualDayCounter=self.day_count,
+            paymentConvention=pay_conv,
+            redemption=float(self.redemption),
+            issueDate=to_ql_date(self.issue_date),
+            putCallSchedule=put_call,
+        )
+
+        # only pass ex-coupon args if set
+        if self.ex_coupon_period is not None:
+            kwargs["exCouponPeriod"] = self.ex_coupon_period
+        if self.ex_coupon_calendar is not None:
+            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
+        if self.ex_coupon_convention is not None:
+            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
+        if self.ex_coupon_end_of_month is not None:
+            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
+
+        return ql.CallableFixedRateBond(**kwargs)
+
 class ZeroCouponBond(Bond):
-    redemption_pct: float = Field(default=100.0, description="Maturity payoff as % of face (100 = par).")
+    redemption_pct: float = Field(
+        default=100.0,
+        gt=0,
+        description="Maturity payoff as % of face (100 = par).",
+        examples=[100.0, 95.0],
+        json_schema_extra={
+            "semantic_type": "redemption_pct",
+            "unit": "per_100",
+            "unit_hint": "100 = 100% of face",
+        },
+    )
     model_config = {"arbitrary_types_allowed": True}
     _discount_curve: ql.YieldTermStructureHandle | None = PrivateAttr(default=None)
 
@@ -1039,23 +1317,175 @@ class ZeroCouponBond(Bond):
 
     def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
         ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
-        return ql.ZeroCouponBond(
-            self.settlement_days,
-            self.calendar,
-            self.face_value,
-            to_ql_date(self.maturity_date),
-            self.business_day_convention,
-            self.redemption_pct,
-            to_ql_date(self.issue_date),
+        sched = self._build_schedule()
+
+        dates = list(sched.dates())
+        asof = ql.Settings.instance().evaluationDate
+        has_periods_left = len(dates) >= 2 and any(dates[i + 1] > asof for i in range(len(dates) - 1))
+
+        if not has_periods_left:
+            maturity = dates[-1] if dates else to_ql_date(self.maturity_date)
+            return ql.ZeroCouponBond(
+                self.settlement_days,
+                self.calendar,
+                self.face_value,
+                maturity,
+                self.business_day_convention,
+                float(self.redemption),  # use model field (default 100)
+                to_ql_date(self.issue_date),
+            )
+
+        coupons = self.coupons if self.coupons is not None else [float(self.coupon_rate)]
+
+        kwargs = dict(
+            settlementDays=int(self.settlement_days),
+            faceAmount=float(self.face_value),
+            schedule=sched,
+            coupons=coupons,
+            paymentDayCounter=self.day_count,
+            redemption=float(self.redemption),
+            issueDate=to_ql_date(self.issue_date),
         )
 
+        # Only pass optional kwargs if user set them (keeps defaults/backward compat)
+        if self.payment_convention is not None:
+            kwargs["paymentConvention"] = int(self.payment_convention)
+        if self.payment_calendar is not None:
+            kwargs["paymentCalendar"] = self.payment_calendar
+        if self.ex_coupon_period is not None:
+            kwargs["exCouponPeriod"] = self.ex_coupon_period
+        if self.ex_coupon_calendar is not None:
+            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
+        if self.ex_coupon_convention is not None:
+            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
+        if self.ex_coupon_end_of_month is not None:
+            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
+
+        try:
+            return ql.FixedRateBond(**kwargs)
+        except TypeError:
+            # fallback to the old positional constructor you had
+            return ql.FixedRateBond(
+                self.settlement_days,
+                self.face_value,
+                sched,
+                coupons,
+                self.day_count,
+            )
 class FloatingRateBond(Bond):
     """Floating-rate bond with specified floating rate index (backward compatible)."""
-    coupon_frequency: QPeriod = Field(...)
-    floating_rate_index_name: str = Field(...)
-    spread: float = Field(default=0.0)
-    # All other fields (issue_date, maturity_date, coupon_frequency, day_count, calendar, etc.)
-    # are inherited from Bond
+    coupon_frequency: QPeriod = Field(
+        ...,
+        description=(
+            "Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None."
+        ),
+        examples=["3M", "6M"],
+        json_schema_extra={
+            "semantic_type": "coupon_frequency",
+            "quantlib_class": "Period",
+        },
+    )
+    floating_rate_index_name: str = Field(
+        ...,
+        description=(
+            "Floating rate index identifier used by your index builder/mapper. "
+            "Use a stable name your system understands."
+        ),
+        examples=["SOFR", "EURIBOR-3M", "USD-LIBOR-3M"],
+        json_schema_extra={
+            "semantic_type": "rate_index",
+            "synonyms": ["index", "reference_rate", "ibor_index"],
+        },
+
+    )
+    spread: float = Field(
+        default=0.0,
+        description="Spread added to the index rate (decimal).",
+        examples=[0.0, 0.0025],
+        json_schema_extra={
+            "semantic_type": "spread",
+            "unit": "rate_decimal",
+            "unit_hint": "0.0025 = 25 bps",
+        },
+
+    )
+
+
+    fixing_days: int | None = Field(
+        default=None,
+        ge=0,
+        description="Override QuantLib fixingDays. If None, uses pricing_index.fixingDays().",
+        examples=[None, 0, 2],
+    )
+
+    gearings: list[float] | None = Field(
+        default=None,
+        description="QuantLib gearings vector. If None, defaults to [1.0].",
+        examples=[None, [1.0], [0.8]],
+    )
+
+    spreads: list[float] | None = Field(
+        default=None,
+        description="QuantLib spreads vector. If None, defaults to [spread].",
+        examples=[None, [0.0], [0.0025]],
+    )
+
+    caps: list[float] | None = Field(
+        default=None,
+        description="QuantLib caps vector (rates as decimals). If None, defaults to [].",
+        examples=[None, [0.05]],
+    )
+
+    floors: list[float] | None = Field(
+        default=None,
+        description="QuantLib floors vector (rates as decimals). If None, defaults to [].",
+        examples=[None, [0.0]],
+    )
+
+    in_arrears: bool = Field(
+        default=False,
+        description="QuantLib inArrears flag.",
+        examples=[False, True],
+    )
+
+    redemption: float = Field(
+        default=100.0,
+        gt=0,
+        description="QuantLib redemption (% of face).",
+        examples=[100.0],
+        json_schema_extra={"unit": "per_100"},
+    )
+
+    payment_convention: QBDC | None = Field(
+        default=None,
+        description=(
+            "QuantLib paymentConvention for FloatingRateBond. "
+            "If None, uses business_day_convention (preserves current behavior)."
+        ),
+        examples=[None, "Following", "ModifiedFollowing"],
+    )
+
+    ex_coupon_period: QPeriod | None = Field(
+        default=None,
+        description="QuantLib exCouponPeriod (optional).",
+        examples=[None, "2D"],
+    )
+    ex_coupon_calendar: QCalendar | None = Field(
+        default=None,
+        description="QuantLib exCouponCalendar (optional).",
+        examples=[None, {"name": "TARGET"}],
+    )
+    ex_coupon_convention: QBDC | None = Field(
+        default=None,
+        description="QuantLib exCouponConvention (optional).",
+        examples=[None, "Unadjusted"],
+    )
+    ex_coupon_end_of_month: bool | None = Field(
+        default=None,
+        description="QuantLib exCouponEndOfMonth (optional).",
+        examples=[None, False],
+    )
+
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -1154,12 +1584,25 @@ class FloatingRateBond(Bond):
             business_day_convention=self.business_day_convention,
             settlement_days=self.settlement_days,
             curve=forecasting,
-            discount_curve=discount_curve,  # may be None (OK)
+            discount_curve=discount_curve,
             seed_past_fixings_from_curve=True,
             schedule=self.schedule,
+
+            fixing_days=self.fixing_days,
+            gearings=self.gearings,
+            spreads=self.spreads,
+            caps=self.caps,
+            floors=self.floors,
+            in_arrears=self.in_arrears,
+            redemption=self.redemption,
+            payment_convention=self.payment_convention,
+            ex_coupon_period=self.ex_coupon_period,
+            ex_coupon_calendar=self.ex_coupon_calendar,
+            ex_coupon_convention=self.ex_coupon_convention,
+            ex_coupon_end_of_month=self.ex_coupon_end_of_month,
         )
 
-    # ---------- public API (kept for backward compatibility) ----------
+        # ---------- public API (kept for backward compatibility) ----------
     def get_index_curve(self):
         self._ensure_index()
         return self._index.forwardingTermStructure()

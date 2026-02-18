@@ -29,6 +29,7 @@ from .base import (
     BasePydanticModel,
     HtmlSaveException,
 )
+from .exceptions import raise_for_response
 from .models_tdag import DataNodeUpdate
 from .utils import DATE_FORMAT, DoesNotExist, make_request
 from .utils import MARKETS_CONSTANTS as CONSTANTS
@@ -280,7 +281,7 @@ class User(BaseObjectOrm, BasePydanticModel):
             url=url,
         )
         if r.status_code not in [200, 201]:
-            raise Exception(f" {r.text()}")
+            raise_for_response(r)
 
         return cls(**r.json())
 
@@ -485,16 +486,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
             )
 
             if r.status_code != 200:
-                if r.status_code == 401:
-                    raise Exception("Unauthorized. Please add credentials to environment.")
-                elif r.status_code == 500:
-                    raise Exception("Server Error.")
-                elif r.status_code == 404:
-                    raise DoesNotExist("Not Found.")
-                elif r.status_code == 405:
-                    raise Exception("Method Not Allowed. Ensure the 'query' endpoint accepts POST.")
-                else:
-                    raise Exception(f"{r.status_code} - {r.text}")
+                raise_for_response(r)
 
             data = r.json()
             next_url = data.get("next")  # DRF-provided next URL (may be relative or absolute)
@@ -511,8 +503,8 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
                             cls(**item) if issubclass(cls, BasePydanticModel) else item
                         )
                     except Exception as e:
-                        print(item)
-                        print(cls)
+                        logger.debug(item)
+                        logger.debug(cls)
                         print(cls(**item))
                         import traceback
 
@@ -608,7 +600,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code not in [200, 201]:
-            raise Exception(r.text)
+            raise_for_response(r)
 
         return cls(**r.json())
 
@@ -648,7 +640,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
             )
 
             if r.status_code != 200:
-                raise Exception(f"Error getting assets (status code: {r.status_code})")
+                raise_for_response(r)
 
             data = r.json()
 
@@ -688,7 +680,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code not in (200, 201):
-            raise Exception(r.text)
+            raise_for_response(r)
 
     def add_instrument_pricing_details_from_ms_instrument(
         self, instrument, pricing_details_date: datetime.datetime, timeout=None
@@ -803,7 +795,7 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
             payload={"json": payload},
         )
         if r.status_code not in [200, 201]:
-            raise Exception(f"Error appending assets: {r.text()}")
+            raise_for_response(r)
         # Return a new instance of AssetCategory built from the response JSON.
         cat = AssetCategory(**r.json())
         self.assets = cat.assets
@@ -823,7 +815,7 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
             payload={"json": payload},
         )
         if r.status_code not in [200, 201]:
-            raise Exception(f"Error removing assets: {r.text()}")
+            raise_for_response(r)
         # Return a new instance of AssetCategory built from the response JSON.
         return AssetCategory(**r.json())
 
@@ -835,7 +827,7 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
             s=cls.build_session(), loaders=cls.LOADERS, r_type="POST", url=url, payload=payload
         )
         if r.status_code not in [200, 201]:
-            raise Exception(f"Error appending creating: {r.text}")
+            raise_for_response(r)
         # Return a new instance of AssetCategory built from the response JSON.
         return AssetCategory(**r.json())
 
@@ -1075,7 +1067,7 @@ class AssetTranslationTable(BaseModel):
                     continue
 
             if r.status_code not in (200, 201):
-                raise Exception(f"Error adding rule: {getattr(r, 'text', r)}")
+                raise_for_response(r)
 
     def remove_rules(self, rules: list[AssetTranslationRule]) -> None:
         base_url = self.get_object_url()
@@ -1167,7 +1159,7 @@ class Asset(AssetMixin, BaseObjectOrm):
             s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
         if r.status_code not in (200, 201):
-            raise Exception(f"Error registering asset: {r.text}")
+            raise_for_response(r)
         return cls(**r.json())
 
     @classmethod
@@ -1184,7 +1176,7 @@ class Asset(AssetMixin, BaseObjectOrm):
             s=s, loaders=cls.LOADERS, r_type="POST", url=base_url, payload=payload, time_out=timeout
         )
         if r.status_code not in (200, 201):
-            raise Exception(f"Error registering asset: {r.text}")
+            raise_for_response(r)
         return cls(**r.json())
 
     @classmethod
@@ -1211,7 +1203,7 @@ class Asset(AssetMixin, BaseObjectOrm):
         )
 
         if r.status_code != 200:
-            raise Exception(f"Error in batch asset registration: {r.text}")
+            raise_for_response(r)
 
         return [cls(**data) for data in r.json()]
 
@@ -1420,8 +1412,7 @@ class AccountMixin(BasePydanticModel):
             time_out=timeout,
         )
         if r.status_code != 200:
-            raise Exception(r.text)
-
+            raise_for_response(r)
         asset_list = []
         for a in r.json():
             asset_list.append(resolve_asset(a))
@@ -1457,7 +1448,7 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
             time_out=timeout,
         )
         if r.status_code not in [200, 201]:
-            raise Exception(f"Error geting or creating account {r.text}")
+            raise_for_response(r)
         return cls(**r.json())
 
     def set_account_target_portfolio_from_asset_holdings(self, timeout=None):
@@ -1479,7 +1470,7 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
         if r.status_code != 200:
-            raise Exception(f"Error Getting NAV in account {r.text}")
+            raise_for_response(r)
 
     def get_tracking_error_details(self, timeout=None):
 
@@ -1489,7 +1480,7 @@ class Account(AccountMixin, BaseObjectOrm, BasePydanticModel):
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
         if r.status_code != 200:
-            raise Exception(f"Error Getting NAV in account {r.text}")
+            raise_for_response(r)
         result = r.json()
         return result["fund_summary"], result["account_tracking_error"]
 
@@ -1619,7 +1610,7 @@ class AccountHistoricalHoldingsMixin:
         url = f"{base_url}/{self.id}/get_nav/"
         r = make_request(s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url)
         if r.status_code != 200:
-            raise Exception(f"Error Getting NAV in account {r.text}")
+            raise_for_response(r)
         return r.json()
 
 
@@ -1718,7 +1709,7 @@ class AccountHistoricalHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, B
             payload=payload,
         )
         if r.status_code != 204:
-            raise Exception(r.text)
+            raise_for_response(r)
 
     @classmethod
     def create_with_holdings(
@@ -1755,7 +1746,7 @@ class AccountHistoricalHoldings(AccountHistoricalHoldingsMixin, BaseObjectOrm, B
             time_out=timeout,
         )
         if r.status_code != 201:
-            raise Exception(r.text)
+            raise_for_response(r)
         return cls(**r.json())
 
 
@@ -1844,7 +1835,7 @@ class Trade(BaseObjectOrm, BasePydanticModel):
             time_out=timeout,
         )
         if r.status_code !=200:
-            raise Exception(f" {r.text()}")
+            raise_for_response(r)
         return cls(**r.json())
 
 
@@ -1929,7 +1920,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             time_out=timeout,
         )
         if r.status_code not in [201]:
-            raise Exception(f" {r.text}")
+            raise_for_response(r)
         response = r.json()
 
         return cls(**response["portfolio"]), PortfolioIndexAsset(
@@ -1962,7 +1953,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
         if r.status_code  !=200:
-            raise Exception(f" {r.text}")
+            r.status_code
         results = r.json()
         return results["weights"], datetime.datetime.utcfromtimestamp(
             results["weights_date"]
@@ -2010,7 +2001,8 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
             time_out=timeout,
         )
         if r.status_code not in [201, 200]:
-            raise Exception(f" {r.text}")
+            raise_for_response(r)
+
         return cls(**r.json())
 
     def append_portfolios(self, portfolio_ids: list[int]) -> "PortfolioGroup":
@@ -2038,7 +2030,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code != 200:
-            raise Exception(f"Error appending portfolios: {r.text}")
+            raise_for_response(r)
 
         # Update the current instance in-place with the response from the server
         updated_data = r.json()
@@ -2072,7 +2064,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code != 200:
-            raise Exception(f"Error removing portfolios: {r.text}")
+            raise_for_response(r)
 
         # Update the current instance in-place with the response from the server
         updated_data = r.json()
@@ -2335,7 +2327,8 @@ class Order(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code not in [200, 201]:
-            raise r.text
+            raise_for_response(r)
+
         return cls(**r.json())
 
 
@@ -2390,7 +2383,7 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
         )
 
         if r.status_code != 204:
-            raise Exception(r.text)
+            raise_for_response(r)
 
 
 # ------------------------------

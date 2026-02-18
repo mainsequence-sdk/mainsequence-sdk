@@ -1,19 +1,38 @@
-import copy
 import datetime
 import os
+import socket
 import time
 from enum import Enum
-from socket import socket
 from typing import TypedDict
 
 import psutil
 import pytz
 import requests
+from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
+from urllib3.util.retry import Retry
 
 from mainsequence.logconf import logger
 
+# ---- Backend defaults (single source of truth) ----
+TDAG_ENDPOINT = (
+    os.environ.get("TDAG_ENDPOINT")
+    or os.environ.get("MAINSEQUENCE_ENDPOINT")
+    or "https://main-sequence.app"
+)
+API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
+
+DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
+DEFAULT_ALLOWED_METHODS = frozenset(["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
+
+# requests supports either a float or (connect, read). Preserve previous ~120s read behavior,
+# but add a sane connect timeout.
+DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 120.0)
+
+
+
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+
 
 
 class DataFrequency(str, Enum):
@@ -86,7 +105,7 @@ def make_request(
 
     TIMEOFF = 0.25
     TRIES = int(15 // TIMEOFF)
-    timeout = 120 if time_out is None else time_out
+    timeout = DEFAULT_TIMEOUT if time_out is None else time_out
     payload = {} if payload is None else payload
 
     def get_req(session):
@@ -94,6 +113,8 @@ def make_request(
             return session.get
         elif r_type == "POST":
             return session.post
+        elif r_type == "PUT":
+            return session.put
         elif r_type == "PATCH":
             return session.patch
         elif r_type == "DELETE":
@@ -131,15 +152,17 @@ def make_request(
             duration = time.perf_counter() - start_time
             logger.debug(f"{url} took {duration:.4f} seconds.")
 
-            if r.status_code in [403, 401] and not headers_refreshed:
-                logger.warning(f"Error {r.status_code} Refreshing headers")
+            if r.status_code in (401, 403) and loaders is not None and not headers_refreshed:
+                logger.warning(f"Error {r.status_code} refreshing auth headers once")
                 loaders.refresh_headers()
                 s.headers.update(loaders.auth_headers)
                 req = get_req(session=s)
                 headers_refreshed = True
-            else:
-                keep_request = False
-                break
+                # retry immediately once with refreshed headers
+                continue
+
+            keep_request = False
+            break
         except requests.exceptions.ConnectionError:
             logger.exception(f"Error connecting {url}")
         except TypeError as e:
@@ -164,33 +187,62 @@ def make_request(
     return r
 
 
-def build_session():
-    from requests.adapters import HTTPAdapter, Retry
+def build_session(
+    *,
+    loaders: AuthLoaders | None = None,
+    retries: int = 3,
+    backoff_factor: float = 0.5,
+    accept_gzip: bool = True,
+) -> requests.Session:
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
     s = requests.Session()
-    retries = Retry(
-        total=2,
-        backoff_factor=2,
+
+    if loaders is not None:
+        s.headers.update(loaders.auth_headers)
+
+    if accept_gzip:
+        s.headers.setdefault("Accept-Encoding", "gzip")
+
+    retry_kwargs = dict(
+        total=retries,
+        connect=retries,
+        read=retries,
+        status=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=DEFAULT_STATUS_FORCELIST,
+        respect_retry_after_header=True,
+        raise_on_status=False,
     )
-    s.mount("http://", HTTPAdapter(max_retries=retries))
+
+    # urllib3 compatibility: allowed_methods replaced method_whitelist
+    try:
+        retry_cfg = Retry(allowed_methods=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
+    except TypeError:
+        retry_cfg = Retry(method_whitelist=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
+
+    adapter = HTTPAdapter(max_retries=retry_cfg)
+
+    # ✅ critical: mount on both schemes
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)
+
     return s
 
+# ---- Shared backend (import this in base/models) ----
+loaders = AuthLoaders()
+session = build_session(loaders=loaders)
 
 def get_constants_tdag():
-    url = f"{os.getenv('TDAG_ENDPOINT')}/orm/api/ts_manager/api/constants"
-    loaders = AuthLoaders()
-    s = build_session()
-    s.headers.update(loaders.auth_headers)
-    r = make_request(s=s, loaders=loaders, r_type="GET", url=url)
+    url = f"{TDAG_ENDPOINT}/orm/api/ts_manager/api/constants"
+    r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 
 
 def get_constants_vam():
-    url = f"{os.getenv('TDAG_ENDPOINT')}/orm/api/assets/api/constants"
-    loaders = AuthLoaders()
-    s = build_session()
-    s.headers.update(loaders.auth_headers)
-    r = make_request(s=s, loaders=loaders, r_type="GET", url=url)
+    url = f"{TDAG_ENDPOINT}/orm/api/assets/api/constants"
+    r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 
 
@@ -311,14 +363,30 @@ def set_types_in_table(df, column_types):
 
 
 def serialize_to_json(kwargs):
-    new_data = {}
-    for key, value in kwargs.items():
-        new_value = copy.deepcopy(value)
-        if isinstance(value, datetime.datetime):
-            new_value = str(value)
+    def to_jsonable(v):
+        if isinstance(v, datetime.datetime):
+            dt = v
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=datetime.UTC)
+            else:
+                dt = dt.astimezone(datetime.UTC)
+            return dt.isoformat().replace("+00:00", "Z")
 
-        new_data[key] = new_value
-    return new_data
+        if hasattr(v, "model_dump"):
+            try:
+                return v.model_dump(mode="json", exclude_none=True)
+            except TypeError:
+                return v.model_dump()
+
+        if isinstance(v, dict):
+            return {k: to_jsonable(x) for k, x in v.items()}
+        if isinstance(v, (list, tuple)):
+            return [to_jsonable(x) for x in v]
+
+        return v
+
+    return {k: to_jsonable(v) for k, v in kwargs.items()}
+
 
 
 import pathlib
@@ -382,3 +450,45 @@ def bios_uuid() -> str:
 
     # Tier 4 – MAC address (uuid.getnode). Always available.
     return f"{uuid.getnode():012x}"
+
+
+def _install_retry_adapters_in_place(
+    s: requests.Session,
+    *,
+    retries: int,
+    backoff_factor: float,
+) -> None:
+    """
+    Configure retry adapters on an EXISTING session object (do not rebind 'session').
+    This is critical so 'from utils import session' users still get the updated behavior.
+    """
+    retry_kwargs = dict(
+        total=retries,
+        connect=retries,
+        read=retries,
+        status=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=DEFAULT_STATUS_FORCELIST,
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+
+    # urllib3 compatibility across versions
+    try:
+        retry_cfg = Retry(allowed_methods=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
+    except TypeError:
+        retry_cfg = Retry(method_whitelist=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
+
+    adapter = HTTPAdapter(max_retries=retry_cfg)
+
+    # Close old adapters' pools (best-effort), then mount new ones
+    for prefix in ("https://", "http://"):
+        old = s.adapters.get(prefix)
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+
+    s.mount("https://", adapter)
+    s.mount("http://", adapter)

@@ -107,9 +107,9 @@ class DuckDBInterface:
             # conn.execute("LOAD ui;")
             # spin up the HTTP server and open your browser
             conn.execute("CALL start_ui();")
-            print(f"DuckDB Explorer launched at {url}")
+            logger.info(f"DuckDB Explorer launched at {url}")
         else:
-            print(f"DuckDB Explorer is already running at {url}")
+            logger.info(f"DuckDB Explorer is already running at {url}")
 
     # ──────────────────────────────────────────────────────────────────────────────
     # Public API
@@ -817,15 +817,15 @@ class DuckDBInterface:
             if m_day:
                 d = int(m_day.group(1))
                 start = pd.Timestamp(
-                    datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.timezone.utc)
+                    datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.UTC)
                 )
                 end = start + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
                 return start, end
             # month granularity
             last_day = monthrange(y, m)[1]
-            start = pd.Timestamp(datetime.datetime(y, m, 1, 0, 0, 0, tzinfo=datetime.timezone.utc))
+            start = pd.Timestamp(datetime.datetime(y, m, 1, 0, 0, 0, tzinfo=datetime.UTC))
             end = pd.Timestamp(
-                datetime.datetime(y, m, last_day, 23, 59, 59, tzinfo=datetime.timezone.utc)
+                datetime.datetime(y, m, last_day, 23, 59, 59, tzinfo=datetime.UTC)
             ) + pd.Timedelta(
                 seconds=0.999999999
             )  # inclusive
@@ -965,7 +965,7 @@ class DuckDBInterface:
             except Exception:
                 max_rows = 10_000_000
         if now is None:
-            now = datetime.datetime.now(datetime.timezone.utc)
+            now = datetime.datetime.now(datetime.UTC)
 
         # Normalize inputs
         start_ts = _to_utc_ts(start)

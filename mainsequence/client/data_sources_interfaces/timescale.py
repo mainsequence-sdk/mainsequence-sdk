@@ -224,11 +224,11 @@ def direct_table_update(
             with conn.cursor() as cur:
                 for index_name in index_names.keys():
                     drop_index_query = f'DROP INDEX IF EXISTS "{index_name}";'
-                    print(f"Dropping index '{index_name}'...")
+                    logger.info(f"Dropping index '{index_name}'...")
                     cur.execute(drop_index_query)
             # Commit changes after all indexes are processed
             conn.commit()
-            print("All specified indexes dropped successfully.")
+            logger.info("All specified indexes dropped successfully.")
 
         # Drop indexes before insertion
 
@@ -336,7 +336,7 @@ def direct_table_update(
 
                     conn.commit()
             except Exception as e:
-                print(f"An error occurred during insertion: {e}")
+                logger.exception(f"An error occurred during insertion: {e}")
                 raise
 
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
@@ -377,7 +377,7 @@ def direct_table_update(
 
                 conn.commit()
         except Exception as e:
-            print(f"An error occurred during single insert: {e}")
+            logger.exception(f"An error occurred during single insert: {e}")
             raise
     # do not rebuild  indices this is only done on inception
     if data_node_storage._rebuild_indices:

@@ -5,7 +5,7 @@ import inspect
 from typing import Annotated, Any, Optional
 
 import QuantLib as ql
-from pydantic import BeforeValidator, PlainSerializer, WithJsonSchema
+from pydantic import BeforeValidator, Field, PlainSerializer, WithJsonSchema
 
 # Reuse your existing codec helpers
 from mainsequence.instruments.instruments.json_codec import (
@@ -188,6 +188,15 @@ QuantLibPeriod = Annotated[
     ql.Period,
     BeforeValidator(period_from_json),
     PlainSerializer(period_to_json, return_type=str),
+Field(
+        description="QuantLib Period (tenor). Common formats: '1D', '1W', '3M', '6M', '1Y'.",
+        examples=["3M", "6M", "1Y"],
+        json_schema_extra={
+            "quantlib_class": "Period",
+            "accepted_json": ["string"],
+            "notes": "Use uppercase units: D/W/M/Y.",
+        },
+    ),
 ]
 
 # ---------- DayCounter -------------------------------------------------------
@@ -195,6 +204,18 @@ QuantLibDayCounter = Annotated[
     ql.DayCounter,
     BeforeValidator(daycount_from_json),
     PlainSerializer(daycount_to_json, return_type=str),
+Field(
+        description=(
+            "QuantLib DayCounter (day count convention) used for year fractions/accrual. "
+            "Provide a canonical name supported by your daycount_from_json parser."
+        ),
+        examples=["Actual/360", "30/360", "Actual/Actual (ISDA)"],
+        json_schema_extra={
+            "quantlib_class": "DayCounter",
+            "accepted_json": ["string"],
+            "synonyms": ["dcc", "day_count_convention"],
+        },
+    ),
 ]
 
 # ---------- Calendar ---------------------------------------------------------
@@ -204,6 +225,22 @@ QuantLibCalendar = Annotated[
     PlainSerializer(
         _calendar_to_json_actual, return_type=dict[str, Any]
     ),  # <— always emit true name
+
+    Field(
+        description=(
+            "QuantLib Calendar used to adjust dates (holidays/weekends). "
+            "Serialized as an object so the true calendar name is preserved."
+        ),
+        examples=[
+            {"name": "TARGET"},
+            {"name": "UnitedStates", "market": "GovernmentBond"},
+        ],
+        json_schema_extra={
+            "quantlib_class": "Calendar",
+            "accepted_json": ["object", "string"],
+            "notes": "Prefer object form to preserve the exact calendar identity.",
+        },
+    ),
 ]
 
 
@@ -220,35 +257,85 @@ QuantLibBDC = Annotated[
     int,
     BeforeValidator(_bdc_from_any),
     PlainSerializer(_bdc_to_str, return_type=str),
+Field(
+        description=(
+            "QuantLib BusinessDayConvention. Accepts either a convention name "
+            "(e.g. 'Following') or the QuantLib enum integer."
+        ),
+        examples=["Following", "ModifiedFollowing", "Unadjusted"],
+        json_schema_extra={
+            "quantlib_enum": "BusinessDayConvention",
+            "accepted_json": ["string", "integer"],
+        },
+    ),
+
+    WithJsonSchema(
+        {
+            "type": ["string", "integer"],
+            "examples": ["Following", "ModifiedFollowing", "Unadjusted"],
+        },
+        mode="validation",
+    ),
+    WithJsonSchema(
+        {"type": "string", "examples": ["Following"]},
+        mode="serialization",
+    ),
 ]
 
 # ---------- Schedule ---------------------------------------------------------
+_SCHEDULE_SCHEMA: dict[str, Any] = {
+    "type": ["object", "null"],
+    "properties": {
+        "dates": {
+            "type": "array",
+            "items": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
+        },
+        "calendar": {"type": "object"},  # {"name": "<display name from cal.name()>"}
+        "business_day_convention": {"type": ["string", "integer"]},
+        "termination_business_day_convention": {"type": ["string", "integer"]},
+        "end_of_month": {"type": "boolean"},
+        "tenor": {"type": "string"},
+        "rule": {"type": ["string", "integer"]},
+    },
+    "required": ["dates"],
+    "additionalProperties": True,
+}
 QuantLibSchedule = Annotated[
     ql.Schedule | None,
     BeforeValidator(_schedule_from_json_auto),  # <— rebuild calendar from display name first
     PlainSerializer(
         _schedule_to_json_actual, return_type=Optional[dict[str, Any]]
     ),  # <— emit true name
-    WithJsonSchema(
-        {
-            "type": ["object", "null"],
-            "properties": {
-                "dates": {
-                    "type": "array",
-                    "items": {"type": "string", "pattern": r"^\d{4}-\d{2}-\d{2}$"},
-                },
-                "calendar": {"type": "object"},  # {"name": "<display name from cal.name()>"}
-                "business_day_convention": {"type": ["string", "integer"]},
-                "termination_business_day_convention": {"type": ["string", "integer"]},
-                "end_of_month": {"type": "boolean"},
-                "tenor": {"type": "string"},
-                "rule": {"type": ["string", "integer"]},
+    Field(
+        description=(
+            "QuantLib Schedule definition. At minimum provide 'dates' as ISO strings. "
+            "Optional keys like 'calendar', 'business_day_convention', 'tenor', 'rule', etc. "
+            "are accepted and passed through your schedule codec."
+        ),
+        examples=[
+            None,
+            {
+                "dates": ["2026-01-15", "2026-07-15", "2027-01-15"],
+                "calendar": {"name": "TARGET"},
+                "business_day_convention": "ModifiedFollowing",
+                "termination_business_day_convention": "ModifiedFollowing",
+                "end_of_month": False,
+                "tenor": "6M",
+                "rule": "Forward",
             },
-            "required": ["dates"],
-            "additionalProperties": True,
+        ],
+        json_schema_extra={
+            "quantlib_class": "Schedule",
+            "accepted_json": ["object", "null"],
+            "required_keys": ["dates"],
+            "date_format": "YYYY-MM-DD",
+            "notes": "calendar is expected as {'name': '<Calendar.name() display name>'} in the preferred form.",
         },
-        mode="serialization",
     ),
+        # Make it appear in config_schema (validation mode)
+    WithJsonSchema(_SCHEDULE_SCHEMA, mode="validation"),
+        #  Keep serialization shape documented too (your serializer returns dict|null)
+    WithJsonSchema(_SCHEDULE_SCHEMA, mode="serialization"),
 ]
 
 __all__ = [

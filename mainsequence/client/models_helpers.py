@@ -19,39 +19,6 @@ def get_right_account_class(account: Account):
     return account
 
 
-class Slide(BasePydanticModel):
-    id: int | None = None
-
-    number: PositiveInt = Field(
-        ...,
-        description="1-based position of the slide within its presentation",
-        example=3,
-    )
-    body: str | None = Field(
-        default=None,
-        description="Raw slide content in markdown/HTML/etc.",
-    )
-    created_at: datetime.datetime = Field(
-        default_factory=datetime.datetime.utcnow,
-        description="Timestamp when the slide row was created",
-        example="2025-06-02T12:34:56Z",
-    )
-    updated_at: datetime.datetime = Field(
-        default_factory=datetime.datetime.utcnow,
-        description="Timestamp automatically updated on save",
-        example="2025-06-02T12:34:56Z",
-    )
-
-
-class Presentation(BaseObjectOrm, BasePydanticModel):
-    id: int | None = None
-    title: str = Field(..., max_length=255)
-    description: str = Field("", description="Free-form description of the deck")
-    slides: list[Slide]
-
-    # These come from the DB and are read-only in normal create/update requests
-    created_at: datetime.datetime | None = None
-    updated_at: datetime.datetime | None = None
 
 
 class FileResource(BaseModel):
@@ -63,9 +30,6 @@ class FileResource(BaseModel):
 class ScriptResource(FileResource):
     pass
 
-
-class NotebookResource(FileResource):
-    pass
 
 
 class AppResource(BaseModel):
@@ -79,7 +43,6 @@ class AppResource(BaseModel):
 
 Resource = Union[
     dict[Literal["script"], ScriptResource],
-    dict[Literal["notebook"], NotebookResource],
     dict[Literal["app"], AppResource],
 ]
 
@@ -122,7 +85,8 @@ class Job(BaseObjectOrm, BasePydanticModel):
             s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload={"json": job_configuration}
         )
         if r.status_code not in [200, 201]:
-            raise Exception(r.text)
+            raise_for_response(r)
+
         return r.json()
 
 
