@@ -24,14 +24,13 @@ from pydantic import (
 from mainsequence.logconf import logger
 
 from .base import (
-    TDAG_ENDPOINT,
     BaseObjectOrm,
     BasePydanticModel,
     HtmlSaveException,
 )
 from .exceptions import raise_for_response
 from .models_tdag import DataNodeUpdate
-from .utils import DATE_FORMAT, DoesNotExist, make_request
+from .utils import DATE_FORMAT, TDAG_ENDPOINT, DoesNotExist, make_request
 from .utils import MARKETS_CONSTANTS as CONSTANTS
 
 CRYPTO_EXCHANGE_CODE = [

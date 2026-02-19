@@ -24,13 +24,14 @@ from pydantic import BaseModel, Field, field_validator
 from mainsequence.logconf import logger
 
 from . import exceptions
-from .base import TDAG_ENDPOINT, BaseObjectOrm, BasePydanticModel
+from .base import BaseObjectOrm, BasePydanticModel
 from .data_filters import *
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
 from .exceptions import raise_for_response
 from .utils import (
     TDAG_CONSTANTS,
+    TDAG_ENDPOINT,
     DataFrequency,
     DateInfo,
     UniqueIdentifierRangeMap,

@@ -17,7 +17,7 @@ from mainsequence.instruments.pricing_models.indices import get_index
 from mainsequence.instruments.utils import to_py_date, to_ql_date
 
 from .base_instrument import InstrumentModel
-from .callability import CallabilityItem, DiscountParameters
+from .callability import AmortizationParameters, CallabilityItem, DiscountParameters
 from .ql_fields import (
     QuantLibBDC as QBDC,
 )
@@ -47,6 +47,8 @@ _BOND_DURATION_CACHE: dict[str, "OrderedDict[str, float]"] = {}  # <- NEW
 def clear_global_bond_cache() -> None:
     with _BOND_CACHE_LOCK:
         _BOND_PRICE_CACHE.clear()
+        _BOND_ZSPREAD_CACHE.clear()
+        _BOND_DURATION_CACHE.clear()
 def global_bond_cache_stats() -> dict[str, int]:
     with _BOND_CACHE_LOCK:
         return {
@@ -159,6 +161,8 @@ class Bond(InstrumentModel):
 
     _bond: ql.Bond | None = PrivateAttr(default=None)
     _with_yield: float | None = PrivateAttr(default=None)
+    _flat_compounding: int | None = PrivateAttr(default=None)
+    _flat_frequency: int | None = PrivateAttr(default=None)
     _engine: ql.PricingEngine | None = PrivateAttr(default=None)
     _last_discount_curve_handle: ql.YieldTermStructureHandle | None = PrivateAttr(default=None)
     _curve_observer: ql.Observer | None = PrivateAttr(default=None)
@@ -171,6 +175,9 @@ class Bond(InstrumentModel):
         self._engine = None
         self._last_discount_curve_handle = None
         self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
+
         # unhook curve observer if we had one
         if self._curve_observer and self._last_discount_curve_handle is not None:
             try:
@@ -304,7 +311,11 @@ class Bond(InstrumentModel):
         """Stabilize currency inputs for cache keys."""
         return round(float(x), 8)
 
-    def _price_context_key(self, with_yield: float | None) -> str:
+    def _price_context_key(self, with_yield: float | None,
+                           *,
+                                   flat_compounding: int = ql.Compounded,
+                                   flat_frequency: int = ql.Annual,
+                           ) -> str:
         """
         Key that captures pricing context beyond the instrument structure.
         - default curve: defined by the curve handle identity + ref date + valuation date
@@ -313,7 +324,10 @@ class Bond(InstrumentModel):
         if with_yield is not None:
             wy = self._normalize_with_yield(with_yield)
             # include dc/comp/freq implicitly defined in _resolve_discount_curve for flat curves
-            return f"flat|y:{wy}|comp:Compounded|freq:Annual|val:{val_ord}"
+            comp_i = int(flat_compounding)
+            freq_i = int(flat_frequency)
+
+            return f"flat|y:{wy}|comp:{comp_i}|freq:{freq_i}|val:{val_ord}"
         handle = self._get_default_discount_curve()
         if handle is None:
             raise ValueError(
@@ -335,7 +349,15 @@ class Bond(InstrumentModel):
     def pricing_engine_id(self) -> str:
         """Human-readable id of the current engine/curve setup."""
         try:
-            return self._price_context_key(self._with_yield)
+            # If we're priced off a flat curve, reflect the stored comp/freq.
+            comp = self._flat_compounding if self._flat_compounding is not None else ql.Compounded
+            freq = self._flat_frequency if self._flat_frequency is not None else ql.Annual
+
+            return self._price_context_key(
+                                self._with_yield,
+                                flat_compounding=int(comp),
+                            flat_frequency = int(freq),
+                        )
         except Exception:
             return "unpriced"
 
@@ -372,7 +394,7 @@ class Bond(InstrumentModel):
             self._bond = self._create_bond(None)  # << NO discount curve required here
 
     # ---- internal helpers ----
-    def _resolve_discount_curve(self, with_yield: float | None) -> ql.YieldTermStructureHandle:
+    def _resolve_discount_curve(self, with_yield: float | None, *, flat_compounding=ql.Compounded, flat_frequency=ql.Annual) -> ql.YieldTermStructureHandle:
         """
         Priority:
           1) If with_yield provided -> build a flat curve off that yield.
@@ -382,9 +404,7 @@ class Bond(InstrumentModel):
 
         if with_yield is not None:
             # Compounded Annual for YTM-style flat curves; day_count from instrument
-            flat = ql.FlatForward(
-                ql_calc_date, with_yield, self.day_count, ql.Compounded, ql.Annual
-            )
+            flat = ql.FlatForward(ql_calc_date, float(with_yield), self.day_count, flat_compounding, flat_frequency)
             return ql.YieldTermStructureHandle(flat)
 
         default = self._get_default_discount_curve()
@@ -399,7 +419,13 @@ class Bond(InstrumentModel):
         # default for vanilla bonds
         return ql.DiscountingBondEngine(discount_curve)
 
-    def _setup_pricer(self, with_yield: float | None = None) -> None:
+    def _setup_pricer(
+            self,
+            with_yield: float | None = None,
+            *,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+    ) -> None:
         if self.valuation_date is None:
             raise ValueError("Set valuation_date before pricing: set_valuation_date(dt).")
 
@@ -408,26 +434,67 @@ class Bond(InstrumentModel):
         ql.Settings.instance().includeReferenceDateEvents = False
         ql.Settings.instance().enforceTodaysHistoricFixings = False
 
-        # Build or rebuild only when needed
-        if self._bond is None or self._with_yield != with_yield:
-            discount_curve = self._resolve_discount_curve(with_yield)
-            bond = self._create_bond(discount_curve)
-            # Ensure engine is attached (safe even if subclass already set one)
-            engine = self._build_pricing_engine(discount_curve)
-            bond.setPricingEngine(engine)
-            self._bond = bond
-            self._engine = engine
-            self._with_yield = with_yield
-            self._ensure_curve_observer(discount_curve)
-            self._last_discount_curve_handle = discount_curve
+        rebuild = False
+
+        # 1) No bond yet
+        if self._bond is None:
+            rebuild = True
+
+        # 2) Yield changed
+        if self._with_yield != with_yield:
+            rebuild = True
+
+        # 3) Flat curve conventions changed (only meaningful when with_yield is used)
+        if with_yield is not None and not rebuild:
+            if self._flat_compounding != int(flat_compounding) or self._flat_frequency != int(flat_frequency):
+                rebuild = True
+
+        # 4) Default curve handle changed (e.g. reset_curve called) when pricing off curve
+        if with_yield is None and not rebuild:
+            default = self._get_default_discount_curve()
+            if default is not None:
+                if self._last_discount_curve_handle is None:
+                    rebuild = True
+                else:
+                    # compare underlying curve identity+refdate rather than handle object equality
+                    if self._curve_cache_id_from_handle(default) != self._curve_cache_id_from_handle(
+                            self._last_discount_curve_handle):
+                        rebuild = True
+
+        if not rebuild:
+            return
+
+        discount_curve = self._resolve_discount_curve(
+            with_yield,
+            flat_compounding=flat_compounding,
+            flat_frequency=flat_frequency,
+        )
+        bond = self._create_bond(discount_curve)
+
+        engine = self._build_pricing_engine(discount_curve)
+        bond.setPricingEngine(engine)
+
+        self._bond = bond
+        self._engine = engine
+        self._with_yield = with_yield
+        self._flat_compounding = int(flat_compounding) if with_yield is not None else None
+        self._flat_frequency = int(flat_frequency) if with_yield is not None else None
+        self._ensure_curve_observer(discount_curve)
+        self._last_discount_curve_handle = discount_curve
 
     # ---- public API shared by all vanilla bonds ----
-    def price(self, with_yield: float | None = None) -> float:
+    def price(self, with_yield: float | None = None, *,
+        flat_compounding: int = ql.Compounded,
+        flat_frequency: int = ql.Annual,) -> float:
         if self.valuation_date is None:
             raise ValueError("Set valuation_date before pricing: set_valuation_date(dt).")
 
         inst_key = self._instrument_cache_key()
-        price_key = self._price_context_key(with_yield)
+        price_key = self._price_context_key(
+                        with_yield,
+                        flat_compounding = flat_compounding,
+                    flat_frequency = flat_frequency,
+                )
 
         # Global cache hit (no engine/bond build)
         with _BOND_CACHE_LOCK:
@@ -438,7 +505,11 @@ class Bond(InstrumentModel):
                 return val
 
         # Miss -> build and compute
-        self._setup_pricer(with_yield=with_yield)
+        self._setup_pricer(
+                        with_yield = with_yield,
+                    flat_compounding = flat_compounding,
+                    flat_frequency = flat_frequency,
+                )
         npv = float(self._bond.NPV())
 
         with _BOND_CACHE_LOCK:
@@ -476,23 +547,31 @@ class Bond(InstrumentModel):
                 else ql.YieldTermStructureHandle(discount_curve)
             )
         else:
-            if hasattr(self, "get_index_curve"):
+            h = None
+
+            # 1) Index curve (floaters)
+            if h is None and hasattr(self, "get_index_curve"):
                 try:
                     h = self.get_index_curve()
                 except Exception:
                     h = None
-            else:
-                h = None
-            if h is None:
-                if hasattr(self, "get_index_curve"):
-                    h = self.get_index_curve()
-                else:
+
+            # 2) Benchmark curve (if configured)
+            if h is None and self.benchmark_rate_index_name:
+                try:
                     h = self.get_benchmark_index_curve()
+                except Exception:
+                    h = None
+
+            # 3) Default curve (fixed/zcb if user set reset_curve)
+            if h is None:
+                h = self._get_default_discount_curve()
+
             if h is None:
                 raise ValueError(
                     "No discount curve available for z-spread. "
                     "Pass `discount_curve=...`, implement get_index_curve(), "
-                    "or set benchmark_rate_index_name."
+                    "or set benchmark_rate_index_name / default curve."
                 )
 
         # Build cache keys
@@ -599,49 +678,146 @@ class Bond(InstrumentModel):
             return float(0.5 * (lo + hi))
 
     # ---- internal: QuantLib-based z-spread (expects clean price per 100) ----
+    def _settlement_notional_for_scaling(self) -> float:
+        """
+        For amortizers, notional(settlementDate) != face_value.
+         Prefer QuantLib notional(settlementDate). If wrappers don't expose it well,
+        fall back to the first future coupon nominal. Finally fall back to face_value.
+        """
+        qb = self._bond
+        if qb is None:
+            return float(self.face_value)
+
+        settle = qb.settlementDate()
+
+        # 1) Prefer notional(settlement) / notional()
+        n = None
+
+        try:
+            n = qb.notional(settle)
+        except TypeError:
+
+            try:
+                n = qb.notional()
+            except Exception:
+                n = None
+            except Exception:
+                n = None
+
+        if isinstance(n, (list, tuple)):
+            n = n[0] if n else None
+
+        try:
+            nf = float(n)
+            if nf > 0.0:
+                return nf
+        except Exception:
+            pass
+
+            # 2) Fallback: infer from first future coupon nominal
+        try:
+            for cf in qb.cashflows():
+                if cf.hasOccurred(settle):
+                    continue
+                f = ql.as_floating_rate_coupon(cf)
+                if f is not None:
+                    try:
+                        nf = float(f.nominal())
+                        if nf > 0.0:
+                            return nf
+                    except Exception:
+                        pass
+                x = ql.as_fixed_rate_coupon(cf)
+                if x is not None:
+                    try:
+                        nf = float(x.nominal())
+                        if nf > 0.0:
+                            return nf
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        return float(self.face_value)
+
     def _z_spread_quantlib(
             self,
             target_dirty_ccy: float,
-            h: ql.YieldTermStructureHandle,
-            *,
+            h: Any,
             tol: float,
             max_iter: int,
     ) -> float:
-        # 1) currency dirty -> clean per 100
-        scale = 100.0 / float(self.face_value)
+        qb = self._bond
+        if qb is None:
+            raise RuntimeError("Bond not built.")
+
+        settle = qb.settlementDate()
+
+        # 1) currency dirty -> dirty per 100 (use settlement notional for amortizers)
+        notional = float(self._settlement_notional_for_scaling())
+        scale = 100.0 / notional
         dirty_per100 = float(target_dirty_ccy) * scale
-        accrued_per100 = float(self._bond.accruedAmount()) * scale
-        clean_per100 = dirty_per100 - accrued_per100
 
         # 2) unwrap handle to the underlying YieldTermStructure (shared_ptr)
         yts = h.currentLink() if isinstance(h, ql.YieldTermStructureHandle) else h
 
-        # 3) day counter & settlement
-        dc = yts.dayCounter() if hasattr(yts, "dayCounter") else h.dayCounter()
-        settle = self._bond.settlementDate()
+        # 3) day counter for quoting the spread
+        dc = self.day_count
 
-        # 4) build BondPrice if available (QL >= 1.30), else pass float
-        price_arg = ql.BondPrice(clean_per100, ql.BondPrice.Clean)
-
-        # 5) correct order: (bond, price, curve, dayCounter, comp, freq, settle, tol, maxIter, guess)
         guess = 0.0
-        return float(
-            ql.BondFunctions.zSpread(
-                self._bond,
-                price_arg,
-                yts,  # <-- CURVE HERE (3rd arg)
-                dc,  # <-- DayCounter
-                ql.Continuous,  # compounding convention for z-spread
-                ql.NoFrequency,
-                settle,
-                float(tol),
-                int(max_iter),
-                float(guess),
-            )
-        )
 
-    def analytics(self, with_yield: float | None = None) -> dict:
-        self._setup_pricer(with_yield=with_yield)
+        # 4a) Prefer the BondPrice(DIRTY) overload if  bindings support it.
+        try:
+            price_arg = ql.BondPrice(float(dirty_per100), ql.BondPrice.Dirty)
+            return float(
+                ql.BondFunctions.zSpread(
+                    qb,
+                    price_arg,
+                    yts,
+                    dc,
+                    ql.Continuous,
+                    ql.NoFrequency,
+                    settle,
+                    float(tol),
+                    int(max_iter),
+                    float(guess),
+                )
+            )
+        except TypeError:
+            # 4b) Older bindings: float overload expects CLEAN price per 100.
+            # IMPORTANT: accruedAmount() is already per-100 in QuantLib (do NOT scale it).
+            try:
+                accrued_per100 = float(qb.accruedAmount(settle))
+            except TypeError:
+                accrued_per100 = float(qb.accruedAmount())
+
+            clean_per100 = float(dirty_per100) - float(accrued_per100)
+
+            return float(
+                ql.BondFunctions.zSpread(
+                    qb,
+                    float(clean_per100),
+                    yts,
+                    dc,
+                    ql.Continuous,
+                    ql.NoFrequency,
+                    settle,
+                    float(tol),
+                    int(max_iter),
+                    float(guess),
+                )
+            )
+
+    def analytics(self, with_yield: float | None = None,
+                  *,
+                          flat_compounding: int = ql.Compounded,
+                          flat_frequency: int = ql.Annual,
+                  ) -> dict:
+        self._setup_pricer(
+                        with_yield = with_yield,
+                    flat_compounding = flat_compounding,
+                    flat_frequency = flat_frequency,
+                )
         _ = self._bond.NPV()
         return {
             "clean_price": self._bond.cleanPrice(),
@@ -767,7 +943,10 @@ class Bond(InstrumentModel):
         return float(ytm)
 
     def get_ql_bond(
-        self, *, build_if_needed: bool = True, with_yield: float | None = None
+        self, *, build_if_needed: bool = True, with_yield: float | None = None,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+
     ) -> ql.Bond:
         """
         Safely access the underlying QuantLib bond.
@@ -781,8 +960,20 @@ class Bond(InstrumentModel):
         if build_if_needed:
             # If caller gave a yield OR we have a default curve, do full pricing setup.
             if with_yield is not None or self._get_default_discount_curve() is not None:
+                eff_y = with_yield if with_yield is not None else self._with_yield
+                # If caller supplies with_yield, use caller comp/freq.
+                # If not, preserve the comp/freq that the object was priced with.
+                eff_comp = int(flat_compounding) if with_yield is not None else (
+                    int(self._flat_compounding) if self._flat_compounding is not None else ql.Compounded
+                )
+                eff_freq = int(flat_frequency) if with_yield is not None else (
+                    int(self._flat_frequency) if self._flat_frequency is not None else ql.Annual
+                )
+
                 self._setup_pricer(
-                    with_yield=with_yield if with_yield is not None else self._with_yield
+                    with_yield=eff_y,
+                                        flat_compounding = eff_comp,
+                                    flat_frequency = eff_freq,
                 )
             else:
                 # No curve, no yield -> build instrument only (good for fixed cashflows)
@@ -801,6 +992,7 @@ class Bond(InstrumentModel):
         with_yield: float | None = None,
         *,
         duration_type = ql.Duration.Modified,
+            flat_compounding: int = ql.Compounded, flat_frequency: int = ql.Annual,
     ) -> float:
         """
         Return bond duration (default: Modified) and cache it using the same
@@ -824,7 +1016,10 @@ class Bond(InstrumentModel):
 
         # Build a context key. For zero-coupon we may not need a curve; avoid raising if none.
         try:
-            ctx_key = self._price_context_key(with_yield)
+            ctx_key = self._price_context_key(with_yield,
+                                              flat_compounding=flat_compounding,
+                                              flat_frequency=flat_frequency,
+                                              )
         except Exception:
             # e.g. zero-coupon duration with no curve/yield doesn't need a curve context;
             # still include valuation date to remain stable across time.
@@ -869,7 +1064,10 @@ class Bond(InstrumentModel):
         else:
             # Coupon-bearing bonds (and any non-default type): use QL functions
             # Ensure pricer so cleanPrice/settlementDate/etc. are available
-            self._setup_pricer(with_yield=with_yield)
+            self._setup_pricer(with_yield=with_yield,
+                               flat_compounding=flat_compounding,
+                               flat_frequency=flat_frequency,
+                               )
             qb: ql.Bond = self._bond  # type: ignore[assignment]
             dcc: ql.DayCounter = self.day_count
 
@@ -1026,18 +1224,24 @@ class Bond(InstrumentModel):
         return out
 
 
-class FixedRateBond(Bond):
-    """Plain-vanilla fixed-rate bond following the shared Bond lifecycle."""
+
+
+
+
+class _FixedRateBondCommon(Bond):
+    """
+    Internal DRY base for fixed-rate bond variants:
+      - FixedRateBond
+      - CallableFixedRateBond
+      - AmortizingFixedRateBond
+    Keeps public class names unchanged.
+    """
+
     coupon_frequency: QPeriod = Field(
         ...,
-        description=(
-            "Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None."
-        ),
+        description="Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None.",
         examples=["6M", "1Y"],
-        json_schema_extra={
-            "semantic_type": "coupon_frequency",
-            "quantlib_class": "Period",
-        },
+        json_schema_extra={"semantic_type": "coupon_frequency", "quantlib_class": "Period"},
     )
 
     coupon_rate: float = Field(
@@ -1047,33 +1251,28 @@ class FixedRateBond(Bond):
         json_schema_extra={
             "semantic_type": "coupon_rate",
             "unit": "rate_decimal",
+            "format": "percent",
             "unit_hint": "0.05 = 5%",
         },
     )
 
     coupons: list[float] | None = Field(
         default=None,
-        description=(
-            "Optional QuantLib 'coupons' vector. If provided, overrides coupon_rate. "
-            "If omitted, defaults to [coupon_rate]."
-        ),
+        description="Optional QuantLib 'coupons' vector. If provided, overrides coupon_rate. If omitted, defaults to [coupon_rate].",
         examples=[None, [0.05]],
     )
 
     redemption: float = Field(
         default=100.0,
         gt=0,
-        description="QuantLib redemption (% of face).",
+        description="Redemption (% of face).",
         examples=[100.0],
         json_schema_extra={"unit": "per_100"},
     )
 
     payment_convention: QBDC | None = Field(
         default=None,
-        description=(
-            "QuantLib paymentConvention for FixedRateBond. "
-            "If None, QuantLib default (Following) is used."
-        ),
+        description="QuantLib paymentConvention. If None, uses business_day_convention.",
         examples=[None, "Following", "ModifiedFollowing"],
     )
 
@@ -1083,27 +1282,12 @@ class FixedRateBond(Bond):
         examples=[None, {"name": "TARGET"}],
     )
 
-    ex_coupon_period: QPeriod | None = Field(default=None, description="QuantLib exCouponPeriod.",
-                                             examples=[None, "2D"])
-    ex_coupon_calendar: QCalendar | None = Field(default=None, description="QuantLib exCouponCalendar.",
-                                                 examples=[None, {"name": "TARGET"}])
-    ex_coupon_convention: QBDC | None = Field(default=None, description="QuantLib exCouponConvention.",
-                                              examples=[None, "Unadjusted"])
-    ex_coupon_end_of_month: bool | None = Field(default=None, description="QuantLib exCouponEndOfMonth.",
-                                                examples=[None, False])
-
-
+    ex_coupon_period: QPeriod | None = Field(default=None, description="QuantLib exCouponPeriod.", examples=[None, "2D"])
+    ex_coupon_calendar: QCalendar | None = Field(default=None, description="QuantLib exCouponCalendar.", examples=[None, {"name": "TARGET"}])
+    ex_coupon_convention: QBDC | None = Field(default=None, description="QuantLib exCouponConvention.", examples=[None, "Unadjusted"])
+    ex_coupon_end_of_month: bool | None = Field(default=None, description="QuantLib exCouponEndOfMonth.", examples=[None, False])
 
     model_config = {"arbitrary_types_allowed": True}
-
-    # Optional market curve if you want to discount off a curve instead of a flat yield
-    _discount_curve: ql.YieldTermStructureHandle | None = PrivateAttr(default=None)
-
-    def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
-        self._discount_curve = curve
-
-    def _get_default_discount_curve(self) -> ql.YieldTermStructureHandle | None:
-        return self._discount_curve
 
     def _build_schedule(self) -> ql.Schedule:
         if self.schedule is not None:
@@ -1118,6 +1302,48 @@ class FixedRateBond(Bond):
             ql.DateGeneration.Forward,
             False,
         )
+
+    def _fixed_coupons(self) -> list[float]:
+        base = self.coupons if self.coupons is not None else [self.coupon_rate]
+        return [float(x) for x in base]
+
+    def _fixed_payment_convention(self) -> int:
+        return int(self.payment_convention) if self.payment_convention is not None else int(self.business_day_convention)
+
+    def _apply_ex_coupon_kwargs(self, kwargs: dict[str, Any]) -> None:
+        # Only pass ex-coupon args if set (keeps older SWIG bindings working)
+        if self.ex_coupon_period is not None:
+            kwargs["exCouponPeriod"] = self.ex_coupon_period
+        if self.ex_coupon_calendar is not None:
+            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
+        if self.ex_coupon_convention is not None:
+            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
+        if self.ex_coupon_end_of_month is not None:
+            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
+
+class FixedRateBond(_FixedRateBondCommon):
+    """Plain-vanilla fixed-rate bond following the shared Bond lifecycle."""
+
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    # Optional market curve if you want to discount off a curve instead of a flat yield
+    _discount_curve: ql.YieldTermStructureHandle | None = PrivateAttr(default=None)
+
+    def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
+        self._discount_curve = curve
+        # force rebuild next time
+        self._bond = None
+        self._engine = None
+        self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
+        self._last_discount_curve_handle = None
+
+    def _get_default_discount_curve(self) -> ql.YieldTermStructureHandle | None:
+        return self._discount_curve
+
+
 
     def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
         ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
@@ -1140,44 +1366,44 @@ class FixedRateBond(Bond):
                 to_ql_date(self.issue_date),
             )
 
-        return ql.FixedRateBond(
-            self.settlement_days, self.face_value, sched, [self.coupon_rate], self.day_count
+        coupons = self._fixed_coupons()
+        pay_conv = self._fixed_payment_convention()
+
+        # Prefer kwargs so optional fields actually work if SWIG supports them.
+        kwargs: dict[str, Any] = dict(
+            settlementDays=int(self.settlement_days),
+            faceAmount=float(self.face_value),
+            schedule=sched,
+            coupons=coupons,
+            accrualDayCounter=self.day_count,
+            paymentConvention=pay_conv,
+            redemption=float(self.redemption),
+            issueDate=to_ql_date(self.issue_date),
         )
+        if self.payment_calendar is not None:
+            kwargs["paymentCalendar"] = self.payment_calendar
+        self._apply_ex_coupon_kwargs(kwargs)
+
+        try:
+            return ql.FixedRateBond(**kwargs)
+        except TypeError:
+            # Older SWIG bindings: fall back to minimal signature.
+            return ql.FixedRateBond(
+                int(self.settlement_days),
+                float(self.face_value),
+                sched,
+                coupons,
+                self.day_count,
+            )
 
 
-class CallableFixedRateBond(Bond):
+class CallableFixedRateBond(_FixedRateBondCommon):
     """
     Callable fixed-rate bond wrapper.
     Builds ql.CallableFixedRateBond and prices via an overridable engine
     configured in DiscountParameters.
     """
 
-    # fixed coupon settings (same idea as FixedRateBond)
-    coupon_rate: float = Field(
-        ...,
-        description="Fixed annual coupon rate as decimal (0.05 = 5%).",
-        examples=[0.05, 0.03],
-        json_schema_extra={"unit_hint": "0.05 = 5%"},
-    )
-    coupon_frequency: QPeriod = Field(
-        ...,
-        description="Coupon tenor (QuantLib Period). Used if schedule is None.",
-        examples=["6M", "1Y"],
-    )
-
-    # QuantLib CallableFixedRateBond requires these explicitly:
-    payment_convention: QBDC | None = Field(
-        default=None,
-        description="Payment convention passed to ql.CallableFixedRateBond. If None, uses business_day_convention.",
-        examples=[None, "Following", "ModifiedFollowing"],
-    )
-    redemption: float = Field(
-        default=100.0,
-        gt=0,
-        description="Redemption (% of face). Passed to ql.CallableFixedRateBond.",
-        examples=[100.0],
-        json_schema_extra={"unit": "per_100"},
-    )
 
     # call schedule
     callability: list[CallabilityItem] = Field(
@@ -1190,29 +1416,8 @@ class CallableFixedRateBond(Bond):
         ]],
     )
 
-    # ex-coupon args supported by CallableFixedRateBond signature
-    ex_coupon_period: QPeriod | None = Field(
-        default=None,
-        description="exCouponPeriod passed to ql.CallableFixedRateBond.",
-        examples=[None, "2D"],
-    )
-    ex_coupon_calendar: QCalendar | None = Field(
-        default=None,
-        description="exCouponCalendar passed to ql.CallableFixedRateBond.",
-        examples=[None, {"name": "TARGET"}],
-    )
-    ex_coupon_convention: QBDC | None = Field(
-        default=None,
-        description="exCouponConvention passed to ql.CallableFixedRateBond.",
-        examples=[None, "Unadjusted"],
-    )
-    ex_coupon_end_of_month: bool | None = Field(
-        default=None,
-        description="exCouponEndOfMonth passed to ql.CallableFixedRateBond.",
-        examples=[None, False],
-    )
 
-    # pricing configuration (your requested submodel)
+    # pricing configuration
     discount_parameters: DiscountParameters = Field(
         default_factory=DiscountParameters,
         description="Callable pricing engine selection + parameters.",
@@ -1220,19 +1425,7 @@ class CallableFixedRateBond(Bond):
 
     model_config = {"arbitrary_types_allowed": True}
 
-    def _build_schedule(self) -> ql.Schedule:
-        if self.schedule is not None:
-            return self.schedule
-        return ql.Schedule(
-            to_ql_date(self.issue_date),
-            to_ql_date(self.maturity_date),
-            self.coupon_frequency,
-            self.calendar,
-            self.business_day_convention,
-            self.business_day_convention,
-            ql.DateGeneration.Forward,
-            False,
-        )
+
 
     def _build_pricing_engine(self, discount_curve: ql.YieldTermStructureHandle) -> ql.PricingEngine:
         # ✅ your “obvious” override
@@ -1255,13 +1448,14 @@ class CallableFixedRateBond(Bond):
                 )
             )
 
-        pay_conv = int(self.payment_convention) if self.payment_convention is not None else int(self.business_day_convention)
+        pay_conv = self._fixed_payment_convention()
+        coupons = self._fixed_coupons()
 
         kwargs: dict[str, Any] = dict(
             settlementDays=int(self.settlement_days),
             faceAmount=float(self.face_value),
             schedule=sched,
-            coupons=[float(self.coupon_rate)],
+            coupons=coupons,
             accrualDayCounter=self.day_count,
             paymentConvention=pay_conv,
             redemption=float(self.redemption),
@@ -1269,17 +1463,72 @@ class CallableFixedRateBond(Bond):
             putCallSchedule=put_call,
         )
 
-        # only pass ex-coupon args if set
-        if self.ex_coupon_period is not None:
-            kwargs["exCouponPeriod"] = self.ex_coupon_period
-        if self.ex_coupon_calendar is not None:
-            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
-        if self.ex_coupon_convention is not None:
-            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
-        if self.ex_coupon_end_of_month is not None:
-            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
+        self._apply_ex_coupon_kwargs(kwargs)
 
         return ql.CallableFixedRateBond(**kwargs)
+
+class AmortizingFixedRateBond(_FixedRateBondCommon):
+
+
+    # full amortization config (QuantLib args)
+    amortization: AmortizationParameters = Field(
+        ...,
+        description="Amortization parameters passed into QuantLib amortizing bond constructor.",
+    )
+
+
+    model_config = {"arbitrary_types_allowed": True}
+
+
+
+    def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
+        ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
+        sched = self._build_schedule()
+
+        # ---- validate alignment: notionals must map to coupon periods ----
+        n_dates = len(list(sched.dates()))
+        expected = max(n_dates - 1, 0)
+        if expected and len(self.amortization.notionals) != expected:
+            raise ValueError(
+                f"amortization.notionals length must be {expected} (len(schedule.dates())-1). "
+                f"Got {len(self.amortization.notionals)}."
+            )
+
+        # (optional but recommended) ensure initial notional matches face_value
+        if self.amortization.notionals and float(self.amortization.notionals[0]) != float(self.face_value):
+            raise ValueError(
+                f"face_value ({self.face_value}) must match amortization.notionals[0] ({self.amortization.notionals[0]})."
+            )
+
+        pay_conv = self._fixed_payment_convention()
+        coupons = self._fixed_coupons()
+        kwargs = dict(
+            settlementDays=int(self.settlement_days),
+            notionals=[float(x) for x in self.amortization.notionals],
+            schedule=sched,
+            coupons=coupons,
+            accrualDayCounter=self.day_count,
+            paymentConvention=pay_conv,
+            issueDate=to_ql_date(self.issue_date),
+        )
+
+        # ex-coupon (only pass if set)
+        self._apply_ex_coupon_kwargs(kwargs)
+
+        # new SWIG args (only pass if used; keep older builds working)
+        if self.amortization.redemptions is not None:
+            kwargs["redemptions"] = [float(x) for x in self.amortization.redemptions]
+        if int(self.amortization.payment_lag) != 0:
+            kwargs["paymentLag"] = int(self.amortization.payment_lag)
+
+        try:
+            return ql.AmortizingFixedRateBond(**kwargs)
+        except TypeError:
+            # Backward-compat: older wrappers might not have redemptions/paymentLag
+            kwargs.pop("redemptions", None)
+            kwargs.pop("paymentLag", None)
+            return ql.AmortizingFixedRateBond(**kwargs)
+
 
 class ZeroCouponBond(Bond):
     redemption_pct: float = Field(
@@ -1298,6 +1547,13 @@ class ZeroCouponBond(Bond):
 
     def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
         self._discount_curve = curve
+        # force rebuild next time
+        self._bond = None
+        self._engine = None
+        self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
+        self._last_discount_curve_handle = None
 
     def _get_default_discount_curve(self) -> ql.YieldTermStructureHandle | None:
         return self._discount_curve
@@ -1317,190 +1573,79 @@ class ZeroCouponBond(Bond):
 
     def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
         ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
-        sched = self._build_schedule()
 
-        dates = list(sched.dates())
-        asof = ql.Settings.instance().evaluationDate
-        has_periods_left = len(dates) >= 2 and any(dates[i + 1] > asof for i in range(len(dates) - 1))
 
-        if not has_periods_left:
-            maturity = dates[-1] if dates else to_ql_date(self.maturity_date)
-            return ql.ZeroCouponBond(
-                self.settlement_days,
-                self.calendar,
-                self.face_value,
-                maturity,
-                self.business_day_convention,
-                float(self.redemption),  # use model field (default 100)
-                to_ql_date(self.issue_date),
+        return ql.ZeroCouponBond(
+                        int(self.settlement_days),
+                        self.calendar,
+                        float(self.face_value),
+                        to_ql_date(self.maturity_date),
+                        int(self.business_day_convention),
+                        float(self.redemption_pct),
+                        to_ql_date(self.issue_date),
             )
 
-        coupons = self.coupons if self.coupons is not None else [float(self.coupon_rate)]
 
-        kwargs = dict(
-            settlementDays=int(self.settlement_days),
-            faceAmount=float(self.face_value),
-            schedule=sched,
-            coupons=coupons,
-            paymentDayCounter=self.day_count,
-            redemption=float(self.redemption),
-            issueDate=to_ql_date(self.issue_date),
-        )
+class _FloatingRateBondCommon(Bond):
+    """
+    Internal DRY base for floating-rate bond variants:
+      - FloatingRateBond
+      - AmortizingFloatingRateBond
+    Centralizes index lifecycle + observer + shared QuantLib args.
+    """
 
-        # Only pass optional kwargs if user set them (keeps defaults/backward compat)
-        if self.payment_convention is not None:
-            kwargs["paymentConvention"] = int(self.payment_convention)
-        if self.payment_calendar is not None:
-            kwargs["paymentCalendar"] = self.payment_calendar
-        if self.ex_coupon_period is not None:
-            kwargs["exCouponPeriod"] = self.ex_coupon_period
-        if self.ex_coupon_calendar is not None:
-            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
-        if self.ex_coupon_convention is not None:
-            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
-        if self.ex_coupon_end_of_month is not None:
-            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
-
-        try:
-            return ql.FixedRateBond(**kwargs)
-        except TypeError:
-            # fallback to the old positional constructor you had
-            return ql.FixedRateBond(
-                self.settlement_days,
-                self.face_value,
-                sched,
-                coupons,
-                self.day_count,
-            )
-class FloatingRateBond(Bond):
-    """Floating-rate bond with specified floating rate index (backward compatible)."""
     coupon_frequency: QPeriod = Field(
         ...,
-        description=(
-            "Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None."
-        ),
+        description="Coupon tenor/frequency as a QuantLib Period. Used to build the Schedule when 'schedule' is None.",
         examples=["3M", "6M"],
-        json_schema_extra={
-            "semantic_type": "coupon_frequency",
-            "quantlib_class": "Period",
-        },
+        json_schema_extra={"semantic_type": "coupon_frequency", "quantlib_class": "Period"},
     )
+
     floating_rate_index_name: str = Field(
         ...,
-        description=(
-            "Floating rate index identifier used by your index builder/mapper. "
-            "Use a stable name your system understands."
-        ),
+        description="Floating rate index identifier used by your index builder/mapper.",
         examples=["SOFR", "EURIBOR-3M", "USD-LIBOR-3M"],
-        json_schema_extra={
-            "semantic_type": "rate_index",
-            "synonyms": ["index", "reference_rate", "ibor_index"],
-        },
-
+        json_schema_extra={"semantic_type": "rate_index", "synonyms": ["index", "reference_rate", "ibor_index"]},
     )
+
     spread: float = Field(
         default=0.0,
         description="Spread added to the index rate (decimal).",
         examples=[0.0, 0.0025],
-        json_schema_extra={
-            "semantic_type": "spread",
-            "unit": "rate_decimal",
-            "unit_hint": "0.0025 = 25 bps",
-        },
-
+        json_schema_extra={"semantic_type": "spread", "unit": "rate_decimal", "unit_hint": "0.0025 = 25 bps"},
     )
 
+    fixing_days: int | None = Field(default=None, ge=0, description="Override QuantLib fixingDays.", examples=[None, 0, 2])
+    gearings: list[float] | None = Field(default=None, description="QuantLib gearings vector.", examples=[None, [1.0]])
+    spreads: list[float] | None = Field(default=None, description="QuantLib spreads vector.", examples=[None, [0.0], [0.0025]])
+    caps: list[float] | None = Field(default=None, description="QuantLib caps vector.", examples=[None, [0.05]])
+    floors: list[float] | None = Field(default=None, description="QuantLib floors vector.", examples=[None, [0.0]])
+    in_arrears: bool = Field(default=False, description="QuantLib inArrears flag.", examples=[False, True])
 
-    fixing_days: int | None = Field(
-        default=None,
-        ge=0,
-        description="Override QuantLib fixingDays. If None, uses pricing_index.fixingDays().",
-        examples=[None, 0, 2],
-    )
-
-    gearings: list[float] | None = Field(
-        default=None,
-        description="QuantLib gearings vector. If None, defaults to [1.0].",
-        examples=[None, [1.0], [0.8]],
-    )
-
-    spreads: list[float] | None = Field(
-        default=None,
-        description="QuantLib spreads vector. If None, defaults to [spread].",
-        examples=[None, [0.0], [0.0025]],
-    )
-
-    caps: list[float] | None = Field(
-        default=None,
-        description="QuantLib caps vector (rates as decimals). If None, defaults to [].",
-        examples=[None, [0.05]],
-    )
-
-    floors: list[float] | None = Field(
-        default=None,
-        description="QuantLib floors vector (rates as decimals). If None, defaults to [].",
-        examples=[None, [0.0]],
-    )
-
-    in_arrears: bool = Field(
-        default=False,
-        description="QuantLib inArrears flag.",
-        examples=[False, True],
-    )
-
-    redemption: float = Field(
-        default=100.0,
-        gt=0,
-        description="QuantLib redemption (% of face).",
-        examples=[100.0],
-        json_schema_extra={"unit": "per_100"},
-    )
+    redemption: float = Field(default=100.0, gt=0, description="QuantLib redemption (% of face).", examples=[100.0], json_schema_extra={"unit": "per_100"})
 
     payment_convention: QBDC | None = Field(
         default=None,
-        description=(
-            "QuantLib paymentConvention for FloatingRateBond. "
-            "If None, uses business_day_convention (preserves current behavior)."
-        ),
+        description="QuantLib paymentConvention for FloatingRateBond. If None, uses business_day_convention.",
         examples=[None, "Following", "ModifiedFollowing"],
     )
 
-    ex_coupon_period: QPeriod | None = Field(
-        default=None,
-        description="QuantLib exCouponPeriod (optional).",
-        examples=[None, "2D"],
-    )
-    ex_coupon_calendar: QCalendar | None = Field(
-        default=None,
-        description="QuantLib exCouponCalendar (optional).",
-        examples=[None, {"name": "TARGET"}],
-    )
-    ex_coupon_convention: QBDC | None = Field(
-        default=None,
-        description="QuantLib exCouponConvention (optional).",
-        examples=[None, "Unadjusted"],
-    )
-    ex_coupon_end_of_month: bool | None = Field(
-        default=None,
-        description="QuantLib exCouponEndOfMonth (optional).",
-        examples=[None, False],
-    )
-
+    ex_coupon_period: QPeriod | None = Field(default=None, description="QuantLib exCouponPeriod.", examples=[None, "2D"])
+    ex_coupon_calendar: QCalendar | None = Field(default=None, description="QuantLib exCouponCalendar.", examples=[None, {"name": "TARGET"}])
+    ex_coupon_convention: QBDC | None = Field(default=None, description="QuantLib exCouponConvention.", examples=[None, "Unadjusted"])
+    ex_coupon_end_of_month: bool | None = Field(default=None, description="QuantLib exCouponEndOfMonth.", examples=[None, False])
 
     model_config = {"arbitrary_types_allowed": True}
 
-    _bond: ql.FloatingRateBond | None = PrivateAttr(default=None)
     _index: ql.IborIndex | None = PrivateAttr(default=None)
     _index_observer: ql.Observer | None = PrivateAttr(default=None)
 
-    # ---------- lifecycle ----------
     def _ensure_index(self) -> None:
         if self._index is not None:
             return
         if self.valuation_date is None:
             raise ValueError("Set valuation_date before pricing: set_valuation_date(dt).")
         self._index = self._get_index_by_name(self.floating_rate_index_name, hydrate_fixings=True)
-        # Observe index so added fixings bump version tick
         self._register_index_observer()
 
     def _register_index_observer(self) -> None:
@@ -1515,7 +1660,6 @@ class FloatingRateBond(Bond):
             except Exception:
                 pass
 
-        # If an observer existed, unhook and rebuild so the callback is tied to the current index
         if self._index_observer is not None:
             try:
                 self._index_observer.unregisterWith(self._index)
@@ -1527,44 +1671,83 @@ class FloatingRateBond(Bond):
         self._index_observer.registerWith(self._index)
 
     def _on_valuation_date_set(self) -> None:
-        super()._on_valuation_date_set()
-        # unhook index observer if any
-        if getattr(self, "_index_observer", None) and getattr(self, "_index", None) is not None:
+        old_handle = self._last_discount_curve_handle
+        old_observer = self._curve_observer
+
+        self._bond = None
+        self._engine = None
+        self._last_discount_curve_handle = None
+        self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
+
+        if old_observer is not None and old_handle is not None:
             try:
-                self._index_observer.unregisterWith(self._index)
+                old_observer.unregisterWith(old_handle)
             except Exception:
                 pass
-        self._index_observer = None
-        self._index = None
+
+        self._curve_observer = None
 
     def reset_curve(self, curve: ql.YieldTermStructureHandle) -> None:
-        """Optional: re-link a custom curve to this index and rebuild."""
         if self.valuation_date is None:
             raise ValueError("Set valuation_date before reset_curve().")
 
         self._index = self._get_index_by_name(
-                        self.floating_rate_index_name,
-                        forwarding_curve = curve,
-                    hydrate_fixings = True,
-                )
+            self.floating_rate_index_name,
+            forwarding_curve=curve,
+            hydrate_fixings=True,
+        )
 
         private = ql.RelinkableYieldTermStructureHandle()
         link = curve.currentLink() if hasattr(curve, "currentLink") else curve
         private.linkTo(link)
         self._index = self._index.clone(private)
         self._register_index_observer()
-        # Force rebuild on next price()
+
         self._bond = None
         self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
 
     def _fixings_version(self) -> int:
-        """Include index fixings tick in the cache key for floaters."""
         return _INDEX_VERSION.get(id(self._index), 0) if self._index is not None else 0
-    # ---- Bond hooks ----
+
     def _get_default_discount_curve(self) -> ql.YieldTermStructureHandle | None:
         self._ensure_index()
-        # Forecasting and (by default) discounting off the index curve for compatibility
         return self._index.forwardingTermStructure()
+
+    def get_index_curve(self):
+        self._ensure_index()
+        return self._index.forwardingTermStructure()
+
+    def _build_schedule(self) -> ql.Schedule:
+        if self.schedule is not None:
+            return self.schedule
+        return ql.Schedule(
+            to_ql_date(self.issue_date),
+            to_ql_date(self.maturity_date),
+            self.coupon_frequency,
+            self.calendar,
+            self.business_day_convention,
+            self.business_day_convention,
+            ql.DateGeneration.Forward,
+            False,
+        )
+
+
+class FloatingRateBond(_FloatingRateBondCommon):
+    """Floating-rate bond with specified floating rate index (backward compatible)."""
+
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    _bond: ql.FloatingRateBond | None = PrivateAttr(default=None)
+    _index: ql.IborIndex | None = PrivateAttr(default=None)
+    _index_observer: ql.Observer | None = PrivateAttr(default=None)
+
+
+
 
     def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
         self._ensure_index()
@@ -1602,12 +1785,7 @@ class FloatingRateBond(Bond):
             ex_coupon_end_of_month=self.ex_coupon_end_of_month,
         )
 
-        # ---------- public API (kept for backward compatibility) ----------
-    def get_index_curve(self):
-        self._ensure_index()
-        return self._index.forwardingTermStructure()
 
-    # price(with_yield) and analytics(with_yield) are inherited from Bond and remain compatible
 
     def get_cashflows(self) -> dict[str, list[dict[str, Any]]]:
         """
@@ -1642,3 +1820,83 @@ class FloatingRateBond(Bond):
                 )
 
         return out
+
+
+class AmortizingFloatingRateBond(_FloatingRateBondCommon):
+
+
+    amortization: AmortizationParameters = Field(..., description="Amortization notionals + optional redemptions/payment_lag.")
+
+
+    model_config = {"arbitrary_types_allowed": True}
+
+    _index: ql.IborIndex | None = PrivateAttr(default=None)
+
+
+
+    def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
+        self._ensure_index()
+        ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
+
+        sched = self._build_schedule()
+
+        # validate notionals vector length
+        n_dates = len(list(sched.dates()))
+        expected = max(n_dates - 1, 0)
+        if expected and len(self.amortization.notionals) != expected:
+            raise ValueError(
+                f"amortization.notionals length must be {expected} (len(schedule.dates())-1). "
+                f"Got {len(self.amortization.notionals)}."
+            )
+
+        # clone index onto its forecasting curve (your pattern)
+        forecasting = self._index.forwardingTermStructure()
+        pricing_index = self._index.clone(forecasting)
+
+        pay_conv = int(self.payment_convention) if self.payment_convention is not None else int(self.business_day_convention)
+        fix_days = int(self.fixing_days) if self.fixing_days is not None else int(pricing_index.fixingDays())
+        g = self.gearings if self.gearings is not None else [1.0]
+        s = self.spreads if self.spreads is not None else [float(self.spread)]
+        c = self.caps if self.caps is not None else []
+        f = self.floors if self.floors is not None else []
+
+        kwargs = dict(
+            settlementDays=int(self.settlement_days),
+            notional=[float(x) for x in self.amortization.notionals],
+            schedule=sched,
+            index=pricing_index,
+            accrualDayCounter=self.day_count,
+            paymentConvention=pay_conv,
+            fixingDays=fix_days,
+            gearings=[float(x) for x in g],
+            spreads=[float(x) for x in s],
+            caps=[float(x) for x in c],
+            floors=[float(x) for x in f],
+            inArrears=bool(self.in_arrears),
+            issueDate=to_ql_date(self.issue_date),
+        )
+
+        # ex-coupon
+        if self.ex_coupon_period is not None:
+            kwargs["exCouponPeriod"] = self.ex_coupon_period
+        if self.ex_coupon_calendar is not None:
+            kwargs["exCouponCalendar"] = self.ex_coupon_calendar
+        if self.ex_coupon_convention is not None:
+            kwargs["exCouponConvention"] = int(self.ex_coupon_convention)
+        if self.ex_coupon_end_of_month is not None:
+            kwargs["exCouponEndOfMonth"] = bool(self.ex_coupon_end_of_month)
+
+        # redemptions/paymentLag (newer SWIG)
+        if self.amortization.redemptions is not None:
+            kwargs["redemptions"] = [float(x) for x in self.amortization.redemptions]
+        if int(self.amortization.payment_lag) != 0:
+            kwargs["paymentLag"] = int(self.amortization.payment_lag)
+
+        try:
+            return ql.AmortizingFloatingRateBond(**kwargs)
+        except TypeError:
+            # Backward-compat: drop newer kwargs
+            kwargs.pop("redemptions", None)
+            kwargs.pop("paymentLag", None)
+            return ql.AmortizingFloatingRateBond(**kwargs)
+

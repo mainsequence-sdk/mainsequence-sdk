@@ -86,7 +86,7 @@ def create_floating_rate_bond_with_curve(
     discount_curve: ql.YieldTermStructureHandle | None = None,
     schedule: ql.Schedule | None = None,
 
-fixing_days: int | None = None,
+    fixing_days: int | None = None,
     gearings: list[float] | None = None,
     spreads: list[float] | None = None,
     caps: list[float] | None = None,
@@ -175,51 +175,50 @@ fixing_days: int | None = None,
             return zcb
 
     # --------- Instrument ----------
-        # --------- Instrument ----------
-        kwargs = dict(
-            settlementDays=settlement_days,
-            faceAmount=face,
-            schedule=schedule,
-            index=pricing_index,
-            paymentDayCounter=dc,
-            paymentConvention=pay_conv,
-            fixingDays=fix_days,
-            gearings=g,
-            spreads=s,
-            caps=c,
-            floors=f,
-            inArrears=in_arrears,
-            redemption=redemption,
-            issueDate=issue_date,
+    kwargs = dict(
+        settlementDays=settlement_days,
+        faceAmount=face,
+        schedule=schedule,
+        index=pricing_index,
+        paymentDayCounter=dc,
+        paymentConvention=pay_conv,
+        fixingDays=fix_days,
+        gearings=g,
+        spreads=s,
+        caps=c,
+        floors=f,
+        inArrears=in_arrears,
+        redemption=redemption,
+        issueDate=issue_date,
+    )
+    if ex_coupon_period is not None:
+        kwargs["exCouponPeriod"] = ex_coupon_period
+    if ex_coupon_calendar is not None:
+        kwargs["exCouponCalendar"] = ex_coupon_calendar
+    if ex_coupon_convention is not None:
+        kwargs["exCouponConvention"] = ex_coupon_convention
+    if ex_coupon_end_of_month is not None:
+        kwargs["exCouponEndOfMonth"] = ex_coupon_end_of_month
+
+    try:
+        bond = ql.FloatingRateBond(**kwargs)
+    except TypeError:
+        # fallback: keep your old positional call as the compat path
+        bond = ql.FloatingRateBond(
+            settlement_days,
+            face,
+            schedule,
+            pricing_index,
+            dc,
+            pay_conv,
+            fix_days,
+            g,
+            s,
+            c,
+            f,
+            in_arrears,
+            redemption,
+            issue_date,
         )
-        if ex_coupon_period is not None:
-            kwargs["exCouponPeriod"] = ex_coupon_period
-        if ex_coupon_calendar is not None:
-            kwargs["exCouponCalendar"] = ex_coupon_calendar
-        if ex_coupon_convention is not None:
-            kwargs["exCouponConvention"] = ex_coupon_convention
-        if ex_coupon_end_of_month is not None:
-            kwargs["exCouponEndOfMonth"] = ex_coupon_end_of_month
 
-        try:
-            bond = ql.FloatingRateBond(**kwargs)
-        except TypeError:
-            # fallback: keep your old positional call as the compat path
-            bond = ql.FloatingRateBond(
-                settlement_days,
-                face,
-                schedule,
-                pricing_index,
-                dc,
-                pay_conv,
-                fix_days,
-                g,
-                s,
-                c,
-                f,
-                in_arrears,
-                redemption,
-                issue_date,
-            )
-
-        return bond
+    return bond

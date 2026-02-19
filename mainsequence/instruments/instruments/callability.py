@@ -120,3 +120,32 @@ class DiscountParameters(BaseModel):
             return ql.BlackCallableFixedRateBondEngine(vol_handle, discount_curve)
 
         raise TypeError(f"Unsupported engine params type: {type(e)}")
+
+
+class AmortizationParameters(BaseModel):
+    notionals: list[float] = Field(
+        ...,
+        min_length=1,
+        description=(
+            "Outstanding notionals per coupon period (QuantLib amortizing bonds). "
+            "Length must match the number of coupon periods: typically len(schedule.dates()) - 1."
+        ),
+        examples=[[10000, 10000, 8000, 8000, 6000, 6000]],
+    )
+
+    redemptions: list[float] | None = Field(
+        default=None,
+        description=(
+            "Optional QuantLib 'redemptions' argument (vector, default {100.0} in QuantLib-SWIG). "
+            "Used for pool/loan loss modelling; omit for standard amortization."
+        ),
+        examples=[None, [100.0], [98.0]],
+        json_schema_extra={"unit": "per_100"},
+    )
+
+    payment_lag: int = Field(
+        default=0,
+        ge=0,
+        description="Optional QuantLib 'paymentLag' argument for amortizing bonds (days).",
+        examples=[0, 2],
+    )

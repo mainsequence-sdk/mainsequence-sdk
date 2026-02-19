@@ -44,6 +44,7 @@ def period_from_json(v: str | ql.Period | None) -> ql.Period | None:
 # Prefer explicit enumerations you actually use in this codebase.
 _DAYCOUNT_FACTORIES = {
     "Actual360": lambda: ql.Actual360(),
+    "Actual/360":lambda: ql.Actual360(),
     "Actual365Fixed": lambda: ql.Actual365Fixed(),
     # Default to USA when we can't introspect Thirty360 convention via SWIG.
     "Thirty360": lambda: ql.Thirty360(ql.Thirty360.USA),
@@ -74,10 +75,9 @@ def daycount_from_json(v: str | ql.DayCounter) -> ql.DayCounter:
         return v
     key = str(v)
     factory = _DAYCOUNT_FACTORIES.get(key)
-    if not factory and key == "Thirty360":
-        factory = _DAYCOUNT_FACTORIES["Thirty360"]
+
     if not factory:
-        raise ValueError(f"Unsupported day_count '{key}'")
+        raise ValueError(f"Unsupported day_count '{key}' only {_DAYCOUNT_FACTORIES.keys()} supported.")
     return factory()
 
 

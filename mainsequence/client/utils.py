@@ -86,6 +86,15 @@ class AuthLoaders:
         logger.debug("Getting Auth Headers ASSETS_ORM")
         self._auth_headers = get_authorization_headers()
 
+def get_rest_token_header():
+    headers = CaseInsensitiveDict()
+    headers["Content-Type"] = "application/json"
+
+    if os.getenv("MAINSEQUENCE_TOKEN"):
+        headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN")
+        return headers
+    else:
+        raise Exception("MAINSEQUENCE_TOKEN is not set in env")
 
 def get_authorization_headers():
     headers = get_rest_token_header()
@@ -306,15 +315,6 @@ if "MARKETS_CONSTANTS" not in locals():
 
 
 
-def get_rest_token_header():
-    headers = CaseInsensitiveDict()
-    headers["Content-Type"] = "application/json"
-
-    if os.getenv("MAINSEQUENCE_TOKEN"):
-        headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN")
-        return headers
-    else:
-        raise Exception("MAINSEQUENCE_TOKEN is not set in env")
 
 
 def get_network_ip():
