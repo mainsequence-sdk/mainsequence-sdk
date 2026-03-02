@@ -167,10 +167,21 @@ class Bond(InstrumentModel):
     _last_discount_curve_handle: ql.YieldTermStructureHandle | None = PrivateAttr(default=None)
     _curve_observer: ql.Observer | None = PrivateAttr(default=None)
 
+
     def get_bond(self):
         return self._bond
     # ---- valuation lifecycle ----
     def _on_valuation_date_set(self) -> None:
+        self._invalidate_pricer()
+
+    def _invalidate_pricer(self) -> None:
+        """
+        Canonical way to reset pricing state (curve observer + bond/engine).
+        Use this when pricing configuration changes (curve relink, engine params, etc).
+        """
+        old_handle = self._last_discount_curve_handle
+        old_observer = self._curve_observer
+
         self._bond = None
         self._engine = None
         self._last_discount_curve_handle = None
@@ -178,13 +189,19 @@ class Bond(InstrumentModel):
         self._flat_compounding = None
         self._flat_frequency = None
 
-        # unhook curve observer if we had one
-        if self._curve_observer and self._last_discount_curve_handle is not None:
+        if old_observer is not None and old_handle is not None:
             try:
-                self._curve_observer.unregisterWith(self._last_discount_curve_handle)
+                old_observer.unregisterWith(old_handle)
             except Exception:
                 pass
         self._curve_observer = None
+
+    def _price_cache_key_suffix(self) -> str:
+        """
+        Hook: subclasses can add extra cache-key context that affects pricing results
+        (e.g. callable engine params). Default: none.
+        """
+        return ""
 
 
     # ---- internal helpers (new) ----
@@ -326,8 +343,9 @@ class Bond(InstrumentModel):
             # include dc/comp/freq implicitly defined in _resolve_discount_curve for flat curves
             comp_i = int(flat_compounding)
             freq_i = int(flat_frequency)
-
-            return f"flat|y:{wy}|comp:{comp_i}|freq:{freq_i}|val:{val_ord}"
+            key = f"flat|y:{wy}|comp:{comp_i}|freq:{freq_i}|val:{val_ord}"
+            suf = self._price_cache_key_suffix()
+            return f"{key}|{suf}" if suf else key
         handle = self._get_default_discount_curve()
         if handle is None:
             raise ValueError(
@@ -343,7 +361,9 @@ class Bond(InstrumentModel):
         yts_ver = _YTS_VERSION.get(yts_key, 0)
         # fixings version tick (default 0 for non-floaters; overridden in FloatingRateBond)
         fixv = self._fixings_version()
-        return f"{base}|v:{yts_ver}|fixv:{fixv}|val:{val_ord}"
+        key = f"{base}|v:{yts_ver}|fixv:{fixv}|val:{val_ord}"
+        suf = self._price_cache_key_suffix()
+        return f"{key}|{suf}" if suf else key
 
 
     def pricing_engine_id(self) -> str:
@@ -1418,18 +1438,139 @@ class CallableFixedRateBond(_FixedRateBondCommon):
 
 
     # pricing configuration
-    discount_parameters: DiscountParameters = Field(
-        default_factory=DiscountParameters,
-        description="Callable pricing engine selection + parameters.",
-    )
+    # NOTE:
+    # Pricing configuration is NOT part of instrument description.
+    # It is configured at pricing time (price/analytics/duration/get_ql_bond)
+    # or via set_pricing_parameters(). Stored only as PrivateAttr (not serialized).
+    _pricing_parameters: DiscountParameters = PrivateAttr(default_factory=DiscountParameters)
+    _pricing_parameters_key: str | None = PrivateAttr(default=None)
 
     model_config = {"arbitrary_types_allowed": True}
 
+    def _invalidate_pricer_due_to_pricing_change(self) -> None:
+        # Unhook observer to avoid double-registering when we rebuild.
+        if self._curve_observer and self._last_discount_curve_handle is not None:
+            try:
+                self._curve_observer.unregisterWith(self._last_discount_curve_handle)
+            except Exception:
+                pass
+        self._curve_observer = None
 
+        # Force full rebuild on next pricing call
+        self._bond = None
+        self._engine = None
+        self._last_discount_curve_handle = None
+        self._with_yield = None
+        self._flat_compounding = None
+        self._flat_frequency = None
+
+    def _pricing_parameters_cache_key_for(self, params: DiscountParameters) -> str:
+        payload = params.model_dump(mode="json", exclude_none=True)
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha1(canonical.encode()).hexdigest()
+
+    def _pricing_parameters_cache_key(self) -> str:
+        if self._pricing_parameters_key is None:
+            self._pricing_parameters_key = self._pricing_parameters_cache_key_for(self._pricing_parameters)
+        return self._pricing_parameters_key
+
+    def _apply_pricing_parameters(self, params: DiscountParameters | dict[str, Any] | None) -> None:
+        if params is None:
+            # keep current _pricing_parameters
+            return
+        if not isinstance(params, DiscountParameters):
+            params = DiscountParameters.model_validate(params)
+
+        old_key = self._pricing_parameters_cache_key()
+        new_key = self._pricing_parameters_cache_key_for(params)
+
+        # Update params (persist on the instance), but invalidate engine only if it actually changed.
+        self._pricing_parameters = params
+        self._pricing_parameters_key = new_key
+        if new_key != old_key:
+            self._invalidate_pricer_due_to_pricing_change()
+
+    def set_pricing_parameters(self, params: DiscountParameters | dict[str, Any]) -> None:
+        """Explicit pricing configuration setter (NOT part of instrument schema)."""
+        self._apply_pricing_parameters(params)
+
+    # ---- cache keys must include pricing config for callable engines ----
+    def _price_context_key(
+            self,
+            with_yield: float | None,
+            *,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+    ) -> str:
+        base = super()._price_context_key(with_yield, flat_compounding=flat_compounding, flat_frequency=flat_frequency)
+        return f"{base}|dp:{self._pricing_parameters_cache_key()}"
+
+    def _context_key_for_handle(self, handle: "ql.YieldTermStructureHandle") -> str:
+        base = super()._context_key_for_handle(handle)
+        return f"{base}|dp:{self._pricing_parameters_cache_key()}"
 
     def _build_pricing_engine(self, discount_curve: ql.YieldTermStructureHandle) -> ql.PricingEngine:
-        # ✅ your “obvious” override
-        return self.discount_parameters.build_engine(discount_curve)
+        return self._pricing_parameters.build_engine(discount_curve)
+
+    # ---- pricing API: pass pricing config here, not in the instrument fields ----
+    def price(
+            self,
+            with_yield: float | None = None,
+            *,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+            discount_parameters: DiscountParameters | dict[str, Any] | None = None,
+    ) -> float:
+        self._apply_pricing_parameters(discount_parameters)
+        return super().price(with_yield=with_yield, flat_compounding=flat_compounding, flat_frequency=flat_frequency)
+
+    def analytics(
+            self,
+            with_yield: float | None = None,
+            *,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+            discount_parameters: DiscountParameters | dict[str, Any] | None = None,
+    ) -> dict:
+        self._apply_pricing_parameters(discount_parameters)
+        return super().analytics(with_yield=with_yield, flat_compounding=flat_compounding,
+                                 flat_frequency=flat_frequency)
+
+    def duration(
+            self,
+            with_yield: float | None = None,
+            *,
+            discount_parameters: DiscountParameters | dict[str, Any] | None = None,
+            duration_type=ql.Duration.Modified,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+    ) -> float:
+        self._apply_pricing_parameters(discount_parameters)
+        return super().duration(
+            with_yield=with_yield,
+            duration_type=duration_type,
+            flat_compounding=flat_compounding,
+            flat_frequency=flat_frequency,
+        )
+
+    def get_ql_bond(
+            self,
+            *,
+            build_if_needed: bool = True,
+            with_yield: float | None = None,
+            flat_compounding: int = ql.Compounded,
+            flat_frequency: int = ql.Annual,
+            discount_parameters: DiscountParameters | dict[str, Any] | None = None,
+    ) -> ql.Bond:
+        # Only relevant if we're going to build a priced bond (engine attached).
+        if build_if_needed and (with_yield is not None or self._get_default_discount_curve() is not None):
+            self._apply_pricing_parameters(discount_parameters)
+        return super().get_ql_bond(
+            build_if_needed=build_if_needed,
+            with_yield=with_yield,
+            flat_compounding=flat_compounding,
+            flat_frequency=flat_frequency,
+        )
 
     def _create_bond(self, discount_curve: ql.YieldTermStructureHandle | None) -> ql.Bond:
         ql.Settings.instance().evaluationDate = to_ql_date(self.valuation_date)
@@ -1899,4 +2040,3 @@ class AmortizingFloatingRateBond(_FloatingRateBondCommon):
             kwargs.pop("redemptions", None)
             kwargs.pop("paymentLag", None)
             return ql.AmortizingFloatingRateBond(**kwargs)
-
