@@ -80,26 +80,18 @@ class BaseJobApi(ABC):
 
         msc.JobApi.update_metadata(
             job_run_id=resolved_job_run_id,
-            name=cls.get_job_api_name(),
             description=cls.get_job_api_description(),
-            entrypoint=cls.get_entrypoint(),
             input_schema=cls.get_input_schema(),
             output_schema=cls.get_output_schema(),
         )
 
-    @classmethod
-    def get_job_api_name(cls) -> str:
-        if isinstance(getattr(cls, "job_api_name", None), str) and cls.job_api_name:
-            return cls.job_api_name
-        return cls.__name__
+
 
     @classmethod
     def get_job_api_description(cls) -> str:
         return getattr(cls, "job_api_description", "") or ""
 
-    @classmethod
-    def get_entrypoint(cls) -> str:
-        return f"{cls.__module__}:{cls.__name__}"
+
 
     @classmethod
     def get_input_schema(cls) -> dict[str, Any] | None:

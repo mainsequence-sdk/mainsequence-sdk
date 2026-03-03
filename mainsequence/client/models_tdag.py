@@ -2616,18 +2616,17 @@ class JobApi(BasePydanticModel, BaseObjectOrm):
         return value
 
     @classmethod
-    def update_metadata(cls, description, output_schema, config_schema, timeout=None):
+    def update_metadata(cls, job_run_id:int,description, output_schema, config_schema, timeout=None):
         url = cls.get_object_url() + "/update_metadata/"
         s = cls.build_session()
-        job_run_id = os.getenv("JOB_RUN_ID")
-        if job_run_id is None:
-            raise Exception("JOB_RUN_ID not found")
+
         data = {
             "description": description,
             "output_schema": output_schema,
             "config_schema": config_schema,
-            "job_run_id": os.getenv("JOB_RUN_ID")
+            "job_run_id": job_run_id
         }
+
 
         payload = {"json": data, }
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
