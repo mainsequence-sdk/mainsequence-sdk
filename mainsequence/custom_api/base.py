@@ -51,7 +51,7 @@ class BaseJobApi(ABC):
 
     def run_and_report(self) -> Any:
         try:
-            raw_output = self.run(self.input)
+            raw_output = self.run()
             output = self._coerce_output(raw_output)
             self.report_result(status="OK", output=output, error=None)
             return output
