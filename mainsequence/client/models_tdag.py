@@ -2616,14 +2616,14 @@ class JobApi(BasePydanticModel, BaseObjectOrm):
         return value
 
     @classmethod
-    def update_metadata(cls, job_run_id:int,description, output_schema, config_schema, timeout=None):
+    def update_metadata(cls, job_run_id:int,description, output_schema, input_schema, timeout=None):
         url = cls.get_object_url() + "/update_metadata/"
         s = cls.build_session()
 
         data = {
             "description": description,
             "output_schema": output_schema,
-            "config_schema": config_schema,
+            "input_schema": input_schema,
             "job_run_id": job_run_id
         }
 
