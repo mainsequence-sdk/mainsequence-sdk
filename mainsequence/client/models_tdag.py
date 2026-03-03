@@ -19,7 +19,9 @@ import pytz
 import requests
 import yaml
 from cachetools import TTLCache, cachedmethod
-from pydantic import BaseModel, Field, field_validator
+from jsonschema import Draft202012Validator
+from jsonschema.exceptions import SchemaError
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from mainsequence.logconf import logger
 
@@ -2193,6 +2195,8 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     status: str
     extra_arguments: dict | None = None
 
+    STATUS_AVAILABLE: ClassVar[str] = "AVAILABLE"
+
     @classmethod
     def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
         url = cls.get_object_url() + "/get_or_create_duck_db/"
@@ -2345,6 +2349,9 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
     related_resource: DataSource
     related_resource_class_type: str
 
+
+
+
     class Config:
         use_enum_values = True  # This ensures that enums are stored as their values (e.g., 'TEXT')
 
@@ -2412,12 +2419,136 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
 
 
 
+class GithubOrganization(BasePydanticModel, BaseObjectOrm):
+    id: int
+    login: str
+    display_name: str | None = None
+
+    def __str__(self):
+        return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
+
+
+class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
+    id: int
+    latest_digest: str | None = None
+    description: str
+    title: str
+
+    def __str__(self):
+        return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
+
+
+
+
 class Project(BasePydanticModel, BaseObjectOrm):
     id: int
     project_name: str
     data_source: DynamicTableDataSource
     git_ssh_url: str | None = None
     project_visible: bool
+    is_initialized:bool
+
+
+    @staticmethod
+    def _normalize_env_vars(
+        env_vars: dict[str, str] | list[dict[str, str]] | None,
+    ) -> list[dict[str, str]] | None:
+        """
+        Serializer expects: [{"name": "...", "value": "..."}, ...]
+        Allow passing a dict for convenience.
+        """
+        if env_vars is None:
+            return None
+        if isinstance(env_vars, dict):
+            return [{"name": k, "value": v} for k, v in env_vars.items()]
+        # assume already list-of-dicts shape
+        return env_vars
+    @staticmethod
+    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
+        """
+        Accept:
+          - None
+          - int
+          - any object with attribute `.id`
+          - dict-like with key "id"
+        """
+        if obj is None:
+            return None
+        if isinstance(obj, int):
+            return obj
+        if hasattr(obj, "id") and obj.id is not None:
+            return int(obj.id)
+        if isinstance(obj, dict) and obj.get("id") is not None:
+            return int(obj["id"])
+        raise TypeError(
+            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
+        )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        project_name: str,
+        data_source: int | DynamicTableDataSource | None = None,
+        default_base_image: int | ProjectBaseImage | None = None,
+        github_org: int | GithubOrganization | None = None,
+        repository_branch: str | None = None,
+        env_vars: dict[str, str] | list[dict[str, str]] | None = None,
+            timeout:int | None = None,
+    ) -> Project:
+        """
+        POST /projects/
+
+        Sends:
+          - project_name
+          - repository_branch (optional)
+          - data_source_id (optional; server may auto-pick for individual orgs)
+          - default_base_image_id (optional)
+          - git_repository_id (optional)
+          - github_org_id (optional)
+          - env_vars (optional list of {name,value})
+        """
+        url = cls.get_object_url() + "/"
+
+        payload: dict[str, Any] = {
+            "project_name": project_name,
+        }
+
+        if repository_branch:
+            payload["repository_branch"] = repository_branch
+
+        ds_id = cls._coerce_id(data_source, field_name="data_source")
+        if ds_id is not None:
+            payload["data_source_id"] = ds_id
+
+        img_id = cls._coerce_id(default_base_image, field_name="default_base_image")
+        if img_id is not None:
+            payload["default_base_image_id"] = img_id
+
+
+        org_id = cls._coerce_id(github_org, field_name="github_org")
+        if org_id is not None:
+            payload["github_org_id"] = org_id
+
+        env_list = cls._normalize_env_vars(env_vars)
+        if env_list is not None:
+            payload["env_vars"] = env_list
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json":payload},time_out=timeout
+        )
+
+        # your helpers already exist; use them consistently
+        raise_for_response(r)
+
+        # DRF should return 201 with your detail serializer shape
+        return cls(**r.json())
+
 
     @classmethod
     def get_user_default_project(cls):
@@ -2443,6 +2574,90 @@ class Project(BasePydanticModel, BaseObjectOrm):
             sort_keys=False,
             default_flow_style=False,
         )
+
+
+class JobApi(BasePydanticModel, BaseObjectOrm):
+    uid: str
+    name: str = Field(..., max_length=255)
+    description: str | None = None
+
+    entrypoint: str = Field(
+        ...,
+        max_length=255,
+        description="The python path to the module/class. Example: job_apis.example_apis.SimpleApi"
+    )
+
+    input_schema: dict[str, Any] | None = None
+    output_schema: dict[str, Any] | None = None
+    source_code: str | None = None
+
+
+    related_job_id: int
+    related_update_job_id: int | None = None
+
+    is_ready: bool = False
+
+    model_config = ConfigDict(from_attributes=True)
+
+    @field_validator("input_schema", "output_schema", mode="before")
+    @classmethod
+    def validate_json_schema(cls, value: Any, info) -> dict[str, Any] | None:
+        if value is None:
+            return None
+
+        if not isinstance(value, dict):
+            raise ValueError(f"{info.field_name} must be a JSON object or null")
+
+        try:
+            Draft202012Validator.check_schema(value)
+        except SchemaError as exc:
+            raise ValueError(f"Invalid JSON Schema for {info.field_name}: {exc.message}")
+
+        return value
+
+    @classmethod
+    def update_metadata(cls, description, output_schema, config_schema, timeout=None):
+        url = cls.get_object_url() + "/update_metadata/"
+        s = cls.build_session()
+        job_run_id = os.getenv("JOB_RUN_ID")
+        if job_run_id is None:
+            raise Exception("JOB_RUN_ID not found")
+        data = {
+            "description": description,
+            "output_schema": output_schema,
+            "config_schema": config_schema,
+            "job_run_id": os.getenv("JOB_RUN_ID")
+        }
+
+        payload = {"json": data, }
+        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout)
+
+        if r.status_code not in [200]:
+            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
+
+    @classmethod
+    def report_job_run_result(cls, job_run_id: int,status: str, output: Any, error: dict[str, Any] | None, timeout=None):
+        """
+        Adds the envelope response of the job run to
+        """
+        url = cls.get_object_url() + "/report_job_run_result/"
+        s = cls.build_session()
+        data = {
+            "job_run_id": job_run_id,
+            "status": status,
+            "output":output,
+            "error":error
+
+        }
+        payload = {"json": data, }
+        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
+                         time_out=timeout)
+
+        if r.status_code not in [200]:
+            raise Exception(f"Failed to get add tool response to job run: {r.status_code} - {r.text}")
+
+
 
 
 class TimeScaleDB(DataSource):
@@ -2818,24 +3033,7 @@ class Constant(BasePydanticModel, BaseObjectOrm):
     def create_constants_if_not_exist(cls, constants_to_create: dict):
         # crete global constants if not exist in  backed
 
-        # constants_to_create=dict(
-        # TIIE_28_UID        = "TIIE_28",
-        # TIIE_91_UID        = "TIIE_91",
-        # TIIE_182_UID       = "TIIE_182",
-        # TIIE_OVERNIGHT_UID = "TIIE_OVERNIGHT",
-        #
-        # CETE_28_UID        = "CETE_28",
-        # CETE_91_UID        = "CETE_91",
-        # CETE_182_UID       = "CETE_182",
-        #
-        # # Curve identifiers
-        # TIIE_28_ZERO_CURVE = "F_TIIE_28_VALMER",
-        # M_BONOS_ZERO_CURVE = "M_BONOS_ZERO_OTR",
-        #
-        #
-        # DISCOUNT_CURVES_TABLE         = "discount_curves",
-        # REFERENCE_RATES_FIXING_TABLE  = "fixing_rates_1d",
-        # )
+
         existing_constants = cls.filter(name__in=list(constants_to_create.keys()))
         existing_constants_names = [c.name for c in existing_constants]
         constants_to_register = {
@@ -2849,60 +3047,7 @@ class Constant(BasePydanticModel, BaseObjectOrm):
 
 
 
-# AI Models
 
-class AgentTool(BasePydanticModel, BaseObjectOrm):
-    """
-    Represents the actual tool metadata that an agent needs to know.
-    """
-    name: str = Field(max_length=255)
-    description:str= None
-
-    entrypoint: str
-    # JSONFields
-    output_schema: dict[str, Any] | None = None
-    config_schema: dict[str, Any] | None = None
-
-    @classmethod
-    def update_metadata(cls,description,output_schema,config_schema,timeout=None):
-        url = cls.get_object_url() + "/update_metadata/"
-        s = cls.build_session()
-        job_run_id=os.getenv("JOB_RUN_ID")
-        if job_run_id is None:
-            raise Exception("JOB_RUN_ID not found")
-        data = {
-            "description": description,
-            "output_schema": output_schema,
-            "config_schema": config_schema,
-            "job_run_id": os.getenv("JOB_RUN_ID")
-        }
-
-        payload = {"json": data,}
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout)
-
-        if r.status_code not in [200]:
-            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
-
-
-    @classmethod
-    def add_tool_response_to_jobrun(cls,job_run_id:int, envelope:dict,timeout=None):
-        """
-        Adds the envelope response of the job run to
-        """
-        url = cls.get_object_url() + "/add_tool_response_to_jobrun/"
-        s = cls.build_session()
-        data = {
-            "job_run_id": job_run_id,
-            "envelope": envelope,
-
-        }
-        payload = {"json": data, }
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout)
-
-        if r.status_code not in [200]:
-            raise Exception(f"Failed to get add tool response to job run: {r.status_code} - {r.text}")
 
 
 

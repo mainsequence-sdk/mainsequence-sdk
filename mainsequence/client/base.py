@@ -120,11 +120,12 @@ class BaseObjectOrm:
         "Job": "pods/job",
         "Constant": "pods/constant",
         "Secret": "pods/secret",
-        # ReportBuilder
-        "Presentation": "reports/presentations",
-        "Folder": "reports/folder",
-        "Slide": "reports/slides",
-        "Theme": "reports/themes",
+        "ProjectBaseImage":"pods/project-base-image",
+        "GithubOrganization": "pods/github-organization",
+        "JobApi":"pods/job-api",
+
+
+
         #AI
         "AgentTool":"ai/agent_tool"
 
@@ -236,7 +237,10 @@ class BaseObjectOrm:
             for item in results:
                 if isinstance(item, dict):
                     item.setdefault("orm_class", cls.__name__)
-                    obj = cls(**item) if issubclass(cls, BasePydanticModel) else item
+                    try:
+                        obj = cls(**item) if issubclass(cls, BasePydanticModel) else item
+                    except Exception as e:
+                        raise e
                 else:
                     obj = item
 
