@@ -112,8 +112,20 @@ class User(BaseObjectOrm, BasePydanticModel):
     @classmethod
     def get_logged_user(cls) -> User:
         headers = _CURRENT_AUTH_HEADERS.get()
+
         if not headers:
-            raise RuntimeError("No auth headers are bound in the current request context.")
+            try:
+                import streamlit as st
+                headers = st.context.headers
+            except Exception:
+                headers = None
+
+        if not headers:
+            raise RuntimeError(
+                "No auth headers are available. "
+                "In Streamlit, this requires st.context.headers to be available. "
+                "In Agents, you must bind request headers into _CURRENT_AUTH_HEADERS at request entry."
+            )
 
         normalized_headers: dict[str, Any] = {}
         for key, value in headers.items():
