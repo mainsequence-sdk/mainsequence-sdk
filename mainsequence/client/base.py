@@ -127,7 +127,7 @@ class BaseObjectOrm:
 
 
         #AI
-        "AgentTool":"ai/agent_tool"
+        "ResourceRelease": "pods/resource-release",
 
     }
     ROOT_URL = API_ENDPOINT

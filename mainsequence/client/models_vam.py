@@ -233,56 +233,6 @@ class Calendar(BaseObjectOrm, BasePydanticModel):
         return self.name
 
 
-class Organization(BaseModel):
-    id: int
-    uid: str
-    name: str
-    url: str | None  # URL can be None
-
-
-class Group(BaseModel):
-    id: int
-    name: str
-    permissions: list[Any]  # Adjust the type for permissions as needed
-
-
-class User(BaseObjectOrm, BasePydanticModel):
-
-    first_name: str
-    last_name: str
-    is_active: bool
-    date_joined: datetime.datetime
-    role: str
-    username: str
-    email: str
-    last_login: datetime.datetime
-    api_request_limit: int
-    mfa_enabled: bool
-    organization: Organization
-    plan: Any | None  # Use a specific model if plan details are available
-    groups: list[Group]
-    user_permissions: list[Any]  # Adjust as necessary for permission structure
-    phone_number: str | None = None
-
-    @classmethod
-    def get_object_url(cls):
-        # TODO should be also orm/api
-        url = f"{cls.ROOT_URL.replace('orm/api', 'user/api')}/{cls.END_POINTS[cls.class_name()]}"
-        return url
-
-    @classmethod
-    def get_authenticated_user_details(cls):
-        url = f"{cls.get_object_url()}/get_user_details/"
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="GET",
-            url=url,
-        )
-        if r.status_code not in [200, 201]:
-            raise_for_response(r)
-
-        return cls(**r.json())
 
 
 class AssetSnapshot(BaseObjectOrm, BasePydanticModel):
@@ -2385,68 +2335,5 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r)
 
 
-# ------------------------------
-# ALPACA
-# ------------------------------
-
-
-class AlpacaAccountRiskFactors(AccountRiskFactors):
-    total_initial_margin: float
-    total_maintenance_margin: float
-    last_equity: float
-    buying_power: float
-    cash: float
-    last_maintenance_margin: float
-    long_market_value: float
-    non_marginable_buying_power: float
-    options_buying_power: float
-    portfolio_value: float
-    regt_buying_power: float
-    sma: float
-
-
-class AlpacaAccount(
-    AccountMixin,
-):
-    api_key: str
-    secret_key: str
-
-    account_number: str
-    id_hex: str
-    account_blocked: bool
-    multiplier: float
-    options_approved_level: int
-    options_trading_level: int
-    pattern_day_trader: bool
-    trade_suspended_by_user: bool
-    trading_blocked: bool
-    transfers_blocked: bool
-    shorting_enabled: bool
-
-
-# ------------------------------
-# BINANCE
-# ------------------------------
-
-
-class BinanceFuturesAccountRiskFactors(AccountRiskFactors):
-    total_initial_margin: float
-    total_maintenance_margin: float
-    total_margin_balance: float
-    total_unrealized_profit: float
-    total_cross_wallet_balance: float
-    total_cross_unrealized_pnl: float
-    available_balance: float
-    max_withdraw_amount: float
-
-
-class BaseFuturesAccount(Account):
-    api_key: str
-    secret_key: str
-
-    multi_assets_margin: bool = False
-    fee_burn: bool = False
-    can_deposit: bool = False
-    can_withdraw: bool = False
 
 

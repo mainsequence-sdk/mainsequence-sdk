@@ -82,6 +82,9 @@ class SourceTableConfigurationDoesNotExist(Exception):
     pass
 
 
+
+
+
 class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
     source_config_id: int | None = Field(
         None,
@@ -3043,6 +3046,7 @@ class Constant(BasePydanticModel, BaseObjectOrm):
             new_constant = cls.create(name=k, value=v)
             created_constants.append(new_constant)
         return created_constants
+
 
 
 
