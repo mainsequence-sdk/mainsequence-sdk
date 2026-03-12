@@ -51,6 +51,8 @@ extra_css:
   - stylesheets/custom.css
 
 markdown_extensions:
+  - admonition
+  - pymdownx.details
   - attr_list # (Optional but recommended) Allows adding CSS classes to elements
   - md_in_html # (Optional but recommended) Allows Markdown parsing inside HTML tags
   - pymdownx.snippets:
@@ -64,4 +66,3 @@ markdown_extensions:
         - name: mermaid
           class: mermaid
           format: !!python/name:mermaid2.fence_mermaid_custom
-

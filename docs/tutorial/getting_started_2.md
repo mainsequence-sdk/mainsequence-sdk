@@ -1,6 +1,6 @@
-# Getting Started (Part 2): Multi‑Index Columns — Working with Assets
+# Getting Started (Part 3): Multi‑Index Columns — Working with Assets
 
-In Part 1, you created a project and built a basic `DataNode`. Now you’ll move closer to a real application by building a `DataNode` that stores **security prices**.
+In Part 2, you built a basic `DataNode`. Now you’ll move closer to a real application by building a `DataNode` that stores **security prices**.
 
 You can reuse this same pattern for signals, news, or any other asset-centric dataset.The key concept in this part of the tutorial is learning how to modify the `update`
 method so it returns a **MultiIndex** `DataFrame`, and how to link the `DataNode` to the Main Sequence **Investment Management System** via **Assets**.

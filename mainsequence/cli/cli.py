@@ -10,6 +10,7 @@ Parity with VS Code extension:
 - settings set-backend
 - logout (clear tokens)
 - project freeze-env (compile environment)
+- project build_local_venv (create local .venv from pyproject + uv sync)
 - project sync (uv bump + lock/sync/export + git commit/push)
 - project build-docker-env (docker build + devcontainer config)
 - docker scaffold creation during set-up-locally when DEFAULT_BASE_IMAGE exists
@@ -25,6 +26,7 @@ import os
 import pathlib
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -36,11 +38,17 @@ from .api import (
     ApiError,
     NotLoggedIn,
     add_deploy_key,
+    create_project,
     deep_find_repo_url,
+    delete_project,
     fetch_project_env_text,
     get_current_user_profile,
+    get_project,
     get_project_token,
     get_projects,
+    list_dynamic_table_data_sources,
+    list_github_organizations,
+    list_project_base_images,
     repo_name_from_git_url,
     safe_slug,
 )
@@ -464,6 +472,143 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
     return p
 
 
+def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
+    """
+    Parse env var entries from repeated KEY=VALUE args and/or comma-separated chunks.
+    """
+    out: dict[str, str] = {}
+    for raw in entries:
+        for part in str(raw).split(","):
+            item = part.strip()
+            if not item:
+                continue
+            if "=" not in item:
+                raise ValueError(f"Invalid env var entry '{item}'. Expected KEY=VALUE.")
+            key, value = item.split("=", 1)
+            key = key.strip()
+            if not key:
+                raise ValueError(f"Invalid env var entry '{item}'. Empty key.")
+            out[key] = value.strip()
+    return out
+
+
+def _prompt_select_id(
+    *,
+    title: str,
+    prompt_label: str,
+    items: list[dict],
+    rows: list[list[str]],
+) -> int:
+    if not items:
+        raise RuntimeError(f"No options available for {prompt_label}.")
+    print_table(title, ["ID", "Name", "Details"], rows)
+    default_id = str(items[0].get("id"))
+    picked = typer.prompt(prompt_label, default=default_id).strip()
+    try:
+        return int(picked)
+    except ValueError as e:
+        raise RuntimeError(f"Invalid {prompt_label}: {picked}") from e
+
+
+def _extract_python_version_from_spec(spec: str | None) -> str | None:
+    if not spec:
+        return None
+    cleaned = str(spec).strip()
+    m = re.search(r"(?<!\d)(\d+)\.(\d+)(?:\.(\d+))?", cleaned)
+    if not m:
+        return None
+    major, minor, patch = m.group(1), m.group(2), m.group(3)
+    if patch and re.fullmatch(r"\d+\.\d+\.\d+", cleaned):
+        return f"{major}.{minor}.{patch}"
+    return f"{major}.{minor}"
+
+
+def _extract_python_version_from_pyproject_text(pyproject_text: str) -> str | None:
+    """
+    Extract python version from pyproject.toml text.
+
+    Supported keys:
+      - [project].requires-python
+      - [tool.poetry.dependencies].python
+    """
+    try:
+        import tomllib
+
+        data = tomllib.loads(pyproject_text)
+    except Exception:
+        data = {}
+
+    candidates: list[str] = []
+    if isinstance(data, dict):
+        project_data = data.get("project") or {}
+        if isinstance(project_data, dict):
+            req = project_data.get("requires-python")
+            if req:
+                candidates.append(str(req))
+
+        tool_data = data.get("tool") or {}
+        if isinstance(tool_data, dict):
+            poetry_data = tool_data.get("poetry") or {}
+            if isinstance(poetry_data, dict):
+                deps = poetry_data.get("dependencies") or {}
+                if isinstance(deps, dict):
+                    py_spec = deps.get("python")
+                    if py_spec:
+                        candidates.append(str(py_spec))
+
+    for spec in candidates:
+        parsed = _extract_python_version_from_spec(spec)
+        if parsed:
+            return parsed
+
+    # Fallback regex parsing for partially-invalid TOML or non-standard formatting.
+    req_match = re.search(r'(?im)^\s*requires-python\s*=\s*["\']([^"\']+)["\']\s*$', pyproject_text)
+    if req_match:
+        parsed = _extract_python_version_from_spec(req_match.group(1))
+        if parsed:
+            return parsed
+
+    poetry_section = re.search(r"(?is)^\s*\[tool\.poetry\.dependencies\]\s*(.*?)(?:^\s*\[|\Z)", pyproject_text, re.MULTILINE)
+    if poetry_section:
+        py_match = re.search(r'(?im)^\s*python\s*=\s*["\']([^"\']+)["\']\s*$', poetry_section.group(1))
+        if py_match:
+            return _extract_python_version_from_spec(py_match.group(1))
+
+    return None
+
+
+def _resolve_uv_runner() -> tuple[list[str], str] | None:
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        return [uv_bin], "uv"
+
+    probe = subprocess.run(
+        [sys.executable, "-m", "uv", "--version"],
+        capture_output=True,
+        text=True,
+    )
+    if probe.returncode == 0:
+        return [sys.executable, "-m", "uv"], f"{sys.executable} -m uv"
+
+    return None
+
+
+def _install_uv() -> tuple[bool, str]:
+    attempts = [
+        [sys.executable, "-m", "pip", "install", "uv"],
+        [sys.executable, "-m", "pip", "install", "--user", "uv"],
+    ]
+    reasons: list[str] = []
+    for cmd in attempts:
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        if r.returncode == 0:
+            return True, ""
+        out = (r.stderr or r.stdout or "").strip()
+        if out:
+            reasons.append(out.splitlines()[-1])
+    return False, "; ".join(reasons)
+
+
 # ---------- top-level commands ----------
 
 
@@ -472,11 +617,37 @@ def login(
     email: str = typer.Argument(..., help="Email/username (server expects 'email' field)"),
     password: str | None = typer.Option(None, prompt=True, hide_input=True, help="Password"),
     no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login"),
+    export: bool = typer.Option(
+        False,
+        "--export",
+        "--export-env",
+        help="Print shell export commands for session auth variables.",
+    ),
 ):
     """
-    Login to the MainSequence platform.
+    Authenticate to the MainSequence platform.
 
-    This stores access/refresh tokens in the CLI config folder and enables project operations.
+    Persists auth tokens in secure OS storage (when available) so subsequent
+    CLI invocations can run without re-authentication.
+
+    Parameters
+    ----------
+    email:
+        Login email.
+    password:
+        Password (prompted if omitted).
+    no_status:
+        If True, skip printing the project table after login.
+    export:
+        If True, print shell export lines instead of storing auth state.
+
+    Examples
+    --------
+    ```bash
+    mainsequence login you@company.com
+    mainsequence login you@company.com --no-status
+    mainsequence login you@company.com --export
+    ```
     """
     try:
         res = api_login(email, password)
@@ -484,10 +655,26 @@ def login(
         error(f"Login failed: {e}")
         raise typer.Exit(1)
 
+    if export:
+        access = (res.get("access") or "").replace('"', '\\"')
+        refresh = (res.get("refresh") or "").replace('"', '\\"')
+        username = (res.get("username") or "").replace('"', '\\"')
+        typer.echo(f'export MAIN_SEQUENCE_USER_TOKEN="{access}"')
+        typer.echo(f'export MAIN_SEQUENCE_REFRESH_TOKEN="{refresh}"')
+        typer.echo(f'export MAIN_SEQUENCE_USERNAME="{username}"')
+        return
+
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
     success(f"Signed in as {res['username']} (Backend: {res['backend']})")
     info(f"Projects base folder: {base}")
+    if cfg.secure_store_available():
+        if res.get("persisted", True):
+            info("Auth tokens are persisted in secure OS storage for subsequent CLI commands.")
+        else:
+            warn("Could not persist auth tokens in secure OS storage. Use --export for shell-based auth.")
+    else:
+        warn("Secure token storage is unavailable on this platform. Use --export for shell-based auth.")
 
     if not no_status:
         try:
@@ -496,27 +683,59 @@ def login(
             typer.echo("\nProjects:")
             typer.echo(_render_projects_table(items, base, org_slug))
         except NotLoggedIn:
-            error("Not logged in.")
+            error("Not logged in. Run: mainsequence login <email>")
 
 
 @app.command("logout")
-def logout():
+def logout(
+    export: bool = typer.Option(
+        False,
+        "--export",
+        "--export-env",
+        help="Print shell unset commands for session auth variables.",
+    ),
+):
     """
-    Log out by deleting stored tokens (token.json).
+    Log out by clearing stored/session authentication state.
 
-    Mirrors VS Code extension "Log out" behavior.
+    Parameters
+    ----------
+    export:
+        If True, print shell `unset` lines for auth variables.
+
+    Examples
+    --------
+    ```bash
+    mainsequence logout
+    mainsequence logout --export
+    ```
     """
     ok = cfg.clear_tokens()
+    if export:
+        typer.echo("unset MAIN_SEQUENCE_USER_TOKEN")
+        typer.echo("unset MAIN_SEQUENCE_REFRESH_TOKEN")
+        typer.echo("unset MAIN_SEQUENCE_USERNAME")
+        return
+
     if ok:
-        success("Signed out (tokens cleared).")
+        success("Signed out (session tokens cleared).")
     else:
-        warn("Signed out (tokens cleared), but some files could not be removed.")
+        warn("Signed out, but some session auth variables could not be cleared.")
 
 
 @app.command("doctor")
 def doctor():
     """
-    Print a diagnostics report (config paths, backend URL, external dependencies).
+    Print a diagnostics report for the CLI environment.
+
+    The report includes config paths, backend URL, auth visibility, and
+    external tool availability.
+
+    Examples
+    --------
+    ```bash
+    mainsequence doctor
+    ```
     """
     run_doctor()
 
@@ -534,7 +753,27 @@ def copy_llm_instructions(
     print_: bool = typer.Option(False, "--print", help="Print the bundle to stdout instead of copying."),
 ):
     """
-    Bundle all markdown files in examples/ai/instructions and copy to the clipboard.
+    Bundle markdown instructions and copy them to clipboard or print them.
+
+    Parameters
+    ----------
+    dir:
+        Explicit path to instructions directory.
+    recursive:
+        Include nested markdown files.
+    out:
+        Optional output file path for the generated bundle.
+    print_:
+        Print bundle to stdout instead of copying.
+
+    Examples
+    --------
+    ```bash
+    mainsequence copy-llm-instructions
+    mainsequence copy-llm-instructions --recursive
+    mainsequence copy-llm-instructions --dir ./examples/ai/instructions --print
+    mainsequence copy-llm-instructions --out ./ai_instructions.txt
+    ```
     """
     try:
         base = pathlib.Path(dir).expanduser().resolve() if dir else None
@@ -576,7 +815,18 @@ def copy_llm_instructions(
 
 @settings.callback(invoke_without_command=True)
 def settings_cb(ctx: typer.Context):
-    """`mainsequence settings` defaults to `show`."""
+    """
+    Settings command group callback.
+
+    When invoked without a subcommand, defaults to `settings show`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings
+    mainsequence settings show
+    ```
+    """
     if ctx.invoked_subcommand is None:
         settings_show()
         raise typer.Exit()
@@ -584,7 +834,17 @@ def settings_cb(ctx: typer.Context):
 
 @settings.command("show")
 def settings_show():
-    """Show current configuration (backend_url + mainsequence_path)."""
+    """
+    Show current CLI configuration.
+
+    Prints backend URL and base projects path as JSON.
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings show
+    ```
+    """
     c = cfg.get_config()
     typer.echo(
         json.dumps(
@@ -599,7 +859,20 @@ def settings_show():
 
 @settings.command("set-base")
 def settings_set_base(path: str = typer.Argument(..., help="New projects base folder")):
-    """Set the projects base folder (where projects are cloned)."""
+    """
+    Set the base folder where projects are cloned locally.
+
+    Parameters
+    ----------
+    path:
+        New base path for local project folders.
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings set-base ~/mainsequence
+    ```
+    """
     out = cfg.set_config({"mainsequence_path": path})
     success(f"Projects base folder set to: {out['mainsequence_path']}")
 
@@ -608,7 +881,20 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
 def settings_set_backend(
     url: str = typer.Argument(..., help="Backend base URL, e.g. https://main-sequence.app")
 ):
-    """Persist backend_url to config.json (parity with VS Code extension settings UI)."""
+    """
+    Set backend base URL used by CLI API calls.
+
+    Parameters
+    ----------
+    url:
+        Backend base URL (for example `https://main-sequence.app`).
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings set-backend https://main-sequence.app
+    ```
+    """
     out = cfg.set_backend_url(url)
     success(f"Backend URL set to: {out.get('backend_url')}")
 
@@ -619,7 +905,13 @@ def settings_set_backend(
 @sdk.command("latest")
 def sdk_latest():
     """
-    Print the latest SDK version on GitHub (same resolution logic as VS Code extension).
+    Print latest available MainSequence SDK version from GitHub.
+
+    Examples
+    --------
+    ```bash
+    mainsequence sdk latest
+    ```
     """
     with status("Checking GitHub for latest SDK version..."):
         try:
@@ -640,9 +932,15 @@ def sdk_latest():
 @project.command("list")
 def project_list():
     """
-    List projects visible to your account (requires login).
+    List projects visible to the authenticated user.
 
-    Shows Local status by scanning your projects base folder for folders ending in '-<id>'.
+    The output includes remote metadata and local mapping status.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project list
+    ```
     """
     _require_login()
     cfg_obj = cfg.get_config()
@@ -650,6 +948,259 @@ def project_list():
     org_slug = _org_slug_from_profile()
     items = get_projects()
     typer.echo(_render_projects_table(items, base, org_slug))
+
+
+@project.command("create")
+def project_create_cmd(
+    project_name: str | None = typer.Argument(None, help="Project name"),
+    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Dynamic table data source ID"),
+    default_base_image_id: int | None = typer.Option(
+        None, "--default-base-image-id", help="Default base image ID"
+    ),
+    github_org_id: int | None = typer.Option(
+        None, "--github-org-id", "--organization-id", help="GitHub organization ID"
+    ),
+    branch: str | None = typer.Option(None, "--branch", help="Repository branch (default: main)"),
+    env: list[str] | None = typer.Option(
+        None,
+        "--env",
+        help="Environment variable entry in KEY=VALUE form. Repeatable or comma-separated.",
+    ),
+):
+    """
+    Create a project on the platform.
+
+    If required values are omitted, the command prompts interactively and applies defaults.
+    After creation, it polls project status until `is_initialized=true`.
+
+    Parameters
+    ----------
+    project_name:
+        Project name. If omitted, prompt is shown.
+    data_source_id:
+        Dynamic table data source ID.
+    default_base_image_id:
+        Default base image ID.
+    github_org_id:
+        GitHub organization ID.
+    branch:
+        Repository branch (default: `main`).
+    env:
+        Environment variable entries in `KEY=VALUE` format.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project create
+    mainsequence project create tutorial-project
+    mainsequence project create tutorial-project --branch main --env FOO=bar --env BAZ=qux
+    ```
+    """
+    _require_login()
+
+    try:
+        if not project_name:
+            project_name = typer.prompt("Project name").strip()
+        project_name = (project_name or "").strip()
+        if not project_name:
+            error("Project name is required.")
+            raise typer.Exit(1)
+
+        if data_source_id is None:
+            ds_items = list_dynamic_table_data_sources(status="AVAILABLE")
+            ds_rows: list[list[str]] = []
+            for item in ds_items:
+                rr = item.get("related_resource") or {}
+                ds_name = (
+                    rr.get("display_name")
+                    or item.get("related_resource_class_type")
+                    or rr.get("class_type")
+                    or f"data-source-{item.get('id')}"
+                )
+                ds_details = f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
+                ds_rows.append([str(item.get("id", "")), str(ds_name), str(ds_details)])
+            data_source_id = _prompt_select_id(
+                title="Available Data Sources",
+                prompt_label="Data source id",
+                items=ds_items,
+                rows=ds_rows,
+            )
+
+        if default_base_image_id is None:
+            img_items = list_project_base_images()
+            img_rows: list[list[str]] = []
+            for item in img_items:
+                name = item.get("title") or f"image-{item.get('id')}"
+                details = item.get("description") or item.get("latest_digest") or "-"
+                img_rows.append([str(item.get("id", "")), str(name), str(details)])
+            default_base_image_id = _prompt_select_id(
+                title="Available Base Images",
+                prompt_label="Default base image id",
+                items=img_items,
+                rows=img_rows,
+            )
+
+        if github_org_id is None:
+            org_items = list_github_organizations()
+            if org_items:
+                org_rows: list[list[str]] = []
+                for item in org_items:
+                    name = item.get("display_name") or item.get("login") or f"org-{item.get('id')}"
+                    details = item.get("login") or "-"
+                    org_rows.append([str(item.get("id", "")), str(name), str(details)])
+                github_org_id = _prompt_select_id(
+                    title="Available GitHub Organizations",
+                    prompt_label="GitHub organization id",
+                    items=org_items,
+                    rows=org_rows,
+                )
+            else:
+                warn("No GitHub organizations available. Project will be created without github_org_id.")
+
+        branch = (branch or "").strip() or typer.prompt("Repository branch", default="main").strip() or "main"
+
+        env_entries = list(env or [])
+        if not env_entries:
+            env_line = typer.prompt(
+                "Environment variables (KEY=VALUE, comma-separated, optional)",
+                default="",
+            ).strip()
+            if env_line:
+                env_entries = [env_line]
+
+        env_vars: dict[str, str] | None = None
+        if env_entries:
+            try:
+                env_vars = _parse_env_var_entries(env_entries)
+            except ValueError as e:
+                error(str(e))
+                raise typer.Exit(1)
+
+        created = create_project(
+            project_name=project_name,
+            data_source_id=data_source_id,
+            default_base_image_id=default_base_image_id,
+            github_org_id=github_org_id,
+            repository_branch=branch,
+            env_vars=env_vars,
+        )
+    except ApiError as e:
+        error(f"Project creation failed: {e}")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    pid = created.get("id")
+    success(f"Project created: {created.get('project_name') or project_name} (id={pid})")
+
+    # A freshly created project can take several minutes to initialize on backend.
+    # Keep polling until API reports is_initialized=True.
+    if pid is not None and created.get("is_initialized") is False:
+        info("Project is still initializing. Waiting until is_initialized=true (poll every 30s).")
+        attempt = 0
+        try:
+            while True:
+                attempt += 1
+                with status(f"Project not ready yet (attempt {attempt}). Next check in 30s..."):
+                    time.sleep(30)
+                try:
+                    latest = get_project(pid)
+                except ApiError as e:
+                    warn(f"Project status poll failed (attempt {attempt}): {e}")
+                    continue
+
+                created = latest
+                if created.get("is_initialized") is True:
+                    success("Project is initialized and ready.")
+                    break
+
+                info("Project still initializing. Continuing to poll...")
+        except KeyboardInterrupt:
+            warn("Stopped waiting for project initialization. Project may still be initializing.")
+
+    print_kv(
+        "Project",
+        [
+            ("ID", str(created.get("id", "-"))),
+            ("Project Name", str(created.get("project_name") or project_name)),
+            ("Git SSH URL", str(created.get("git_ssh_url") or "-")),
+            ("Branch", branch),
+        ],
+    )
+    if pid is not None:
+        info(f"Next: mainsequence project set-up-locally {pid}")
+
+
+@project.command("delete")
+def project_delete_remote_cmd(
+    project_id: int = typer.Argument(..., help="Project ID"),
+    delete_repositories: bool = typer.Option(
+        False,
+        "--delete-repositories/--no-delete-repositories",
+        help="Also delete linked repositories in the backend workflow.",
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
+):
+    """
+    Delete a project from the platform (remote deletion).
+
+    This does not delete local files unless you run `project delete-local`.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID.
+    delete_repositories:
+        Also delete linked repositories on backend workflow.
+    yes:
+        Skip interactive confirmation.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project delete 123
+    mainsequence project delete 123 --yes
+    mainsequence project delete 123 --delete-repositories --yes
+    ```
+    """
+    _require_login()
+
+    project_name = f"project-{project_id}"
+    try:
+        items = get_projects()
+        found = next((x for x in items if str(x.get("id")) == str(project_id)), None)
+        if found and found.get("project_name"):
+            project_name = str(found.get("project_name"))
+    except Exception:
+        # Best-effort metadata lookup only.
+        pass
+
+    if not yes:
+        warning = (
+            f"This will permanently delete project '{project_name}' (id={project_id}) from the platform.\n"
+            "This action cannot be undone."
+        )
+        if delete_repositories:
+            warning += "\nLinked repositories will also be deleted."
+        if not typer.confirm(f"{warning}\n\nContinue?", default=False):
+            info("Cancelled.")
+            raise typer.Exit(0)
+
+    try:
+        resp = delete_project(project_id, delete_repositories=delete_repositories)
+    except NotLoggedIn:
+        error("Not logged in. Run: mainsequence login <email>")
+        raise typer.Exit(1)
+    except ApiError as e:
+        error(f"Project deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Project deleted: {project_name} (id={project_id})")
+    if isinstance(resp, dict) and resp:
+        detail = resp.get("detail") or resp.get("message")
+        if detail:
+            info(str(detail))
 
 
 @project.command("set-up-locally")
@@ -663,15 +1214,31 @@ def project_set_up_locally(
     ),
 ):
     """
-    Clone a MainSequence project locally and create a .env file with tokens + backend.
+    Clone a project locally and provision runtime `.env`.
 
-    Parity with VS Code extension:
-      - ensure SSH key and copy public key to clipboard
-      - best-effort add deploy key
-      - git clone
-      - fetch environment + project token
-      - write .env: MAINSEQUENCE_TOKEN, TDAG_ENDPOINT, INGORE_MS_AGENT=true
-      - (optional) scaffold Dockerfile + .dockerignore if DEFAULT_BASE_IMAGE exists
+    Workflow:
+    - ensure SSH key and optionally register deploy key,
+    - clone repository into local projects root,
+    - fetch remote environment and project token,
+    - write/update `.env` with local runtime values,
+    - optionally scaffold Docker files from default base image.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID.
+    base_dir:
+        Override local projects base directory.
+    scaffold_docker:
+        Enable Dockerfile/.dockerignore scaffold when base image is available.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project set-up-locally 123
+    mainsequence project set-up-locally 123 --base-dir ~/mainsequence
+    mainsequence project set-up-locally 123 --no-scaffold-docker
+    ```
     """
     _require_login()
 
@@ -789,9 +1356,21 @@ def project_open(
     path: str | None = typer.Option(None, "--path", help="Open an explicit path instead of resolving by id"),
 ):
     """
-    Open the local folder in the OS file manager.
+    Open a mapped project folder in the OS file manager.
 
-    (CLI equivalent to VS Code "Open Folder", but uses OS file manager)
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path to open.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project open 123
+    mainsequence project open --path .
+    ```
     """
     p = _resolve_project_dir(project_id, path)
     open_folder(str(p))
@@ -805,11 +1384,25 @@ def project_delete_local(
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
     """
-    Delete the local folder for a project.
+    Delete a local project folder.
 
-    Safety:
-      - only deletes within <base>/<org>/projects
-      - prompts unless --yes is provided
+    Safety checks prevent deletion outside configured projects root.
+
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local path.
+    path:
+        Explicit local path to delete.
+    yes:
+        Skip confirmation prompt.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project delete-local 123
+    mainsequence project delete-local --path ./my-project --yes
+    ```
     """
     p = _resolve_project_dir(project_id, path)
 
@@ -852,10 +1445,21 @@ def project_open_signed_terminal(
     path: str | None = typer.Option(None, "--path", help="Open in a specific project directory"),
 ):
     """
-    Open a terminal with ssh-agent started and project SSH key added.
+    Open terminal with `ssh-agent` and project key preloaded.
 
-    Parity:
-      - VS Code opens an integrated terminal. CLI opens an external terminal window.
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project open-signed-terminal 123
+    mainsequence project open-signed-terminal --path .
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
 
@@ -865,6 +1469,100 @@ def project_open_signed_terminal(
     open_signed_terminal(str(project_dir), key_path, name)
 
 
+@project.command("build_local_venv")
+def project_build_local_venv(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Build local `.venv` and sync dependencies using `uv`.
+
+    Reads Python requirement from `pyproject.toml`, creates `.venv`, then runs `uv sync`.
+
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project build_local_venv 123
+    mainsequence project build_local_venv --path .
+    ```
+    """
+    project_dir = _resolve_project_dir(project_id, path)
+    venv_path = project_dir / ".venv"
+    if venv_path.exists():
+        info(f"Skipped: {venv_path} already exists.")
+        return
+
+    pyproject_path = project_dir / "pyproject.toml"
+    if not pyproject_path.is_file():
+        error("pyproject.toml not found in the project root.")
+        raise typer.Exit(1)
+
+    try:
+        pyproject_text = pyproject_path.read_text(encoding="utf-8")
+    except Exception:
+        error("Could not read pyproject.toml from the project root.")
+        raise typer.Exit(1)
+
+    python_version = _extract_python_version_from_pyproject_text(pyproject_text)
+    if not python_version:
+        error("Could not determine Python version from pyproject.toml (requires-python or Poetry python spec).")
+        raise typer.Exit(1)
+
+    with status("Building local .venv..."):
+        uv_runner = _resolve_uv_runner()
+        if not uv_runner:
+            info("uv not found. Installing uv...")
+            ok, reason = _install_uv()
+            if not ok:
+                details = f": {reason}" if reason else ""
+                error(f"uv is not installed and automatic install failed{details}. Install manually with: pip install uv")
+                raise typer.Exit(1)
+
+            uv_runner = _resolve_uv_runner()
+            if not uv_runner:
+                error("uv install completed but uv is still not available. Restart your shell and try again.")
+                raise typer.Exit(1)
+
+        uv_cmd, uv_display = uv_runner
+
+        info(f"Creating .venv with Python {python_version}...")
+        venv_result = subprocess.run(
+            [*uv_cmd, "venv", ".venv", "--python", python_version],
+            cwd=str(project_dir),
+            env=os.environ.copy(),
+            capture_output=True,
+            text=True,
+        )
+        if venv_result.returncode != 0:
+            reason = (venv_result.stderr or venv_result.stdout or "").strip()
+            error(f"Failed to create local .venv via {uv_display}: {reason or f'exit {venv_result.returncode}'}")
+            raise typer.Exit(1)
+
+        info("Running uv sync with .venv...")
+        sync_env = os.environ.copy()
+        sync_env["UV_PROJECT_ENVIRONMENT"] = ".venv"
+        sync_result = subprocess.run(
+            [*uv_cmd, "sync"],
+            cwd=str(project_dir),
+            env=sync_env,
+            capture_output=True,
+            text=True,
+        )
+        if sync_result.returncode != 0:
+            reason = (sync_result.stderr or sync_result.stdout or "").strip()
+            error(f"Failed to run uv sync for local .venv via {uv_display}: {reason or f'exit {sync_result.returncode}'}")
+            raise typer.Exit(1)
+
+    success(f"Local .venv built with Python {python_version}.")
+
+
 @project.command("freeze-env")
 def project_freeze_env(
     project_id: int | None = typer.Argument(None, help="Project ID"),
@@ -872,11 +1570,24 @@ def project_freeze_env(
     ensure_uv: bool = typer.Option(True, "--ensure-uv/--no-ensure-uv", help="Install uv into .venv if missing"),
 ):
     """
-    Compile / freeze environment into requirements.txt using uv export.
+    Export pinned dependencies into `requirements.txt` using `uv`.
 
-    VS Code parity:
-      - requires .venv
-      - runs uv export -> requirements.txt
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+    ensure_uv:
+        Install `uv` in `.venv` if missing.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project freeze-env 123
+    mainsequence project freeze-env --path .
+    mainsequence project freeze-env --path . --no-ensure-uv
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
     ensure_venv(project_dir)
@@ -902,14 +1613,36 @@ def project_sync(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
-    Sync a project: bump version, resolve env, export requirements, commit and push.
+    Run end-to-end sync workflow for project dependencies and git state.
 
-    Mirrors VS Code "Sync Project" workflow:
-      1) Ensure uv is installed
-      2) uv version --bump <patch>
-      3) uv lock, uv sync
-      4) uv export locked requirements.txt
-      5) git add -A; git commit -m; git push
+    Workflow:
+    1. bump package version via `uv version`,
+    2. run `uv lock` + `uv sync`,
+    3. export locked `requirements.txt`,
+    4. commit and push git changes.
+
+    Parameters
+    ----------
+    message:
+        Commit message.
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+    bump:
+        Version bump strategy (`patch`, `minor`, `major`).
+    no_push:
+        Skip git push.
+    dry_run:
+        Print plan without executing commands.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project sync -m "Update environment" --path .
+    mainsequence project sync -m "Bump minor" --bump minor --path .
+    mainsequence project sync -m "Preview only" --path . --dry-run
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
     ensure_venv(project_dir)
@@ -970,12 +1703,26 @@ def project_build_docker_env(
     ),
 ):
     """
-    Build Docker environment for a project and optionally create devcontainer config.
+    Build Docker image for project and optionally write devcontainer config.
 
-    VS Code parity:
-      - requires Dockerfile
-      - docker buildx build --platform linux/amd64 --load
-      - writes .devcontainer/devcontainer.json
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+    image_ref:
+        Explicit docker image tag/reference.
+    devcontainer:
+        Write `.devcontainer/devcontainer.json` after build.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project build-docker-env 123
+    mainsequence project build-docker-env --path . --image-ref ghcr.io/acme/proj:dev
+    mainsequence project build-docker-env --path . --no-devcontainer
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
     dockerfile = project_dir / "Dockerfile"
@@ -1003,14 +1750,22 @@ def project_build_docker_env(
 @project.command("current")
 def project_current(debug: bool = typer.Option(False, "--debug", help="Show detection debug details")):
     """
-    Detect and display the current project based on the current working directory.
+    Detect and display current project context from current directory.
 
-    Mirrors VS Code extension "Current Project" detection:
-      - finds /projects/<folder>
-      - project id from suffix -<digits>
-      - fallback detection via .env markers
-      - shows .venv and python version if available
-      - (bonus) shows SDK status if requirements.txt exists
+    Includes detected path, project id, virtual environment, Python version,
+    and SDK status when available.
+
+    Parameters
+    ----------
+    debug:
+        Include detailed detection diagnostics.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project current
+    mainsequence project current --debug
+    ```
     """
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
@@ -1065,7 +1820,21 @@ def project_sdk_status(
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
-    Show local vs latest SDK versions for a project.
+    Show local project SDK version versus latest GitHub release.
+
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project sdk-status 123
+    mainsequence project sdk-status --path .
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
     req = project_dir / "requirements.txt"
@@ -1095,13 +1864,24 @@ def project_update_sdk(
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
     """
-    Update the project's SDK to the latest by upgrading mainsequence via uv.
+    Upgrade project SDK dependency (`mainsequence`) using `uv`.
 
-    Mirrors VS Code extension:
-      - activate .venv (implicitly by using venv uv)
-      - pip install uv
-      - uv lock --upgrade-package mainsequence
-      - uv sync
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+    dry_run:
+        Print update plan without executing.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project update-sdk 123
+    mainsequence project update-sdk --path .
+    mainsequence project update-sdk --path . --dry-run
+    ```
     """
     project_dir = _resolve_project_dir(project_id, path)
     ensure_venv(project_dir)

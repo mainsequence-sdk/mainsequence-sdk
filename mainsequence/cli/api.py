@@ -18,6 +18,7 @@ import json
 import os
 import re
 from typing import Any
+from urllib.parse import urlencode
 
 import requests
 
@@ -61,7 +62,7 @@ def _normalize_api_path(p: str) -> str:
 
 
 def _access_token() -> str | None:
-    """Return access token from env or token.json."""
+    """Return access token from session environment."""
     t = os.environ.get("MAIN_SEQUENCE_USER_TOKEN")
     if t:
         return t
@@ -70,21 +71,21 @@ def _access_token() -> str | None:
 
 
 def _refresh_token() -> str | None:
-    """Return refresh token from token.json."""
+    """Return refresh token from session environment."""
     tok = get_tokens()
     return tok.get("refresh")
 
 
 def login(email: str, password: str) -> dict:
     """
-    Authenticate and store tokens.
+    Authenticate and store session tokens in process environment.
 
     Args:
         email: login email (server expects 'email' field)
         password: password
 
     Returns:
-        dict: {"username": email, "backend": backend_url()}
+        dict: {"username": email, "backend": backend_url(), "access": "...", "refresh": "...", "persisted": bool}
     """
     email = (email or "").strip()
     password = (password or "").rstrip("\r\n")
@@ -106,14 +107,14 @@ def login(email: str, password: str) -> dict:
     if not access or not refresh:
         raise ApiError("Server did not return expected tokens.")
 
-    save_tokens(email, access, refresh)
+    persisted = save_tokens(email, access, refresh)
     set_env_access(access)
-    return {"username": email, "backend": backend_url()}
+    return {"username": email, "backend": backend_url(), "access": access, "refresh": refresh, "persisted": bool(persisted)}
 
 
 def refresh_access() -> str:
     """
-    Use refresh token to obtain a new access token, update token.json and env.
+    Use refresh token to obtain a new access token and update session env.
 
     Raises:
         NotLoggedIn: if refresh is missing or refresh fails
@@ -270,6 +271,155 @@ def get_projects() -> list[dict]:
     if isinstance(data, list):
         return data
     return data.get("results") or []
+
+
+def get_project(project_id: int | str) -> dict:
+    """
+    Fetch a single project by id.
+    """
+    r = authed("GET", f"/orm/api/pods/projects/{project_id}/")
+    if not r.ok:
+        msg = r.text or ""
+        try:
+            if "application/json" in (r.headers.get("content-type") or "").lower():
+                data = r.json()
+                msg = data.get("detail") or data.get("message") or msg
+        except Exception:
+            pass
+        raise ApiError(f"Project fetch failed ({r.status_code}). {msg}".strip())
+
+    if not r.headers.get("content-type", "").startswith("application/json"):
+        raise ApiError(
+            f"Project fetch response was not JSON (content-type: {r.headers.get('content-type')})."
+        )
+    data = r.json()
+    if not isinstance(data, dict):
+        raise ApiError("Project fetch response had unexpected payload shape.")
+    return data
+
+
+def _json_results(r: requests.Response) -> list[dict]:
+    """
+    Return list-like API payloads for DRF list endpoints.
+    """
+    data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        results = data.get("results")
+        if isinstance(results, list):
+            return results
+    return []
+
+
+def list_dynamic_table_data_sources(status: str | None = "AVAILABLE") -> list[dict]:
+    """
+    List DynamicTableDataSource rows (optionally filtered by related resource status).
+    """
+    query = ""
+    if status:
+        query = "?" + urlencode({"related_resource__status": status})
+    r = authed("GET", f"/orm/api/ts_manager/dynamic_table_data_source/{query}")
+    if not r.ok:
+        raise ApiError(f"Data sources fetch failed ({r.status_code}).")
+    return _json_results(r)
+
+
+def list_project_base_images() -> list[dict]:
+    """
+    List available ProjectBaseImage rows.
+    """
+    r = authed("GET", "/orm/api/pods/project-base-image/")
+    if not r.ok:
+        raise ApiError(f"Project base images fetch failed ({r.status_code}).")
+    return _json_results(r)
+
+
+def list_github_organizations() -> list[dict]:
+    """
+    List available GitHub organizations for the current user.
+    """
+    r = authed("GET", "/orm/api/pods/github-organization/")
+    if not r.ok:
+        raise ApiError(f"GitHub organizations fetch failed ({r.status_code}).")
+    return _json_results(r)
+
+
+def create_project(
+    *,
+    project_name: str,
+    data_source_id: int | None = None,
+    default_base_image_id: int | None = None,
+    github_org_id: int | None = None,
+    repository_branch: str | None = None,
+    env_vars: dict[str, str] | None = None,
+) -> dict:
+    """
+    Create a new project.
+    """
+    payload: dict[str, Any] = {"project_name": project_name}
+
+    if repository_branch:
+        payload["repository_branch"] = repository_branch
+    if data_source_id is not None:
+        payload["data_source_id"] = int(data_source_id)
+    if default_base_image_id is not None:
+        payload["default_base_image_id"] = int(default_base_image_id)
+    if github_org_id is not None:
+        payload["github_org_id"] = int(github_org_id)
+    if env_vars:
+        payload["env_vars"] = [{"name": k, "value": str(v)} for k, v in env_vars.items()]
+
+    r = authed("POST", "/orm/api/pods/projects/", payload)
+    if not r.ok:
+        msg = r.text or ""
+        try:
+            if "application/json" in (r.headers.get("content-type") or "").lower():
+                data = r.json()
+                msg = data.get("detail") or data.get("message") or msg
+        except Exception:
+            pass
+        raise ApiError(f"Project create failed ({r.status_code}). {msg}".strip())
+
+    if not r.headers.get("content-type", "").startswith("application/json"):
+        raise ApiError(
+            f"Project create response was not JSON (content-type: {r.headers.get('content-type')})."
+        )
+    data = r.json()
+    if not isinstance(data, dict):
+        raise ApiError("Project create response had unexpected payload shape.")
+    return data
+
+
+def delete_project(project_id: int | str, *, delete_repositories: bool = False) -> dict[str, Any] | None:
+    """
+    Delete a project by id.
+
+    Mirrors backend behavior:
+      - DELETE /orm/api/pods/projects/{id}/
+      - optional query param delete_repositories=true
+    """
+    path = f"/orm/api/pods/projects/{project_id}/"
+    if delete_repositories:
+        path = f"{path}?delete_repositories=true"
+
+    r = authed("DELETE", path)
+    if not r.ok:
+        msg = r.text or ""
+        try:
+            if "application/json" in (r.headers.get("content-type") or "").lower():
+                data = r.json()
+                msg = data.get("detail") or data.get("message") or msg
+        except Exception:
+            pass
+        raise ApiError(f"Project delete failed ({r.status_code}). {msg}".strip())
+
+    if r.content:
+        try:
+            return r.json()
+        except Exception:
+            return {"detail": (r.text or "").strip()} if (r.text or "").strip() else None
+    return None
 
 
 def fetch_project_env_text(project_id: int | str) -> str:

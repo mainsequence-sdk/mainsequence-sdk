@@ -4,17 +4,17 @@ from __future__ import annotations
 mainsequence.cli.config
 =======================
 
-Configuration and token persistence for the MainSequence CLI.
+Configuration and auth handling for the MainSequence CLI.
 
-This module mirrors the VS Code extension behavior:
-- Stores config.json and token.json in an OS-specific config directory
-- Supports MAIN_SEQUENCE_BACKEND_URL env override (same semantics as extension)
-- Provides helpers to clear tokens (logout) and update settings
+This module stores non-secret config on disk and keeps auth tokens in env,
+with secure persistence via OS keychain on supported platforms.
 """
 
 import json
 import os
 import pathlib
+import shutil
+import subprocess
 import sys
 import time
 
@@ -43,7 +43,15 @@ CFG_DIR = _config_dir()
 CFG_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_JSON = CFG_DIR / "config.json"
-TOKENS_JSON = CFG_DIR / "token.json"  # {username, access, refresh, ts}
+# Deprecated compatibility constant (token file persistence is disabled).
+TOKENS_JSON = CFG_DIR / "token.json"
+
+# Session-scoped auth environment variables (no token file persistence).
+ENV_USERNAME = "MAIN_SEQUENCE_USERNAME"
+ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
+ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
+KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
+KEYCHAIN_ACCOUNT = "default"
 
 DEFAULTS = {
     "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", "https://main-sequence.app/"),
@@ -119,32 +127,52 @@ def set_backend_url(url: str) -> dict:
 
 def get_tokens() -> dict:
     """
-    Return token.json contents (or {}).
+    Return auth tokens from environment variables, with secure-store fallback.
     """
-    return read_json(TOKENS_JSON, {})
+    tokens = {
+        "username": os.environ.get(ENV_USERNAME, ""),
+        "access": os.environ.get(ENV_ACCESS, ""),
+        "refresh": os.environ.get(ENV_REFRESH, ""),
+    }
+    if tokens["access"] and tokens["refresh"]:
+        return tokens
+
+    # Fallback to OS keychain if available.
+    secret = _read_secure_tokens()
+    if secret:
+        tokens = {
+            "username": tokens["username"] or secret.get("username", ""),
+            "access": tokens["access"] or secret.get("access", ""),
+            "refresh": tokens["refresh"] or secret.get("refresh", ""),
+        }
+    return tokens
 
 
-def save_tokens(username: str, access: str, refresh: str) -> None:
+def save_tokens(username: str, access: str, refresh: str) -> bool:
     """
-    Persist {username, access, refresh, ts} into token.json.
+    Save auth tokens in process environment and secure store (when supported).
 
     Args:
         username: email/username used to login
         access: access token string
         refresh: refresh token string
+    Returns:
+        bool: True if secure persistence succeeded (or is not applicable), False otherwise.
     """
-    write_json(
-        TOKENS_JSON,
-        {"username": username, "access": access, "refresh": refresh, "ts": int(time.time())},
-    )
+    if username:
+        os.environ[ENV_USERNAME] = username
+    os.environ[ENV_ACCESS] = access
+    os.environ[ENV_REFRESH] = refresh
+    return _write_secure_tokens(username=username, access=access, refresh=refresh)
 
 
 def clear_tokens() -> bool:
     """
-    Delete token.json and remove MAIN_SEQUENCE_USER_TOKEN from this process env.
+    Clear session auth env vars for current process.
+    Also remove legacy token.json if present.
 
     Returns:
-        bool: True if token.json was removed (or didn't exist), False if removal failed.
+        bool: True on success; False if legacy token file removal fails.
     """
     ok = True
     try:
@@ -152,7 +180,12 @@ def clear_tokens() -> bool:
             TOKENS_JSON.unlink()
     except Exception:
         ok = False
-    os.environ.pop("MAIN_SEQUENCE_USER_TOKEN", None)
+
+    os.environ.pop(ENV_ACCESS, None)
+    os.environ.pop(ENV_REFRESH, None)
+    os.environ.pop(ENV_USERNAME, None)
+    if not _clear_secure_tokens():
+        ok = False
     return ok
 
 
@@ -162,7 +195,114 @@ def set_env_access(access: str) -> None:
 
     Note: cannot update the parent shell environment.
     """
-    os.environ["MAIN_SEQUENCE_USER_TOKEN"] = access
+    os.environ[ENV_ACCESS] = access
+
+
+def _macos_security_exists() -> bool:
+    return sys.platform == "darwin" and bool(shutil.which("security"))
+
+
+def secure_store_available() -> bool:
+    """
+    Return whether a secure token store is available on this platform.
+    """
+    return _macos_security_exists()
+
+
+def _read_secure_tokens() -> dict:
+    """
+    Read persisted tokens from OS keychain (macOS) when available.
+    """
+    if not _macos_security_exists():
+        return {}
+    try:
+        proc = subprocess.run(
+            [
+                "security",
+                "find-generic-password",
+                "-s",
+                KEYCHAIN_SERVICE,
+                "-a",
+                KEYCHAIN_ACCOUNT,
+                "-w",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode != 0:
+            return {}
+        raw = (proc.stdout or "").strip()
+        if not raw:
+            return {}
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            return {}
+        return {
+            "username": str(data.get("username") or ""),
+            "access": str(data.get("access") or ""),
+            "refresh": str(data.get("refresh") or ""),
+        }
+    except Exception:
+        return {}
+
+
+def _write_secure_tokens(*, username: str, access: str, refresh: str) -> bool:
+    """
+    Persist tokens in OS keychain (macOS) without writing plain token files.
+    """
+    if not _macos_security_exists():
+        return True
+    payload = json.dumps({"username": username or "", "access": access or "", "refresh": refresh or ""})
+    try:
+        proc = subprocess.run(
+            [
+                "security",
+                "add-generic-password",
+                "-s",
+                KEYCHAIN_SERVICE,
+                "-a",
+                KEYCHAIN_ACCOUNT,
+                "-w",
+                payload,
+                "-U",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return proc.returncode == 0
+    except Exception:
+        return False
+
+
+def _clear_secure_tokens() -> bool:
+    """
+    Delete persisted tokens from OS keychain (macOS). Missing entry is treated as success.
+    """
+    if not _macos_security_exists():
+        return True
+    try:
+        proc = subprocess.run(
+            [
+                "security",
+                "delete-generic-password",
+                "-s",
+                KEYCHAIN_SERVICE,
+                "-a",
+                KEYCHAIN_ACCOUNT,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        # Return code 0: deleted. Non-zero with "could not be found" also acceptable.
+        err = (proc.stderr or "").lower()
+        if proc.returncode == 0 or "could not be found" in err:
+            return True
+        return False
+    except Exception:
+        return False
 
 
 def backend_url() -> str:

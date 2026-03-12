@@ -114,6 +114,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
 
@@ -123,6 +124,66 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert "Signed in as user@example.com" in result.output
+    assert "Auth tokens are persisted in secure OS storage" in result.output
+
+
+def test_login_export_env(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "api_login",
+        lambda email, password: {
+            "username": email,
+            "backend": "https://example.test",
+            "access": "acc-123",
+            "refresh": "ref-456",
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "--password", "secret", "--no-status", "--export"],
+    )
+    assert result.exit_code == 0
+    assert 'export MAIN_SEQUENCE_USER_TOKEN="acc-123"' in result.output
+    assert 'export MAIN_SEQUENCE_REFRESH_TOKEN="ref-456"' in result.output
+    assert 'export MAIN_SEQUENCE_USERNAME="user@example.com"' in result.output
+
+
+def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "api_login",
+        lambda email, password: {
+            "username": email,
+            "backend": "https://example.test",
+            "access": "acc-123",
+            "refresh": "ref-456",
+            "persisted": False,
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "--password", "secret", "--no-status"],
+    )
+    assert result.exit_code == 0
+    assert "Could not persist auth tokens in secure OS storage" in result.output
 
 
 def test_logout(cli_mod, runner, monkeypatch):
@@ -130,6 +191,44 @@ def test_logout(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["logout"])
     assert result.exit_code == 0
     assert "Signed out" in result.output
+
+
+def test_logout_export_env(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
+    result = runner.invoke(cli_mod.app, ["logout", "--export"])
+    assert result.exit_code == 0
+    assert "unset MAIN_SEQUENCE_USER_TOKEN" in result.output
+    assert "unset MAIN_SEQUENCE_REFRESH_TOKEN" in result.output
+    assert "unset MAIN_SEQUENCE_USERNAME" in result.output
+
+
+def test_config_get_tokens_fallback_secure_store(cli_mod, monkeypatch):
+    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "_read_secure_tokens",
+        lambda: {"username": "u@example.com", "access": "acc", "refresh": "ref"},
+    )
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "u@example.com"
+    assert out["access"] == "acc"
+    assert out["refresh"] == "ref"
+
+
+def test_config_save_tokens_writes_secure_store(cli_mod, monkeypatch):
+    captured = {}
+
+    def _write_secure_tokens(*, username, access, refresh):
+        captured["username"] = username
+        captured["access"] = access
+        captured["refresh"] = refresh
+        return True
+
+    monkeypatch.setattr(cli_mod.cfg, "_write_secure_tokens", _write_secure_tokens)
+    cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
+    assert captured == {"username": "u@example.com", "access": "acc", "refresh": "ref"}
 
 
 def test_doctor_command(cli_mod, runner, monkeypatch):
@@ -186,6 +285,153 @@ def test_project_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["project", "list"])
     assert result.exit_code == 0
     assert "Demo" in result.output
+
+
+def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {})
+    result = runner.invoke(cli_mod.app, ["project", "list"])
+    assert result.exit_code == 1
+    assert "Not logged in. Run: mainsequence login <email>" in result.output
+
+
+def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_dynamic_table_data_sources",
+        lambda status="AVAILABLE": [
+            {
+                "id": 11,
+                "related_resource": {
+                    "display_name": "Default DS",
+                    "class_type": "timescale_db",
+                    "status": "AVAILABLE",
+                },
+                "related_resource_class_type": "timescale_db",
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_base_images",
+        lambda: [{"id": 22, "title": "Python 3.12", "description": "Default image"}],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "list_github_organizations",
+        lambda: [{"id": 33, "login": "main-sequence", "display_name": "Main Sequence"}],
+    )
+
+    captured = {}
+
+    def _create_project(**kwargs):
+        captured.update(kwargs)
+        return {"id": 321, "project_name": kwargs["project_name"], "git_ssh_url": "git@github.com:org/repo.git"}
+
+    monkeypatch.setattr(cli_mod, "create_project", _create_project)
+
+    # Prompts:
+    # 1) Project name
+    # 2) Data source id (default=11)
+    # 3) Default base image id (default=22)
+    # 4) GitHub organization id (default=33)
+    # 5) Repository branch (default=main)
+    # 6) Environment variables line
+    user_input = "demo-project\n\n\n\n\nFOO=bar, BAZ=qux\n"
+    result = runner.invoke(cli_mod.app, ["project", "create"], input=user_input)
+
+    assert result.exit_code == 0
+    assert captured["project_name"] == "demo-project"
+    assert captured["data_source_id"] == 11
+    assert captured["default_base_image_id"] == 22
+    assert captured["github_org_id"] == 33
+    assert captured["repository_branch"] == "main"
+    assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
+    assert "Project created: demo-project (id=321)" in result.output
+
+
+def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "create_project",
+        lambda **kwargs: {
+            "id": 777,
+            "project_name": kwargs["project_name"],
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": False,
+        },
+    )
+
+    polled = [
+        {
+            "id": 777,
+            "project_name": "demo-project",
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": False,
+        },
+        {
+            "id": 777,
+            "project_name": "demo-project",
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": True,
+        },
+    ]
+    monkeypatch.setattr(cli_mod, "get_project", lambda project_id: polled.pop(0))
+
+    sleep_calls = []
+    monkeypatch.setattr(cli_mod.time, "sleep", lambda secs: sleep_calls.append(secs))
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "create",
+            "demo-project",
+            "--data-source-id",
+            "11",
+            "--default-base-image-id",
+            "22",
+            "--github-org-id",
+            "33",
+            "--branch",
+            "main",
+            "--env",
+            "FOO=bar",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert sleep_calls == [30, 30]
+    assert "Project is still initializing." in result.output
+    assert "Project is initialized and ready." in result.output
+
+
+def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: [{"id": 321, "project_name": "Demo Project"}],
+    )
+
+    captured = {}
+
+    def _delete_project(project_id, delete_repositories=False):
+        captured["project_id"] = project_id
+        captured["delete_repositories"] = delete_repositories
+        return {"detail": "deleted"}
+
+    monkeypatch.setattr(cli_mod, "delete_project", _delete_project)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "delete", "321", "--yes", "--delete-repositories"],
+    )
+    assert result.exit_code == 0
+    assert captured["project_id"] == 321
+    assert captured["delete_repositories"] is True
+    assert "Project deleted: Demo Project (id=321)" in result.output
 
 
 def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
@@ -297,6 +543,60 @@ def test_project_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
     )
     assert result.exit_code == 0
     assert called["args"] is not None
+
+
+def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.11,<3.13"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli_mod, "_resolve_uv_runner", lambda: (["uv"], "uv"))
+    calls = []
+
+    def _run(cmd, cwd=None, env=None, capture_output=None, text=None):
+        calls.append((cmd, cwd, env))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _run)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target)],
+    )
+    assert result.exit_code == 0
+    assert calls[0][0] == ["uv", "venv", ".venv", "--python", "3.11"]
+    assert calls[0][1] == str(target.resolve())
+    assert calls[1][0] == ["uv", "sync"]
+    assert calls[1][2]["UV_PROJECT_ENVIRONMENT"] == ".venv"
+    assert "Local .venv built with Python 3.11." in result.output
+
+
+def test_project_build_local_venv_skips_when_exists(cli_mod, runner, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".venv").mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target)],
+    )
+    assert result.exit_code == 0
+    assert "already exists" in result.output
+
+
+def test_project_build_local_venv_requires_pyproject(cli_mod, runner, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "build_local_venv", "--path", str(target)],
+    )
+    assert result.exit_code == 1
+    assert "pyproject.toml not found in the project root." in result.output
 
 
 def test_project_freeze_env(cli_mod, runner, monkeypatch, tmp_path):

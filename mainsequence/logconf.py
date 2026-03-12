@@ -65,11 +65,11 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     headers["Content-Type"] = "application/json"
     headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN", "INVALID_TOKEN")
 
-    tdag_endpoint=os.getenv("TDAG_ENDPOINT")
+    tdag_endpoint=os.getenv("TDAG_ENDPOINT","https://main-sequence.app")
     if tdag_endpoint is None:
         raise OSError("TDAG_ENDPOINT is required")
 
-    endpoint = f'{os.getenv("TDAG_ENDPOINT")}/orm/api/pods/job/get_job_startup_state/'
+    endpoint = f'{tdag_endpoint}/orm/api/pods/job/get_job_startup_state/'
 
     command_id = os.getenv("COMMAND_ID")
     params: dict[str, Any] = {}
@@ -78,12 +78,14 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
     if resp.status_code != 200:
-        # don't crash logger setup; return empty-ish state
-        try:
-            body = resp.text
-        except Exception:
-            body = "<unreadable>"
-        print(f"Got Status Code {resp.status_code} with response {body}")
+        # Do not spam stdout during CLI usage when auth context is not present yet.
+        # Keep this visible only when explicitly debugging logger bootstrap.
+        if os.getenv("MAINSEQUENCE_LOGCONF_DEBUG", "").lower() in {"1", "true", "yes"}:
+            try:
+                body = resp.text
+            except Exception:
+                body = "<unreadable>"
+            print(f"Got Status Code {resp.status_code} with response {body}")
         return {}
 
     try:

@@ -2571,6 +2571,39 @@ class Project(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
 
+    def delete(
+            self,
+            *,
+            delete_repositories: bool = False,
+            timeout: int | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        DELETE /projects/{id}/
+
+        Optional query param:
+          - delete_repositories=true
+        """
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/"
+
+        request_payload: dict[str, Any] = {}
+        if delete_repositories:
+            request_payload["params"] = {"delete_repositories": "true"}
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="DELETE",
+            url=url,
+            payload=request_payload,
+            time_out=timeout,
+        )
+
+        raise_for_response(r)
+
+        return r.json() if r.content else None
+
     def __str__(self):
         return yaml.safe_dump(
             self.model_dump(),

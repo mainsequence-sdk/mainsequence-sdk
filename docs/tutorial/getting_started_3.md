@@ -1,4 +1,4 @@
-# Getting Started 3: Orchestration
+# Getting Started 4: Orchestration
 
 Now that you've built and tested your `DataNode`s locally, it's time to **orchestrate** them on the Main Sequence Platform. This involves **scheduling** your data pipelines to run automatically or on demand.
 
