@@ -317,3 +317,5 @@ You'll see that you have a single table with three different update processes (y
 ![img.png](../img/tutorial/update_vs_storage.png)
 
 Congratulations! You've built your first Data Nodes in Main Sequence. In the next part of the tutorial, we'll explore scheduling and automating these nodes and more.
+
+For further reference on DataNode concepts and best practices, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).

@@ -1,7 +1,15 @@
+import base64
 import datetime
+import json
 import os
+import pathlib
+import shutil
 import socket
+import subprocess
+import threading
 import time
+import uuid
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import TypedDict
 
@@ -55,6 +63,181 @@ class DateInfo(TypedDict, total=False):
 
 UniqueIdentifierRangeMap = dict[str, DateInfo]
 
+class AuthError(Exception):
+    pass
+
+def _decode_jwt_exp(token: str | None) -> int | None:
+    """
+    Decode JWT payload without signature verification.
+    Used ONLY to decide whether to refresh early.
+    """
+    if not token:
+        return None
+
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        data = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")).decode("utf-8"))
+        exp = data.get("exp")
+        return int(exp) if exp is not None else None
+    except Exception:
+        return None
+
+class BaseAuthProvider:
+    def get_headers(self) -> CaseInsensitiveDict:
+        raise NotImplementedError
+
+    def refresh(
+        self,
+        *,
+        force: bool = False,
+        session: requests.Session | None = None,
+    ) -> None:
+        return None
+
+
+@dataclass
+class DRFTokenAuthProvider(BaseAuthProvider):
+    token: str | None = None
+    token_env_var: str = "MAINSEQUENCE_TOKEN"
+    header_keyword: str = "Token"
+
+    def _current_token(self) -> str:
+        token = self.token or os.getenv(self.token_env_var)
+        if not token:
+            raise AuthError(f"{self.token_env_var} is not set")
+        return token
+
+    def get_headers(self) -> CaseInsensitiveDict:
+        return CaseInsensitiveDict(
+            {
+                "Authorization": f"{self.header_keyword} {self._current_token()}",
+            }
+        )
+
+    def refresh(
+            self,
+            *,
+            force: bool = False,
+            session: requests.Session | None = None,
+    ) -> None:
+        # DRF token has no refresh endpoint in this client.
+        # Re-read from runtime/env in case caller rotated it externally.
+        if self.token is None and not os.getenv(self.token_env_var):
+            raise AuthError(f"{self.token_env_var} is not set")
+
+
+@dataclass
+class JWTAuthProvider(BaseAuthProvider):
+    access_token: str | None = None
+    refresh_token: str | None = None
+    refresh_url: str = f"{API_ENDPOINT}/auth/jwt-token/token/refresh/"
+    obtain_url: str = f"{API_ENDPOINT}/auth/jwt-token/token/"
+    header_keyword: str = "Bearer"
+    refresh_skew_seconds: int = 60
+    timeout: tuple[float, float] = DEFAULT_TIMEOUT
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+
+    def __post_init__(self):
+        if self.access_token is None:
+            self.access_token = os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
+        if self.refresh_token is None:
+            self.refresh_token = os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+
+    def set_tokens(self, *, access: str | None = None, refresh: str | None = None) -> None:
+        with self._lock:
+            if access is not None:
+                self.access_token = access
+            if refresh is not None:
+                self.refresh_token = refresh
+
+    def clear(self) -> None:
+        with self._lock:
+            self.access_token = None
+            self.refresh_token = None
+
+    def _needs_refresh(self) -> bool:
+        if not self.access_token:
+            return True
+
+        exp = _decode_jwt_exp(self.access_token)
+        if exp is None:
+            # If we cannot inspect exp, just use the token until server says no.
+            return False
+
+        return exp <= int(time.time()) + self.refresh_skew_seconds
+
+    def refresh(
+            self,
+            *,
+            force: bool = False,
+            session: requests.Session | None = None,
+    ) -> None:
+        with self._lock:
+            if not force and not self._needs_refresh():
+                return
+
+            if not self.refresh_token:
+                if self.access_token and not force:
+                    return
+                raise AuthError("JWT refresh token is missing")
+
+            http_client = session or requests
+
+            r = http_client.post(
+                self.refresh_url,
+                json={"refresh": self.refresh_token},
+                headers={"Content-Type": "application/json"},
+                timeout=self.timeout,
+            )
+
+            if r.status_code != 200:
+                raise AuthError(f"JWT refresh failed with status {r.status_code}")
+
+            data = r.json()
+            access = data.get("access")
+            if not access:
+                raise AuthError("JWT refresh response did not include access token")
+
+            self.access_token = access
+
+            # Important if ROTATE_REFRESH_TOKENS=True
+            new_refresh = data.get("refresh")
+            if new_refresh:
+                self.refresh_token = new_refresh
+
+    def get_headers(self) -> CaseInsensitiveDict:
+        if not self.access_token:
+            raise AuthError("JWT access token is missing")
+
+        return CaseInsensitiveDict(
+            {
+                "Authorization": f"{self.header_keyword} {self.access_token}",
+            }
+        )
+
+    def login(
+            self,
+            username: str,
+            password: str,
+            session: requests.Session | None = None,
+    ) -> dict:
+        http_client = session or requests
+
+        r = http_client.post(
+            self.obtain_url,
+            json={"username": username, "password": password},
+            headers={"Content-Type": "application/json"},
+            timeout=self.timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+        self.set_tokens(access=data.get("access"), refresh=data.get("refresh"))
+        return data
+
 
 def request_to_datetime(string_date: str):
     if "+" in string_date:
@@ -70,35 +253,80 @@ def request_to_datetime(string_date: str):
         )
     return date
 
+def build_default_auth_provider() -> BaseAuthProvider:
+    mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower()
+
+    has_drf = bool(os.getenv("MAINSEQUENCE_TOKEN"))
+    has_jwt = bool(
+        os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
+        or os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+    )
+
+    if mode == "drf":
+        return DRFTokenAuthProvider()
+
+    if mode == "jwt":
+        return JWTAuthProvider()
+
+    if has_drf and has_jwt:
+        raise AuthError(
+            "Both DRF and JWT credentials are set. "
+            "Set MAINSEQUENCE_AUTH_MODE to 'drf' or 'jwt'."
+        )
+
+    if has_drf:
+        return DRFTokenAuthProvider()
+
+    if has_jwt:
+        return JWTAuthProvider()
+
+    raise AuthError(
+        "No auth configured. Set MAINSEQUENCE_TOKEN or "
+        "MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN."
+    )
+
 
 class DoesNotExist(Exception):
     pass
 
 
 class AuthLoaders:
+    def __init__(self, provider: BaseAuthProvider | None = None):
+        self.provider = provider
+
+    def _provider(self) -> BaseAuthProvider:
+        if self.provider is None:
+            self.provider = build_default_auth_provider()
+        return self.provider
+
     @property
     def auth_headers(self):
-        if not hasattr(self, "_auth_headers"):
-            self.refresh_headers()
-        return self._auth_headers
+        return self._provider().get_headers()
 
-    def refresh_headers(self):
-        logger.debug("Getting Auth Headers ASSETS_ORM")
-        self._auth_headers = get_authorization_headers()
+    def refresh_headers(
+            self,
+            force: bool = False,
+            session: requests.Session | None = None,
+    ):
+        provider = self._provider()
+        provider.refresh(force=force, session=session)
+        return provider.get_headers()
+
+    def use_drf_token(self, token: str):
+        self.provider = DRFTokenAuthProvider(token=token)
+
+    def use_jwt(self, *, access: str | None = None, refresh: str | None = None):
+        self.provider = JWTAuthProvider(access_token=access, refresh_token=refresh)
+
+    def clear_auth(self):
+        self.provider = None
 
 def get_rest_token_header():
-    headers = CaseInsensitiveDict()
-    headers["Content-Type"] = "application/json"
+    return loaders.refresh_headers()
 
-    if os.getenv("MAINSEQUENCE_TOKEN"):
-        headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN")
-        return headers
-    else:
-        raise Exception("MAINSEQUENCE_TOKEN is not set in env")
 
 def get_authorization_headers():
-    headers = get_rest_token_header()
-    return headers
+    return loaders.refresh_headers()
 
 
 def make_request(
@@ -131,47 +359,58 @@ def make_request(
         else:
             raise NotImplementedError(f"Unsupported method: {r_type}")
 
-    # --- Prepare kwargs for requests call ---
     request_kwargs = {}
     if r_type in ("POST", "PATCH") and "files" in payload:
-        # We have file uploads → use multipart form data
-        request_kwargs["data"] = payload.get("json", {})  # form fields
-        request_kwargs["files"] = payload["files"]  # actual files
+        request_kwargs["data"] = payload.get("json", {})
+        request_kwargs["files"] = payload["files"]
         s.headers.pop("Content-Type", None)
     else:
-        # Fallback: no files, no json → just form fields
         request_kwargs = payload
 
     req = get_req(session=s)
     keep_request = True
     counter = 0
-    headers_refreshed = False
+    auth_retried = False
 
     if accept_gzip:
-        # Don't clobber other headers; just ensure the key exists.
-        # Keep it simple: gzip covers Django's GZipMiddleware.
         s.headers.setdefault("Accept-Encoding", "gzip")
 
-    # Now loop with retry logic
     while keep_request:
         try:
+            if loaders is not None:
+                s.headers.update(loaders.refresh_headers(force=False, session=s))
+
             start_time = time.perf_counter()
             logger.debug(f"Requesting {r_type} from {url}")
             r = req(url, timeout=timeout, **request_kwargs)
             duration = time.perf_counter() - start_time
             logger.debug(f"{url} took {duration:.4f} seconds.")
 
-            if r.status_code in (401, 403) and loaders is not None and not headers_refreshed:
-                logger.warning(f"Error {r.status_code} refreshing auth headers once")
-                loaders.refresh_headers()
-                s.headers.update(loaders.auth_headers)
-                req = get_req(session=s)
-                headers_refreshed = True
-                # retry immediately once with refreshed headers
-                continue
+            if r.status_code == 401 and loaders is not None and not auth_retried:
+                logger.warning(f"Error {r.status_code}; forcing auth refresh once")
+                try:
+                    s.headers.update(loaders.refresh_headers(force=True, session=s))
+                    req = get_req(session=s)
+                    auth_retried = True
+                    continue
+                except AuthError:
+                    logger.exception("Auth refresh failed")
+                    keep_request = False
+                    break
 
             keep_request = False
             break
+
+        except AuthError as e:
+            logger.warning(f"Auth error for {url}: {e}")
+            r = Response()
+            r.code = "auth_error"
+            r.error_type = "auth_error"
+            r.status_code = 401
+            r._content = str(e).encode("utf-8")
+            keep_request = False
+            break
+
         except requests.exceptions.ConnectionError:
             logger.exception(f"Error connecting {url}")
         except TypeError as e:
@@ -190,11 +429,12 @@ def make_request(
             break
 
         logger.debug(
-            f"Trying request again after {TIMEOFF}s " f"- Counter: {counter}/{TRIES} - URL: {url}"
+            f"Trying request again after {TIMEOFF}s "
+            f"- Counter: {counter}/{TRIES} - URL: {url}"
         )
         time.sleep(TIMEOFF)
-    return r
 
+    return r
 
 def build_session(
     *,
@@ -203,13 +443,10 @@ def build_session(
     backoff_factor: float = 0.5,
     accept_gzip: bool = True,
 ) -> requests.Session:
-    from requests.adapters import HTTPAdapter
-    from urllib3.util.retry import Retry
-
     s = requests.Session()
 
-    if loaders is not None:
-        s.headers.update(loaders.auth_headers)
+    # Do not pin auth headers here.
+    # Auth is attached per request inside make_request().
 
     if accept_gzip:
         s.headers.setdefault("Accept-Encoding", "gzip")
@@ -225,18 +462,14 @@ def build_session(
         raise_on_status=False,
     )
 
-    # urllib3 compatibility: allowed_methods replaced method_whitelist
     try:
         retry_cfg = Retry(allowed_methods=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
     except TypeError:
         retry_cfg = Retry(method_whitelist=DEFAULT_ALLOWED_METHODS, **retry_kwargs)
 
     adapter = HTTPAdapter(max_retries=retry_cfg)
-
-    # ✅ critical: mount on both schemes
     s.mount("https://", adapter)
     s.mount("http://", adapter)
-
     return s
 
 # ---- Shared backend (import this in base/models) ----
@@ -388,11 +621,6 @@ def serialize_to_json(kwargs):
     return {k: to_jsonable(v) for k, v in kwargs.items()}
 
 
-
-import pathlib
-import shutil
-import subprocess
-import uuid
 
 
 def _linux_machine_id() -> str | None:

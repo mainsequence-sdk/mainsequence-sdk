@@ -10,6 +10,8 @@
     - [Part 4.3 — Markets — Portfolios and Virtual Funds](tutorial/getting_started_4_2.md)
     - [Part 5.1 — From Data to Dashboards I](tutorial/getting_started_5_1.md)
     - [Part 5.2 — From Data to Dashboards II](tutorial/getting_started_5_2.md)
+- Knowledge
+    - [Data Nodes](knowledge/data_nodes.md)
 - CLI
     - [Overview](cli/index.md)
 - [Examples](examples/index.md)

@@ -1691,6 +1691,79 @@ def project_sync(
     success(f"Synced: {repo_name}")
 
 
+@project.command("sync_project")
+def project_sync_project(
+    message: str = typer.Argument(..., help="Git commit message"),
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Run the standard project sync chain with a commit message.
+
+    This helper executes:
+    1. `uv version --bump patch`
+    2. `uv lock`
+    3. `uv sync`
+    4. `uv export --locked --no-dev --no-hashes --format requirements.txt --output-file requirements.txt`
+    5. `git add -A`
+    6. `git commit -m "<message>"`
+    7. `git push`
+
+    Notes
+    -----
+    `.venv` activation is handled implicitly by using the `uv` binary inside `.venv`.
+
+    Parameters
+    ----------
+    message:
+        Git commit message.
+    project_id:
+        Project ID to resolve local folder.
+    path:
+        Explicit local path.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project sync_project "Update dependencies" --path .
+    mainsequence project sync_project "Sync patch bump" 123
+    ```
+    """
+    project_dir = _resolve_project_dir(project_id, path)
+    ensure_venv(project_dir)
+
+    origin = git_origin(project_dir)
+    repo_name = repo_name_from_git_url(origin) or project_dir.name
+    key_path, _, _ = ensure_key_for_repo(origin)
+
+    safe_message = str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
+    if not safe_message:
+        error("Commit message is required.")
+        raise typer.Exit(1)
+
+    env = os.environ.copy()
+    env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
+
+    uv = ensure_uv_installed(project_dir)
+    with status("Running sync_project steps..."):
+        run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
+        run_uv(uv, ["lock"], cwd=project_dir, env=env)
+        run_uv(uv, ["sync"], cwd=project_dir, env=env)
+        uv_export_requirements(
+            uv,
+            cwd=project_dir,
+            locked=True,
+            no_dev=True,
+            no_hashes=True,
+            output_file="requirements.txt",
+        )
+        run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
+        run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
+        run_cmd(["git", "push"], cwd=project_dir, env=env)
+
+    success(f"Project synced: {repo_name}")
+
+
 @project.command("build-docker-env")
 def project_build_docker_env(
     project_id: int | None = typer.Argument(None, help="Project ID"),

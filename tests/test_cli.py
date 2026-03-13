@@ -660,6 +660,53 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     assert ["git", "push"] not in git_calls
 
 
+def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    key = tmp_path / "id_ed25519"
+    uv_path = target / ".venv" / "bin" / "uv"
+    uv_calls = []
+    export_calls = []
+    git_calls = []
+
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(
+        cli_mod,
+        "run_uv",
+        lambda uv, args, cwd, env=None: uv_calls.append(args),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "uv_export_requirements",
+        lambda uv, cwd, **kwargs: export_calls.append(kwargs),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_cmd",
+        lambda cmd, cwd, env=None: git_calls.append(cmd),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync_project", "Update deps", "--path", str(target)],
+    )
+    assert result.exit_code == 0
+    assert uv_calls == [["version", "--bump", "patch"], ["lock"], ["sync"]]
+    assert len(export_calls) == 1
+    assert export_calls[0]["locked"] is True
+    assert export_calls[0]["no_dev"] is True
+    assert export_calls[0]["no_hashes"] is True
+    assert export_calls[0]["output_file"] == "requirements.txt"
+    assert git_calls == [
+        ["git", "add", "-A"],
+        ["git", "commit", "-m", "Update deps"],
+        ["git", "push"],
+    ]
+
+
 def test_project_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)

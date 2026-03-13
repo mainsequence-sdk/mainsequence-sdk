@@ -549,7 +549,27 @@ class APIDataNode(DataAccessMixin):
 
 class DataNode(DataAccessMixin, ABC):
     """
-    Base DataNode class
+    A DataNode its a class that aims to solve a dual purpose.
+    1) It explicetely  defines a data generating process  via
+        a) all the arguments in the signature of teh constructuos
+        b) The dependencies decalred in the get_dependendices metehod
+    2) It controls CRUD operations with the phsycial storage of the data and records the updating process
+
+     extend the DataNode class the following methods are obligatory:
+
+     -__init__(
+     - get_dependences()
+     - update()
+
+    The prefered constructions of a data node its via a configuration model that extends Pydantic Base model
+
+    class SimulationConfiguration(BaseModel):
+        mean:Field(float,description="mean of a normal distribution used to simulate prices")
+        standard_deviation:Field(float,description="standard deviation of a normal distribution used to simulate prices")
+    class SimulatedPricesDataNode(DataNode):
+        def __init__(self, configuration:SimulationConfiguration,*args, **kwargs):
+            ...
+        def dependendies()
     """
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)

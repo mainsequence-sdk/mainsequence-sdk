@@ -56,6 +56,7 @@ mainsequence project freeze-env --path .
 
 # 4) Day-to-day sync
 mainsequence project sync --path . -m "Update environment"
+mainsequence project sync_project "Update environment" --path .
 
 # 5) Docker/devcontainer
 mainsequence project build-docker-env --path .

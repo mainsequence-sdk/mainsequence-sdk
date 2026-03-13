@@ -120,7 +120,25 @@ mainsequence project list
 
 The `Local` column should show `Local`, and `Path` should point to your local folder.
 
-## 6. Move Into the Project You Just Created
+## 6. Open a Signed Terminal (Required for Git Push/Pull)
+
+Before running git commands, open a signed terminal so the project SSH key is loaded in `ssh-agent`.
+
+### macOS/Linux (bash/zsh)
+
+```bash
+mainsequence project open-signed-terminal 130
+```
+
+### Windows (PowerShell)
+
+```powershell
+mainsequence project open-signed-terminal 130
+```
+
+Use the newly opened terminal for `git pull`, `git push`, and any other git operations against the project repository.
+
+## 7. Move Into the Project You Just Created
 
 ### macOS/Linux (bash/zsh)
 
@@ -144,7 +162,9 @@ Set-Location $ProjectPath
 Get-Location
 ```
 
-## 7. Understand the Folder Structure Created
+If `open-signed-terminal` opened directly in the project folder, you can keep working there and skip this step.
+
+## 8. Understand the Folder Structure Created
 
 After `mainsequence project set-up-locally [PROJECT_ID]`, your local project folder should look similar to:
 
@@ -165,7 +185,7 @@ Key points:
 - `src/`, `dashboards/`, `tests/`, `pyproject.toml`, and `requirements.txt` come from the project repository scaffold.
 - `Dockerfile` and `.dockerignore` are scaffolded only when a default base image is present.
 
-## 8. Build the Local Environment
+## 9. Build the Local Environment
 
 Inside the project folder, create and sync a local `.venv`:
 
