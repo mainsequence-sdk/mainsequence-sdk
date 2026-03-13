@@ -549,27 +549,27 @@ class APIDataNode(DataAccessMixin):
 
 class DataNode(DataAccessMixin, ABC):
     """
-    A DataNode its a class that aims to solve a dual purpose.
-    1) It explicetely  defines a data generating process  via
-        a) all the arguments in the signature of teh constructuos
-        b) The dependencies decalred in the get_dependendices metehod
-    2) It controls CRUD operations with the phsycial storage of the data and records the updating process
+    Base class for building and maintaining datasets in Main Sequence.
 
-     extend the DataNode class the following methods are obligatory:
+    A ``DataNode`` is both:
 
-     -__init__(
-     - get_dependences()
-     - update()
+    - the recipe to produce data (config + dependencies + update logic), and
+    - the data product contract used by downstream users (identifier + schema + metadata).
 
-    The prefered constructions of a data node its via a configuration model that extends Pydantic Base model
+    Two identities matter:
 
-    class SimulationConfiguration(BaseModel):
-        mean:Field(float,description="mean of a normal distribution used to simulate prices")
-        standard_deviation:Field(float,description="standard deviation of a normal distribution used to simulate prices")
-    class SimulatedPricesDataNode(DataNode):
-        def __init__(self, configuration:SimulationConfiguration,*args, **kwargs):
-            ...
-        def dependendies()
+    - ``storage_hash``: identifies the table/dataset contract.
+    - ``update_hash``: identifies the updater job writing to that table.
+
+    This separation lets you run different updater jobs (for example, asset shards)
+    while writing into the same table safely.
+
+    Subclass checklist:
+
+    - Keep constructor args stable and serializable (Pydantic config is recommended).
+    - Build dependencies in ``__init__`` and return them in ``dependencies()``.
+    - Use ``self.update_statistics`` in ``update()`` and return only incremental rows.
+    - Provide table/column metadata for production datasets.
     """
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
@@ -599,35 +599,25 @@ class DataNode(DataAccessMixin, ABC):
         **kwargs,
     ):
         """
-        Initializes the DataNode object with the provided data_node_storage and configurations. For extension of the method
+        Initialize framework-level state for the node.
 
-        This method sets up the time series object, loading the necessary configurations
-        and metadata.
+        Subclasses should call ``super().__init__(...)`` and keep their own dataset
+        configuration in the subclass constructor.
 
-        Each DataNode instance will create a table in the Main Sequence Data Engine by uniquely hashing
-        the arguments with exception of:
-
-        - init_meta
-        - build_meta_data
-
-        Each DataNode instance will create a update_hash and a DataNodeUpdate instance in the Data Engine by uniquely hashing
-        the same arguments as the table but excluding the arguments inside _LOCAL_KWARGS_TO_IGNORE
-
-
-        allowed type of arguments can only be str,list, int or  Pydantic objects inlcuding lists of Pydantic Objects.
-
-        The OFFSET_START property can be overridend and markts the minimum date value where the table will insert data
+        ``init_meta`` and ``build_meta_data`` are framework controls (not dataset meaning).
+        The initial fallback start date for first-run updates is ``OFFSET_START``.
 
         Parameters
         ----------
-        init_meta : dict, optional
-            Metadata for initializing the time series instance.
+        init_meta : build_operations.TimeSerieInitMeta | None, optional
+            Optional bootstrap metadata used by build/persistence internals.
         build_meta_data : dict, optional
-            Metadata related to the building process of the time series.
+            Optional build controls. Common key:
+            ``initialize_with_default_partitions`` (default: ``True``).
         *args : tuple
-            Additional arguments.
+            Reserved for subclass extension.
         **kwargs : dict
-            Additional keyword arguments.
+            Reserved for subclass extension.
         """
 
         self.init_meta = init_meta
@@ -1044,6 +1034,32 @@ class DataNode(DataAccessMixin, ABC):
         remote_scheduler: object | None = None,
         override_update_stats: UpdateStatistics | None = None,
     ):
+        """
+        Run one update cycle for this node.
+
+        By default, this also updates dependencies first, validates output, persists rows,
+        and runs metadata/post-update hooks.
+
+        Parameters
+        ----------
+        debug_mode : bool, default=True
+            Enables debug-friendly run behavior.
+        update_tree : bool, default=True
+            If ``True``, update dependencies before this node.
+        force_update : bool, default=False
+            If ``True``, run even when no new range is detected.
+        update_only_tree : bool, default=False
+            If ``True``, update dependencies only (skip this node update).
+        remote_scheduler : object | None, optional
+            Optional scheduler context.
+        override_update_stats : UpdateStatistics | None, optional
+            Optional explicit update statistics (useful in tests or controlled runs).
+
+        Returns
+        -------
+        Any
+            Result returned by ``UpdateRunner.run()``.
+        """
 
         def _do_run():
             update_runner = run_operations.UpdateRunner(
@@ -1079,33 +1095,27 @@ class DataNode(DataAccessMixin, ABC):
     def get_table_metadata(
         self,
     ) -> ms_client.TableMetaData | None:
-        """Provides the metadata configuration for a market time series."""
+        """
+        Return metadata that describes the table as a dataset.
+
+        Override this in production nodes so users can understand what the table
+        means and how it should be used.
+
+        Returns
+        -------
+        ms_client.TableMetaData | None
+            Table metadata, or ``None`` when not provided.
+        """
 
         return None
 
     def get_column_metadata(self) -> list[ColumnMetaData] | None:
         """
-        This Method should return a list for ColumnMetaData to add extra context to each time series
-        Examples:
-            from mainsequence.client.models_tdag import ColumnMetaData
-        columns_metadata = [ColumnMetaData(column_name="instrument",
-                                          dtype="str",
-                                          label="Instrument",
-                                          description=(
-                                              "Unique identifier provided by Valmer; it’s a composition of the "
-                                              "columns `tv_emisora_serie`, and is also used as a ticker for custom "
-                                              "assets in Valmer."
-                                          )
-                                          ),
-                            ColumnMetaData(column_name="currency",
-                                           dtype="str",
-                                           label="Currency",
-                                           description=(
-                                               "Corresponds to  code for curries be aware this may not match Figi Currency assets"
-                                           )
-                                           ),
+        Return metadata for output columns.
 
-                            ]
+        Override this in production nodes to document column meaning, labels,
+        and expected dtypes.
+
         Returns:
             A list of ColumnMetaData objects, or None.
         """
@@ -1113,22 +1123,19 @@ class DataNode(DataAccessMixin, ABC):
 
     def get_asset_list(self) -> list["Asset"] | None:
         """
-        Provide the list of assets that this DataNode should include when updating.
+        Return the assets this updater should consider.
 
-        By default, this method returns `self.asset_list` if defined.
-        Subclasses _must_ override this method when no `asset_list` attribute was set
-        during initialization, to supply a dynamic list of assets for update_statistics.
+        For ``(time_index, unique_identifier)`` tables, this is usually the best place
+        to resolve/register assets idempotently before running updates.
 
-        Use Case:
-          - For category-based series, return all Asset unique_identifiers in a given category
-            (e.g., `AssetCategory(unique_identifier="investable_assets")`), so that only those
-            assets are updated in this DataNode.
+        Default behavior:
+        - returns ``self.asset_list`` when that attribute exists,
+        - otherwise returns ``None`` (no explicit asset filtering).
 
         Returns
         -------
-        list or None
-            - A list of asset unique_identifiers to include in the update.
-            - `None` if no filtering by asset is required (update all assets by default).
+        list["Asset"] | None
+            Asset list used by ``UpdateStatistics.update_assets(...)`` or ``None``.
         """
         if hasattr(self, "asset_list"):
             return self.asset_list
@@ -1285,7 +1292,10 @@ class DataNode(DataAccessMixin, ABC):
     @abstractmethod
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         """
-        Subclasses must implement this method to explicitly declare their upstream dependencies.
+        Return direct upstream nodes required by this node.
+
+        Keep keys short and descriptive (for example ``"prices"`` or ``"raw"``),
+        and prefer creating dependency instances in ``__init__``.
 
         Returns:
             A dictionary where keys are descriptive names and values are the DataNode dependency instances.
@@ -1295,29 +1305,25 @@ class DataNode(DataAccessMixin, ABC):
     @abstractmethod
     def update(self) -> pd.DataFrame:
         """
-        Fetch and ingest only the new rows for this DataNode based on prior update checkpoints.
+        Build and return the rows to persist in this run.
 
+        Use ``self.update_statistics`` to compute an incremental window and avoid
+        returning full history on every run.
 
+        Expected output shape:
 
-        Requirements:
-          - `time_index` **must** be a `datetime.datetime` instance with UTC timezone.
-          - Column names **must** be all lowercase.
-          - No column values may be Python `datetime` objects; if date/time storage is needed, convert to integer
-            timestamps (e.g., UNIX epoch in seconds or milliseconds).
+        - index starts with ``time_index`` (UTC-aware datetimes),
+        - column names are lowercase and schema-stable,
+        - no duplicate index keys,
+        - no datetime payload columns (time should live in the index).
 
-        After retrieving the incremental rows, this method inserts or upserts them into the Main Sequence Data Engine.
-
-        Parameters
-        ----------
-        update_statistics : UpdateStatistics
-            Object capturing the previous update state. Must expose:
-              - `max_time` (datetime | None)
-              - `max_time_per_id` (dict[str, datetime] | None)
+        For asset MultiIndex tables, the second index level should be
+        ``unique_identifier`` and should map to platform assets.
 
         Returns
         -------
         pd.DataFrame
-            A DataFrame containing only the newly added or updated records.
+            Data to persist for this run. Return an empty DataFrame when no new rows exist.
         """
         raise NotImplementedError
     
