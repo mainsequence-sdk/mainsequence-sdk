@@ -2,6 +2,7 @@
 
 This page gives a practical overview of the `mainsequence` command-line interface.
 For command-by-command behavior, use `--help` (for example: `mainsequence project --help`).
+For a deeper workflow guide, see [CLI Deep Dive](../knowledge/cli.md).
 
 ## Installation
 
@@ -13,8 +14,11 @@ pip install mainsequence
 
 ```bash
 mainsequence login you@company.com
+mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
 mainsequence logout
 ```
+
+Backend/base-folder overrides passed to `login` are terminal-session only. They do not rewrite the persisted CLI settings for other terminals.
 
 If you prefer shell-managed environment variables:
 
@@ -46,11 +50,15 @@ Most frequently used flows:
 # 1) List and create
 mainsequence project list
 mainsequence project create tutorial-project
+mainsequence project list data_nodes_updates
+mainsequence project list data_nodes_updates 123
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
+mainsequence project refresh_token
 
 # 3) Environment setup
+mainsequence project build_local_venv
 mainsequence project build_local_venv --path .
 mainsequence project freeze-env --path .
 

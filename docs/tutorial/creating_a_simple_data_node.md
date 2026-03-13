@@ -195,6 +195,22 @@ Click the **storage hash**, then in the table's context menu (the **…** button
 
 ![img.png](../img/tutorial/random_number_table.png)
 
+### Check Updates From the CLI
+
+You can also confirm that your launcher created `data_node_updates` directly from the terminal:
+
+```bash
+mainsequence project list data_nodes_updates
+```
+
+If your local project auth has expired or your `.env` does not yet contain fresh project JWTs, refresh them first:
+
+```bash
+mainsequence project refresh_token --path .
+```
+
+The CLI output lists the update ID, update hash, data node storage, and update details for the current project. Run it again after `random_daily_addition_launcher.py` or after the updated `random_number_launcher.py` to confirm that additional update processes were created.
+
 ### Add a Dependent Data Node
 
 Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the following to `src\data_nodes\example_nodes.py`:
@@ -326,6 +342,20 @@ Run the updated launcher in VS Code as before. After it runs, return to the Dyna
 You'll see that you have a single table with three different update processes (you just added two new processes by running the modified launcher):
 
 ![img.png](../img/tutorial/update_vs_storage.png)
+
+
+You can also monitor the data nodes updates via the cli by running:
+```shell
+mainsequence project list data_nodes_updates
+
+                                    Project Data Node Updates                                     
+                                                                                                  
+  ID     Update Hash                                          Data Node Storage   Update Details  
+ ──────────────────────────────────────────────────────────────────────────────────────────────── 
+  8005   dailyrandomnumber_009e3dfd8059e97933414c8e54b13af1   5016                -               
+  8004   dailyrandomnumber_f32b575aa53142a50fa10c2fbff4d658   5016                -     
+
+```
 
 Congratulations! You've built your first Data Nodes in Main Sequence. In the next part of the tutorial, we'll explore scheduling and automating these nodes and more.
 

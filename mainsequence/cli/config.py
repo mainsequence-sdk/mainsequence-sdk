@@ -10,6 +10,8 @@ This module stores non-secret config on disk and keeps auth tokens in env,
 with secure persistence via OS keychain on supported platforms.
 """
 
+import hashlib
+import ipaddress
 import json
 import os
 import pathlib
@@ -43,13 +45,17 @@ CFG_DIR = _config_dir()
 CFG_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_JSON = CFG_DIR / "config.json"
+SESSION_OVERRIDES_DIR = CFG_DIR / "session_overrides"
 # Deprecated compatibility constant (token file persistence is disabled).
 TOKENS_JSON = CFG_DIR / "token.json"
 
 # Session-scoped auth environment variables (no token file persistence).
-ENV_USERNAME = "MAIN_SEQUENCE_USERNAME"
-ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
-ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
+ENV_USERNAME = "MAINSEQUENCE_USERNAME"
+ENV_ACCESS = "MAINSEQUENCE_ACCESS_TOKEN"
+ENV_REFRESH = "MAINSEQUENCE_REFRESH_TOKEN"
+LEGACY_ENV_USERNAME = "MAIN_SEQUENCE_USERNAME"
+LEGACY_ENV_ACCESS = "MAIN_SEQUENCE_USER_TOKEN"
+LEGACY_ENV_REFRESH = "MAIN_SEQUENCE_REFRESH_TOKEN"
 KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
 
@@ -83,6 +89,94 @@ def write_json(path: pathlib.Path, obj) -> None:
     os.replace(tmp, path)
 
 
+def get_persistent_config() -> dict:
+    """
+    Return persisted config only, without terminal-session overrides.
+    """
+    return DEFAULTS | read_json(CONFIG_JSON, {})
+
+
+def _session_scope_key() -> str | None:
+    """
+    Return a stable identifier for the current terminal session.
+
+    Uses the parent shell pid plus controlling tty when available, so overrides
+    stay visible to subsequent CLI invocations from the same terminal only.
+    """
+    explicit = (os.environ.get("MAINSEQUENCE_CLI_SESSION_ID") or "").strip()
+    if explicit:
+        return explicit
+
+    tty = ""
+    for fd in (0, 1, 2):
+        try:
+            tty = os.ttyname(fd)
+            if tty:
+                break
+        except Exception:
+            continue
+
+    parent_pid = os.getppid()
+    if not tty and not parent_pid:
+        return None
+    return f"{parent_pid}:{tty}"
+
+
+def _session_override_path() -> pathlib.Path | None:
+    key = _session_scope_key()
+    if not key:
+        return None
+    SESSION_OVERRIDES_DIR.mkdir(parents=True, exist_ok=True)
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return SESSION_OVERRIDES_DIR / f"{digest}.json"
+
+
+def get_session_overrides() -> dict:
+    """
+    Return config overrides scoped to the current terminal session.
+    """
+    path = _session_override_path()
+    if path is None:
+        return {}
+    data = read_json(path, {})
+    return data if isinstance(data, dict) else {}
+
+
+def set_session_overrides(*, backend_url: str | None = None, mainsequence_path: str | None = None) -> dict:
+    """
+    Persist backend/path overrides for the current terminal session only.
+    """
+    path = _session_override_path()
+    if path is None:
+        return {}
+
+    overrides: dict[str, str] = {}
+    if backend_url is not None:
+        overrides["backend_url"] = normalize_backend_url(backend_url)
+    if mainsequence_path is not None:
+        normalized_path = normalize_mainsequence_path(mainsequence_path)
+        pathlib.Path(normalized_path).mkdir(parents=True, exist_ok=True)
+        overrides["mainsequence_path"] = normalized_path
+
+    if overrides:
+        write_json(path, overrides)
+    elif path.exists():
+        path.unlink()
+    return overrides
+
+
+def clear_session_overrides() -> None:
+    """
+    Clear backend/path overrides for the current terminal session.
+    """
+    path = _session_override_path()
+    if path and path.exists():
+        try:
+            path.unlink()
+        except Exception:
+            pass
+
+
 def get_config() -> dict:
     """
     Load config.json merged with DEFAULTS and ensure the base projects path exists.
@@ -90,7 +184,7 @@ def get_config() -> dict:
     Returns:
         dict: merged config with at least {backend_url, mainsequence_path, version}.
     """
-    cfg = DEFAULTS | read_json(CONFIG_JSON, {})
+    cfg = get_persistent_config() | get_session_overrides()
     pathlib.Path(cfg["mainsequence_path"]).mkdir(parents=True, exist_ok=True)
     return cfg
 
@@ -105,7 +199,7 @@ def set_config(updates: dict) -> dict:
     Returns:
         dict: the updated full config object.
     """
-    cfg = get_config() | (updates or {})
+    cfg = get_persistent_config() | (updates or {})
     cfg["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     write_json(CONFIG_JSON, cfg)
     return cfg
@@ -121,8 +215,69 @@ def set_backend_url(url: str) -> dict:
     Returns:
         dict: updated config
     """
-    url = (url or "").strip()
+    url = normalize_backend_url(url)
     return set_config({"backend_url": url})
+
+
+def set_mainsequence_path(path: str) -> dict:
+    """
+    Convenience helper to set the projects base folder in config.json.
+
+    A bare folder name like `mainsequence-dev` is interpreted as `~/mainsequence-dev`.
+    """
+    normalized = normalize_mainsequence_path(path)
+    pathlib.Path(normalized).mkdir(parents=True, exist_ok=True)
+    return set_config({"mainsequence_path": normalized})
+
+
+def normalize_backend_url(url: str | None) -> str:
+    """
+    Normalize backend input into an absolute base URL without trailing slash.
+
+    Rules:
+      - keep explicit `http://` / `https://` as-is
+      - default to `http://` for localhost/private IP style targets
+      - default to `https://` for everything else
+    """
+    raw = (url or "").strip()
+    if not raw:
+        return raw
+
+    if "://" in raw:
+        return raw.rstrip("/")
+
+    host = raw.split("/", 1)[0].split(":", 1)[0].strip("[]").lower()
+    scheme = "https"
+
+    if host in {"localhost", "0.0.0.0"}:
+        scheme = "http"
+    else:
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_loopback or ip.is_private or ip.is_unspecified:
+                scheme = "http"
+        except ValueError:
+            pass
+
+    return f"{scheme}://{raw}".rstrip("/")
+
+
+def normalize_mainsequence_path(path: str | None) -> str:
+    """
+    Normalize projects base folder input into an absolute path.
+
+    Rules:
+      - `~/foo`, `/tmp/foo`, `./foo`, `../foo` behave like normal filesystem paths
+      - a bare folder name like `mainsequence-dev` maps to `~/mainsequence-dev`
+    """
+    raw = (path or "").strip()
+    if not raw:
+        return str(pathlib.Path.home() / "mainsequence")
+
+    if raw.startswith(("~", ".", "/")) or "\\" in raw or "/" in raw:
+        return str(pathlib.Path(raw).expanduser().resolve())
+
+    return str((pathlib.Path.home() / raw).resolve())
 
 
 def get_tokens() -> dict:
@@ -130,9 +285,9 @@ def get_tokens() -> dict:
     Return auth tokens from environment variables, with secure-store fallback.
     """
     tokens = {
-        "username": os.environ.get(ENV_USERNAME, ""),
-        "access": os.environ.get(ENV_ACCESS, ""),
-        "refresh": os.environ.get(ENV_REFRESH, ""),
+        "username": os.environ.get(ENV_USERNAME) or os.environ.get(LEGACY_ENV_USERNAME, ""),
+        "access": os.environ.get(ENV_ACCESS) or os.environ.get(LEGACY_ENV_ACCESS, ""),
+        "refresh": os.environ.get(ENV_REFRESH) or os.environ.get(LEGACY_ENV_REFRESH, ""),
     }
     if tokens["access"] and tokens["refresh"]:
         return tokens
@@ -163,6 +318,9 @@ def save_tokens(username: str, access: str, refresh: str) -> bool:
         os.environ[ENV_USERNAME] = username
     os.environ[ENV_ACCESS] = access
     os.environ[ENV_REFRESH] = refresh
+    os.environ.pop(LEGACY_ENV_USERNAME, None)
+    os.environ.pop(LEGACY_ENV_ACCESS, None)
+    os.environ.pop(LEGACY_ENV_REFRESH, None)
     return _write_secure_tokens(username=username, access=access, refresh=refresh)
 
 
@@ -184,18 +342,12 @@ def clear_tokens() -> bool:
     os.environ.pop(ENV_ACCESS, None)
     os.environ.pop(ENV_REFRESH, None)
     os.environ.pop(ENV_USERNAME, None)
+    os.environ.pop(LEGACY_ENV_ACCESS, None)
+    os.environ.pop(LEGACY_ENV_REFRESH, None)
+    os.environ.pop(LEGACY_ENV_USERNAME, None)
     if not _clear_secure_tokens():
         ok = False
     return ok
-
-
-def set_env_access(access: str) -> None:
-    """
-    Set MAIN_SEQUENCE_USER_TOKEN for current process (and children).
-
-    Note: cannot update the parent shell environment.
-    """
-    os.environ[ENV_ACCESS] = access
 
 
 def _macos_security_exists() -> bool:
@@ -321,4 +473,4 @@ def backend_url() -> str:
     if os.environ.get("MAIN_SEQUENCE_BACKEND_URL") is not None:
         url = (os.environ.get("MAIN_SEQUENCE_BACKEND_URL") or "").rstrip("/")
 
-    return url
+    return normalize_backend_url(url)

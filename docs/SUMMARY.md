@@ -2,7 +2,7 @@
 - Tutorial
     - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
     - [Part 1A — Setting a Project (GUI + VS Code Extension)](tutorial/setting_a_project_gui.md)
-    - [Part 2 — Creating a Data Node](tutorial/creating_a_data_node.md)
+    - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 3 — Multi-Index Columns](tutorial/getting_started_2.md)
     - [Part 4 — Orchestration](tutorial/getting_started_3.md)
     - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/getting_started_4.md)
@@ -12,6 +12,7 @@
     - [Part 5.2 — From Data to Dashboards II](tutorial/getting_started_5_2.md)
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
+    - [CLI Deep Dive](knowledge/cli.md)
 - CLI
     - [Overview](cli/index.md)
 - [Examples](examples/index.md)

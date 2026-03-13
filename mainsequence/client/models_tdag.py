@@ -225,7 +225,8 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     def get_or_create(cls, **kwargs):
         url = cls.get_object_url() + "/get_or_create/"
         kwargs = serialize_to_json(kwargs)
-
+        pod_project=POD_PROJECT
+        kwargs["current_project_id"]=pod_project.id
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -2446,7 +2447,7 @@ class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
 class Project(BasePydanticModel, BaseObjectOrm):
     id: int
     project_name: str
-    data_source: DynamicTableDataSource
+    data_source: DynamicTableDataSource | None
     git_ssh_url: str | None = None
     project_visible: bool
     is_initialized:bool
@@ -2603,6 +2604,42 @@ class Project(BasePydanticModel, BaseObjectOrm):
         raise_for_response(r)
 
         return r.json() if r.content else None
+
+    def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[DataNodeUpdate]:
+        """
+        GET /projects/{id}/get-data-nodes-updates/
+
+        Returns a list of DataNodeUpdate objects for this project.
+        """
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/get-data-nodes-updates/"
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+        payload = r.json()
+        if isinstance(payload, list):
+            raw_updates = payload
+        elif isinstance(payload, dict):
+            if isinstance(payload.get("results"), list):
+                raw_updates = payload["results"]
+            elif isinstance(payload.get("data_node_updates"), list):
+                raw_updates = payload["data_node_updates"]
+            else:
+                raw_updates = []
+        else:
+            raise ValueError(
+                f"Unexpected response type for project data node updates: {type(payload)!r}"
+            )
+
+        return [u if isinstance(u, DataNodeUpdate) else DataNodeUpdate(**u) for u in raw_updates]
 
     def __str__(self):
         return yaml.safe_dump(
@@ -2885,13 +2922,22 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
 
             return cls(**r.json())
 
+POD_PROJECT = None
 
 try:
     POD_PROJECT = Project.get_user_default_project()
 except Exception:
-    POD_PROJECT = None
-    logger.exception("Could not retrieve pod project running in local mode")
 
+
+    RUNNING_PROJECT_ID=os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+    if RUNNING_PROJECT_ID is not None:
+        try:
+            POD_PROJECT = Project.get(id=os.environ["MAIN_SEQUENCE_PROJECT_ID"])
+        except Exception:
+            POD_PROJECT = None
+            logger.exception("Could not retrieve pod project running in local mode")
+    else:
+        logger.debug("MAIN_SEQUENCE_PROJECT_ID not set; no local pod project attached")
 
 @dataclass
 class PodDataSource:
@@ -2902,7 +2948,7 @@ class PodDataSource:
             return None
 
         self.data_source = POD_PROJECT.data_source
-        logger.info(f"Set remote data source to {self.data_source.related_resource}")
+        logger.debug(f"Set remote data source to {self.data_source.related_resource}")
 
         if self.data_source.related_resource.status != "AVAILABLE":
             raise Exception(f"Project Database {self.data_source} is not available")

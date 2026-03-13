@@ -146,19 +146,19 @@ mainsequence project open-signed-terminal 123
 ## Environment variables
 
 - `MAIN_SEQUENCE_BACKEND_URL` – set before running the CLI to point at a different backend.
-- `MAIN_SEQUENCE_USER_TOKEN` – access token; `login --export` prints a shell-ready export line.
+- `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` – JWT auth variables; `login --export` prints shell-ready export lines.
 
 ---
 
 ## Top-level commands
 
 ### `login`
-Obtain and store tokens, set `MAIN_SEQUENCE_USER_TOKEN` for the current process, and (by default) print a projects table.
+Obtain and store tokens, set `MAINSEQUENCE_ACCESS_TOKEN` / `MAINSEQUENCE_REFRESH_TOKEN` for the current process, and (by default) print a projects table.
 
 ```powershell
 mainsequence login <email>
 # options:
-#   --export      Print: export MAIN_SEQUENCE_USER_TOKEN="…"
+#   --export      Print: export MAINSEQUENCE_ACCESS_TOKEN="…"
 #   --no-status   Do not print the projects table after login
 ```
 
@@ -168,13 +168,14 @@ mainsequence login <email>
 ```powershell
 # The CLI prints a POSIX export line, but you need to set it manually in PowerShell
 mainsequence login you@example.com --export
-# Copy the token from output, then:
-$env:MAIN_SEQUENCE_USER_TOKEN = "<paste token here>"
+# Copy the tokens from output, then:
+$env:MAINSEQUENCE_ACCESS_TOKEN = "<paste access token here>"
+$env:MAINSEQUENCE_REFRESH_TOKEN = "<paste refresh token here>"
 ```
 
 **macOS/Linux (bash/zsh):**
 ```bash
-# Set token env var for the current shell
+# Set JWT env vars for the current shell
 eval "$(mainsequence login you@example.com --export)"
 ```
 

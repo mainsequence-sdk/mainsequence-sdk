@@ -47,7 +47,6 @@ class RunningMode(Enum):
 class Configuration:
     OBLIGATORY_ENV_VARIABLES = [
         "TDAG_ENDPOINT",
-        "MAINSEQUENCE_TOKEN",
     ]
 
     def __init__(self):
@@ -70,6 +69,14 @@ class Configuration:
             return None
         for ob_var in self.OBLIGATORY_ENV_VARIABLES:
             assert ob_var in os.environ, f"{ob_var} not in environment variables"
+        assert (
+            os.environ.get("MAINSEQUENCE_ACCESS_TOKEN")
+            or os.environ.get("MAINSEQUENCE_REFRESH_TOKEN")
+            or os.environ.get("MAINSEQUENCE_TOKEN")
+        ), (
+            "Authentication env is missing. Set MAINSEQUENCE_ACCESS_TOKEN / "
+            "MAINSEQUENCE_REFRESH_TOKEN (preferred) or MAINSEQUENCE_TOKEN."
+        )
 
     def _build_template_yaml(self):
         config = {

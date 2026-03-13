@@ -69,7 +69,7 @@ def _print_cli_terminal(monkeypatch):
 def test_settings_defaults_to_show(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
-        "get_config",
+        "get_persistent_config",
         lambda: {
             "backend_url": "https://main-sequence.app",
             "mainsequence_path": "/tmp/mainsequence",
@@ -81,11 +81,35 @@ def test_settings_defaults_to_show(cli_mod, runner, monkeypatch):
     assert "mainsequence_path" in result.output
 
 
+def test_settings_show_ignores_session_overrides(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_persistent_config",
+        lambda: {
+            "backend_url": "https://main-sequence.app",
+            "mainsequence_path": "/tmp/mainsequence",
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_session_overrides",
+        lambda: {
+            "backend_url": "http://127.0.0.1:8000",
+            "mainsequence_path": "/tmp/mainsequence-dev",
+        },
+    )
+    result = runner.invoke(cli_mod.app, ["settings"])
+    assert result.exit_code == 0
+    assert "https://main-sequence.app" in result.output
+    assert "/tmp/mainsequence" in result.output
+    assert "127.0.0.1:8000" not in result.output
+
+
 def test_settings_set_base(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
-        "set_config",
-        lambda updates: {"mainsequence_path": updates["mainsequence_path"]},
+        "set_mainsequence_path",
+        lambda path: {"mainsequence_path": path},
     )
     result = runner.invoke(cli_mod.app, ["settings", "set-base", "/tmp/ms-base"])
     assert result.exit_code == 0
@@ -103,7 +127,49 @@ def test_settings_set_backend(cli_mod, runner, monkeypatch):
     assert "Backend URL set to" in result.output
 
 
+def test_config_normalize_backend_url(cli_mod):
+    assert cli_mod.cfg.normalize_backend_url("127.0.0.1:800") == "http://127.0.0.1:800"
+    assert cli_mod.cfg.normalize_backend_url("localhost:8000") == "http://localhost:8000"
+    assert cli_mod.cfg.normalize_backend_url("main-sequence.app") == "https://main-sequence.app"
+    assert cli_mod.cfg.normalize_backend_url("https://example.test/") == "https://example.test"
+
+
+def test_config_normalize_mainsequence_path(cli_mod):
+    assert cli_mod.cfg.normalize_mainsequence_path("mainsequence-dev").endswith("/mainsequence-dev")
+    assert cli_mod.cfg.normalize_mainsequence_path("~/mainsequence-dev").endswith("/mainsequence-dev")
+
+
+def test_config_session_overrides_do_not_persist(cli_mod, monkeypatch, tmp_path):
+    config_json = tmp_path / "config.json"
+    session_json = tmp_path / "session.json"
+    cli_mod.cfg.write_json(
+        config_json,
+        {
+            "backend_url": "https://prod.test",
+            "mainsequence_path": str(tmp_path / "mainsequence"),
+            "version": 1,
+        },
+    )
+
+    monkeypatch.setattr(cli_mod.cfg, "CONFIG_JSON", config_json)
+    monkeypatch.setattr(cli_mod.cfg, "_session_override_path", lambda: session_json)
+
+    cli_mod.cfg.set_session_overrides(
+        backend_url="127.0.0.1:8000",
+        mainsequence_path="mainsequence-dev",
+    )
+
+    effective = cli_mod.cfg.get_config()
+    persisted = cli_mod.cfg.read_json(config_json, {})
+
+    assert effective["backend_url"] == "http://127.0.0.1:8000"
+    assert effective["mainsequence_path"].endswith("/mainsequence-dev")
+    assert persisted["backend_url"] == "https://prod.test"
+    assert persisted["mainsequence_path"] == str(tmp_path / "mainsequence")
+
+
 def test_login_mocked(cli_mod, runner, monkeypatch):
+    cleared = {"called": False}
     monkeypatch.setattr(
         cli_mod,
         "api_login",
@@ -115,6 +181,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
 
@@ -125,6 +192,94 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Signed in as user@example.com" in result.output
     assert "Auth tokens are persisted in secure OS storage" in result.output
+    assert cleared["called"] is True
+
+
+def test_login_with_backend_override(cli_mod, runner, monkeypatch):
+    seen = {}
+    session_override = {}
+    cleared = {"called": False}
+
+    def _api_login(email, password):
+        seen["backend"] = cli_mod.cfg.backend_url()
+        return {"username": email, "backend": seen["backend"]}
+
+    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "127.0.0.1:800", "mainsequence-dev", "--password", "secret", "--no-status"],
+    )
+    assert result.exit_code == 0
+    assert seen["backend"] == "http://127.0.0.1:800"
+    assert session_override["backend_url"] == "http://127.0.0.1:800"
+    assert session_override["mainsequence_path"] == "mainsequence-dev"
+    assert cleared["called"] is False
+    assert "http://127.0.0.1:800" in result.output
+    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+
+
+def test_login_with_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
+    called = {"api_login": False}
+
+    def _api_login(email, password):
+        called["api_login"] = True
+        return {"username": email, "backend": "http://127.0.0.1:8000"}
+
+    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "127.0.0.1:8000", "--password", "secret", "--no-status"],
+    )
+    assert result.exit_code == 1
+    assert "must also specify a different projects base folder" in result.output
+    assert called["api_login"] is False
+
+
+def test_login_with_different_backend_requires_different_projects_base(cli_mod, runner, monkeypatch):
+    called = {"api_login": False}
+
+    def _api_login(email, password):
+        called["api_login"] = True
+        return {"username": email, "backend": "http://127.0.0.1:8000"}
+
+    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "127.0.0.1:8000", "/tmp/mainsequence", "--password", "secret", "--no-status"],
+    )
+    assert result.exit_code == 1
+    assert "projects base folder must differ from the current one" in result.output
+    assert called["api_login"] is False
 
 
 def test_login_export_env(cli_mod, runner, monkeypatch):
@@ -144,6 +299,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
 
@@ -152,9 +308,9 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
         ["login", "user@example.com", "--password", "secret", "--no-status", "--export"],
     )
     assert result.exit_code == 0
-    assert 'export MAIN_SEQUENCE_USER_TOKEN="acc-123"' in result.output
-    assert 'export MAIN_SEQUENCE_REFRESH_TOKEN="ref-456"' in result.output
-    assert 'export MAIN_SEQUENCE_USERNAME="user@example.com"' in result.output
+    assert 'export MAINSEQUENCE_ACCESS_TOKEN="acc-123"' in result.output
+    assert 'export MAINSEQUENCE_REFRESH_TOKEN="ref-456"' in result.output
+    assert 'export MAINSEQUENCE_USERNAME="user@example.com"' in result.output
 
 
 def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
@@ -175,6 +331,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
 
@@ -187,19 +344,25 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
 
 
 def test_logout(cli_mod, runner, monkeypatch):
+    cleared = {"called": False}
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout"])
     assert result.exit_code == 0
     assert "Signed out" in result.output
+    assert cleared["called"] is True
 
 
 def test_logout_export_env(cli_mod, runner, monkeypatch):
+    cleared = {"called": False}
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout", "--export"])
     assert result.exit_code == 0
-    assert "unset MAIN_SEQUENCE_USER_TOKEN" in result.output
-    assert "unset MAIN_SEQUENCE_REFRESH_TOKEN" in result.output
-    assert "unset MAIN_SEQUENCE_USERNAME" in result.output
+    assert "unset MAINSEQUENCE_ACCESS_TOKEN" in result.output
+    assert "unset MAINSEQUENCE_REFRESH_TOKEN" in result.output
+    assert "unset MAINSEQUENCE_USERNAME" in result.output
+    assert cleared["called"] is True
 
 
 def test_config_get_tokens_fallback_secure_store(cli_mod, monkeypatch):
@@ -215,6 +378,84 @@ def test_config_get_tokens_fallback_secure_store(cli_mod, monkeypatch):
     assert out["username"] == "u@example.com"
     assert out["access"] == "acc"
     assert out["refresh"] == "ref"
+
+
+def test_config_get_tokens_fallback_legacy_env(cli_mod, monkeypatch):
+    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setenv(cli_mod.cfg.LEGACY_ENV_ACCESS, "legacy-acc")
+    monkeypatch.setenv(cli_mod.cfg.LEGACY_ENV_REFRESH, "legacy-ref")
+    monkeypatch.setenv(cli_mod.cfg.LEGACY_ENV_USERNAME, "legacy@example.com")
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "legacy@example.com"
+    assert out["access"] == "legacy-acc"
+    assert out["refresh"] == "legacy-ref"
+
+
+def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_path):
+    bootstrap = importlib.import_module("mainsequence.bootstrap")
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    (project_dir / ".env").write_text(
+        "TDAG_ENDPOINT=https://project-backend.test\n"
+        "MAIN_SEQUENCE_PROJECT_ID=123\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://session-backend.test")
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: {"username": "user@example.com", "access": "acc-123", "refresh": "ref-456"},
+    )
+    for key in (
+        "TDAG_ENDPOINT",
+        "MAINSEQUENCE_ENDPOINT",
+        "MAIN_SEQUENCE_PROJECT_ID",
+        "MAINSEQUENCE_ACCESS_TOKEN",
+        "MAINSEQUENCE_REFRESH_TOKEN",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    bootstrap.prime_runtime_env()
+
+    assert os.environ["TDAG_ENDPOINT"] == "https://project-backend.test"
+    assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://project-backend.test"
+    assert os.environ["MAIN_SEQUENCE_PROJECT_ID"] == "123"
+    assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
+    assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
+
+
+def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch, tmp_path):
+    bootstrap = importlib.import_module("mainsequence.bootstrap")
+    project_dir = tmp_path / "project"
+    project_dir.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.chdir(project_dir)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: {"username": "user@example.com", "access": "acc-123", "refresh": "ref-456"},
+    )
+    for key in (
+        "TDAG_ENDPOINT",
+        "MAINSEQUENCE_ENDPOINT",
+        "MAIN_SEQUENCE_PROJECT_ID",
+        "MAINSEQUENCE_ACCESS_TOKEN",
+        "MAINSEQUENCE_REFRESH_TOKEN",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    bootstrap.prime_runtime_env()
+
+    assert os.environ["TDAG_ENDPOINT"] == "http://127.0.0.1:8000"
+    assert os.environ["MAINSEQUENCE_ENDPOINT"] == "http://127.0.0.1:8000"
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
+    assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
+    assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
 
 
 def test_config_save_tokens_writes_secure_store(cli_mod, monkeypatch):
@@ -285,6 +526,115 @@ def test_project_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["project", "list"])
     assert result.exit_code == 0
     assert "Demo" in result.output
+
+
+def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_data_node_updates",
+        lambda project_id, timeout=None: [
+            {
+                "id": 10,
+                "update_hash": "abc123",
+                "data_node_storage": {"id": 42, "storage_hash": "storage-xyz"},
+                "update_details": {"id": 77},
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "list", "data_nodes_updates", "123"])
+    assert result.exit_code == 0
+    assert "Project Data Node Updates" in result.output
+    assert "abc123" in result.output
+    assert "storage-xyz" in result.output
+    assert "Total updates: 1" in result.output
+
+
+def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeUpdate:
+        def model_dump(self):
+            return {"id": 10, "update_hash": "abc123"}
+
+    class FakeProject:
+        ROOT_URL = "https://old.test/orm/api/pods/project"
+
+        @classmethod
+        def get(cls, pk, timeout=None):
+            captured["project_id_arg"] = pk
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            return types.SimpleNamespace(get_data_nodes_updates=lambda timeout=None: [FakeUpdate()])
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Project = FakeProject
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.get_project_data_node_updates(123)
+    assert captured["project_id_arg"] == 123
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [{"id": 10, "update_hash": "abc123"}]
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_project_get_data_node_updates_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    captured = {}
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _get_updates(project_id, timeout=None):
+        captured["project_id"] = project_id
+        return [
+            {
+                "id": 10,
+                "update_hash": "abc123",
+                "data_node_storage": {"id": 42, "storage_hash": "storage-xyz"},
+                "update_details": {"id": 77},
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "get_project_data_node_updates", _get_updates)
+
+    result = runner.invoke(cli_mod.app, ["project", "list", "data_nodes_updates"])
+    assert result.exit_code == 0
+    assert captured["project_id"] == 123
+    assert "abc123" in result.output
+    assert "storage-xyz" in result.output
 
 
 def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):
@@ -467,9 +817,13 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_mod,
         "fetch_project_env_text",
-        lambda project_id: "DEFAULT_BASE_IMAGE=none\nFOO=bar\n",
+        lambda project_id: "DEFAULT_BASE_IMAGE=none\nFOO=bar\nMAINSEQUENCE_TOKEN=legacy-token\n",
     )
-    monkeypatch.setattr(cli_mod, "get_project_token", lambda project_id: "token-123")
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: {"username": "u", "access": "access-123", "refresh": "refresh-456"},
+    )
     monkeypatch.setattr(cli_mod, "resolve_base_image", lambda _: ("ghcr.io/test/image:latest", []))
     monkeypatch.setattr(
         cli_mod,
@@ -483,9 +837,11 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     env_file = base / "org" / "projects" / "demo-123" / ".env"
     assert env_file.exists()
     env_text = env_file.read_text(encoding="utf-8")
-    assert "MAINSEQUENCE_TOKEN=token-123" in env_text
+    assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
+    assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
-    assert "INGORE_MS_AGENT=true" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAINSEQUENCE_TOKEN=" not in env_text
 
 
 def test_project_open(cli_mod, runner, monkeypatch, tmp_path):
@@ -497,6 +853,71 @@ def test_project_open(cli_mod, runner, monkeypatch, tmp_path):
     result = runner.invoke(cli_mod.app, ["project", "open", "--path", str(target)])
     assert result.exit_code == 0
     assert opened["path"] == str(target.resolve())
+
+
+def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    env_path = target / ".env"
+    env_path.write_text(
+        "FOO=bar\n"
+        "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
+        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        "TDAG_ENDPOINT=https://old-backend.test\n"
+        "MAINSEQUENCE_TOKEN=legacy-token\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+
+    result = runner.invoke(cli_mod.app, ["project", "refresh_token", "--path", str(target)])
+    assert result.exit_code == 0
+
+    env_text = env_path.read_text(encoding="utf-8")
+    assert "FOO=bar" in env_text
+    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
+    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
+    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAINSEQUENCE_TOKEN=" not in env_text
+    assert "old-access" not in env_text
+    assert "old-refresh" not in env_text
+
+
+def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    env_path = target / ".env"
+    env_path.write_text(
+        "FOO=bar\n"
+        "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
+        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: {"username": "u", "access": "new-access", "refresh": "new-refresh"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+
+    result = runner.invoke(cli_mod.app, ["project", "refresh_token"])
+    assert result.exit_code == 0
+
+    env_text = env_path.read_text(encoding="utf-8")
+    assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
+    assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
+    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
 
 
 def test_project_delete_local(cli_mod, runner, monkeypatch, tmp_path):
@@ -572,6 +993,33 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
     assert calls[1][0] == ["uv", "sync"]
     assert calls[1][2]["UV_PROJECT_ENVIRONMENT"] == ".venv"
     assert "Local .venv built with Python 3.11." in result.output
+
+
+def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / "pyproject.toml").write_text(
+        '[project]\nname = "demo"\nrequires-python = ">=3.11,<3.13"\n',
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_resolve_uv_runner", lambda: (["uv"], "uv"))
+    calls = []
+
+    def _run(cmd, cwd=None, env=None, capture_output=None, text=None):
+        calls.append((cmd, cwd, env))
+        return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _run)
+
+    result = runner.invoke(cli_mod.app, ["project", "build_local_venv"])
+    assert result.exit_code == 0
+    assert calls[0][0] == ["uv", "venv", ".venv", "--python", "3.11"]
+    assert calls[0][1] == str(target.resolve())
+    assert calls[1][0] == ["uv", "sync"]
+    assert calls[1][2]["UV_PROJECT_ENVIRONMENT"] == ".venv"
 
 
 def test_project_build_local_venv_skips_when_exists(cli_mod, runner, tmp_path):

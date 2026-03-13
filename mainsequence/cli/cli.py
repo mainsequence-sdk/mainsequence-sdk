@@ -44,7 +44,7 @@ from .api import (
     fetch_project_env_text,
     get_current_user_profile,
     get_project,
-    get_project_token,
+    get_project_data_node_updates,
     get_projects,
     list_dynamic_table_data_sources,
     list_github_organizations,
@@ -84,10 +84,12 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 project = typer.Typer(help="Project commands (remote + local operations)")
+project_list_group = typer.Typer(help="List-related project commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(project, name="project")
+project.add_typer(project_list_group, name="list")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
 
@@ -472,6 +474,55 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
     return p
 
 
+def _read_project_id_from_env_file(project_dir: pathlib.Path) -> int | None:
+    """
+    Read `MAIN_SEQUENCE_PROJECT_ID` from `<project_dir>/.env` when available.
+    """
+    env_path = project_dir / ".env"
+    if not env_path.is_file():
+        return None
+    try:
+        content = env_path.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None
+
+    match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(\d+)\s*$", content)
+    if not match:
+        return None
+
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _resolve_current_project_dir_from_env() -> pathlib.Path:
+    """
+    Resolve the current working directory as a project folder when local `.env`
+    declares `MAIN_SEQUENCE_PROJECT_ID`.
+    """
+    cwd = pathlib.Path.cwd()
+    if _read_project_id_from_env_file(cwd) is None:
+        error(
+            "No PROJECT_ID was provided and the current directory does not expose "
+            "MAIN_SEQUENCE_PROJECT_ID in .env."
+        )
+        raise typer.Exit(1)
+    return cwd
+
+
+def _resolve_project_id_from_local_env(path: str | None = None) -> int:
+    """
+    Resolve project id from `<path>/.env` or `./.env`.
+    """
+    project_dir = normalize_path(path) if path else pathlib.Path.cwd()
+    project_id = _read_project_id_from_env_file(project_dir)
+    if project_id is None:
+        error(f"Could not determine project id from {project_dir / '.env'}.")
+        raise typer.Exit(1)
+    return project_id
+
+
 def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
     """
     Parse env var entries from repeated KEY=VALUE args and/or comma-separated chunks.
@@ -609,12 +660,76 @@ def _install_uv() -> tuple[bool, str]:
     return False, "; ".join(reasons)
 
 
+def _current_session_jwt_tokens() -> tuple[str, str]:
+    """
+    Return access/refresh JWTs from the current CLI session.
+
+    Raises:
+        RuntimeError: if the CLI session does not currently expose both tokens.
+    """
+    tokens = cfg.get_tokens()
+    access_token = (tokens.get("access") or "").strip()
+    refresh_token = (tokens.get("refresh") or "").strip()
+    if not access_token or not refresh_token:
+        raise RuntimeError("JWT session tokens are missing. Run: mainsequence login <email>")
+    return access_token, refresh_token
+
+
+def _render_project_runtime_env_text(
+    env_text: str,
+    *,
+    access_token: str,
+    refresh_token: str,
+    backend_url: str,
+    project_runtime_id: str | None = None,
+) -> str:
+    """
+    Return `.env` text with managed runtime auth keys refreshed.
+
+    Managed keys are rewritten from scratch to avoid duplicate stale entries.
+    """
+    managed_prefixes = (
+        "MAINSEQUENCE_TOKEN=",
+        "MAINSEQUENCE_ACCESS_TOKEN=",
+        "MAINSEQUENCE_REFRESH_TOKEN=",
+        "TDAG_ENDPOINT=",
+    ) + (("MAIN_SEQUENCE_PROJECT_ID=",) if project_runtime_id is not None else ())
+    lines = [
+        ln
+        for ln in (env_text or "").replace("\r", "").splitlines()
+        if not any(ln.startswith(prefix) for prefix in managed_prefixes)
+    ]
+
+    if lines and lines[-1] != "":
+        lines.append("")
+
+    lines.extend(
+        [
+            f"MAINSEQUENCE_ACCESS_TOKEN={access_token}",
+            f"MAINSEQUENCE_REFRESH_TOKEN={refresh_token}",
+            f"TDAG_ENDPOINT={backend_url}",
+        ]
+        + ([f"MAIN_SEQUENCE_PROJECT_ID={project_runtime_id}"] if project_runtime_id is not None else [])
+    )
+
+    final_env = "\n".join(lines).replace("\r", "")
+    return final_env + ("\n" if not final_env.endswith("\n") else "")
+
+
 # ---------- top-level commands ----------
 
 
 @app.command()
 def login(
     email: str = typer.Argument(..., help="Email/username (server expects 'email' field)"),
+    backend: str | None = typer.Argument(
+        None,
+        help="Optional backend URL or host[:port], for example 127.0.0.1:8000",
+    ),
+    projects_base: str | None = typer.Argument(
+        None,
+        help="Optional local projects base folder, for example mainsequence-dev",
+    ),
     password: str | None = typer.Option(None, prompt=True, hide_input=True, help="Password"),
     no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login"),
     export: bool = typer.Option(
@@ -628,12 +743,18 @@ def login(
     Authenticate to the MainSequence platform.
 
     Persists auth tokens in secure OS storage (when available) so subsequent
-    CLI invocations can run without re-authentication.
+    CLI invocations can run without re-authentication. Backend/base-folder
+    overrides passed to `login` are scoped to the current terminal session.
 
     Parameters
     ----------
     email:
         Login email.
+    backend:
+        Optional backend override for this login. It applies only to the current terminal session.
+    projects_base:
+        Optional projects base folder for the current terminal session. A bare
+        name like `mainsequence-dev` maps to `~/mainsequence-dev`.
     password:
         Password (prompted if omitted).
     no_status:
@@ -645,23 +766,55 @@ def login(
     --------
     ```bash
     mainsequence login you@company.com
+    mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
     mainsequence login you@company.com --no-status
     mainsequence login you@company.com --export
     ```
     """
+    current_backend = cfg.backend_url()
+    current_projects_base = cfg.normalize_mainsequence_path(cfg.get_config().get("mainsequence_path"))
+    normalized_backend = cfg.normalize_backend_url(backend) if backend else None
+    normalized_projects_base = cfg.normalize_mainsequence_path(projects_base) if projects_base else None
+
+    if normalized_backend and normalized_backend != current_backend:
+        if not projects_base:
+            error("When using a different backend, you must also specify a different projects base folder.")
+            raise typer.Exit(1)
+        if normalized_projects_base == current_projects_base:
+            error("When using a different backend, the projects base folder must differ from the current one.")
+            raise typer.Exit(1)
+
+    previous_backend_override = os.environ.get("MAIN_SEQUENCE_BACKEND_URL")
+    if normalized_backend:
+        os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
+
     try:
         res = api_login(email, password)
     except ApiError as e:
         error(f"Login failed: {e}")
         raise typer.Exit(1)
+    finally:
+        if normalized_backend:
+            if previous_backend_override is None:
+                os.environ.pop("MAIN_SEQUENCE_BACKEND_URL", None)
+            else:
+                os.environ["MAIN_SEQUENCE_BACKEND_URL"] = previous_backend_override
+
+    if normalized_backend or projects_base:
+        cfg.set_session_overrides(
+            backend_url=normalized_backend,
+            mainsequence_path=projects_base,
+        )
+    else:
+        cfg.clear_session_overrides()
 
     if export:
         access = (res.get("access") or "").replace('"', '\\"')
         refresh = (res.get("refresh") or "").replace('"', '\\"')
         username = (res.get("username") or "").replace('"', '\\"')
-        typer.echo(f'export MAIN_SEQUENCE_USER_TOKEN="{access}"')
-        typer.echo(f'export MAIN_SEQUENCE_REFRESH_TOKEN="{refresh}"')
-        typer.echo(f'export MAIN_SEQUENCE_USERNAME="{username}"')
+        typer.echo(f'export MAINSEQUENCE_ACCESS_TOKEN="{access}"')
+        typer.echo(f'export MAINSEQUENCE_REFRESH_TOKEN="{refresh}"')
+        typer.echo(f'export MAINSEQUENCE_USERNAME="{username}"')
         return
 
     cfg_obj = cfg.get_config()
@@ -710,8 +863,12 @@ def logout(
     mainsequence logout --export
     ```
     """
+    cfg.clear_session_overrides()
     ok = cfg.clear_tokens()
     if export:
+        typer.echo("unset MAINSEQUENCE_ACCESS_TOKEN")
+        typer.echo("unset MAINSEQUENCE_REFRESH_TOKEN")
+        typer.echo("unset MAINSEQUENCE_USERNAME")
         typer.echo("unset MAIN_SEQUENCE_USER_TOKEN")
         typer.echo("unset MAIN_SEQUENCE_REFRESH_TOKEN")
         typer.echo("unset MAIN_SEQUENCE_USERNAME")
@@ -845,7 +1002,7 @@ def settings_show():
     mainsequence settings show
     ```
     """
-    c = cfg.get_config()
+    c = cfg.get_persistent_config()
     typer.echo(
         json.dumps(
             {
@@ -873,7 +1030,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
     mainsequence settings set-base ~/mainsequence
     ```
     """
-    out = cfg.set_config({"mainsequence_path": path})
+    out = cfg.set_mainsequence_path(path)
     success(f"Projects base folder set to: {out['mainsequence_path']}")
 
 
@@ -929,8 +1086,8 @@ def sdk_latest():
 # ---------- project group ----------
 
 
-@project.command("list")
-def project_list():
+@project_list_group.callback(invoke_without_command=True)
+def project_list(ctx: typer.Context):
     """
     List projects visible to the authenticated user.
 
@@ -942,12 +1099,118 @@ def project_list():
     mainsequence project list
     ```
     """
+    if ctx.invoked_subcommand is not None:
+        return
+
     _require_login()
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
     org_slug = _org_slug_from_profile()
     items = get_projects()
     typer.echo(_render_projects_table(items, base, org_slug))
+
+
+def _print_project_data_node_updates(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+) -> None:
+    """
+    List data node updates for a project.
+
+    Uses SDK client `Project.get_data_nodes_updates()` as the single source of truth
+    for payload parsing and shape handling.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID. If omitted, resolve it from `MAIN_SEQUENCE_PROJECT_ID` in `./.env`.
+    timeout:
+        Optional request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project list data_nodes_updates
+    mainsequence project list data_nodes_updates 123
+    mainsequence project list data_nodes_updates 123 --timeout 60
+    ```
+    """
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env()
+
+    _require_login()
+    try:
+        updates = get_project_data_node_updates(project_id, timeout=timeout)
+    except NotLoggedIn:
+        error("Not logged in. Run: mainsequence login <email>")
+        raise typer.Exit(1)
+    except ApiError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    if not updates:
+        info("No data node updates found.")
+        return
+
+    rows: list[list[str]] = []
+    for u in updates:
+        storage = u.get("data_node_storage")
+        if isinstance(storage, dict):
+            storage_value = storage.get("storage_hash") or storage.get("id") or "-"
+        else:
+            storage_value = storage if storage is not None else "-"
+
+        details = u.get("update_details")
+        if isinstance(details, dict):
+            details_id = details.get("id") or "-"
+        else:
+            details_id = details if details is not None else "-"
+
+        rows.append(
+            [
+                str(u.get("id") or "-"),
+                str(u.get("update_hash") or "-"),
+                str(storage_value),
+                str(details_id),
+            ]
+        )
+
+    print_table(
+        "Project Data Node Updates",
+        ["ID", "Update Hash", "Data Node Storage", "Update Details"],
+        rows,
+    )
+    info(f"Total updates: {len(rows)}")
+
+
+@project_list_group.command("data_nodes_updates")
+def project_list_data_nodes_updates_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List data node updates for a project.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project list data_nodes_updates
+    mainsequence project list data_nodes_updates 123
+    mainsequence project list data_nodes_updates 123 --timeout 60
+    ```
+    """
+    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
+
+
+@project.command("get-data-node-updates", hidden=True)
+def project_get_data_node_updates_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence project list data_nodes_updates`.
+    """
+    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
 
 
 @project.command("create")
@@ -1219,7 +1482,7 @@ def project_set_up_locally(
     Workflow:
     - ensure SSH key and optionally register deploy key,
     - clone repository into local projects root,
-    - fetch remote environment and project token,
+    - fetch remote environment and inject current session JWTs,
     - write/update `.env` with local runtime values,
     - optionally scaffold Docker files from default base image.
 
@@ -1302,36 +1565,20 @@ def project_set_up_locally(
         orig_env_text = ""
     env_text = (orig_env_text or "").replace("\r", "")
 
-    # Project token
     try:
-        project_token = get_project_token(project_id)
-    except NotLoggedIn:
-        error("Session expired or refresh failed. Run: mainsequence login <email>")
-        raise typer.Exit(1)
-    except ApiError as e:
-        error(f"Could not fetch project token: {e}")
+        access_token, refresh_token = _current_session_jwt_tokens()
+    except RuntimeError as e:
+        error(str(e))
         raise typer.Exit(1)
 
-    # Write .env (upsert logic mirrors extension)
-    lines = env_text.splitlines()
-
-    def upsert(prefix: str, value: str):
-        nonlocal lines
-        key = prefix + "="
-        for i, ln in enumerate(lines):
-            if ln.startswith(key):
-                lines[i] = f"{prefix}={value}"
-                return
-        if lines and lines[-1] != "":
-            lines.append("")
-        lines.append(f"{prefix}={value}")
-
-    upsert("MAINSEQUENCE_TOKEN", project_token)
-    upsert("TDAG_ENDPOINT", cfg.backend_url())
-    upsert("INGORE_MS_AGENT", "true")
-
-    final_env = "\n".join(lines).replace("\r", "")
-    (target_dir / ".env").write_text(final_env + ("\n" if not final_env.endswith("\n") else ""), encoding="utf-8")
+    final_env = _render_project_runtime_env_text(
+        env_text,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        backend_url=cfg.backend_url(),
+        project_runtime_id=str(project_id),
+    )
+    (target_dir / ".env").write_text(final_env, encoding="utf-8")
 
     # Docker scaffold parity
     if scaffold_docker:
@@ -1482,18 +1729,20 @@ def project_build_local_venv(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project ID to resolve local folder. If omitted, the current directory is used when
+        `MAIN_SEQUENCE_PROJECT_ID` is present in `./.env`.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
+    mainsequence project build_local_venv
     mainsequence project build_local_venv 123
     mainsequence project build_local_venv --path .
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path)
+    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
     venv_path = project_dir / ".venv"
     if venv_path.exists():
         info(f"Skipped: {venv_path} already exists.")
@@ -1561,6 +1810,70 @@ def project_build_local_venv(
             raise typer.Exit(1)
 
     success(f"Local .venv built with Python {python_version}.")
+
+
+@project.command("refresh_token")
+def project_refresh_token(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Refresh local project JWTs in `.env` from the current CLI session.
+
+    Use this when a project has been idle long enough for the previously injected
+    JWTs to expire. The command preserves the rest of the `.env` file and only
+    rewrites the runtime auth keys managed by the CLI.
+
+    Parameters
+    ----------
+    project_id:
+        Project ID to resolve local folder. If omitted, the current directory is used.
+    path:
+        Explicit local path. If omitted, the current directory is used.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project refresh_token
+    mainsequence project refresh_token 123
+    mainsequence project refresh_token --path .
+    ```
+    """
+    _require_login()
+    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else pathlib.Path.cwd()
+    env_path = project_dir / ".env"
+    if not env_path.is_file():
+        error(f".env not found in project root: {env_path}")
+        info("Run: mainsequence project set-up-locally <id> to provision the local runtime first.")
+        raise typer.Exit(1)
+
+    try:
+        access_token, refresh_token = _current_session_jwt_tokens()
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    try:
+        env_text = env_path.read_text(encoding="utf-8")
+    except Exception as e:
+        error(f"Could not read .env: {e}")
+        raise typer.Exit(1)
+
+    inferred_project_id = str(project_id) if project_id is not None else None
+    if inferred_project_id is None:
+        match = re.search(r"-(\d+)$", project_dir.name)
+        if match:
+            inferred_project_id = match.group(1)
+
+    final_env = _render_project_runtime_env_text(
+        env_text,
+        access_token=access_token,
+        refresh_token=refresh_token,
+        backend_url=cfg.backend_url(),
+        project_runtime_id=inferred_project_id,
+    )
+    env_path.write_text(final_env, encoding="utf-8")
+    success(f"Refreshed JWT tokens in: {env_path}")
 
 
 @project.command("freeze-env")

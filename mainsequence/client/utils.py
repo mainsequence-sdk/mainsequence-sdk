@@ -1,3 +1,4 @@
+# mainsequence/client/utils.py
 import base64
 import datetime
 import json
@@ -151,13 +152,17 @@ class JWTAuthProvider(BaseAuthProvider):
         with self._lock:
             if access is not None:
                 self.access_token = access
+                os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
             if refresh is not None:
                 self.refresh_token = refresh
+                os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
 
     def clear(self) -> None:
         with self._lock:
             self.access_token = None
             self.refresh_token = None
+            os.environ.pop("MAINSEQUENCE_ACCESS_TOKEN", None)
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
 
     def _needs_refresh(self) -> bool:
         if not self.access_token:
@@ -202,12 +207,9 @@ class JWTAuthProvider(BaseAuthProvider):
             if not access:
                 raise AuthError("JWT refresh response did not include access token")
 
-            self.access_token = access
-
             # Important if ROTATE_REFRESH_TOKENS=True
             new_refresh = data.get("refresh")
-            if new_refresh:
-                self.refresh_token = new_refresh
+            self.set_tokens(access=access, refresh=new_refresh)
 
     def get_headers(self) -> CaseInsensitiveDict:
         if not self.access_token:
@@ -268,21 +270,15 @@ def build_default_auth_provider() -> BaseAuthProvider:
     if mode == "jwt":
         return JWTAuthProvider()
 
-    if has_drf and has_jwt:
-        raise AuthError(
-            "Both DRF and JWT credentials are set. "
-            "Set MAINSEQUENCE_AUTH_MODE to 'drf' or 'jwt'."
-        )
+    if has_jwt:
+        return JWTAuthProvider()
 
     if has_drf:
         return DRFTokenAuthProvider()
 
-    if has_jwt:
-        return JWTAuthProvider()
-
     raise AuthError(
-        "No auth configured. Set MAINSEQUENCE_TOKEN or "
-        "MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN."
+        "No auth configured. Set MAINSEQUENCE_ACCESS_TOKEN / "
+        "MAINSEQUENCE_REFRESH_TOKEN (preferred) or MAINSEQUENCE_TOKEN."
     )
 
 

@@ -9,7 +9,7 @@ Current project detection aligned with VS Code extension logic:
 - Detect a project by path structure containing ".../projects/<folder>"
 - Extract project id from "<slug>-<digits>" folder suffix
 - If outside configured base, allow detection via .env markers:
-    MAINSEQUENCE_TOKEN, TDAG_ENDPOINT
+    MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, TDAG_ENDPOINT
 - Detect .venv and infer Python version
 """
 
@@ -179,14 +179,22 @@ def _analyze_workspace(workspace_dir: str, base_dir: str) -> tuple[CurrentProjec
 
 def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bool]:
     env_path = str(workspace / ".env")
-    markers = ["MAINSEQUENCE_TOKEN", "TDAG_ENDPOINT"]
+    markers = [
+        "MAINSEQUENCE_ACCESS_TOKEN",
+        "MAINSEQUENCE_REFRESH_TOKEN",
+        "MAINSEQUENCE_TOKEN",
+        "TDAG_ENDPOINT",
+    ]
     try:
         p = workspace / ".env"
         if not p.exists():
             return env_path, False, [], False
         content = p.read_text(encoding="utf-8", errors="replace")
         found = [m for m in markers if re.search(rf"^{re.escape(m)}=", content, flags=re.M)]
-        return env_path, True, found, bool(found)
+        has_auth_marker = bool(
+            {"MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN", "MAINSEQUENCE_TOKEN"}.intersection(found)
+        )
+        return env_path, True, found, has_auth_marker
     except Exception:
         return env_path, False, [], False
 

@@ -58,18 +58,70 @@ class CustomConsoleRenderer(ConsoleRenderer):
 
 def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     """
-    Fetch startup state from backend using current env vars (token, endpoint, command_id).
-    Safe to call later after auth (when MAINSEQUENCE_TOKEN becomes available).
+    Fetch startup state from backend using current env vars (JWT preferred, endpoint, command_id).
+    Safe to call later after auth when access/refresh tokens become available.
     """
-    headers = CaseInsensitiveDict()
-    headers["Content-Type"] = "application/json"
-    headers["Authorization"] = "Token " + os.getenv("MAINSEQUENCE_TOKEN", "INVALID_TOKEN")
+    def _backend_base_url() -> str:
+        return (
+            os.getenv("TDAG_ENDPOINT")
+            or os.getenv("MAINSEQUENCE_ENDPOINT")
+            or "https://main-sequence.app"
+        ).rstrip("/")
 
-    tdag_endpoint=os.getenv("TDAG_ENDPOINT","https://main-sequence.app")
-    if tdag_endpoint is None:
-        raise OSError("TDAG_ENDPOINT is required")
+    def _auth_headers() -> tuple[CaseInsensitiveDict, bool]:
+        headers = CaseInsensitiveDict()
+        headers["Content-Type"] = "application/json"
 
-    endpoint = f'{tdag_endpoint}/orm/api/pods/job/get_job_startup_state/'
+        access_token = (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
+        if access_token:
+            headers["Authorization"] = "Bearer " + access_token
+            return headers, True
+
+        legacy_token = (os.getenv("MAINSEQUENCE_TOKEN") or "").strip()
+        if legacy_token:
+            headers["Authorization"] = "Token " + legacy_token
+            return headers, False
+
+        return headers, False
+
+    def _refresh_access_token() -> bool:
+        refresh_token = (os.getenv("MAINSEQUENCE_REFRESH_TOKEN") or "").strip()
+        if not refresh_token:
+            return False
+
+        try:
+            refresh_resp = requests.post(
+                f"{_backend_base_url()}/auth/jwt-token/token/refresh/",
+                headers={"Content-Type": "application/json"},
+                json={"refresh": refresh_token},
+                timeout=timeout_s,
+            )
+        except Exception:
+            return False
+
+        if refresh_resp.status_code != 200:
+            return False
+
+        try:
+            data = refresh_resp.json()
+        except Exception:
+            return False
+
+        access_token = str(data.get("access") or "").strip()
+        if not access_token:
+            return False
+
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access_token
+        new_refresh_token = str(data.get("refresh") or "").strip()
+        if new_refresh_token:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = new_refresh_token
+        return True
+
+    if not os.getenv("MAINSEQUENCE_ACCESS_TOKEN") and os.getenv("MAINSEQUENCE_REFRESH_TOKEN"):
+        _refresh_access_token()
+
+    headers, using_jwt = _auth_headers()
+    endpoint = f"{_backend_base_url()}/orm/api/pods/job/get_job_startup_state/"
 
     command_id = os.getenv("COMMAND_ID")
     params: dict[str, Any] = {}
@@ -77,6 +129,10 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         params["command_id"] = command_id
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
+    if resp.status_code in {401, 403} and using_jwt and _refresh_access_token():
+        headers, _ = _auth_headers()
+        resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
+
     if resp.status_code != 200:
         # Do not spam stdout during CLI usage when auth context is not present yet.
         # Keep this visible only when explicitly debugging logger bootstrap.

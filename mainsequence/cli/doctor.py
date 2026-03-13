@@ -71,7 +71,11 @@ def run_doctor() -> None:
     hints = []
     if os.environ.get("MAIN_SEQUENCE_BACKEND_URL") is not None:
         hints.append(("MAIN_SEQUENCE_BACKEND_URL", os.environ.get("MAIN_SEQUENCE_BACKEND_URL") or ""))
+    if os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"):
+        hints.append(("MAINSEQUENCE_ACCESS_TOKEN", "(set)"))
+    if os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"):
+        hints.append(("MAINSEQUENCE_REFRESH_TOKEN", "(set)"))
     if os.environ.get("MAIN_SEQUENCE_USER_TOKEN"):
-        hints.append(("MAIN_SEQUENCE_USER_TOKEN", "(set)"))
+        hints.append(("MAIN_SEQUENCE_USER_TOKEN", "(legacy set)"))
     if hints:
         print_kv("Environment overrides", hints)

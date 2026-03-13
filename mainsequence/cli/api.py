@@ -9,7 +9,7 @@ HTTP API wrapper for MainSequence CLI.
 This module is intentionally aligned with the VS Code extension implementation:
 - Token login + refresh
 - authed() retries after refresh on 401
-- Project helpers: list projects, get env text, deploy key, project token
+- Project helpers: list projects, get env text, deploy key
 
 Any behavioral differences vs the VS Code extension should be considered bugs.
 """
@@ -22,7 +22,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from .config import backend_url, get_tokens, save_tokens, set_env_access
+from .config import backend_url, get_tokens, save_tokens
 
 AUTH_PATHS = {
     "obtain": "/auth/jwt-token/token/",
@@ -63,9 +63,6 @@ def _normalize_api_path(p: str) -> str:
 
 def _access_token() -> str | None:
     """Return access token from session environment."""
-    t = os.environ.get("MAIN_SEQUENCE_USER_TOKEN")
-    if t:
-        return t
     tok = get_tokens()
     return tok.get("access")
 
@@ -108,7 +105,6 @@ def login(email: str, password: str) -> dict:
         raise ApiError("Server did not return expected tokens.")
 
     persisted = save_tokens(email, access, refresh)
-    set_env_access(access)
     return {"username": email, "backend": backend_url(), "access": access, "refresh": refresh, "persisted": bool(persisted)}
 
 
@@ -132,9 +128,9 @@ def refresh_access() -> str:
     if not access:
         raise NotLoggedIn("Refresh succeeded but no access token returned.")
 
+    new_refresh = data.get("refresh") or refresh
     tokens = get_tokens()
-    save_tokens(tokens.get("username") or "", access, refresh)
-    set_env_access(access)
+    save_tokens(tokens.get("username") or "", access, new_refresh)
     return access
 
 
@@ -296,6 +292,114 @@ def get_project(project_id: int | str) -> dict:
     if not isinstance(data, dict):
         raise ApiError("Project fetch response had unexpected payload shape.")
     return data
+
+
+def get_project_data_node_updates(project_id: int | str, *, timeout: int | None = None) -> list[dict[str, Any]]:
+    """
+    Fetch project data node updates via SDK client model.
+
+    Single source of truth:
+      - delegates response parsing to `Project.get_data_nodes_updates()`
+      - avoids duplicating payload-shape logic in the CLI API wrapper
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_project_root_url = None
+
+    try:
+        # Configure client auth/runtime to use JWT credentials from CLI login.
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_tdag import Project as ClientProject
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_project_root_url = getattr(ClientProject, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientProject.ROOT_URL = root_url
+
+        project = ClientProject.get(pk=project_id, timeout=timeout)
+        updates = project.get_data_nodes_updates(timeout=timeout)
+
+        out: list[dict[str, Any]] = []
+        for u in updates:
+            if isinstance(u, dict):
+                out.append(u)
+            elif hasattr(u, "model_dump"):
+                out.append(u.model_dump())
+            else:
+                out.append({"id": getattr(u, "id", None)})
+        return out
+
+    except Exception as e:
+        # Delay class references to after import path above.
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {project_id}")
+        raise ApiError(f"Data node updates fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_project_root_url is not None:
+            try:
+                from mainsequence.client.models_tdag import Project as ClientProject
+
+                ClientProject.ROOT_URL = old_project_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
 
 
 def _json_results(r: requests.Response) -> list[dict]:
@@ -473,47 +577,3 @@ def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> No
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()
-
-
-def get_project_token(project_id: int | str) -> str:
-    """
-    Fetch the project's token using the current access token.
-
-    Parity: VS Code extension accepts:
-      - {"token": "<string>"}
-      - {"development": ["<token>", ...]} (legacy/alternate shape)
-
-    Raises:
-        NotLoggedIn: if auth fails
-        ApiError: for non-OK responses or missing token
-    """
-    r = authed("GET", f"/orm/api/pods/projects/{project_id}/get_project_token/")
-    if not r.ok:
-        msg = r.text or ""
-        try:
-            if "application/json" in (r.headers.get("content-type") or "").lower():
-                data = r.json()
-                msg = data.get("detail") or data.get("message") or msg
-        except Exception:
-            pass
-        raise ApiError(f"Project token fetch failed ({r.status_code}). {msg}".strip())
-
-    try:
-        content_type = (r.headers.get("content-type") or "").lower()
-        if "application/json" not in content_type:
-            raise ApiError(
-                f"Project token response was not JSON (content-type: {r.headers.get('content-type')})."
-            )
-        data = r.json()
-    except ValueError as e:
-        raise ApiError(f"Project token response contained invalid JSON: {e}") from e
-
-    token = data.get("token")
-    if isinstance(token, str) and token:
-        return token
-
-    dev = data.get("development")
-    if isinstance(dev, list) and dev and isinstance(dev[0], str) and dev[0]:
-        return dev[0]
-
-    raise ApiError("Project token response did not include a valid token.")
