@@ -35,11 +35,18 @@ class VolatilityConfig(BaseModel):
 
 
 class RandomDataNodeConfig(BaseModel):
-    mean: float = Field(..., ignore_from_storage_hash=False, title="Mean",
-                        description="Mean for the random normal distribution generator")
-    std: VolatilityConfig = Field(VolatilityConfig(center=1, skew=True), ignore_from_storage_hash=True,
-                                  title="Vol Config",
-                                  description="Vol Configuration")
+    mean: float = Field(
+        ...,
+        title="Mean",
+        description="Mean for the random normal distribution generator",
+        json_schema_extra={"ignore_from_storage_hash": False},
+    )
+    std: VolatilityConfig = Field(
+        VolatilityConfig(center=1, skew=True),
+        title="Vol Config",
+        description="Vol Configuration",
+        json_schema_extra={"ignore_from_storage_hash": True},
+    )
 
 
 class DailyRandomNumber(DataNode):
@@ -82,6 +89,8 @@ class DailyRandomNumber(DataNode):
         return {}
 ```
 
+In Pydantic v2, passing `ignore_from_storage_hash` via `json_schema_extra` avoids a deprecation warning while preserving the same Main Sequence behavior.
+
 ### DataNode Recipe
 
 To create a data node we must follow the same recipe every time:
@@ -95,12 +104,12 @@ To create a data node we must follow the same recipe every time:
 
 The update method has only one requirement: it should return a `pandas.DataFrame` with the following characteristics:
 
-* Update method always needs to return a `pd.DataFrame()`
+* The `update()` method must always return a `pd.DataFrame()`.
 ##### Data Frame Structure Requirements
 * The first index level must always be of type `datetime.datetime(timezone="UTC")`.
 * All column names in the DataFrame must be lowercase and no more than 63 characters long.
 * Column data types are only allowed to be `float`, `int`, or `str`. Any date information must be transformed to `int` or `float`.
-* The DataFrame must not be empty. If there is no new data to return, an empty `pd.DataFrame()` must be returned.
+* If there is new data to return, the DataFrame must not be empty. If there is no new data to return, return an empty `pd.DataFrame()`.
 * A MultiIndex DataFrame is only allowed when the first index level is of type `datetime.datetime(timezone="UTC")`, the second index level is of type `str`, and its name is `unique_identifier`.
 * For a single-index DataFrame, the index must not contain duplicate values. For a MultiIndex DataFrame, there must be no duplicate combinations of `(time_index, unique_identifier)`.
 * The name of the first index level must always be `time_index`, and it is strongly recommended that it represents the observation time of the time series. For example, if the DataFrame stores time bars, `time_index` should represent the moment the bar is observed, not when the bar started.
@@ -110,23 +119,25 @@ The update method has only one requirement: it should return a `pandas.DataFrame
 Next, create `scripts\random_number_launcher.py` to run the node:
 
 ```python
-from src.data_nodes.example_nodes import DailyRandomNumber
+from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig
+
 
 def main():
     daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
     daily_node.run()
 
+
 if __name__ == "__main__":
     main()
 ```
 
-To run and debug in VS Code, you can configure a launch file at `.vscode\launch.json`:
+To run and debug in VS Code, you can configure a launch file at `.vscode\launch.json`.
 
-you can also just as copilot or your ai assitant
+You can also ask Copilot or another AI assistant to generate it for `scripts/random_number_launcher.py`:
 
 ```text
-Build me a debug launcher called "Debug random_number_launcher" 
-for my file src/random_number_launcher
+Build me a debug launcher called "Debug random_number_launcher"
+for my file scripts/random_number_launcher.py
 ```
 
 
@@ -176,7 +187,7 @@ This will execute the configuration. Then open:
 
 https://main-sequence.app/dynamic-table-metadatas/
 
-Search for `dailyrandom`. You should see your data node and its table.
+Search for `example_random_number`. You should see your data node and its table.
 
 ![img.png](../img/tutorial/table_search.png)
 
@@ -264,9 +275,9 @@ Now to run this launcher, add a new debug configuration to your `.vscode/launch.
 ```
 Then back to the `random_daily_addition_launcher.py` file and run the configuration from the Run/Debug dropdown at the top-right, choose "Debug random_daily_addition_launcher” and then choose new configuration with "Debug random_daily_addition_launcher" name. After it runs, return to the Dynamic Table Metadatas page to see the new table:
 
-https://main-sequence.app/dynamic-table-metadatas/?search=dailyrandom&storage_hash=&identifier=
+https://main-sequence.app/dynamic-table-metadatas/
 
-Open the `dailyrandomaddition_XXXXX` table to explore it. For a visual of the dependency structure, click the **update process** arrow and then the **update hash**.
+Because `DailyRandomAddition` does not define `get_table_metadata()` in this example, the new table may not have a friendly identifier yet. Open the most recently created table from this run, or match it by its update process, to explore it. If you want a predictable human-readable table name, add `get_table_metadata()` to `DailyRandomAddition` as well. For a visual of the dependency structure, click the **update process** arrow and then the **update hash**.
 
 ![img.png](../img/tutorial/update_hash.png)
 
