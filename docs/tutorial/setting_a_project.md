@@ -4,11 +4,18 @@ If you are building a pricing engine, a research pipeline, or a dashboard, the b
 
 Main Sequence removes that setup overhead. A project gives you a production-ready workspace where code, data, and compute are already connected.
 
-This tutorial uses a **CLI-only** flow:
-1. create a project,
-2. map it locally,
-3. move into that local folder,
-4. build the local Python environment.
+This tutorial uses a **CLI-only** flow.
+
+## Quick Summary
+
+In this part, you will:
+
+- create a new project from the CLI
+- map the project to your local machine
+- open the project folder and build the local Python environment
+- learn the default project parameters used by the platform
+
+DataNodes created in this part: **none**.
 
 For the GUI + VS Code extension flow, see [Setting a Project (GUI + VS Code Extension)](./setting_a_project_gui.md).
 

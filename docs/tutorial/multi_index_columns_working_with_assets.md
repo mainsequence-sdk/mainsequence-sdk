@@ -1,5 +1,16 @@
 # Part 3: Multi-Index Columns and Working with Assets
 
+## Quick Summary
+
+In this part, you will:
+
+- build an asset-based DataNode that writes a `(time_index, unique_identifier)` MultiIndex table
+- use `get_asset_list()` to scope updates by asset
+- run multiple updaters that write to the same dataset
+- understand table identity (`storage_hash`) vs updater identity (`update_hash`)
+
+DataNodes created in this part: **`SimulatedPrices`**.
+
 In Part 2, you built a basic `DataNode`. In this part, you will build an asset-based `DataNode` that stores simulated security prices in a two-level `MultiIndex` DataFrame.
 
 You can reuse this pattern for prices, signals, news, or any other asset-centric dataset.

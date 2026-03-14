@@ -6,6 +6,17 @@ Main Sequence is designed to remove that bottleneck. A project gives you a produ
 
 In this tutorial, you will create a project using the platform UI and set it up locally with the VS Code extension.
 
+## Quick Summary
+
+In this part, you will:
+
+- create a project in the Main Sequence web app
+- install and use the VS Code extension
+- map the project locally and open it in VS Code
+- verify project readiness before coding
+
+DataNodes created in this part: **none**.
+
 ## Setting a Project (Part 1 - GUI + VS Code Extension)
 
 This guide uses the web application and the VS Code extension flow.

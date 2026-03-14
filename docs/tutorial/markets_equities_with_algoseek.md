@@ -1,8 +1,18 @@
-
 # Getting Started 4 - Markets: Equities example with Algoseek
 
 In the previous part of the tutorial, we focused on the data layer, introducing DataNodes and how to work with them.
 In this part, we’ll shift to the financial layer and explore how to integrate financial systems using the Markets platform.
+
+## Quick Summary
+
+In this part, you will:
+
+- connect DataNodes with Main Sequence Markets concepts (especially Assets)
+- hydrate and reconcile assets from the Algoseek security master
+- integrate market data ingestion patterns for equities workflows
+- understand the DataNode update lifecycle in a real provider integration
+
+DataNodes created in this part: **Algoseek asset hydration and market-data ingestion nodes** (from `src/data_nodes/algo_seek_nodes.py`).
 
 ## Main Sequence Markets
 

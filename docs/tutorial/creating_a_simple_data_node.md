@@ -1,5 +1,16 @@
 # Creating a Data Node (Part 2)
 
+## Quick Summary
+
+In this part, you will:
+
+- create your first DataNode and run it locally
+- add a second DataNode that depends on the first one
+- debug launchers from VS Code and inspect persisted tables
+- learn the difference between `update_hash` and `storage_hash`
+
+DataNodes created in this part: **`DailyRandomNumber`** and **`DailyRandomAddition`**.
+
 ## 2. Creating a Data Node
 
 **Key concepts:** data DAGs, `DataNode`, dependencies, `update_hash`, and `storage_hash`.

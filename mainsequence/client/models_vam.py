@@ -1181,13 +1181,6 @@ class FutureUSDMMixin(AssetMixin, BasePydanticModel):
     last_trade_time: datetime.datetime | None = None
     currency_pair: AssetCurrencyPair
 
-    def get_spot_reference_asset_unique_identifier(self):
-
-        base_asset_symbol = self.currency_pair.base_asset.unique_identifier
-        if self.execution_venue_symbol == CONSTANTS.BINANCE_FUTURES_EV_SYMBOL:
-            # replace() will do nothing if “1000SHIB” isn’t present
-            return base_asset_symbol.replace("1000SHIB", "SHIB")
-        return base_asset_symbol
 
 
 class AssetFutureUSDM(FutureUSDMMixin, BaseObjectOrm):
