@@ -564,7 +564,7 @@ def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "list", "data_nodes_updates", "123"])
+    result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list", "123"])
     assert result.exit_code == 0
     assert "Project Data Node Updates" in result.output
     assert "abc123" in result.output
@@ -1143,7 +1143,7 @@ def test_project_get_data_node_updates_defaults_to_env_project_id(cli_mod, runne
 
     monkeypatch.setattr(cli_mod, "get_project_data_node_updates", _get_updates)
 
-    result = runner.invoke(cli_mod.app, ["project", "list", "data_nodes_updates"])
+    result = runner.invoke(cli_mod.app, ["project", "data-node-updates", "list"])
     assert result.exit_code == 0
     assert captured["project_id"] == 123
     assert "abc123" in result.output

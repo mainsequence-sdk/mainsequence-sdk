@@ -100,6 +100,7 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
+project_data_node_updates_group = typer.Typer(help="Project data node update commands")
 project_images_group = typer.Typer(help="Project image commands")
 project_jobs_group = typer.Typer(help="Project job commands")
 project_job_runs_group = typer.Typer(help="Project job run commands")
@@ -108,6 +109,7 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
+project.add_typer(project_data_node_updates_group, name="data-node-updates")
 project.add_typer(project_images_group, name="images")
 project.add_typer(project_jobs_group, name="jobs")
 project_jobs_group.add_typer(project_job_runs_group, name="runs")
@@ -1540,9 +1542,9 @@ def _print_project_data_node_updates(
     Examples
     --------
     ```bash
-    mainsequence project list data_nodes_updates
-    mainsequence project list data_nodes_updates 123
-    mainsequence project list data_nodes_updates 123 --timeout 60
+    mainsequence project data-node-updates list
+    mainsequence project data-node-updates list 123
+    mainsequence project data-node-updates list 123 --timeout 60
     ```
     """
     if project_id is None:
@@ -1593,8 +1595,8 @@ def _print_project_data_node_updates(
     info(f"Total updates: {len(rows)}")
 
 
-@project_list_group.command("data_nodes_updates")
-def project_list_data_nodes_updates_cmd(
+@project_data_node_updates_group.command("list")
+def project_data_node_updates_list_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID"),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -1604,10 +1606,21 @@ def project_list_data_nodes_updates_cmd(
     Examples
     --------
     ```bash
-    mainsequence project list data_nodes_updates
-    mainsequence project list data_nodes_updates 123
-    mainsequence project list data_nodes_updates 123 --timeout 60
+    mainsequence project data-node-updates list
+    mainsequence project data-node-updates list 123
+    mainsequence project data-node-updates list 123 --timeout 60
     ```
+    """
+    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
+
+
+@project_list_group.command("data_nodes_updates", hidden=True)
+def project_list_data_nodes_updates_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence project data-node-updates list`.
     """
     _print_project_data_node_updates(project_id=project_id, timeout=timeout)
 
@@ -1618,7 +1631,7 @@ def project_get_data_node_updates_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Backward-compatible alias for `mainsequence project list data_nodes_updates`.
+    Backward-compatible alias for `mainsequence project data-node-updates list`.
     """
     _print_project_data_node_updates(project_id=project_id, timeout=timeout)
 

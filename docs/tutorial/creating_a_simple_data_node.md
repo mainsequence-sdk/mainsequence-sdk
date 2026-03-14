@@ -211,7 +211,7 @@ Click the **storage hash**, then in the table's context menu (the **…** button
 You can also confirm that your launcher created `data_node_updates` directly from the terminal:
 
 ```bash
-mainsequence project list data_nodes_updates
+mainsequence project data-node-updates list
 ```
 
 If your local project auth has expired or your `.env` does not yet contain fresh project JWTs, refresh them first:
@@ -357,7 +357,7 @@ You'll see that you have a single table with three different update processes (y
 
 You can also monitor the data nodes updates via the cli by running:
 ```shell
-mainsequence project list data_nodes_updates
+mainsequence project data-node-updates list
 
                                     Project Data Node Updates                                     
                                                                                                   

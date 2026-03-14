@@ -62,8 +62,8 @@ mainsequence project jobs runs logs 501
 mainsequence project jobs runs logs 501 --max-wait-seconds 900
 mainsequence project jobs run 91
 mainsequence project jobs create --name daily-run --execution-path scripts/test.py
-mainsequence project list data_nodes_updates
-mainsequence project list data_nodes_updates 123
+mainsequence project data-node-updates list
+mainsequence project data-node-updates list 123
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
@@ -103,6 +103,7 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
 - `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.
+- `mainsequence project data-node-updates list` lists data node updates through the SDK client `Project.get_data_nodes_updates()` path.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
 - `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
