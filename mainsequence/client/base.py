@@ -118,9 +118,11 @@ class BaseObjectOrm:
         "SourceTableConfiguration": "ts_manager/source_table_config",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
+        "JobRun": "pods/job-run",
         "Constant": "pods/constant",
         "Secret": "pods/secret",
         "ProjectBaseImage":"pods/project-base-image",
+        "ProjectImage":"pods/project-image",
         "GithubOrganization": "pods/github-organization",
         "JobApi":"pods/job-api",
 

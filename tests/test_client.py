@@ -1,5 +1,7 @@
 import time
 
+import pytest
+
 import mainsequence.client as msc
 
 
@@ -56,9 +58,31 @@ def test_project_data_nodes_updates():
         print(data_node_update)
 
 
+def test_project_image_filter():
+    images = msc.ProjectImage.filter()
+    if not images:
+        pytest.skip("No project images available for filter test.")
 
-users=msc.User.filter()
+    image = images[0]
+    project_id = image.related_project.id if hasattr(image.related_project, "id") else image.related_project
+    repo_hash = image.project_repo_hash
 
-msc.User.get(id=users[0].id,serializer="full")
+    filtered_by_project = msc.ProjectImage.filter(related_project__id__in=[project_id])
+    assert any(img.id == image.id for img in filtered_by_project)
 
-a=5
+    filtered_by_hash = msc.ProjectImage.filter(project_repo_hash=repo_hash)
+    assert any(img.id == image.id for img in filtered_by_hash)
+
+    filtered_by_hash_in = msc.ProjectImage.filter(project_repo_hash__in=[repo_hash])
+    assert any(img.id == image.id for img in filtered_by_hash_in)
+
+    with pytest.raises(ValueError):
+        msc.ProjectImage.filter(related_project=project_id)
+
+
+test_project_image_filter()
+# users=msc.User.filter()
+#
+# msc.User.get(id=users[0].id,serializer="full")
+#
+# a=5

@@ -3,7 +3,7 @@
     - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
     - [Part 1A — Setting a Project (GUI + VS Code Extension)](tutorial/setting_a_project_gui.md)
     - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
-    - [Part 3 — Multi-Index Columns](tutorial/getting_started_2.md)
+    - [Part 3 — Multi-Index Columns and Working with Assets](tutorial/multi_index_columns_working_with_assets.md)
     - [Part 4 — Orchestration](tutorial/getting_started_3.md)
     - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/getting_started_4.md)
     - [Part 4.2 — Markets: Fixed Income Custom Assets](tutorial/getting_started_4_1.md)

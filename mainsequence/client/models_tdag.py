@@ -2649,6 +2649,155 @@ class Project(BasePydanticModel, BaseObjectOrm):
         )
 
 
+
+class ProjectImage(BasePydanticModel, BaseObjectOrm):
+    """
+    Image build from a a project
+    """
+
+    id: int
+    project_repo_hash: str
+    related_project: int | Project  = None
+    base_image:int | ProjectBaseImage | None  = None #backward compatiblity old Images iwth None
+    is_ready:bool
+
+    @classmethod
+    def _normalize_filter_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        """
+        Validate filter kwargs against the backend-supported ProjectImage filters.
+
+        Supported filters:
+          - search
+          - related_project__id__in
+          - project_repo_hash
+          - project_repo_hash__in
+        """
+        allowed = {
+            "search",
+            "related_project__id__in",
+            "project_repo_hash",
+            "project_repo_hash__in",
+        }
+        unexpected = sorted(k for k in kwargs.keys() if k not in allowed)
+        if unexpected:
+            raise ValueError(
+                "Unsupported ProjectImage filter(s): "
+                + ", ".join(unexpected)
+                + ". Allowed filters: search, related_project__id__in, project_repo_hash, project_repo_hash__in."
+            )
+
+        normalized = dict(kwargs)
+        if "search" in normalized and normalized["search"] is not None:
+            normalized["search"] = str(normalized["search"]).strip()
+
+        if "related_project__id__in" in normalized:
+            value = normalized["related_project__id__in"]
+            if value is None:
+                normalized["related_project__id__in"] = []
+            elif isinstance(value, (list, tuple, set)):
+                normalized["related_project__id__in"] = [
+                    cls._coerce_id(v, field_name="related_project__id__in") for v in value
+                ]
+            else:
+                normalized["related_project__id__in"] = [
+                    cls._coerce_id(value, field_name="related_project__id__in")
+                ]
+
+        if "project_repo_hash" in normalized and normalized["project_repo_hash"] is not None:
+            normalized["project_repo_hash"] = str(normalized["project_repo_hash"]).strip()
+
+        if "project_repo_hash__in" in normalized:
+            value = normalized["project_repo_hash__in"]
+            if value is None:
+                normalized["project_repo_hash__in"] = []
+            elif isinstance(value, (list, tuple, set)):
+                normalized["project_repo_hash__in"] = [str(v).strip() for v in value]
+            else:
+                normalized["project_repo_hash__in"] = [str(value).strip()]
+
+        return normalized
+
+    @staticmethod
+    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
+        """
+        Accept:
+          - None
+          - int
+          - any object with attribute `.id`
+          - dict-like with key "id"
+        """
+        if obj is None:
+            return None
+        if isinstance(obj, int):
+            return obj
+        if hasattr(obj, "id") and obj.id is not None:
+            return int(obj.id)
+        if isinstance(obj, dict) and obj.get("id") is not None:
+            return int(obj["id"])
+        raise TypeError(
+            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
+        )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        project_repo_hash: str,
+        related_project: int | Project | None = None,
+        related_project_id: int | Project | None = None,
+        base_image: int | ProjectBaseImage | None = None,
+        base_image_id: int | ProjectBaseImage | None = None,
+        timeout=None,
+        files=None,
+        **kwargs,
+    ) -> ProjectImage:
+        """
+        Create a project image.
+        """
+        payload: dict[str, Any] = {"project_repo_hash": project_repo_hash}
+
+        project_ref = related_project_id if related_project_id is not None else related_project
+        project_id = cls._coerce_id(project_ref, field_name="related_project")
+        if project_id is not None:
+            payload["related_project_id"] = project_id
+
+        base_image_ref = base_image_id if base_image_id is not None else base_image
+        image_id = cls._coerce_id(base_image_ref, field_name="base_image")
+        if image_id is not None:
+            payload["base_image_id"] = image_id
+
+        payload.update(kwargs)
+        data = cls.serialize_for_json(payload)
+        request_payload = {"json": data}
+        if files:
+            request_payload["files"] = files
+
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{cls.get_object_url()}/",
+            payload=request_payload,
+            time_out=timeout,
+        )
+        if r.status_code not in (200, 201, 202):
+            raise_for_response(r, payload=request_payload)
+        return cls(**r.json())
+
+    @classmethod
+    def filter(cls, timeout=None, **kwargs):
+        kwargs = cls._normalize_filter_kwargs(kwargs)
+        return super().filter(timeout=timeout, **kwargs)
+
+    @classmethod
+    def iter_filter(cls, timeout=None, **kwargs):
+        kwargs = cls._normalize_filter_kwargs(kwargs)
+        return super().iter_filter(timeout=timeout, **kwargs)
+
+
+
+
+
 class JobApi(BasePydanticModel, BaseObjectOrm):
     uid: str
     name: str = Field(..., max_length=255)

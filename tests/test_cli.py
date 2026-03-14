@@ -81,6 +81,27 @@ def test_settings_defaults_to_show(cli_mod, runner, monkeypatch):
     assert "mainsequence_path" in result.output
 
 
+def test_pydantic_cli_metadata_from_source():
+    metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
+    meta = metadata_mod.get_cli_field_metadata(
+        "mainsequence.client.models_helpers.Job",
+        "execution_path",
+    )
+    assert meta.label == "Execution path"
+    assert "content root" in meta.description
+    assert "scripts/test.py" in meta.examples
+
+
+def test_project_jobs_create_help_uses_pydantic_metadata(cli_mod, runner):
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "create", "--help"])
+    assert result.exit_code == 0
+    assert "Human-readable job" in result.output
+    assert "feature build" in result.output
+    assert "scripts/test.py" in result.output
+    assert "Five-field crontab" in result.output
+    assert "day_of_week" in result.output
+
+
 def test_settings_show_ignores_session_overrides(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -607,6 +628,498 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
+def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProjectImage:
+        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+
+        @classmethod
+        def create(cls, *, project_repo_hash, related_project_id=None, base_image_id=None, timeout=None):
+            captured["project_repo_hash"] = project_repo_hash
+            captured["related_project_id"] = related_project_id
+            captured["base_image_id"] = base_image_id
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            return types.SimpleNamespace(
+                model_dump=lambda: {
+                    "id": 77,
+                    "project_repo_hash": project_repo_hash,
+                    "related_project": related_project_id,
+                    "base_image": base_image_id,
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.ProjectImage = FakeProjectImage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.create_project_image(project_repo_hash="abc123", related_project_id=123, base_image_id=22)
+    assert captured["project_repo_hash"] == "abc123"
+    assert captured["related_project_id"] == 123
+    assert captured["base_image_id"] == 22
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["id"] == 77
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProjectImage:
+        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            if "related_project__id__in" in kwargs:
+                return [
+                    types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 77,
+                            "project_repo_hash": "abc123",
+                            "related_project": 123,
+                            "base_image": {"id": 22, "title": "Python 3.12"},
+                        }
+                    )
+                ]
+            return []
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.ProjectImage = FakeProjectImage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_project_images(related_project_id=123)
+    assert captured["filters"][0] == {"related_project__id__in": [123]}
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [
+        {
+            "id": 77,
+            "project_repo_hash": "abc123",
+            "related_project": 123,
+            "base_image": {"id": 22, "title": "Python 3.12"},
+        }
+    ]
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJob:
+        ROOT_URL = "https://old.test/orm/api/pods/job"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            if "project" in kwargs:
+                return [
+                    types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 91,
+                            "name": "daily-run",
+                            "project_repo_hash": "abc123",
+                            "execution_path": "src.jobs.daily:main",
+                            "app_name": None,
+                            "task_schedule": {
+                                "name": "Every hour",
+                                "task": "daily-run",
+                                "schedule": {"type": "interval", "every": 1, "period": "hours"},
+                            },
+                            "related_image": 77,
+                        }
+                    )
+                ]
+            return []
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.Job = FakeJob
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.list_project_jobs(project_id=123)
+    assert captured["filters"][0] == {"project": 123}
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [
+        {
+            "id": 91,
+            "name": "daily-run",
+            "project_repo_hash": "abc123",
+            "execution_path": "src.jobs.daily:main",
+            "app_name": None,
+            "task_schedule": {
+                "name": "Every hour",
+                "task": "daily-run",
+                "schedule": {"type": "interval", "every": 1, "period": "hours"},
+            },
+            "related_image": 77,
+        }
+    ]
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJob:
+        ROOT_URL = "https://old.test/orm/api/pods/job"
+
+        @classmethod
+        def create(
+            cls,
+            *,
+            name,
+            project_id,
+            execution_path=None,
+            app_name=None,
+            task_schedule=None,
+            cpu_request=None,
+            memory_request=None,
+            gpu_request=None,
+            gpu_type=None,
+            spot=None,
+            max_runtime_seconds=None,
+            related_image_id=None,
+            timeout=None,
+        ):
+            captured["payload"] = {
+                "name": name,
+                "project_id": project_id,
+                "execution_path": execution_path,
+                "app_name": app_name,
+                "task_schedule": task_schedule,
+                "cpu_request": cpu_request,
+                "memory_request": memory_request,
+                "gpu_request": gpu_request,
+                "gpu_type": gpu_type,
+                "spot": spot,
+                "max_runtime_seconds": max_runtime_seconds,
+                "related_image_id": related_image_id,
+                "timeout": timeout,
+            }
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            return types.SimpleNamespace(model_dump=lambda: {"id": 91, "task_schedule": task_schedule})
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.Job = FakeJob
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    schedule = {"schedule": {"type": "interval", "every": 1, "period": "hours"}, "one_off": False}
+    out = api_mod.create_project_job(
+        name="demo-job",
+        project_id=123,
+        execution_path="scripts/test.py",
+        task_schedule=schedule,
+        cpu_request="0.25",
+        memory_request="0.5",
+        spot=False,
+        max_runtime_seconds=86400,
+        related_image_id=77,
+    )
+    assert captured["payload"]["task_schedule"] == schedule
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == {"id": 91, "task_schedule": schedule}
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJob:
+        ROOT_URL = "https://old.test/orm/api/pods/job"
+
+        @classmethod
+        def get(cls, pk, timeout=None):
+            captured["job_id_arg"] = pk
+            return types.SimpleNamespace(
+                run_job=lambda timeout=None: {
+                    "id": 501,
+                    "job": pk,
+                    "status": "QUEUED",
+                    "unique_identifier": "jobrun_abc123",
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.Job = FakeJob
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.run_project_job(91)
+    assert captured["job_id_arg"] == 91
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == {
+        "id": 501,
+        "job": 91,
+        "status": "QUEUED",
+        "unique_identifier": "jobrun_abc123",
+    }
+
+
+def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJobRun:
+        ROOT_URL = "https://old.test/orm/api/pods/job-run"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda: {
+                        "id": 501,
+                        "name": "daily-run-1",
+                        "status": "COMPLETED",
+                        "unique_identifier": "jobrun_abc123",
+                    }
+                )
+            ]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.JobRun = FakeJobRun
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.list_project_job_runs(job_id=91)
+    assert captured["filters"][0] == {"job__id": [91]}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [
+        {
+            "id": 501,
+            "name": "daily-run-1",
+            "status": "COMPLETED",
+            "unique_identifier": "jobrun_abc123",
+        }
+    ]
+
+
+def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJobRun:
+        ROOT_URL = "https://old.test/orm/api/pods/job-run"
+
+        @classmethod
+        def get(cls, pk, timeout=None):
+            captured["job_run_id_arg"] = pk
+            return types.SimpleNamespace(
+                get_logs=lambda timeout=None: {
+                    "job_run_id": pk,
+                    "status": "RUNNING",
+                    "rows": ["first line"],
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.JobRun = FakeJobRun
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.get_project_job_run_logs(501)
+    assert captured["job_run_id_arg"] == 501
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == {
+        "job_run_id": 501,
+        "status": "RUNNING",
+        "rows": ["first line"],
+    }
+
+
 def test_project_get_data_node_updates_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
@@ -635,6 +1148,471 @@ def test_project_get_data_node_updates_defaults_to_env_project_id(cli_mod, runne
     assert captured["project_id"] == 123
     assert "abc123" in result.output
     assert "storage-xyz" in result.output
+
+
+def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123",
+                "base_image": {"id": 22, "title": "Python 3.12"},
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "images", "list"])
+    assert result.exit_code == 0
+    assert "Project Images" in result.output
+    assert "abc123" in result.output
+    assert "Python 3.12" in result.output
+    assert "Total images: 1" in result.output
+
+
+def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_jobs",
+        lambda project_id, timeout=None: [
+            {
+                "id": 91,
+                "name": "daily-run",
+                "project_repo_hash": "abc123",
+                "execution_path": "src.jobs.daily:main",
+                "app_name": None,
+                "task_schedule": {
+                    "name": "Every hour",
+                    "task": "daily-run",
+                    "schedule": {"type": "interval", "every": 1, "period": "hours"},
+                },
+                "related_image": 77,
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "list"])
+    assert result.exit_code == 0
+    assert "Project Jobs" in result.output
+    assert "daily-run" in result.output
+    assert "abc123" in result.output
+    assert "Every" in result.output
+    assert "hour:" in result.output
+    assert "every 1" in result.output
+    assert "hours" in result.output
+    assert "Total jobs: 1" in result.output
+
+
+def test_project_jobs_run(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "run_project_job",
+        lambda job_id, timeout=None: {
+            "id": 501,
+            "job": job_id,
+            "status": "QUEUED",
+            "unique_identifier": "jobrun_abc123",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "run", "91"])
+    assert result.exit_code == 0
+    assert "Project job run requested: job_id=91" in result.output
+    assert "jobrun_abc123" in result.output
+    assert "QUEUED" in result.output
+
+
+def test_project_job_runs_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_job_runs",
+        lambda job_id, timeout=None: [
+            {
+                "id": 501,
+                "name": "daily-run-1",
+                "status": "COMPLETED",
+                "execution_start": "2026-03-14T09:00:00Z",
+                "execution_end": "2026-03-14T09:10:00Z",
+                "unique_identifier": "jobrun_abc123",
+                "commit_hash": "abc123",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "runs", "list", "91"])
+    assert result.exit_code == 0
+    assert "Project Job Runs" in result.output
+    assert "daily-run" in result.output
+    assert "jobrun_ab" in result.output
+    assert "Total job runs: 1" in result.output
+
+
+def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_job_run_logs",
+        lambda job_run_id, timeout=None: {
+            "job_run_id": job_run_id,
+            "status": "COMPLETED",
+            "rows": [
+                {"timestamp": "2026-03-14T09:00:00Z", "level": "info", "event": "job started"},
+                {"timestamp": "2026-03-14T09:10:00Z", "level": "info", "event": "job finished"},
+            ],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "runs", "logs", "501"])
+    assert result.exit_code == 0
+    assert "Job Run Logs" in result.output
+    assert "job started" in result.output
+    assert "job finished" in result.output
+    assert "COMPLETED" in result.output
+
+
+def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    responses = iter(
+        [
+            {"job_run_id": 501, "status": "PENDING", "rows": ["first line"]},
+            {"job_run_id": 501, "status": "RUNNING", "rows": ["first line", "second line"]},
+            {"job_run_id": 501, "status": "COMPLETED", "rows": ["first line", "second line", "third line"]},
+        ]
+    )
+    sleeps = []
+
+    monkeypatch.setattr(cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses))
+    monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "runs", "logs", "501", "--poll-interval", "3"])
+    assert result.exit_code == 0
+    assert result.output.count("first line") == 1
+    assert result.output.count("second line") == 1
+    assert result.output.count("third line") == 1
+    assert "Polling again in 3s" in result.output
+    assert sleeps == [3, 3]
+
+
+def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    responses = iter(
+        [
+            {"job_run_id": 742, "status": "PENDING", "rows": ["first line"]},
+            {"job_run_id": 742, "status": "RUNNING", "rows": ["first line", "second line"]},
+        ]
+    )
+    sleeps = []
+    monotonic_values = iter([100.0, 100.0, 106.0])
+
+    monkeypatch.setattr(cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses))
+    monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
+    monkeypatch.setattr(cli_mod.time, "monotonic", lambda: next(monotonic_values))
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "runs", "logs", "742", "--poll-interval", "3", "--max-wait-seconds", "5"],
+    )
+    assert result.exit_code == 0
+    assert result.output.count("first line") == 1
+    assert result.output.count("second line") == 1
+    assert "Stopping log polling after 5s while job run is still RUNNING." in result.output
+    assert sleeps == [3]
+
+
+def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123",
+                "base_image": {"id": 22, "title": "Python 3.12"},
+            }
+        ],
+    )
+
+    captured = {}
+
+    def _create_project_job(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 91,
+            "name": kwargs["name"],
+            "execution_path": kwargs["execution_path"],
+            "app_name": kwargs["app_name"],
+            "related_image": kwargs["related_image_id"],
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "create"], input="demo-job\n\nscripts/test.py\n\n")
+    assert result.exit_code == 0
+    assert captured["project_id"] == 123
+    assert captured["name"] == "demo-job"
+    assert captured["related_image_id"] == 77
+    assert captured["execution_path"] == "scripts/test.py"
+    assert captured["task_schedule"] is None
+    assert captured["cpu_request"] == "0.25"
+    assert captured["memory_request"] == "0.5"
+    assert captured["spot"] is False
+    assert captured["max_runtime_seconds"] == 86400
+    assert (
+        "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false, max_runtime_seconds=86400."
+        in result.output
+    )
+    assert "Project job created: id=91" in result.output
+
+
+def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123",
+                "base_image": {"id": 22, "title": "Python 3.12"},
+            }
+        ],
+    )
+
+    captured = {}
+
+    def _create_project_job(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 91,
+            "name": kwargs["name"],
+            "execution_path": kwargs["execution_path"],
+            "related_image": kwargs["related_image_id"],
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "project",
+            "jobs",
+            "create",
+            "--name",
+            "demo-job",
+            "--cpu-request",
+            "1",
+            "--execution-path",
+            "scripts/test.py",
+            "--related-image-id",
+            "77",
+        ],
+        input="\n",
+    )
+    assert result.exit_code == 0
+    assert captured["cpu_request"] == "1"
+    assert captured["memory_request"] == "1"
+    assert captured["spot"] is False
+    assert captured["max_runtime_seconds"] == 86400
+    assert captured["task_schedule"] is None
+    assert "Using defaults: memory_request=1, spot=false, max_runtime_seconds=86400." in result.output
+
+
+def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123",
+                "base_image": {"id": 22, "title": "Python 3.12"},
+            }
+        ],
+    )
+
+    captured = {}
+
+    def _create_project_job(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 91,
+            "name": kwargs["name"],
+            "execution_path": kwargs["execution_path"],
+            "task_schedule": kwargs["task_schedule"],
+            "related_image": kwargs["related_image_id"],
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "create"],
+        input="demo-job\n\nscripts/test.py\ny\n\n\n\n\nn\n",
+    )
+    assert result.exit_code == 0
+    assert captured["task_schedule"] == {
+        "schedule": {"type": "interval", "every": 1, "period": "hours"},
+        "one_off": False,
+    }
+    assert "every 1 hours" in result.output
+
+
+def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_base_images",
+        lambda: [{"id": 22, "title": "Python 3.12", "description": "Default image"}],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [{"id": 66, "project_repo_hash": "1111111111111111111111111111111111111111"}],
+    )
+
+    def _git_run(cmd, capture_output=None, text=None):
+        args = cmd[3:]
+        if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]:
+            return types.SimpleNamespace(returncode=0, stdout="origin/main\n", stderr="")
+        if args[:1] == ["log"] and "--not" in args and "--remotes" in args:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="2222222222222222222222222222222222222222\t2222222\t2026-03-14 11:45:00\tLocal pending commit\n",
+                stderr="",
+            )
+        if args[:1] == ["log"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="1111111111111111111111111111111111111111\t1111111\t2026-03-14 10:11:12\tPushed commit\n",
+                stderr="",
+            )
+        if args[:3] == ["branch", "-r", "--contains"]:
+            return types.SimpleNamespace(returncode=0, stdout="  origin/main\n", stderr="")
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _git_run)
+
+    captured = {}
+
+    def _create_project_image(**kwargs):
+        captured.update(kwargs)
+        return {"id": 77, "project_repo_hash": kwargs["project_repo_hash"], "base_image": kwargs["base_image_id"]}
+
+    monkeypatch.setattr(cli_mod, "create_project_image", _create_project_image)
+
+    result = runner.invoke(cli_mod.app, ["project", "images", "create"], input="\n\n")
+    assert result.exit_code == 0
+    assert captured["related_project_id"] == 123
+    assert captured["project_repo_hash"] == "1111111111111111111111111111111111111111"
+    assert captured["base_image_id"] == 22
+    assert "Project image created: id=77" in result.output
+    assert "local commit(s) have not been pushed yet" in result.output
+    assert "2026-03-14 10:11:12" in result.output
+    assert "66" in result.output
+    assert "already has project image(s): 66" in result.output
+
+
+def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_id, timeout=None: [])
+
+    def _git_run(cmd, capture_output=None, text=None):
+        args = cmd[3:]
+        if args[:1] == ["log"] and "--not" in args and "--remotes" in args:
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        if args[:3] == ["branch", "-r", "--contains"]:
+            return types.SimpleNamespace(returncode=0, stdout="", stderr="")
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _git_run)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "images", "create", "123", "deadbeef", "--path", str(target)],
+    )
+    assert result.exit_code == 1
+    assert "must reference a commit that has already been pushed" in result.output
+
+
+def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
+    monkeypatch.setattr(cli_mod, "_is_pushed_commit", lambda *_: True)
+
+    list_calls = {"count": 0}
+
+    def _list_project_images(related_project_id, timeout=None):
+        list_calls["count"] += 1
+        if list_calls["count"] == 1:
+            return []
+        if list_calls["count"] == 2:
+            return [{"id": 77, "project_repo_hash": "abc123", "base_image": 22, "is_ready": False}]
+        return [{"id": 77, "project_repo_hash": "abc123", "base_image": 22, "is_ready": True}]
+
+    monkeypatch.setattr(cli_mod, "list_project_images", _list_project_images)
+    monkeypatch.setattr(
+        cli_mod,
+        "create_project_image",
+        lambda **kwargs: {"id": 77, "project_repo_hash": kwargs["project_repo_hash"], "base_image": 22, "is_ready": False},
+    )
+
+    sleep_calls = []
+    monkeypatch.setattr(cli_mod.time, "sleep", lambda secs: sleep_calls.append(secs))
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "images", "create", "123", "abc123", "--path", str(target), "--base-image-id", "22"],
+    )
+    assert result.exit_code == 0
+    assert sleep_calls == [30, 30]
+    assert "Project image is still building." in result.output
+    assert "Project image is ready." in result.output
+    assert "Is Ready" in result.output
+    assert "True" in result.output
 
 
 def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):

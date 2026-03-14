@@ -21,6 +21,7 @@ Parity with VS Code extension:
 All commands have docstrings so `--help` is useful.
 """
 
+import datetime
 import json
 import os
 import pathlib
@@ -30,6 +31,7 @@ import shutil
 import subprocess
 import sys
 import time
+from decimal import ROUND_UP, Decimal, InvalidOperation
 
 import typer
 
@@ -39,17 +41,24 @@ from .api import (
     NotLoggedIn,
     add_deploy_key,
     create_project,
+    create_project_image,
+    create_project_job,
     deep_find_repo_url,
     delete_project,
     fetch_project_env_text,
     get_current_user_profile,
     get_project,
     get_project_data_node_updates,
+    get_project_job_run_logs,
     get_projects,
     list_dynamic_table_data_sources,
     list_github_organizations,
     list_project_base_images,
+    list_project_images,
+    list_project_job_runs,
+    list_project_jobs,
     repo_name_from_git_url,
+    run_project_job,
     safe_slug,
 )
 from .api import login as api_login
@@ -72,6 +81,12 @@ from .local_ops import (
     uv_export_requirements,
 )
 from .project_status import detect_current_project
+from .pydantic_cli import (
+    get_cli_field_metadata,
+    pydantic_argument,
+    pydantic_option,
+    pydantic_prompt_text,
+)
 from .sdk_utils import fetch_latest_sdk_version, normalize_version, read_local_sdk_version
 from .ssh_utils import (
     ensure_key_for_repo,
@@ -85,13 +100,32 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
+project_images_group = typer.Typer(help="Project image commands")
+project_jobs_group = typer.Typer(help="Project job commands")
+project_job_runs_group = typer.Typer(help="Project job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
+project.add_typer(project_images_group, name="images")
+project.add_typer(project_jobs_group, name="jobs")
+project_jobs_group.add_typer(project_job_runs_group, name="runs")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
+
+JOB_DEFAULT_CPU_REQUEST = Decimal("0.25")
+JOB_DEFAULT_MEMORY_REQUEST = Decimal("0.5")
+JOB_MEMORY_PER_CPU_MAX = Decimal("6.5")
+JOB_DEFAULT_SPOT = False
+JOB_DEFAULT_MAX_RUNTIME_SECONDS = 86400
+JOB_ALLOWED_INTERVAL_PERIODS = ("seconds", "minutes", "hours", "days")
+JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
+INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
+CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
+JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
+JOB_RUN_STATUS_PENDING = "PENDING"
+JOB_RUN_STATUS_RUNNING = "RUNNING"
 
 
 # ---------- AI instructions utilities (kept) ----------
@@ -559,6 +593,382 @@ def _prompt_select_id(
         return int(picked)
     except ValueError as e:
         raise RuntimeError(f"Invalid {prompt_label}: {picked}") from e
+
+
+def _git_run(project_dir: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(project_dir), *args],
+        capture_output=True,
+        text=True,
+    )
+
+
+def _git_upstream_ref(project_dir: pathlib.Path) -> str | None:
+    result = _git_run(project_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
+    if result.returncode != 0:
+        return None
+    upstream = (result.stdout or "").strip()
+    return upstream or None
+
+
+def _parse_git_log_rows(stdout: str) -> list[dict[str, str]]:
+    commits: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for line in (stdout or "").splitlines():
+        full_hash, short_hash, commit_date, subject = (line.split("\t", 3) + ["", "", "", ""])[:4]
+        full_hash = full_hash.strip()
+        if not full_hash or full_hash in seen:
+            continue
+        seen.add(full_hash)
+        commits.append(
+            {
+                "hash": full_hash,
+                "short_hash": short_hash.strip(),
+                "date": commit_date.strip(),
+                "subject": subject.strip(),
+            }
+        )
+    return commits
+
+
+def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dict[str, str]]:
+    """
+    List commits already present on the remote-tracking branch.
+
+    Preference order:
+      1. current branch upstream
+      2. all remote refs
+    """
+    refs: list[str] = []
+    upstream = _git_upstream_ref(project_dir)
+    if upstream:
+        refs = [upstream]
+    else:
+        refs_result = _git_run(project_dir, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
+        if refs_result.returncode == 0:
+            refs = [
+                line.strip()
+                for line in (refs_result.stdout or "").splitlines()
+                if line.strip() and not line.strip().endswith("/HEAD")
+            ]
+
+    if not refs:
+        raise RuntimeError("No pushed commits found. Configure a remote and push at least one commit first.")
+
+    result = _git_run(
+        project_dir,
+        [
+            "log",
+            f"--max-count={max(int(limit), 1)}",
+            "--date=format-local:%Y-%m-%d %H:%M:%S",
+            "--format=%H%x09%h%x09%ad%x09%s",
+            *refs,
+        ],
+    )
+    if result.returncode != 0:
+        reason = (result.stderr or result.stdout or "").strip() or "git log failed"
+        raise RuntimeError(f"Could not list pushed commits: {reason}")
+
+    commits = _parse_git_log_rows(result.stdout or "")
+    if not commits:
+        raise RuntimeError("No pushed commits found. Push at least one commit before creating an image.")
+    return commits
+
+
+def _list_unpushed_commits(project_dir: pathlib.Path, limit: int = 10) -> list[dict[str, str]]:
+    """
+    List local commits reachable from HEAD that are not present on any remote ref.
+    """
+    result = _git_run(
+        project_dir,
+        [
+            "log",
+            f"--max-count={max(int(limit), 1)}",
+            "--date=format-local:%Y-%m-%d %H:%M:%S",
+            "--format=%H%x09%h%x09%ad%x09%s",
+            "HEAD",
+            "--not",
+            "--remotes",
+        ],
+    )
+    if result.returncode != 0:
+        return []
+    return _parse_git_log_rows(result.stdout or "")
+
+
+def _is_pushed_commit(project_dir: pathlib.Path, commit_hash: str) -> bool:
+    result = _git_run(project_dir, ["branch", "-r", "--contains", commit_hash])
+    if result.returncode != 0:
+        return False
+    refs = [
+        line.strip()
+        for line in (result.stdout or "").splitlines()
+        if line.strip() and not line.strip().endswith("/HEAD")
+    ]
+    return bool(refs)
+
+
+def _group_project_images_by_hash(images: list[dict]) -> dict[str, list[dict]]:
+    grouped: dict[str, list[dict]] = {}
+    for image in images:
+        commit_hash = str(image.get("project_repo_hash") or "").strip()
+        if not commit_hash:
+            continue
+        grouped.setdefault(commit_hash, []).append(image)
+    return grouped
+
+
+def _format_base_image_label(value) -> str:
+    if isinstance(value, dict):
+        return str(value.get("title") or value.get("id") or "-")
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _format_image_ids(images: list[dict]) -> str:
+    ids = [str(img.get("id")) for img in images if img.get("id") is not None]
+    return ", ".join(ids) if ids else "-"
+
+
+def _format_related_image_label(value) -> str:
+    if isinstance(value, dict):
+        return str(value.get("id") or value.get("title") or "-")
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _find_image_by_id(images: list[dict], image_id: int | None) -> dict | None:
+    if image_id is None:
+        return None
+    return next((img for img in images if str(img.get("id")) == str(image_id)), None)
+
+
+def _format_job_schedule_summary(task_schedule) -> str:
+    if task_schedule is None:
+        return "-"
+
+    if not isinstance(task_schedule, dict):
+        return str(task_schedule)
+
+    name = str(task_schedule.get("name") or "").strip()
+    schedule = task_schedule.get("schedule")
+    prefix = f"{name}: " if name else ""
+
+    if isinstance(schedule, dict):
+        schedule_type = str(schedule.get("type") or "").strip().lower()
+        if schedule_type == "crontab":
+            expr = str(schedule.get("expression") or "").strip() or "-"
+            return f"{prefix}cron {expr}"
+        if schedule_type == "interval":
+            every = schedule.get("every")
+            period = str(schedule.get("period") or "").strip() or "units"
+            if every is not None:
+                return f"{prefix}every {every} {period}"
+            return f"{prefix}interval"
+
+    task_name = str(task_schedule.get("task") or "").strip()
+    if prefix or task_name:
+        return f"{prefix}{task_name}".strip() or "-"
+    return "-"
+
+
+def _decimal_to_storage(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _parse_decimal_option(value: str | None, *, field_name: str) -> Decimal | None:
+    if value is None:
+        return None
+
+    raw = value.strip()
+    if not raw:
+        return None
+
+    try:
+        dec = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        raise ValueError(f"{field_name} must be a valid decimal value.")
+
+    if not dec.is_finite():
+        raise ValueError(f"{field_name} must be a valid decimal value.")
+
+    if dec.as_tuple().exponent < -2:
+        raise ValueError(f"{field_name} must have at most 2 decimal places.")
+
+    return dec
+
+
+def _resolve_job_create_defaults(
+    *,
+    cpu_request: str | None,
+    memory_request: str | None,
+    spot: bool | None,
+    max_runtime_seconds: int | None,
+) -> tuple[str, str, bool, int, list[str]]:
+    cpu = _parse_decimal_option(cpu_request, field_name="cpu_request")
+    memory = _parse_decimal_option(memory_request, field_name="memory_request")
+    used_defaults: list[str] = []
+
+    if cpu is None and memory is None:
+        cpu = JOB_DEFAULT_CPU_REQUEST
+        memory = JOB_DEFAULT_MEMORY_REQUEST
+        used_defaults.extend(["cpu_request", "memory_request"])
+    elif cpu is None:
+        derived_cpu = (memory / JOB_MEMORY_PER_CPU_MAX).quantize(Decimal("0.01"), rounding=ROUND_UP)
+        cpu = max(JOB_DEFAULT_CPU_REQUEST, derived_cpu)
+        used_defaults.append("cpu_request")
+    elif memory is None:
+        memory = max(JOB_DEFAULT_MEMORY_REQUEST, cpu)
+        used_defaults.append("memory_request")
+
+    resolved_spot = JOB_DEFAULT_SPOT if spot is None else spot
+    if spot is None:
+        used_defaults.append("spot")
+
+    if max_runtime_seconds is None:
+        resolved_max_runtime_seconds = JOB_DEFAULT_MAX_RUNTIME_SECONDS
+        used_defaults.append("max_runtime_seconds")
+    else:
+        resolved_max_runtime_seconds = int(max_runtime_seconds)
+        if resolved_max_runtime_seconds <= 0:
+            raise ValueError("max_runtime_seconds must be a positive integer.")
+
+    return (
+        _decimal_to_storage(cpu),
+        _decimal_to_storage(memory),
+        resolved_spot,
+        resolved_max_runtime_seconds,
+        used_defaults,
+    )
+
+
+def _parse_schedule_start_time(value: str | None) -> datetime.datetime | None:
+    if value is None:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    normalized = raw.replace("Z", "+00:00")
+    try:
+        return datetime.datetime.fromisoformat(normalized)
+    except ValueError as exc:
+        raise ValueError("schedule_start_time must be a valid ISO datetime.") from exc
+
+
+def _build_job_task_schedule_payload(
+    *,
+    schedule_type: str | None,
+    schedule_every: int | None,
+    schedule_period: str | None,
+    schedule_expression: str | None,
+    schedule_start_time: str | None,
+    schedule_one_off: bool | None,
+    prompt_for_missing: bool,
+) -> dict[str, object] | None:
+    inferred_type = (schedule_type or "").strip().lower() or None
+    if inferred_type is None:
+        if schedule_expression:
+            inferred_type = "crontab"
+        elif schedule_every is not None or schedule_period:
+            inferred_type = "interval"
+
+    if inferred_type is None and prompt_for_missing:
+        if not typer.confirm(
+            pydantic_prompt_text(JOB_MODEL_REF, "task_schedule", optional=True, extra_hint="create now?"),
+            default=False,
+        ):
+            return None
+        inferred_type = typer.prompt(
+            pydantic_prompt_text(
+                INTERVAL_SCHEDULE_MODEL_REF,
+                "type",
+                extra_hint="interval/crontab",
+            ),
+            default="interval",
+        ).strip().lower()
+
+    if inferred_type is None:
+        return None
+
+    if inferred_type not in {"interval", "crontab"}:
+        raise ValueError("schedule_type must be either 'interval' or 'crontab'.")
+
+    if inferred_type == "interval":
+        if schedule_expression:
+            raise ValueError("schedule_expression cannot be used with interval schedules.")
+        if schedule_every is None and prompt_for_missing:
+            schedule_every = int(
+                typer.prompt(
+                    pydantic_prompt_text(INTERVAL_SCHEDULE_MODEL_REF, "every"),
+                    default="1",
+                ).strip()
+            )
+        if schedule_period is None and prompt_for_missing:
+            schedule_period = typer.prompt(
+                pydantic_prompt_text(
+                    INTERVAL_SCHEDULE_MODEL_REF,
+                    "period",
+                    extra_hint="seconds/minutes/hours/days",
+                ),
+                default="hours",
+            ).strip()
+        if schedule_every is None:
+            raise ValueError("schedule_every is required for interval schedules.")
+        if schedule_every <= 0:
+            raise ValueError("schedule_every must be greater than 0.")
+        normalized_period = str(schedule_period or "").strip().lower()
+        if normalized_period not in JOB_ALLOWED_INTERVAL_PERIODS:
+            raise ValueError(
+                "schedule_period must be one of: " + ", ".join(JOB_ALLOWED_INTERVAL_PERIODS) + "."
+            )
+        schedule_payload: dict[str, object] = {
+            "type": "interval",
+            "every": int(schedule_every),
+            "period": normalized_period,
+        }
+    else:
+        if schedule_every is not None or schedule_period:
+            raise ValueError("schedule_every and schedule_period are only valid for interval schedules.")
+        if schedule_expression is None and prompt_for_missing:
+            schedule_expression = typer.prompt(
+                pydantic_prompt_text(
+                    CRONTAB_SCHEDULE_MODEL_REF,
+                    "expression",
+                ),
+                default="0 * * * *",
+            ).strip()
+        expression = str(schedule_expression or "").strip()
+        if not expression:
+            raise ValueError("schedule_expression is required for crontab schedules.")
+        if len(expression.split()) != 5:
+            raise ValueError(
+                "schedule_expression must have 5 crontab fields: minute hour day_of_month month_of_year day_of_week."
+            )
+        schedule_payload = {
+            "type": "crontab",
+            "expression": expression,
+        }
+
+    if schedule_start_time is None and prompt_for_missing:
+        schedule_start_time = typer.prompt(
+            pydantic_prompt_text(CRONTAB_SCHEDULE_MODEL_REF, "start_time", optional=True),
+            default="",
+        ).strip() or None
+
+    if schedule_one_off is None and prompt_for_missing:
+        schedule_one_off = typer.confirm("Make this a one-off schedule?", default=False)
+
+    payload: dict[str, object] = {"schedule": schedule_payload}
+
+    parsed_start_time = _parse_schedule_start_time(schedule_start_time)
+    if parsed_start_time is not None:
+        payload["start_time"] = parsed_start_time
+    if schedule_one_off is not None:
+        payload["one_off"] = bool(schedule_one_off)
+
+    return payload
 
 
 def _extract_python_version_from_spec(spec: str | None) -> str | None:
@@ -1464,6 +1874,872 @@ def project_delete_remote_cmd(
         detail = resp.get("detail") or resp.get("message")
         if detail:
             info(str(detail))
+
+
+def _project_images_list_impl(
+    project_id: int | None,
+    path: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(path)
+
+    try:
+        images = list_project_images(related_project_id=project_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project images fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for image in images:
+        rows.append(
+            [
+                str(image.get("id") or "-"),
+                str(image.get("project_repo_hash") or "-"),
+                _format_base_image_label(image.get("base_image")),
+            ]
+        )
+
+    if rows:
+        print_table("Project Images", ["ID", "Project Repo Hash", "Base Image"], rows)
+    else:
+        info("No project images.")
+    info(f"Total images: {len(images)}")
+
+
+@project_images_group.command("list")
+def project_images_list_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List project images for a project.
+
+    Uses SDK client `ProjectImage.filter()` as the single source of truth.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID. Defaults to local `.env`.
+    path:
+        Local project path. Used when resolving project id from `.env`.
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project images list
+    mainsequence project images list 123
+    mainsequence project images list 123 --path .
+    ```
+    """
+    _project_images_list_impl(project_id=project_id, path=path, timeout=timeout)
+
+
+def _project_images_create_impl(
+    project_id: int | None,
+    project_repo_hash: str | None,
+    path: str | None,
+    base_image_id: int | None,
+    timeout: int,
+    poll_interval: int,
+) -> None:
+    _require_login()
+
+    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(str(project_dir))
+
+    try:
+        existing_images = list_project_images(related_project_id=project_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project images fetch failed: {e}")
+        raise typer.Exit(1)
+    images_by_hash = _group_project_images_by_hash(existing_images)
+
+    pending_commits = _list_unpushed_commits(project_dir)
+    if pending_commits:
+        pending_hashes = ", ".join(c["short_hash"] for c in pending_commits[:3] if c.get("short_hash"))
+        suffix = f" Pending: {pending_hashes}." if pending_hashes else ""
+        warn(
+            f"{len(pending_commits)} local commit(s) have not been pushed yet. "
+            "Only pushed commits can be used for project_repo_hash."
+            f"{suffix}"
+        )
+
+    project_repo_hash = (project_repo_hash or "").strip()
+    if not project_repo_hash:
+        try:
+            commits = _list_pushed_commits(project_dir)
+        except RuntimeError as e:
+            error(str(e))
+            raise typer.Exit(1)
+
+        rows = [
+            [
+                c["hash"],
+                c["date"],
+                c["subject"] or "-",
+                _format_image_ids(images_by_hash.get(c["hash"], [])),
+            ]
+            for c in commits
+        ]
+        print_table("Pushed Commits", ["Hash", "Date/Time", "Subject", "Image IDs"], rows)
+        project_repo_hash = typer.prompt("project_repo_hash", default=commits[0]["hash"]).strip()
+
+    if not project_repo_hash:
+        error("project_repo_hash is required.")
+        raise typer.Exit(1)
+
+    if not _is_pushed_commit(project_dir, project_repo_hash):
+        error("project_repo_hash must reference a commit that has already been pushed to the remote.")
+        raise typer.Exit(1)
+
+    existing_for_hash = images_by_hash.get(project_repo_hash, [])
+    if existing_for_hash:
+        warn(
+            "This commit already has project image(s): "
+            + _format_image_ids(existing_for_hash)
+        )
+
+    try:
+        if base_image_id is None:
+            img_items = list_project_base_images()
+            img_rows: list[list[str]] = []
+            for item in img_items:
+                name = item.get("title") or f"image-{item.get('id')}"
+                details = item.get("description") or item.get("latest_digest") or "-"
+                img_rows.append([str(item.get("id", "")), str(name), str(details)])
+            base_image_id = _prompt_select_id(
+                title="Available Base Images",
+                prompt_label="Base image id",
+                items=img_items,
+                rows=img_rows,
+            )
+
+        created = create_project_image(
+            project_repo_hash=project_repo_hash,
+            related_project_id=project_id,
+            base_image_id=base_image_id,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project image creation failed: {e}")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    success(f"Project image created: id={created.get('id') or '-'}")
+
+    image_id = created.get("id")
+    if image_id is not None and created.get("is_ready") is False:
+        wait_deadline = time.monotonic() + max(int(timeout), 0)
+        attempt = 0
+        info(
+            "Project image is still building. "
+            f"Waiting until is_ready=true (poll every {poll_interval}s, timeout {timeout}s)."
+        )
+        while time.monotonic() < wait_deadline:
+            attempt += 1
+            remaining = max(wait_deadline - time.monotonic(), 0.0)
+            sleep_for = min(max(int(poll_interval), 1), remaining)
+            if sleep_for > 0:
+                with status(f"Project image not ready yet (attempt {attempt}). Next check in {int(sleep_for)}s..."):
+                    time.sleep(sleep_for)
+
+            try:
+                polled_images = list_project_images(related_project_id=project_id, timeout=timeout)
+            except ApiError as e:
+                warn(f"Project image status poll failed (attempt {attempt}): {e}")
+                continue
+
+            latest = next((img for img in polled_images if str(img.get("id")) == str(image_id)), None)
+            if latest is None:
+                warn(f"Project image {image_id} was not visible yet on poll attempt {attempt}.")
+                continue
+
+            created = latest
+            if created.get("is_ready") is True:
+                success("Project image is ready.")
+                break
+            info("Project image still building. Continuing to poll...")
+        else:
+            warn(
+                f"Timed out after {timeout}s waiting for project image {image_id} to become ready. "
+                "It may still be building on the backend."
+            )
+
+    base_image_value = created.get("base_image")
+    if isinstance(base_image_value, dict):
+        base_image_value = base_image_value.get("id") or base_image_value.get("title") or "-"
+
+    print_kv(
+        "Project Image",
+        [
+            ("ID", str(created.get("id") or "-")),
+            ("Project ID", str(project_id)),
+            ("Project Repo Hash", project_repo_hash),
+            ("Base Image", str(base_image_value or base_image_id or "-")),
+            ("Is Ready", str(created.get("is_ready")) if created.get("is_ready") is not None else "-"),
+        ],
+    )
+
+
+@project_images_group.command("create")
+def project_images_create_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_repo_hash: str | None = typer.Argument(
+        None,
+        help="Git commit hash for the image build. Must already be pushed to the remote.",
+    ),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
+    timeout: int = typer.Option(300, "--timeout", help="Maximum wait time in seconds for the image to become ready."),
+    poll_interval: int = typer.Option(30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."),
+):
+    """
+    Create a project image from a pushed git commit.
+
+    If `project_id` is omitted, the command reads `MAIN_SEQUENCE_PROJECT_ID`
+    from the local project `.env`. If `project_repo_hash` is omitted, it shows
+    only commits already present on the remote and prompts for a selection.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID. Defaults to local `.env`.
+    project_repo_hash:
+        Git commit hash already pushed to remote.
+    path:
+        Local repository path. Defaults to current project folder.
+    base_image_id:
+        Project base image ID. If omitted, prompt from available base images.
+    timeout:
+        Maximum wait time in seconds for the image to become ready.
+    poll_interval:
+        Polling interval in seconds while waiting for `is_ready=true`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project images create
+    mainsequence project images create 123
+    mainsequence project images create 123 4a1b2c3d
+    mainsequence project images create 123 --path .
+    mainsequence project images create 123 --timeout 600 --poll-interval 15
+    ```
+    """
+    _project_images_create_impl(
+        project_id=project_id,
+        project_repo_hash=project_repo_hash,
+        path=path,
+        base_image_id=base_image_id,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
+
+
+@project.command("create_image", hidden=True)
+def project_create_image_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_repo_hash: str | None = typer.Argument(
+        None,
+        help="Git commit hash for the image build. Must already be pushed to the remote.",
+    ),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
+    timeout: int = typer.Option(300, "--timeout", help="Maximum wait time in seconds for the image to become ready."),
+    poll_interval: int = typer.Option(30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."),
+):
+    """
+    Backward-compatible alias for `mainsequence project images create`.
+    """
+    _project_images_create_impl(
+        project_id=project_id,
+        project_repo_hash=project_repo_hash,
+        path=path,
+        base_image_id=base_image_id,
+        timeout=timeout,
+        poll_interval=poll_interval,
+    )
+
+
+def _project_jobs_list_impl(
+    project_id: int | None,
+    path: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(path)
+
+    try:
+        jobs = list_project_jobs(project_id=project_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project jobs fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for job in jobs:
+        rows.append(
+            [
+                str(job.get("id") or "-"),
+                str(job.get("name") or "-"),
+                str(job.get("project_repo_hash") or "-"),
+                str(job.get("execution_path") or "-"),
+                str(job.get("app_name") or "-"),
+                _format_job_schedule_summary(job.get("task_schedule")),
+                _format_related_image_label(job.get("related_image")),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Project Jobs",
+            ["ID", "Name", "Repo Hash", "Execution Path", "App Name", "Schedule", "Related Image"],
+            rows,
+        )
+    else:
+        info("No project jobs.")
+    info(f"Total jobs: {len(jobs)}")
+
+
+def _project_job_runs_list_impl(
+    job_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        runs = list_project_job_runs(job_id=job_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project job runs fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for run in runs:
+        rows.append(
+            [
+                str(run.get("id") or "-"),
+                str(run.get("name") or "-"),
+                str(run.get("status") or run.get("response_status") or "-"),
+                str(run.get("execution_start") or "-"),
+                str(run.get("execution_end") or "-"),
+                str(run.get("unique_identifier") or "-"),
+                str(run.get("commit_hash") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Project Job Runs",
+            ["ID", "Name", "Status", "Execution Start", "Execution End", "Unique Identifier", "Commit Hash"],
+            rows,
+        )
+    else:
+        info("No job runs.")
+    info(f"Total job runs: {len(runs)}")
+
+
+def _format_job_run_log_row(row) -> str:
+    if isinstance(row, str):
+        return row
+    if not isinstance(row, dict):
+        return str(row)
+
+    timestamp = str(row.get("timestamp") or "").strip()
+    level = str(row.get("level") or "").strip().upper()
+    event = str(row.get("event") or "").strip()
+
+    parts = [part for part in (timestamp, level, event) if part]
+    if parts:
+        return " | ".join(parts)
+    return json.dumps(row, default=str, sort_keys=True)
+
+
+def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
+    if not isinstance(rows, list):
+        return start_index
+
+    for row in rows[start_index:]:
+        typer.echo(_format_job_run_log_row(row))
+    return len(rows)
+
+
+@project_jobs_group.command("list")
+def project_jobs_list_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List jobs for a project.
+
+    Uses SDK client `Job.filter()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project jobs list
+    mainsequence project jobs list 123
+    mainsequence project jobs list 123 --path .
+    ```
+    """
+    _project_jobs_list_impl(project_id=project_id, path=path, timeout=timeout)
+
+
+@project_jobs_group.command("run")
+def project_jobs_run_cmd(
+    job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID to run."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Run a project job immediately.
+
+    Uses SDK client `Job.run_job()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project jobs run 91
+    mainsequence project jobs run 91 --timeout 60
+    ```
+    """
+    _require_login()
+
+    try:
+        payload = run_project_job(job_id=job_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project job run failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Project job run requested: job_id={job_id}")
+
+    if payload:
+        preferred_keys = [
+            ("Job ID", str(payload.get("job") or payload.get("job_id") or job_id)),
+            ("Job Run ID", str(payload.get("id") or payload.get("job_run_id") or "-")),
+            ("Name", str(payload.get("name") or payload.get("job_name") or "-")),
+            ("Unique Identifier", str(payload.get("unique_identifier") or "-")),
+            ("Status", str(payload.get("status") or "-")),
+        ]
+        rows = [(label, value) for label, value in preferred_keys if value != "-"]
+        remaining = []
+        for key, value in payload.items():
+            if key in {"job", "job_id", "id", "job_run_id", "name", "job_name", "unique_identifier", "status"}:
+                continue
+            remaining.append((str(key), json.dumps(value) if isinstance(value, (dict, list)) else str(value)))
+        print_kv("Job Run", rows + remaining)
+
+
+@project_job_runs_group.command("list")
+def project_job_runs_list_cmd(
+    job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID whose runs will be listed."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List runs for a specific job.
+
+    Uses SDK client `JobRun.filter(job__id=[job_id])` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project jobs runs list 91
+    mainsequence project jobs runs list 91 --timeout 60
+    ```
+    """
+    _project_job_runs_list_impl(job_id=job_id, timeout=timeout)
+
+
+@project_job_runs_group.command("logs")
+def project_job_runs_logs_cmd(
+    job_run_id: int = pydantic_argument(JOB_RUN_MODEL_REF, "id", ..., help="Job run ID whose logs will be shown."),
+    poll_interval: int = typer.Option(
+        30,
+        "--poll-interval",
+        help="Polling interval in seconds while the job run status is PENDING or RUNNING. Set to 0 to disable polling.",
+    ),
+    max_wait_seconds: int = typer.Option(
+        600,
+        "--max-wait-seconds",
+        help="Maximum total time in seconds to keep polling while the job run status is PENDING or RUNNING. Set to 0 to disable the overall polling timeout.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show logs for a specific job run.
+
+    Uses SDK client `JobRun.get_logs()` as the single source of truth.
+    When the backend reports `PENDING` or `RUNNING`, the CLI polls every 30 seconds by default
+    for up to 10 minutes unless `--max-wait-seconds 0` is used.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project jobs runs logs 501
+    mainsequence project jobs runs logs 501 --poll-interval 10
+    mainsequence project jobs runs logs 501 --max-wait-seconds 900
+    mainsequence project jobs runs logs 501 --poll-interval 0
+    ```
+    """
+    _require_login()
+
+    if max_wait_seconds < 0:
+        error("--max-wait-seconds must be >= 0.")
+        raise typer.Exit(2)
+
+    shown_rows = 0
+    poll_started_at = time.monotonic()
+
+    while True:
+        try:
+            payload = get_project_job_run_logs(job_run_id=job_run_id, timeout=timeout)
+        except ApiError as e:
+            error(f"Project job run logs fetch failed: {e}")
+            raise typer.Exit(1)
+
+        status_value = str(payload.get("status") or "-")
+        rows = payload.get("rows") or []
+        if not isinstance(rows, list):
+            rows = [rows]
+
+        if shown_rows == 0:
+            print_kv(
+                "Job Run Logs",
+                [
+                    ("Job Run ID", str(payload.get("job_run_id") or job_run_id)),
+                    ("Status", status_value),
+                ],
+            )
+        else:
+            info(f"Job run status: {status_value}")
+
+        if len(rows) < shown_rows:
+            warn("Log stream was reset by the backend. Reprinting from the beginning.")
+            shown_rows = 0
+
+        shown_rows = _print_job_run_logs_rows(rows, start_index=shown_rows)
+        if shown_rows == 0:
+            info("No logs yet.")
+
+        if status_value not in {JOB_RUN_STATUS_PENDING, JOB_RUN_STATUS_RUNNING}:
+            break
+        if poll_interval <= 0:
+            break
+        if max_wait_seconds > 0:
+            elapsed = time.monotonic() - poll_started_at
+            remaining = max_wait_seconds - elapsed
+            if remaining <= 0:
+                warn(
+                    f"Stopping log polling after {max_wait_seconds}s while job run is still {status_value}."
+                )
+                break
+            sleep_for = min(float(poll_interval), remaining)
+        else:
+            sleep_for = float(poll_interval)
+
+        info(f"Job run is still {status_value}. Polling again in {sleep_for:g}s...")
+        time.sleep(sleep_for)
+
+
+def _project_jobs_create_impl(
+    project_id: int | None,
+    name: str | None,
+    path: str | None,
+    execution_path: str | None,
+    app_name: str | None,
+    related_image_id: int | None,
+    schedule_type: str | None,
+    schedule_every: int | None,
+    schedule_period: str | None,
+    schedule_expression: str | None,
+    schedule_start_time: str | None,
+    schedule_one_off: bool | None,
+    cpu_request: str | None,
+    memory_request: str | None,
+    gpu_request: str | None,
+    gpu_type: str | None,
+    spot: bool | None,
+    max_runtime_seconds: int | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(str(project_dir))
+
+    name = (name or "").strip() or typer.prompt(pydantic_prompt_text(JOB_MODEL_REF, "name")).strip()
+    if not name:
+        error("Job name is required.")
+        raise typer.Exit(1)
+
+    try:
+        project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project images fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if related_image_id is None and project_images:
+        image_rows = [
+            [
+                str(img.get("id") or "-"),
+                str(img.get("project_repo_hash") or "-"),
+                _format_base_image_label(img.get("base_image")),
+            ]
+            for img in project_images
+        ]
+        related_image_id = _prompt_select_id(
+            title="Available Project Images",
+            prompt_label="Related image ID",
+            items=project_images,
+            rows=image_rows,
+        )
+
+    if execution_path is None and app_name is None:
+        execution_path = (
+            typer.prompt(
+                pydantic_prompt_text(JOB_MODEL_REF, "execution_path", optional=True),
+                default="",
+            ).strip()
+            or None
+        )
+        if execution_path is None:
+            app_name = typer.prompt(
+                pydantic_prompt_text(JOB_MODEL_REF, "app_name", optional=True),
+                default="",
+            ).strip() or None
+
+    if execution_path is None and app_name is None:
+        error("One of execution_path or app_name is required.")
+        raise typer.Exit(1)
+
+    try:
+        task_schedule = _build_job_task_schedule_payload(
+            schedule_type=schedule_type,
+            schedule_every=schedule_every,
+            schedule_period=schedule_period,
+            schedule_expression=schedule_expression,
+            schedule_start_time=schedule_start_time,
+            schedule_one_off=schedule_one_off,
+            prompt_for_missing=True,
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    try:
+        cpu_request, memory_request, spot, max_runtime_seconds, used_defaults = _resolve_job_create_defaults(
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            spot=spot,
+            max_runtime_seconds=max_runtime_seconds,
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    if used_defaults:
+        default_parts: list[str] = []
+        if "cpu_request" in used_defaults:
+            default_parts.append(f"cpu_request={cpu_request}")
+        if "memory_request" in used_defaults:
+            default_parts.append(f"memory_request={memory_request}")
+        if "spot" in used_defaults:
+            default_parts.append(f"spot={'true' if spot else 'false'}")
+        if "max_runtime_seconds" in used_defaults:
+            default_parts.append(f"max_runtime_seconds={max_runtime_seconds}")
+        info(
+            "Using defaults: "
+            + ", ".join(default_parts)
+            + "."
+        )
+
+    try:
+        created = create_project_job(
+            name=name,
+            project_id=project_id,
+            execution_path=execution_path,
+            app_name=app_name,
+            task_schedule=task_schedule,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            spot=spot,
+            max_runtime_seconds=max_runtime_seconds,
+            related_image_id=related_image_id,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project job creation failed: {e}")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    success(f"Project job created: id={created.get('id') or '-'}")
+    print_kv(
+        "Project Job",
+        [
+            ("ID", str(created.get("id") or "-")),
+            ("Name", str(created.get("name") or name)),
+            ("Project ID", str(project_id)),
+            ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
+            ("App Name", str(created.get("app_name") or app_name or "-")),
+            ("Related Image", _format_related_image_label(created.get("related_image") or related_image_id)),
+            (
+                "Schedule",
+                _format_job_schedule_summary(created.get("task_schedule") or task_schedule),
+            ),
+            ("CPU Request", str(created.get("cpu_request") or cpu_request)),
+            ("Memory Request", str(created.get("memory_request") or memory_request)),
+            ("Spot", str(created.get("spot") if created.get("spot") is not None else spot).lower()),
+            (
+                "Max Runtime Seconds",
+                str(created.get("max_runtime_seconds") or max_runtime_seconds),
+            ),
+        ],
+    )
+
+
+@project_jobs_group.command("create")
+def project_jobs_create_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    execution_path: str | None = pydantic_option(
+        JOB_MODEL_REF,
+        "execution_path",
+        None,
+        "--execution-path",
+    ),
+    app_name: str | None = pydantic_option(JOB_MODEL_REF, "app_name", None, "--app-name"),
+    related_image_id: int | None = pydantic_option(
+        JOB_MODEL_REF,
+        "related_image",
+        None,
+        "--related-image-id",
+        extra_help="Use the numeric project image ID.",
+    ),
+    schedule_type: str | None = pydantic_option(
+        INTERVAL_SCHEDULE_MODEL_REF,
+        "type",
+        None,
+        "--schedule-type",
+        extra_help="Use interval or crontab. If omitted, the CLI asks whether to build a schedule.",
+    ),
+    schedule_every: int | None = pydantic_option(
+        INTERVAL_SCHEDULE_MODEL_REF,
+        "every",
+        None,
+        "--schedule-every",
+        extra_help="Used with --schedule-type interval.",
+    ),
+    schedule_period: str | None = pydantic_option(
+        INTERVAL_SCHEDULE_MODEL_REF,
+        "period",
+        None,
+        "--schedule-period",
+        extra_help="Used with --schedule-type interval.",
+    ),
+    schedule_expression: str | None = pydantic_option(
+        CRONTAB_SCHEDULE_MODEL_REF,
+        "expression",
+        None,
+        "--schedule-expression",
+        extra_help="Used with --schedule-type crontab.",
+    ),
+    schedule_start_time: str | None = pydantic_option(
+        CRONTAB_SCHEDULE_MODEL_REF,
+        "start_time",
+        None,
+        "--schedule-start-time",
+    ),
+    schedule_one_off: bool | None = typer.Option(
+        None,
+        "--schedule-one-off/--schedule-recurring",
+        help="Mark the created schedule as one-off or recurring.",
+    ),
+    cpu_request: str | None = pydantic_option(
+        JOB_MODEL_REF,
+        "cpu_request",
+        None,
+        "--cpu-request",
+        extra_help="Defaults to 0.25 when omitted, or is derived from memory_request if only memory is provided.",
+    ),
+    memory_request: str | None = pydantic_option(
+        JOB_MODEL_REF,
+        "memory_request",
+        None,
+        "--memory-request",
+        extra_help="Defaults to 0.5 when omitted, or is derived from cpu_request if only CPU is provided.",
+    ),
+    gpu_request: str | None = pydantic_option(JOB_MODEL_REF, "gpu_request", None, "--gpu-request"),
+    gpu_type: str | None = pydantic_option(JOB_MODEL_REF, "gpu_type", None, "--gpu-type"),
+    spot: bool | None = typer.Option(
+        None,
+        "--spot/--no-spot",
+        help=get_cli_field_metadata(JOB_MODEL_REF, "spot").build_help(
+            extra_help="Defaults to --no-spot.",
+            include_examples=False,
+        ),
+    ),
+    max_runtime_seconds: int | None = pydantic_option(
+        JOB_MODEL_REF,
+        "max_runtime_seconds",
+        None,
+        "--max-runtime-seconds",
+        extra_help="Defaults to 86400 when omitted.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create a job for a project.
+
+    Uses SDK client `Job.create()` as the single source of truth.
+    When compute settings are omitted, the CLI applies safe defaults:
+    `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400`.
+    If schedule arguments are omitted, the CLI asks whether to build an interval or crontab schedule.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project jobs create
+    mainsequence project jobs create 123 --name daily-run --execution-path scripts/test.py
+    mainsequence project jobs create 123 --name dashboard --app-name dashboard-api --related-image-id 77
+    mainsequence project jobs create 123 --name hourly-run --execution-path scripts/test.py --schedule-type interval --schedule-every 1 --schedule-period hours
+    mainsequence project jobs create 123 --name nightly-run --execution-path scripts/test.py --schedule-type crontab --schedule-expression "0 0 * * *"
+    ```
+    """
+    _project_jobs_create_impl(
+        project_id=project_id,
+        name=name,
+        path=path,
+        execution_path=execution_path,
+        app_name=app_name,
+        related_image_id=related_image_id,
+        schedule_type=schedule_type,
+        schedule_every=schedule_every,
+        schedule_period=schedule_period,
+        schedule_expression=schedule_expression,
+        schedule_start_time=schedule_start_time,
+        schedule_one_off=schedule_one_off,
+        cpu_request=cpu_request,
+        memory_request=memory_request,
+        gpu_request=gpu_request,
+        gpu_type=gpu_type,
+        spot=spot,
+        max_runtime_seconds=max_runtime_seconds,
+        timeout=timeout,
+    )
 
 
 @project.command("set-up-locally")

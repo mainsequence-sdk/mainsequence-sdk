@@ -6,48 +6,44 @@ Now that you've built and tested your `DataNode`s locally, it's time to **orches
 
 Before scheduling anything, make sure your environment is consistent and your latest changes are committed.
 
-1. **Activate your virtual environment** (if not already active):
-
-   Windows PowerShell:
-   ```powershell
-   .\.venv\Scripts\Activate
-   ```
-   Linux/macOS:
-   ```bash
-   source .venv/bin/activate
-   ```
-
-2. **Compile dependencies** from your declared deps into `requirements.txt` (most common flow):
+1. **Run a dry-run first (recommended)** to preview everything the sync command will do:
 
    ```powershell
-   uv pip compile pyproject.toml --universal -o requirements.txt
+   mainsequence project sync --path . -m "Tutorial files" --dry-run
    ```
-   
-    **Note** you can do this by clicking "Compile/Freeze Environment" button in the current project panel in the vs code extension
-    ![img.png](../img/tutorial/compile_env.png)
-3. **Commit your changes:**
+
+2. **Run the full sync workflow**:
 
    ```powershell
-   git add -A        # stages new, modified, and deleted files
-   git commit -m "Tutorial files"
+   mainsequence project sync --path . -m "Tutorial files"
    ```
 
-4. **Push to the repository.**  
-   Because this is a private, security‑backed repo behind the Main Sequence Platform, you'll need a **signed terminal** that loads the correct cryptographic key.
+   You can also target by project id:
+   ```powershell
+   mainsequence project sync [PROJECT_ID] -m "Tutorial files"
+   ```
 
-   Open a signed terminal via the CLI:
+3. **What `mainsequence project sync` does for you**
+
+   - Ensures your local `.venv` and `uv` tooling are ready.
+   - Bumps package version (`patch` by default; configurable with `--bump`).
+   - Runs `uv lock` and `uv sync`.
+   - Exports locked dependencies to `requirements.txt`.
+   - Runs `git add -A`, creates your commit, and pushes to remote (unless `--no-push` is used).
+   - Uses your project SSH key setup for secure push flow.
+
+4. **Useful options**
 
    ```powershell
-   mainsequence project open-signed-terminal [PROJECT_ID]
-   ```
-   **Note:**
-   Replace `[PROJECT_ID]` with your actual project ID (e.g., `60`).
+   # Bump minor version instead of patch
+   mainsequence project sync --path . -m "Tutorial files" --bump minor
 
-   Then push your changes:
-
-   ```powershell
-   git push
+   # Commit changes but skip push
+   mainsequence project sync --path . -m "Tutorial files" --no-push
    ```
+
+   **Note:** You can still use the VS Code extension button to compile/freeze dependencies if you prefer:
+   ![img.png](../img/tutorial/compile_env.png)
 
 ## 2) Scheduling Jobs
 

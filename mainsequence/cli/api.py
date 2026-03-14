@@ -402,6 +402,781 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
                 os.environ[k] = v
 
 
+def create_project_image(
+    *,
+    project_repo_hash: str,
+    related_project_id: int | str,
+    base_image_id: int | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create a project image via SDK client model.
+
+    Single source of truth:
+      - delegates payload construction and request behavior to `ProjectImage.create()`
+      - avoids duplicating the endpoint contract in the CLI API wrapper
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_image_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientProjectImage.ROOT_URL = root_url
+
+        created = ClientProjectImage.create(
+            project_repo_hash=project_repo_hash,
+            related_project_id=int(related_project_id),
+            base_image_id=base_image_id,
+            timeout=timeout,
+        )
+        if isinstance(created, dict):
+            return created
+        if hasattr(created, "model_dump"):
+            return created.model_dump()
+        return {"id": getattr(created, "id", None)}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {related_project_id}")
+        raise ApiError(f"Project image create failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_image_root_url is not None:
+            try:
+                from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+
+                ClientProjectImage.ROOT_URL = old_image_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def list_project_images(
+    *,
+    related_project_id: int | str,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List project images for a project via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `ProjectImage.filter()`
+      - avoids duplicating filter endpoint behavior in the CLI API wrapper
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_image_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientProjectImage.ROOT_URL = root_url
+
+        images = ClientProjectImage.filter(
+            timeout=timeout,
+            related_project__id__in=[int(related_project_id)],
+        )
+
+        out: list[dict[str, Any]] = []
+        for image in images:
+            if isinstance(image, dict):
+                out.append(image)
+            elif hasattr(image, "model_dump"):
+                out.append(image.model_dump())
+            else:
+                out.append({"id": getattr(image, "id", None)})
+        return out
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {related_project_id}")
+        raise ApiError(f"Project images fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_image_root_url is not None:
+            try:
+                from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+
+                ClientProjectImage.ROOT_URL = old_image_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def list_project_jobs(
+    *,
+    project_id: int | str,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List jobs for a project via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `Job.filter()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import Job as ClientJob
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJob.ROOT_URL = root_url
+
+        jobs = []
+        for filters in ({"project": int(project_id)}, {"project__id__in": [int(project_id)]}):
+            try:
+                jobs = ClientJob.filter(timeout=timeout, **filters)
+                if jobs or "project__id__in" in filters:
+                    break
+            except Exception:
+                continue
+
+        out: list[dict[str, Any]] = []
+        for job in jobs:
+            if isinstance(job, dict):
+                out.append(job)
+            elif hasattr(job, "model_dump"):
+                out.append(job.model_dump())
+            else:
+                out.append({"id": getattr(job, "id", None)})
+        return out
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {project_id}")
+        raise ApiError(f"Project jobs fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import Job as ClientJob
+
+                ClientJob.ROOT_URL = old_job_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def create_project_job(
+    *,
+    name: str,
+    project_id: int | str,
+    execution_path: str | None = None,
+    app_name: str | None = None,
+    task_schedule: dict[str, Any] | str | None = None,
+    cpu_request: str | int | float | None = None,
+    memory_request: str | int | float | None = None,
+    gpu_request: str | int | float | None = None,
+    gpu_type: str | None = None,
+    spot: bool | None = None,
+    max_runtime_seconds: int | None = None,
+    related_image_id: int | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create a project job via SDK client model.
+
+    Single source of truth:
+      - delegates payload construction and request behavior to `Job.create()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import Job as ClientJob
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJob.ROOT_URL = root_url
+
+        created = ClientJob.create(
+            name=name,
+            project_id=int(project_id),
+            execution_path=execution_path,
+            app_name=app_name,
+            task_schedule=task_schedule,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            spot=spot,
+            max_runtime_seconds=max_runtime_seconds,
+            related_image_id=related_image_id,
+            timeout=timeout,
+        )
+        if isinstance(created, dict):
+            return created
+        if hasattr(created, "model_dump"):
+            return created.model_dump()
+        return {"id": getattr(created, "id", None)}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {project_id}")
+        raise ApiError(f"Project job create failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import Job as ClientJob
+
+                ClientJob.ROOT_URL = old_job_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def run_project_job(
+    job_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Run a project job via SDK client model.
+
+    Single source of truth:
+      - delegates request behavior to `Job.run_job()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import Job as ClientJob
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJob.ROOT_URL = root_url
+
+        job = ClientJob.get(pk=int(job_id), timeout=timeout)
+        payload = job.run_job(timeout=timeout)
+        if isinstance(payload, dict):
+            return payload
+        if hasattr(payload, "model_dump"):
+            return payload.model_dump()
+        return {"job_id": int(job_id)}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Job not found: {job_id}")
+        raise ApiError(f"Project job run failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import Job as ClientJob
+
+                ClientJob.ROOT_URL = old_job_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def list_project_job_runs(
+    *,
+    job_id: int | str,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List job runs via SDK client model.
+
+    Single source of truth:
+      - delegates response parsing to `JobRun.filter()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_run_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import JobRun as ClientJobRun
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_run_root_url = getattr(ClientJobRun, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJobRun.ROOT_URL = root_url
+
+        runs = ClientJobRun.filter(job__id=[int(job_id)], timeout=timeout)
+        out: list[dict[str, Any]] = []
+        for run in runs:
+            if isinstance(run, dict):
+                out.append(run)
+            elif hasattr(run, "model_dump"):
+                out.append(run.model_dump())
+            else:
+                out.append({"id": getattr(run, "id", None)})
+        return out
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Job not found: {job_id}")
+        raise ApiError(f"Project job runs fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_run_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import JobRun as ClientJobRun
+
+                ClientJobRun.ROOT_URL = old_job_run_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def get_project_job_run_logs(
+    job_run_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch job run logs via SDK client model.
+
+    Single source of truth:
+      - delegates request behavior to `JobRun.get_logs()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_run_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import JobRun as ClientJobRun
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_run_root_url = getattr(ClientJobRun, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJobRun.ROOT_URL = root_url
+
+        job_run = ClientJobRun.get(pk=int(job_run_id), timeout=timeout)
+        payload = job_run.get_logs(timeout=timeout)
+        if isinstance(payload, dict):
+            return payload
+        if hasattr(payload, "model_dump"):
+            return payload.model_dump()
+        return {"job_run_id": int(job_run_id), "rows": []}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Job run not found: {job_run_id}")
+        raise ApiError(f"Project job run logs fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_run_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import JobRun as ClientJobRun
+
+                ClientJobRun.ROOT_URL = old_job_run_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def _json_results(r: requests.Response) -> list[dict]:
     """
     Return list-like API payloads for DRF list endpoints.

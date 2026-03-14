@@ -49,7 +49,19 @@ Most frequently used flows:
 ```bash
 # 1) List and create
 mainsequence project list
+mainsequence project images list
+mainsequence project images list 123
 mainsequence project create tutorial-project
+mainsequence project images create
+mainsequence project images create 123
+mainsequence project images create 123 4a1b2c3d
+mainsequence project images create 123 --timeout 600 --poll-interval 15
+mainsequence project jobs list
+mainsequence project jobs runs list 91
+mainsequence project jobs runs logs 501
+mainsequence project jobs runs logs 501 --max-wait-seconds 900
+mainsequence project jobs run 91
+mainsequence project jobs create --name daily-run --execution-path scripts/test.py
 mainsequence project list data_nodes_updates
 mainsequence project list data_nodes_updates 123
 
@@ -87,3 +99,11 @@ mainsequence settings set-base ~/mainsequence
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
+- `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
+- `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
+- `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
+- `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.
+- `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.
+- `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
+- `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
+- `mainsequence project jobs create` creates jobs through the SDK client `Job.create()` path, uses the selected project image directly, expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
