@@ -1,4 +1,4 @@
-# Getting Started 5: From Data to Dashboards I
+# Part 5.1: Streamlit Integration I
 
 ## Introduction
 

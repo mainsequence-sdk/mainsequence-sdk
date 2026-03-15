@@ -99,7 +99,7 @@ If you came here from the tutorial, this is the right place to slow down and und
 
 ## Related Reading
 
-- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/getting_started_4_2.md)
+- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
 - [Data Nodes](../data_nodes.md)
 - [Artifacts](../infrastructure/artifacts.md)
 - [Instruments](../instruments/index.md)

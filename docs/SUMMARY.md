@@ -7,9 +7,9 @@
     - [Part 4 — Orchestration](tutorial/scheduling_jobs.md)
     - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/markets_tutorial/markets_equities_with_algoseek.md)
     - [Part 4.2 — Markets: Fixed Income Custom Assets](tutorial/markets_tutorial/markets_fixed_income_custom_assets.md)
-    - [Part 4.3 — Markets — Portfolios and Virtual Funds](tutorial/getting_started_4_2.md)
-    - [Part 5.1 — From Data to Dashboards I](tutorial/getting_started_5_1.md)
-    - [Part 5.2 — From Data to Dashboards II](tutorial/getting_started_5_2.md)
+    - [Part 4.3 — Markets — Portfolios and Virtual Funds](tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
+    - [Part 5.1 — Streamlit Integration I](tutorial/dashboards/streamlit/streamlit_integration_1.md)
+    - [Part 5.2 — Streamlit Integration II](tutorial/dashboards/streamlit/streamlit_integration_2.md)
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
     - [CLI Deep Dive](knowledge/cli.md)

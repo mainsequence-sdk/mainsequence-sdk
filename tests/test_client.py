@@ -80,93 +80,50 @@ def test_project_image_filter():
         msc.ProjectImage.filter(related_project=project_id)
 
 
+def _build_asset_translation_rule_for_test():
+    existing_tables = msc.AssetTranslationTable.filter()
+    for table in existing_tables:
+        for rule in table.rules:
+            return msc.AssetTranslationRule(
+                asset_filter=rule.asset_filter,
+                markets_time_serie_unique_identifier=rule.markets_time_serie_unique_identifier,
+                target_exchange_code=rule.target_exchange_code,
+                default_column_name=rule.default_column_name,
+            )
 
+    candidate_storages = msc.DataNodeStorage.filter(source_class_name="MarketsTimeSeriesDetails")
+    storage = next((item for item in candidate_storages if item.identifier), None)
+    if storage is None:
+        pytest.skip("No MarketsTimeSeriesDetails storage with identifier available for AssetTranslationTable test.")
 
-class DummyRule:
-    def __init__(self, payload: dict):
-        self.payload = payload
-
-    def model_dump(self):
-        return dict(self.payload)
-
-
-def test_asset_translation_table_get_or_create_creates_when_missing(monkeypatch):
-    rules = [
-        DummyRule(
-            {
-                "asset_filter": {"security_market_sector": "Crypto"},
-                "markets_time_serie_unique_identifier": "binance_1d_bars",
-                "target_exchange_code": "BNCE",
-                "default_column_name": "close",
-            }
-        )
-    ]
-    captured = {}
-
-    monkeypatch.setattr(msc.AssetTranslationTable, "get_or_none", lambda unique_identifier: None)
-
-    def _create(*, unique_identifier, rules):
-        captured["unique_identifier"] = unique_identifier
-        captured["rules"] = rules
-        return "created-table"
-
-    monkeypatch.setattr(msc.AssetTranslationTable, "create", _create)
-
-    result = msc.AssetTranslationTable.get_or_create("prices_translation_table_1d", rules)
-
-    assert result == "created-table"
-    assert captured == {
-        "unique_identifier": "prices_translation_table_1d",
-        "rules": [rule.model_dump() for rule in rules],
-    }
-
-
-def test_asset_translation_table_get_or_create_adds_rules_when_existing(monkeypatch):
-    rules = [
-        DummyRule(
-            {
-                "asset_filter": {"security_market_sector": "Equity"},
-                "markets_time_serie_unique_identifier": "alpaca_1d_bars",
-                "target_exchange_code": "US",
-                "default_column_name": "close",
-            }
-        )
-    ]
-
-    class ExistingTable:
-        def __init__(self):
-            self.received_rules = None
-
-        def add_rules(self, new_rules):
-            self.received_rules = new_rules
-
-    existing = ExistingTable()
-    create_called = {"value": False}
-
-    monkeypatch.setattr(
-        msc.AssetTranslationTable,
-        "get_or_none",
-        lambda unique_identifier: existing,
+    return msc.AssetTranslationRule(
+        asset_filter=msc.AssetFilter(),
+        markets_time_serie_unique_identifier=storage.identifier,
+        target_exchange_code=None,
+        default_column_name="close",
     )
 
-    def _create(**kwargs):
-        create_called["value"] = True
-        return kwargs
 
-    monkeypatch.setattr(msc.AssetTranslationTable, "create", _create)
+def test_asset_translation_table_get_or_create():
+    identifier = "codex-test-asset-translation-table"
+    rule = _build_asset_translation_rule_for_test()
 
-    result = msc.AssetTranslationTable.get_or_create("prices_translation_table_1d", rules)
+    table = msc.AssetTranslationTable.get_or_create(identifier, [rule])
+    assert table.id is not None
+    assert table.unique_identifier == identifier
 
-    assert result is existing
-    assert existing.received_rules is rules
+    table_again = msc.AssetTranslationTable.get_or_create(identifier, [rule])
+    assert table_again.id == table.id
+    assert table_again.unique_identifier == identifier
 
+    def _matches(existing_rule):
+        return (
+            existing_rule.asset_filter.model_dump(exclude_none=True)
+            == rule.asset_filter.model_dump(exclude_none=True)
+            and existing_rule.markets_time_serie_unique_identifier
+            == rule.markets_time_serie_unique_identifier
+            and existing_rule.target_exchange_code == rule.target_exchange_code
+            and existing_rule.default_column_name == rule.default_column_name
+        )
 
-
-test_asset_translation_table_get_or_create_creates_when_missing()
-#
-# test_project_image_filter()
-# users=msc.User.filter()
-#
-# msc.User.get(id=users[0].id,serializer="full")
-#
-# a=5
+    assert any(_matches(existing_rule) for existing_rule in table_again.rules)

@@ -1,4 +1,4 @@
-# Getting Started 4: Markets — Portfolios and Virtual Funds
+# Part 4.3: Markets — Portfolios and Virtual Funds
 
 In the previous part, you created and updated **assets** and learned how **Data Nodes** relate to assets. This chapter goes deeper into Main Sequence’s **Markets** features and shows, end‑to‑end, how to create a portfolio that the platform understands.
 
@@ -390,6 +390,20 @@ And also update imports at the top of the file:
 from src.helpers_mock import ensure_test_assets, SECURITY_TYPE_MOCK, SIMULATED_PRICES_TABLE, TRANSLATION_TABLE_IDENTIFIER
 
 ```
+
+> [!IMPORTANT]
+> `WrapperDataNode` treats the translation table as a dependency manifest, not only as a per-asset matching rule set.
+>
+> During initialization, it loops through every rule in the table and resolves every distinct `markets_time_serie_unique_identifier` into an `APIDataNode` before it evaluates which rule matches a given asset.
+>
+> That means this shared-table example is expected to fail fast:
+>
+> - Rule A: `security_type=MOCK_ASSET_TUTORIAL_135 -> simulated_daily_closes_tutorial_135`
+> - Rule B: `security_type=SOMETHING_ELSE -> old_deleted_table`
+>
+> Even if your current portfolio only contains assets that match Rule A, `WrapperDataNode` will still try to resolve `old_deleted_table` while it is building its dependency map. If that target does not exist, wrapper construction fails immediately.
+>
+> This is intentional behavior. Shared translation tables are valid and useful across projects, but every target time series referenced by any rule in the table must exist and remain valid. If you want a tutorial or project to stay isolated from unrelated rules, use a dedicated translation-table identifier.
 
 Now you have a translation table that maps all assets with `security_type=MOCK_ASSET` to the `simulated_daily_closes_tutorial` prices table.
 
@@ -792,4 +806,4 @@ Then back to `run_simulated_prices.py` file and run it from the Run and Debug dr
 
 You’re now ready to use these portfolios in dashboards and deeper analyses.
 
-For a deeper explanation of the Virtual Fund Builder concepts behind this tutorial, see [Virtual Fund Builder](../knowledge/virtualfundbuilder/index.md).
+For a deeper explanation of the Virtual Fund Builder concepts behind this tutorial, see [Virtual Fund Builder](../../knowledge/virtualfundbuilder/index.md).

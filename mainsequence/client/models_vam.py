@@ -980,8 +980,9 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
         if translation_table is None:
             translation_table = AssetTranslationTable.create(
                 unique_identifier=translation_table_identifier,
-                rules=rules_serialized,
+
             )
+            translation_table.add_rules(rules)
         else:
             translation_table.add_rules(rules)
         return translation_table

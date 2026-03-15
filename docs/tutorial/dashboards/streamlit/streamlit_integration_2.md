@@ -1,4 +1,4 @@
-# Getting Started 5: From Data to Dashboards II
+# Part 5.2: Streamlit Integration II
 **Build the Fixed‑Income “Curve, Stats & Positions” dashboard on the Main Sequence platform**
 
 > Updated to reflect your current repository state for the *Fixed Income Position Dashboard* (multipage Streamlit app with curve bumps, portfolio/group selection, z‑spreads, and per‑asset drill‑downs).
@@ -199,4 +199,3 @@ def get_app_data_nodes(): return _deps
 
 **You now have a complete, multipage, curve‑aware fixed‑income dashboard running on the Main Sequence platform.**  
 Push your repo, open the dashboard, and try a few curve bump scenarios!
-
