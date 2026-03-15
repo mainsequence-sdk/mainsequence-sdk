@@ -30,6 +30,7 @@ TDAG_ENDPOINT = (
     or "https://main-sequence.app"
 )
 API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
+AUTH_ENDPOINT = TDAG_ENDPOINT.rstrip("/")
 
 DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 DEFAULT_ALLOWED_METHODS = frozenset(["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
@@ -66,6 +67,14 @@ UniqueIdentifierRangeMap = dict[str, DateInfo]
 
 class AuthError(Exception):
     pass
+
+
+def _jwt_reauth_hint() -> str:
+    return (
+        " Refresh your credentials with `mainsequence logout` and "
+        "`mainsequence login <email>`. If this code runs in a separate shell or IDE, "
+        "use `mainsequence login <email> --export` and load the exported env vars there."
+    )
 
 def _decode_jwt_exp(token: str | None) -> int | None:
     """
@@ -135,8 +144,8 @@ class DRFTokenAuthProvider(BaseAuthProvider):
 class JWTAuthProvider(BaseAuthProvider):
     access_token: str | None = None
     refresh_token: str | None = None
-    refresh_url: str = f"{API_ENDPOINT}/auth/jwt-token/token/refresh/"
-    obtain_url: str = f"{API_ENDPOINT}/auth/jwt-token/token/"
+    refresh_url: str = f"{AUTH_ENDPOINT}/auth/jwt-token/token/refresh/"
+    obtain_url: str = f"{AUTH_ENDPOINT}/auth/jwt-token/token/"
     header_keyword: str = "Bearer"
     refresh_skew_seconds: int = 60
     timeout: tuple[float, float] = DEFAULT_TIMEOUT
@@ -188,7 +197,7 @@ class JWTAuthProvider(BaseAuthProvider):
             if not self.refresh_token:
                 if self.access_token and not force:
                     return
-                raise AuthError("JWT refresh token is missing")
+                raise AuthError("JWT refresh token is missing." + _jwt_reauth_hint())
 
             http_client = session or requests
 
@@ -200,12 +209,16 @@ class JWTAuthProvider(BaseAuthProvider):
             )
 
             if r.status_code != 200:
-                raise AuthError(f"JWT refresh failed with status {r.status_code}")
+                raise AuthError(
+                    f"JWT refresh failed with status {r.status_code}." + _jwt_reauth_hint()
+                )
 
             data = r.json()
             access = data.get("access")
             if not access:
-                raise AuthError("JWT refresh response did not include access token")
+                raise AuthError(
+                    "JWT refresh response did not include access token." + _jwt_reauth_hint()
+                )
 
             # Important if ROTATE_REFRESH_TOKENS=True
             new_refresh = data.get("refresh")

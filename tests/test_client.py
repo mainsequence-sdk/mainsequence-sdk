@@ -80,6 +80,46 @@ def test_project_image_filter():
         msc.ProjectImage.filter(related_project=project_id)
 
 
+def test_project_resource_filter():
+    resources = msc.ProjectResource.filter()
+    if not resources:
+        pytest.skip("No project resources available for filter test.")
+
+    resource = next(
+        (item for item in resources if item.id is not None and item.project is not None),
+        None,
+    )
+    if resource is None:
+        pytest.skip("No project resource with id and project available for filter test.")
+
+    project_ref = resource.project
+    project_id = project_ref.id if hasattr(project_ref, "id") else project_ref
+
+    filtered_by_project = msc.ProjectResource.filter(project__id=project_id)
+    assert any(item.id == resource.id for item in filtered_by_project)
+
+    filtered_by_id = msc.ProjectResource.filter(id=resource.id)
+    assert any(item.id == resource.id for item in filtered_by_id)
+
+    filtered_by_id_in = msc.ProjectResource.filter(id__in=[resource.id])
+    assert any(item.id == resource.id for item in filtered_by_id_in)
+
+    if resource.repo_commit_sha:
+        filtered_by_repo_commit = msc.ProjectResource.filter(
+            repo_commit_sha=resource.repo_commit_sha
+        )
+        assert any(item.id == resource.id for item in filtered_by_repo_commit)
+
+    if resource.resource_type:
+        filtered_by_resource_type = msc.ProjectResource.filter(
+            resource_type=resource.resource_type
+        )
+        assert any(item.id == resource.id for item in filtered_by_resource_type)
+
+    with pytest.raises(ValueError):
+        msc.ProjectResource.filter(project=project_id)
+
+
 def _build_asset_translation_rule_for_test():
     existing_tables = msc.AssetTranslationTable.filter()
     for table in existing_tables:
@@ -127,3 +167,6 @@ def test_asset_translation_table_get_or_create():
         )
 
     assert any(_matches(existing_rule) for existing_rule in table_again.rules)
+
+
+test_project_resource_filter()

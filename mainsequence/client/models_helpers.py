@@ -3,12 +3,17 @@ from __future__ import annotations
 import datetime
 import json
 from collections.abc import Collection
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal, Union
 
 from pydantic import BaseModel, Field, PositiveInt
 
+from ..compute_validation import (
+    decimal_to_storage,
+    normalize_string,
+    validate_and_normalize_compute_fields,
+)
 from .models_tdag import POD_PROJECT, Project, ProjectImage
 from .models_vam import *
 
@@ -214,16 +219,11 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
     @staticmethod
     def _normalize_str(value: Any) -> str | None:
-        if value is None:
-            return None
-        value = str(value).strip()
-        return value or None
+        return normalize_string(value)
 
     @staticmethod
     def _decimal_to_storage(value: Decimal | None) -> str | None:
-        if value is None:
-            return None
-        return format(value.normalize(), "f")
+        return decimal_to_storage(value)
 
     @classmethod
     def _resolve_project_id(
@@ -326,73 +326,16 @@ class Job(BaseObjectOrm, BasePydanticModel):
         gpu_request: Any,
         gpu_type: Any,
         require_cpu_and_memory: bool = True,
+        output_format: Literal["decimal", "k8s"] = "decimal",
     ) -> dict[str, str | None]:
-        def parse_decimal(value: Any, field_name: str) -> Decimal | None:
-            if value in (None, ""):
-                return None
-            try:
-                dec = value if isinstance(value, Decimal) else Decimal(str(value).strip())
-            except (InvalidOperation, TypeError, ValueError):
-                raise ValueError(f"{field_name} must be a valid decimal value.")
-
-            if not dec.is_finite():
-                raise ValueError(f"{field_name} must be a valid decimal value.")
-
-            if dec.as_tuple().exponent < -2:
-                raise ValueError(f"{field_name} must have at most 2 decimal places.")
-
-            return dec
-
-        def parse_int(value: Any, field_name: str) -> int | None:
-            if value in (None, ""):
-                return None
-            try:
-                return int(str(value).strip())
-            except (TypeError, ValueError):
-                raise ValueError(f"{field_name} must be a valid integer.")
-
-        cpu = parse_decimal(cpu_request, "cpu_request")
-        memory = parse_decimal(memory_request, "memory_request")
-
-        if require_cpu_and_memory:
-            if cpu is None:
-                raise ValueError("cpu_request is required.")
-            if memory is None:
-                raise ValueError("memory_request is required.")
-        else:
-            if (cpu is None) ^ (memory is None):
-                raise ValueError("cpu_request and memory_request must be provided together.")
-
-        if cpu is not None and (cpu < cls.CPU_MIN or cpu > cls.CPU_MAX):
-            raise ValueError(f"cpu_request must be between {cls.CPU_MIN} and {cls.CPU_MAX} vCPU.")
-
-        if memory is not None and (memory < cls.MEMORY_MIN or memory > cls.MEMORY_MAX):
-            raise ValueError(f"memory_request must be between {cls.MEMORY_MIN} and {cls.MEMORY_MAX} GiB.")
-
-        if cpu is not None and memory is not None:
-            ratio = memory / cpu
-            if ratio < cls.MEMORY_PER_CPU_MIN or ratio > cls.MEMORY_PER_CPU_MAX:
-                raise ValueError("memory_request must be between 1x and 6.5x cpu_request.")
-
-        gpu_count = parse_int(gpu_request, "gpu_request")
-        normalized_gpu_type = cls._normalize_str(gpu_type)
-
-        if gpu_count is None and normalized_gpu_type is None:
-            pass
-        else:
-            if gpu_count is None:
-                raise ValueError("gpu_request is required when gpu_type is set.")
-            if normalized_gpu_type is None:
-                raise ValueError("gpu_type is required when gpu_request is set.")
-            if gpu_count < cls.GPU_MIN or gpu_count > cls.GPU_MAX:
-                raise ValueError(f"gpu_request must be between {cls.GPU_MIN} and {cls.GPU_MAX}.")
-
-        return {
-            "cpu_request": cls._decimal_to_storage(cpu),
-            "memory_request": cls._decimal_to_storage(memory),
-            "gpu_request": str(gpu_count) if gpu_count is not None else None,
-            "gpu_type": normalized_gpu_type,
-        }
+        return validate_and_normalize_compute_fields(
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            require_cpu_and_memory=require_cpu_and_memory,
+            output_format=output_format,
+        )
 
     @classmethod
     def _normalize_task_schedule_payload(
@@ -742,3 +685,288 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r)
 
         return r.json()
+
+
+
+class ProjectResource(BaseObjectOrm, BasePydanticModel):
+    SEARCH_FIELDS: ClassVar[list[str]] = [
+        "project__id",
+        "id",
+        "repo_commit_sha",
+        "resource_type",
+    ]
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "project__id": ["exact"],
+        "id": ["in", "exact"],
+        "repo_commit_sha": ["exact"],
+        "resource_type": ["exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "project__id": "id",
+        "id": "id",
+    }
+
+    # present on ProjectResourceSerializer
+    id: int | None = Field(
+        None,
+        title="Project Resource ID",
+        description="Unique identifier of the project resource.",
+        examples=[101],
+    )
+    project: int | Project | None = Field(
+        None,
+        title="Project",
+        description="Project this resource belongs to. Can be either the project ID or the expanded Project object.",
+        examples=[12],
+    )
+    name: str | None = Field(
+        None,
+        title="Resource Name",
+        description="Display name of the resource discovered in the project's repository.",
+        examples=["analytics_dashboard.py"],
+    )
+    resource_type: Literal["dashboard", "agent", "markdown"] | None = Field(
+        None,
+        title="Resource Type",
+        description="Type of the project resource. Allowed values are `dashboard`, `agent`, and `markdown`.",
+        examples=["dashboard", "markdown"],
+    )
+    code: str | None = Field(
+        None,
+        title="Code",
+        description="Raw file contents of the resource, when available.",
+        examples=["print('hello world')"],
+    )
+    path: str | None = Field(
+        None,
+        title="Path",
+        description="Repository path where the resource was discovered.",
+        examples=["src/dashboards/analytics_dashboard.py"],
+    )
+    filesize: int | None = Field(
+        None,
+        title="File Size",
+        description="Size of the resource file in bytes.",
+        examples=[2048],
+    )
+    last_modified: datetime.datetime | None = Field(
+        None,
+        title="Last Modified",
+        description="Timestamp of the last known modification to the resource.",
+        examples=["2026-03-15T10:30:00Z"],
+    )
+    created_at: datetime.datetime | None = Field(
+        None,
+        title="Created At",
+        description="Timestamp when the project resource record was created.",
+        examples=["2026-03-14T09:00:00Z"],
+    )
+    updated_at: datetime.datetime | None = Field(
+        None,
+        title="Updated At",
+        description="Timestamp when the project resource record was last updated.",
+        examples=["2026-03-15T11:45:00Z"],
+    )
+    repo_commit_sha: str | None = Field(
+        None,
+        title="Repository Commit SHA",
+        description="Repository commit SHA associated with this discovered resource, if available.",
+        examples=["a1b2c3d4e5f678901234567890abcdef12345678"],
+    )
+
+    def _create_release(
+        self,
+        release_kind: ResourceReleaseKind,
+        timeout=None,
+        files=None,
+        *args,
+        **kwargs,
+    ) -> ResourceRelease:
+        if self.id is None:
+            raise ValueError("ProjectResource must have an id before creating a release.")
+
+        kwargs["resource"] = self.id
+        kwargs["release_kind"] = release_kind.value
+        return ResourceRelease.create(timeout=timeout, files=files, *args, **kwargs)
+
+    def create_dashboard(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
+        return self._create_release(
+            ResourceReleaseKind.STREAMLIT_DASHBOARD,
+            timeout,
+            files,
+            *args,
+            **kwargs,
+        )
+
+    def create_agent(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
+        return self._create_release(
+            ResourceReleaseKind.AGENT,
+            timeout,
+            files,
+            *args,
+            **kwargs,
+        )
+
+
+class ResourceReleaseKind(str, Enum):
+    STREAMLIT_DASHBOARD = "streamlit_dashboard"
+    AGENT = "agent"
+
+
+class ResourceRelease(BaseObjectOrm, BasePydanticModel):
+    # present on ResourceReleaseSerializer
+    id: int | None = Field(
+        None,
+        title="Resource Release ID",
+        description="Unique identifier of the resource release.",
+        examples=[123],
+    )
+    subdomain: str  = Field(
+        title="Subdomain",
+        description="DNS-safe label used as the subdomain for this release.",
+        examples=["analytics-123"],
+    )
+    resource: int | ProjectResource | None = Field(
+        None,
+        title="Resource",
+        description="Primary project resource for this release. Can be either the resource ID or the expanded ProjectResource object.",
+        examples=[42],
+    )
+    readme_resource: int | ProjectResource | None = Field(
+        None,
+        title="README Resource",
+        description="Optional project resource containing README or supporting documentation for this release. Can be either the resource ID or the expanded ProjectResource object.",
+        examples=[84],
+    )
+    related_job: int | Job  = Field(
+        title="Related Job",
+        description="Job associated with this resource release. Can be either the job ID or the expanded Job object.",
+        examples=[7],
+    )
+    release_kind: ResourceReleaseKind | None = Field(
+        None,
+        title="Release Kind",
+        description="Type of resource release.",
+        examples=["streamlit_dashboard"],
+    )
+    related_image: int | ProjectImage | None = Field(
+        None,
+        title="Related Image",
+        description="Execution image, either as an image id or the expanded ProjectImage object.",
+        examples=[94],
+    )
+    cpu_request: str | None = Field(
+        None,
+        title="CPU Request",
+        description="Requested CPU for the release. Accepts decimal vCPU values or Kubernetes quantities such as 500m.",
+        examples=["500m", "1"],
+    )
+    memory_request: str | None = Field(
+        None,
+        title="Memory Request",
+        description="Requested memory for the release. Accepts decimal GiB values or Kubernetes quantities such as 1Gi.",
+        examples=["1Gi", "2Gi"],
+    )
+    gpu_request: str | None = Field(
+        None,
+        title="GPU Request",
+        description="Requested GPU count, stored as a string.",
+        examples=["1", None],
+    )
+    gpu_type: str | None = Field(
+        None,
+        title="GPU Type",
+        description="GPU accelerator type.",
+        examples=["nvidia-tesla-t4", None],
+    )
+    spot: bool = Field(
+        default=False,
+        title="Spot",
+        description="Whether the release should prefer spot or preemptible capacity.",
+        examples=[False, True],
+    )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        resource: int | ProjectResource,
+        release_kind: ResourceReleaseKind | str,
+        readme_resource: int | ProjectResource | None = None,
+        readme_resource_id: int | ProjectResource | None = None,
+        related_image: int | ProjectImage | None = None,
+        related_image_id: int | ProjectImage | None = None,
+        cpu_request: str | int | float | Decimal | None = None,
+        memory_request: str | int | float | Decimal | None = None,
+        gpu_request: str | int | None = None,
+        gpu_type: str | None = None,
+        spot: bool | None = None,
+        timeout: int | None = None,
+        files=None,
+    ) -> ResourceRelease:
+        resource_id = Job._coerce_id(resource, field_name="resource")
+        if resource_id is None:
+            raise ValueError("resource is required.")
+
+        if isinstance(release_kind, ResourceReleaseKind):
+            normalized_release_kind = release_kind.value
+        else:
+            normalized_release_kind = Job._normalize_str(release_kind)
+            allowed_release_kinds = {kind.value for kind in ResourceReleaseKind}
+            if normalized_release_kind not in allowed_release_kinds:
+                raise ValueError(
+                    "release_kind must be one of: "
+                    + ", ".join(sorted(allowed_release_kinds))
+                    + "."
+                )
+
+        normalized_compute = Job._validate_and_normalize_compute_fields(
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            require_cpu_and_memory=True,
+            output_format="k8s",
+        )
+
+        payload: dict[str, Any] = {
+            "resource": resource_id,
+            "release_kind": normalized_release_kind,
+            "cpu_request": normalized_compute["cpu_request"],
+            "memory_request": normalized_compute["memory_request"],
+        }
+
+        readme_ref = readme_resource_id if readme_resource_id is not None else readme_resource
+        readme_id = Job._coerce_id(readme_ref, field_name="readme_resource")
+        if readme_id is not None:
+            payload["readme_resource"] = readme_id
+
+        image_ref = related_image_id if related_image_id is not None else related_image
+        image_id = Job._coerce_id(image_ref, field_name="related_image")
+        if image_id is not None:
+            payload["related_image"] = image_id
+
+        if normalized_compute["gpu_request"] is not None:
+            payload["gpu_request"] = normalized_compute["gpu_request"]
+        if normalized_compute["gpu_type"] is not None:
+            payload["gpu_type"] = normalized_compute["gpu_type"]
+        if spot is not None:
+            payload["spot"] = bool(spot)
+
+        request_payload = {"json": cls.serialize_for_json(payload)}
+        if files:
+            request_payload["files"] = files
+
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{cls.get_object_url()}/",
+            payload=request_payload,
+            time_out=timeout,
+        )
+
+        if r.status_code not in (200, 201, 202):
+            raise_for_response(r, payload=request_payload)
+
+        return cls(**r.json())

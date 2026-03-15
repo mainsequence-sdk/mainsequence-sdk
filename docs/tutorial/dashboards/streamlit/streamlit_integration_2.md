@@ -1,6 +1,10 @@
 # Part 5.2: Streamlit Integration II
 **Build the Fixed‑Income “Curve, Stats & Positions” dashboard on the Main Sequence platform**
 
+!!! warning "IMPORTANT"
+    Each dashboard folder must include a `README.md` file in the same directory as `app.py`.
+    If your dashboard entrypoint is `dashboards/my_dashboard/app.py`, then you should also have `dashboards/my_dashboard/README.md`.
+
 > Updated to reflect your current repository state for the *Fixed Income Position Dashboard* (multipage Streamlit app with curve bumps, portfolio/group selection, z‑spreads, and per‑asset drill‑downs).
 
 ---

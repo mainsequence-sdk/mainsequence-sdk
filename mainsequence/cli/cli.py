@@ -31,10 +31,12 @@ import shutil
 import subprocess
 import sys
 import time
-from decimal import ROUND_UP, Decimal, InvalidOperation
+from decimal import ROUND_UP, Decimal
+from textwrap import dedent
 
 import typer
 
+from ..compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
 from . import config as cfg
 from .api import (
     ApiError,
@@ -43,6 +45,7 @@ from .api import (
     create_project,
     create_project_image,
     create_project_job,
+    create_project_resource_release,
     deep_find_repo_url,
     delete_project,
     fetch_project_env_text,
@@ -61,9 +64,11 @@ from .api import (
     list_project_images,
     list_project_job_runs,
     list_project_jobs,
+    list_project_resources,
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
+    sync_project_after_commit,
 )
 from .api import login as api_login
 from .docker_utils import (
@@ -107,6 +112,7 @@ markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
 markets_asset_translation_table_group = typer.Typer(help="Markets asset translation table commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
+project_project_resource_group = typer.Typer(help="Project resource commands")
 project_data_node_updates_group = typer.Typer(help="Project data node update commands")
 project_images_group = typer.Typer(help="Project image commands")
 project_jobs_group = typer.Typer(help="Project job commands")
@@ -119,6 +125,7 @@ markets.add_typer(markets_portfolios_group, name="portfolios")
 markets.add_typer(markets_asset_translation_table_group, name="asset-translation-table")
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
+project.add_typer(project_project_resource_group, name="project_resource")
 project.add_typer(project_data_node_updates_group, name="data-node-updates")
 project.add_typer(project_images_group, name="images")
 project.add_typer(project_jobs_group, name="jobs")
@@ -138,11 +145,28 @@ CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
+RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
+    "streamlit_dashboard": "dashboard",
+    "agent": "agent",
+}
 
 
 # ---------- AI instructions utilities (kept) ----------
 
 INSTR_REL_PATH = pathlib.Path("examples") / "ai" / "instructions"
+
+
+def _mainsequence_ascii_banner() -> str:
+    return dedent(
+        r"""
+         __  __       _         ____                                 
+        |  \/  | __ _(_)_ __   / ___|  ___  __ _ _   _  ___ _ __   ___
+        | |\/| |/ _` | | '_ \  \___ \ / _ \/ _` | | | |/ _ \ '_ \ / __|
+        | |  | | (_| | | | | |  ___) |  __/ (_| | |_| |  __/ | | | (__ 
+        |_|  |_|\__,_|_|_| |_| |____/ \___|\__, |\__,_|\___|_| |_|\___|
+                                              |_|                       
+        """
+    ).strip("\n")
 
 
 def _git_root() -> pathlib.Path | None:
@@ -623,6 +647,24 @@ def _git_upstream_ref(project_dir: pathlib.Path) -> str | None:
     return upstream or None
 
 
+def _get_remote_branch_head_commit(project_dir: pathlib.Path) -> tuple[str, str]:
+    upstream = _git_upstream_ref(project_dir)
+    if not upstream:
+        raise RuntimeError(
+            "Current branch has no upstream remote branch. Push with --set-upstream before listing project resources."
+        )
+
+    result = _git_run(project_dir, ["rev-parse", upstream])
+    if result.returncode != 0:
+        reason = (result.stderr or result.stdout or "").strip() or "git rev-parse failed"
+        raise RuntimeError(f"Could not resolve remote branch head commit: {reason}")
+
+    commit_sha = (result.stdout or "").strip()
+    if not commit_sha:
+        raise RuntimeError("Remote branch head commit is empty.")
+    return upstream, commit_sha
+
+
 def _parse_git_log_rows(stdout: str) -> list[dict[str, str]]:
     commits: list[dict[str, str]] = []
     seen: set[str] = set()
@@ -872,32 +914,6 @@ def _format_job_schedule_summary(task_schedule) -> str:
     return "-"
 
 
-def _decimal_to_storage(value: Decimal) -> str:
-    return format(value.normalize(), "f")
-
-
-def _parse_decimal_option(value: str | None, *, field_name: str) -> Decimal | None:
-    if value is None:
-        return None
-
-    raw = value.strip()
-    if not raw:
-        return None
-
-    try:
-        dec = Decimal(raw)
-    except (InvalidOperation, ValueError):
-        raise ValueError(f"{field_name} must be a valid decimal value.")
-
-    if not dec.is_finite():
-        raise ValueError(f"{field_name} must be a valid decimal value.")
-
-    if dec.as_tuple().exponent < -2:
-        raise ValueError(f"{field_name} must have at most 2 decimal places.")
-
-    return dec
-
-
 def _resolve_job_create_defaults(
     *,
     cpu_request: str | None,
@@ -905,8 +921,37 @@ def _resolve_job_create_defaults(
     spot: bool | None,
     max_runtime_seconds: int | None,
 ) -> tuple[str, str, bool, int, list[str]]:
-    cpu = _parse_decimal_option(cpu_request, field_name="cpu_request")
-    memory = _parse_decimal_option(memory_request, field_name="memory_request")
+    cpu_request, memory_request, resolved_spot, used_defaults = _resolve_compute_defaults(
+        cpu_request=cpu_request,
+        memory_request=memory_request,
+        spot=spot,
+    )
+
+    if max_runtime_seconds is None:
+        resolved_max_runtime_seconds = JOB_DEFAULT_MAX_RUNTIME_SECONDS
+        used_defaults.append("max_runtime_seconds")
+    else:
+        resolved_max_runtime_seconds = int(max_runtime_seconds)
+        if resolved_max_runtime_seconds <= 0:
+            raise ValueError("max_runtime_seconds must be a positive integer.")
+
+    return (
+        cpu_request,
+        memory_request,
+        resolved_spot,
+        resolved_max_runtime_seconds,
+        used_defaults,
+    )
+
+
+def _resolve_compute_defaults(
+    *,
+    cpu_request: str | None,
+    memory_request: str | None,
+    spot: bool | None,
+) -> tuple[str, str, bool, list[str]]:
+    cpu = parse_cpu_request(cpu_request, field_name="cpu_request")
+    memory = parse_memory_request(memory_request, field_name="memory_request")
     used_defaults: list[str] = []
 
     if cpu is None and memory is None:
@@ -925,19 +970,10 @@ def _resolve_job_create_defaults(
     if spot is None:
         used_defaults.append("spot")
 
-    if max_runtime_seconds is None:
-        resolved_max_runtime_seconds = JOB_DEFAULT_MAX_RUNTIME_SECONDS
-        used_defaults.append("max_runtime_seconds")
-    else:
-        resolved_max_runtime_seconds = int(max_runtime_seconds)
-        if resolved_max_runtime_seconds <= 0:
-            raise ValueError("max_runtime_seconds must be a positive integer.")
-
     return (
-        _decimal_to_storage(cpu),
-        _decimal_to_storage(memory),
+        decimal_to_storage(cpu),
+        decimal_to_storage(memory),
         resolved_spot,
-        resolved_max_runtime_seconds,
         used_defaults,
     )
 
@@ -1327,6 +1363,8 @@ def login(
 
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
+    typer.echo(_mainsequence_ascii_banner())
+    typer.echo("MAIN SEQUENCE")
     success(f"Signed in as {res['username']} (Backend: {res['backend']})")
     info(f"Projects base folder: {base}")
     if cfg.secure_store_available():
@@ -2223,6 +2261,320 @@ def project_delete_remote_cmd(
         detail = resp.get("detail") or resp.get("message")
         if detail:
             info(str(detail))
+
+
+def _project_resources_list_impl(
+    project_id: int | None,
+    path: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    project_dir = _resolve_project_dir(project_id, path)
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(str(project_dir))
+
+    try:
+        upstream, repo_commit_sha = _get_remote_branch_head_commit(project_dir)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    try:
+        resources = list_project_resources(
+            project_id=project_id,
+            repo_commit_sha=repo_commit_sha,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project resources fetch failed: {e}")
+        raise typer.Exit(1)
+
+    info(f"Using repo_commit_sha={repo_commit_sha} from {upstream}.")
+
+    rows: list[list[str]] = []
+    for resource in resources:
+        rows.append(
+            [
+                str(resource.get("id") or "-"),
+                str(resource.get("name") or "-"),
+                str(resource.get("resource_type") or "-"),
+                str(resource.get("path") or "-"),
+                str(resource.get("filesize") or "-"),
+                str(resource.get("last_modified") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Project Resources",
+            ["ID", "Name", "Type", "Path", "File Size", "Last Modified"],
+            rows,
+        )
+    else:
+        info("No project resources found.")
+    info(f"Total project resources: {len(resources)}")
+
+
+@project_project_resource_group.command("list")
+def project_project_resource_list_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List project resources for the current project at the head commit of the remote branch.
+
+    Uses SDK client `ProjectResource.filter()` as the single source of truth and always applies
+    the standard `repo_commit_sha` filter resolved from the current upstream branch head.
+
+    Parameters
+    ----------
+    project_id:
+        Platform project ID. Defaults to local `.env`.
+    path:
+        Local project path. Used when resolving project id and remote branch head commit.
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project project_resource list
+    mainsequence project project_resource list 123
+    mainsequence project project_resource list --path .
+    ```
+    """
+    _project_resources_list_impl(project_id=project_id, path=path, timeout=timeout)
+
+
+def _project_resource_release_create_impl(
+    *,
+    release_kind: str,
+    project_id: int | None,
+    resource_id: int | None,
+    path: str | None,
+    related_image_id: int | None,
+    readme_resource_id: int | None,
+    cpu_request: str | None,
+    memory_request: str | None,
+    gpu_request: str | None,
+    gpu_type: str | None,
+    spot: bool | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    project_dir = _resolve_project_dir(project_id, path)
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(str(project_dir))
+
+    try:
+        project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project images fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if not project_images:
+        error("No project images are available. Create an image first.")
+        raise typer.Exit(1)
+
+    if related_image_id is None:
+        image_rows: list[list[str]] = []
+        for image in project_images:
+            image_rows.append(
+                [
+                    str(image.get("id") or ""),
+                    str(image.get("project_repo_hash") or "-"),
+                    _format_base_image_label(image.get("base_image")),
+                ]
+            )
+        related_image_id = _prompt_select_id(
+            title="Available Project Images",
+            prompt_label="Related image id",
+            items=project_images,
+            rows=image_rows,
+        )
+
+    selected_image = _find_image_by_id(project_images, related_image_id)
+    if not selected_image:
+        error(f"Related image not found: {related_image_id}")
+        raise typer.Exit(1)
+
+    repo_commit_sha = str(selected_image.get("project_repo_hash") or "").strip()
+    if not repo_commit_sha:
+        error("The selected image does not expose project_repo_hash.")
+        raise typer.Exit(1)
+
+    resource_type = RESOURCE_RELEASE_RESOURCE_TYPE_MAP.get(release_kind)
+    if not resource_type:
+        error(f"Unsupported release kind: {release_kind}")
+        raise typer.Exit(1)
+
+    try:
+        resources = list_project_resources(
+            project_id=project_id,
+            repo_commit_sha=repo_commit_sha,
+            resource_type=resource_type,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project resources fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if not resources:
+        error(
+            "No project resources match the selected image commit and release type. "
+            f"Expected resource_type={resource_type!r} for release_kind={release_kind!r}."
+        )
+        raise typer.Exit(1)
+
+    if resource_id is None:
+        resource_rows: list[list[str]] = []
+        for resource in resources:
+            resource_rows.append(
+                [
+                    str(resource.get("id") or ""),
+                    str(resource.get("name") or "-"),
+                    f"{str(resource.get('resource_type') or '-')}: {str(resource.get('path') or '-')}",
+                ]
+            )
+        resource_id = _prompt_select_id(
+            title="Project Resources Matching Selected Image and Release Type",
+            prompt_label="Resource id",
+            items=resources,
+            rows=resource_rows,
+        )
+
+    resource_ids = {str(resource.get("id")) for resource in resources if resource.get("id") is not None}
+    if str(resource_id) not in resource_ids:
+        error("Selected resource does not match the selected image commit and release type.")
+        raise typer.Exit(1)
+
+    try:
+        cpu_request, memory_request, spot, used_defaults = _resolve_compute_defaults(
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            spot=spot,
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    if used_defaults:
+        default_parts: list[str] = []
+        if "cpu_request" in used_defaults:
+            default_parts.append(f"cpu_request={cpu_request}")
+        if "memory_request" in used_defaults:
+            default_parts.append(f"memory_request={memory_request}")
+        if "spot" in used_defaults:
+            default_parts.append(f"spot={'true' if spot else 'false'}")
+        info("Using defaults: " + ", ".join(default_parts) + ".")
+
+    try:
+        created = create_project_resource_release(
+            release_kind=release_kind,
+            resource_id=resource_id,
+            related_image_id=related_image_id,
+            readme_resource_id=readme_resource_id,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            spot=spot,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project resource release creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Project resource release created: id={created.get('id') or '-'}")
+    print_kv(
+        "Project Resource Release",
+        [
+            ("ID", str(created.get("id") or "-")),
+            ("Release Kind", release_kind),
+            ("Resource", str(created.get("resource") or resource_id)),
+            ("Related Image", _format_related_image_label(created.get("related_image") or related_image_id)),
+            ("CPU Request", str(created.get("cpu_request") or cpu_request)),
+            ("Memory Request", str(created.get("memory_request") or memory_request)),
+            ("GPU Request", str(created.get("gpu_request") or gpu_request or "-")),
+            ("GPU Type", str(created.get("gpu_type") or gpu_type or "-")),
+            ("Spot", str(created.get("spot") if created.get("spot") is not None else spot).lower()),
+        ],
+    )
+
+
+@project_project_resource_group.command("create_dashboard")
+def project_project_resource_create_dashboard_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
+    readme_resource_id: int | None = typer.Option(None, "--readme-resource-id", help="Optional README resource ID."),
+    cpu_request: str | None = typer.Option(None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."),
+    memory_request: str | None = typer.Option(None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."),
+    gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
+    gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
+    spot: bool | None = typer.Option(None, "--spot/--no-spot", help="Whether to prefer spot capacity."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create a Streamlit dashboard release from a project resource.
+
+    The command first lets the user select a project image and then filters resources so
+    only resources with `repo_commit_sha == related_image.project_repo_hash` are eligible.
+    """
+    _project_resource_release_create_impl(
+        release_kind="streamlit_dashboard",
+        project_id=project_id,
+        resource_id=resource_id,
+        path=path,
+        related_image_id=related_image_id,
+        readme_resource_id=readme_resource_id,
+        cpu_request=cpu_request,
+        memory_request=memory_request,
+        gpu_request=gpu_request,
+        gpu_type=gpu_type,
+        spot=spot,
+        timeout=timeout,
+    )
+
+
+@project_project_resource_group.command("create_agent")
+def project_project_resource_create_agent_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
+    readme_resource_id: int | None = typer.Option(None, "--readme-resource-id", help="Optional README resource ID."),
+    cpu_request: str | None = typer.Option(None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."),
+    memory_request: str | None = typer.Option(None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."),
+    gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
+    gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
+    spot: bool | None = typer.Option(None, "--spot/--no-spot", help="Whether to prefer spot capacity."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create an agent release from a project resource.
+
+    The command first lets the user select a project image and then filters resources so
+    only resources with `repo_commit_sha == related_image.project_repo_hash` are eligible.
+    """
+    _project_resource_release_create_impl(
+        release_kind="agent",
+        project_id=project_id,
+        resource_id=resource_id,
+        path=path,
+        related_image_id=related_image_id,
+        readme_resource_id=readme_resource_id,
+        cpu_request=cpu_request,
+        memory_request=memory_request,
+        gpu_request=gpu_request,
+        gpu_type=gpu_type,
+        spot=spot,
+        timeout=timeout,
+    )
 
 
 def _project_images_list_impl(
@@ -3543,9 +3895,10 @@ def project_freeze_env(
 
 @project.command("sync")
 def project_sync(
-    message: str = typer.Option(..., "--message", "-m", help="Git commit message"),
+    message: str | None = typer.Argument(None, help="Git commit message"),
     project_id: int | None = typer.Argument(None, help="Project ID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
+    message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
     bump: str = typer.Option("patch", "--bump", help="uv version bump: patch|minor|major (default: patch)"),
     no_push: bool = typer.Option(False, "--no-push", help="Do not git push"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
@@ -3562,7 +3915,7 @@ def project_sync(
     Parameters
     ----------
     message:
-        Commit message.
+        Commit message. Can be passed positionally or via `--message`.
     project_id:
         Project ID to resolve local folder.
     path:
@@ -3577,12 +3930,27 @@ def project_sync(
     Examples
     --------
     ```bash
+    mainsequence project sync "Update environment"
     mainsequence project sync -m "Update environment" --path .
     mainsequence project sync -m "Bump minor" --bump minor --path .
     mainsequence project sync -m "Preview only" --path . --dry-run
     ```
     """
+    if message is not None and message_opt is not None:
+        error("Pass the commit message either positionally or with --message, not both.")
+        raise typer.Exit(2)
+
+    message = message if message is not None else message_opt
     project_dir = _resolve_project_dir(project_id, path)
+    resolved_project_id = project_id if project_id is not None else _read_project_id_from_env_file(project_dir)
+    if not dry_run and not no_push:
+        _require_login()
+        if resolved_project_id is None:
+            error(
+                "Could not determine project id from local .env. "
+                "Pass PROJECT_ID or ensure MAIN_SEQUENCE_PROJECT_ID is present before syncing."
+            )
+            raise typer.Exit(1)
     ensure_venv(project_dir)
 
     origin = git_origin(project_dir)
@@ -3619,75 +3987,6 @@ def project_sync(
         run_uv(uv, ["version", "--bump", bump], cwd=project_dir, env=env)
         run_uv(uv, ["lock"], cwd=project_dir, env=env)
         run_uv(uv, ["sync"], cwd=project_dir, env=env)
-        uv_export_requirements(uv, cwd=project_dir, locked=True, no_dev=True, output_file="requirements.txt")
-
-        run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
-        run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
-        if not no_push:
-            run_cmd(["git", "push"], cwd=project_dir, env=env)
-
-    success(f"Synced: {repo_name}")
-
-
-@project.command("sync_project")
-def project_sync_project(
-    message: str = typer.Argument(..., help="Git commit message"),
-    project_id: int | None = typer.Argument(None, help="Project ID"),
-    path: str | None = typer.Option(None, "--path", help="Project directory"),
-):
-    """
-    Run the standard project sync chain with a commit message.
-
-    This helper executes:
-    1. `uv version --bump patch`
-    2. `uv lock`
-    3. `uv sync`
-    4. `uv export --locked --no-dev --no-hashes --format requirements.txt --output-file requirements.txt`
-    5. `git add -A`
-    6. `git commit -m "<message>"`
-    7. `git push`
-
-    Notes
-    -----
-    `.venv` activation is handled implicitly by using the `uv` binary inside `.venv`.
-
-    Parameters
-    ----------
-    message:
-        Git commit message.
-    project_id:
-        Project ID to resolve local folder.
-    path:
-        Explicit local path.
-
-    Examples
-    --------
-    ```bash
-    mainsequence project sync_project "Update dependencies"
-    mainsequence project sync_project "Update dependencies" --path .
-    mainsequence project sync_project "Sync patch bump" 123
-    ```
-    """
-    project_dir = _resolve_project_dir(project_id, path)
-    ensure_venv(project_dir)
-
-    origin = git_origin(project_dir)
-    repo_name = repo_name_from_git_url(origin) or project_dir.name
-    key_path, _, _ = ensure_key_for_repo(origin)
-
-    safe_message = str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
-    if not safe_message:
-        error("Commit message is required.")
-        raise typer.Exit(1)
-
-    env = os.environ.copy()
-    env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
-
-    uv = ensure_uv_installed(project_dir)
-    with status("Running sync_project steps..."):
-        run_uv(uv, ["version", "--bump", "patch"], cwd=project_dir, env=env)
-        run_uv(uv, ["lock"], cwd=project_dir, env=env)
-        run_uv(uv, ["sync"], cwd=project_dir, env=env)
         uv_export_requirements(
             uv,
             cwd=project_dir,
@@ -3696,11 +3995,42 @@ def project_sync_project(
             no_hashes=True,
             output_file="requirements.txt",
         )
+
         run_cmd(["git", "add", "-A"], cwd=project_dir, env=env)
         run_cmd(["git", "commit", "-m", safe_message], cwd=project_dir, env=env)
-        run_cmd(["git", "push"], cwd=project_dir, env=env)
+        if not no_push:
+            run_cmd(["git", "push"], cwd=project_dir, env=env)
 
-    success(f"Project synced: {repo_name}")
+    if not dry_run and not no_push and resolved_project_id is not None:
+        with status("Triggering backend sync_project_after_commit..."):
+            try:
+                sync_project_after_commit(resolved_project_id)
+            except ApiError as e:
+                error(f"Backend post-commit sync failed: {e}")
+                raise typer.Exit(1)
+        info(f"Triggered backend sync for project {resolved_project_id}.")
+
+    success(f"Synced: {repo_name}")
+
+
+@project.command("sync_project", hidden=True)
+def project_sync_project(
+    message: str = typer.Argument(..., help="Git commit message"),
+    project_id: int | None = typer.Argument(None, help="Project ID"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Backward-compatible hidden alias for `mainsequence project sync`.
+    """
+    project_sync(
+        message=message,
+        project_id=project_id,
+        path=path,
+        message_opt=None,
+        bump="patch",
+        no_push=False,
+        dry_run=False,
+    )
 
 
 @project.command("build-docker-env")

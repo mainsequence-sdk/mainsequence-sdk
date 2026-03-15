@@ -1,5 +1,9 @@
 # Part 5.1: Streamlit Integration I
 
+!!! warning "IMPORTANT"
+    Each dashboard folder must include a `README.md` file in the same directory as `app.py`.
+    If your dashboard entrypoint is `dashboards/my_dashboard/app.py`, then you should also have `dashboards/my_dashboard/README.md`.
+
 ## Introduction
 
 Once your data is unified, you can start doing more interesting things with it. Let’s build your first dashboard.

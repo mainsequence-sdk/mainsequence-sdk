@@ -2445,12 +2445,47 @@ class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
 
 
 class Project(BasePydanticModel, BaseObjectOrm):
-    id: int
-    project_name: str
-    data_source: DynamicTableDataSource | None
-    git_ssh_url: str | None = None
-    project_visible: bool
-    is_initialized:bool
+    id: int = Field(
+        ...,
+        title="Project ID",
+        description="Unique identifier of the project.",
+        examples=[142],
+        json_schema_extra={"label": "Project ID"},
+    )
+    project_name: str = Field(
+        ...,
+        title="Project Name",
+        description="Human-readable name of the project.",
+        examples=["Markets Research Pipeline"],
+        json_schema_extra={"label": "Project Name"},
+    )
+    data_source: DynamicTableDataSource | None = Field(
+        None,
+        title="Data Source",
+        description="Default data source associated with the project, when configured.",
+        json_schema_extra={"label": "Data Source"},
+    )
+    git_ssh_url: str | None = Field(
+        None,
+        title="Git SSH URL",
+        description="SSH repository URL used to access the project's source code repository.",
+        examples=["git@github.com:mainsequence/markets-research-pipeline.git"],
+        json_schema_extra={"label": "Git SSH URL"},
+    )
+    project_visible: bool = Field(
+        ...,
+        title="Project Visible",
+        description="Whether the project is visible to the current user or organization members.",
+        examples=[True],
+        json_schema_extra={"label": "Project Visible"},
+    )
+    is_initialized: bool = Field(
+        ...,
+        title="Is Initialized",
+        description="Whether the project has completed its initial setup and is ready for use.",
+        examples=[True],
+        json_schema_extra={"label": "Is Initialized"},
+    )
 
 
     @staticmethod
@@ -2571,6 +2606,32 @@ class Project(BasePydanticModel, BaseObjectOrm):
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
+
+    @classmethod
+    def sync_project_after_commit(
+        cls,
+        project_id: int,
+        timeout: int | None = None,
+    ) -> Project | dict[str, Any] | None:
+        url = f"{cls.get_object_url()}/{project_id}/sync_project_after_commit/"
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+        if not r.content:
+            return None
+
+        data = r.json()
+        if isinstance(data, dict) and {"id", "project_name"}.issubset(data):
+            return cls(**data)
+        return data
 
     def delete(
             self,
@@ -3051,10 +3112,10 @@ class Artifact(BasePydanticModel, BaseObjectOrm):
             return cls(**r.json())
 
 POD_PROJECT = None
+if os.getenv("MAINSEQUENCE_TOKEN") is not None:
 
-try:
     POD_PROJECT = Project.get_user_default_project()
-except Exception:
+else:
 
 
     RUNNING_PROJECT_ID=os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
@@ -3253,8 +3314,6 @@ class Constant(BasePydanticModel, BaseObjectOrm):
             new_constant = cls.create(name=k, value=v)
             created_constants.append(new_constant)
         return created_constants
-
-
 
 
 
