@@ -80,7 +80,91 @@ def test_project_image_filter():
         msc.ProjectImage.filter(related_project=project_id)
 
 
-test_project_image_filter()
+
+
+class DummyRule:
+    def __init__(self, payload: dict):
+        self.payload = payload
+
+    def model_dump(self):
+        return dict(self.payload)
+
+
+def test_asset_translation_table_get_or_create_creates_when_missing(monkeypatch):
+    rules = [
+        DummyRule(
+            {
+                "asset_filter": {"security_market_sector": "Crypto"},
+                "markets_time_serie_unique_identifier": "binance_1d_bars",
+                "target_exchange_code": "BNCE",
+                "default_column_name": "close",
+            }
+        )
+    ]
+    captured = {}
+
+    monkeypatch.setattr(msc.AssetTranslationTable, "get_or_none", lambda unique_identifier: None)
+
+    def _create(*, unique_identifier, rules):
+        captured["unique_identifier"] = unique_identifier
+        captured["rules"] = rules
+        return "created-table"
+
+    monkeypatch.setattr(msc.AssetTranslationTable, "create", _create)
+
+    result = msc.AssetTranslationTable.get_or_create("prices_translation_table_1d", rules)
+
+    assert result == "created-table"
+    assert captured == {
+        "unique_identifier": "prices_translation_table_1d",
+        "rules": [rule.model_dump() for rule in rules],
+    }
+
+
+def test_asset_translation_table_get_or_create_adds_rules_when_existing(monkeypatch):
+    rules = [
+        DummyRule(
+            {
+                "asset_filter": {"security_market_sector": "Equity"},
+                "markets_time_serie_unique_identifier": "alpaca_1d_bars",
+                "target_exchange_code": "US",
+                "default_column_name": "close",
+            }
+        )
+    ]
+
+    class ExistingTable:
+        def __init__(self):
+            self.received_rules = None
+
+        def add_rules(self, new_rules):
+            self.received_rules = new_rules
+
+    existing = ExistingTable()
+    create_called = {"value": False}
+
+    monkeypatch.setattr(
+        msc.AssetTranslationTable,
+        "get_or_none",
+        lambda unique_identifier: existing,
+    )
+
+    def _create(**kwargs):
+        create_called["value"] = True
+        return kwargs
+
+    monkeypatch.setattr(msc.AssetTranslationTable, "create", _create)
+
+    result = msc.AssetTranslationTable.get_or_create("prices_translation_table_1d", rules)
+
+    assert result is existing
+    assert existing.received_rules is rules
+
+
+
+test_asset_translation_table_get_or_create_creates_when_missing()
+#
+# test_project_image_filter()
 # users=msc.User.filter()
 #
 # msc.User.get(id=users[0].id,serializer="full")

@@ -574,7 +574,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     signal_weights_instance: WeightsBase
 ```
 
-The current SDK does **not** build `BacktestingWeightsConfig` from strategy names plus config dictionaries. Instead, you instantiate the signal node and rebalance strategy first, then inject those live instances into `BacktestingWeightsConfig`.
+Instantiate the signal node and rebalance strategy first, then inject those live instances into `BacktestingWeightsConfig`.
 
 #### PortfolioBuildConfiguration
 
