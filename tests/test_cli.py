@@ -1659,6 +1659,49 @@ def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
+def test_create_project_does_not_send_project_visible(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeResponse:
+        ok = True
+        status_code = 201
+        headers = {"content-type": "application/json"}
+
+        def json(self):
+            return {"id": 321, "project_name": "demo-project"}
+
+    def _fake_authed(method, api_path, body=None):
+        captured["method"] = method
+        captured["api_path"] = api_path
+        captured["body"] = body
+        return FakeResponse()
+
+    monkeypatch.setattr(api_mod, "authed", _fake_authed)
+
+    out = api_mod.create_project(
+        project_name="demo-project",
+        data_source_id=11,
+        default_base_image_id=22,
+        github_org_id=33,
+        repository_branch="main",
+        env_vars={"FOO": "bar"},
+    )
+
+    assert captured["method"] == "POST"
+    assert captured["api_path"] == "/orm/api/pods/projects/"
+    assert captured["body"] == {
+        "project_name": "demo-project",
+        "repository_branch": "main",
+        "data_source_id": 11,
+        "default_base_image_id": 22,
+        "github_org_id": 33,
+        "env_vars": [{"name": "FOO", "value": "bar"}],
+    }
+    assert "project_visible" not in captured["body"]
+    assert out == {"id": 321, "project_name": "demo-project"}
+
+
 def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}

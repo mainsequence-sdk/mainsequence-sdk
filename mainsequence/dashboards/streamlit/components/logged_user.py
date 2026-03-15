@@ -6,11 +6,9 @@ from typing import Any
 
 import streamlit as st
 
-import mainsequence.client as msc
+from mainsequence.client import OrganizationTeam, User
 
-_LOGGED_USER_KEY = "_ms_logged_user"
-_LOGGED_USER_ERROR_KEY = "_ms_logged_user_error"
-_LOGGED_USER_LOADED_KEY = "_ms_logged_user_loaded"
+_TOKEN_RENDER_NOTE = "Logged user rendered from tokens."
 
 
 def _format_datetime(value: dt.datetime | None) -> str | None:
@@ -39,7 +37,7 @@ def _format_plan(value: Any | None) -> str | None:
     return str(value)
 
 
-def _status_summary(user: msc.User) -> str:
+def _status_summary(user: User) -> str:
     parts = ["active" if user.is_active else "inactive"]
 
     if user.is_verified is True:
@@ -58,7 +56,7 @@ def _status_summary(user: msc.User) -> str:
     return " | ".join(parts)
 
 
-def _team_title(team: int | msc.OrganizationTeam | Mapping[str, Any]) -> str:
+def _team_title(team: int | OrganizationTeam | Mapping[str, Any]) -> str:
     if isinstance(team, int):
         return f"Team #{team}"
 
@@ -82,7 +80,7 @@ def _team_title(team: int | msc.OrganizationTeam | Mapping[str, Any]) -> str:
     return "Unknown team"
 
 
-def _team_detail(team: int | msc.OrganizationTeam | Mapping[str, Any]) -> str | None:
+def _team_detail(team: int | OrganizationTeam | Mapping[str, Any]) -> str | None:
     if isinstance(team, int):
         return None
 
@@ -118,15 +116,15 @@ def _team_detail(team: int | msc.OrganizationTeam | Mapping[str, Any]) -> str | 
     return " | ".join(parts) or None
 
 
-def _group_names(user: msc.User) -> list[str]:
+def _group_names(user: User) -> list[str]:
     return [group.name for group in user.groups if getattr(group, "name", None)]
 
 
-def _team_entries(user: msc.User) -> list[int | msc.OrganizationTeam | Mapping[str, Any]]:
+def _team_entries(user: User) -> list[int | OrganizationTeam | Mapping[str, Any]]:
     return list(user.organization_teams or [])
 
 
-def _detail_rows(user: msc.User) -> list[tuple[str, str]]:
+def _detail_rows(user: User) -> list[tuple[str, str]]:
     rows: list[tuple[str, str]] = [("Username", user.username)]
 
     if user.email and user.email != user.username:
@@ -168,30 +166,27 @@ def _detail_rows(user: msc.User) -> list[tuple[str, str]]:
     return rows
 
 
-def _get_logged_user(
-    *,
-    refresh: bool = False,
-    session_key: str = _LOGGED_USER_KEY,
-) -> tuple[msc.User | None, str | None]:
-    loaded_key = f"{session_key}:{_LOGGED_USER_LOADED_KEY}"
-    error_key = f"{session_key}:{_LOGGED_USER_ERROR_KEY}"
+def _should_fallback_to_authenticated_details(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return (
+        message == "Missing X-User-ID in request headers."
+        or "No auth headers are available." in message
+    )
 
-    if refresh:
-        st.session_state.pop(session_key, None)
-        st.session_state.pop(error_key, None)
-        st.session_state.pop(loaded_key, None)
 
-    if not st.session_state.get(loaded_key, False):
-        try:
-            st.session_state[session_key] = msc.User.get_logged_user()
-            st.session_state.pop(error_key, None)
-        except Exception as exc:
-            st.session_state[session_key] = None
-            st.session_state[error_key] = str(exc)
-        finally:
-            st.session_state[loaded_key] = True
+def _resolve_logged_user() -> User:
+    try:
+        user = User.get_logged_user()
+    except RuntimeError as exc:
+        if not _should_fallback_to_authenticated_details(exc):
+            raise
+        user = User.get_authenticated_user_details()
 
-    return st.session_state.get(session_key), st.session_state.get(error_key)
+    if user is None:
+        user = User.get_authenticated_user_details()
+    if user is None:
+        raise RuntimeError("No authenticated user available.")
+    return user
 
 
 def render_logged_user_username(
@@ -199,18 +194,12 @@ def render_logged_user_username(
     label: str = "Logged user",
     show_organization: bool = False,
     show_errors: bool = False,
-    refresh: bool = False,
-    session_key: str = _LOGGED_USER_KEY,
-) -> msc.User | None:
-    user, error = _get_logged_user(refresh=refresh, session_key=session_key)
-
-    if user is None:
-        if show_errors and error:
-            st.caption(f"{label}: unavailable")
-            st.caption(error)
-        return None
+) -> User:
+    _ = show_errors
+    user = _resolve_logged_user()
 
     st.caption(label)
+    st.caption(_TOKEN_RENDER_NOTE)
 
     text = user.username
     organization_name = getattr(user.organization, "name", None)
@@ -226,18 +215,12 @@ def render_logged_user_details(
     title: str = "Logged user details",
     expanded: bool = False,
     show_errors: bool = False,
-    refresh: bool = False,
-    session_key: str = _LOGGED_USER_KEY,
-) -> msc.User | None:
-    user, error = _get_logged_user(refresh=refresh, session_key=session_key)
-
-    if user is None:
-        if show_errors and error:
-            st.caption(f"{title}: unavailable")
-            st.caption(error)
-        return None
+) -> User:
+    _ = show_errors
+    user = _resolve_logged_user()
 
     with st.expander(title, expanded=expanded):
+        st.caption(_TOKEN_RENDER_NOTE)
         st.caption(_status_summary(user))
 
         for label, value in _detail_rows(user):
@@ -258,12 +241,12 @@ def render_logged_user_details(
     return user
 
 
-def sidebar_logged_user_username(**kwargs: Any) -> msc.User | None:
+def sidebar_logged_user_username(**kwargs: Any) -> User:
     with st.sidebar:
         return render_logged_user_username(**kwargs)
 
 
-def sidebar_logged_user_details(**kwargs: Any) -> msc.User | None:
+def sidebar_logged_user_details(**kwargs: Any) -> User:
     with st.sidebar:
         return render_logged_user_details(**kwargs)
 

@@ -2472,13 +2472,7 @@ class Project(BasePydanticModel, BaseObjectOrm):
         examples=["git@github.com:mainsequence/markets-research-pipeline.git"],
         json_schema_extra={"label": "Git SSH URL"},
     )
-    project_visible: bool = Field(
-        ...,
-        title="Project Visible",
-        description="Whether the project is visible to the current user or organization members.",
-        examples=[True],
-        json_schema_extra={"label": "Project Visible"},
-    )
+
     is_initialized: bool = Field(
         ...,
         title="Is Initialized",

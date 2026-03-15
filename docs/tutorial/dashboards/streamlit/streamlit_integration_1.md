@@ -53,17 +53,58 @@ return msc.AssetTranslationTable.get_or_create(
 )
 ```
 
-Second, read the simulated prices table through `DataNodeStorage` plus `APIDataNode`:
+Second, read the simulated prices table through `APIDataNode.build_from_identifier(...)`:
 
 ```python
-storage = msc.DataNodeStorage.get(identifier=SIMULATED_PRICES_TABLE)
-api_node = APIDataNode(
-    data_source_id=storage.data_source.id,
-    storage_hash=storage.storage_hash,
-)
+api_node = APIDataNode.build_from_identifier(SIMULATED_PRICES_TABLE)
 ```
 
-That keeps the dashboard aligned with the same data contract used by the tutorial runner scripts.
+This is the cleanest way to read a published table when you already know its identifier. It keeps the dashboard aligned with the same data contract used by the tutorial runner scripts, without manually resolving `DataNodeStorage` first.
+
+### Why use `APIDataNode.build_from_identifier(...)` here?
+
+Use this helper when your code is consuming an existing table, not creating one.
+
+!!! warning "IMPORTANT"
+    This pattern also turns a published table into a reusable API-style data source for other projects.
+    Once a table exists in the platform and you know its identifier, another project can resolve it with
+    `APIDataNode.build_from_identifier(...)` and read it without rebuilding the original DataNode locally.
+    That is one of the main ways to share data products across projects while keeping one published table as
+    the source of truth.
+
+It is a good fit for dashboards because:
+
+- the dashboard usually knows the table identifier ahead of time
+- it keeps the read path short and readable
+- it returns an `APIDataNode` ready for methods such as `get_df_between_dates(...)`
+
+In other words, this is the "I know which table I want, now give me a reader" entry point.
+
+### When should you switch to `mainsequence.client.data_filters`?
+
+`APIDataNode.build_from_identifier(...)` is the right tool for straightforward reads of one table.
+
+When the dashboard starts building ad-hoc filters dynamically, or when it needs joins across dynamic tables, move to the structured filter DSL from `mainsequence.client.data_filters`.
+
+For example:
+
+```python
+import datetime as dt
+
+from mainsequence.client.data_filters import F, SearchRequest, and_
+
+request = SearchRequest(
+    node_unique_identifier=SIMULATED_PRICES_TABLE,
+    filter=and_(
+        F.between("time_index", start_date, end_date),
+        F.in_("unique_identifier", unique_identifiers),
+    ),
+)
+
+history = msc.DataNodeStorage.get_data_from_filter(request)
+```
+
+That is the better path when the UI is assembling filters at runtime, because it gives you a safe, structured request format instead of hard-coding one read shape into dashboard code.
 
 ### Why use `Asset.query(...)` in a dashboard?
 

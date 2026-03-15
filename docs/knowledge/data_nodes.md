@@ -383,6 +383,36 @@ Breaking changes (create a new table identifier instead):
 - validate external inputs,
 - prefer batched calls over excessive network chatter.
 
+## 13.1) Reading an existing table from the client
+
+When you are consuming a table that already exists in the platform, the first question is simple:
+
+"Do I just want to read one known table, or do I need a more flexible query?"
+
+Start with `APIDataNode.build_from_identifier(...)` when you already know the published table identifier.
+
+```python
+from mainsequence.tdag import APIDataNode
+
+prices = APIDataNode.build_from_identifier("simulated_prices_tutorial")
+
+df = prices.get_df_between_dates(
+    start_date="2026-01-01",
+    columns=["open", "high", "low", "close"],
+    unique_identifier_list=["NVDA", "AAPL"],
+)
+```
+
+This helper resolves the table metadata for you and returns an `APIDataNode` that is ready for normal read methods.
+
+Use it when:
+
+- you are reading one table by its stable identifier,
+- the read shape is fairly standard,
+- you want the shortest path from published dataset to DataFrame.
+
+This is especially useful in dashboards, notebooks, and integration code where the table already exists and you are not constructing a dependency graph.
+
 ## 14) Client-side filters and joins (B14 summary)
 
 For dynamic table reads, clients send a structured filter payload instead of raw SQL.
@@ -398,6 +428,42 @@ Use this approach when building:
 - UI filter builders,
 - notebook analysis with ad-hoc slices,
 - joins between dynamic tables (for example prices + fundamentals).
+
+The main entry point is `mainsequence.client.data_filters.SearchRequest`, which you submit through `DataNodeStorage.get_data_from_filter(...)`.
+
+```python
+import datetime as dt
+
+import mainsequence.client as msc
+from mainsequence.client.data_filters import F, SearchRequest, and_
+
+request = SearchRequest(
+    node_unique_identifier="simulated_prices_tutorial",
+    filter=and_(
+        F.between(
+            "time_index",
+            dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+            dt.datetime(2026, 1, 31, 23, 59, 59, tzinfo=dt.UTC),
+        ),
+        F.in_("unique_identifier", ["NVDA", "AAPL"]),
+    ),
+)
+
+df = msc.DataNodeStorage.get_data_from_filter(request)
+```
+
+Use `APIDataNode.build_from_identifier(...)` and `get_df_between_dates(...)` when you are reading one table in a fixed way.
+
+Use `SearchRequest` when:
+
+- filters are assembled dynamically by a UI or notebook,
+- you need paging and server-side filter execution,
+- you need joins between dynamic tables.
+
+They are complementary APIs:
+
+- `APIDataNode.build_from_identifier(...)` is the simple table reader
+- `SearchRequest` is the structured query layer for more flexible reads
 
 ## 15) Quick pre-ship checklist
 
