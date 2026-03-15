@@ -250,6 +250,123 @@ def get_current_user_profile() -> dict:
     return {"username": u.get("username") or "", "organization": org_name}
 
 
+def get_logged_user_details() -> dict[str, Any]:
+    """
+    Return the authenticated user via SDK client `User.get_logged_user()`.
+
+    The CLI does not naturally run inside a request context, so this bridge resolves
+    the current user id from the authenticated API session and temporarily binds
+    `X-User-ID` into `mainsequence.client.models_user._CURRENT_AUTH_HEADERS`
+    before calling the SDK method.
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_user_root_url = None
+    headers_token = None
+    current_auth_headers = None
+
+    try:
+        who = authed("GET", AUTH_PATHS["ping"])
+        data = who.json() if who.ok else {}
+        user_id = data.get("id") or data.get("pk") or (data.get("user") or {}).get("id") or data.get("user_id")
+        if user_id in (None, ""):
+            raise ApiError("Could not determine the authenticated user id.")
+
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_user import (
+            _CURRENT_AUTH_HEADERS,
+        )
+        from mainsequence.client.models_user import (
+            User as ClientUser,
+        )
+
+        client_utils = _client_utils
+        current_auth_headers = _CURRENT_AUTH_HEADERS
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_user_root_url = getattr(ClientUser, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientUser.ROOT_URL = root_url
+        headers_token = current_auth_headers.set({"X-User-ID": str(user_id)})
+
+        user = ClientUser.get_logged_user()
+        if isinstance(user, dict):
+            return user
+        if hasattr(user, "model_dump"):
+            return user.model_dump()
+        return {"id": getattr(user, "id", None)}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        raise ApiError(f"Current user fetch failed: {e}")
+    finally:
+        if current_auth_headers is not None and headers_token is not None:
+            try:
+                current_auth_headers.reset(headers_token)
+            except Exception:
+                pass
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_user_root_url is not None:
+            try:
+                from mainsequence.client.models_user import User as ClientUser
+
+                ClientUser.ROOT_URL = old_user_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def get_projects() -> list[dict]:
     """
     List projects visible to the current user.

@@ -47,6 +47,7 @@ from .api import (
     delete_project,
     fetch_project_env_text,
     get_current_user_profile,
+    get_logged_user_details,
     get_market_asset_translation_table,
     get_project,
     get_project_data_node_updates,
@@ -1402,6 +1403,50 @@ def doctor():
     ```
     """
     run_doctor()
+
+
+@app.command("user")
+def user_show():
+    """
+    Show the authenticated MainSequence user.
+
+    Uses SDK client `User.get_logged_user()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence user
+    ```
+    """
+    try:
+        user = get_logged_user_details()
+    except NotLoggedIn:
+        error("Not logged in. Run: mainsequence login <email>")
+        raise typer.Exit(1)
+    except ApiError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    organization = user.get("organization")
+    if isinstance(organization, dict):
+        organization_name = str(organization.get("name") or organization.get("id") or "-")
+    else:
+        organization_name = str(organization or "-")
+
+    print_kv(
+        "MainSequence User",
+        [
+            ("ID", str(user.get("id") or "-")),
+            ("Username", str(user.get("username") or "-")),
+            ("Email", str(user.get("email") or "-")),
+            ("Organization", organization_name),
+            ("Active", str(user.get("is_active") if user.get("is_active") is not None else "-")),
+            ("Verified", str(user.get("is_verified") if user.get("is_verified") is not None else "-")),
+            ("MFA Enabled", str(user.get("mfa_enabled") if user.get("mfa_enabled") is not None else "-")),
+            ("Date Joined", str(user.get("date_joined") or "-")),
+            ("Last Login", str(user.get("last_login") or "-")),
+        ],
+    )
 
 
 @app.command("copy-llm-instructions")

@@ -35,6 +35,7 @@ mainsequence logout --export
 mainsequence --help
 mainsequence doctor
 mainsequence markets --help
+mainsequence user
 mainsequence settings show
 mainsequence sdk latest
 ```
@@ -106,6 +107,7 @@ mainsequence settings set-base ~/mainsequence
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
+- `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - `mainsequence markets portfolios list` lists markets portfolios through the SDK client `Portfolio.filter()` path.
 - `mainsequence markets asset-translation-table list` lists translation tables through the SDK client `AssetTranslationTable.filter()` path.
 - `mainsequence markets asset-translation-table detail` fetches one translation table through `AssetTranslationTable.get()` and renders each rule as a readable `match => target` mapping in the terminal.

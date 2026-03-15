@@ -81,6 +81,31 @@ def test_settings_defaults_to_show(cli_mod, runner, monkeypatch):
     assert "mainsequence_path" in result.output
 
 
+def test_user_show(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "get_logged_user_details",
+        lambda: {
+            "id": 7,
+            "username": "jose",
+            "email": "jose@main-sequence.io",
+            "organization": {"id": 2, "name": "Main Sequence"},
+            "is_active": True,
+            "is_verified": True,
+            "mfa_enabled": False,
+            "date_joined": "2026-01-01T10:00:00Z",
+            "last_login": "2026-03-15T09:30:00Z",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["user"])
+    assert result.exit_code == 0
+    assert "MainSequence User" in result.output
+    assert "jose" in result.output
+    assert "jose@main-sequence.io" in result.output
+    assert "Main Sequence" in result.output
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(
@@ -1010,6 +1035,86 @@ def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeyp
     detail = api_mod.get_market_asset_translation_table(12)
     assert captured["get"] == {"pk": 12, "filters": {}, "timeout": None}
     assert detail["id"] == 12
+
+
+def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.setattr(
+        api_mod,
+        "authed",
+        lambda method, api_path, body=None: types.SimpleNamespace(
+            ok=True,
+            json=lambda: {"id": 7},
+        ),
+    )
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models_user = types.ModuleType("mainsequence.client.models_user")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    class FakeHeadersContext:
+        current = None
+
+        def set(self, value):
+            self.current = value
+            captured["headers_set"] = value
+            return "token"
+
+        def reset(self, token):
+            captured["headers_reset"] = token
+            self.current = None
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    fake_headers = FakeHeadersContext()
+
+    class FakeUser:
+        ROOT_URL = "https://old.test/orm/api/user/user"
+
+        @classmethod
+        def get_logged_user(cls):
+            captured["headers_seen"] = fake_headers.current
+            return types.SimpleNamespace(
+                model_dump=lambda: {
+                    "id": 7,
+                    "username": "jose",
+                    "email": "jose@main-sequence.io",
+                    "organization": {"id": 2, "name": "Main Sequence"},
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models_user.User = FakeUser
+    fake_models_user._CURRENT_AUTH_HEADERS = fake_headers
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_user", fake_models_user)
+
+    out = api_mod.get_logged_user_details()
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["headers_set"] == {"X-User-ID": "7"}
+    assert captured["headers_seen"] == {"X-User-ID": "7"}
+    assert captured["headers_reset"] == "token"
+    assert out["username"] == "jose"
 
 
 def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
