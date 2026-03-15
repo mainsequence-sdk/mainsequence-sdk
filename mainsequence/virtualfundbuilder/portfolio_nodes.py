@@ -84,7 +84,6 @@ All_PORTFOLIO_COLUMNS_POSITIONS.extend(["last_rebalance_date", "close", "return"
 
 
 def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
-        portfolio_tags=None
 ) -> tuple[msc.Portfolio, msc.PortfolioIndexAsset]:
     """
     This method creates a portfolio in VAM with configm file settings.
@@ -94,7 +93,7 @@ def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
 
 
 
-    def build_markets_portfolio(ts, portfolio_tags):
+    def build_markets_portfolio(ts):
         # when is live target portfolio
         signal_weights_ts = ts.signal_weights
 
@@ -112,8 +111,7 @@ def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
             portfolio_ts.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_instance.calendar_key
         )
 
-        if portfolio_tags is not None:
-            standard_kwargs["tags"] = portfolio_tags
+
             # front end details
         standard_kwargs["target_portfolio_about"] = {
             "description": ts.get_portfolio_about_text(),
@@ -138,7 +136,7 @@ def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
         return target_portfolio, index_asset
 
     target_portfolio, index_asset = build_markets_portfolio(
-        portfolio_ts, portfolio_tags=portfolio_tags
+        portfolio_ts,
     )
 
     portfolio_ts.index_asset = index_asset
@@ -227,7 +225,7 @@ class PortfolioFromDF(DataNode):
         return df
 
     def run(self,*args,add_portfolio_to_markets_backend=False,
-            portfolio_tags: list[str] = None,**kwargs):
+           **kwargs):
         super().run(
 
             *args,**kwargs
@@ -823,7 +821,7 @@ rebalance details:"""
 
 
     def run(self,add_portfolio_to_markets_backend=False,
-            portfolio_tags=False,
+
             *args,**kwargs):
         """
         We override run  to create
@@ -833,5 +831,5 @@ rebalance details:"""
 
         if add_portfolio_to_markets_backend:
             _build_target_portfolio_in_backend(portfolio_ts=self,
-                portfolio_tags=portfolio_tags)
+                )
 

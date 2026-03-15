@@ -781,3 +781,5 @@ Add a new entry to the `.vscode/launch.json` to the `configurations` array to ru
 Then back to `run_simulated_prices.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug simulated_daily_close_prices` configuration.
 
 You’re now ready to use these portfolios in dashboards and deeper analyses.
+
+For a deeper explanation of the Virtual Fund Builder concepts behind this tutorial, see [Virtual Fund Builder](../knowledge/virtualfundbuilder/index.md).

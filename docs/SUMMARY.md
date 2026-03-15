@@ -5,8 +5,8 @@
     - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 3 — Multi-Index Columns and Working with Assets](tutorial/multi_index_columns_working_with_assets.md)
     - [Part 4 — Orchestration](tutorial/scheduling_jobs.md)
-    - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/markets_equities_with_algoseek.md)
-    - [Part 4.2 — Markets: Fixed Income Custom Assets](tutorial/getting_started_4_1.md)
+    - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/markets_tutorial/markets_equities_with_algoseek.md)
+    - [Part 4.2 — Markets: Fixed Income Custom Assets](tutorial/markets_tutorial/markets_fixed_income_custom_assets.md)
     - [Part 4.3 — Markets — Portfolios and Virtual Funds](tutorial/getting_started_4_2.md)
     - [Part 5.1 — From Data to Dashboards I](tutorial/getting_started_5_1.md)
     - [Part 5.2 — From Data to Dashboards II](tutorial/getting_started_5_2.md)
@@ -15,6 +15,15 @@
     - [CLI Deep Dive](knowledge/cli.md)
     - Infrastructure
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
+        - [Artifacts](knowledge/infrastructure/artifacts.md)
+    - Virtual Fund Builder
+        - [Overview](knowledge/virtualfundbuilder/index.md)
+        - [Portfolio Pipeline and Configuration](knowledge/virtualfundbuilder/portfolio_pipeline.md)
+        - [Built-in Strategies](knowledge/virtualfundbuilder/built_in_strategies.md)
+        - [Data Contracts](knowledge/virtualfundbuilder/data_contracts.md)
+        - [Prices and Forward Fill](knowledge/virtualfundbuilder/prices_and_forward_fill.md)
+        - [Implementation Patterns](knowledge/virtualfundbuilder/implementation_patterns.md)
+        - [Examples](knowledge/virtualfundbuilder/examples.md)
     - Instruments
         - [Overview](knowledge/instruments/index.md)
         - [Market Data and Registration](knowledge/instruments/market_data_and_registration.md)

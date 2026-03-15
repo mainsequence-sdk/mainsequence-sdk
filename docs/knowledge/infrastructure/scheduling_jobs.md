@@ -2,6 +2,8 @@
 
 Part 4 of the tutorial shows the shortest path to getting a job running. This page explains the same topic from an infrastructure point of view: what a job is, where schedules should live, how images fit in, and when to use the CLI versus the Python client.
 
+If your jobs consume spreadsheets, CSV drops, model files, or generated reports, pair this guide with the [Artifacts](./artifacts.md) guide.
+
 ## Quick Summary
 
 In this guide, you will:
@@ -30,6 +32,8 @@ A scheduled workflow in Main Sequence usually has five moving parts:
 
 5. **Job run**  
    Every execution creates a job run. That is the object you inspect when you want status, logs, start time, end time, or resource usage.
+
+Some workflows also include an **Artifact**: a file stored in a platform bucket that a job or `DataNode` reads later.
 
 If you keep that chain in mind, most operational decisions become straightforward.
 
@@ -409,4 +413,5 @@ or disable polling control if you want to handle it yourself.
 ## Related Reading
 
 - [Tutorial Part 4: Orchestration](../../tutorial/scheduling_jobs.md)
+- [Artifacts](./artifacts.md)
 - [CLI Deep Dive](../cli.md)

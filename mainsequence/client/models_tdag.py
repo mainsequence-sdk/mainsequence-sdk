@@ -3035,12 +3035,48 @@ def add_created_object_to_jobrun(
 
 
 class Artifact(BasePydanticModel, BaseObjectOrm):
-    id: int | None
-    name: str
-    created_by_resource_name: str
-    bucket_name: str
-    content: Any
-    creation_date: datetime.datetime
+    id: int | None = Field(
+        None,
+        title="Artifact ID",
+        description="Unique identifier of the artifact record.",
+        examples=[128],
+        json_schema_extra={"label": "Artifact ID"},
+    )
+    name: str = Field(
+        ...,
+        title="Artifact Name",
+        description="Human-readable artifact name used to identify the stored file or payload.",
+        examples=["daily_positions_report.pdf"],
+        json_schema_extra={"label": "Artifact Name"},
+    )
+    created_by_resource_name: str = Field(
+        ...,
+        title="Created By Resource Name",
+        description="Name of the job, agent, workflow, or resource that produced this artifact.",
+        examples=["portfolio-rebalance-job"],
+        json_schema_extra={"label": "Created By Resource Name"},
+    )
+    bucket_name: str = Field(
+        ...,
+        title="Bucket Name",
+        description="Storage bucket where the artifact content is persisted.",
+        examples=["default_bucket"],
+        json_schema_extra={"label": "Bucket Name"},
+    )
+    content: Any = Field(
+        ...,
+        title="Artifact Content",
+        description="Artifact payload returned by the API. This may be raw file content, a serialized object, or metadata depending on the endpoint.",
+        examples=["<binary-or-serialized-artifact-content>"],
+        json_schema_extra={"label": "Artifact Content"},
+    )
+    creation_date: datetime.datetime = Field(
+        ...,
+        title="Creation Date",
+        description="Timestamp when the artifact was created and stored.",
+        examples=["2026-03-15T10:30:00Z"],
+        json_schema_extra={"label": "Creation Date"},
+    )
 
     @classmethod
     def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):

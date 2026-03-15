@@ -1,5 +1,5 @@
 
-# Getting Started 4 - Markets: Fixed Income Custom Assets
+# Part 4.2: Markets - Fixed Income Custom Assets
 
 
 
@@ -337,7 +337,7 @@ To prepare for the next section:
 2. Make sure the configurations for **Discount Curves Storage Node** and **Reference Rates Fixings Storage Node** are set.
 
 
-![img.png](../img/img.png)
+![img.png](../../img/img.png)
 
 ```python
 

@@ -33,7 +33,7 @@ and many more from other financial systems.
 
 This enables us to build robust connection layers between our existing systems and our **DataWorkflows**. This information is accessible via the [Main Sequence API](https://main-sequence.app/docs/vam-api-reference) and through the client library by importing the Main Sequence client:
 
-![img.png](../img/tutorial/main_sequence_markets.png)
+![img.png](../../img/tutorial/main_sequence_markets.png)
 
 
 ```python
