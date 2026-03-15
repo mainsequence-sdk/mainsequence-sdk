@@ -34,6 +34,7 @@ mainsequence logout --export
 ```bash
 mainsequence --help
 mainsequence doctor
+mainsequence markets --help
 mainsequence settings show
 mainsequence sdk latest
 ```
@@ -47,6 +48,11 @@ mainsequence project --help
 Most frequently used flows:
 
 ```bash
+# Markets
+mainsequence markets portfolios list
+mainsequence markets asset-translation-table list
+mainsequence markets asset-translation-table detail 12
+
 # 1) List and create
 mainsequence project list
 mainsequence project images list
@@ -76,6 +82,7 @@ mainsequence project freeze-env --path .
 
 # 4) Day-to-day sync
 mainsequence project sync --path . -m "Update environment"
+mainsequence project sync_project "Update environment"
 mainsequence project sync_project "Update environment" --path .
 
 # 5) Docker/devcontainer
@@ -99,6 +106,9 @@ mainsequence settings set-base ~/mainsequence
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
+- `mainsequence markets portfolios list` lists markets portfolios through the SDK client `Portfolio.filter()` path.
+- `mainsequence markets asset-translation-table list` lists translation tables through the SDK client `AssetTranslationTable.filter()` path.
+- `mainsequence markets asset-translation-table detail` fetches one translation table through `AssetTranslationTable.get()` and renders each rule as a readable `match => target` mapping in the terminal.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.

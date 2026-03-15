@@ -2655,67 +2655,20 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     Image build from a a project
     """
 
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "search": ["exact"],
+        "related_project__id": ["in"],
+        "project_repo_hash": ["exact", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "related_project__id": "id",
+    }
+
     id: int
     project_repo_hash: str
     related_project: int | Project  = None
     base_image:int | ProjectBaseImage | None  = None #backward compatiblity old Images iwth None
     is_ready:bool
-
-    @classmethod
-    def _normalize_filter_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """
-        Validate filter kwargs against the backend-supported ProjectImage filters.
-
-        Supported filters:
-          - search
-          - related_project__id__in
-          - project_repo_hash
-          - project_repo_hash__in
-        """
-        allowed = {
-            "search",
-            "related_project__id__in",
-            "project_repo_hash",
-            "project_repo_hash__in",
-        }
-        unexpected = sorted(k for k in kwargs.keys() if k not in allowed)
-        if unexpected:
-            raise ValueError(
-                "Unsupported ProjectImage filter(s): "
-                + ", ".join(unexpected)
-                + ". Allowed filters: search, related_project__id__in, project_repo_hash, project_repo_hash__in."
-            )
-
-        normalized = dict(kwargs)
-        if "search" in normalized and normalized["search"] is not None:
-            normalized["search"] = str(normalized["search"]).strip()
-
-        if "related_project__id__in" in normalized:
-            value = normalized["related_project__id__in"]
-            if value is None:
-                normalized["related_project__id__in"] = []
-            elif isinstance(value, (list, tuple, set)):
-                normalized["related_project__id__in"] = [
-                    cls._coerce_id(v, field_name="related_project__id__in") for v in value
-                ]
-            else:
-                normalized["related_project__id__in"] = [
-                    cls._coerce_id(value, field_name="related_project__id__in")
-                ]
-
-        if "project_repo_hash" in normalized and normalized["project_repo_hash"] is not None:
-            normalized["project_repo_hash"] = str(normalized["project_repo_hash"]).strip()
-
-        if "project_repo_hash__in" in normalized:
-            value = normalized["project_repo_hash__in"]
-            if value is None:
-                normalized["project_repo_hash__in"] = []
-            elif isinstance(value, (list, tuple, set)):
-                normalized["project_repo_hash__in"] = [str(v).strip() for v in value]
-            else:
-                normalized["project_repo_hash__in"] = [str(value).strip()]
-
-        return normalized
 
     @staticmethod
     def _coerce_id(obj: Any, *, field_name: str) -> int | None:
@@ -2783,16 +2736,6 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         if r.status_code not in (200, 201, 202):
             raise_for_response(r, payload=request_payload)
         return cls(**r.json())
-
-    @classmethod
-    def filter(cls, timeout=None, **kwargs):
-        kwargs = cls._normalize_filter_kwargs(kwargs)
-        return super().filter(timeout=timeout, **kwargs)
-
-    @classmethod
-    def iter_filter(cls, timeout=None, **kwargs):
-        kwargs = cls._normalize_filter_kwargs(kwargs)
-        return super().iter_filter(timeout=timeout, **kwargs)
 
 
 

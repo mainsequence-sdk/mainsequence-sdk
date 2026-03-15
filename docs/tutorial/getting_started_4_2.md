@@ -449,7 +449,7 @@ from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     register_signal_class,
 )
 from mainsequence.tdag.data_nodes import DataNode
-from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
 from datetime import timedelta
 
 
@@ -461,12 +461,19 @@ class AUIDWeight(VFBConfigBaseModel):
 @register_signal_class(register_in_agent=True)
 class FixedWeights(WeightsBase, DataNode):
 
-    def __init__(self, asset_unique_identifier_weights: list[AUIDWeight], *args, **kwargs):
+    def __init__(
+        self,
+        signal_assets_configuration: AssetsConfiguration,
+        asset_unique_identifier_weights: list[AUIDWeight],
+        *args,
+        **kwargs,
+    ):
         """
         Args:
-            asset_symbol_weights (List[SymbolWeight]): List of SymbolWeights that map asset symbols to weights
+            signal_assets_configuration: Asset and price configuration used by the signal.
+            asset_unique_identifier_weights: Fixed target weights keyed by asset unique identifier.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(signal_assets_configuration=signal_assets_configuration, *args, **kwargs)
         self.asset_unique_identifier_weights = asset_unique_identifier_weights
 
     def maximum_forward_fill(self):
@@ -544,36 +551,30 @@ class PortfolioExecutionConfiguration(VFBConfigBaseModel):
 
 #### BacktestingWeightsConfig
 
-Joins the **signal** with a **rebalance strategy**:
+Joins the **signal** with a **rebalance strategy** using direct instance injection:
 ```python
 class BacktestingWeightsConfig(VFBConfigBaseModel):
     """
     Configuration for backtesting weights.
 
     Attributes:
-        rebalance_strategy_name (str): Strategy used for rebalancing.
-        rebalance_strategy_configuration (Dict): Placeholder dict for the rebalance strategy configuration.
-        signal_weights_name (str): Type of signal weights strategy.
-        signal_weights_configuration (Dict): Placeholder dict for the signal weights configuration.
-    Private attrs:
-        _rebalance_strategy_instance (RebalanceStrategyBase | None)
-        _signal_weights_instance (WeightsBase | None)
+        rebalance_strategy_instance (RebalanceStrategyBase):
+            Instantiated rebalance strategy, for example `ImmediateSignal(calendar_key="SIFMAUS")`.
+        signal_weights_instance (WeightsBase):
+            Instantiated signal node, for example a `FixedWeights(...)` DataNode.
     """
 
     model_config = ConfigDict(
-        frozen=True,  # make the model immutable
-        extra="forbid",  # reject unknown fields
+        extra="forbid",
         populate_by_name=True,
+        arbitrary_types_allowed=True,
     )
-    rebalance_strategy_name: str = "ImmediateSignal"
-    rebalance_strategy_configuration: dict[str, Any] = Field(default_factory=dict)
 
-    signal_weights_name: str = "MarketCap"
-    signal_weights_configuration: dict[str, Any] = Field(default_factory=dict)
-
-    _rebalance_strategy_instance: RebalanceStrategyBase | None = PrivateAttr(default=None)
-    _signal_weights_instance: WeightsBase | None = PrivateAttr(default=None)
+    rebalance_strategy_instance: RebalanceStrategyBase
+    signal_weights_instance: WeightsBase
 ```
+
+The current SDK does **not** build `BacktestingWeightsConfig` from strategy names plus config dictionaries. Instead, you instantiate the signal node and rebalance strategy first, then inject those live instances into `BacktestingWeightsConfig`.
 
 #### PortfolioBuildConfiguration
 
@@ -614,28 +615,35 @@ from src.helpers_mock import (
     SIMULATED_PRICES_TABLE,
     TRANSLATION_TABLE_IDENTIFIER
 )
-from src.data_nodes.simulated_daily_close_prices import SimulatedDailyClosePrices
+from src.data_nodes.simulated_daily_close_prices import (
+    SimulatedDailyClosePrices,
+    SimulatedDailyClosePricesConfig,
+)
 import mainsequence.client as msc
 
 from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import (
     FixedWeights,
     AUIDWeight,
 )
-from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
+from mainsequence.virtualfundbuilder.enums import PriceTypeNames
 from mainsequence.virtualfundbuilder.models import (
     AssetsConfiguration,
     PricesConfiguration,
+    PortfolioConfiguration,
     PortfolioBuildConfiguration,
     BacktestingWeightsConfig,
     PortfolioExecutionConfiguration,
-    PortfolioMarketsConfig
+    PortfolioMarketsConfig,
+    FrontEndDetails,
 )
 from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
 from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
 
 assets = ensure_test_assets()
 # Instantiate and update the DataNode (platform would orchestrate this)
-prices_node = SimulatedDailyClosePrices(asset_list=assets)
+prices_node = SimulatedDailyClosePrices(
+    simulation_config=SimulatedDailyClosePricesConfig(asset_list=assets)
+)
 prices_node.run(debug_mode=True, force_update=True)
 
 # Get or create the asset category
@@ -666,7 +674,7 @@ for c, a in enumerate(assets):
     node_weights_input_1.append(AUIDWeight(unique_identifier=a.unique_identifier,
                                            weight=weights[c]))
     node_weights_input_2.append(AUIDWeight(unique_identifier=a.unique_identifier,
-                                           weight=weights[c] * 1.05))
+                                           weight=[.35, .65][c]))
 
 # assets configuration
 prices_configuration = PricesConfiguration(
@@ -678,53 +686,55 @@ prices_configuration = PricesConfiguration(
     forward_fill_to_now=False
 )
 
-assets_configuration = AssetsConfiguration(
+signal_assets_configuration = AssetsConfiguration(
+    assets_category_unique_id=None,
+    price_type=PriceTypeNames.CLOSE,
+    prices_configuration=prices_configuration,
+)
+
+portfolio_assets_configuration = AssetsConfiguration(
     assets_category_unique_id="mock_category_assets_tutorial",
-    price_type="close",
+    price_type=PriceTypeNames.CLOSE,
     prices_configuration=prices_configuration,
 )
 
 signal_weights_node_1 = FixedWeights(
     asset_unique_identifier_weights=node_weights_input_1,
-    signal_assets_configuration=assets_configuration,
+    signal_assets_configuration=signal_assets_configuration,
 )
 signal_weights_node_2 = FixedWeights(
     asset_unique_identifier_weights=node_weights_input_2,
-    signal_assets_configuration=assets_configuration,
+    signal_assets_configuration=signal_assets_configuration,
 )
 
 
 # portfolio
 def build_portfolio(portfolio_name, signal_node):
-    portfolio_execution_configuration = PortfolioExecutionConfiguration(commission_fee=0.0)
-    rebalance_strategy = ImmediateSignal(calendar="SIFMAUS")  # US bond market (SIFMA) calendar
-
-    backtest_weight_configuration = BacktestingWeightsConfig.build_from_rebalance_strategy_and_signal_node(
-        rebalance_strategy=rebalance_strategy,
-        signal_weights_node=signal_node,
+    portfolio_configuration = PortfolioConfiguration(
+        portfolio_build_configuration=PortfolioBuildConfiguration(
+            assets_configuration=portfolio_assets_configuration,
+            portfolio_prices_frequency="1d",
+            execution_configuration=PortfolioExecutionConfiguration(commission_fee=0.0),
+            backtesting_weights_configuration=BacktestingWeightsConfig(
+                rebalance_strategy_instance=ImmediateSignal(calendar_key="SIFMAUS"),
+                signal_weights_instance=signal_node,
+            ),
+        ),
+        portfolio_markets_configuration=PortfolioMarketsConfig(
+            portfolio_name=portfolio_name,
+            front_end_details=FrontEndDetails(
+                description="Mock fixed-income tutorial portfolio built from fixed weights."
+            ),
+        ),
     )
 
-    portfolio_build_configuration = PortfolioBuildConfiguration(
-        assets_configuration=assets_configuration,
-        portfolio_prices_frequency="1d",
-        execution_configuration=portfolio_execution_configuration,
-        backtesting_weights_configuration=backtest_weight_configuration
-    )
-
-    portfolio_data_node = PortfolioStrategy(portfolio_build_configuration=portfolio_build_configuration, )
-    portfolio_markets_config = PortfolioMarketsConfig(portfolio_name=portfolio_name)
-
-    interface = PortfolioInterface.build_from_portfolio_node(portfolio_node=portfolio_data_node,
-                                                             portfolio_markets_config=portfolio_markets_config)
-
-    res = interface.run(
-        patch_build_configuration=False,
+    portfolio_data_node = PortfolioStrategy(portfolio_configuration=portfolio_configuration)
+    portfolio_data_node.run(
         debug_mode=True,
-        portfolio_tags=None,
         add_portfolio_to_markets_backend=True,
     )
 
-    return interface.target_portfolio
+    return portfolio_data_node.target_portfolio
 
 
 portfolio_1 = build_portfolio(

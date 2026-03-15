@@ -845,6 +845,173 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
+def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_vam = types.ModuleType("mainsequence.client.models_vam")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakePortfolio:
+        ROOT_URL = "https://old.test/orm/api/vam/portfolio"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda: {
+                        "id": 42,
+                        "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
+                        "calendar": {"name": "NYSE"},
+                        "data_node_update": {"id": 901, "update_hash": "weights_daily"},
+                        "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
+                    }
+                )
+            ]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_vam.Portfolio = FakePortfolio
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
+
+    out = api_mod.list_market_portfolios()
+    assert captured["filters"][0] == {}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [
+        {
+            "id": 42,
+            "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
+            "calendar": {"name": "NYSE"},
+            "data_node_update": {"id": 901, "update_hash": "weights_daily"},
+            "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
+        }
+    ]
+
+
+def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_vam = types.ModuleType("mainsequence.client.models_vam")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeAssetTranslationTable:
+        ROOT_URL = "https://old.test/orm/api/assets/asset-translation-tables"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda: {
+                        "id": 12,
+                        "unique_identifier": "prices_translation_table_1d",
+                        "rules": [
+                            {
+                                "id": 100,
+                                "asset_filter": {"security_market_sector": "Crypto"},
+                                "markets_time_serie_unique_identifier": "binance_1d_bars",
+                                "target_exchange_code": "krkn",
+                                "default_column_name": "close",
+                            }
+                        ],
+                    }
+                )
+            ]
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+            return types.SimpleNamespace(
+                model_dump=lambda: {
+                    "id": pk,
+                    "unique_identifier": "prices_translation_table_1d",
+                    "rules": [
+                        {
+                            "id": 100,
+                            "asset_filter": {"security_market_sector": "Crypto"},
+                            "markets_time_serie_unique_identifier": "binance_1d_bars",
+                            "target_exchange_code": "krkn",
+                            "default_column_name": "close",
+                        }
+                    ],
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_vam.AssetTranslationTable = FakeAssetTranslationTable
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
+
+    listed = api_mod.list_market_asset_translation_tables()
+    assert captured["filters"][0] == {}
+    assert captured["jwt"] == ("acc", "ref")
+    assert listed == [
+        {
+            "id": 12,
+            "unique_identifier": "prices_translation_table_1d",
+            "rules": [
+                {
+                    "id": 100,
+                    "asset_filter": {"security_market_sector": "Crypto"},
+                    "markets_time_serie_unique_identifier": "binance_1d_bars",
+                    "target_exchange_code": "krkn",
+                    "default_column_name": "close",
+                }
+            ],
+        }
+    ]
+
+    detail = api_mod.get_market_asset_translation_table(12)
+    assert captured["get"] == {"pk": 12, "filters": {}, "timeout": None}
+    assert detail["id"] == 12
+
+
 def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -1214,6 +1381,97 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
     assert "every 1" in result.output
     assert "hours" in result.output
     assert "Total jobs: 1" in result.output
+
+
+def test_markets_portfolios_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_market_portfolios",
+        lambda timeout=None: [
+            {
+                "id": 42,
+                "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
+                "calendar": {"name": "NYSE"},
+                "data_node_update": {"id": 901, "update_hash": "weights_daily"},
+                "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["markets", "portfolios", "list"])
+    assert result.exit_code == 0
+    assert "Markets Portfolios" in result.output
+    assert "Growth Model" in result.output
+    assert "growth-model" in result.output
+    assert "weights_daily" in result.output
+    assert "signal_daily" in result.output
+    assert "Total portfolios: 1" in result.output
+
+
+def test_markets_asset_translation_table_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_market_asset_translation_tables",
+        lambda timeout=None: [
+            {
+                "id": 12,
+                "unique_identifier": "prices_translation_table_1d",
+                "rules": [
+                    {
+                        "id": 100,
+                        "asset_filter": {"security_market_sector": "Crypto"},
+                        "markets_time_serie_unique_identifier": "binance_1d_bars",
+                        "target_exchange_code": "krkn",
+                        "default_column_name": "close",
+                    }
+                ],
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["markets", "asset-translation-table", "list"])
+    assert result.exit_code == 0
+    assert "Markets Asset Translation Tables" in result.output
+    assert "prices_translation_table_1d" in result.output
+    assert "Crypto" in result.output
+    assert "binance_1d_bars" in result.output
+    assert "Total asset translation tables: 1" in result.output
+
+
+def test_markets_asset_translation_table_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_market_asset_translation_table",
+        lambda table_id, timeout=None: {
+            "id": table_id,
+            "unique_identifier": "prices_translation_table_1d",
+            "rules": [
+                {
+                    "id": 100,
+                    "asset_filter": {
+                        "security_type": "ETP",
+                        "security_market_sector": "Crypto",
+                    },
+                    "markets_time_serie_unique_identifier": "binance_1d_bars",
+                    "target_exchange_code": "krkn",
+                    "default_column_name": "close",
+                }
+            ],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["markets", "asset-translation-table", "detail", "12"])
+    assert result.exit_code == 0
+    assert "Markets Asset Translation Table" in result.output
+    assert "prices_translation_table_1d" in result.output
+    assert "Rules" in result.output
+    assert "security_type=ETP" in result.output
+    assert "market_sector=Crypto" in result.output
+    assert "binance_1d_bars @" in result.output
+    assert "krkn (close)" in result.output
 
 
 def test_project_jobs_run(cli_mod, runner, monkeypatch):
@@ -2131,6 +2389,44 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
         ["git", "commit", "-m", "Update deps"],
         ["git", "push"],
     ]
+
+
+def test_project_sync_project_defaults_to_current_project_dir(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    key = tmp_path / "id_ed25519"
+    uv_path = target / ".venv" / "bin" / "uv"
+    seen = {"cwd": []}
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
+    monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
+    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
+    monkeypatch.setattr(
+        cli_mod,
+        "run_uv",
+        lambda uv, args, cwd, env=None: seen["cwd"].append(cwd),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "uv_export_requirements",
+        lambda uv, cwd, **kwargs: seen["cwd"].append(cwd),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_cmd",
+        lambda cmd, cwd, env=None: seen["cwd"].append(cwd),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sync_project", "Update deps"],
+    )
+    assert result.exit_code == 0
+    assert seen["cwd"]
+    assert all(pathlib.Path(cwd) == target for cwd in seen["cwd"])
 
 
 def test_project_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):

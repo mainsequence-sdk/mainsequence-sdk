@@ -47,12 +47,15 @@ from .api import (
     delete_project,
     fetch_project_env_text,
     get_current_user_profile,
+    get_market_asset_translation_table,
     get_project,
     get_project_data_node_updates,
     get_project_job_run_logs,
     get_projects,
     list_dynamic_table_data_sources,
     list_github_organizations,
+    list_market_asset_translation_tables,
+    list_market_portfolios,
     list_project_base_images,
     list_project_images,
     list_project_job_runs,
@@ -98,6 +101,9 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
+markets = typer.Typer(help="Markets commands")
+markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
+markets_asset_translation_table_group = typer.Typer(help="Markets asset translation table commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
 project_data_node_updates_group = typer.Typer(help="Project data node update commands")
@@ -107,6 +113,9 @@ project_job_runs_group = typer.Typer(help="Project job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
+app.add_typer(markets, name="markets")
+markets.add_typer(markets_portfolios_group, name="portfolios")
+markets.add_typer(markets_asset_translation_table_group, name="asset-translation-table")
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
 project.add_typer(project_data_node_updates_group, name="data-node-updates")
@@ -470,6 +479,7 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
     """
     Resolve project directory by:
       - explicit --path, or
+      - current working directory when local `.env` exposes `MAIN_SEQUENCE_PROJECT_ID`, or
       - scanning base projects root for '-<id>' suffix
 
     Raises:
@@ -483,8 +493,7 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
         return p
 
     if project_id is None:
-        error("You must pass either PROJECT_ID or --path.")
-        raise typer.Exit(1)
+        return _resolve_current_project_dir_from_env()
 
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
@@ -739,6 +748,92 @@ def _format_related_image_label(value) -> str:
     if value is None:
         return "-"
     return str(value)
+
+
+def _format_nested_summary(
+    value,
+    *,
+    preferred_fields: tuple[str, ...],
+) -> str:
+    if isinstance(value, dict):
+        for field_name in preferred_fields:
+            field_value = value.get(field_name)
+            if field_value not in (None, ""):
+                return str(field_value)
+        return "-"
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _format_portfolio_label(portfolio: dict) -> str:
+    index_asset = portfolio.get("index_asset")
+    if isinstance(index_asset, dict):
+        unique_identifier = str(index_asset.get("unique_identifier") or "").strip()
+        name = str(index_asset.get("name") or "").strip()
+        if name and unique_identifier and name != unique_identifier:
+            return f"{name} ({unique_identifier})"
+        if name:
+            return name
+        if unique_identifier:
+            return unique_identifier
+        if index_asset.get("id") is not None:
+            return str(index_asset.get("id"))
+    elif index_asset is not None:
+        return str(index_asset)
+
+    return str(portfolio.get("id") or "-")
+
+
+def _format_asset_filter_summary(asset_filter) -> str:
+    if not isinstance(asset_filter, dict):
+        return str(asset_filter or "All assets")
+
+    parts: list[str] = []
+    security_type = str(asset_filter.get("security_type") or "").strip()
+    if security_type:
+        parts.append(f"security_type={security_type}")
+
+    market_sector = str(asset_filter.get("security_market_sector") or "").strip()
+    if market_sector:
+        parts.append(f"market_sector={market_sector}")
+
+    if asset_filter.get("open_for_everyone") is True:
+        parts.append("open_for_everyone=true")
+
+    return ", ".join(parts) if parts else "All assets"
+
+
+def _format_asset_translation_target(rule: dict) -> str:
+    target = str(rule.get("markets_time_serie_unique_identifier") or "-")
+    exchange = str(rule.get("target_exchange_code") or "").strip()
+    column = str(rule.get("default_column_name") or "").strip()
+
+    if exchange:
+        target = f"{target} @ {exchange}"
+    if column:
+        target = f"{target} ({column})"
+    return target
+
+
+def _format_asset_translation_rules_preview(rules, *, limit: int = 2) -> str:
+    if not isinstance(rules, list) or not rules:
+        return "-"
+
+    previews: list[str] = []
+    for rule in rules[:limit]:
+        if not isinstance(rule, dict):
+            previews.append(str(rule))
+            continue
+        previews.append(
+            f"{_format_asset_filter_summary(rule.get('asset_filter'))} => "
+            f"{_format_asset_translation_target(rule)}"
+        )
+
+    if len(rules) > limit:
+        previews.append(f"+{len(rules) - limit} more")
+
+    return "; ".join(previews)
 
 
 def _find_image_by_id(images: list[dict], image_id: int | None) -> dict | None:
@@ -1493,6 +1588,202 @@ def sdk_latest():
         success(f"Latest SDK (GitHub): {v}")
     else:
         warn("Latest SDK version unavailable.")
+
+
+# ---------- markets group ----------
+
+
+def _markets_portfolios_list_impl(timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        portfolios = list_market_portfolios(timeout=timeout)
+    except ApiError as e:
+        error(f"Markets portfolios fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for portfolio in portfolios:
+        rows.append(
+            [
+                str(portfolio.get("id") or "-"),
+                _format_portfolio_label(portfolio),
+                _format_nested_summary(
+                    portfolio.get("calendar"),
+                    preferred_fields=("name", "display_name", "id"),
+                ),
+                _format_nested_summary(
+                    portfolio.get("data_node_update"),
+                    preferred_fields=("update_hash", "id"),
+                ),
+                _format_nested_summary(
+                    portfolio.get("signal_data_node_update"),
+                    preferred_fields=("update_hash", "id"),
+                ),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Markets Portfolios",
+            ["ID", "Portfolio", "Calendar", "Data Node Update", "Signal Update"],
+            rows,
+        )
+    else:
+        info("No markets portfolios.")
+    info(f"Total portfolios: {len(portfolios)}")
+
+
+@markets_portfolios_group.command("list")
+def markets_portfolios_list_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List markets portfolios visible to the authenticated user.
+
+    Uses SDK client `Portfolio.filter()` as the single source of truth.
+
+    Parameters
+    ----------
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence markets portfolios list
+    mainsequence markets portfolios list --timeout 60
+    ```
+    """
+    _markets_portfolios_list_impl(timeout=timeout)
+
+
+def _markets_asset_translation_table_list_impl(timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        tables = list_market_asset_translation_tables(timeout=timeout)
+    except ApiError as e:
+        error(f"Markets asset translation tables fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for table in tables:
+        rules = table.get("rules")
+        rule_count = len(rules) if isinstance(rules, list) else 0
+        rows.append(
+            [
+                str(table.get("id") or "-"),
+                str(table.get("unique_identifier") or "-"),
+                str(rule_count),
+                _format_asset_translation_rules_preview(rules),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Markets Asset Translation Tables",
+            ["ID", "Unique Identifier", "Rules", "Mappings"],
+            rows,
+        )
+    else:
+        info("No markets asset translation tables.")
+    info(f"Total asset translation tables: {len(tables)}")
+
+
+def _markets_asset_translation_table_detail_impl(table_id: int, timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        table = get_market_asset_translation_table(table_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Markets asset translation table fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rules = table.get("rules")
+    rule_count = len(rules) if isinstance(rules, list) else 0
+    print_kv(
+        "Markets Asset Translation Table",
+        [
+            ("ID", str(table.get("id") or table_id)),
+            ("Unique Identifier", str(table.get("unique_identifier") or "-")),
+            ("Rules", str(rule_count)),
+        ],
+    )
+
+    if not isinstance(rules, list) or not rules:
+        info("No translation rules.")
+        return
+
+    rows: list[list[str]] = []
+    for rule in rules:
+        rule_dict = rule if isinstance(rule, dict) else {}
+        rows.append(
+            [
+                str(rule_dict.get("id") or "-"),
+                _format_asset_filter_summary(rule_dict.get("asset_filter")),
+                _format_asset_translation_target(rule_dict),
+                str(rule_dict.get("target_exchange_code") or "-"),
+                str(rule_dict.get("default_column_name") or "-"),
+            ]
+        )
+
+    print_table(
+        "Rules",
+        ["Rule ID", "Matches", "Maps To", "Exchange", "Column"],
+        rows,
+    )
+
+
+@markets_asset_translation_table_group.command("list")
+def markets_asset_translation_table_list_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List markets asset translation tables visible to the authenticated user.
+
+    Uses SDK client `AssetTranslationTable.filter()` as the single source of truth.
+
+    Parameters
+    ----------
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence markets asset-translation-table list
+    mainsequence markets asset-translation-table list --timeout 60
+    ```
+    """
+    _markets_asset_translation_table_list_impl(timeout=timeout)
+
+
+@markets_asset_translation_table_group.command("detail")
+def markets_asset_translation_table_detail_cmd(
+    table_id: int = typer.Argument(..., help="Asset translation table ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one markets asset translation table and render its rules in a readable terminal table.
+
+    Uses SDK client `AssetTranslationTable.get()` as the single source of truth.
+
+    Parameters
+    ----------
+    table_id:
+        Asset translation table ID.
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence markets asset-translation-table detail 12
+    mainsequence markets asset-translation-table detail 12 --timeout 60
+    ```
+    """
+    _markets_asset_translation_table_detail_impl(table_id=table_id, timeout=timeout)
 
 
 # ---------- project group ----------
@@ -3327,6 +3618,7 @@ def project_sync_project(
     Examples
     --------
     ```bash
+    mainsequence project sync_project "Update dependencies"
     mainsequence project sync_project "Update dependencies" --path .
     mainsequence project sync_project "Sync patch bump" 123
     ```

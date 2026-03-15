@@ -564,6 +564,23 @@ class DataNode(DataAccessMixin, ABC):
     This separation lets you run different updater jobs (for example, asset shards)
     while writing into the same table safely.
 
+    Hash namespace
+    --------------
+    ``DataNode`` also supports ``hash_namespace`` for test and experiment isolation.
+
+    Resolution order is:
+
+    1. explicit ``hash_namespace="..."`` passed at construction,
+    2. ``test_node=True`` which becomes the namespace ``"test"``,
+    3. the active ``with hash_namespace("...")`` context manager,
+    4. otherwise, no namespace.
+
+    A non-empty namespace is injected into the build configuration, which changes
+    both ``storage_hash`` and ``update_hash``. An empty namespace changes nothing.
+
+    During ``run()``, the active namespace is re-applied around the full run so
+    dependencies created inside ``dependencies()`` inherit the same isolation.
+
     Subclass checklist:
 
     - Keep constructor args stable and serializable (Pydantic config is recommended).
@@ -607,6 +624,11 @@ class DataNode(DataAccessMixin, ABC):
         ``init_meta`` and ``build_meta_data`` are framework controls (not dataset meaning).
         The initial fallback start date for first-run updates is ``OFFSET_START``.
 
+        Important:
+        ``hash_namespace`` and ``test_node`` are handled by the wrapper installed in
+        ``__init_subclass__``. They are consumed before your subclass constructor runs
+        and are therefore not regular business configuration arguments.
+
         Parameters
         ----------
         init_meta : build_operations.TimeSerieInitMeta | None, optional
@@ -636,8 +658,23 @@ class DataNode(DataAccessMixin, ABC):
 
     def __init_subclass__(cls, **kwargs):
         """
-        This special method is called when DataNode is subclassed.
-        It automatically wraps the subclass's __init__ method to add post-init routines.
+        Wrap subclass construction so DataNode can capture config, compute hashes,
+        and apply namespace/test controls consistently.
+
+        The wrapper consumes two special kwargs before the subclass ``__init__`` runs:
+
+        - ``hash_namespace="..."``: explicit hash isolation namespace
+        - ``test_node=True``: shortcut for ``hash_namespace="test"``
+
+        Namespace precedence is:
+
+        1. explicit ``hash_namespace``
+        2. ``test_node=True``
+        3. active namespacing context manager
+
+        Only a non-empty namespace is injected into the hashed build configuration.
+        That preserves backward compatibility for normal runs while allowing isolated
+        test tables when needed.
         """
         super().__init_subclass__(**kwargs)
 
@@ -756,11 +793,24 @@ class DataNode(DataAccessMixin, ABC):
 
     @property
     def hash_namespace(self) -> str:
+        """
+        Return the active hash namespace for this node.
+
+        An empty string means "no namespace", which keeps hashing identical to the
+        normal production-style behavior. A non-empty value means this node was
+        constructed in an isolated namespace and its hashes include that namespace.
+        """
         # Works for old pickles too (attribute may not exist)
         return getattr(self, "_hash_namespace", "") or ""
 
     @property
     def test_node(self) -> bool:
+        """
+        Return ``True`` when this node is running with any non-empty hash namespace.
+
+        In current behavior, ``test_node`` is just a convenience view over
+        ``bool(self.hash_namespace)``.
+        """
         # “test node” = any non-empty namespace
         return bool(self.hash_namespace)
 
@@ -1039,6 +1089,12 @@ class DataNode(DataAccessMixin, ABC):
 
         By default, this also updates dependencies first, validates output, persists rows,
         and runs metadata/post-update hooks.
+
+        Namespace behavior:
+        if this node has a non-empty ``hash_namespace``, ``run()`` activates that
+        namespace around the full run. That ensures dependencies instantiated inside
+        ``dependencies()`` inherit the same namespace instead of accidentally writing
+        into the non-namespaced tables.
 
         Parameters
         ----------

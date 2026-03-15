@@ -5,7 +5,7 @@ import math
 from collections.abc import Iterable
 from decimal import Decimal
 from enum import Enum, IntEnum
-from typing import Any, Optional, TypedDict, Union
+from typing import Any, ClassVar, Optional, TypedDict, Union
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import pandas as pd
@@ -283,6 +283,25 @@ class AssetPricingDetail(BasePydanticModel):
 
 
 class AssetMixin(BaseObjectOrm, BasePydanticModel):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "is_custom_by_organization": ["exact"],
+        "id": ["in", "exact"],
+        "unique_identifier": ["in", "exact", "contains"],
+        "current_snapshot__ticker": ["in", "exact"],
+        "current_snapshot__name": ["in", "exact", "contains"],
+        "current_snapshot__exchange_code": ["in", "exact"],
+        "current_snapshot__asset_ticker_group_id": ["in", "exact"],
+        "figi": ["in", "exact"],
+        "security_type": ["in", "exact"],
+        "security_type_2": ["in", "exact"],
+        "security_market_sector": ["in", "exact"],
+        "isin": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "is_custom_by_organization": "bool",
+        "id": "id",
+    }
+
     id: int | None = None
 
     # Immutable identifiers
@@ -406,7 +425,9 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         Follows DRF pagination and accumulates ALL pages. Returns raw dict items.
         """
         base_url = cls.get_object_url()  # e.g. "https://api.example.com/assets"
-        body = cls._parse_parameters_filter(kwargs)  # same filters as GET
+        transformed_kwargs = cls._translate_query_params(kwargs)
+        transformed_kwargs = cls._normalize_filter_kwargs(transformed_kwargs)
+        body = cls._parse_parameters_filter(transformed_kwargs)  # same filters as GET
         accumulated = []
 
         # Start at the collection action
@@ -478,6 +499,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         to the corresponding fields on the related current_snapshot.
         """
         transformed_kwargs = cls._translate_query_params(kwargs)
+        transformed_kwargs = cls._normalize_filter_kwargs(transformed_kwargs)
         return super().get(*args, **transformed_kwargs)
 
     @property
@@ -567,6 +589,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         # Convert `kwargs` to query parameters
         # kwargs["include_relationship_details_depth"]=include_details
         transformed_kwargs = cls._translate_query_params(kwargs)
+        transformed_kwargs = cls._normalize_filter_kwargs(transformed_kwargs)
         params = cls._parse_parameters_filter(parameters=transformed_kwargs)
 
         # We'll call the custom action endpoint
@@ -877,7 +900,7 @@ class AssetTranslationRule(BaseModel):
         return self.asset_filter.filter_triggered(asset)
 
 
-class AssetTranslationTable(BaseModel):
+class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
     """Organization-scoped table of translation rules.
 
     This model mirrors the backend AssetTranslationTable and is used by wrapper nodes
@@ -1158,6 +1181,16 @@ class Asset(AssetMixin, BaseObjectOrm):
 
 
 class PortfolioIndexAsset(Asset):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        **AssetMixin.FILTERSET_FIELDS,
+        "reference_portfolio__id": ["in", "exact"],
+        "reference_portfolio__data_node_update__update_hash": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        **AssetMixin.FILTER_VALUE_NORMALIZERS,
+        "reference_portfolio__id": "id",
+    }
+
     reference_portfolio: Union["Portfolio", int]
 
     @property
@@ -1804,6 +1837,20 @@ class PortfolioAbout(TypedDict):
 
 
 class Portfolio(BaseObjectOrm, BasePydanticModel):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "index_asset__unique_identifier": ["in", "exact", "contains"],
+        "data_node_update__id": ["in", "exact"],
+        "data_node_update": ["isnull"],
+        "signal_data_node_update": ["isnull"],
+        "id": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "data_node_update__id": "id",
+        "data_node_update__isnull": "bool",
+        "signal_data_node_update__isnull": "bool",
+        "id": "id",
+    }
+
     id: int | None = Field(
         None,
         title="Portfolio ID",
@@ -1833,13 +1880,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         examples=["close"],
         json_schema_extra={"label": "Backtest Price Column"},
     )
-    tags: list["PortfolioTags"] | None = Field(
-        None,
-        title="Portfolio Tags",
-        description="Optional categorization tags attached to the portfolio.",
-        examples=[[{"id": 1, "name": "production", "color": "#0f766e"}]],
-        json_schema_extra={"label": "Portfolio Tags"},
-    )
+
     calendar: Optional["Calendar"] = Field(
         ...,
         title="Calendar",
@@ -1869,152 +1910,6 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         json_schema_extra={"label": "Builds From Target Positions"},
     )
 
-    @staticmethod
-    def _coerce_filter_id(value: Any, *, field_name: str) -> int:
-        if isinstance(value, int):
-            return value
-        if hasattr(value, "id") and value.id is not None:
-            return int(value.id)
-        if isinstance(value, dict) and value.get("id") is not None:
-            return int(value["id"])
-        raise TypeError(
-            f"{field_name} must be an int id or an object with .id. Got: {type(value)!r}"
-        )
-
-    @staticmethod
-    def _coerce_isnull(value: Any, *, field_name: str) -> bool:
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"1", "true", "yes"}:
-                return True
-            if normalized in {"0", "false", "no"}:
-                return False
-        raise TypeError(f"{field_name} must be a boolean value. Got: {value!r}")
-
-    @classmethod
-    def _normalize_filter_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
-        normalized: dict[str, Any] = {}
-
-        if kwargs.get("index_asset__unique_identifier") is not None:
-            normalized["index_asset__unique_identifier"] = str(
-                kwargs["index_asset__unique_identifier"]
-            ).strip()
-
-        if kwargs.get("index_asset__unique_identifier__in") is not None:
-            value = kwargs["index_asset__unique_identifier__in"]
-            if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
-                normalized["index_asset__unique_identifier__in"] = [str(v).strip() for v in value]
-            else:
-                normalized["index_asset__unique_identifier__in"] = [str(value).strip()]
-
-        if kwargs.get("index_asset__unique_identifier__contains") is not None:
-            normalized["index_asset__unique_identifier__contains"] = str(
-                kwargs["index_asset__unique_identifier__contains"]
-            ).strip()
-
-        if kwargs.get("data_node_update__id") is not None:
-            normalized["data_node_update__id"] = cls._coerce_filter_id(
-                kwargs["data_node_update__id"],
-                field_name="data_node_update__id",
-            )
-
-        if kwargs.get("data_node_update__id__in") is not None:
-            value = kwargs["data_node_update__id__in"]
-            if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
-                normalized["data_node_update__id__in"] = [
-                    cls._coerce_filter_id(v, field_name="data_node_update__id__in") for v in value
-                ]
-            else:
-                normalized["data_node_update__id__in"] = [
-                    cls._coerce_filter_id(value, field_name="data_node_update__id__in")
-                ]
-
-        if kwargs.get("data_node_update__isnull") is not None:
-            normalized["data_node_update__isnull"] = cls._coerce_isnull(
-                kwargs["data_node_update__isnull"],
-                field_name="data_node_update__isnull",
-            )
-
-        if kwargs.get("signal_data_node_update__isnull") is not None:
-            normalized["signal_data_node_update__isnull"] = cls._coerce_isnull(
-                kwargs["signal_data_node_update__isnull"],
-                field_name="signal_data_node_update__isnull",
-            )
-
-        if kwargs.get("id") is not None:
-            normalized["id"] = cls._coerce_filter_id(kwargs["id"], field_name="id")
-
-        if kwargs.get("id__in") is not None:
-            value = kwargs["id__in"]
-            if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
-                normalized["id__in"] = [cls._coerce_filter_id(v, field_name="id__in") for v in value]
-            else:
-                normalized["id__in"] = [cls._coerce_filter_id(value, field_name="id__in")]
-
-        return normalized
-
-    @classmethod
-    def filter(
-        cls,
-        timeout=None,
-        *,
-        index_asset__unique_identifier: str | None = None,
-        index_asset__unique_identifier__in: Iterable[str] | None = None,
-        index_asset__unique_identifier__contains: str | None = None,
-        data_node_update__id: int | DataNodeUpdate | dict[str, Any] | None = None,
-        data_node_update__id__in: Iterable[int | DataNodeUpdate | dict[str, Any]] | None = None,
-        data_node_update__isnull: bool | str | None = None,
-        signal_data_node_update__isnull: bool | str | None = None,
-        id: int | None = None,
-        id__in: Iterable[int] | None = None,
-    ):
-        params = cls._normalize_filter_kwargs(
-            {
-                "index_asset__unique_identifier": index_asset__unique_identifier,
-                "index_asset__unique_identifier__in": index_asset__unique_identifier__in,
-                "index_asset__unique_identifier__contains": index_asset__unique_identifier__contains,
-                "data_node_update__id": data_node_update__id,
-                "data_node_update__id__in": data_node_update__id__in,
-                "data_node_update__isnull": data_node_update__isnull,
-                "signal_data_node_update__isnull": signal_data_node_update__isnull,
-                "id": id,
-                "id__in": id__in,
-            }
-        )
-        return super().filter(timeout=timeout, **params)
-
-    @classmethod
-    def iter_filter(
-        cls,
-        timeout=None,
-        *,
-        index_asset__unique_identifier: str | None = None,
-        index_asset__unique_identifier__in: Iterable[str] | None = None,
-        index_asset__unique_identifier__contains: str | None = None,
-        data_node_update__id: int | DataNodeUpdate | dict[str, Any] | None = None,
-        data_node_update__id__in: Iterable[int | DataNodeUpdate | dict[str, Any]] | None = None,
-        data_node_update__isnull: bool | str | None = None,
-        signal_data_node_update__isnull: bool | str | None = None,
-        id: int | None = None,
-        id__in: Iterable[int] | None = None,
-    ):
-        params = cls._normalize_filter_kwargs(
-            {
-                "index_asset__unique_identifier": index_asset__unique_identifier,
-                "index_asset__unique_identifier__in": index_asset__unique_identifier__in,
-                "index_asset__unique_identifier__contains": index_asset__unique_identifier__contains,
-                "data_node_update__id": data_node_update__id,
-                "data_node_update__id__in": data_node_update__id__in,
-                "data_node_update__isnull": data_node_update__isnull,
-                "signal_data_node_update__isnull": signal_data_node_update__isnull,
-                "id": id,
-                "id__in": id__in,
-            }
-        )
-        return super().iter_filter(timeout=timeout, **params)
-
     def pretty_print(self) -> str:
         def format_field(name, value):
             if isinstance(value, list):
@@ -2038,7 +1933,6 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         calendar_name: str,
         target_portfolio_about: PortfolioAbout,
         backtest_table_price_column_name: str,
-        tags: list | None = None,
         timeout=None,
     ) -> "Portfolio":
         url = f"{cls.get_object_url()}/create_from_time_series/"
@@ -2051,7 +1945,6 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             "calendar_name": calendar_name,
             "target_portfolio_about": target_portfolio_about,
             "backtest_table_price_column_name": backtest_table_price_column_name,
-            "tags": tags,
         }
 
         r = make_request(
@@ -2527,4 +2420,3 @@ class OrderManager(BaseObjectOrm, BasePydanticModel):
 
         if r.status_code != 204:
             raise_for_response(r)
-

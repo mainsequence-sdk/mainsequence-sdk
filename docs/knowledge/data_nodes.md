@@ -114,6 +114,75 @@ Common example:
 
 Only change build metadata when you understand the storage/layout impact.
 
+## 5.2) Hash namespaces: what they actually do
+
+`DataNode` also supports a separate testing and isolation mechanism called `hash_namespace`.
+
+This is not the same thing as table identity, asset identity, or business meaning. It is an extra namespace added to hashing so you can safely isolate runs on a shared backend.
+
+### When to use it
+
+Use `hash_namespace` when you want:
+
+- integration tests that do not collide with production-like tables
+- temporary experimentation on a shared tenant
+- parallel test runs that must not write into each other's tables
+
+### How namespace is resolved
+
+The code resolves namespace in this order:
+
+1. explicit `hash_namespace="..."`
+2. `test_node=True`, which becomes the namespace `"test"`
+3. the active `with hash_namespace("..."):` context manager
+4. otherwise, an empty namespace
+
+### What changes when the namespace is non-empty
+
+If the namespace is empty, nothing changes and hashes behave exactly as they do in normal production-style runs.
+
+If the namespace is non-empty, `DataNode` injects `hash_namespace` into the build configuration. That changes both:
+
+- `storage_hash`
+- `update_hash`
+
+That is why namespaced runs are isolated from non-namespaced runs.
+
+### What happens during `run()`
+
+If a node has a non-empty namespace, `run()` re-activates that namespace around the full execution.
+
+That matters because dependencies created inside `dependencies()` will inherit the same namespace automatically during the run.
+
+So the isolation is not only for the top-level node. It propagates across the run tree.
+
+### What to prefer
+
+For tests, prefer:
+
+```python
+from mainsequence.tdag.data_nodes import hash_namespace
+
+with hash_namespace("pytest_case_123"):
+    node = MyNode(...)
+    node.run(debug_mode=True, force_update=True)
+```
+
+`test_node=True` is a shortcut and simply uses the namespace `"test"`.
+
+### What not to use it for
+
+Do not use `hash_namespace` to represent business meaning such as:
+
+- frequency
+- venue
+- asset universe
+- transformation logic
+
+Those belong in the actual constructor/config fields and should be reflected through the normal hashing rules.
+
+Think of `hash_namespace` as test and isolation plumbing, not dataset definition.
+
 ## 6) Update strategy: incremental by default
 
 Use `UpdateStatistics` to minimize work and control windows intentionally.
@@ -243,6 +312,49 @@ Keep test runs bounded:
 - use a narrow `OFFSET_START` for test nodes,
 - or pass controlled update statistics/checkpoints,
 - keep integration tests small and deterministic.
+
+### Example: keep integration tests in `tests/` and override `OFFSET_START`
+
+In real projects, keep these tests in the `tests/` folder, for example:
+
+- `tests/test_my_node.py`
+
+A practical pattern is to create a small test-only subclass with a narrow `OFFSET_START`, then run it inside a namespace:
+
+```python
+import datetime
+
+import pytz
+
+from mainsequence.tdag.data_nodes import hash_namespace
+
+from src.data_nodes.my_node import MyNode, MyNodeConfig
+
+UTC = pytz.utc
+
+
+class TestMyNode(MyNode):
+    OFFSET_START = datetime.datetime(2025, 1, 1, tzinfo=UTC)
+
+
+def test_my_node_smoke():
+    config = MyNodeConfig(...)
+
+    with hash_namespace("pytest_my_node_smoke"):
+        node = TestMyNode(config=config)
+        err, df = node.run(debug_mode=True, force_update=True)
+
+    assert err is False
+    assert df is not None
+```
+
+Why this pattern works well:
+
+- the namespace isolates hashes from production-like tables
+- the subclass keeps the production node unchanged
+- the narrower `OFFSET_START` prevents large first-run backfills during tests
+
+If you want the shortcut form, `test_node=True` is equivalent to using the namespace `"test"`, but explicit namespaces are usually better for parallel test runs.
 
 ## 12) Schema evolution policy
 

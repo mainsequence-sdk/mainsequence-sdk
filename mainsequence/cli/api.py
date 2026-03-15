@@ -740,6 +740,321 @@ def list_project_jobs(
                 os.environ[k] = v
 
 
+def list_market_portfolios(
+    *,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List markets portfolios via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `Portfolio.filter()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_portfolio_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_vam import Portfolio as ClientPortfolio
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_portfolio_root_url = getattr(ClientPortfolio, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientPortfolio.ROOT_URL = root_url
+
+        portfolios = ClientPortfolio.filter(timeout=timeout)
+
+        out: list[dict[str, Any]] = []
+        for portfolio in portfolios:
+            if isinstance(portfolio, dict):
+                out.append(portfolio)
+            elif hasattr(portfolio, "model_dump"):
+                out.append(portfolio.model_dump())
+            else:
+                out.append({"id": getattr(portfolio, "id", None)})
+        return out
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        raise ApiError(f"Markets portfolios fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_portfolio_root_url is not None:
+            try:
+                from mainsequence.client.models_vam import Portfolio as ClientPortfolio
+
+                ClientPortfolio.ROOT_URL = old_portfolio_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def list_market_asset_translation_tables(
+    *,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List markets asset translation tables via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `AssetTranslationTable.filter()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_table_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_vam import (
+            AssetTranslationTable as ClientAssetTranslationTable,
+        )
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_table_root_url = getattr(ClientAssetTranslationTable, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientAssetTranslationTable.ROOT_URL = root_url
+
+        tables = ClientAssetTranslationTable.filter(timeout=timeout)
+
+        out: list[dict[str, Any]] = []
+        for table in tables:
+            if isinstance(table, dict):
+                out.append(table)
+            elif hasattr(table, "model_dump"):
+                out.append(table.model_dump())
+            else:
+                out.append({"id": getattr(table, "id", None)})
+        return out
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        raise ApiError(f"Markets asset translation tables fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_table_root_url is not None:
+            try:
+                from mainsequence.client.models_vam import (
+                    AssetTranslationTable as ClientAssetTranslationTable,
+                )
+
+                ClientAssetTranslationTable.ROOT_URL = old_table_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def get_market_asset_translation_table(
+    table_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one markets asset translation table via SDK client model.
+
+    Single source of truth:
+      - delegates detail fetching and payload parsing to `AssetTranslationTable.get()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_table_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_vam import (
+            AssetTranslationTable as ClientAssetTranslationTable,
+        )
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_table_root_url = getattr(ClientAssetTranslationTable, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientAssetTranslationTable.ROOT_URL = root_url
+
+        table = ClientAssetTranslationTable.get(pk=int(table_id), timeout=timeout)
+        if isinstance(table, dict):
+            return table
+        if hasattr(table, "model_dump"):
+            return table.model_dump()
+        return {"id": getattr(table, "id", None)}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Markets asset translation table not found: {table_id}")
+        raise ApiError(f"Markets asset translation table fetch failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_table_root_url is not None:
+            try:
+                from mainsequence.client.models_vam import (
+                    AssetTranslationTable as ClientAssetTranslationTable,
+                )
+
+                ClientAssetTranslationTable.ROOT_URL = old_table_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
 def create_project_job(
     *,
     name: str,

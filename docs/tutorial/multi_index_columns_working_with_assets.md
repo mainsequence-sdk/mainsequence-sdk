@@ -315,17 +315,129 @@ Then run `Debug simulated_prices_launcher` from VS Code.
 
 ## Testing or experimenting safely on a shared backend
 
-If you are experimenting in a shared organization backend, isolate your test tables instead of colliding with production-like identifiers.
+If you are experimenting in a shared organization backend, keep the table identifier stable and isolate the run with `hash_namespace(...)` instead of inventing a new identifier for every test.
+
+Why this is the safer pattern:
+
+- `identifier` still describes the dataset meaning
+- `hash_namespace(...)` is test-only isolation plumbing
+- a non-empty namespace changes both `storage_hash` and `update_hash`
+- your experiment writes into isolated tables and updater records instead of colliding with production-like runs
+
+Use a short namespace you can recognize later, for example:
+
+- `tutorial_alice`
+- `tutorial_alice_fix_123`
+- `pytest_simulated_prices_smoke`
+
+Preferred pattern:
 
 ```python
 from mainsequence.tdag.data_nodes import hash_namespace
 
 with hash_namespace("tutorial_alice"):
     node = SimulatedPrices(simulation_config=config)
-    node.run(debug_mode=True, force_update=True)
+    err, df = node.run(debug_mode=True, force_update=True)
 ```
 
-This is especially useful for tests and tutorial experimentation.
+Shortcut form:
+
+```python
+node = SimulatedPrices(simulation_config=config, test_node=True)
+err, df = node.run(debug_mode=True, force_update=True)
+```
+
+Prefer the explicit namespace form when multiple people or parallel tests may run at the same time.
+
+After the run, inspect the updater records from the CLI:
+
+```bash
+mainsequence project data-node-updates list
+```
+
+If your local project auth has expired, refresh it first:
+
+```bash
+mainsequence project refresh_token --path .
+```
+
+Example CLI output:
+
+```text
+Project Data Node Updates
+ID   Update Hash                        Data Node Storage                  Update Details
+--   ---------------------------------  ---------------------------------  --------------
+410  0f0a8c2c6b9a4b6b8d7d2e9b5b6f2a1     7b6d7a7a65f34d7f9a8d8c3e9f8a7b1     901
+411  4b7c27f5f8a9447eaaf3c9f37df0f5ab    0c2f0e32cf14462f8d54b9c1f8a31f73    902
+Total updates: 2
+```
+
+What to expect from that output:
+
+- the exact IDs and hashes will differ in your environment
+- a namespaced run will have a different `Data Node Storage` value from a non-namespaced run
+- the `Update Hash` will also differ, because the updater identity is isolated too
+- that difference is expected even when both runs use the same `SIMULATED_PRICES_IDENTIFIER`
+
+This is especially useful for tests, smoke runs, and short-lived tutorial experimentation on a shared backend.
+
+## Example test in the `tests/` folder
+
+For real projects, keep your tests under `tests/`. For this tutorial, a good example would be:
+
+- `tests/test_simulated_prices.py`
+
+One useful testing pattern is:
+
+1. create a test-only subclass of `SimulatedPrices`
+2. override `OFFSET_START` so the first run stays small
+3. run the node inside a namespace so the test hashes do not collide with shared tables
+
+Example:
+
+```python
+import datetime
+
+import pytz
+
+import mainsequence.client as msc
+from mainsequence.tdag.data_nodes import hash_namespace
+
+from src.data_nodes.prices_nodes import PriceSimulConfig, SimulatedPrices
+
+UTC = pytz.utc
+
+
+class TestSimulatedPrices(SimulatedPrices):
+    OFFSET_START = datetime.datetime(2025, 1, 1, tzinfo=UTC)
+
+
+def test_simulated_prices_smoke():
+    assets = msc.Asset.batch_get_or_register_custom_assets(
+        [
+            {"unique_identifier": "TEST_SIM_A", "snapshot": {"name": "TEST_SIM_A", "ticker": "TEST_SIM_A"}},
+            {"unique_identifier": "TEST_SIM_B", "snapshot": {"name": "TEST_SIM_B", "ticker": "TEST_SIM_B"}},
+        ]
+    )
+
+    config = PriceSimulConfig(asset_list=assets)
+
+    with hash_namespace("pytest_simulated_prices_smoke"):
+        node = TestSimulatedPrices(simulation_config=config)
+        err, df = node.run(debug_mode=True, force_update=True)
+
+    assert err is False
+    assert df is not None
+    assert not df.empty
+    assert df.index.names == ["time_index", "unique_identifier"]
+```
+
+Why this is the recommended shape:
+
+- the test lives in the normal `tests/` folder
+- `hash_namespace(...)` isolates both `storage_hash` and `update_hash`
+- overriding `OFFSET_START` keeps the first-run backfill small and fast
+- the production `SimulatedPrices` class stays unchanged
 
 ## What success looks like
 

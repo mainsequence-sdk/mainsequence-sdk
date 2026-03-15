@@ -1,6 +1,8 @@
 import inspect
 import os
+from collections.abc import Callable, Iterable
 from datetime import datetime
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
@@ -68,6 +70,9 @@ class BasePydanticModel(BaseModel):
 
 
 class BaseObjectOrm:
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = None
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str | Callable[..., Any]]] = {}
+
     END_POINTS = {
         "User": "user",
         # VAM
@@ -202,11 +207,148 @@ class BaseObjectOrm:
                 parameters[key] = ",".join(value)
         return parameters
 
+    @staticmethod
+    def _coerce_filter_id(value: Any, *, field_name: str) -> int:
+        if isinstance(value, int):
+            return value
+        if hasattr(value, "id") and value.id is not None:
+            return int(value.id)
+        if isinstance(value, dict) and value.get("id") is not None:
+            return int(value["id"])
+        raise TypeError(
+            f"{field_name} must be an int id or an object with .id. Got: {type(value)!r}"
+        )
+
+    @staticmethod
+    def _coerce_filter_bool(value: Any, *, field_name: str) -> bool:
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes"}:
+                return True
+            if normalized in {"0", "false", "no"}:
+                return False
+        raise TypeError(f"{field_name} must be a boolean value. Got: {value!r}")
+
+    @classmethod
+    def _filter_param_name(cls, field_name: str, lookup: str) -> str:
+        return field_name if lookup == "exact" else f"{field_name}__{lookup}"
+
+    @classmethod
+    def _build_filter_param_specs(cls) -> dict[str, tuple[str, str]]:
+        filterset_fields = getattr(cls, "FILTERSET_FIELDS", None)
+        if not filterset_fields:
+            return {}
+
+        specs: dict[str, tuple[str, str]] = {}
+        for field_name, lookups in filterset_fields.items():
+            for lookup in lookups:
+                specs[cls._filter_param_name(field_name, lookup)] = (field_name, lookup)
+        return specs
+
+    @classmethod
+    def _resolve_filter_normalizer(
+        cls,
+        *,
+        filter_key: str,
+        field_name: str,
+        lookup: str,
+    ) -> str | Callable[..., Any] | None:
+        normalizers = getattr(cls, "FILTER_VALUE_NORMALIZERS", {}) or {}
+        return (
+            normalizers.get(filter_key)
+            or normalizers.get(field_name)
+            or ("bool" if lookup == "isnull" else None)
+        )
+
+    @classmethod
+    def _apply_filter_normalizer(
+        cls,
+        value: Any,
+        *,
+        filter_key: str,
+        field_name: str,
+        lookup: str,
+    ) -> Any:
+        normalizer = cls._resolve_filter_normalizer(
+            filter_key=filter_key,
+            field_name=field_name,
+            lookup=lookup,
+        )
+
+        if normalizer == "id":
+            return cls._coerce_filter_id(value, field_name=filter_key)
+        if normalizer == "bool":
+            return cls._coerce_filter_bool(value, field_name=filter_key)
+        if normalizer == "str":
+            return str(value).strip()
+        if callable(normalizer):
+            try:
+                return normalizer(value, field_name=filter_key)
+            except TypeError:
+                return normalizer(value)
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @classmethod
+    def _normalize_filter_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        specs = cls._build_filter_param_specs()
+        if not specs:
+            return dict(kwargs)
+
+        unexpected = sorted(key for key in kwargs.keys() if key not in specs)
+        if unexpected:
+            allowed_filters = ", ".join(sorted(specs.keys()))
+            raise ValueError(
+                f"Unsupported {cls.__name__} filter(s): {', '.join(unexpected)}. "
+                f"Allowed filters: {allowed_filters}."
+            )
+
+        normalized: dict[str, Any] = {}
+        for filter_key, value in kwargs.items():
+            if value is None:
+                continue
+
+            field_name, lookup = specs[filter_key]
+            if lookup == "in":
+                if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
+                    normalized[filter_key] = [
+                        cls._apply_filter_normalizer(
+                            item,
+                            filter_key=filter_key,
+                            field_name=field_name,
+                            lookup=lookup,
+                        )
+                        for item in value
+                    ]
+                else:
+                    normalized[filter_key] = [
+                        cls._apply_filter_normalizer(
+                            value,
+                            filter_key=filter_key,
+                            field_name=field_name,
+                            lookup=lookup,
+                        )
+                    ]
+                continue
+
+            normalized[filter_key] = cls._apply_filter_normalizer(
+                value,
+                filter_key=filter_key,
+                field_name=field_name,
+                lookup=lookup,
+            )
+
+        return normalized
+
     @classmethod
     def iter_filter(cls, timeout=None, max_items: int | None = None, **kwargs):
         """
         Generator variant: yields objects across all pages without accumulating into memory.
         """
+        kwargs = cls._normalize_filter_kwargs(kwargs)
         base_url = cls.get_object_url()
         params = cls._parse_parameters_filter(kwargs)
 
