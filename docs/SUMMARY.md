@@ -13,6 +13,8 @@
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
     - [CLI Deep Dive](knowledge/cli.md)
+    - Markets
+        - [Assets](knowledge/markets/assets.md)
     - Infrastructure
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)

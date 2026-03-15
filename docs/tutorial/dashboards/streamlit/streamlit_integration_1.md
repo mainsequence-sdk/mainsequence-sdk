@@ -2,266 +2,190 @@
 
 !!! warning "IMPORTANT"
     Each dashboard folder must include a `README.md` file in the same directory as `app.py`.
-    If your dashboard entrypoint is `dashboards/my_dashboard/app.py`, then you should also have `dashboards/my_dashboard/README.md`.
+    The current Streamlit scaffold can create `.streamlit/config.toml` automatically on first run, so you do not need to commit that file unless you want to override the packaged theme.
 
 ## Introduction
 
-Once your data is unified, you can start doing more interesting things with it. Let’s build your first dashboard.
+In this chapter, we will build a small tutorial dashboard that reads the same objects you created in the Markets chapters:
 
-To help you build and deploy dashboards quickly, the Main Sequence platform integrates **Streamlit**, an open‑source Python library for interactive apps.
+- mock fixed-income assets with pricing details
+- the simulated daily prices table
+- the translation table that maps those assets to prices
 
-Streamlit on the Main Sequence platform lets you turn data into interactive tools. Coupled with your project’s compute engine, you can ship a **production‑ready** dashboard in minutes.
+The goal is to keep the first dashboard chapter small and understandable. Instead of copying a large external example application, we will create a minimal multipage Streamlit app directly inside the tutorial project.
 
-In this example, we’ll build a simple app to **stress‑test a fixed‑income portfolio** against movements in the benchmark yield curve.
+## Project structure
 
-We’ll use the **`mainsequence.instrument`** library, which is a template wrapper you can use to integrate any instrument‑pricing engine. For high‑quality pricing, we wrap the excellent **QuantLib** project: https://www.quantlib.org/.
+Create the following structure under your project:
 
-QuantLib is a free, open‑source library for modeling, trading, and risk management. It’s written in C++ and exported to languages like C#, Java, Python, and R.
-
-We’ll use `mainsequence.instrument` to price a portfolio of floating‑ and fixed‑rate bonds and use QuantLib to estimate KPIs such as expected carry and mark‑to‑market impact.
-
-If you want to see the end result, check the example repository: https://github.com/mainsequence-sdk/ExampleDashboards. We still recommend that you continue building in your isolated tutorial project.
-
-## Building a Dashboard
-
-For the platform to detect your dashboards, place them inside the `dashboards/` folder in your repo, and name the file that initializes the app **`app.py`**. The platform will discover and deploy it automatically. You already may find an example dashboard in your tutorial project under `dashboards/sample_app/app.py`. So you can create a new folder for this tutorial dashboard: `dashboards/tutorial/` and add your `app.py` file there.
-
-## Interest‑Rate Portfolio Exposure Example
-
-We’ll build a dashboard that shows how changes in the yield curve affect a portfolio. It will include:
-
-1) A search input to look up the portfolio.
-2) Controls to choose how the yield curve should shift.
-3) A chart comparing the original vs. shifted curve.
-4) A table showing overall and per‑instrument impact.
-
-## Pre‑work Making A Portfolio
-
-We don’t yet have portfolios in the platform, so let’s create one. Any portfolio in Main Sequence has the following properties (see the examples under **Markets** for more context: https://github.com/mainsequence-sdk/mainsequence-sdk/tree/main/examples/markets).
-
-```python
-class PortfolioMixin:
-    id: Optional[int] = None
-    is_active: bool = False
-    data_node_update: Optional['DataNodeUpdate']
-    signal_data_node_update: Optional['DataNodeUpdate']
-    follow_account_rebalance: bool = False
-    comparable_portfolios: Optional[List[int]] = None
-    backtest_table_price_column_name: Optional[str] = Field(None, max_length=20)
-    tags: Optional[List['PortfolioTags']] = None
-    calendar: Optional['Calendar']
-    index_asset: PortfolioIndexAsset
+```text
+dashboards/
+  └─ tutorial_fixed_income_dashboard/
+      ├─ README.md
+      ├─ common.py
+      ├─ app.py
+      └─ pages/
+          ├─ 01_prices_and_assets.py
+          └─ 02_metadata_and_rules.py
 ```
 
-The most important fields are **`data_node_update`** and **`signal_data_node_update`**. On Main Sequence, a portfolio is typically composed of a **signal** (which generates weights) and a **portfolio process** (which represents the historical performance and configuration). For instance, a market‑cap strategy might compute weights daily, but the portfolio may only rebalance **quarterly**.
+This layout is enough for Streamlit discovery on the platform and for a clean local development flow.
 
-For this tutorial dashboard, we’ll build a **mock portfolio** with **no signal**—just a `data_node_update`.
+## 1) Shared helpers
 
-You can find the code under `dashboards/helpers/mock.py`:
+Create `dashboards/tutorial_fixed_income_dashboard/common.py`.
+
+This helper module should:
+
+1. reuse the tutorial helpers from `src/helpers_mock.py`
+2. reuse the simulated prices node from `src/data_nodes/simulated_daily_close_prices.py`
+3. expose a `bootstrap_tutorial_data()` helper that rebuilds the tutorial state on demand
+4. expose read helpers for assets, table metadata, translation-table rules, and recent price history
+
+Two pieces matter most.
+
+First, keep the translation-table path aligned with the Markets tutorial:
 
 ```python
-import mainsequence.client as msc
-import mainsequence.instruments as msi
-import pytz
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
-from mainsequence.virtualfundbuilder.portfolio_interface import PortfolioInterface
+return msc.AssetTranslationTable.get_or_create(
+    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
+    rules=rules,
+)
+```
 
-import pandas as pd
-import json
-import datetime
-import QuantLib as ql
+Second, read the simulated prices table through `DataNodeStorage` plus `APIDataNode`:
 
-UTC = pytz.utc
-SECURITY_TYPE_MOCK = "MOCK_ASSET"
-SIMULATED_PRICES_TABLE = "simulated_daily_closes_tutorial"
-TRANSLATION_TABLE_IDENTIFIER = "prices_translation_table_1d"
+```python
+storage = msc.DataNodeStorage.get(identifier=SIMULATED_PRICES_TABLE)
+api_node = APIDataNode(
+    data_source_id=storage.data_source.id,
+    storage_hash=storage.storage_hash,
+)
+```
 
+That keeps the dashboard aligned with the same data contract used by the tutorial runner scripts.
 
-class TestFixedIncomePortfolio(PortfolioFromDF):
-    def get_portfolio_df(self):
+### Why use `Asset.query(...)` in a dashboard?
 
-        time_idx = datetime.datetime.now()
-        time_idx = datetime.datetime(time_idx.year, time_idx.month, time_idx.day, time_idx.hour,
-                                     time_idx.minute, tzinfo=pytz.utc, )
+For the dashboard asset loader, prefer:
 
-        unique_identifiers = ["TEST_FLOATING_BOND_UST", "TEST_FIXED_BOND_USD"]
-        existing_assets = msc.Asset.query(unique_identifier__in=unique_identifiers)
-        existing_uids = {a.unique_identifier: a for a in existing_assets}
-        for uid in unique_identifiers:
-            build_uid = False
-            if uid not in existing_uids.keys():
-                build_uid = True
-            else:
-                if existing_uids[uid].current_pricing_detail is None:
-                    build_uid = True
+```python
+assets = msc.Asset.query(unique_identifier__in=DEFAULT_TEST_ASSET_UIDS)
+```
 
-            if build_uid:
-                common_kwargs = {
-                    "face_value": 100,
-                    "coupon_frequency": ql.Period(6, ql.Months),
-                    "day_count": ql.Actual365Fixed(),
-                    "calendar": ql.UnitedStates(ql.UnitedStates.GovernmentBond),
-                    "business_day_convention": ql.Unadjusted,
-                    "settlement_days": 0,
-                    "maturity_date": time_idx.date() + datetime.timedelta(days=365 * 10),
-                    "issue_date": time_idx.date()
-                }
+This comes from `mainsequence.client.models_vam.AssetMixin.query`.
 
-                # --- Conditionally create the bond, adding only the specific arguments ---
-                if "FLOATING" in uid:
-                    bond = msi.FloatingRateBond(
-                        **common_kwargs,  # Unpack the common arguments
-                        floating_rate_index_name="UST",
-                    )
-                else:  # Implies a FixedRateBond
-                    bond = msi.FixedRateBond(
-                        **common_kwargs,  # Unpack the common arguments
-                        coupon_rate=0.05
-                    )
-                snapshot = {
-                    "name": uid,
-                    "ticker": uid
-                }
-                payload_item = {
-                    "unique_identifier": uid,
-                    "snapshot": snapshot,
-                }
-                assets = msc.Asset.batch_get_or_register_custom_assets([payload_item])
-                asset = assets[0]
-                # registed the instrument pricing details
-                asset.add_instrument_pricing_details_from_ms_instrument(
-                    instrument=bond, pricing_details_date=time_idx
-                )
+Why use it here:
 
-        # ----- build dict-valued columns -----
-        keys = unique_identifiers
-        n = len(keys)
+- it is POST-based, so it is safer for dashboard searches that may grow beyond a short URL
+- it accepts the same filter syntax as normal asset filters
+- it follows pagination and accumulates all pages
+- it also supports friendly aliases such as `ticker`, `name`, and `exchange_code`
 
-        # random weights that sum to 1
-        import numpy as np
-        w = np.random.rand(n)
-        w = w / w.sum()
-        weights_dict = json.dumps({k: float(v) for k, v in zip(keys, w)})
+For very small one-off filters, `filter(...)` is still fine. But in dashboards, `query(...)` is a better default because UI-driven filters tend to grow over time.
 
-        # everything else set to 1 per asset
-        ones_dict = json.dumps({k: 1 for k in keys})
+## 2) Landing page
 
-        # Map logical fields to actual DF columns
-        col_weights_current = "rebalance_weights"  # "weights_current"
-        col_price_current = "rebalance_price"  # "price_current"
-        col_vol_current = "volume"  # "volume_current"
-        col_weights_before = "weights_at_last_rebalance"  # "weights_before"
-        col_price_before = "price_at_last_rebalance"  # "price_before"
-        col_vol_before = "volume_at_last_rebalance"  # "volume_before"
+Create `dashboards/tutorial_fixed_income_dashboard/app.py`.
 
-        row = {
-            "time_index": time_idx,
-            "close": 1,
-            "return": 0,
-            "last_rebalance_date": time_idx.timestamp(),
-            col_weights_current: weights_dict,
-            col_weights_before: weights_dict,  # same as current
-            col_price_current: ones_dict,
-            col_price_before: ones_dict,
-            col_vol_current: ones_dict,
-            col_vol_before: ones_dict,
-        }
+Use the current Streamlit scaffold from the SDK:
 
-        # one-row DataFrame
-        portoflio_df = pd.DataFrame([row])
-        portoflio_df = portoflio_df.set_index("time_index")
-        if self.update_statistics.max_time_index_value is not None:
-            portoflio_df = portoflio_df[portoflio_df.index > self.update_statistics.max_time_index_value]
-        return portoflio_df
+```python
+from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+```
 
+Then initialize the page:
 
-def build_test_portfolio(portfolio_name: str):
-    node = TestFixedIncomePortfolio(
-        portfolio_name=portfolio_name,
-        calendar_name="24/7",
-        target_portfolio_about="Test"
+```python
+run_page(
+    PageConfig(
+        title="Tutorial Fixed-Income Dashboard",
+        use_wide_layout=True,
+        inject_theme_css=True,
     )
-
-    PortfolioInterface.build_and_run_portfolio_from_df(
-        portfolio_node=node,
-        add_portfolio_to_markets_backend=True,
-    )
-
-
-if __name__ == "__main__":
-    portfolio_name = "TestFixedIncomePortfolio"
-    build_test_portfolio(portfolio_name=portfolio_name)
-```
-
-Key pieces to notice:
-
-```python
-assets = msc.Asset.batch_get_or_register_custom_assets([payload_item])
-```
-
-This ensures the custom assets you want are **registered** on the platform.
-
-```python
-asset.add_instrument_pricing_details_from_ms_instrument(
-    instrument=bond, pricing_details_date=time_idx
 )
 ```
 
-This attaches **instrument pricing details** to the asset.
+The landing page should:
+
+- explain what the app reads from the platform
+- show a few current status metrics
+- expose a `Build or Refresh Tutorial Data` button
+- link to the dashboard sub-pages with `st.page_link(...)`
+
+The refresh button is useful in a tutorial because it lets the reader recover the demo state directly from the app:
 
 ```python
-node = TestFixedIncomePortfolio(
-    portfolio_name=portfolio_name,          
-    calendar_name="24/7",
-    target_portfolio_about="Test",
-)
+if st.button("Build or Refresh Tutorial Data"):
+    status = bootstrap_tutorial_data()
+```
 
-PortfolioInterface.build_and_run_portfolio_from_df(
-    portfolio_node=node,
-    add_portfolio_to_markets_backend=True
+## 3) Prices and assets page
+
+Create `dashboards/tutorial_fixed_income_dashboard/pages/01_prices_and_assets.py`.
+
+This page should:
+
+- start with `run_page(PageConfig(...))`
+- offer a sidebar asset selector
+- offer a sidebar lookback window
+- load recent price history from the simulated prices table
+- render:
+  - a close-price chart
+  - a latest-bars table
+  - an asset summary table
+  - a raw-history table
+
+The central read path is:
+
+```python
+history = api_node.get_df_between_dates(
+    start_date=start_date,
+    unique_identifier_list=unique_identifiers,
+    columns=["open", "high", "low", "close", "volume", "trade_count", "vwap"],
 )
 ```
 
-Here we use the `PortfolioInterface` to **build and run** the portfolio. This differs slightly from running a plain `DataNode`: the interface populates portfolio‑specific objects in the platform (for example, creating a `PortfolioIndexAsset` linked to this portfolio).
+That is enough for a useful first dashboard page without introducing a second pricing stack.
 
-Now you can run this script to create the portfolio and assets in the platform. Make sure you have correct environment variables set to connect to your tutorial project’s platform instance. Open `.env` file and look on values inside to run next commands in your terminal:
+## 4) Metadata and rules page
 
-(Windows)
-```powershell
-$env:MAINSEQUENCE_ACCESS_TOKEN="your_access_token"
-$env:MAINSEQUENCE_REFRESH_TOKEN="your_refresh_token"
-$env:TDAG_ENDPOINT="your_tdag_endpoint"
-.\.venv\Scripts\Activate
-python .\dashboards\helpers\mock.py
-```
-(Linux/Mac)
+Create `dashboards/tutorial_fixed_income_dashboard/pages/02_metadata_and_rules.py`.
+
+This page should:
+
+- fetch the project-specific translation table
+- flatten its rules into a table
+- show the key platform objects as JSON
+- explain the fail-fast behavior of shared translation tables
+
+That last point is important. `WrapperDataNode` validates every referenced target time series during initialization, so a shared translation table is not only a matching ruleset. It is also a dependency manifest.
+
+If a table contains:
+
+- Rule A: `security_type=MOCK_ASSET_TUTORIAL_135 -> simulated_daily_closes_tutorial_135`
+- Rule B: `security_type=SOMETHING_ELSE -> old_deleted_table`
+
+then wrapper construction is expected to fail if `old_deleted_table` does not exist, even when the current assets would only match Rule A.
+
+## 5) Local validation
+
+From the project root:
+
 ```bash
-export MAINSEQUENCE_ACCESS_TOKEN="your_access_token"
-export MAINSEQUENCE_REFRESH_TOKEN="your_refresh_token"
-export TDAG_ENDPOINT="your_tdag_endpoint"
 source .venv/bin/activate
-python dashboards/helpers/mock.py
+streamlit run dashboards/tutorial_fixed_income_dashboard/app.py
 ```
 
-After running the node through the `PortfolioInterface`, you’ll see a few things in the platform:
+If the tutorial data does not exist yet, use the landing-page button to create the assets, translation table, and simulated prices.
 
-1) **Target Portfolios**:
-   https://main-sequence.app/target-portfolios/ — you should see the new portfolio with the name you provided `TestFixedIncomePortfolio`.
+## Why this chapter is structured this way
 
+This tutorial chapter stays intentionally small:
 
-2) **Tables** (portfolio details stored by the data node):
-   https://main-sequence.app/dynamic-table-metadatas/?search=testfixed&storage_hash=&identifier=
+- it does not re-teach portfolio construction
+- it does not require cloning an external dashboard repository
+- it uses the current SDK Streamlit scaffold
+- it reuses the data products already created in earlier tutorial chapters
 
-3) **Assets** (the two newly created assets):
-   https://main-sequence.app/asset/?search=TEST_&unique_identifier=&figi=&security_type=&security_market_sector=&ticker=
-   Click either asset to explore the **current pricing details** created from the snapshot.
-
-
-## Pre‑work Simulating Asset Prices Closes, 
-
-For our dashboards we want also to include the latest price for each asset. We will need a data_node containing closing
-prices. You can reuse your price simulator from the previoys tutorial
-
-Now you have pricing details for these assets that you can use to rebuild the instruments with QuantLib—unlocking deeper analysis and richer dashboards.
-
-With the platform **hydrated** (portfolio + assets), you’re ready to move on and build the dashboard UI.
+By the end of Part 5.1, you have a working tutorial dashboard in your own project, and Part 5.2 can focus only on deployment.

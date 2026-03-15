@@ -11,7 +11,7 @@ In this guide, you will:
 - understand the lifecycle from project code to scheduled execution
 - manage jobs from the CLI
 - create the same jobs from the Python client
-- decide when to use `project_configuration.yaml` and when to create jobs directly
+- decide when to use `scheduled_jobs.yaml` and when to create jobs directly
 - inspect runs, logs, and frozen images
 
 ## The mental model
@@ -43,8 +43,8 @@ For shared projects, treat recurring schedules as part of the repository.
 
 That means:
 
-- define recurring jobs in `project_configuration.yaml`
-- sync the project with `mainsequence project sync`
+- define recurring jobs in `scheduled_jobs.yaml`
+- submit the batch with `mainsequence project schedule_batch_jobs`
 - use direct CLI or client-created jobs mainly for experiments, backfills, or one-off operational tasks
 
 !!! tip "Default rule"
@@ -58,25 +58,31 @@ There are two valid workflows, and they serve different purposes.
 
 This is the best option for long-lived schedules used by a team.
 
-You define the job in `project_configuration.yaml`, commit it, and push it with:
+You define the jobs in `scheduled_jobs.yaml`, commit that file, and submit the batch with:
 
 ```bash
-mainsequence project sync -m "Add nightly simulated prices job"
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 ```
+
+Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. The selected image is then applied to every job in the submitted batch.
+
+After that selection, the CLI asks for confirmation and explicitly warns that the whole batch will be scheduled on the same image.
 
 Example:
 
 ```yaml
-name: "Tutorial Job Configuration"
 jobs:
   - name: "Simulated Prices"
-    resource:
-      script:
-        path: "scripts/simulated_prices_launcher.py"
-    schedule:
+    execution_path: "scripts/simulated_prices_launcher.py"
+    task_schedule:
       type: "crontab"
       expression: "0 0 * * *"
+    related_image_id: 77
+    cpu_request: "0.25"
+    memory_request: "0.5"
 ```
+
+Each entry is validated with the same rules used by individual job creation. That means the job still needs a related image id, valid compute settings, and a valid target. If one definition is invalid, the batch submission fails before anything is sent.
 
 This approach is easier to review, easier to reproduce, and much easier to reason about later.
 
@@ -105,6 +111,26 @@ mainsequence project sync -m "Prepare scheduling changes"
 
 That command is more than a `git push`. It updates the local environment, exports `requirements.txt`, creates a commit, and pushes the result in the platform-compatible flow.
 
+### Submit a reviewed batch file
+
+Once your repository state is ready, apply the scheduled jobs batch explicitly:
+
+```bash
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml
+```
+
+This command reads the YAML file, checks that it contains a top-level `jobs` list, validates each job with the same rules as `Job.create()`, and then submits the normalized list to the backend in one request.
+
+Every job in the file still needs a `related_image_id`. The batch flow does not relax that requirement.
+
+If you want the file to act as the full desired state for project jobs, add strict mode:
+
+```bash
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
+```
+
+In strict mode, jobs that exist remotely but are not present in the YAML file may be removed. The default is `--no-strict`.
+
 ### Create a manual job
 
 Use this when you want a job that only runs when someone triggers it:
@@ -112,7 +138,8 @@ Use this when you want a job that only runs when someone triggers it:
 ```bash
 mainsequence project jobs create \
   --name "Simulated Prices - Manual" \
-  --execution-path scripts/simulated_prices_launcher.py
+  --execution-path scripts/simulated_prices_launcher.py \
+  --related-image-id <IMAGE_ID>
 ```
 
 Then run it:
@@ -130,6 +157,7 @@ Use interval schedules when the cadence is simple, for example every hour:
 mainsequence project jobs create \
   --name "Simulated Prices - Hourly" \
   --execution-path scripts/simulated_prices_launcher.py \
+  --related-image-id <IMAGE_ID> \
   --schedule-type interval \
   --schedule-every 1 \
   --schedule-period hours
@@ -143,6 +171,7 @@ Use crontab when you want calendar-based timing such as nightly runs:
 mainsequence project jobs create \
   --name "Simulated Prices - Nightly" \
   --execution-path scripts/simulated_prices_launcher.py \
+  --related-image-id <IMAGE_ID> \
   --schedule-type crontab \
   --schedule-expression "0 0 * * *"
 ```
@@ -153,6 +182,7 @@ You can also add a start time or mark the schedule as one-off:
 mainsequence project jobs create \
   --name "One-time Backfill" \
   --execution-path scripts/simulated_prices_launcher.py \
+  --related-image-id <IMAGE_ID> \
   --schedule-type crontab \
   --schedule-expression "0 2 * * *" \
   --schedule-start-time "2026-03-15T02:00:00Z" \
@@ -220,6 +250,7 @@ manual_job = Job.create(
     name="Simulated Prices - Manual",
     project_id=123,
     execution_path="scripts/simulated_prices_launcher.py",
+    related_image_id=77,
     cpu_request="0.25",
     memory_request="0.5",
 )
@@ -232,6 +263,7 @@ hourly_job = Job.create(
     name="Simulated Prices - Hourly",
     project_id=123,
     execution_path="scripts/simulated_prices_launcher.py",
+    related_image_id=77,
     task_schedule=IntervalSchedule(
         every=1,
         period="hours",
@@ -249,6 +281,7 @@ nightly_job = Job.create(
     name="Simulated Prices - Nightly",
     project_id=123,
     execution_path="scripts/simulated_prices_launcher.py",
+    related_image_id=77,
     task_schedule={
         "schedule": CrontabSchedule(
             expression="0 0 * * *",
@@ -281,7 +314,7 @@ In practice, the client gives you the same lifecycle as the CLI:
 - read logs for the run you care about
 
 !!! note "One practical difference"
-    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself.
+    The CLI applies safe defaults for `cpu_request`, `memory_request`, `spot`, and `max_runtime_seconds` when you omit them. The Python client expects you to pass the compute values yourself, and jobs still require `related_image_id`.
 
 ## What the schedule fields mean
 
@@ -362,7 +395,7 @@ If a job is operationally important, ask whether it should follow the latest pro
 
 ### Keep recurring jobs reviewable
 
-For production-like schedules, prefer `project_configuration.yaml` plus `mainsequence project sync`.
+For production-like schedules, prefer `scheduled_jobs.yaml` plus `mainsequence project schedule_batch_jobs`.
 
 That gives you:
 
@@ -390,11 +423,11 @@ Usually this means one of three things:
 
 - the `execution_path` points at the wrong launcher
 - the repository changed after the job was created and the job was not pinned to an image
-- the schedule exists, but the actual logic should have been stored in `project_configuration.yaml` and reviewed first
+- the schedule exists, but the actual logic should have been stored in `scheduled_jobs.yaml` and reviewed first
 
 ### "The client example fails, but the CLI worked"
 
-The most common reason is missing compute values. The CLI supplies defaults. `Job.create()` does not.
+The most common reasons are missing compute values or a missing `related_image_id`. The CLI supplies compute defaults. `Job.create()` does not.
 
 ### "The cron expression looks valid, but the API rejects it"
 

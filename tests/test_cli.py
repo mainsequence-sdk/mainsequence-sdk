@@ -7,6 +7,7 @@ import sys
 import types
 
 import pytest
+import yaml
 from typer.testing import CliRunner
 
 
@@ -833,6 +834,71 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
+def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProjectImage:
+        ROOT_URL = "https://old.test/orm/api/pods/project-image"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Image:
+                id = pk
+
+                def model_dump(self, mode="python"):
+                    return {
+                        "id": pk,
+                        "project_repo_hash": "abc123",
+                        "base_image": {"id": 22, "title": "Python 3.12"},
+                        "is_ready": True,
+                    }
+
+                def delete(self):
+                    captured["deleted"] = pk
+
+            return _Image()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.ProjectImage = FakeProjectImage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.delete_project_image(image_id=94)
+    assert captured["get"] == {"pk": 94, "timeout": None, "filters": {}}
+    assert captured["deleted"] == 94
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["id"] == 94
+    assert out["project_repo_hash"] == "abc123"
+
+
 def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
@@ -844,8 +910,6 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
-
     class FakeLoaders:
         provider = "orig"
 
@@ -887,6 +951,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
             return []
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
     fake_helpers.Job = FakeJob
     fake_client_pkg.utils = fake_utils
 
@@ -1058,6 +1123,75 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     assert captured["create_dashboard"]["memory_request"] == "1"
     assert captured["jwt"] == ("acc", "ref")
     assert out == {"id": 501, "resource": 381, "related_image": 94}
+
+
+def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeResourceRelease:
+        ROOT_URL = "https://old.test/orm/api/pods/resource-release"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Release:
+                id = pk
+
+                def model_dump(self, mode="python"):
+                    return {
+                        "id": pk,
+                        "release_kind": "streamlit_dashboard",
+                        "subdomain": "analytics-123",
+                        "resource": 381,
+                        "related_image": 94,
+                    }
+
+                def delete(self):
+                    captured["deleted"] = pk
+
+            return _Release()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.ResourceRelease = FakeResourceRelease
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.delete_resource_release(
+        release_id=501,
+        expected_release_kind="streamlit_dashboard",
+    )
+    assert captured["get"] == {"pk": 501, "timeout": None, "filters": {}}
+    assert captured["deleted"] == 501
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["id"] == 501
+    assert out["release_kind"] == "streamlit_dashboard"
 
 
 def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
@@ -1448,9 +1582,80 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
         related_image_id=77,
     )
     assert captured["payload"]["task_schedule"] == schedule
+    assert captured["payload"]["related_image_id"] == 77
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
     assert out == {"id": 91, "task_schedule": schedule}
+    assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp_path):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    jobs_file = tmp_path / "scheduled_jobs.yaml"
+    jobs_file.write_text("jobs: []\n", encoding="utf-8")
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeJob:
+        ROOT_URL = "https://old.test/orm/api/pods/job"
+
+        @classmethod
+        def bulk_get_or_create(cls, *, yaml_file, project_id, strict=False, timeout=None):
+            captured["payload"] = {
+                "yaml_file": yaml_file,
+                "project_id": project_id,
+                "strict": strict,
+                "timeout": timeout,
+            }
+            captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
+            return [types.SimpleNamespace(model_dump=lambda: {"id": 91, "name": "Simulated Prices"})]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.Job = FakeJob
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.schedule_batch_project_jobs(
+        file_path=str(jobs_file),
+        project_id=123,
+        strict=True,
+        timeout=45,
+    )
+    assert captured["payload"] == {
+        "yaml_file": str(jobs_file),
+        "project_id": 123,
+        "strict": True,
+        "timeout": 45,
+    }
+    assert captured["env_project_id"] == "123"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [{"id": 91, "name": "Simulated Prices"}]
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
@@ -1693,6 +1898,40 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
     assert "Total images: 1" in result.output
 
 
+def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_image",
+        lambda image_id, timeout=None: {
+            "id": image_id,
+            "project_repo_hash": "abc123",
+            "base_image": {"id": 22, "title": "Python 3.12"},
+            "is_ready": True,
+        },
+    )
+
+    def _delete_project_image(image_id, timeout=None):
+        captured["image_id"] = image_id
+        return {
+            "id": image_id,
+            "project_repo_hash": "abc123",
+            "base_image": {"id": 22, "title": "Python 3.12"},
+            "is_ready": True,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_project_image", _delete_project_image)
+
+    result = runner.invoke(cli_mod.app, ["project", "images", "delete", "94"], input="y\n")
+    assert result.exit_code == 0
+    assert captured["image_id"] == 94
+    assert "Project Image Delete Preview" in result.output
+    assert "Delete project image 94?" in result.output
+    assert "Project image deleted: id=94" in result.output
+
+
 def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
@@ -1838,6 +2077,88 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     assert captured["create_release"]["spot"] is False
     assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
     assert "Project resource release created: id=501" in result.output
+
+
+def test_project_project_resource_delete_dashboard_requires_confirmation(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_resource_release",
+        lambda release_id, expected_release_kind=None, timeout=None: {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "analytics-123",
+            "resource": 381,
+            "related_image": 94,
+        },
+    )
+
+    def _delete_resource_release(release_id, expected_release_kind=None, timeout=None):
+        captured["release_id"] = release_id
+        captured["expected_release_kind"] = expected_release_kind
+        return {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "analytics-123",
+            "resource": 381,
+            "related_image": 94,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_resource_release", _delete_resource_release)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "project_resource", "delete_dashboard", "501"],
+        input="y\n",
+    )
+    assert result.exit_code == 0
+    assert captured["release_id"] == 501
+    assert captured["expected_release_kind"] == "streamlit_dashboard"
+    assert "Project Resource Release Delete Preview" in result.output
+    assert "Delete dashboard release 501?" in result.output
+    assert "Project resource release deleted: id=501" in result.output
+
+
+def test_project_project_resource_delete_agent_yes_skips_confirmation(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_resource_release",
+        lambda release_id, expected_release_kind=None, timeout=None: {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "agent-123",
+            "resource": 390,
+            "related_image": 95,
+        },
+    )
+
+    def _delete_resource_release(release_id, expected_release_kind=None, timeout=None):
+        captured["release_id"] = release_id
+        captured["expected_release_kind"] = expected_release_kind
+        return {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "agent-123",
+            "resource": 390,
+            "related_image": 95,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_resource_release", _delete_resource_release)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "project_resource", "delete_agent", "601", "--yes"],
+    )
+    assert result.exit_code == 0
+    assert captured["release_id"] == 601
+    assert captured["expected_release_kind"] == "agent"
+    assert "Delete agent release 601?" not in result.output
+    assert "Project resource release deleted: id=601" in result.output
 
 
 def test_markets_portfolios_list(cli_mod, runner, monkeypatch):
@@ -2832,6 +3153,159 @@ def test_project_sync_defaults_to_cwd_with_positional_message(cli_mod, runner, m
     assert result.exit_code == 0
     assert (["git", "commit", "-m", "Update deps"], target) in git_calls
     assert all(cwd == target for _, cwd in git_calls)
+
+
+def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / "scheduled_jobs.yaml").write_text("jobs: []\n", encoding="utf-8")
+    captured = {}
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: True)
+    monkeypatch.setattr(
+        cli_mod,
+        "schedule_batch_project_jobs",
+        lambda **kwargs: captured.update(kwargs) or [
+            {
+                "id": 91,
+                "name": "Simulated Prices",
+                "execution_path": "scripts/simulated_prices_launcher.py",
+                "app_name": None,
+                "task_schedule": {"schedule": {"type": "crontab", "expression": "0 0 * * *"}},
+            }
+        ],
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "schedule_batch_jobs", "scheduled_jobs.yaml", "--strict"],
+    )
+    assert result.exit_code == 0
+    assert captured["project_id"] == 123
+    assert captured["file_path"] == str((target / "scheduled_jobs.yaml").resolve())
+    assert captured["strict"] is True
+    assert "Scheduled 1 jobs from scheduled_jobs.yaml." in result.output
+
+
+def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to_all_jobs(
+    cli_mod, runner, monkeypatch, tmp_path
+):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    batch_file = target / "scheduled_jobs.yaml"
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    batch_file.write_text(
+        "\n".join(
+            [
+                "jobs:",
+                '  - name: "Simulated Prices"',
+                '    execution_path: "scripts/simulated_prices_launcher.py"',
+                "    related_image_id: 78",
+                "    task_schedule:",
+                '      type: "crontab"',
+                '      expression: "0 0 * * *"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    captured = {}
+    captured_picker = {}
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured_confirm = {}
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {"id": 77, "project_repo_hash": "abc123", "base_image": {"title": "py311"}},
+            {"id": 78, "project_repo_hash": "def456", "base_image": {"title": "py312"}},
+        ],
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_prompt_select_id",
+        lambda **kwargs: captured_picker.update(kwargs) or 77,
+    )
+    monkeypatch.setattr(
+        cli_mod.typer,
+        "confirm",
+        lambda message, default=False: captured_confirm.setdefault("message", message) or True,
+    )
+
+    def _fake_schedule_batch_project_jobs(**kwargs):
+        captured.update(kwargs)
+        captured["yaml"] = yaml.safe_load(pathlib.Path(kwargs["file_path"]).read_text(encoding="utf-8"))
+        return [
+            {
+                "id": 91,
+                "name": "Simulated Prices",
+                "execution_path": "scripts/simulated_prices_launcher.py",
+                "app_name": None,
+                "task_schedule": {"schedule": {"type": "crontab", "expression": "0 0 * * *"}},
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "schedule_batch_project_jobs", _fake_schedule_batch_project_jobs)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "schedule_batch_jobs", "scheduled_jobs.yaml"],
+    )
+    assert result.exit_code == 0
+    assert captured["project_id"] == 123
+    assert captured["file_path"] != str(batch_file.resolve())
+    assert captured_picker["title"] == "Available Project Images"
+    assert captured_picker["items"][0]["id"] == 77
+    assert captured["yaml"]["jobs"][0]["related_image_id"] == 77
+    assert "same image (77)" in captured_confirm["message"]
+    assert "Overriding related_image_id for 1 job(s)" in result.output
+    assert "Using project image 77 for all 1 job(s) in this batch." in result.output
+
+
+def test_project_schedule_batch_jobs_cancelled_on_confirmation(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    batch_file = target / "scheduled_jobs.yaml"
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    batch_file.write_text(
+        "\n".join(
+            [
+                "jobs:",
+                '  - name: "Simulated Prices"',
+                '    execution_path: "scripts/simulated_prices_launcher.py"',
+                '    related_image_id: 77',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {"id": 77, "project_repo_hash": "abc123", "base_image": {"title": "py311"}},
+        ],
+    )
+    monkeypatch.setattr(cli_mod, "_prompt_select_id", lambda **kwargs: 77)
+    monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: False)
+    monkeypatch.setattr(
+        cli_mod,
+        "schedule_batch_project_jobs",
+        lambda **kwargs: pytest.fail("schedule_batch_project_jobs should not be called"),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "schedule_batch_jobs", "scheduled_jobs.yaml"],
+    )
+    assert result.exit_code == 0
+    assert "Cancelled." in result.output
 
 
 def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypatch, tmp_path):

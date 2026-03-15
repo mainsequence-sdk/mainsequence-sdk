@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import datetime
 import json
+import pathlib
 from collections.abc import Collection
 from decimal import Decimal
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal, Union
 
+import yaml
 from pydantic import BaseModel, Field, PositiveInt
 
 from ..compute_validation import (
@@ -14,8 +16,10 @@ from ..compute_validation import (
     normalize_string,
     validate_and_normalize_compute_fields,
 )
+from .exceptions import raise_for_response
 from .models_tdag import POD_PROJECT, Project, ProjectImage
 from .models_vam import *
+from .utils import make_request
 
 
 class CrontabSchedule(BaseModel):
@@ -424,7 +428,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         return payload
 
     @classmethod
-    def create(
+    def _build_create_payload(
         cls,
         *,
         name: str,
@@ -444,8 +448,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         related_image: int | ProjectImage | None = None,
         related_image_id: int | ProjectImage | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
-        timeout: int | None = None,
-    ) -> Job:
+    ) -> dict[str, Any]:
         normalized_name = cls._normalize_str(name)
         if not normalized_name:
             raise ValueError("name is required.")
@@ -454,6 +457,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
             "name": normalized_name,
             "project": cls._resolve_project_id(project=project, project_id=project_id),
         }
+
+        normalized_project_repo_hash = cls._normalize_str(project_repo_hash)
+        if normalized_project_repo_hash is not None:
+            payload["project_repo_hash"] = normalized_project_repo_hash
 
         payload.update(
             cls._build_target_payload(
@@ -479,9 +486,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         if normalized_compute["gpu_type"] is not None:
             payload["gpu_type"] = normalized_compute["gpu_type"]
 
-        normalized_commit = cls._normalize_str(project_repo_hash)
-        if normalized_commit is not None:
-            payload["project_repo_hash"] = normalized_commit
+
 
         normalized_task_schedule = cls._normalize_task_schedule_payload(
             task_schedule=task_schedule,
@@ -501,8 +506,54 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         image_ref = related_image_id if related_image_id is not None else related_image
         image_id = cls._coerce_id(image_ref, field_name="related_image")
-        if image_id is not None:
-            payload["related_image"] = image_id
+        if image_id is None:
+            raise ValueError("related_image_id is required.")
+        payload["related_image"] = image_id
+
+        return payload
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str,
+        project: int | Project | None = None,
+        project_id: int | Project | None = None,
+        project_repo_hash: str | None = None,
+        execution_path: str | None = None,
+        app_name: str | None = None,
+        task_schedule: PeriodicTask | Schedule | dict[str, Any] | str | None = None,
+        task_schedule_id: int | None = None,
+        cpu_request: str | int | float | Decimal | None = None,
+        memory_request: str | int | float | Decimal | None = None,
+        gpu_request: str | int | None = None,
+        gpu_type: str | None = None,
+        spot: bool | None = None,
+        max_runtime_seconds: int | None = None,
+        related_image: int | ProjectImage | None = None,
+        related_image_id: int | ProjectImage | None = None,
+        allowed_execution_extensions: Collection[str] | str | None = None,
+        timeout: int | None = None,
+    ) -> Job:
+        payload = cls._build_create_payload(
+            name=name,
+            project=project,
+            project_id=project_id,
+            project_repo_hash=project_repo_hash,
+            execution_path=execution_path,
+            app_name=app_name,
+            task_schedule=task_schedule,
+            task_schedule_id=task_schedule_id,
+            cpu_request=cpu_request,
+            memory_request=memory_request,
+            gpu_request=gpu_request,
+            gpu_type=gpu_type,
+            spot=spot,
+            max_runtime_seconds=max_runtime_seconds,
+            related_image=related_image,
+            related_image_id=related_image_id,
+            allowed_execution_extensions=allowed_execution_extensions,
+        )
 
         request_payload = {"json": cls.serialize_for_json(payload)}
 
@@ -519,6 +570,103 @@ class Job(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r, payload=request_payload)
 
         return cls(**r.json())
+
+    @classmethod
+    def bulk_get_or_create(
+        cls,
+        *,
+        yaml_file: str | pathlib.Path,
+        project_id: int | Project,
+        strict: bool = False,
+        timeout: int | None = None,
+    ) -> list[Job] | dict[str, Any]:
+        resolved_project_id = cls._coerce_id(project_id, field_name="project_id")
+        if resolved_project_id is None:
+            raise ValueError("project_id is required.")
+
+        yaml_path = pathlib.Path(yaml_file).expanduser()
+        if not yaml_path.is_file():
+            raise FileNotFoundError(f"Jobs file not found: {yaml_path}")
+
+        with yaml_path.open("r", encoding="utf-8") as f:
+            raw_config = yaml.safe_load(f) or {}
+
+        if not isinstance(raw_config, dict) or "jobs" not in raw_config:
+            raise ValueError("Job batch file must define a top-level 'jobs' key.")
+
+        jobs_config = raw_config["jobs"]
+        if not isinstance(jobs_config, list):
+            raise ValueError("The 'jobs' key must contain a list.")
+
+        normalized_jobs: list[dict[str, Any]] = []
+        for index, raw_job in enumerate(jobs_config):
+            if not isinstance(raw_job, dict):
+                raise ValueError(f"jobs[{index}] must be a mapping.")
+
+            job_data = dict(raw_job)
+
+            if "project" in job_data or "project_id" in job_data:
+                raise ValueError(
+                    f"jobs[{index}] must not define project or project_id. "
+                    "Pass the target project_id to Job.bulk_get_or_create()."
+                )
+            if "timeout" in job_data:
+                raise ValueError(f"jobs[{index}] must not define timeout.")
+            if "related_image" in job_data and "related_image_id" in job_data:
+                raise ValueError(
+                    f"jobs[{index}] must not define both related_image and related_image_id."
+                )
+            if "related_image_id" in job_data:
+                job_data["related_image"] = job_data.pop("related_image_id")
+
+            try:
+                normalized_job = cls._build_create_payload(
+                    project_id=resolved_project_id,
+                    **job_data,
+                )
+                normalized_job.pop("project", None)
+                normalized_jobs.append(normalized_job)
+            except TypeError as exc:
+                raise ValueError(
+                    f"jobs[{index}] has unsupported or missing fields: {exc}"
+                ) from exc
+            except Exception as exc:
+                raise ValueError(f"jobs[{index}] is invalid: {exc}") from exc
+
+        request_payload = {
+            "json": cls.serialize_for_json(
+                {
+                    "project_id": resolved_project_id,
+                    "jobs": normalized_jobs,
+                    "strict": bool(strict),
+                }
+            )
+        }
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{cls.get_object_url()}/sync_jobs/",
+            payload=request_payload,
+            time_out=timeout,
+        )
+        if r.status_code not in (200, 201, 202):
+            raise_for_response(r, payload=request_payload)
+
+        response_data = r.json()
+        if not isinstance(response_data, list):
+            return response_data
+
+        jobs_out: list[Job] = []
+        for item in response_data:
+            if not isinstance(item, dict):
+                return response_data
+            try:
+                jobs_out.append(cls(**item))
+            except Exception:
+                return response_data
+
+        return jobs_out
 
     @classmethod
     def create_from_configuration(cls, job_configuration):

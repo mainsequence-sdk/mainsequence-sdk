@@ -14,6 +14,7 @@ This module is intentionally aligned with the VS Code extension implementation:
 Any behavioral differences vs the VS Code extension should be considered bugs.
 """
 
+import importlib
 import json
 import os
 import re
@@ -226,6 +227,110 @@ def _format_env_value(value: Any) -> str:
         return value
     if isinstance(value, (int, float, bool)):
         return str(value)
+
+
+def _sdk_object_to_dict(obj: Any) -> dict[str, Any]:
+    if isinstance(obj, dict):
+        return dict(obj)
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump(mode="json")
+    return {"id": getattr(obj, "id", None)}
+
+
+def _run_sdk_model_operation(
+    *,
+    module_name: str,
+    class_name: str,
+    operation,
+    project_id_env: int | str | None = None,
+):
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    client_model = None
+    old_model_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        if project_id_env is not None:
+            os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id_env)
+        else:
+            os.environ.pop("MAIN_SEQUENCE_PROJECT_ID", None)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+
+        module = importlib.import_module(module_name)
+        client_model = getattr(module, class_name)
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_model_root_url = getattr(client_model, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        client_model.ROOT_URL = root_url
+
+        return operation(client_model)
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        raise
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if client_model is not None and old_model_root_url is not None:
+            try:
+                client_model.ROOT_URL = old_model_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
     try:
         return json.dumps(value)
     except Exception:
@@ -841,6 +946,123 @@ def list_project_images(
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
+
+
+def get_project_image(
+    *,
+    image_id: int | str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        image = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="ProjectImage",
+            operation=lambda ClientProjectImage: ClientProjectImage.get(
+                pk=int(image_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(image)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project image not found: {image_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Project image fetch failed: {e}")
+
+
+def delete_project_image(
+    *,
+    image_id: int | str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        def _delete(ClientProjectImage):
+            image = ClientProjectImage.get(pk=int(image_id), timeout=timeout)
+            payload = _sdk_object_to_dict(image)
+            image.delete()
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="ProjectImage",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project image not found: {image_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Project image deletion failed: {e}")
+
+
+def _normalize_release_kind_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if hasattr(value, "value"):
+        return str(value.value)
+    return str(value).strip() or None
+
+
+def get_resource_release(
+    *,
+    release_id: int | str,
+    expected_release_kind: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        release = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_helpers",
+            class_name="ResourceRelease",
+            operation=lambda ClientResourceRelease: ClientResourceRelease.get(
+                pk=int(release_id),
+                timeout=timeout,
+            ),
+        )
+        payload = _sdk_object_to_dict(release)
+        actual_kind = _normalize_release_kind_value(payload.get("release_kind"))
+        if expected_release_kind and actual_kind != expected_release_kind:
+            raise ApiError(f"Resource release {release_id} is not {expected_release_kind}.")
+        return payload
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Resource release not found: {release_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Resource release fetch failed: {e}")
+
+
+def delete_resource_release(
+    *,
+    release_id: int | str,
+    expected_release_kind: str | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        def _delete(ClientResourceRelease):
+            release = ClientResourceRelease.get(pk=int(release_id), timeout=timeout)
+            payload = _sdk_object_to_dict(release)
+            actual_kind = _normalize_release_kind_value(payload.get("release_kind"))
+            if expected_release_kind and actual_kind != expected_release_kind:
+                raise ApiError(f"Resource release {release_id} is not {expected_release_kind}.")
+            release.delete()
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_helpers",
+            class_name="ResourceRelease",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Resource release not found: {release_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Resource release deletion failed: {e}")
 
 
 def list_project_jobs(
@@ -1623,6 +1845,125 @@ def create_project_job(
         if err_name == "NotFoundError":
             raise ApiError(f"Project not found: {project_id}")
         raise ApiError(f"Project job create failed: {e}")
+    finally:
+        if client_utils is not None:
+            try:
+                client_utils.loaders.provider = old_provider
+            except Exception:
+                pass
+        if old_base_root_url is not None:
+            try:
+                from mainsequence.client.base import BaseObjectOrm
+
+                BaseObjectOrm.ROOT_URL = old_base_root_url
+            except Exception:
+                pass
+        if old_job_root_url is not None:
+            try:
+                from mainsequence.client.models_helpers import Job as ClientJob
+
+                ClientJob.ROOT_URL = old_job_root_url
+            except Exception:
+                pass
+
+        for k, v in old_env.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def schedule_batch_project_jobs(
+    *,
+    file_path: str,
+    project_id: int | str,
+    strict: bool = False,
+    timeout: int | None = None,
+) -> list[dict[str, Any]] | dict[str, Any]:
+    """
+    Create or update a batch of project jobs from a YAML file via SDK client model.
+
+    Single source of truth:
+      - delegates file validation, payload normalization, and request behavior to
+        `Job.bulk_get_or_create()`
+    """
+    tokens = get_tokens()
+    access = (tokens.get("access") or "").strip()
+    refresh = (tokens.get("refresh") or "").strip()
+    if not access:
+        raise NotLoggedIn("Not logged in.")
+
+    endpoint = backend_url().rstrip("/")
+    root_url = f"{endpoint}/orm/api"
+
+    old_env = {
+        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
+        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
+        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
+        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
+        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
+    }
+
+    client_utils = None
+    old_provider = None
+    old_base_root_url = None
+    old_job_root_url = None
+
+    try:
+        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+        if refresh:
+            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
+        else:
+            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
+        os.environ["TDAG_ENDPOINT"] = endpoint
+        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+
+        from mainsequence.client import utils as _client_utils
+        from mainsequence.client.base import BaseObjectOrm
+        from mainsequence.client.models_helpers import Job as ClientJob
+
+        client_utils = _client_utils
+        old_provider = getattr(client_utils.loaders, "provider", None)
+        old_base_root_url = BaseObjectOrm.ROOT_URL
+        old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
+
+        client_utils.TDAG_ENDPOINT = endpoint
+        client_utils.API_ENDPOINT = root_url
+        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
+
+        BaseObjectOrm.ROOT_URL = root_url
+        ClientJob.ROOT_URL = root_url
+
+        created = ClientJob.bulk_get_or_create(
+            yaml_file=file_path,
+            project_id=int(project_id),
+            strict=bool(strict),
+            timeout=timeout,
+        )
+        if isinstance(created, list):
+            out: list[dict[str, Any]] = []
+            for item in created:
+                if hasattr(item, "model_dump"):
+                    out.append(item.model_dump())
+                elif isinstance(item, dict):
+                    out.append(item)
+                else:
+                    out.append({"id": getattr(item, "id", None)})
+            return out
+        if isinstance(created, dict):
+            return created
+        return {"result": created}
+
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name in {"AuthenticationError", "PermissionDeniedError"}:
+            raise NotLoggedIn(str(e) or "Not logged in.")
+        if err_name == "NotFoundError":
+            raise ApiError(f"Project not found: {project_id}")
+        raise ApiError(f"Project batch job scheduling failed: {e}")
     finally:
         if client_utils is not None:
             try:

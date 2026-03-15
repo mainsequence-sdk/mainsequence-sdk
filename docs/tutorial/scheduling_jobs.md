@@ -9,7 +9,7 @@ In this part, you will:
 - sync local project changes to the platform from the CLI
 - create manual jobs from both GUI and CLI
 - freeze jobs to project images for reproducible execution
-- define recurring schedules as code (`project_configuration.yaml`)
+- define recurring schedules as code in a batch file (`scheduled_jobs.yaml`)
 - store and reuse platform-managed files with `Artifact` when a workflow starts from file drops instead of APIs
 
 DataNodes created in this part: **none new** (you orchestrate DataNodes built in previous parts).
@@ -118,14 +118,15 @@ You can create the same manual job from the terminal.
 1. Create an unscheduled job:
 
    ```bash
-   mainsequence project jobs create --name "Random Number Launcher - Manual Job" --execution-path scripts/random_number_launcher.py
+   mainsequence project jobs create --name "Random Number Launcher - Manual Job" --execution-path scripts/random_number_launcher.py --related-image-id <IMAGE_ID>
    ```
 
    Notes:
 
    - `execution-path` must be relative to the repository root, for example `scripts/random_number_launcher.py`.
    - If the CLI asks whether to build a schedule, answer **No** for a manual job.
-   - If project images already exist, the CLI may prompt you to select a `related_image_id`.
+   - Jobs require a `related_image_id`.
+   - If project images already exist, the CLI will prompt you to select one when `--related-image-id` is omitted.
    - If you want to run the Part 3 example instead, replace the execution path with `scripts/simulated_prices_launcher.py`.
 
 2. List the jobs for the current project and note the job id:
@@ -201,31 +202,39 @@ Use the **Images** tab to review the images already created for the project and 
 
 ### 2.3 Automatic Schedule
 
-As projects and workflows grow, you will usually want **automation described as code**. You can define jobs and schedules inside the repository and let the platform apply them from version-controlled configuration.
+As projects and workflows grow, you will usually want **automation described as code**. You can define jobs and schedules in a reviewed YAML file, keep it in the repository, and apply the whole batch from the CLI.
 
-Create a file named **`project_configuration.yaml`** at the **repository root**.
+Create a file named **`scheduled_jobs.yaml`** at the **repository root**.
 
-**Windows path example:** `C:\Users\<YourName>\mainsequence\<YourOrganization>\projects\tutorial-project\project_configuration.yaml`
+**Windows path example:** `C:\Users\<YourName>\mainsequence\<YourOrganization>\projects\tutorial-project\scheduled_jobs.yaml`
 
-**macOS/Linux path example:** `/home/<YourName>/mainsequence/<YourOrganization>/projects/tutorial-project/project_configuration.yaml`
+**macOS/Linux path example:** `/home/<YourName>/mainsequence/<YourOrganization>/projects/tutorial-project/scheduled_jobs.yaml`
 
 Add the following content to schedule `simulated_prices_launcher.py` to run daily at midnight:
 
 ```yaml
-name: "Tutorial Job Configuration"
 jobs:
   - name: "Simulated Prices"
-    resource:
-      script:
-        path: "scripts/simulated_prices_launcher.py"
-    schedule:
+    execution_path: "scripts/simulated_prices_launcher.py"
+    task_schedule:
       type: "crontab"
       expression: "0 0 * * *"
+    related_image_id: 77
+    cpu_request: "0.25"
+    memory_request: "0.5"
 ```
 
-**Note:** In the YAML file, always use forward slashes (`/`) for the script path, even on Windows. The platform will handle path conversion automatically.
+**Note:** In the YAML file, always use forward slashes (`/`) for `execution_path`, even on Windows. The platform will handle path conversion automatically.
 
-#### GUI / Git-assisted path
+Each entry under `jobs` is validated with the same rules used for individual job creation. That means:
+
+- each job needs a valid `name`
+- each job must define exactly one of `execution_path` or `app_name`
+- each job must define a `related_image_id`
+- each scheduled job must use a valid `task_schedule`
+- compute settings such as `cpu_request` and `memory_request` must also be valid
+
+#### Keep the file version-controlled
 
 If you want to follow the same signed-terminal flow used earlier in the tutorial, commit and push this file with a signed terminal:
 
@@ -238,24 +247,40 @@ mainsequence project open-signed-terminal [PROJECT_ID]
 Then, in the new terminal window that opens, run:
 
 ```bash
-git add project_configuration.yaml
-git commit -m "Add automated job schedule"
+git add scheduled_jobs.yaml
+git commit -m "Add scheduled jobs batch"
 git push
 ```
 
-The platform will detect the file and create the scheduled job automatically:
-
-![img.png](../img/tutorial/automatic_job_schedule.png)
+This keeps the scheduling configuration reviewable in git, even though the actual scheduling step happens through the CLI command below.
 
 #### CLI
 
-The recommended CLI flow is to keep the schedule in `project_configuration.yaml` and let `mainsequence project sync` handle the environment update, commit, and push:
+To validate the batch file and submit all jobs in it, run:
 
 ```bash
-mainsequence project sync -m "Add automated job schedule"
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 ```
 
-After the sync completes, verify that the scheduled job exists:
+Before the batch is submitted, the CLI shows the project's available images and asks you to choose which one the batch should use. That selected image is applied to every job in the submitted batch.
+
+After the image is selected, the CLI asks for confirmation and explicitly warns that all jobs will be scheduled on that same image.
+
+You can also pass an explicit path:
+
+```bash
+mainsequence project schedule_batch_jobs /path/to/project/scheduled_jobs.yaml
+```
+
+If you want the submitted file to become the full source of truth for scheduled jobs, use strict mode:
+
+```bash
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
+```
+
+With `--strict`, jobs that already exist remotely but are not listed in `scheduled_jobs.yaml` may be removed. By default, strict mode is off.
+
+After the batch is submitted, verify that the scheduled job exists:
 
 ```bash
 mainsequence project jobs list
@@ -270,13 +295,13 @@ mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
 
 #### CLI direct-create alternative
 
-If you want to create a scheduled job directly from the terminal without relying on `project_configuration.yaml`, you can do that too:
+If you want to create a scheduled job directly from the terminal without relying on `scheduled_jobs.yaml`, you can do that too:
 
 ```bash
-mainsequence project jobs create --name "Simulated Prices" --execution-path scripts/simulated_prices_launcher.py --schedule-type crontab --schedule-expression "0 0 * * *"
+mainsequence project jobs create --name "Simulated Prices" --execution-path scripts/simulated_prices_launcher.py --related-image-id <IMAGE_ID> --schedule-type crontab --schedule-expression "0 0 * * *"
 ```
 
-This direct CLI approach is useful for quick experiments. For shared projects, the repository-based `project_configuration.yaml` flow is usually better because the schedule stays reviewable and version-controlled.
+This direct CLI approach is useful for quick experiments. For shared projects, the repository-based `scheduled_jobs.yaml` flow is usually better because the schedule stays reviewable and version-controlled.
 
 ## 3) Artifacts: Platform-Managed Files
 

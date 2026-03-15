@@ -30,11 +30,13 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 from decimal import ROUND_UP, Decimal
 from textwrap import dedent
 
 import typer
+import yaml
 
 from ..compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
 from . import config as cfg
@@ -48,14 +50,18 @@ from .api import (
     create_project_resource_release,
     deep_find_repo_url,
     delete_project,
+    delete_project_image,
+    delete_resource_release,
     fetch_project_env_text,
     get_current_user_profile,
     get_logged_user_details,
     get_market_asset_translation_table,
     get_project,
     get_project_data_node_updates,
+    get_project_image,
     get_project_job_run_logs,
     get_projects,
+    get_resource_release,
     list_dynamic_table_data_sources,
     list_github_organizations,
     list_market_asset_translation_tables,
@@ -68,6 +74,7 @@ from .api import (
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
+    schedule_batch_project_jobs,
     sync_project_after_commit,
 )
 from .api import login as api_login
@@ -629,6 +636,157 @@ def _prompt_select_id(
         return int(picked)
     except ValueError as e:
         raise RuntimeError(f"Invalid {prompt_label}: {picked}") from e
+
+
+def _prepare_batch_jobs_file_with_selected_related_image(
+    *,
+    project_id: int,
+    batch_file: pathlib.Path,
+    timeout: int | None,
+) -> pathlib.Path:
+    try:
+        raw_config = yaml.safe_load(batch_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        return batch_file
+
+    jobs_config = raw_config.get("jobs") if isinstance(raw_config, dict) else None
+    if not isinstance(jobs_config, list):
+        return batch_file
+
+    if not jobs_config:
+        return batch_file
+    for raw_job in jobs_config:
+        if not isinstance(raw_job, dict):
+            return batch_file
+
+    project_images = list_project_images(related_project_id=project_id, timeout=timeout)
+    if not project_images:
+        raise RuntimeError(
+            "No project images are available. Create a project image before scheduling batch jobs."
+        )
+
+    rows = [
+        [
+            str(img.get("id") or "-"),
+            str(img.get("project_repo_hash") or "-"),
+            _format_base_image_label(img.get("base_image")),
+        ]
+        for img in project_images
+    ]
+    warn(
+        f"All {len(jobs_config)} job(s) in {batch_file.name} will be scheduled on one project image. "
+        "Select the image to use for this batch."
+    )
+    related_image_id = _prompt_select_id(
+        title="Available Project Images",
+        prompt_label="Related image ID",
+        items=project_images,
+        rows=rows,
+    )
+    selected_image = _find_image_by_id(project_images, related_image_id)
+    if selected_image is None:
+        raise RuntimeError(f"Related image not found: {related_image_id}")
+
+    patched_config = dict(raw_config)
+    patched_jobs: list[dict] = []
+    overwritten_count = 0
+    for raw_job in jobs_config:
+        job_copy = dict(raw_job)
+        existing_image_ref = job_copy.get("related_image_id")
+        if existing_image_ref in (None, ""):
+            existing_image_ref = job_copy.get("related_image")
+        if existing_image_ref not in (None, "") and str(existing_image_ref) != str(related_image_id):
+            overwritten_count += 1
+        job_copy.pop("related_image", None)
+        job_copy["related_image_id"] = related_image_id
+        patched_jobs.append(job_copy)
+    patched_config["jobs"] = patched_jobs
+
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".yaml",
+        prefix=f"{batch_file.stem}.",
+        delete=False,
+    ) as tmp_file:
+        yaml.safe_dump(patched_config, tmp_file, sort_keys=False)
+        temp_path = pathlib.Path(tmp_file.name)
+
+    if overwritten_count:
+        warn(
+            f"Overriding related_image_id for {overwritten_count} job(s) so the entire batch uses image {related_image_id}."
+        )
+    info(
+        f"Using project image {related_image_id} for all {len(jobs_config)} job(s) in this batch."
+    )
+    return temp_path
+
+
+def _confirm_schedule_batch_jobs_submission(batch_file: pathlib.Path) -> bool:
+    prompt_text = f"Schedule jobs from {batch_file.name}?"
+    try:
+        raw_config = yaml.safe_load(batch_file.read_text(encoding="utf-8")) or {}
+    except Exception:
+        raw_config = {}
+
+    jobs_config = raw_config.get("jobs") if isinstance(raw_config, dict) else None
+    if isinstance(jobs_config, list) and jobs_config:
+        image_ids: list[str] = []
+        for raw_job in jobs_config:
+            if not isinstance(raw_job, dict):
+                continue
+            image_ref = raw_job.get("related_image_id")
+            if image_ref in (None, ""):
+                image_ref = raw_job.get("related_image")
+            if image_ref not in (None, ""):
+                image_ids.append(str(image_ref))
+        unique_image_ids = sorted(set(image_ids))
+        if len(unique_image_ids) == 1:
+            prompt_text = (
+                f"This will schedule all {len(jobs_config)} job(s) on the same image "
+                f"({unique_image_ids[0]}). Continue?"
+            )
+        else:
+            prompt_text = f"This will schedule {len(jobs_config)} job(s). Continue?"
+
+    if not typer.confirm(prompt_text, default=False):
+        info("Cancelled.")
+        return False
+    return True
+
+
+def _confirm_delete_action(
+    *,
+    preview_title: str,
+    preview_items: list[tuple[str, str]],
+    prompt_text: str,
+    yes: bool,
+) -> None:
+    print_kv(preview_title, preview_items)
+    if yes:
+        return
+    if not typer.confirm(prompt_text, default=False):
+        info("Cancelled.")
+        raise typer.Exit(0)
+
+
+def _format_project_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(image.get("id") or "-")),
+        ("Project Repo Hash", str(image.get("project_repo_hash") or "-")),
+        ("Base Image", _format_base_image_label(image.get("base_image"))),
+        ("Is Ready", str(image.get("is_ready")) if image.get("is_ready") is not None else "-"),
+    ]
+
+
+def _format_resource_release_delete_preview(release: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(release.get("id") or "-")),
+        ("Release Kind", str(release.get("release_kind") or "-")),
+        ("Subdomain", str(release.get("subdomain") or "-")),
+        ("Resource", str(release.get("resource") or "-")),
+        ("Related Image", _format_related_image_label(release.get("related_image"))),
+    ]
 
 
 def _git_run(project_dir: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -2577,6 +2735,95 @@ def project_project_resource_create_agent_cmd(
     )
 
 
+def _project_resource_release_delete_impl(
+    *,
+    release_id: int,
+    expected_release_kind: str,
+    yes: bool,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        release = get_resource_release(
+            release_id=release_id,
+            expected_release_kind=expected_release_kind,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project resource release fetch failed: {e}")
+        raise typer.Exit(1)
+
+    release_label = "dashboard release" if expected_release_kind == "streamlit_dashboard" else "agent release"
+    _confirm_delete_action(
+        preview_title="Project Resource Release Delete Preview",
+        preview_items=_format_resource_release_delete_preview(release),
+        prompt_text=f"Delete {release_label} {release_id}?",
+        yes=yes,
+    )
+
+    try:
+        deleted = delete_resource_release(
+            release_id=release_id,
+            expected_release_kind=expected_release_kind,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Project resource release deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Project resource release deleted: id={release_id}")
+    print_kv("Deleted Project Resource Release", _format_resource_release_delete_preview(deleted))
+
+
+@project_project_resource_group.command("delete_dashboard")
+def project_project_resource_delete_dashboard_cmd(
+    release_id: int = typer.Argument(..., help="Dashboard resource release ID."),
+    yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete a dashboard resource release.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project project_resource delete_dashboard 501
+    mainsequence project project_resource delete_dashboard 501 --yes
+    ```
+    """
+    _project_resource_release_delete_impl(
+        release_id=release_id,
+        expected_release_kind="streamlit_dashboard",
+        yes=yes,
+        timeout=timeout,
+    )
+
+
+@project_project_resource_group.command("delete_agent")
+def project_project_resource_delete_agent_cmd(
+    release_id: int = typer.Argument(..., help="Agent resource release ID."),
+    yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete an agent resource release.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project project_resource delete_agent 601
+    mainsequence project project_resource delete_agent 601 --yes
+    ```
+    """
+    _project_resource_release_delete_impl(
+        release_id=release_id,
+        expected_release_kind="agent",
+        yes=yes,
+        timeout=timeout,
+    )
+
+
 def _project_images_list_impl(
     project_id: int | None,
     path: str | None,
@@ -2639,6 +2886,56 @@ def project_images_list_cmd(
     ```
     """
     _project_images_list_impl(project_id=project_id, path=path, timeout=timeout)
+
+
+def _project_images_delete_impl(
+    *,
+    image_id: int,
+    yes: bool,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        image = get_project_image(image_id=image_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project image fetch failed: {e}")
+        raise typer.Exit(1)
+
+    _confirm_delete_action(
+        preview_title="Project Image Delete Preview",
+        preview_items=_format_project_image_delete_preview(image),
+        prompt_text=f"Delete project image {image_id}?",
+        yes=yes,
+    )
+
+    try:
+        deleted = delete_project_image(image_id=image_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project image deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Project image deleted: id={image_id}")
+    print_kv("Deleted Project Image", _format_project_image_delete_preview(deleted))
+
+
+@project_images_group.command("delete")
+def project_images_delete_cmd(
+    image_id: int = typer.Argument(..., help="Project image ID."),
+    yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete a project image.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project images delete 94
+    mainsequence project images delete 94 --yes
+    ```
+    """
+    _project_images_delete_impl(image_id=image_id, yes=yes, timeout=timeout)
 
 
 def _project_images_create_impl(
@@ -3204,6 +3501,10 @@ def _project_jobs_create_impl(
             rows=image_rows,
         )
 
+    if related_image_id is None:
+        error("related_image_id is required for jobs.")
+        raise typer.Exit(1)
+
     if execution_path is None and app_name is None:
         execution_path = (
             typer.prompt(
@@ -3414,10 +3715,10 @@ def project_jobs_create_cmd(
     --------
     ```bash
     mainsequence project jobs create
-    mainsequence project jobs create 123 --name daily-run --execution-path scripts/test.py
+    mainsequence project jobs create 123 --name daily-run --execution-path scripts/test.py --related-image-id 77
     mainsequence project jobs create 123 --name dashboard --app-name dashboard-api --related-image-id 77
-    mainsequence project jobs create 123 --name hourly-run --execution-path scripts/test.py --schedule-type interval --schedule-every 1 --schedule-period hours
-    mainsequence project jobs create 123 --name nightly-run --execution-path scripts/test.py --schedule-type crontab --schedule-expression "0 0 * * *"
+    mainsequence project jobs create 123 --name hourly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type interval --schedule-every 1 --schedule-period hours
+    mainsequence project jobs create 123 --name nightly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type crontab --schedule-expression "0 0 * * *"
     ```
     """
     _project_jobs_create_impl(
@@ -3440,6 +3741,109 @@ def project_jobs_create_cmd(
         spot=spot,
         max_runtime_seconds=max_runtime_seconds,
         timeout=timeout,
+    )
+
+
+@project.command("schedule_batch_jobs")
+def project_schedule_batch_jobs_cmd(
+    file_path: str = typer.Argument(..., help="Path to the scheduled jobs YAML file."),
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path used to resolve project id."),
+    strict: bool = typer.Option(
+        False,
+        "--strict/--no-strict",
+        help="If enabled, jobs that exist remotely but are not listed in the file may be removed.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Validate and submit a batch of jobs from a YAML file.
+
+    Uses SDK client `Job.bulk_get_or_create()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project schedule_batch_jobs scheduled_jobs.yaml
+    mainsequence project schedule_batch_jobs scheduled_jobs.yaml 123
+    mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
+    mainsequence project schedule_batch_jobs configs/scheduled_jobs.yaml --path .
+    ```
+    """
+    _require_login()
+
+    project_dir = normalize_path(path) if path else pathlib.Path.cwd()
+    if not project_dir.exists():
+        error(f"Project folder does not exist: {project_dir}")
+        raise typer.Exit(1)
+
+    if project_id is None:
+        project_id = _resolve_project_id_from_local_env(str(project_dir))
+
+    batch_file = pathlib.Path(file_path).expanduser()
+    if not batch_file.is_absolute():
+        batch_file = (project_dir / batch_file).resolve()
+
+    if not batch_file.is_file():
+        error(f"Jobs file not found: {batch_file}")
+        raise typer.Exit(1)
+
+        prepared_batch_file = batch_file
+    try:
+        prepared_batch_file = _prepare_batch_jobs_file_with_selected_related_image(
+            project_id=int(project_id),
+            batch_file=batch_file,
+            timeout=timeout,
+        )
+        if not _confirm_schedule_batch_jobs_submission(prepared_batch_file):
+            return
+        created = schedule_batch_project_jobs(
+            file_path=str(prepared_batch_file),
+            project_id=project_id,
+            strict=strict,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Batch job scheduling failed: {e}")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1)
+    finally:
+        if prepared_batch_file != batch_file:
+            try:
+                prepared_batch_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    if isinstance(created, list):
+        success(f"Scheduled {len(created)} jobs from {batch_file.name}.")
+        rows = [
+            [
+                str(item.get("id") or "-"),
+                str(item.get("name") or "-"),
+                str(item.get("execution_path") or "-"),
+                str(item.get("app_name") or "-"),
+                _format_job_schedule_summary(item.get("task_schedule")),
+            ]
+            for item in created
+        ]
+        print_table(
+            "Scheduled Jobs",
+            ["ID", "Name", "Execution Path", "App Name", "Schedule"],
+            rows,
+        )
+        return
+
+    success(f"Scheduled jobs from {batch_file.name}.")
+    print_kv(
+        "Batch Scheduling",
+        [
+            ("Project ID", str(project_id)),
+            ("File", str(batch_file)),
+            ("Strict", str(bool(strict)).lower()),
+            ("Result", json.dumps(created) if isinstance(created, (dict, list)) else str(created)),
+        ],
     )
 
 
