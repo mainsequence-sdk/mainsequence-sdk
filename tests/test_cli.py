@@ -733,6 +733,357 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
+def test_list_constants_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeConstant:
+        ROOT_URL = "https://old.test/orm/api/pods/constant"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda mode="python": {
+                        "id": 7,
+                        "name": "ASSETS__MASTER",
+                        "value": {"source": "bbg"},
+                    }
+                )
+            ]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Constant = FakeConstant
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_constants(filters={"name__in": ["ASSETS__MASTER"]})
+    assert captured["filters"][0] == {"name__in": ["ASSETS__MASTER"]}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [{"id": 7, "name": "ASSETS__MASTER", "value": {"source": "bbg"}}]
+
+
+def test_create_constant_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeConstant:
+        ROOT_URL = "https://old.test/orm/api/pods/constant"
+
+        @classmethod
+        def create(cls, *, name, value, timeout=None):
+            captured["name"] = name
+            captured["value"] = value
+            captured["timeout"] = timeout
+            return types.SimpleNamespace(
+                model_dump=lambda mode="python": {
+                    "id": 7,
+                    "name": name,
+                    "value": value,
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Constant = FakeConstant
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.create_constant(name="ASSETS__MASTER", value={"source": "bbg"}, timeout=15)
+    assert captured["name"] == "ASSETS__MASTER"
+    assert captured["value"] == {"source": "bbg"}
+    assert captured["timeout"] == 15
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["id"] == 7
+
+
+def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeConstant:
+        ROOT_URL = "https://old.test/orm/api/pods/constant"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Constant:
+                id = pk
+
+                def model_dump(self, mode="python"):
+                    return {
+                        "id": pk,
+                        "name": "ASSETS__MASTER",
+                        "value": {"source": "bbg"},
+                    }
+
+                def delete(self, timeout=None):
+                    captured["delete_timeout"] = timeout
+
+            return _Constant()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Constant = FakeConstant
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.delete_constant(7, timeout=20)
+    assert captured["get"] == {"pk": 7, "timeout": 20, "filters": {}}
+    assert captured["delete_timeout"] == 20
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["name"] == "ASSETS__MASTER"
+
+
+def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeSecret:
+        ROOT_URL = "https://old.test/orm/api/pods/secret"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda mode="python": {
+                        "id": 8,
+                        "name": "API_KEY",
+                    }
+                )
+            ]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Secret = FakeSecret
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_secrets(filters={"name__in": ["API_KEY"]})
+    assert captured["filters"][0] == {"name__in": ["API_KEY"]}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [{"id": 8, "name": "API_KEY"}]
+
+
+def test_create_secret_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeSecret:
+        ROOT_URL = "https://old.test/orm/api/pods/secret"
+
+        @classmethod
+        def create(cls, *, name, value, timeout=None):
+            captured["name"] = name
+            captured["value"] = value
+            captured["timeout"] = timeout
+            return types.SimpleNamespace(
+                model_dump=lambda mode="python": {
+                    "id": 8,
+                    "name": name,
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Secret = FakeSecret
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.create_secret(name="API_KEY", value="super-secret", timeout=10)
+    assert captured["name"] == "API_KEY"
+    assert captured["value"] == "super-secret"
+    assert captured["timeout"] == 10
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["id"] == 8
+
+
+def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeSecret:
+        ROOT_URL = "https://old.test/orm/api/pods/secret"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Secret:
+                id = pk
+
+                def model_dump(self, mode="python"):
+                    return {
+                        "id": pk,
+                        "name": "API_KEY",
+                    }
+
+                def delete(self, timeout=None):
+                    captured["delete_timeout"] = timeout
+
+            return _Secret()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Secret = FakeSecret
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.delete_secret(8, timeout=20)
+    assert captured["get"] == {"pk": 8, "timeout": 20, "filters": {}}
+    assert captured["delete_timeout"] == 20
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["name"] == "API_KEY"
+
+
 def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -2512,6 +2863,220 @@ def test_markets_portfolios_list_show_filters(cli_mod, runner, monkeypatch):
     assert "Markets Portfolios Filters" in result.output
     assert "id__in" in result.output
     assert "integer IDs" in result.output
+
+
+def test_constants_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_constants",
+        lambda filters=None, timeout=None: [
+            {
+                "id": 7,
+                "name": "ASSETS__MASTER",
+                "value": {"source": "bbg"},
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["constants", "list"])
+    assert result.exit_code == 0
+    assert "Constants" in result.output
+    assert "ASSETS__MASTER" in result.output
+    assert "ASSETS" in result.output
+    assert "Total constants: 1" in result.output
+
+
+def test_constants_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"name__in": ["ASSETS__MASTER", "APP__MODE"]}
+
+    def _list(timeout=None, filters=None):
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_constants", _list)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["constants", "list", "--filter", "name__in=ASSETS__MASTER,APP__MODE"],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == ["name__in=ASSETS__MASTER,APP__MODE"]
+    assert captured["filters"] == {"name__in": ["ASSETS__MASTER", "APP__MODE"]}
+
+
+def test_constants_create_parses_json_value(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(*, name, value, timeout=None):
+        captured["name"] = name
+        captured["value"] = value
+        captured["timeout"] = timeout
+        return {"id": 7, "name": name, "value": value}
+
+    monkeypatch.setattr(cli_mod, "create_constant", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["constants", "create", "ASSETS__MASTER", '{"source":"bbg"}'],
+    )
+    assert result.exit_code == 0
+    assert captured["name"] == "ASSETS__MASTER"
+    assert captured["value"] == {"source": "bbg"}
+    assert "Constant created: ASSETS__MASTER" in result.output
+    assert "Created Constant" in result.output
+    assert "ASSETS" in result.output
+
+
+def test_constants_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_constant",
+        lambda constant_id, timeout=None: {
+            "id": constant_id,
+            "name": "ASSETS__MASTER",
+            "value": {"source": "bbg"},
+        },
+    )
+
+    def _delete(constant_id, timeout=None):
+        captured["constant_id"] = constant_id
+        captured["timeout"] = timeout
+        return {
+            "id": constant_id,
+            "name": "ASSETS__MASTER",
+            "value": {"source": "bbg"},
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_constant", _delete)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["constants", "delete", "7"],
+        input="ASSETS__MASTER\n",
+    )
+    assert result.exit_code == 0
+    assert "Constant Delete Preview" in result.output
+    assert "Type constant name 'ASSETS__MASTER' to confirm deletion" in result.output
+    assert captured["constant_id"] == 7
+    assert "Constant deleted: id=7" in result.output
+
+
+def test_secrets_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_secrets",
+        lambda filters=None, timeout=None: [
+            {
+                "id": 8,
+                "name": "API_KEY",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["secrets", "list"])
+    assert result.exit_code == 0
+    assert "Secrets" in result.output
+    assert "API_KEY" in result.output
+    assert "Total secrets: 1" in result.output
+
+
+def test_secrets_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"name__in": ["API_KEY", "DB_PASSWORD"]}
+
+    def _list(timeout=None, filters=None):
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_secrets", _list)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["secrets", "list", "--filter", "name__in=API_KEY,DB_PASSWORD"],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == ["name__in=API_KEY,DB_PASSWORD"]
+    assert captured["filters"] == {"name__in": ["API_KEY", "DB_PASSWORD"]}
+
+
+def test_secrets_create_hides_value_in_output(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(*, name, value, timeout=None):
+        captured["name"] = name
+        captured["value"] = value
+        captured["timeout"] = timeout
+        return {"id": 8, "name": name}
+
+    monkeypatch.setattr(cli_mod, "create_secret", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["secrets", "create", "API_KEY", "super-secret"],
+    )
+    assert result.exit_code == 0
+    assert captured["name"] == "API_KEY"
+    assert captured["value"] == "super-secret"
+    assert "Secret created: API_KEY" in result.output
+    assert "Created Secret" in result.output
+    assert "super-secret" not in result.output
+
+
+def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_secret",
+        lambda secret_id, timeout=None: {
+            "id": secret_id,
+            "name": "API_KEY",
+        },
+    )
+
+    def _delete(secret_id, timeout=None):
+        captured["secret_id"] = secret_id
+        captured["timeout"] = timeout
+        return {
+            "id": secret_id,
+            "name": "API_KEY",
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_secret", _delete)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["secrets", "delete", "8"],
+        input="API_KEY\n",
+    )
+    assert result.exit_code == 0
+    assert "Secret Delete Preview" in result.output
+    assert "Type secret name 'API_KEY' to confirm deletion" in result.output
+    assert captured["secret_id"] == 8
+    assert "Secret deleted: id=8" in result.output
 
 
 def test_data_node_storage_list(cli_mod, runner, monkeypatch):

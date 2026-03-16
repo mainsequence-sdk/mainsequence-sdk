@@ -21,7 +21,7 @@ import yaml
 from cachetools import TTLCache, cachedmethod
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from mainsequence.logconf import logger
 
@@ -3119,6 +3119,30 @@ def add_created_object_to_jobrun(
     return r.json()
 
 
+
+class Bucket(BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "name": ["in", "exact"],
+    }
+
+    id:  int | None = Field(
+        None,
+        title="Artifact ID",
+        description="Unique identifier of the artifact record.",
+        examples=[128],
+        json_schema_extra={"label": "Artifact ID"},
+    )
+    name:str= Field(
+        ...,
+        title="Bucket Name",
+        description="Human-readable Bucket name ",
+        examples=["daily_positions_report.pdf"],
+        json_schema_extra={"label": "Bucket Name"},
+    )
+
+
+
+
 class Artifact(BasePydanticModel, BaseObjectOrm):
     id: int | None = Field(
         None,
@@ -3314,21 +3338,59 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
     return tuple(sorted(items))
 
 class Secret(BasePydanticModel, BaseObjectOrm):
-    id: int | None
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "name": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "name": "str",
+        "name__in": "str",
+    }
+
+    id: int | None = None
     name: str = Field(..., description="Secret name")
-    value: str = Field(..., description="Secret value ")
+    value: SecretStr | None = Field(
+        None,
+        description="Secret value. The create endpoint may omit it in the response.",
+        exclude=True,
+    )
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str,
+        value: str,
+        timeout: int | None = None,
+    ) -> Secret:
+        """
+        Create a secret.
+
+        Parameters
+        ----------
+        name:
+            Secret name.
+        value:
+            Secret value. Stored as a string by the backend. The backend create
+            response may return only the secret name, so the returned model can
+            have `id=None` and `value=None`.
+        timeout:
+            Optional request timeout in seconds.
+        """
+        return super().create(name=name, value=value, timeout=timeout)
 
 
 class Constant(BasePydanticModel, BaseObjectOrm):
     """
-    Simple scoped constant.
-    - Global when project is None.
-    - Project-scoped when project is set.
-
-    Uniqueness (enforced in DB/service layer):
-      * Global:      (organization_owner, name)
-      * Per-project: (organization_owner, project, name)
+    Simple organization-level constant.
     """
+
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "name": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "name": "str",
+        "name__in": "str",
+    }
 
     id: int | None
 
@@ -3341,7 +3403,6 @@ class Constant(BasePydanticModel, BaseObjectOrm):
         ...,
         description="Small JSON value (string/number/bool/object/array). Keep it small (e.g., <=10KB).",
     )
-    project: Project | int | None = Field(None, description="Project ID; None ⇒ global.")
     category: str | None = None
 
     # Class-level cache & lock (Pydantic ignores ClassVar)
@@ -3373,8 +3434,32 @@ class Constant(BasePydanticModel, BaseObjectOrm):
         return super().get(**kwargs)
 
     @classmethod
-    def get_value(cls, name: str, project_id: int | None = None):
-        return cls.get(name=name, project_id=project_id).value
+    def get_value(cls, name: str):
+        return cls.get(name=name).value
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str,
+        value: Any,
+        timeout: int | None = None,
+    ) -> Constant:
+        """
+        Create a constant.
+
+        Parameters
+        ----------
+        name:
+            Constant name in UPPER_SNAKE_CASE. When the name contains `__`,
+            the prefix before the first double underscore is used as the
+            display category, for example `ASSETS__MASTER`.
+        value:
+            Small JSON-serializable value.
+        timeout:
+            Optional request timeout in seconds.
+        """
+        return super().create(name=name, value=value, timeout=timeout)
 
     @classmethod
     def invalidate_filter_cache(cls) -> None:

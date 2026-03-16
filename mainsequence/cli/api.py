@@ -1570,6 +1570,242 @@ def list_data_node_storages(
         raise ApiError(f"Data node storages fetch failed: {e}")
 
 
+def list_constants(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List constants via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `Constant.filter()`
+    """
+    try:
+        constants = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Constant",
+            operation=lambda ClientConstant: ClientConstant.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(constant) for constant in constants]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Constants fetch failed: {e}")
+
+
+def list_secrets(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List secrets via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `Secret.filter()`
+    """
+    try:
+        secrets = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Secret",
+            operation=lambda ClientSecret: ClientSecret.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(secret) for secret in secrets]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Secrets fetch failed: {e}")
+
+
+def get_secret(
+    secret_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one secret via SDK client model.
+
+    Single source of truth:
+      - delegates detail fetching and payload parsing to `Secret.get()`
+    """
+    try:
+        secret = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Secret",
+            operation=lambda ClientSecret: ClientSecret.get(
+                pk=int(secret_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(secret)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Secret not found: {secret_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Secret fetch failed: {e}")
+
+
+def create_secret(
+    *,
+    name: str,
+    value: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one secret via SDK client model.
+
+    Single source of truth:
+      - delegates create payload and parsing to `Secret.create()`
+    """
+    try:
+        secret = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Secret",
+            operation=lambda ClientSecret: ClientSecret.create(
+                name=name,
+                value=value,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(secret)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Secret creation failed: {e}")
+
+
+def delete_secret(
+    secret_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one secret via SDK client model.
+
+    Single source of truth:
+      - delegates deletion to `Secret.delete()`
+    """
+    try:
+        def _delete(ClientSecret):
+            secret = ClientSecret.get(pk=int(secret_id), timeout=timeout)
+            payload = _sdk_object_to_dict(secret)
+            secret.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Secret",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Secret not found: {secret_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Secret deletion failed: {e}")
+
+
+def get_constant(
+    constant_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one constant via SDK client model.
+
+    Single source of truth:
+      - delegates detail fetching and payload parsing to `Constant.get()`
+    """
+    try:
+        constant = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Constant",
+            operation=lambda ClientConstant: ClientConstant.get(
+                pk=int(constant_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(constant)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Constant not found: {constant_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Constant fetch failed: {e}")
+
+
+def create_constant(
+    *,
+    name: str,
+    value: Any,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one constant via SDK client model.
+
+    Single source of truth:
+      - delegates create payload and parsing to `Constant.create()`
+    """
+    try:
+        constant = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Constant",
+            operation=lambda ClientConstant: ClientConstant.create(
+                name=name,
+                value=value,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(constant)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Constant creation failed: {e}")
+
+
+def delete_constant(
+    constant_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one constant via SDK client model.
+
+    Single source of truth:
+      - delegates deletion to `Constant.delete()`
+    """
+    try:
+        def _delete(ClientConstant):
+            constant = ClientConstant.get(pk=int(constant_id), timeout=timeout)
+            payload = _sdk_object_to_dict(constant)
+            constant.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Constant",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Constant not found: {constant_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Constant deletion failed: {e}")
+
+
 def get_data_node_storage(
     storage_id: int | str,
     *,

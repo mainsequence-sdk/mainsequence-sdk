@@ -34,6 +34,8 @@ mainsequence logout --export
 ```bash
 mainsequence --help
 mainsequence doctor
+mainsequence constants --help
+mainsequence secrets --help
 mainsequence data-node list
 mainsequence markets --help
 mainsequence user
@@ -51,6 +53,15 @@ Most frequently used flows:
 
 ```bash
 # Markets
+mainsequence constants list
+mainsequence constants list --show-filters
+mainsequence constants create APP__MODE production
+mainsequence constants create ASSETS__MASTER '{"dataset":"bloomberg"}'
+mainsequence constants delete 42
+mainsequence secrets list
+mainsequence secrets list --show-filters
+mainsequence secrets create API_KEY super-secret-value
+mainsequence secrets delete 42
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter id__in=42,43
@@ -128,6 +139,8 @@ Rules:
   - `mainsequence project project_resource list` always scopes by project and upstream remote `repo_commit_sha`.
   - `mainsequence project jobs runs list` always scopes by `job__id`.
 - If a command's backing model does not expose filter metadata, `--show-filters` will tell you that no additional model filters are available.
+- `mainsequence constants list` exposes filters from `Constant.FILTERSET_FIELDS`, currently `name` and `name__in`.
+- `mainsequence secrets list` exposes filters from `Secret.FILTERSET_FIELDS`, currently `name` and `name__in`.
 
 ## Settings
 
@@ -143,6 +156,14 @@ mainsequence settings set-base ~/mainsequence
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
+- `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
+- `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
+- `mainsequence constants delete` deletes a constant through the SDK client `Constant.delete()` path and always requires typed verification before the delete call is sent.
+- Constant names that include a double underscore display the prefix before `__` as the terminal category. Example: `ASSETS__MASTER` is shown under category `ASSETS`.
+- `mainsequence secrets list` lists secrets through the SDK client `Secret.filter()` path.
+- `mainsequence secrets create` creates a secret through the SDK client `Secret.create()` path and only accepts `name` and `value`.
+- `mainsequence secrets delete` deletes a secret through the SDK client `Secret.delete()` path and always requires typed verification before the delete call is sent.
+- Secret list and delete previews intentionally show metadata only, not secret values.
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.

@@ -44,16 +44,21 @@ from .api import (
     ApiError,
     NotLoggedIn,
     add_deploy_key,
+    create_constant,
     create_project,
     create_project_image,
     create_project_job,
     create_project_resource_release,
+    create_secret,
     deep_find_repo_url,
+    delete_constant,
     delete_data_node_storage,
     delete_project,
     delete_project_image,
     delete_resource_release,
+    delete_secret,
     fetch_project_env_text,
+    get_constant,
     get_current_user_profile,
     get_data_node_storage,
     get_logged_user_details,
@@ -64,6 +69,8 @@ from .api import (
     get_project_job_run_logs,
     get_projects,
     get_resource_release,
+    get_secret,
+    list_constants,
     list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
@@ -74,6 +81,7 @@ from .api import (
     list_project_job_runs,
     list_project_jobs,
     list_project_resources,
+    list_secrets,
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
@@ -118,6 +126,8 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
+constants = typer.Typer(help="Constant commands")
+secrets = typer.Typer(help="Secret commands")
 markets = typer.Typer(help="Markets commands")
 data_node_storage_group = typer.Typer(help="Data node commands")
 markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
@@ -132,6 +142,8 @@ project_job_runs_group = typer.Typer(help="Project job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
+app.add_typer(constants, name="constants")
+app.add_typer(secrets, name="secrets")
 app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
@@ -162,6 +174,8 @@ JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_tdag.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
 DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
+CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
+SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
 PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
 ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
 JOB_RUN_STATUS_PENDING = "PENDING"
@@ -2050,6 +2064,242 @@ def _markets_portfolios_list_impl(
     info(f"Total portfolios: {len(portfolios)}")
 
 
+def _constant_category(name: object) -> str:
+    text = str(name or "").strip()
+    if "__" not in text:
+        return "-"
+    return text.split("__", 1)[0].strip() or "-"
+
+
+def _format_constant_delete_preview(constant: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(constant.get("id") or "-")),
+        ("Category", _constant_category(constant.get("name"))),
+        ("Name", str(constant.get("name") or "-")),
+        ("Value", _format_json_value(constant.get("value"))),
+    ]
+
+
+def _format_secret_preview(secret: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(secret.get("id") or "-")),
+        ("Name", str(secret.get("name") or "-")),
+    ]
+
+
+def _parse_constant_value(raw_value: str) -> object:
+    text = raw_value.strip()
+    if text == "":
+        return ""
+    try:
+        return json.loads(text)
+    except Exception:
+        return raw_value
+
+
+def _constants_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=CONSTANT_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Constants",
+    )
+    _require_login()
+
+    try:
+        constants_payload = list_constants(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Constants fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for constant in constants_payload:
+        rows.append(
+            [
+                str(constant.get("id") or "-"),
+                _constant_category(constant.get("name")),
+                str(constant.get("name") or "-"),
+                _format_json_value(constant.get("value")),
+            ]
+        )
+
+    if rows:
+        print_table("Constants", ["ID", "Category", "Name", "Value"], rows)
+    else:
+        info("No constants.")
+    info(f"Total constants: {len(constants_payload)}")
+
+
+def _constants_create_impl(
+    *,
+    name: str | None,
+    value: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    constant_name = (name or "").strip() or typer.prompt(
+        "Constant name (double underscore creates a display category, example: ASSETS__MASTER)"
+    ).strip()
+    if not constant_name:
+        error("Constant name is required.")
+        raise typer.Exit(1)
+
+    raw_value = value
+    if raw_value is None:
+        raw_value = typer.prompt(
+            "Constant value (JSON parses when valid; otherwise it is stored as a string)",
+            default="",
+            show_default=False,
+        )
+    parsed_value = _parse_constant_value(raw_value)
+
+    try:
+        created = create_constant(name=constant_name, value=parsed_value, timeout=timeout)
+    except ApiError as e:
+        error(f"Constant creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Constant created: {constant_name}")
+    print_kv("Created Constant", _format_constant_delete_preview(created))
+
+
+def _constants_delete_impl(
+    *,
+    constant_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        constant = get_constant(constant_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Constant fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(constant.get("name") or constant.get("id") or constant_id)
+    _require_delete_verification(
+        preview_title="Constant Delete Preview",
+        preview_items=_format_constant_delete_preview(constant),
+        verification_value=verification_value,
+        verification_label="constant name" if constant.get("name") else "constant id",
+    )
+
+    try:
+        deleted = delete_constant(constant_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Constant deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Constant deleted: id={constant_id}")
+    print_kv("Deleted Constant", _format_constant_delete_preview(deleted))
+
+
+def _secrets_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=SECRET_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Secrets",
+    )
+    _require_login()
+
+    try:
+        secrets_payload = list_secrets(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Secrets fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for secret in secrets_payload:
+        rows.append(
+            [
+                str(secret.get("id") or "-"),
+                str(secret.get("name") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table("Secrets", ["ID", "Name"], rows)
+    else:
+        info("No secrets.")
+    info(f"Total secrets: {len(secrets_payload)}")
+
+
+def _secrets_create_impl(
+    *,
+    name: str | None,
+    value: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    secret_name = (name or "").strip() or typer.prompt("Secret name").strip()
+    if not secret_name:
+        error("Secret name is required.")
+        raise typer.Exit(1)
+
+    secret_value = value
+    if secret_value is None:
+        secret_value = typer.prompt(
+            "Secret value",
+            default="",
+            show_default=False,
+            hide_input=True,
+        )
+    if secret_value == "":
+        error("Secret value is required.")
+        raise typer.Exit(1)
+
+    try:
+        created = create_secret(name=secret_name, value=secret_value, timeout=timeout)
+    except ApiError as e:
+        error(f"Secret creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Secret created: {secret_name}")
+    print_kv("Created Secret", _format_secret_preview(created))
+
+
+def _secrets_delete_impl(
+    *,
+    secret_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        secret = get_secret(secret_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Secret fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(secret.get("name") or secret.get("id") or secret_id)
+    _require_delete_verification(
+        preview_title="Secret Delete Preview",
+        preview_items=_format_secret_preview(secret),
+        verification_value=verification_value,
+        verification_label="secret name" if secret.get("name") else "secret id",
+    )
+
+    try:
+        deleted = delete_secret(secret_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Secret deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Secret deleted: id={secret_id}")
+    print_kv("Deleted Secret", _format_secret_preview(deleted))
+
+
 def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -2091,6 +2341,144 @@ def _data_node_storage_list_impl(
     else:
         info("No data node storages.")
     info(f"Total data node storages: {len(storages)}")
+
+
+@constants.command("list")
+def constants_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List constants visible to the authenticated user.
+
+    Uses SDK client `Constant.filter()` as the single source of truth.
+    Names containing a double underscore display the prefix before `__`
+    as the terminal `Category`, for example `ASSETS__MASTER` => `ASSETS`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants list
+    mainsequence constants list --show-filters
+    mainsequence constants list --filter name__in=ASSETS__MASTER,APP__MODE
+    ```
+    """
+    _constants_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@constants.command("create")
+def constants_create_cmd(
+    name: str | None = typer.Argument(None, help="Constant name, for example ASSETS__MASTER."),
+    value: str | None = typer.Argument(
+        None,
+        help="Constant value. JSON is parsed when valid; otherwise it is stored as a string.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create one constant.
+
+    Only `name` and `value` are accepted by this CLI flow.
+    Names containing a double underscore display the prefix before `__`
+    as the terminal `Category`, for example `ASSETS__MASTER` => `ASSETS`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants create APP__MODE production
+    mainsequence constants create ASSETS__MASTER '{"dataset":"bloomberg"}'
+    ```
+    """
+    _constants_create_impl(name=name, value=value, timeout=timeout)
+
+
+@constants.command("delete")
+def constants_delete_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one constant.
+
+    The command always requires typed verification before the delete call is executed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants delete 42
+    ```
+    """
+    _constants_delete_impl(constant_id=constant_id, timeout=timeout)
+
+
+@secrets.command("list")
+def secrets_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List secrets visible to the authenticated user.
+
+    Uses SDK client `Secret.filter()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets list
+    mainsequence secrets list --show-filters
+    mainsequence secrets list --filter name__in=API_KEY,DB_PASSWORD
+    ```
+    """
+    _secrets_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@secrets.command("create")
+def secrets_create_cmd(
+    name: str | None = typer.Argument(None, help="Secret name."),
+    value: str | None = typer.Argument(None, help="Secret value."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create one secret.
+
+    Only `name` and `value` are accepted by this CLI flow.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets create API_KEY super-secret-value
+    ```
+    """
+    _secrets_create_impl(name=name, value=value, timeout=timeout)
+
+
+@secrets.command("delete")
+def secrets_delete_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one secret.
+
+    The command always requires typed verification before the delete call is executed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets delete 42
+    ```
+    """
+    _secrets_delete_impl(secret_id=secret_id, timeout=timeout)
 
 
 def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None:

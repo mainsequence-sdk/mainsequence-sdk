@@ -24,6 +24,7 @@
     - Infrastructure
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
+        - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
     - Virtual Fund Builder
         - [Overview](knowledge/virtualfundbuilder/index.md)
         - [Portfolio Pipeline and Configuration](knowledge/virtualfundbuilder/portfolio_pipeline.md)
