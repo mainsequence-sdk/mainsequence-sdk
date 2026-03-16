@@ -516,6 +516,116 @@ def get_project(project_id: int | str) -> dict:
     return data
 
 
+def list_project_users_can_view(
+    project_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a project via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_project_users_can_edit(
+    project_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a project via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_project_user_to_view(
+    project_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit view access to one user for a project.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_project_user_to_edit(
+    project_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit edit access to one user for a project.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_project_user_from_view(
+    project_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit view access from one user for a project.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_project_user_from_edit(
+    project_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit edit access from one user for a project.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
 def get_project_data_node_updates(project_id: int | str, *, timeout: int | None = None) -> list[dict[str, Any]]:
     """
     Fetch project data node updates via SDK client model.
@@ -1715,6 +1825,116 @@ def delete_secret(
         raise ApiError(f"Secret deletion failed: {e}")
 
 
+def list_secret_users_can_view(
+    secret_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a secret via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_secret_users_can_edit(
+    secret_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a secret via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_secret_user_to_view(
+    secret_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit view access to one user for a secret.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_secret_user_to_edit(
+    secret_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit edit access to one user for a secret.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_secret_user_from_view(
+    secret_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit view access from one user for a secret.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_secret_user_from_edit(
+    secret_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit edit access from one user for a secret.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
 def get_constant(
     constant_id: int | str,
     *,
@@ -1804,6 +2024,171 @@ def delete_constant(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Constant deletion failed: {e}")
+
+
+def _get_shareable_object_access_state(
+    *,
+    module_name: str,
+    class_name: str,
+    object_id: int | str,
+    accessor_name: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        payload = _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=lambda ClientObject: getattr(
+                ClientObject.get(pk=int(object_id), timeout=timeout),
+                accessor_name,
+            )(timeout=timeout),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {object_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"{class_name} share access fetch failed: {e}")
+
+
+def _mutate_shareable_object_access(
+    *,
+    module_name: str,
+    class_name: str,
+    object_id: int | str,
+    action_name: str,
+    user_id: int | str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        payload = _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=lambda ClientObject: getattr(
+                ClientObject.get(pk=int(object_id), timeout=timeout),
+                action_name,
+            )(int(user_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {object_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"{class_name} share access update failed: {e}")
+
+
+def list_constant_users_can_view(
+    constant_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a constant via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_constant_users_can_edit(
+    constant_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a constant via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_constant_user_to_view(
+    constant_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit view access to one user for a constant.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_constant_user_to_edit(
+    constant_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit edit access to one user for a constant.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_constant_user_from_view(
+    constant_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit view access from one user for a constant.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_constant_user_from_edit(
+    constant_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit edit access from one user for a constant.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
 
 
 def get_data_node_storage(

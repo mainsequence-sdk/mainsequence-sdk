@@ -197,8 +197,6 @@ def get_model_class(model_class: str):
     """
     MODEL_CLASS_MAP = {
         "Asset": Asset,
-        "AssetCurrencyPair": AssetCurrencyPair,
-        "AssetFutureUSDM": AssetFutureUSDM,
         "PortfolioIndexAsset": PortfolioIndexAsset,
         "Calendar": Calendar,
         "ExecutionVenue": ExecutionVenue,
@@ -1199,26 +1197,13 @@ class PortfolioIndexAsset(Asset):
         return f"{TDAG_ENDPOINT}/dashboards/portfolio-detail/?target_portfolio_id={self.reference_portfolios.id}"
 
 
-class AssetCurrencyPair(AssetMixin, BasePydanticModel):
-    base_asset: AssetMixin | int
-    quote_asset: AssetMixin | int
-
-    def get_spot_reference_asset_unique_identifier(self):
-        return self.base_asset.unique_identifier
-
-    def get_ms_share_class(self):
-        return self.base_asset.get_ms_share_class()
-
-
-class FutureUSDMMixin(AssetMixin, BasePydanticModel):
-    maturity_code: str = Field(..., max_length=50)
-    last_trade_time: datetime.datetime | None = None
-    currency_pair: AssetCurrencyPair
 
 
 
-class AssetFutureUSDM(FutureUSDMMixin, BaseObjectOrm):
-    pass
+
+
+
+
 
 
 class AccountPortfolioScheduledRebalance(BaseObjectOrm, BasePydanticModel):
@@ -2113,7 +2098,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
 class VirtualFundPositionDetail(BaseObjectOrm, BasePydanticModel):
     id: int | None = None
-    asset: Asset | AssetFutureUSDM | int
+    asset: Asset | int
     price: float
     quantity: float
     parents_holdings: Union[int, "VirtualFundHistoricalHoldings"]
@@ -2144,7 +2129,7 @@ class VirtualFundHistoricalHoldings(BaseObjectOrm, BasePydanticModel):
 
 
 class ExecutionQuantity(BaseModel):
-    asset: Asset | AssetFutureUSDM | int
+    asset: Asset | int
     quantity: float
     reference_price: None | float
 

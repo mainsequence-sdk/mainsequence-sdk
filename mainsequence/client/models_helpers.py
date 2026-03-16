@@ -16,6 +16,7 @@ from ..compute_validation import (
     normalize_string,
     validate_and_normalize_compute_fields,
 )
+from .base import ShareableObjectMixin
 from .exceptions import raise_for_response
 from .models_tdag import POD_PROJECT, Project, ProjectImage
 from .models_vam import *
@@ -974,7 +975,7 @@ class ResourceReleaseKind(str, Enum):
     AGENT = "agent"
 
 
-class ResourceRelease(BaseObjectOrm, BasePydanticModel):
+class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     # present on ResourceReleaseSerializer
     id: int | None = Field(
         None,

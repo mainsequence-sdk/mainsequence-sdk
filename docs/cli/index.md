@@ -57,10 +57,22 @@ mainsequence constants list
 mainsequence constants list --show-filters
 mainsequence constants create APP__MODE production
 mainsequence constants create ASSETS__MASTER '{"dataset":"bloomberg"}'
+mainsequence constants can_view 42
+mainsequence constants can_edit 42
+mainsequence constants add_to_view 42 7
+mainsequence constants add_to_edit 42 7
+mainsequence constants remove_from_view 42 7
+mainsequence constants remove_from_edit 42 7
 mainsequence constants delete 42
 mainsequence secrets list
 mainsequence secrets list --show-filters
 mainsequence secrets create API_KEY super-secret-value
+mainsequence secrets can_view 42
+mainsequence secrets can_edit 42
+mainsequence secrets add_to_view 42 7
+mainsequence secrets add_to_edit 42 7
+mainsequence secrets remove_from_view 42 7
+mainsequence secrets remove_from_edit 42 7
 mainsequence secrets delete 42
 mainsequence data-node list
 mainsequence data-node list --show-filters
@@ -77,6 +89,12 @@ mainsequence markets asset-translation-table detail 12
 
 # 1) List and create
 mainsequence project list
+mainsequence project can_view 123
+mainsequence project can_edit 123
+mainsequence project add_to_view 123 7
+mainsequence project add_to_edit 123 7
+mainsequence project remove_from_view 123 7
+mainsequence project remove_from_edit 123 7
 mainsequence project images list
 mainsequence project images list 123
 mainsequence project images list --show-filters
@@ -158,10 +176,16 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
 - `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
+- `mainsequence constants can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Constant`.
+- `mainsequence constants can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Constant`.
+- `mainsequence constants add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate constant sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence constants delete` deletes a constant through the SDK client `Constant.delete()` path and always requires typed verification before the delete call is sent.
 - Constant names that include a double underscore display the prefix before `__` as the terminal category. Example: `ASSETS__MASTER` is shown under category `ASSETS`.
 - `mainsequence secrets list` lists secrets through the SDK client `Secret.filter()` path.
 - `mainsequence secrets create` creates a secret through the SDK client `Secret.create()` path and only accepts `name` and `value`.
+- `mainsequence secrets can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Secret`.
+- `mainsequence secrets can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Secret`.
+- `mainsequence secrets add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate secret sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence secrets delete` deletes a secret through the SDK client `Secret.delete()` path and always requires typed verification before the delete call is sent.
 - Secret list and delete previews intentionally show metadata only, not secret values.
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
@@ -178,6 +202,9 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
 - `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.
 - `mainsequence project data-node-updates list` lists data node updates through the SDK client `Project.get_data_nodes_updates()` path.
+- `mainsequence project can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Project`.
+- `mainsequence project can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Project`.
+- `mainsequence project add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate project sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence project project_resource list` lists project resources through the SDK client `ProjectResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
 - `mainsequence project sync` performs the local uv/git sync flow and, after a successful push, calls the SDK client `Project.sync_project_after_commit()` path for the resolved project id.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.

@@ -43,7 +43,13 @@ from . import config as cfg
 from .api import (
     ApiError,
     NotLoggedIn,
+    add_constant_user_to_edit,
+    add_constant_user_to_view,
     add_deploy_key,
+    add_project_user_to_edit,
+    add_project_user_to_view,
+    add_secret_user_to_edit,
+    add_secret_user_to_view,
     create_constant,
     create_project,
     create_project_image,
@@ -70,6 +76,8 @@ from .api import (
     get_projects,
     get_resource_release,
     get_secret,
+    list_constant_users_can_edit,
+    list_constant_users_can_view,
     list_constants,
     list_data_node_storages,
     list_dynamic_table_data_sources,
@@ -81,7 +89,17 @@ from .api import (
     list_project_job_runs,
     list_project_jobs,
     list_project_resources,
+    list_project_users_can_edit,
+    list_project_users_can_view,
+    list_secret_users_can_edit,
+    list_secret_users_can_view,
     list_secrets,
+    remove_constant_user_from_edit,
+    remove_constant_user_from_view,
+    remove_project_user_from_edit,
+    remove_project_user_from_view,
+    remove_secret_user_from_edit,
+    remove_secret_user_from_view,
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
@@ -2087,6 +2105,43 @@ def _format_secret_preview(secret: dict[str, object]) -> list[tuple[str, str]]:
     ]
 
 
+def _render_shareable_user_name(user: dict[str, object]) -> str:
+    first_name = str(user.get("first_name") or "").strip()
+    last_name = str(user.get("last_name") or "").strip()
+    full_name = " ".join(part for part in (first_name, last_name) if part)
+    return full_name or "-"
+
+
+def _render_shareable_team_name(team: dict[str, object]) -> str:
+    return str(team.get("name") or "-")
+
+
+def _format_shareable_permission_change(payload: dict[str, object]) -> list[tuple[str, str]]:
+    user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    explicit_view_ids = payload.get("explicit_can_view_user_ids")
+    explicit_edit_ids = payload.get("explicit_can_edit_user_ids")
+    return [
+        ("Action", str(payload.get("action") or "-")),
+        ("Detail", str(payload.get("detail") or "-")),
+        ("Object ID", str(payload.get("object_id") or "-")),
+        ("Object Type", str(payload.get("object_type") or "-")),
+        ("User ID", str(user.get("id") or "-")),
+        ("Username", str(user.get("username") or "-")),
+        ("Email", str(user.get("email") or "-")),
+        ("Name", _render_shareable_user_name(user)),
+        ("Explicit Can View", str(payload.get("explicit_can_view"))),
+        ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
+        (
+            "Explicit View User IDs",
+            ", ".join(str(item) for item in explicit_view_ids) if isinstance(explicit_view_ids, list) else "-",
+        ),
+        (
+            "Explicit Edit User IDs",
+            ", ".join(str(item) for item in explicit_edit_ids) if isinstance(explicit_edit_ids, list) else "-",
+        ),
+    ]
+
+
 def _parse_constant_value(raw_value: str) -> object:
     text = raw_value.strip()
     if text == "":
@@ -2197,6 +2252,94 @@ def _constants_delete_impl(
 
     success(f"Constant deleted: id={constant_id}")
     print_kv("Deleted Constant", _format_constant_delete_preview(deleted))
+
+
+def _shareable_user_list_impl(
+    *,
+    fetch_fn,
+    object_label: str,
+    access_label: str,
+    object_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        access_state = fetch_fn(object_id, timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} {access_label} fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if isinstance(access_state, dict):
+        effective_access_label = str(access_state.get("access_level") or access_label)
+        users_payload = list(access_state.get("users") or [])
+        teams_payload = list(access_state.get("teams") or [])
+    else:
+        effective_access_label = access_label
+        users_payload = list(access_state or [])
+        teams_payload = []
+
+    user_rows: list[list[str]] = []
+    for user in users_payload:
+        user_rows.append(
+            [
+                str(user.get("id") or "-"),
+                str(user.get("username") or "-"),
+                str(user.get("email") or "-"),
+                _render_shareable_user_name(user),
+            ]
+        )
+
+    title = f"{object_label} Users Who Can {effective_access_label.title()}"
+    if user_rows:
+        print_table(title, ["ID", "Username", "Email", "Name"], user_rows)
+    else:
+        info(f"No users can {effective_access_label} this {object_label.lower()}.")
+
+    team_rows: list[list[str]] = []
+    for team in teams_payload:
+        member_count = team.get("member_count")
+        if member_count is None:
+            members = team.get("members")
+            member_count = len(members) if isinstance(members, list) else "-"
+        team_rows.append(
+            [
+                str(team.get("id") or "-"),
+                _render_shareable_team_name(team),
+                str(team.get("description") or "-"),
+                str(member_count),
+            ]
+        )
+
+    teams_title = f"{object_label} Teams Who Can {effective_access_label.title()}"
+    if team_rows:
+        print_table(teams_title, ["ID", "Name", "Description", "Members"], team_rows)
+    else:
+        info(f"No teams can {effective_access_label} this {object_label.lower()}.")
+
+    info(f"Total users who can {effective_access_label}: {len(users_payload)}")
+    info(f"Total teams who can {effective_access_label}: {len(teams_payload)}")
+
+
+def _shareable_user_access_update_impl(
+    *,
+    action_fn,
+    object_label: str,
+    action_label: str,
+    object_id: int,
+    user_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        payload = action_fn(object_id, user_id, timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} {action_label} failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"{object_label} {action_label} completed.")
+    print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
 
 
 def _secrets_list_impl(
@@ -2416,6 +2559,156 @@ def constants_delete_cmd(
     _constants_delete_impl(constant_id=constant_id, timeout=timeout)
 
 
+@constants.command("can_view")
+def constants_can_view_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users and teams who can view one constant.
+
+    Uses the SDK `ShareableObjectMixin.can_view()` path through the `Constant` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants can_view 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_constant_users_can_view,
+        object_label="Constant",
+        access_label="view",
+        object_id=constant_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("can_edit")
+def constants_can_edit_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users and teams who can edit one constant.
+
+    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `Constant` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants can_edit 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_constant_users_can_edit,
+        object_label="Constant",
+        access_label="edit",
+        object_id=constant_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("add_to_view")
+def constants_add_to_view_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit view access to one user for one constant.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants add_to_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_constant_user_to_view,
+        object_label="Constant",
+        action_label="add_to_view",
+        object_id=constant_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("add_to_edit")
+def constants_add_to_edit_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit edit access to one user for one constant.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants add_to_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_constant_user_to_edit,
+        object_label="Constant",
+        action_label="add_to_edit",
+        object_id=constant_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("remove_from_view")
+def constants_remove_from_view_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit view access from one user for one constant.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants remove_from_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_constant_user_from_view,
+        object_label="Constant",
+        action_label="remove_from_view",
+        object_id=constant_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("remove_from_edit")
+def constants_remove_from_edit_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit edit access from one user for one constant.
+
+    Examples
+    --------
+    ```bash
+    mainsequence constants remove_from_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_constant_user_from_edit,
+        object_label="Constant",
+        action_label="remove_from_edit",
+        object_id=constant_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
 @secrets.command("list")
 def secrets_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
@@ -2479,6 +2772,156 @@ def secrets_delete_cmd(
     ```
     """
     _secrets_delete_impl(secret_id=secret_id, timeout=timeout)
+
+
+@secrets.command("can_view")
+def secrets_can_view_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users and teams who can view one secret.
+
+    Uses the SDK `ShareableObjectMixin.can_view()` path through the `Secret` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets can_view 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_secret_users_can_view,
+        object_label="Secret",
+        access_label="view",
+        object_id=secret_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("can_edit")
+def secrets_can_edit_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users and teams who can edit one secret.
+
+    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `Secret` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets can_edit 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_secret_users_can_edit,
+        object_label="Secret",
+        access_label="edit",
+        object_id=secret_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("add_to_view")
+def secrets_add_to_view_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit view access to one user for one secret.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets add_to_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_secret_user_to_view,
+        object_label="Secret",
+        action_label="add_to_view",
+        object_id=secret_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("add_to_edit")
+def secrets_add_to_edit_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit edit access to one user for one secret.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets add_to_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_secret_user_to_edit,
+        object_label="Secret",
+        action_label="add_to_edit",
+        object_id=secret_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("remove_from_view")
+def secrets_remove_from_view_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit view access from one user for one secret.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets remove_from_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_secret_user_from_view,
+        object_label="Secret",
+        action_label="remove_from_view",
+        object_id=secret_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("remove_from_edit")
+def secrets_remove_from_edit_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit edit access from one user for one secret.
+
+    Examples
+    --------
+    ```bash
+    mainsequence secrets remove_from_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_secret_user_from_edit,
+        object_label="Secret",
+        action_label="remove_from_edit",
+        object_id=secret_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
 
 
 def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None:
@@ -3283,6 +3726,156 @@ def project_delete_remote_cmd(
         detail = resp.get("detail") or resp.get("message")
         if detail:
             info(str(detail))
+
+
+@project.command("can_view")
+def project_can_view_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users who can view one project.
+
+    Uses the SDK `ShareableObjectMixin.users_can_view()` path through the `Project` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project can_view 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_project_users_can_view,
+        object_label="Project",
+        access_label="view",
+        object_id=project_id,
+        timeout=timeout,
+    )
+
+
+@project.command("can_edit")
+def project_can_edit_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users who can edit one project.
+
+    Uses the SDK `ShareableObjectMixin.users_can_edit()` path through the `Project` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project can_edit 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_project_users_can_edit,
+        object_label="Project",
+        access_label="edit",
+        object_id=project_id,
+        timeout=timeout,
+    )
+
+
+@project.command("add_to_view")
+def project_add_to_view_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit view access to one user for one project.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project add_to_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_project_user_to_view,
+        object_label="Project",
+        action_label="add_to_view",
+        object_id=project_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@project.command("add_to_edit")
+def project_add_to_edit_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit edit access to one user for one project.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project add_to_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_project_user_to_edit,
+        object_label="Project",
+        action_label="add_to_edit",
+        object_id=project_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@project.command("remove_from_view")
+def project_remove_from_view_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit view access from one user for one project.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project remove_from_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_project_user_from_view,
+        object_label="Project",
+        action_label="remove_from_view",
+        object_id=project_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@project.command("remove_from_edit")
+def project_remove_from_edit_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit edit access from one user for one project.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project remove_from_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_project_user_from_edit,
+        object_label="Project",
+        action_label="remove_from_edit",
+        object_id=project_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
 
 
 def _project_resources_list_impl(

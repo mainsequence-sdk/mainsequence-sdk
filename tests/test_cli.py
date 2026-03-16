@@ -677,6 +677,67 @@ def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
     assert "Total updates: 1" in result.output
 
 
+def test_project_can_view(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_users_can_view",
+        lambda project_id, timeout=None: [
+            {
+                "id": 12,
+                "username": "viewer",
+                "email": "viewer@example.com",
+                "first_name": "View",
+                "last_name": "User",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "can_view", "4"])
+    assert result.exit_code == 0
+    assert "Project Users Who Can View" in result.output
+    assert "viewer@example.com" in result.output
+    assert "Total users who can view: 1" in result.output
+
+
+def test_project_add_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(project_id, user_id, timeout=None):
+        captured["project_id"] = project_id
+        captured["user_id"] = user_id
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_to_edit",
+            "detail": "User now has explicit edit access.",
+            "object_id": project_id,
+            "object_type": "tdag.project",
+            "user": {
+                "id": user_id,
+                "username": "editor",
+                "email": "editor@example.com",
+                "first_name": "Edit",
+                "last_name": "User",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_user_ids": [user_id],
+            "explicit_can_edit_user_ids": [user_id],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_project_user_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["project", "add_to_edit", "4", "12"])
+    assert result.exit_code == 0
+    assert captured == {"project_id": 4, "user_id": 12, "timeout": None}
+    assert "Project add_to_edit completed." in result.output
+    assert "Project Sharing Update" in result.output
+    assert "editor@example.com" in result.output
+
+
 def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -731,6 +792,143 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     assert captured["jwt"] == ("acc", "ref")
     assert out == [{"id": 10, "update_hash": "abc123"}]
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
+
+
+def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProject:
+        ROOT_URL = "https://old.test/orm/api/pods/projects"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Project:
+                def can_view(self, timeout=None):
+                    captured["can_view_timeout"] = timeout
+                    return types.SimpleNamespace(
+                        model_dump=lambda mode="python": {
+                            "object_id": pk,
+                            "object_type": "tdag.project",
+                            "access_level": "view",
+                            "users": [
+                                {
+                                    "id": 12,
+                                    "username": "viewer",
+                                    "email": "viewer@example.com",
+                                    "first_name": "View",
+                                    "last_name": "User",
+                                }
+                            ],
+                            "teams": [],
+                        }
+                    )
+
+            return _Project()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Project = FakeProject
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_project_users_can_view(4, timeout=9)
+    assert captured["get"] == {"pk": 4, "timeout": 9, "filters": {}}
+    assert captured["can_view_timeout"] == 9
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["users"][0]["username"] == "viewer"
+
+
+def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProject:
+        ROOT_URL = "https://old.test/orm/api/pods/projects"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Project:
+                def add_to_edit(self, user_id, timeout=None):
+                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                    return {
+                        "ok": True,
+                        "action": "add_to_edit",
+                        "detail": "User now has explicit edit access.",
+                        "object_id": pk,
+                        "object_type": "tdag.project",
+                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "explicit_can_view": True,
+                        "explicit_can_edit": True,
+                        "explicit_can_view_user_ids": [user_id],
+                        "explicit_can_edit_user_ids": [user_id],
+                    }
+
+            return _Project()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Project = FakeProject
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.add_project_user_to_edit(4, 12, timeout=10)
+    assert captured["get"] == {"pk": 4, "timeout": 10, "filters": {}}
+    assert captured["add_to_edit"] == {"user_id": 12, "timeout": 10}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["action"] == "add_to_edit"
 
 
 def test_list_constants_uses_client_model(cli_mod, monkeypatch):
@@ -910,6 +1108,143 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
     assert out["name"] == "ASSETS__MASTER"
 
 
+def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeConstant:
+        ROOT_URL = "https://old.test/orm/api/pods/constant"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Constant:
+                def can_edit(self, timeout=None):
+                    captured["can_edit_timeout"] = timeout
+                    return types.SimpleNamespace(
+                        model_dump=lambda mode="python": {
+                            "object_id": 7,
+                            "object_type": "tdag.constant",
+                            "access_level": "edit",
+                            "users": [
+                                {
+                                    "id": 9,
+                                    "username": "editor",
+                                    "email": "editor@example.com",
+                                    "first_name": "Edit",
+                                    "last_name": "User",
+                                }
+                            ],
+                            "teams": [],
+                        }
+                    )
+
+            return _Constant()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Constant = FakeConstant
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_constant_users_can_edit(7, timeout=12)
+    assert captured["get"] == {"pk": 7, "timeout": 12, "filters": {}}
+    assert captured["can_edit_timeout"] == 12
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["users"][0]["username"] == "editor"
+
+
+def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeConstant:
+        ROOT_URL = "https://old.test/orm/api/pods/constant"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Constant:
+                def add_to_edit(self, user_id, timeout=None):
+                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                    return {
+                        "ok": True,
+                        "action": "add_to_edit",
+                        "detail": "User now has explicit edit access.",
+                        "object_id": pk,
+                        "object_type": "tdag.constant",
+                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "explicit_can_view": True,
+                        "explicit_can_edit": True,
+                        "explicit_can_view_user_ids": [user_id],
+                        "explicit_can_edit_user_ids": [user_id],
+                    }
+
+            return _Constant()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Constant = FakeConstant
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.add_constant_user_to_edit(7, 9, timeout=14)
+    assert captured["get"] == {"pk": 7, "timeout": 14, "filters": {}}
+    assert captured["add_to_edit"] == {"user_id": 9, "timeout": 14}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["action"] == "add_to_edit"
+
+
 def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
@@ -963,6 +1298,145 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
     assert captured["filters"][0] == {"name__in": ["API_KEY"]}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [{"id": 8, "name": "API_KEY"}]
+
+
+def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeSecret:
+        ROOT_URL = "https://old.test/orm/api/pods/secret"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Secret:
+                def can_view(self, timeout=None):
+                    captured["can_view_timeout"] = timeout
+                    return types.SimpleNamespace(
+                        model_dump=lambda mode="python": {
+                            "object_id": 8,
+                            "object_type": "tdag.secret",
+                            "access_level": "view",
+                            "users": [
+                                {
+                                    "id": 11,
+                                    "username": "viewer",
+                                    "email": "viewer@example.com",
+                                    "first_name": "View",
+                                    "last_name": "User",
+                                }
+                            ],
+                            "teams": [{"id": 4, "name": "Ops", "description": "", "member_count": 2}],
+                        }
+                    )
+
+            return _Secret()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Secret = FakeSecret
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_secret_users_can_view(8, timeout=13)
+    assert captured["get"] == {"pk": 8, "timeout": 13, "filters": {}}
+    assert captured["can_view_timeout"] == 13
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["users"][0]["username"] == "viewer"
+    assert out["teams"][0]["name"] == "Ops"
+    assert out["teams"][0]["member_count"] == 2
+
+
+def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeSecret:
+        ROOT_URL = "https://old.test/orm/api/pods/secret"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Secret:
+                def add_to_edit(self, user_id, timeout=None):
+                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                    return {
+                        "ok": True,
+                        "action": "add_to_edit",
+                        "detail": "User now has explicit edit access.",
+                        "object_id": pk,
+                        "object_type": "tdag.secret",
+                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "explicit_can_view": True,
+                        "explicit_can_edit": True,
+                        "explicit_can_view_user_ids": [user_id],
+                        "explicit_can_edit_user_ids": [user_id],
+                    }
+
+            return _Secret()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Secret = FakeSecret
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.add_secret_user_to_edit(8, 11, timeout=14)
+    assert captured["get"] == {"pk": 8, "timeout": 14, "filters": {}}
+    assert captured["add_to_edit"] == {"user_id": 11, "timeout": 14}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["action"] == "add_to_edit"
 
 
 def test_create_secret_uses_client_model(cli_mod, monkeypatch):
@@ -2974,6 +3448,76 @@ def test_constants_delete_requires_typed_verification(cli_mod, runner, monkeypat
     assert "Constant deleted: id=7" in result.output
 
 
+def test_constants_can_edit(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_constant_users_can_edit",
+        lambda constant_id, timeout=None: {
+            "object_id": constant_id,
+            "object_type": "tdag.constant",
+            "access_level": "edit",
+            "users": [
+                {
+                    "id": 9,
+                    "username": "editor",
+                    "email": "editor@example.com",
+                    "first_name": "Edit",
+                    "last_name": "User",
+                }
+            ],
+            "teams": [{"id": 3, "name": "Research", "description": "Core team", "member_count": 6}],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["constants", "can_edit", "7"])
+    assert result.exit_code == 0
+    assert "Constant Users Who Can Edit" in result.output
+    assert "Constant Teams Who Can Edit" in result.output
+    assert "editor" in result.output
+    assert "editor@example.com" in result.output
+    assert "Total users who can edit: 1" in result.output
+    assert "Total teams who can edit: 1" in result.output
+
+
+def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(constant_id, user_id, timeout=None):
+        captured["constant_id"] = constant_id
+        captured["user_id"] = user_id
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_to_edit",
+            "detail": "User now has explicit edit access.",
+            "object_id": constant_id,
+            "object_type": "tdag.constant",
+            "user": {
+                "id": user_id,
+                "username": "editor",
+                "email": "editor@example.com",
+                "first_name": "Edit",
+                "last_name": "User",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_user_ids": [user_id],
+            "explicit_can_edit_user_ids": [user_id],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_constant_user_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["constants", "add_to_edit", "7", "9"])
+    assert result.exit_code == 0
+    assert captured == {"constant_id": 7, "user_id": 9, "timeout": None}
+    assert "Constant add_to_edit completed." in result.output
+    assert "Constant Sharing Update" in result.output
+    assert "editor@example.com" in result.output
+
+
 def test_secrets_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -3077,6 +3621,74 @@ def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch
     assert "Type secret name 'API_KEY' to confirm deletion" in result.output
     assert captured["secret_id"] == 8
     assert "Secret deleted: id=8" in result.output
+
+
+def test_secrets_can_view(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_secret_users_can_view",
+        lambda secret_id, timeout=None: {
+            "object_id": secret_id,
+            "object_type": "tdag.secret",
+            "access_level": "view",
+            "users": [
+                {
+                    "id": 11,
+                    "username": "viewer",
+                    "email": "viewer@example.com",
+                    "first_name": "View",
+                    "last_name": "User",
+                }
+            ],
+            "teams": [],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["secrets", "can_view", "8"])
+    assert result.exit_code == 0
+    assert "Secret Users Who Can View" in result.output
+    assert "viewer@example.com" in result.output
+    assert "Total users who can view: 1" in result.output
+    assert "Total teams who can view: 0" in result.output
+
+
+def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(secret_id, user_id, timeout=None):
+        captured["secret_id"] = secret_id
+        captured["user_id"] = user_id
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_to_edit",
+            "detail": "User now has explicit edit access.",
+            "object_id": secret_id,
+            "object_type": "tdag.secret",
+            "user": {
+                "id": user_id,
+                "username": "editor",
+                "email": "editor@example.com",
+                "first_name": "Edit",
+                "last_name": "User",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_user_ids": [user_id],
+            "explicit_can_edit_user_ids": [user_id],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_secret_user_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["secrets", "add_to_edit", "8", "11"])
+    assert result.exit_code == 0
+    assert captured == {"secret_id": 8, "user_id": 11, "timeout": None}
+    assert "Secret add_to_edit completed." in result.output
+    assert "Secret Sharing Update" in result.output
+    assert "editor@example.com" in result.output
 
 
 def test_data_node_storage_list(cli_mod, runner, monkeypatch):

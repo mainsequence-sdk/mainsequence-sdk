@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from mainsequence.logconf import logger
 
 from . import exceptions
-from .base import BaseObjectOrm, BasePydanticModel
+from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .data_filters import *
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
@@ -2531,7 +2531,7 @@ class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
 
 
 
-class Project(BasePydanticModel, BaseObjectOrm):
+class Project(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     id: int = Field(
         ...,
         title="Project ID",
@@ -2883,7 +2883,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
 
 
 
-class JobApi(BasePydanticModel, BaseObjectOrm):
+class JobApi(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     uid: str
     name: str = Field(..., max_length=255)
     description: str | None = None
@@ -3120,7 +3120,7 @@ def add_created_object_to_jobrun(
 
 
 
-class Bucket(BasePydanticModel, BaseObjectOrm):
+class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "name": ["in", "exact"],
     }
@@ -3143,7 +3143,7 @@ class Bucket(BasePydanticModel, BaseObjectOrm):
 
 
 
-class Artifact(BasePydanticModel, BaseObjectOrm):
+class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     id: int | None = Field(
         None,
         title="Artifact ID",
@@ -3337,7 +3337,7 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
             items.append((k, _norm_value(v)))
     return tuple(sorted(items))
 
-class Secret(BasePydanticModel, BaseObjectOrm):
+class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "name": ["in", "exact"],
     }
@@ -3379,7 +3379,7 @@ class Secret(BasePydanticModel, BaseObjectOrm):
         return super().create(name=name, value=value, timeout=timeout)
 
 
-class Constant(BasePydanticModel, BaseObjectOrm):
+class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     """
     Simple organization-level constant.
     """

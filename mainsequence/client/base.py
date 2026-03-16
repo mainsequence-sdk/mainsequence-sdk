@@ -82,8 +82,6 @@ class BaseObjectOrm:
         "PortfolioGroup": "assets/portfolio_group",
         "Asset": "assets/asset",
         "IndexAsset": "assets/index_asset",
-        "AssetFutureUSDM": "assets/asset_future_usdm",
-        "AssetCurrencyPair": "assets/asset_currency_pair",
         "VirtualFund": "assets/virtualfund",
         "OrderManager": "assets/order_manager",
         "ExecutionVenue": "assets/execution_venue",
@@ -619,3 +617,177 @@ class BaseObjectOrm:
 
     def get_app_label(self):
         return self.END_POINTS[self.orm_class].split("/")[0]
+
+
+class ShareableObjectMixin:
+    SHARING_ACTION_PATHS: ClassVar[dict[str, str]] = {
+        "add_to_view": "add-to-view",
+        "add_to_edit": "add-to-edit",
+        "remove_from_edit": "remove-from-edit",
+        "remove_from_view": "remove-from-view",
+        "can_view": "can-view",
+        "can_edit": "can-edit",
+        "users_can_view": "can-view",
+        "users_can_edit": "can-edit",
+    }
+
+    def get_detail_url(self) -> str:
+        object_id = getattr(self, "id", None)
+        if object_id is None:
+            raise ValueError(f"{type(self).__name__} must have an id before calling detail actions.")
+
+        base = type(self).get_object_url().rstrip("/")
+        return f"{base}/{object_id}/"
+
+    def get_action_url(self, action_name: str) -> str:
+        return f"{self.get_detail_url().rstrip('/')}/{action_name.strip('/')}/"
+
+    def _post_sharing_action(
+        self,
+        action_name: str,
+        *,
+        user_id: Any,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        normalized_user_id = type(self)._coerce_filter_id(user_id, field_name="user_id")
+        payload = {"json": {"user_id": normalized_user_id}}
+
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=self.get_action_url(action_name),
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201, 202):
+            raise_for_response(response, payload=payload)
+
+        if not getattr(response, "content", b""):
+            return {}
+
+        return response.json()
+
+    def _get_sharing_state(
+        self,
+        action_name: str,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="GET",
+            url=self.get_action_url(action_name),
+            payload={},
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response)
+
+        data = response.json()
+        if not isinstance(data, dict):
+            raise ApiError(
+                f"Unexpected {type(self).__name__} sharing response for action "
+                f"{action_name!r}: {type(data)!r}"
+            )
+
+        from .models_user import ShareableAccessState
+
+        return ShareableAccessState.model_validate(data)
+
+    def add_to_view(
+        self,
+        user_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["add_to_view"],
+            user_id=user_id,
+            timeout=timeout,
+        )
+
+    def add_to_edit(
+        self,
+        user_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["add_to_edit"],
+            user_id=user_id,
+            timeout=timeout,
+        )
+
+    def remove_from_edit(
+        self,
+        user_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["remove_from_edit"],
+            user_id=user_id,
+            timeout=timeout,
+        )
+
+    def remove_from_view(
+        self,
+        user_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["remove_from_view"],
+            user_id=user_id,
+            timeout=timeout,
+        )
+
+    def can_view(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self._get_sharing_state(
+            self.SHARING_ACTION_PATHS["can_view"],
+            timeout=timeout,
+        )
+
+    def users_can_view(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self.can_view(timeout=timeout)
+
+    def list_users_can_view(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self.can_view(timeout=timeout)
+
+    def can_edit(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self._get_sharing_state(
+            self.SHARING_ACTION_PATHS["can_edit"],
+            timeout=timeout,
+        )
+
+    def users_can_edit(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self.can_edit(timeout=timeout)
+
+    def list_users_can_edit(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        return self.can_edit(timeout=timeout)

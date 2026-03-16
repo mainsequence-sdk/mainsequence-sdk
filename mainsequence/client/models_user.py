@@ -4,7 +4,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -176,6 +176,65 @@ class OrganizationTeam(BasePydanticModel):
         title="Updated At",
         description="Timestamp when the team was last updated.",
         examples=["2026-03-15T10:30:00Z"],
+    )
+
+
+class Team(BasePydanticModel):
+    id: int = Field(
+        ...,
+        title="Team ID",
+        description="Unique identifier of the team in shareable-access responses.",
+        examples=[9],
+    )
+    name: str = Field(
+        ...,
+        title="Team Name",
+        description="Human-readable name of the team.",
+        examples=["Research"],
+    )
+    description: str = Field(
+        "",
+        title="Team Description",
+        description="Optional textual description of the team.",
+        examples=["Team responsible for model research and validation."],
+    )
+    member_count: int = Field(
+        0,
+        title="Member Count",
+        description="Number of members currently in the team.",
+        examples=[5],
+    )
+
+
+class ShareableAccessState(BasePydanticModel):
+    object_id: int = Field(
+        ...,
+        title="Object ID",
+        description="Primary key of the shareable object whose access is being described.",
+        examples=[123],
+    )
+    object_type: str = Field(
+        ...,
+        title="Object Type",
+        description="Backend object type identifier for the shareable object.",
+        examples=["tdag.constant"],
+    )
+    access_level: Literal["view", "edit"] = Field(
+        ...,
+        title="Access Level",
+        description="Permission level represented by this access-state payload.",
+        examples=["view"],
+    )
+    users: list[UserSummary] = Field(
+        default_factory=list,
+        title="Users",
+        description="Users with this explicit access level on the object.",
+    )
+    teams: list[Team] = Field(
+        default_factory=list,
+        title="Teams",
+        description="Teams with this access level on the object.",
+        examples=[[{"id": 9, "name": "Research", "description": "Research team", "member_count": 5}]],
     )
 
 

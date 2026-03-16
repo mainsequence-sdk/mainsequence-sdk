@@ -54,6 +54,43 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
+## RBAC and Shareable Resources
+
+Constants and secrets sit inside a broader platform access model.
+
+Main Sequence applies resource-level access control, so the real operational question is not only "what is this value?" but also:
+
+- who can see it
+- who can edit it
+- which team or project boundary it belongs to
+- whether it is safe to expose through a deployed release
+
+In practice, this matters across several resource types:
+
+- `Project`
+- `Constant`
+- `Secret`
+- `Bucket`
+- `ResourceRelease`
+
+Why these matter:
+
+- `Project` defines an important collaboration and execution boundary
+- `Constant` stores shareable, non-sensitive runtime configuration
+- `Secret` stores protected credentials
+- `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
+- `ResourceRelease` is the deployment-facing wrapper for resources such as dashboards and agents
+
+!!! warning "IMPORTANT"
+    In the current SDK and CLI, `Constant` and `Secret` are the clearest directly shareable objects.
+    They expose explicit sharing methods such as `can_view()`, `can_edit()`, `add_to_view()`, and `add_to_edit()`.
+    Other resource types still participate in access control, but the client surface shown in this guide is most explicit for constants and secrets.
+
+That is the practical reason this topic matters early:
+
+- constants and secrets teach the access-control model in its simplest form
+- the same idea scales later to projects, buckets, and deployed resources
+
 ## Constants
 
 The client model is:
@@ -349,6 +386,26 @@ Important behavior:
 - constants display the category derived from the prefix before `__`
 - secrets are shown by metadata only in CLI tables and delete previews
 - delete commands require typed verification
+
+### CLI sharing examples for constants
+
+These commands show the resource-level sharing model directly:
+
+```bash
+mainsequence constants can_view 42
+mainsequence constants can_edit 42
+mainsequence constants add_to_view 42 7
+mainsequence constants add_to_edit 42 7
+mainsequence constants remove_from_view 42 7
+mainsequence constants remove_from_edit 42 7
+```
+
+Interpretation:
+
+- `42` is the constant id
+- `7` is the user id receiving or losing access
+
+This is the most concrete CLI example of Main Sequence RBAC at the resource level.
 
 ## Recommended Practice
 
