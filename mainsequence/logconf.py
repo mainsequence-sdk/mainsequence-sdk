@@ -11,6 +11,7 @@ from requests.structures import CaseInsensitiveDict
 from structlog.dev import ConsoleRenderer
 
 from .instrumentation import OTelJSONRenderer
+from .runtime_flags import is_running_in_pod
 
 logger = None
 import inspect
@@ -61,6 +62,9 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     Fetch startup state from backend using current env vars (JWT preferred, endpoint, command_id).
     Safe to call later after auth when access/refresh tokens become available.
     """
+    if not is_running_in_pod():
+        return {}
+
     def _backend_base_url() -> str:
         return (
             os.getenv("TDAG_ENDPOINT")
