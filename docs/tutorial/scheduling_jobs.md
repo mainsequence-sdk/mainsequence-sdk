@@ -278,7 +278,7 @@ If you want the submitted file to become the full source of truth for scheduled 
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
 ```
 
-With `--strict`, jobs that already exist remotely but are not listed in `scheduled_jobs.yaml` may be removed. By default, strict mode is off.
+With `--strict`, jobs that already exist remotely but are not listed in `scheduled_jobs.yaml` may be removed. Jobs that are still linked to dashboards or resource releases are protected and will show up as not deleted in the batch result. By default, strict mode is off.
 
 After the batch is submitted, verify that the scheduled job exists:
 

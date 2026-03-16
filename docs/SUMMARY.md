@@ -13,6 +13,12 @@
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
     - [CLI Deep Dive](knowledge/cli.md)
+    - Dashboards
+        - Streamlit
+            - [Overview](knowledge/dashboards/streamlit/index.md)
+            - [Scaffold and Theming](knowledge/dashboards/streamlit/scaffold_and_theming.md)
+            - [Components](knowledge/dashboards/streamlit/components.md)
+            - [Instrument Forms](knowledge/dashboards/streamlit/instrument_forms.md)
     - Markets
         - [Assets](knowledge/markets/assets.md)
     - Infrastructure

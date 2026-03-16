@@ -121,7 +121,7 @@ mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 
 This command reads the YAML file, checks that it contains a top-level `jobs` list, validates each job with the same rules as `Job.create()`, and then submits the normalized list to the backend in one request.
 
-Every job in the file still needs a `related_image_id`. The batch flow does not relax that requirement.
+Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. That selected image is then applied to every job in the submitted batch.
 
 If you want the file to act as the full desired state for project jobs, add strict mode:
 
@@ -129,7 +129,7 @@ If you want the file to act as the full desired state for project jobs, add stri
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
 ```
 
-In strict mode, jobs that exist remotely but are not present in the YAML file may be removed. The default is `--no-strict`.
+In strict mode, jobs that exist remotely but are not present in the YAML file may be removed. Jobs that are still linked to dashboards or resource releases are protected and will appear as not deleted in the batch result. The default is `--no-strict`.
 
 ### Create a manual job
 

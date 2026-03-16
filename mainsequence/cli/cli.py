@@ -1072,6 +1072,36 @@ def _format_job_schedule_summary(task_schedule) -> str:
     return "-"
 
 
+def _extract_batch_job_dict(item) -> dict:
+    if isinstance(item, dict):
+        nested_job = item.get("job")
+        if isinstance(nested_job, dict):
+            return nested_job
+        return item
+    return {}
+
+
+def _format_batch_job_ref(item) -> tuple[str, str, str, str]:
+    job = _extract_batch_job_dict(item)
+    fallback_id = item.get("id") if isinstance(item, dict) else "-"
+    fallback_name = item.get("name") if isinstance(item, dict) else "-"
+    job_id = str(job.get("id") or fallback_id or "-")
+    name = str(job.get("name") or fallback_name or "-")
+    execution_path = str(job.get("execution_path") or "-")
+    app_name = str(job.get("app_name") or "-")
+    return job_id, name, execution_path, app_name
+
+
+def _format_batch_job_reason(item) -> str:
+    if not isinstance(item, dict):
+        return "-"
+    for field_name in ("reason", "detail", "message", "error"):
+        value = item.get(field_name)
+        if value not in (None, ""):
+            return str(value)
+    return "-"
+
+
 def _resolve_job_create_defaults(
     *,
     cpu_request: str | None,
@@ -3752,7 +3782,10 @@ def project_schedule_batch_jobs_cmd(
     strict: bool = typer.Option(
         False,
         "--strict/--no-strict",
-        help="If enabled, jobs that exist remotely but are not listed in the file may be removed.",
+        help=(
+            "If enabled, jobs that exist remotely but are not listed in the file may be removed. "
+            "Jobs linked to dashboards or resource releases are protected."
+        ),
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -3760,6 +3793,7 @@ def project_schedule_batch_jobs_cmd(
     Validate and submit a batch of jobs from a YAML file.
 
     Uses SDK client `Job.bulk_get_or_create()` as the single source of truth.
+    In strict mode, jobs linked to dashboards or resource releases are not deleted.
 
     Examples
     --------
@@ -3836,15 +3870,65 @@ def project_schedule_batch_jobs_cmd(
         return
 
     success(f"Scheduled jobs from {batch_file.name}.")
-    print_kv(
-        "Batch Scheduling",
-        [
-            ("Project ID", str(project_id)),
-            ("File", str(batch_file)),
-            ("Strict", str(bool(strict)).lower()),
-            ("Result", json.dumps(created) if isinstance(created, (dict, list)) else str(created)),
-        ],
-    )
+    summary_items = [
+        ("Project ID", str(created.get("project_id") or project_id)),
+        ("File", str(batch_file)),
+        ("Strict", str(bool(created.get("strict", strict))).lower()),
+        ("Created", str(created.get("created_count", 0))),
+        ("Existing", str(created.get("existing_count", 0))),
+        ("Deleted", str(created.get("deleted_count", 0))),
+        ("Not Deleted", str(created.get("not_deleted_count", 0))),
+    ]
+    print_kv("Batch Scheduling Summary", summary_items)
+
+    results = created.get("results")
+    if isinstance(results, list) and results:
+        rows: list[list[str]] = []
+        for item in results:
+            job = item.get("job") if isinstance(item, dict) else {}
+            status_label = "created" if bool(item.get("created")) else "existing"
+            rows.append(
+                [
+                    status_label,
+                    str(job.get("id") or "-"),
+                    str(job.get("name") or "-"),
+                    str(job.get("execution_path") or "-"),
+                    str(job.get("app_name") or "-"),
+                    _format_job_schedule_summary(job.get("task_schedule")),
+                ]
+            )
+        print_table(
+            "Batch Job Results",
+            ["Status", "ID", "Name", "Execution Path", "App Name", "Schedule"],
+            rows,
+        )
+
+    deleted_items = created.get("deleted")
+    if isinstance(deleted_items, list) and deleted_items:
+        rows = []
+        for item in deleted_items:
+            job_id, name, execution_path, app_name = _format_batch_job_ref(item)
+            rows.append([job_id, name, execution_path, app_name])
+        print_table(
+            "Deleted Jobs",
+            ["ID", "Name", "Execution Path", "App Name"],
+            rows,
+        )
+
+    not_deleted_items = created.get("not_deleted")
+    if isinstance(not_deleted_items, list) and not_deleted_items:
+        rows = []
+        for item in not_deleted_items:
+            job_id, name, execution_path, app_name = _format_batch_job_ref(item)
+            rows.append([job_id, name, execution_path, app_name, _format_batch_job_reason(item)])
+        print_table(
+            "Not Deleted Jobs",
+            ["ID", "Name", "Execution Path", "App Name", "Reason"],
+            rows,
+        )
+        warn(
+            "Strict mode will not delete jobs that are still linked to dashboards or resource releases."
+        )
 
 
 @project.command("set-up-locally")

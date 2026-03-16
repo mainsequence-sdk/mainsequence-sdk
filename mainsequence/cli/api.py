@@ -1886,6 +1886,10 @@ def schedule_batch_project_jobs(
     Single source of truth:
       - delegates file validation, payload normalization, and request behavior to
         `Job.bulk_get_or_create()`
+
+    Response can be either:
+      - a list of jobs, or
+      - a summary dict with counts/results/deleted/not_deleted details from `sync_jobs`
     """
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()

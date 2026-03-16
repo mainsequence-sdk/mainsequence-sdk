@@ -580,6 +580,19 @@ class Job(BaseObjectOrm, BasePydanticModel):
         strict: bool = False,
         timeout: int | None = None,
     ) -> list[Job] | dict[str, Any]:
+        """
+        Validate a batch YAML file and synchronize its jobs with the backend.
+
+        Request body:
+          - project
+          - jobs
+          - strict
+
+        Strict mode notes:
+          - jobs that exist remotely but are not present in the YAML may be deleted
+          - jobs linked to dashboards or resource releases are protected and may be returned
+            in the response under `not_deleted`
+        """
         resolved_project_id = cls._coerce_id(project_id, field_name="project_id")
         if resolved_project_id is None:
             raise ValueError("project_id is required.")
@@ -636,7 +649,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         request_payload = {
             "json": cls.serialize_for_json(
                 {
-                    "project_id": resolved_project_id,
+                    "project": resolved_project_id,
                     "jobs": normalized_jobs,
                     "strict": bool(strict),
                 }

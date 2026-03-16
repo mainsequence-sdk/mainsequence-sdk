@@ -3351,6 +3351,86 @@ def test_project_schedule_batch_jobs_cancelled_on_confirmation(cli_mod, runner, 
     assert "Cancelled." in result.output
 
 
+def test_project_schedule_batch_jobs_renders_summary_response(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / "scheduled_jobs.yaml").write_text("jobs: []\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod.typer, "confirm", lambda message, default=False: True)
+    monkeypatch.setattr(
+        cli_mod,
+        "schedule_batch_project_jobs",
+        lambda **kwargs: {
+            "project_id": 123,
+            "strict": True,
+            "created_count": 1,
+            "existing_count": 1,
+            "deleted_count": 1,
+            "deleted": [
+                {
+                    "id": 40,
+                    "name": "old-job",
+                    "execution_path": "scripts/old.py",
+                    "app_name": None,
+                }
+            ],
+            "not_deleted_count": 1,
+            "not_deleted": [
+                {
+                    "job": {
+                        "id": 50,
+                        "name": "dashboard-job",
+                        "execution_path": "scripts/dashboard.py",
+                        "app_name": None,
+                    },
+                    "reason": "linked to dashboard",
+                }
+            ],
+            "results": [
+                {
+                    "created": True,
+                    "job": {
+                        "id": 91,
+                        "name": "new-job",
+                        "execution_path": "scripts/new.py",
+                        "app_name": None,
+                        "task_schedule": {"schedule": {"type": "crontab", "expression": "0 0 * * *"}},
+                    },
+                },
+                {
+                    "created": False,
+                    "job": {
+                        "id": 92,
+                        "name": "existing-job",
+                        "execution_path": "scripts/existing.py",
+                        "app_name": "svc",
+                        "task_schedule": None,
+                    },
+                },
+            ],
+        },
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "schedule_batch_jobs", "scheduled_jobs.yaml", "--strict"],
+    )
+
+    assert result.exit_code == 0
+    assert "Batch Scheduling Summary" in result.output
+    assert "Created" in result.output
+    assert "Existing" in result.output
+    assert "Deleted Jobs" in result.output
+    assert "Not Deleted Jobs" in result.output
+    assert "new-job" in result.output
+    assert "existing" in result.output
+    assert "linked to dashboard" in result.output
+    assert "Strict mode will not delete jobs that are still linked to dashboards or resource releases." in result.output
+
+
 def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
