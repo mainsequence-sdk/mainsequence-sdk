@@ -49,11 +49,13 @@ from .api import (
     create_project_job,
     create_project_resource_release,
     deep_find_repo_url,
+    delete_data_node_storage,
     delete_project,
     delete_project_image,
     delete_resource_release,
     fetch_project_env_text,
     get_current_user_profile,
+    get_data_node_storage,
     get_logged_user_details,
     get_market_asset_translation_table,
     get_project,
@@ -62,6 +64,7 @@ from .api import (
     get_project_job_run_logs,
     get_projects,
     get_resource_release,
+    list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
     list_market_asset_translation_tables,
@@ -96,6 +99,7 @@ from .local_ops import (
     run_uv,
     uv_export_requirements,
 )
+from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
 from .project_status import detect_current_project
 from .pydantic_cli import (
     get_cli_field_metadata,
@@ -115,6 +119,7 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 markets = typer.Typer(help="Markets commands")
+data_node_storage_group = typer.Typer(help="Data node commands")
 markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
 markets_asset_translation_table_group = typer.Typer(help="Markets asset translation table commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
@@ -128,6 +133,10 @@ settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(markets, name="markets")
+app.add_typer(data_node_storage_group, name="data-node")
+app.add_typer(data_node_storage_group, name="data_node")
+app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)
+app.add_typer(data_node_storage_group, name="data_node_storage", hidden=True)
 markets.add_typer(markets_portfolios_group, name="portfolios")
 markets.add_typer(markets_asset_translation_table_group, name="asset-translation-table")
 app.add_typer(project, name="project")
@@ -150,12 +159,21 @@ JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
 CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
+PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_tdag.ProjectImage"
+PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
+DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
+PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
+ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
     "streamlit_dashboard": "dashboard",
     "agent": "agent",
 }
+LIST_FILTER_OPTION_HELP = (
+    "Repeatable filter in KEY=VALUE form. "
+    "Use --show-filters to inspect the filters supported by this list command."
+)
 
 
 # ---------- AI instructions utilities (kept) ----------
@@ -620,6 +638,65 @@ def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
     return out
 
 
+def _format_cli_filter_value(value: object) -> str:
+    if isinstance(value, list):
+        return ",".join(str(item) for item in value)
+    if isinstance(value, dict):
+        return json.dumps(value, sort_keys=True)
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _resolve_cli_list_filters(
+    *,
+    model_ref: type | str | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+    command_label: str,
+    reserved_filter_descriptions: dict[str, object] | None = None,
+) -> dict[str, object]:
+    reserved_filter_descriptions = dict(reserved_filter_descriptions or {})
+
+    if show_filters:
+        rows = build_cli_model_filter_rows(model_ref)
+        if rows:
+            print_table(
+                f"{command_label} Filters",
+                ["Filter", "Lookup", "Value Format", "Normalized As"],
+                rows,
+            )
+        else:
+            info(f"No additional model filters exposed by {command_label}.")
+
+        if reserved_filter_descriptions:
+            print_table(
+                "Always Applied Filters",
+                ["Filter", "Value"],
+                [
+                    [key, _format_cli_filter_value(value)]
+                    for key, value in reserved_filter_descriptions.items()
+                ],
+            )
+        raise typer.Exit(0)
+
+    try:
+        filters = parse_cli_model_filters(model_ref, filter_entries)
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    conflicting = sorted(key for key in filters if key in reserved_filter_descriptions)
+    if conflicting:
+        error(
+            "These filters are already enforced by the command and cannot be overridden: "
+            + ", ".join(conflicting)
+        )
+        raise typer.Exit(1)
+
+    return filters
+
+
 def _prompt_select_id(
     *,
     title: str,
@@ -768,6 +845,35 @@ def _confirm_delete_action(
     if not typer.confirm(prompt_text, default=False):
         info("Cancelled.")
         raise typer.Exit(0)
+
+
+def _require_delete_verification(
+    *,
+    preview_title: str,
+    preview_items: list[tuple[str, str]],
+    verification_value: str,
+    verification_label: str,
+) -> None:
+    print_kv(preview_title, preview_items)
+    typed = typer.prompt(
+        f"Type {verification_label} '{verification_value}' to confirm deletion",
+        default="",
+        show_default=False,
+    ).strip()
+    if typed != verification_value:
+        info("Cancelled.")
+        raise typer.Exit(0)
+
+
+def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(storage.get("id") or "-")),
+        ("Storage Hash", str(storage.get("storage_hash") or "-")),
+        ("Identifier", str(storage.get("identifier") or "-")),
+        ("Source Class", str(storage.get("source_class_name") or "-")),
+        ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
+        ("Protected", str(storage.get("protect_from_deletion"))),
+    ]
 
 
 def _format_project_image_delete_preview(image: dict[str, object]) -> list[tuple[str, str]]:
@@ -984,6 +1090,35 @@ def _format_portfolio_label(portfolio: dict) -> str:
         return str(index_asset)
 
     return str(portfolio.get("id") or "-")
+
+
+def _format_data_node_storage_data_source(value) -> str:
+    if isinstance(value, dict):
+        display_name = str(value.get("display_name") or "").strip()
+        class_type = str(value.get("class_type") or "").strip()
+        if display_name and class_type:
+            return f"{display_name} ({class_type})"
+        if display_name:
+            return display_name
+        if class_type:
+            return class_type
+        if value.get("id") is not None:
+            return str(value.get("id"))
+        return "-"
+    if value is None:
+        return "-"
+    return str(value)
+
+
+def _format_json_value(value) -> str:
+    if value in (None, "", [], {}):
+        return "-"
+    if isinstance(value, str):
+        return value
+    try:
+        return json.dumps(value, indent=2, sort_keys=True)
+    except Exception:
+        return str(value)
 
 
 def _format_asset_filter_summary(asset_filter) -> str:
@@ -1864,11 +1999,21 @@ def sdk_latest():
 # ---------- markets group ----------
 
 
-def _markets_portfolios_list_impl(timeout: int | None) -> None:
+def _markets_portfolios_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=PORTFOLIO_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Markets Portfolios",
+    )
     _require_login()
 
     try:
-        portfolios = list_market_portfolios(timeout=timeout)
+        portfolios = list_market_portfolios(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Markets portfolios fetch failed: {e}")
         raise typer.Exit(1)
@@ -1905,8 +2050,247 @@ def _markets_portfolios_list_impl(timeout: int | None) -> None:
     info(f"Total portfolios: {len(portfolios)}")
 
 
+def _data_node_storage_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Data Node Storage",
+    )
+    _require_login()
+
+    try:
+        storages = list_data_node_storages(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Data node storages fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for storage in storages:
+        rows.append(
+            [
+                str(storage.get("id") or "-"),
+                str(storage.get("storage_hash") or "-"),
+                str(storage.get("source_class_name") or "-"),
+                str(storage.get("identifier") or "-"),
+                _format_data_node_storage_data_source(storage.get("data_source")),
+                str(storage.get("data_frequency_id") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Data Node Storages",
+            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            rows,
+        )
+    else:
+        info("No data node storages.")
+    info(f"Total data node storages: {len(storages)}")
+
+
+def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        storage = get_data_node_storage(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Data node storage fetch failed: {e}")
+        raise typer.Exit(1)
+
+    print_kv(
+        "Data Node Storage",
+        [
+            ("ID", str(storage.get("id") or storage_id)),
+            ("Storage Hash", str(storage.get("storage_hash") or "-")),
+            ("Identifier", str(storage.get("identifier") or "-")),
+            ("Source Class", str(storage.get("source_class_name") or "-")),
+            ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
+            ("Frequency", str(storage.get("data_frequency_id") or "-")),
+            ("Protected", str(storage.get("protect_from_deletion"))),
+            ("Created", str(storage.get("creation_date") or "-")),
+            ("Created By", str(storage.get("created_by_user") or "-")),
+            ("Organization", str(storage.get("organization_owner") or "-")),
+            ("Description", str(storage.get("description") or "-")),
+        ],
+    )
+
+    print_kv(
+        "Data Node Storage Config",
+        [
+            ("Build Configuration", _format_json_value(storage.get("build_configuration"))),
+            ("Build Metadata", _format_json_value(storage.get("build_meta_data"))),
+            ("Source Table Configuration", _format_json_value(storage.get("sourcetableconfiguration"))),
+            ("Table Index Names", _format_json_value(storage.get("table_index_names"))),
+            ("Compression Policy", _format_json_value(storage.get("compression_policy_config"))),
+            ("Retention Policy", _format_json_value(storage.get("retention_policy_config"))),
+        ],
+    )
+
+
+def _data_node_storage_delete_impl(
+    *,
+    storage_id: int,
+    full_delete_selected: bool,
+    full_delete_downstream_tables: bool,
+    delete_with_no_table: bool,
+    override_protection: bool,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        storage = get_data_node_storage(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Data node storage fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(storage.get("storage_hash") or storage.get("id") or storage_id)
+    _require_delete_verification(
+        preview_title="Data Node Storage Delete Preview",
+        preview_items=_format_data_node_storage_delete_preview(storage)
+        + [
+            ("full_delete_selected", str(full_delete_selected).lower()),
+            ("full_delete_downstream_tables", str(full_delete_downstream_tables).lower()),
+            ("delete_with_no_table", str(delete_with_no_table).lower()),
+            ("override_protection", str(override_protection).lower()),
+        ],
+        verification_value=verification_value,
+        verification_label="storage hash" if storage.get("storage_hash") else "storage id",
+    )
+
+    try:
+        deleted = delete_data_node_storage(
+            storage_id,
+            full_delete_selected=full_delete_selected,
+            full_delete_downstream_tables=full_delete_downstream_tables,
+            delete_with_no_table=delete_with_no_table,
+            override_protection=override_protection,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Data node storage deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Data node storage deleted: id={storage_id}")
+    print_kv("Deleted Data Node Storage", _format_data_node_storage_delete_preview(deleted))
+
+
+@data_node_storage_group.command("list")
+def data_node_storage_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List data node storages visible to the authenticated user.
+
+    Uses SDK client `DataNodeStorage.filter()` as the single source of truth.
+
+    Parameters
+    ----------
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node list
+    mainsequence data_node list
+    mainsequence data-node list --timeout 60
+    ```
+    """
+    _data_node_storage_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@data_node_storage_group.command("detail")
+def data_node_storage_detail_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one data node storage and render its configuration in the terminal.
+
+    Uses SDK client `DataNodeStorage.get()` as the single source of truth.
+
+    Parameters
+    ----------
+    storage_id:
+        Data node storage ID.
+    timeout:
+        Request timeout in seconds.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node detail 123
+    mainsequence data_node detail 123
+    mainsequence data-node detail 123 --timeout 60
+    ```
+    """
+    _data_node_storage_detail_impl(storage_id=storage_id, timeout=timeout)
+
+
+@data_node_storage_group.command("delete")
+def data_node_storage_delete_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    full_delete_selected: bool = typer.Option(
+        False,
+        "--full-delete-selected/--no-full-delete-selected",
+        help="Fully delete the selected DataNode instance.",
+    ),
+    full_delete_downstream_tables: bool = typer.Option(
+        False,
+        "--full-delete-downstream-tables/--no-full-delete-downstream-tables",
+        help="Delete downstream tables and dependencies starting from the selected metadata instance.",
+    ),
+    delete_with_no_table: bool = typer.Option(
+        False,
+        "--delete-with-no-table/--no-delete-with-no-table",
+        help="Scan DataNode rows and fully delete records whose backing DB table does not exist.",
+    ),
+    override_protection: bool = typer.Option(
+        False,
+        "--override-protection/--no-override-protection",
+        help="Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one data node storage using the SDK client `DataNodeStorage.delete()` path.
+
+    The command always requires typed verification before the delete call is executed.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node delete 42
+    mainsequence data-node delete 42 --full-delete-selected
+    mainsequence data-node delete 42 --full-delete-selected --override-protection
+    ```
+    """
+    _data_node_storage_delete_impl(
+        storage_id=storage_id,
+        full_delete_selected=full_delete_selected,
+        full_delete_downstream_tables=full_delete_downstream_tables,
+        delete_with_no_table=delete_with_no_table,
+        override_protection=override_protection,
+        timeout=timeout,
+    )
+
+
 @markets_portfolios_group.command("list")
 def markets_portfolios_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -1926,14 +2310,28 @@ def markets_portfolios_list_cmd(
     mainsequence markets portfolios list --timeout 60
     ```
     """
-    _markets_portfolios_list_impl(timeout=timeout)
+    _markets_portfolios_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
 
 
-def _markets_asset_translation_table_list_impl(timeout: int | None) -> None:
+def _markets_asset_translation_table_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=ASSET_TRANSLATION_TABLE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Markets Asset Translation Table",
+    )
     _require_login()
 
     try:
-        tables = list_market_asset_translation_tables(timeout=timeout)
+        tables = list_market_asset_translation_tables(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Markets asset translation tables fetch failed: {e}")
         raise typer.Exit(1)
@@ -2008,6 +2406,8 @@ def _markets_asset_translation_table_detail_impl(table_id: int, timeout: int | N
 
 @markets_asset_translation_table_group.command("list")
 def markets_asset_translation_table_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -2027,7 +2427,11 @@ def markets_asset_translation_table_list_cmd(
     mainsequence markets asset-translation-table list --timeout 60
     ```
     """
-    _markets_asset_translation_table_list_impl(timeout=timeout)
+    _markets_asset_translation_table_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
 
 
 @markets_asset_translation_table_group.command("detail")
@@ -2061,7 +2465,11 @@ def markets_asset_translation_table_detail_cmd(
 
 
 @project_list_group.callback(invoke_without_command=True)
-def project_list(ctx: typer.Context):
+def project_list(
+    ctx: typer.Context,
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+):
     """
     List projects visible to the authenticated user.
 
@@ -2076,6 +2484,13 @@ def project_list(ctx: typer.Context):
     if ctx.invoked_subcommand is not None:
         return
 
+    _resolve_cli_list_filters(
+        model_ref=None,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Projects",
+    )
+
     _require_login()
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
@@ -2086,6 +2501,8 @@ def project_list(ctx: typer.Context):
 
 def _print_project_data_node_updates(
     project_id: int | None = typer.Argument(None, help="Project ID"),
+    filter_entries: list[str] | None = None,
+    show_filters: bool = False,
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ) -> None:
     """
@@ -2109,6 +2526,14 @@ def _print_project_data_node_updates(
     mainsequence project data-node-updates list 123 --timeout 60
     ```
     """
+    _resolve_cli_list_filters(
+        model_ref=None,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Project Data Node Updates",
+        reserved_filter_descriptions={"project_id": "always set from PROJECT_ID or local .env"},
+    )
+
     if project_id is None:
         project_id = _resolve_project_id_from_local_env()
 
@@ -2160,6 +2585,8 @@ def _print_project_data_node_updates(
 @project_data_node_updates_group.command("list")
 def project_data_node_updates_list_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -2173,29 +2600,48 @@ def project_data_node_updates_list_cmd(
     mainsequence project data-node-updates list 123 --timeout 60
     ```
     """
-    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
+    _print_project_data_node_updates(
+        project_id=project_id,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 @project_list_group.command("data_nodes_updates", hidden=True)
 def project_list_data_nodes_updates_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Backward-compatible alias for `mainsequence project data-node-updates list`.
     """
-    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
+    _print_project_data_node_updates(
+        project_id=project_id,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 @project.command("get-data-node-updates", hidden=True)
 def project_get_data_node_updates_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Backward-compatible alias for `mainsequence project data-node-updates list`.
     """
-    _print_project_data_node_updates(project_id=project_id, timeout=timeout)
+    _print_project_data_node_updates(
+        project_id=project_id,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 @project.command("create")
@@ -2454,8 +2900,21 @@ def project_delete_remote_cmd(
 def _project_resources_list_impl(
     project_id: int | None,
     path: str | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
     timeout: int | None,
 ) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=PROJECT_RESOURCE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Project Resources",
+        reserved_filter_descriptions={
+            "project__id": "always set from PROJECT_ID or local .env",
+            "repo_commit_sha": "always set from the upstream remote branch head commit",
+        },
+    )
+
     _require_login()
 
     project_dir = _resolve_project_dir(project_id, path)
@@ -2472,6 +2931,7 @@ def _project_resources_list_impl(
         resources = list_project_resources(
             project_id=project_id,
             repo_commit_sha=repo_commit_sha,
+            filters=filters,
             timeout=timeout,
         )
     except ApiError as e:
@@ -2508,6 +2968,8 @@ def _project_resources_list_impl(
 def project_project_resource_list_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -2533,7 +2995,13 @@ def project_project_resource_list_cmd(
     mainsequence project project_resource list --path .
     ```
     """
-    _project_resources_list_impl(project_id=project_id, path=path, timeout=timeout)
+    _project_resources_list_impl(
+        project_id=project_id,
+        path=path,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 def _project_resource_release_create_impl(
@@ -2857,15 +3325,27 @@ def project_project_resource_delete_agent_cmd(
 def _project_images_list_impl(
     project_id: int | None,
     path: str | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
     timeout: int | None,
 ) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=PROJECT_IMAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Project Images",
+        reserved_filter_descriptions={
+            "related_project__id__in": "always set from PROJECT_ID or local .env",
+        },
+    )
+
     _require_login()
 
     if project_id is None:
         project_id = _resolve_project_id_from_local_env(path)
 
     try:
-        images = list_project_images(related_project_id=project_id, timeout=timeout)
+        images = list_project_images(related_project_id=project_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1)
@@ -2891,6 +3371,8 @@ def _project_images_list_impl(
 def project_images_list_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -2915,7 +3397,13 @@ def project_images_list_cmd(
     mainsequence project images list 123 --path .
     ```
     """
-    _project_images_list_impl(project_id=project_id, path=path, timeout=timeout)
+    _project_images_list_impl(
+        project_id=project_id,
+        path=path,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 def _project_images_delete_impl(
@@ -3200,15 +3688,28 @@ def project_create_image_cmd(
 def _project_jobs_list_impl(
     project_id: int | None,
     path: str | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
     timeout: int | None,
 ) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=JOB_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Project Jobs",
+        reserved_filter_descriptions={
+            "project": "always scoped to the selected project",
+            "project__id__in": "always scoped to the selected project",
+        },
+    )
+
     _require_login()
 
     if project_id is None:
         project_id = _resolve_project_id_from_local_env(path)
 
     try:
-        jobs = list_project_jobs(project_id=project_id, timeout=timeout)
+        jobs = list_project_jobs(project_id=project_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project jobs fetch failed: {e}")
         raise typer.Exit(1)
@@ -3240,12 +3741,22 @@ def _project_jobs_list_impl(
 
 def _project_job_runs_list_impl(
     job_id: int,
+    filter_entries: list[str] | None,
+    show_filters: bool,
     timeout: int | None,
 ) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=JOB_RUN_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Project Job Runs",
+        reserved_filter_descriptions={"job__id": "always set from JOB_ID"},
+    )
+
     _require_login()
 
     try:
-        runs = list_project_job_runs(job_id=job_id, timeout=timeout)
+        runs = list_project_job_runs(job_id=job_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project job runs fetch failed: {e}")
         raise typer.Exit(1)
@@ -3304,6 +3815,8 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
 def project_jobs_list_cmd(
     project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -3319,7 +3832,13 @@ def project_jobs_list_cmd(
     mainsequence project jobs list 123 --path .
     ```
     """
-    _project_jobs_list_impl(project_id=project_id, path=path, timeout=timeout)
+    _project_jobs_list_impl(
+        project_id=project_id,
+        path=path,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 @project_jobs_group.command("run")
@@ -3369,6 +3888,8 @@ def project_jobs_run_cmd(
 @project_job_runs_group.command("list")
 def project_job_runs_list_cmd(
     job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID whose runs will be listed."),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -3383,7 +3904,12 @@ def project_job_runs_list_cmd(
     mainsequence project jobs runs list 91 --timeout 60
     ```
     """
-    _project_job_runs_list_impl(job_id=job_id, timeout=timeout)
+    _project_job_runs_list_impl(
+        job_id=job_id,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        timeout=timeout,
+    )
 
 
 @project_job_runs_group.command("logs")

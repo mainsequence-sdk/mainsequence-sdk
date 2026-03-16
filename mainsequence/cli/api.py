@@ -839,6 +839,7 @@ def create_project_image(
 def list_project_images(
     *,
     related_project_id: int | str,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -898,10 +899,9 @@ def list_project_images(
         BaseObjectOrm.ROOT_URL = root_url
         ClientProjectImage.ROOT_URL = root_url
 
-        images = ClientProjectImage.filter(
-            timeout=timeout,
-            related_project__id__in=[int(related_project_id)],
-        )
+        merged_filters = dict(filters or {})
+        merged_filters["related_project__id__in"] = [int(related_project_id)]
+        images = ClientProjectImage.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
         for image in images:
@@ -1068,6 +1068,7 @@ def delete_resource_release(
 def list_project_jobs(
     *,
     project_id: int | str,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -1127,10 +1128,11 @@ def list_project_jobs(
         ClientJob.ROOT_URL = root_url
 
         jobs = []
-        for filters in ({"project": int(project_id)}, {"project__id__in": [int(project_id)]}):
+        extra_filters = dict(filters or {})
+        for candidate_filters in ({"project": int(project_id)}, {"project__id__in": [int(project_id)]}):
             try:
-                jobs = ClientJob.filter(timeout=timeout, **filters)
-                if jobs or "project__id__in" in filters:
+                jobs = ClientJob.filter(timeout=timeout, **{**extra_filters, **candidate_filters})
+                if jobs or "project__id__in" in candidate_filters:
                     break
             except Exception:
                 continue
@@ -1185,6 +1187,7 @@ def list_project_resources(
     project_id: int | str,
     repo_commit_sha: str,
     resource_type: str | None = None,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -1243,15 +1246,18 @@ def list_project_resources(
         BaseObjectOrm.ROOT_URL = root_url
         ClientProjectResource.ROOT_URL = root_url
 
-        filters: dict[str, Any] = {
+        merged_filters: dict[str, Any] = dict(filters or {})
+        merged_filters.update(
+            {
             "project__id": int(project_id),
             "repo_commit_sha": str(repo_commit_sha).strip(),
-        }
+            }
+        )
         normalized_resource_type = str(resource_type).strip() if resource_type is not None else ""
         if normalized_resource_type:
-            filters["resource_type"] = normalized_resource_type
+            merged_filters["resource_type"] = normalized_resource_type
 
-        resources = ClientProjectResource.filter(timeout=timeout, **filters)
+        resources = ClientProjectResource.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
         for resource in resources:
@@ -1432,6 +1438,7 @@ def create_project_resource_release(
 
 def list_market_portfolios(
     *,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -1488,7 +1495,7 @@ def list_market_portfolios(
         BaseObjectOrm.ROOT_URL = root_url
         ClientPortfolio.ROOT_URL = root_url
 
-        portfolios = ClientPortfolio.filter(timeout=timeout)
+        portfolios = ClientPortfolio.filter(timeout=timeout, **dict(filters or {}))
 
         out: list[dict[str, Any]] = []
         for portfolio in portfolios:
@@ -1533,8 +1540,111 @@ def list_market_portfolios(
                 os.environ[k] = v
 
 
+def list_data_node_storages(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List data node storages via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `DataNodeStorage.filter()`
+    """
+    try:
+        storages = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        out: list[dict[str, Any]] = []
+        for storage in storages:
+            out.append(_sdk_object_to_dict(storage))
+        return out
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storages fetch failed: {e}")
+
+
+def get_data_node_storage(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one data node storage via SDK client model.
+
+    Single source of truth:
+      - delegates detail fetching and payload parsing to `DataNodeStorage.get()`
+    """
+    try:
+        storage = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get(
+                pk=int(storage_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(storage)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Data node storage not found: {storage_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storage fetch failed: {e}")
+
+
+def delete_data_node_storage(
+    storage_id: int | str,
+    *,
+    full_delete_selected: bool = False,
+    full_delete_downstream_tables: bool = False,
+    delete_with_no_table: bool = False,
+    override_protection: bool = False,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one data node storage via SDK client model.
+
+    Single source of truth:
+      - delegates deletion and destroy query params to `DataNodeStorage.delete()`
+    """
+    try:
+        def _delete(ClientDataNodeStorage):
+            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            payload = _sdk_object_to_dict(storage)
+            storage.delete(
+                full_delete_selected=full_delete_selected,
+                full_delete_downstream_tables=full_delete_downstream_tables,
+                delete_with_no_table=delete_with_no_table,
+                override_protection=override_protection,
+                timeout=timeout,
+            )
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Data node storage not found: {storage_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storage deletion failed: {e}")
+
+
 def list_market_asset_translation_tables(
     *,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -1593,7 +1703,7 @@ def list_market_asset_translation_tables(
         BaseObjectOrm.ROOT_URL = root_url
         ClientAssetTranslationTable.ROOT_URL = root_url
 
-        tables = ClientAssetTranslationTable.filter(timeout=timeout)
+        tables = ClientAssetTranslationTable.filter(timeout=timeout, **dict(filters or {}))
 
         out: list[dict[str, Any]] = []
         for table in tables:
@@ -2101,6 +2211,7 @@ def run_project_job(
 def list_project_job_runs(
     *,
     job_id: int | str,
+    filters: dict[str, Any] | None = None,
     timeout: int | None = None,
 ) -> list[dict[str, Any]]:
     """
@@ -2157,7 +2268,9 @@ def list_project_job_runs(
         BaseObjectOrm.ROOT_URL = root_url
         ClientJobRun.ROOT_URL = root_url
 
-        runs = ClientJobRun.filter(job__id=[int(job_id)], timeout=timeout)
+        merged_filters = dict(filters or {})
+        merged_filters["job__id"] = [int(job_id)]
+        runs = ClientJobRun.filter(timeout=timeout, **merged_filters)
         out: list[dict[str, Any]] = []
         for run in runs:
             if isinstance(run, dict):

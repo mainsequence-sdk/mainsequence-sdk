@@ -34,6 +34,7 @@ mainsequence logout --export
 ```bash
 mainsequence --help
 mainsequence doctor
+mainsequence data-node list
 mainsequence markets --help
 mainsequence user
 mainsequence settings show
@@ -50,14 +51,25 @@ Most frequently used flows:
 
 ```bash
 # Markets
+mainsequence data-node list
+mainsequence data-node list --show-filters
+mainsequence data-node list --filter id__in=42,43
+mainsequence data-node detail 123
+mainsequence data-node delete 123
+mainsequence data-node delete 123 --full-delete-selected
+mainsequence data-node delete 123 --full-delete-selected --override-protection
 mainsequence markets portfolios list
+mainsequence markets portfolios list --filter id__in=42
 mainsequence markets asset-translation-table list
+mainsequence markets asset-translation-table list --show-filters
 mainsequence markets asset-translation-table detail 12
 
 # 1) List and create
 mainsequence project list
 mainsequence project images list
 mainsequence project images list 123
+mainsequence project images list --show-filters
+mainsequence project images list --filter project_repo_hash__in=4a1b2c3d,5e6f7a8b
 mainsequence project create tutorial-project
 mainsequence project images create
 mainsequence project images create 123
@@ -72,6 +84,8 @@ mainsequence project jobs create --name daily-run --execution-path scripts/test.
 mainsequence project data-node-updates list
 mainsequence project data-node-updates list 123
 mainsequence project project_resource list
+mainsequence project project_resource list --show-filters
+mainsequence project project_resource list --filter resource_type=dashboard
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
@@ -94,6 +108,27 @@ mainsequence project sdk-status --path .
 mainsequence project update-sdk --path .
 ```
 
+## List Filters
+
+Most `list` commands accept the same generic filter interface:
+
+```bash
+mainsequence <...> list --show-filters
+mainsequence <...> list --filter KEY=VALUE
+mainsequence <...> list --filter KEY=VALUE --filter OTHER_KEY=VALUE
+```
+
+Rules:
+
+- Allowed filters are taken from the backing SDK model `FILTERSET_FIELDS`.
+- Value expectations are derived from `FILTER_VALUE_NORMALIZERS`.
+- `__in` filters accept comma-separated values such as `id__in=1,2,3`.
+- Some commands always apply scoping filters internally and will reject attempts to override them.
+  - `mainsequence project images list` always scopes by the selected project.
+  - `mainsequence project project_resource list` always scopes by project and upstream remote `repo_commit_sha`.
+  - `mainsequence project jobs runs list` always scopes by `job__id`.
+- If a command's backing model does not expose filter metadata, `--show-filters` will tell you that no additional model filters are available.
+
 ## Settings
 
 ```bash
@@ -108,10 +143,16 @@ mainsequence settings set-base ~/mainsequence
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
+- `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
+- `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
+- `mainsequence data-node delete` executes the SDK client `DataNodeStorage.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
+- `mainsequence data-node delete` always requires typed verification before the delete call is sent.
 - `mainsequence markets portfolios list` lists markets portfolios through the SDK client `Portfolio.filter()` path.
 - `mainsequence markets asset-translation-table list` lists translation tables through the SDK client `AssetTranslationTable.filter()` path.
 - `mainsequence markets asset-translation-table detail` fetches one translation table through `AssetTranslationTable.get()` and renders each rule as a readable `match => target` mapping in the terminal.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
+- All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
 - `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.

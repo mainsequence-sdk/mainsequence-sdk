@@ -72,6 +72,8 @@ class BasePydanticModel(BaseModel):
 class BaseObjectOrm:
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = None
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str | Callable[..., Any]]] = {}
+    DESTROY_QUERY_PARAMS: ClassVar[dict[str, str | Callable[..., Any]] | None] = None
+    DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
 
     END_POINTS = {
         "User": "user",
@@ -279,15 +281,33 @@ class BaseObjectOrm:
             lookup=lookup,
         )
 
+        return cls._apply_declared_normalizer(
+            value,
+            field_name=filter_key,
+            normalizer=normalizer,
+        )
+
+    @classmethod
+    def _apply_declared_normalizer(
+        cls,
+        value: Any,
+        *,
+        field_name: str,
+        normalizer: str | Callable[..., Any] | None,
+        bool_as_query_string: bool = False,
+    ) -> Any:
         if normalizer == "id":
-            return cls._coerce_filter_id(value, field_name=filter_key)
+            return cls._coerce_filter_id(value, field_name=field_name)
         if normalizer == "bool":
-            return cls._coerce_filter_bool(value, field_name=filter_key)
+            normalized_bool = cls._coerce_filter_bool(value, field_name=field_name)
+            if bool_as_query_string:
+                return str(normalized_bool).lower()
+            return normalized_bool
         if normalizer == "str":
             return str(value).strip()
         if callable(normalizer):
             try:
-                return normalizer(value, field_name=filter_key)
+                return normalizer(value, field_name=field_name)
             except TypeError:
                 return normalizer(value)
         if isinstance(value, str):
@@ -341,6 +361,34 @@ class BaseObjectOrm:
                 filter_key=filter_key,
                 field_name=field_name,
                 lookup=lookup,
+            )
+
+        return normalized
+
+    @classmethod
+    def _normalize_destroy_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        destroy_query_params = getattr(cls, "DESTROY_QUERY_PARAMS", None)
+        if not destroy_query_params:
+            return dict(kwargs)
+
+        unexpected = sorted(key for key in kwargs.keys() if key not in destroy_query_params)
+        if unexpected:
+            allowed_params = ", ".join(sorted(destroy_query_params.keys()))
+            raise ValueError(
+                f"Unsupported {cls.__name__} delete parameter(s): {', '.join(unexpected)}. "
+                f"Allowed parameters: {allowed_params}."
+            )
+
+        normalized: dict[str, Any] = {}
+        for param_name, value in kwargs.items():
+            if value is None:
+                continue
+
+            normalized[param_name] = cls._apply_declared_normalizer(
+                value,
+                field_name=param_name,
+                normalizer=destroy_query_params.get(param_name),
+                bool_as_query_string=True,
             )
 
         return normalized
@@ -494,16 +542,26 @@ class BaseObjectOrm:
         return cls(**r.json())
 
     @classmethod
-    def destroy_by_id(cls, instance_id, *args, **kwargs):
+    def destroy_by_id(cls, instance_id, *args, timeout=None, **kwargs):
         base_url = cls.get_object_url()
-        data = cls.serialize_for_json(kwargs)
-        payload = {"json": data}
+        payload: dict[str, Any] = {}
+
+        if getattr(cls, "DESTROY_QUERY_PARAMS", None):
+            normalized_params = cls._normalize_destroy_kwargs(kwargs)
+            if normalized_params:
+                payload["params"] = normalized_params
+        else:
+            data = cls.serialize_for_json(kwargs)
+            if data:
+                payload["json"] = data
+
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="DELETE",
             url=f"{base_url}/{instance_id}/",
             payload=payload,
+            time_out=timeout,
         )
         if r.status_code != 204:
             raise_for_response(r)
@@ -557,7 +615,7 @@ class BaseObjectOrm:
         return type(self).patch_by_id(self.id, _into=self, **kwargs)
 
     def delete(self, *args, **kwargs):
-        return self.__class__.destroy_by_id(self.id)
+        return self.__class__.destroy_by_id(self.id, *args, **kwargs)
 
     def get_app_label(self):
         return self.END_POINTS[self.orm_class].split("/")[0]

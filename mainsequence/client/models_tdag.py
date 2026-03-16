@@ -851,6 +851,36 @@ class TableMetaData(BaseModel):
 
 
 class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "storage_hash": ["in", "exact", "contains"],
+        "identifier": ["in", "exact", "contains"],
+        "id": ["in", "exact", "contains"],
+        "data_source__id": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "id": "id",
+        "id__in": "id",
+        "data_source__id": "id",
+    }
+    DESTROY_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "full_delete_selected": "bool",
+        "full_delete_downstream_tables": "bool",
+        "delete_with_no_table": "bool",
+        "override_protection": "bool",
+    }
+    DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
+        "full_delete_selected": "Fully delete the selected DataNode instance.",
+        "full_delete_downstream_tables": (
+            "Delete downstream tables/dependencies starting from the selected metadata instance."
+        ),
+        "delete_with_no_table": (
+            "Scan all DataNode rows and fully delete records whose backing DB table does not exist."
+        ),
+        "override_protection": (
+            "Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true."
+        ),
+    }
+
     id: int = Field(None, description="Primary key, auto-incremented ID")
     storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
 
@@ -916,6 +946,63 @@ class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
     def patch_by_hash(cls, storage_hash: str, *args, **kwargs):
         metadata = cls.get(storage_hash=storage_hash)
         metadata.patch(*args, **kwargs)
+
+    @classmethod
+    def destroy_by_id(
+        cls,
+        instance_id,
+        *,
+        full_delete_selected: bool = False,
+        full_delete_downstream_tables: bool = False,
+        delete_with_no_table: bool = False,
+        override_protection: bool = False,
+        timeout: int | None = None,
+    ):
+        """
+        Delete a DataNodeStorage row using backend delete query parameters.
+
+        Parameters
+        ----------
+        full_delete_selected:
+            Fully delete the selected DataNode instance.
+        full_delete_downstream_tables:
+            Delete downstream tables/dependencies starting from the selected metadata instance.
+        delete_with_no_table:
+            Scan all DataNode rows and fully delete records whose backing DB table does not exist.
+        override_protection:
+            Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true.
+        timeout:
+            Optional request timeout in seconds.
+        """
+        return super().destroy_by_id(
+            instance_id,
+            timeout=timeout,
+            full_delete_selected=full_delete_selected,
+            full_delete_downstream_tables=full_delete_downstream_tables,
+            delete_with_no_table=delete_with_no_table,
+            override_protection=override_protection,
+        )
+
+    def delete(
+        self,
+        *,
+        full_delete_selected: bool = False,
+        full_delete_downstream_tables: bool = False,
+        delete_with_no_table: bool = False,
+        override_protection: bool = False,
+        timeout: int | None = None,
+    ):
+        """
+        Instance wrapper for `destroy_by_id()` with the same delete query parameters.
+        """
+        return type(self).destroy_by_id(
+            self.id,
+            timeout=timeout,
+            full_delete_selected=full_delete_selected,
+            full_delete_downstream_tables=full_delete_downstream_tables,
+            delete_with_no_table=delete_with_no_table,
+            override_protection=override_protection,
+        )
 
     @classmethod
     def get_or_create(cls, **kwargs):

@@ -118,6 +118,38 @@ def test_pydantic_cli_metadata_from_source():
     assert "scripts/test.py" in meta.examples
 
 
+def test_model_filter_parser_uses_filterset_metadata():
+    filters_mod = importlib.import_module("mainsequence.cli.model_filters")
+
+    class FakeModel:
+        FILTERSET_FIELDS = {
+            "id": ["exact", "in"],
+            "is_active": ["exact", "isnull"],
+            "name": ["contains"],
+        }
+        FILTER_VALUE_NORMALIZERS = {
+            "id": "id",
+            "is_active__isnull": "bool",
+            "name": "str",
+        }
+
+    rows = filters_mod.build_cli_model_filter_rows(FakeModel)
+    assert ["id", "exact", "integer ID", "id"] in rows
+    assert ["id__in", "in", "comma-separated integer IDs", "id"] in rows
+    assert ["is_active__isnull", "isnull", "true/false", "bool"] in rows
+    assert ["name__contains", "contains", "text", "str"] in rows
+
+    parsed = filters_mod.parse_cli_model_filters(
+        FakeModel,
+        ["id__in=1,2,3", "name__contains=daily", "is_active__isnull=true"],
+    )
+    assert parsed == {
+        "id__in": ["1", "2", "3"],
+        "name__contains": "daily",
+        "is_active__isnull": "true",
+    }
+
+
 def test_shared_compute_validation_supports_k8s_quantities(cli_mod):
     compute_mod = importlib.import_module("mainsequence.compute_validation")
 
@@ -819,8 +851,14 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.list_project_images(related_project_id=123)
-    assert captured["filters"][0] == {"related_project__id__in": [123]}
+    out = api_mod.list_project_images(
+        related_project_id=123,
+        filters={"project_repo_hash__in": ["abc123", "def456"]},
+    )
+    assert captured["filters"][0] == {
+        "project_repo_hash__in": ["abc123", "def456"],
+        "related_project__id__in": [123],
+    }
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
@@ -960,8 +998,8 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.list_project_jobs(project_id=123)
-    assert captured["filters"][0] == {"project": 123}
+    out = api_mod.list_project_jobs(project_id=123, filters={"name__contains": "daily"})
+    assert captured["filters"][0] == {"name__contains": "daily", "project": 123}
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
@@ -1042,8 +1080,10 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
         project_id=123,
         repo_commit_sha="abc123",
         resource_type="dashboard",
+        filters={"id__in": ["301", "302"]},
     )
     assert captured["filters"][0] == {
+        "id__in": ["301", "302"],
         "project__id": 123,
         "repo_commit_sha": "abc123",
         "resource_type": "dashboard",
@@ -1246,8 +1286,8 @@ def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
 
-    out = api_mod.list_market_portfolios()
-    assert captured["filters"][0] == {}
+    out = api_mod.list_market_portfolios(filters={"id__in": ["42"]})
+    assert captured["filters"][0] == {"id__in": ["42"]}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
@@ -1258,6 +1298,183 @@ def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
             "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
         }
     ]
+
+
+def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+                captured["filters"].append(kwargs)
+                return [
+                    types.SimpleNamespace(
+                        model_dump=lambda *args, **kwargs: {
+                            "id": 42,
+                            "storage_hash": "weights_daily",
+                            "source_class_name": "PortfolioWeights",
+                            "identifier": "weights_daily",
+                            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                        "data_frequency_id": "1d",
+                    }
+                )
+            ]
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+            return types.SimpleNamespace(
+                model_dump=lambda *args, **kwargs: {
+                    "id": pk,
+                    "storage_hash": "weights_daily",
+                    "source_class_name": "PortfolioWeights",
+                    "identifier": "weights_daily",
+                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                    "data_frequency_id": "1d",
+                    "protect_from_deletion": True,
+                }
+            )
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_data_node_storages(filters={"storage_hash__contains": "weights"})
+    detail = api_mod.get_data_node_storage(42)
+    assert captured["filters"][0] == {"storage_hash__contains": "weights"}
+    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": None}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == [
+        {
+            "id": 42,
+            "storage_hash": "weights_daily",
+            "source_class_name": "PortfolioWeights",
+            "identifier": "weights_daily",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "data_frequency_id": "1d",
+        }
+    ]
+    assert detail["id"] == 42
+    assert detail["storage_hash"] == "weights_daily"
+
+
+def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+
+            class _Storage:
+                id = pk
+
+                def model_dump(self, mode="python"):
+                    return {
+                        "id": pk,
+                        "storage_hash": "weights_daily",
+                        "identifier": "weights_daily",
+                    }
+
+                def delete(
+                    self,
+                    *,
+                    full_delete_selected=False,
+                    full_delete_downstream_tables=False,
+                    delete_with_no_table=False,
+                    override_protection=False,
+                    timeout=None,
+                ):
+                    captured["delete"] = {
+                        "full_delete_selected": full_delete_selected,
+                        "full_delete_downstream_tables": full_delete_downstream_tables,
+                        "delete_with_no_table": delete_with_no_table,
+                        "override_protection": override_protection,
+                        "timeout": timeout,
+                    }
+
+            return _Storage()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.delete_data_node_storage(
+        42,
+        full_delete_selected=True,
+        full_delete_downstream_tables=True,
+        delete_with_no_table=False,
+        override_protection=True,
+        timeout=30,
+    )
+    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 30}
+    assert captured["delete"] == {
+        "full_delete_selected": True,
+        "full_delete_downstream_tables": True,
+        "delete_with_no_table": False,
+        "override_protection": True,
+        "timeout": 30,
+    }
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == {"id": 42, "storage_hash": "weights_daily", "identifier": "weights_daily"}
 
 
 def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeypatch):
@@ -1337,8 +1554,8 @@ def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeyp
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
 
-    listed = api_mod.list_market_asset_translation_tables()
-    assert captured["filters"][0] == {}
+    listed = api_mod.list_market_asset_translation_tables(filters={"search": "prices"})
+    assert captured["filters"][0] == {"search": "prices"}
     assert captured["jwt"] == ("acc", "ref")
     assert listed == [
         {
@@ -1813,8 +2030,8 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.list_project_job_runs(job_id=91)
-    assert captured["filters"][0] == {"job__id": [91]}
+    out = api_mod.list_project_job_runs(job_id=91, filters={"status": "COMPLETED"})
+    assert captured["filters"][0] == {"status": "COMPLETED", "job__id": [91]}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
@@ -1924,7 +2141,7 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(
         cli_mod,
         "list_project_images",
-        lambda related_project_id, timeout=None: [
+        lambda related_project_id, filters=None, timeout=None: [
             {
                 "id": 77,
                 "project_repo_hash": "abc123",
@@ -1939,6 +2156,20 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
     assert "abc123" in result.output
     assert "Python 3.12" in result.output
     assert "Total images: 1" in result.output
+
+
+def test_project_images_list_rejects_reserved_filter(cli_mod, runner, monkeypatch):
+    def _parse(model_ref, entries):
+        return {"related_project__id__in": ["999"]}
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "images", "list", "123", "--filter", "related_project__id__in=999"],
+    )
+    assert result.exit_code == 1
+    assert "cannot be overridden" in result.output
 
 
 def test_project_images_delete_requires_confirmation(cli_mod, runner, monkeypatch):
@@ -1985,7 +2216,7 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
     monkeypatch.setattr(
         cli_mod,
         "list_project_jobs",
-        lambda project_id, timeout=None: [
+        lambda project_id, filters=None, timeout=None: [
             {
                 "id": 91,
                 "name": "daily-run",
@@ -2014,6 +2245,16 @@ def test_project_jobs_list_defaults_to_env_project_id(cli_mod, runner, monkeypat
     assert "Total jobs: 1" in result.output
 
 
+def test_project_jobs_list_show_filters_mentions_project_scope(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "build_cli_model_filter_rows", lambda model_ref: [])
+
+    result = runner.invoke(cli_mod.app, ["project", "jobs", "list", "--show-filters"])
+    assert result.exit_code == 0
+    assert "No additional model filters exposed by Project Jobs." in result.output
+    assert "Always Applied Filters" in result.output
+    assert "project" in result.output
+
+
 def test_project_project_resource_list_defaults_to_remote_branch_head(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
@@ -2028,7 +2269,7 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(cli_mod, r
         lambda project_dir: ("origin/main", "abc123"),
     )
 
-    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, timeout=None):
+    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None):
         captured["project_id"] = project_id
         captured["repo_commit_sha"] = repo_commit_sha
         captured["resource_type"] = resource_type
@@ -2054,6 +2295,35 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(cli_mod, r
     assert "analytics_dash" in result.output
     assert "board.py" in result.output
     assert "Total project resources: 1" in result.output
+
+
+def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "_get_remote_branch_head_commit", lambda project_dir: ("origin/main", "abc123"))
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"id__in": ["301"]}
+
+    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None):
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "project_resource", "list", "--path", str(target), "--filter", "id__in=301"],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == ["id__in=301"]
+    assert captured["filters"] == {"id__in": ["301"]}
 
 
 def test_project_project_resource_create_dashboard_filters_resources_by_selected_image(cli_mod, runner, monkeypatch, tmp_path):
@@ -2209,7 +2479,7 @@ def test_markets_portfolios_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_market_portfolios",
-        lambda timeout=None: [
+        lambda filters=None, timeout=None: [
             {
                 "id": 42,
                 "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
@@ -2230,12 +2500,187 @@ def test_markets_portfolios_list(cli_mod, runner, monkeypatch):
     assert "Total portfolios: 1" in result.output
 
 
+def test_markets_portfolios_list_show_filters(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "build_cli_model_filter_rows",
+        lambda model_ref: [["id__in", "in", "comma-separated integer IDs", "id"]],
+    )
+
+    result = runner.invoke(cli_mod.app, ["markets", "portfolios", "list", "--show-filters"])
+    assert result.exit_code == 0
+    assert "Markets Portfolios Filters" in result.output
+    assert "id__in" in result.output
+    assert "integer IDs" in result.output
+
+
+def test_data_node_storage_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_data_node_storages",
+        lambda filters=None, timeout=None: [
+            {
+                "id": 42,
+                "storage_hash": "weights_daily",
+                "source_class_name": "PortfolioWeights",
+                "identifier": "weights_daily",
+                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                "data_frequency_id": "1d",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["data-node", "list"])
+    assert result.exit_code == 0
+    assert "Data Node Storages" in result.output
+    assert "weights_daily" in result.output
+    assert "PortfolioWei" in result.output
+    assert "Default DB" in result.output
+    assert "Total data node storages: 1" in result.output
+
+
+def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"id__in": ["42", "43"]}
+
+    def _list(timeout=None, filters=None):
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
+
+    result = runner.invoke(cli_mod.app, ["data-node", "list", "--filter", "id__in=42,43"])
+    assert result.exit_code == 0
+    assert captured["entries"] == ["id__in=42,43"]
+    assert captured["filters"] == {"id__in": ["42", "43"]}
+
+
+def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_data_node_storage",
+        lambda storage_id, timeout=None: {
+            "id": storage_id,
+            "storage_hash": "weights_daily",
+            "identifier": "weights_daily",
+            "source_class_name": "PortfolioWeights",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "data_frequency_id": "1d",
+            "protect_from_deletion": True,
+            "creation_date": "2026-03-16T10:00:00Z",
+            "created_by_user": 7,
+            "organization_owner": 2,
+            "description": "Daily portfolio weights",
+            "build_configuration": {"window": 30},
+            "build_meta_data": {"owner": "research"},
+            "sourcetableconfiguration": {"time_index_name": "time_index"},
+            "table_index_names": {"0": "time_index"},
+            "compression_policy_config": {"after": "7 days"},
+            "retention_policy_config": {"after": "90 days"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["data-node", "detail", "42"])
+    assert result.exit_code == 0
+    assert "Data Node Storage" in result.output
+    assert "weights_daily" in result.output
+    assert "Daily portfolio weights" in result.output
+    assert "Build Configuration" in result.output
+    assert "time_index_name" in result.output
+    assert "90 days" in result.output
+
+
+def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_data_node_storage",
+        lambda storage_id, timeout=None: {
+            "id": storage_id,
+            "storage_hash": "weights_daily",
+            "identifier": "weights_daily",
+            "source_class_name": "PortfolioWeights",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "protect_from_deletion": True,
+        },
+    )
+
+    def _delete(storage_id, **kwargs):
+        captured["storage_id"] = storage_id
+        captured["kwargs"] = kwargs
+        return {
+            "id": storage_id,
+            "storage_hash": "weights_daily",
+            "identifier": "weights_daily",
+            "source_class_name": "PortfolioWeights",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "protect_from_deletion": True,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_data_node_storage", _delete)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "delete", "42", "--full-delete-selected"],
+        input="weights_daily\n",
+    )
+    assert result.exit_code == 0
+    assert "Data Node Storage Delete Preview" in result.output
+    assert "Type storage hash 'weights_daily' to confirm deletion" in result.output
+    assert captured["storage_id"] == 42
+    assert captured["kwargs"]["full_delete_selected"] is True
+    assert "Data node storage deleted: id=42" in result.output
+
+
+def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_data_node_storage",
+        lambda storage_id, timeout=None: {
+            "id": storage_id,
+            "storage_hash": "weights_daily",
+            "identifier": "weights_daily",
+            "source_class_name": "PortfolioWeights",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "protect_from_deletion": False,
+        },
+    )
+
+    called = {"value": False}
+
+    def _delete(storage_id, **kwargs):
+        called["value"] = True
+        return {}
+
+    monkeypatch.setattr(cli_mod, "delete_data_node_storage", _delete)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "delete", "42"],
+        input="wrong-value\n",
+    )
+    assert result.exit_code == 0
+    assert called["value"] is False
+    assert "Cancelled." in result.output
+
+
 def test_markets_asset_translation_table_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
         "list_market_asset_translation_tables",
-        lambda timeout=None: [
+        lambda filters=None, timeout=None: [
             {
                 "id": 12,
                 "unique_identifier": "prices_translation_table_1d",
@@ -2320,7 +2765,7 @@ def test_project_job_runs_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_project_job_runs",
-        lambda job_id, timeout=None: [
+        lambda job_id, filters=None, timeout=None: [
             {
                 "id": 501,
                 "name": "daily-run-1",
@@ -2339,6 +2784,33 @@ def test_project_job_runs_list(cli_mod, runner, monkeypatch):
     assert "daily-run" in result.output
     assert "jobrun_ab" in result.output
     assert "Total job runs: 1" in result.output
+
+
+def test_project_job_runs_list_passes_cli_filters(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"status": "COMPLETED"}
+
+    def _list_project_job_runs(job_id, filters=None, timeout=None):
+        captured["job_id"] = job_id
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_project_job_runs", _list_project_job_runs)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "runs", "list", "91", "--filter", "status=COMPLETED"],
+    )
+    assert result.exit_code == 0
+    assert captured["job_id"] == 91
+    assert captured["entries"] == ["status=COMPLETED"]
+    assert captured["filters"] == {"status": "COMPLETED"}
 
 
 def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
