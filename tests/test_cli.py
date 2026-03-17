@@ -2302,6 +2302,143 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     assert out == {"id": 42, "storage_hash": "weights_daily", "identifier": "weights_daily"}
 
 
+def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+
+            class _Storage:
+                def can_view(self, timeout=None):
+                    captured["can_view_timeout"] = timeout
+                    return types.SimpleNamespace(
+                        model_dump=lambda mode="python": {
+                            "object_id": pk,
+                            "object_type": "tdag.datanodestorage",
+                            "access_level": "view",
+                            "users": [
+                                {
+                                    "id": 8,
+                                    "username": "viewer",
+                                    "email": "viewer@example.com",
+                                    "first_name": "View",
+                                    "last_name": "User",
+                                }
+                            ],
+                            "teams": [],
+                        }
+                    )
+
+            return _Storage()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_data_node_storage_users_can_view(42, timeout=15)
+    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 15}
+    assert captured["can_view_timeout"] == 15
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["users"][0]["username"] == "viewer"
+
+
+def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+
+            class _Storage:
+                def add_to_edit(self, user_id, timeout=None):
+                    captured["add_to_edit"] = {"user_id": user_id, "timeout": timeout}
+                    return {
+                        "ok": True,
+                        "action": "add_to_edit",
+                        "detail": "User now has explicit edit access.",
+                        "object_id": pk,
+                        "object_type": "tdag.datanodestorage",
+                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "explicit_can_view": True,
+                        "explicit_can_edit": True,
+                        "explicit_can_view_user_ids": [user_id],
+                        "explicit_can_edit_user_ids": [user_id],
+                    }
+
+            return _Storage()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.add_data_node_storage_user_to_edit(42, 9, timeout=16)
+    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 16}
+    assert captured["add_to_edit"] == {"user_id": 9, "timeout": 16}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out["action"] == "add_to_edit"
+
+
 def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
@@ -3773,6 +3910,71 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert "Build Configuration" in result.output
     assert "time_index_name" in result.output
     assert "90 days" in result.output
+
+
+def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_data_node_storage_users_can_view",
+        lambda storage_id, timeout=None: {
+            "access_level": "view",
+            "users": [
+                {
+                    "id": 8,
+                    "username": "viewer",
+                    "email": "viewer@example.com",
+                    "first_name": "View",
+                    "last_name": "User",
+                }
+            ],
+            "teams": [],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["data-node", "can_view", "42"])
+    assert result.exit_code == 0
+    assert "Data Node Users Who Can View" in result.output
+    assert "viewer@example.com" in result.output
+    assert "Total users who can view: 1" in result.output
+
+
+def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(storage_id, user_id, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["user_id"] = user_id
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_to_edit",
+            "detail": "User now has explicit edit access.",
+            "object_id": storage_id,
+            "object_type": "tdag.datanodestorage",
+            "user": {
+                "id": user_id,
+                "username": "editor",
+                "email": "editor@example.com",
+                "first_name": "Edit",
+                "last_name": "User",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_user_ids": [user_id],
+            "explicit_can_edit_user_ids": [user_id],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_data_node_storage_user_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["data-node", "add_to_edit", "42", "9"])
+    assert result.exit_code == 0
+    assert captured == {"storage_id": 42, "user_id": 9, "timeout": None}
+    assert "Data Node add_to_edit completed." in result.output
+    assert "Data Node Sharing Update" in result.output
+    assert "editor@example.com" in result.output
 
 
 def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, monkeypatch):

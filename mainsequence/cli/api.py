@@ -2263,6 +2263,116 @@ def delete_data_node_storage(
         raise ApiError(f"Data node storage deletion failed: {e}")
 
 
+def list_data_node_storage_users_can_view(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a data node storage via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_data_node_storage_users_can_edit(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a data node storage via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_data_node_storage_user_to_view(
+    storage_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit view access to one user for a data node storage.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_data_node_storage_user_to_edit(
+    storage_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit edit access to one user for a data node storage.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_data_node_storage_user_from_view(
+    storage_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit view access from one user for a data node storage.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_data_node_storage_user_from_edit(
+    storage_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit edit access from one user for a data node storage.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
 def list_market_asset_translation_tables(
     *,
     filters: dict[str, Any] | None = None,

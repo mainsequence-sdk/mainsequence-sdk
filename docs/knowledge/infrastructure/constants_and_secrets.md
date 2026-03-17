@@ -65,31 +65,35 @@ Main Sequence applies resource-level access control, so the real operational que
 - which team or project boundary it belongs to
 - whether it is safe to expose through a deployed release
 
-In practice, this matters across several resource types:
+In practice, the current SDK exposes sharing behavior across several resource types:
 
 - `Project`
+- `DataNodeStorage`
 - `Constant`
 - `Secret`
 - `Bucket`
+- `Artifact`
 - `ResourceRelease`
 
 Why these matter:
 
 - `Project` defines an important collaboration and execution boundary
+- `DataNodeStorage` is the published table boundary for shared datasets
 - `Constant` stores shareable, non-sensitive runtime configuration
 - `Secret` stores protected credentials
 - `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
+- `Artifact` is the individual stored object that may need controlled visibility
 - `ResourceRelease` is the deployment-facing wrapper for resources such as dashboards and agents
 
 !!! warning "IMPORTANT"
-    In the current SDK and CLI, `Constant` and `Secret` are the clearest directly shareable objects.
-    They expose explicit sharing methods such as `can_view()`, `can_edit()`, `add_to_view()`, and `add_to_edit()`.
-    Other resource types still participate in access control, but the client surface shown in this guide is most explicit for constants and secrets.
+    `Constant` and `Secret` are not the only shareable resources in the SDK.
+    `Project`, `DataNodeStorage`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
+    This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
 
 That is the practical reason this topic matters early:
 
 - constants and secrets teach the access-control model in its simplest form
-- the same idea scales later to projects, buckets, and deployed resources
+- the same idea scales later to projects, shared tables, buckets, artifacts, and deployed resources
 
 ## Constants
 

@@ -45,6 +45,8 @@ from .api import (
     NotLoggedIn,
     add_constant_user_to_edit,
     add_constant_user_to_view,
+    add_data_node_storage_user_to_edit,
+    add_data_node_storage_user_to_view,
     add_deploy_key,
     add_project_user_to_edit,
     add_project_user_to_view,
@@ -79,6 +81,8 @@ from .api import (
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
+    list_data_node_storage_users_can_edit,
+    list_data_node_storage_users_can_view,
     list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
@@ -96,6 +100,8 @@ from .api import (
     list_secrets,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
+    remove_data_node_storage_user_from_edit,
+    remove_data_node_storage_user_from_view,
     remove_project_user_from_edit,
     remove_project_user_from_view,
     remove_secret_user_from_edit,
@@ -3114,6 +3120,162 @@ def data_node_storage_delete_cmd(
         full_delete_downstream_tables=full_delete_downstream_tables,
         delete_with_no_table=delete_with_no_table,
         override_protection=override_protection,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("can_view")
+def data_node_storage_can_view_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users who can view one data node storage.
+
+    Uses the SDK `ShareableObjectMixin.can_view()` path through the `DataNodeStorage` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node can_view 42
+    mainsequence data_node can_view 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_data_node_storage_users_can_view,
+        object_label="Data Node",
+        access_label="view",
+        object_id=storage_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("can_edit")
+def data_node_storage_can_edit_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List users who can edit one data node storage.
+
+    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `DataNodeStorage` model.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node can_edit 42
+    mainsequence data_node can_edit 42
+    ```
+    """
+    _shareable_user_list_impl(
+        fetch_fn=list_data_node_storage_users_can_edit,
+        object_label="Data Node",
+        access_label="edit",
+        object_id=storage_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("add_to_view")
+def data_node_storage_add_to_view_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit view access to one user for one data node storage.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node add_to_view 42 7
+    mainsequence data_node add_to_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_data_node_storage_user_to_view,
+        object_label="Data Node",
+        action_label="add_to_view",
+        object_id=storage_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("add_to_edit")
+def data_node_storage_add_to_edit_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Grant explicit edit access to one user for one data node storage.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node add_to_edit 42 7
+    mainsequence data_node add_to_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=add_data_node_storage_user_to_edit,
+        object_label="Data Node",
+        action_label="add_to_edit",
+        object_id=storage_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("remove_from_view")
+def data_node_storage_remove_from_view_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit view access from one user for one data node storage.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node remove_from_view 42 7
+    mainsequence data_node remove_from_view 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_data_node_storage_user_from_view,
+        object_label="Data Node",
+        action_label="remove_from_view",
+        object_id=storage_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("remove_from_edit")
+def data_node_storage_remove_from_edit_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove explicit edit access from one user for one data node storage.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node remove_from_edit 42 7
+    mainsequence data_node remove_from_edit 42 7
+    ```
+    """
+    _shareable_user_access_update_impl(
+        action_fn=remove_data_node_storage_user_from_edit,
+        object_label="Data Node",
+        action_label="remove_from_edit",
+        object_id=storage_id,
+        user_id=user_id,
         timeout=timeout,
     )
 

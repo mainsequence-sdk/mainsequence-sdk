@@ -78,6 +78,12 @@ mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter id__in=42,43
 mainsequence data-node detail 123
+mainsequence data-node can_view 123
+mainsequence data-node can_edit 123
+mainsequence data-node add_to_view 123 7
+mainsequence data-node add_to_edit 123 7
+mainsequence data-node remove_from_view 123 7
+mainsequence data-node remove_from_edit 123 7
 mainsequence data-node delete 123
 mainsequence data-node delete 123 --full-delete-selected
 mainsequence data-node delete 123 --full-delete-selected --override-protection
@@ -191,6 +197,9 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
+- `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
+- `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
+- `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence data-node delete` executes the SDK client `DataNodeStorage.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
 - `mainsequence data-node delete` always requires typed verification before the delete call is sent.
 - `mainsequence markets portfolios list` lists markets portfolios through the SDK client `Portfolio.filter()` path.

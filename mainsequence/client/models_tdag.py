@@ -850,7 +850,7 @@ class TableMetaData(BaseModel):
     data_frequency_id: DataFrequency | None = None
 
 
-class DataNodeStorage(BasePydanticModel, BaseObjectOrm):
+class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
