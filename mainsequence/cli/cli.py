@@ -98,6 +98,7 @@ from .api import (
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
+    prime_sync_project_after_commit_sdk,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
     remove_data_node_storage_user_from_edit,
@@ -6107,6 +6108,11 @@ def project_sync(
                 "Could not determine project id from local .env. "
                 "Pass PROJECT_ID or ensure MAIN_SEQUENCE_PROJECT_ID is present before syncing."
             )
+            raise typer.Exit(1)
+        try:
+            prime_sync_project_after_commit_sdk()
+        except ApiError as e:
+            error(f"Could not load SDK post-commit sync path before uv sync: {e}")
             raise typer.Exit(1)
     ensure_venv(project_dir)
 

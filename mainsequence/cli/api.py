@@ -741,57 +741,16 @@ def sync_project_after_commit(project_id: int | str, *, timeout: int | None = No
     Single source of truth:
       - delegates request behavior and payload parsing to `Project.sync_project_after_commit()`
     """
-    tokens = get_tokens()
-    access = (tokens.get("access") or "").strip()
-    refresh = (tokens.get("refresh") or "").strip()
-    if not access:
-        raise NotLoggedIn("Not logged in.")
-
-    endpoint = backend_url().rstrip("/")
-    root_url = f"{endpoint}/orm/api"
-
-    old_env = {
-        "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
-        "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
-        "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
-        "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
-        "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
-    }
-
-    client_utils = None
-    old_provider = None
-    old_base_root_url = None
-    old_project_root_url = None
-
     try:
-        os.environ["MAINSEQUENCE_AUTH_MODE"] = "jwt"
-        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
-        if refresh:
-            os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
-        else:
-            os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
-        os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
-
-        from mainsequence.client import utils as _client_utils
-        from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_tdag import Project as ClientProject
-
-        client_utils = _client_utils
-        old_provider = getattr(client_utils.loaders, "provider", None)
-        old_base_root_url = BaseObjectOrm.ROOT_URL
-        old_project_root_url = getattr(ClientProject, "ROOT_URL", None)
-
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
-        client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
-
-        BaseObjectOrm.ROOT_URL = root_url
-        ClientProject.ROOT_URL = root_url
-
-        payload = ClientProject.sync_project_after_commit(int(project_id), timeout=timeout)
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Project",
+            operation=lambda ClientProject: ClientProject.sync_project_after_commit(
+                int(project_id),
+                timeout=timeout,
+            ),
+            project_id_env=project_id,
+        )
         if payload is None:
             return None
         if isinstance(payload, dict):
@@ -799,7 +758,6 @@ def sync_project_after_commit(project_id: int | str, *, timeout: int | None = No
         if hasattr(payload, "model_dump"):
             return payload.model_dump()
         return {"id": getattr(payload, "id", None)}
-
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
@@ -807,32 +765,25 @@ def sync_project_after_commit(project_id: int | str, *, timeout: int | None = No
         if err_name == "NotFoundError":
             raise ApiError(f"Project not found: {project_id}")
         raise ApiError(f"Project post-commit sync failed: {e}")
-    finally:
-        if client_utils is not None:
-            try:
-                client_utils.loaders.provider = old_provider
-            except Exception:
-                pass
-        if old_base_root_url is not None:
-            try:
-                from mainsequence.client.base import BaseObjectOrm
 
-                BaseObjectOrm.ROOT_URL = old_base_root_url
-            except Exception:
-                pass
-        if old_project_root_url is not None:
-            try:
-                from mainsequence.client.models_tdag import Project as ClientProject
 
-                ClientProject.ROOT_URL = old_project_root_url
-            except Exception:
-                pass
+def prime_sync_project_after_commit_sdk() -> None:
+    """
+    Load the SDK modules needed by `sync_project_after_commit()` before the active
+    virtual environment is mutated by `uv sync`.
 
-        for k, v in old_env.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+    `project sync` runs inside the same `.venv` that it later updates. If the
+    environment changes during the command, a fresh `mainsequence.client` import
+    can fail late in the flow. Priming the relevant SDK modules first keeps the
+    post-commit sync path available in the current process.
+    """
+    try:
+        importlib.import_module("mainsequence.client")
+        importlib.import_module("mainsequence.client.utils")
+        importlib.import_module("mainsequence.client.base")
+        importlib.import_module("mainsequence.client.models_tdag")
+    except Exception as e:
+        raise ApiError(f"Project post-commit SDK import failed: {e}")
 
 
 def create_project_image(

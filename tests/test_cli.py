@@ -5289,6 +5289,7 @@ def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypa
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     post_sync = {}
+    call_order = []
 
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -5296,18 +5297,25 @@ def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypa
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
     monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
-    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
-    monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: None)
-    monkeypatch.setattr(cli_mod, "run_cmd", lambda cmd, cwd, env=None: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "prime_sync_project_after_commit_sdk",
+        lambda: call_order.append("prime"),
+    )
+    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: call_order.append(f"uv:{args[0]}"))
+    monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: call_order.append("uv:export"))
+    monkeypatch.setattr(cli_mod, "run_cmd", lambda cmd, cwd, env=None: call_order.append(f"cmd:{cmd[0]}"))
     monkeypatch.setattr(
         cli_mod,
         "sync_project_after_commit",
-        lambda project_id: post_sync.update(project_id=project_id) or {"id": project_id},
+        lambda project_id: call_order.append("post_sync") or post_sync.update(project_id=project_id) or {"id": project_id},
     )
 
     result = runner.invoke(cli_mod.app, ["project", "sync", "Update deps"])
     assert result.exit_code == 0
     assert post_sync["project_id"] == 123
+    assert call_order[0] == "prime"
+    assert "post_sync" == call_order[-1]
     assert "Triggered backend sync for project 123." in result.output
 
 
