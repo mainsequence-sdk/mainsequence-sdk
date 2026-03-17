@@ -2212,6 +2212,236 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     assert detail["storage_hash"] == "weights_daily"
 
 
+def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def description_search(
+            cls,
+            q,
+            *,
+            q_embedding=None,
+            trigram_k=200,
+            embed_k=200,
+            w_trgm=0.65,
+            w_emb=0.35,
+            embedding_model="default",
+            **filters,
+        ):
+            captured["search"] = {
+                "q": q,
+                "q_embedding": q_embedding,
+                "trigram_k": trigram_k,
+                "embed_k": embed_k,
+                "w_trgm": w_trgm,
+                "w_emb": w_emb,
+                "embedding_model": embedding_model,
+                "filters": filters,
+            }
+            return {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [
+                    types.SimpleNamespace(
+                        model_dump=lambda *args, **kwargs: {
+                            "id": 42,
+                            "storage_hash": "weights_daily",
+                            "identifier": "weights_daily",
+                        }
+                    )
+                ],
+            }
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.data_node_storage_description_search(
+        "portfolio weights",
+        q_embedding=[0.1, 0.2],
+        trigram_k=150,
+        embed_k=120,
+        w_trgm=0.7,
+        w_emb=0.3,
+        embedding_model="text-embedding-3-large",
+        filters={"data_source__id": "2"},
+    )
+
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["search"] == {
+        "q": "portfolio weights",
+        "q_embedding": [0.1, 0.2],
+        "trigram_k": 150,
+        "embed_k": 120,
+        "w_trgm": 0.7,
+        "w_emb": 0.3,
+        "embedding_model": "text-embedding-3-large",
+        "filters": {"data_source__id": "2"},
+    }
+    assert out == {
+        "count": 1,
+        "next": None,
+        "previous": None,
+        "results": [
+            {
+                "id": 42,
+                "storage_hash": "weights_daily",
+                "identifier": "weights_daily",
+            }
+        ],
+    }
+
+
+def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def column_search(cls, q, **filters):
+            captured["search"] = {"q": q, "filters": filters}
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda *args, **kwargs: {
+                        "id": 43,
+                        "storage_hash": "prices_daily",
+                        "identifier": "prices_daily",
+                    }
+                )
+            ]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.data_node_storage_column_search("close", filters={"storage_hash__contains": "prices"})
+
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "prices"}}
+    assert out == [
+        {
+            "id": 43,
+            "storage_hash": "prices_daily",
+            "identifier": "prices_daily",
+        }
+    ]
+
+
+def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+
+            class _Storage:
+                def refresh_table_search_index(self, *, timeout=None):
+                    captured["refresh"] = {"timeout": timeout}
+                    return {"status": "queued", "message": "refresh started"}
+
+            return _Storage()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.refresh_data_node_storage_search_index(42, timeout=30)
+
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 30}
+    assert captured["refresh"] == {"timeout": 30}
+    assert out == {"status": "queued", "message": "refresh started", "id": 42}
+
+
 def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -3876,6 +4106,296 @@ def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch)
     assert captured["filters"] == {"id__in": ["42", "43"]}
 
 
+def test_data_node_storage_search_supports_data_source_id_option(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", lambda model_ref, entries: {})
+
+    def _description(
+        q,
+        *,
+        q_embedding=None,
+        trigram_k=200,
+        embed_k=200,
+        w_trgm=0.65,
+        w_emb=0.35,
+        embedding_model="default",
+        filters=None,
+    ):
+        captured["filters"] = filters
+        return {"count": 0, "next": None, "previous": None, "results": []}
+
+    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
+    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", lambda q, *, filters=None: [])
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data_node", "search", "close price", "--mode", "description", "--data-source-id", "2"],
+    )
+    assert result.exit_code == 0
+    assert captured["filters"] == {"data_source__id": "2"}
+
+
+def test_data_node_storage_search_rejects_conflicting_data_source_filters(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        return {"data_source__id": "9"}
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "data-node",
+            "search",
+            "close price",
+            "--data-source-id",
+            "2",
+            "--filter",
+            "data_source__id=9",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "Do not pass both `--data-source-id` and `--filter data_source__id=...`." in result.output
+
+
+def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {}
+
+    def _search(
+        q,
+        *,
+        q_embedding=None,
+        trigram_k=200,
+        embed_k=200,
+        w_trgm=0.65,
+        w_emb=0.35,
+        embedding_model="default",
+        filters=None,
+    ):
+        captured["search"] = {
+            "q": q,
+            "q_embedding": q_embedding,
+            "trigram_k": trigram_k,
+            "embed_k": embed_k,
+            "w_trgm": w_trgm,
+            "w_emb": w_emb,
+            "embedding_model": embedding_model,
+            "filters": filters,
+        }
+        return {
+            "count": 3,
+            "next": "https://backend.test/page/2",
+            "previous": None,
+            "results": [
+                {
+                    "id": 42,
+                    "storage_hash": "weights_daily",
+                    "source_class_name": "PortfolioWeights",
+                    "identifier": "weights_daily",
+                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                    "data_frequency_id": "1d",
+                }
+            ],
+        }
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _search)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "data-node",
+            "description-search",
+            "portfolio weights",
+            "--data-source-id",
+            "2",
+            "--q-embedding",
+            "0.1,0.2",
+            "--trigram-k",
+            "150",
+            "--embed-k",
+            "180",
+            "--w-trgm",
+            "0.7",
+            "--w-emb",
+            "0.3",
+            "--embedding-model",
+            "text-embedding-3-large",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == []
+    assert captured["search"] == {
+        "q": "portfolio weights",
+        "q_embedding": [0.1, 0.2],
+        "trigram_k": 150,
+        "embed_k": 180,
+        "w_trgm": 0.7,
+        "w_emb": 0.3,
+        "embedding_model": "text-embedding-3-large",
+        "filters": {"data_source__id": "2"},
+    }
+    assert "Description Matches" in result.output
+    assert "weights_daily" in result.output
+    assert "Pagination" in result.output
+    assert "Count" in result.output
+
+
+def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {"storage_hash__contains": "portfolio"}
+
+    def _search(q, *, filters=None):
+        captured["search"] = {"q": q, "filters": filters}
+        return [
+            {
+                "id": 43,
+                "storage_hash": "prices_daily",
+                "source_class_name": "PriceBars",
+                "identifier": "prices_daily",
+                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                "data_frequency_id": "1d",
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _search)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "column-search", "close", "--filter", "storage_hash__contains=portfolio"],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == ["storage_hash__contains=portfolio"]
+    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "portfolio"}}
+    assert "Column Matches" in result.output
+    assert "prices_daily" in result.output
+    assert 'Column Matches: 1 match(es) for "close"' in result.output
+
+
+def test_data_node_storage_search_combines_description_and_column(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["entries"] = list(entries or [])
+        return {}
+
+    def _description(
+        q,
+        *,
+        q_embedding=None,
+        trigram_k=200,
+        embed_k=200,
+        w_trgm=0.65,
+        w_emb=0.35,
+        embedding_model="default",
+        filters=None,
+    ):
+        captured["description"] = {
+            "q": q,
+            "q_embedding": q_embedding,
+            "trigram_k": trigram_k,
+            "embed_k": embed_k,
+            "w_trgm": w_trgm,
+            "w_emb": w_emb,
+            "embedding_model": embedding_model,
+            "filters": filters,
+        }
+        return {
+            "count": 2,
+            "next": None,
+            "previous": None,
+            "results": [
+                {
+                    "id": 42,
+                    "storage_hash": "weights_daily",
+                    "source_class_name": "PortfolioWeights",
+                    "identifier": "weights_daily",
+                    "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                    "data_frequency_id": "1d",
+                }
+            ],
+        }
+
+    def _column(q, *, filters=None):
+        captured["column"] = {"q": q, "filters": filters}
+        return [
+            {
+                "id": 43,
+                "storage_hash": "prices_daily",
+                "source_class_name": "PriceBars",
+                "identifier": "prices_daily",
+                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                "data_frequency_id": "1d",
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "data_node_storage_description_search", _description)
+    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "data_node",
+            "search",
+            "close price",
+            "--data-source-id",
+            "2",
+            "--q-embedding",
+            "0.1,0.2",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["entries"] == []
+    assert captured["description"]["q"] == "close price"
+    assert captured["description"]["q_embedding"] == [0.1, 0.2]
+    assert captured["description"]["filters"] == {"data_source__id": "2"}
+    assert captured["column"] == {"q": "close price", "filters": {"data_source__id": "2"}}
+    assert "Description Matches" in result.output
+    assert "Column Matches" in result.output
+    assert 'Total search matches for "close price": 2' in result.output
+
+
+def test_data_node_storage_search_column_mode_only(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", lambda model_ref, entries: {})
+    monkeypatch.setattr(
+        cli_mod,
+        "data_node_storage_description_search",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("description search should not run")),
+    )
+
+    def _column(q, *, filters=None):
+        captured["column"] = {"q": q, "filters": filters}
+        return []
+
+    monkeypatch.setattr(cli_mod, "data_node_storage_column_search", _column)
+
+    result = runner.invoke(cli_mod.app, ["data-node", "search", "close", "--mode", "column"])
+    assert result.exit_code == 0
+    assert captured["column"] == {"q": "close", "filters": {}}
+    assert 'Column Matches: 0 match(es) for "close"' in result.output
+
+
 def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -3910,6 +4430,31 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert "Build Configuration" in result.output
     assert "time_index_name" in result.output
     assert "90 days" in result.output
+
+
+def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _refresh(storage_id, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["timeout"] = timeout
+        return {
+            "id": storage_id,
+            "status": "queued",
+            "message": "refresh started",
+        }
+
+    monkeypatch.setattr(cli_mod, "refresh_data_node_storage_search_index", _refresh)
+
+    result = runner.invoke(cli_mod.app, ["data-node", "refresh-search-index", "42", "--timeout", "15"])
+    assert result.exit_code == 0
+    assert captured == {"storage_id": 42, "timeout": 15}
+    assert "Data node search index refresh requested: id=42" in result.output
+    assert "Data Node Search Index Refresh" in result.output
+    assert "queued" in result.output
+    assert "refresh started" in result.output
 
 
 def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):

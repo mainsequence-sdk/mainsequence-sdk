@@ -77,7 +77,13 @@ mainsequence secrets delete 42
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter id__in=42,43
+mainsequence data-node list --data-source-id 2
+mainsequence data_node search "close price"
+mainsequence data-node search "close price" --data-source-id 2
+mainsequence data-node search "portfolio weights" --mode description
+mainsequence data-node search close --mode column
 mainsequence data-node detail 123
+mainsequence data-node refresh-search-index 123
 mainsequence data-node can_view 123
 mainsequence data-node can_edit 123
 mainsequence data-node add_to_view 123 7
@@ -196,7 +202,14 @@ mainsequence settings set-base ~/mainsequence
 - Secret list and delete previews intentionally show metadata only, not secret values.
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
+- `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `DataNodeStorage.description_search()` and `DataNodeStorage.column_search()` paths.
+- `mainsequence data-node search --mode description` only uses `DataNodeStorage.description_search()`.
+- `mainsequence data-node search --mode column` only uses `DataNodeStorage.column_search()`.
+- `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
+- `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
+- `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.

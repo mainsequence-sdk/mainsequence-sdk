@@ -9,6 +9,7 @@ import json
 import math
 import os
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any, ClassVar
@@ -1032,6 +1033,43 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         if r.status_code != 202:
             raise Exception(f"Error in request {r.text}")
 
+    def refresh_table_search_index(
+        self,
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any] | None:
+        """
+        Refresh the semantic search index for this data node storage.
+
+        The backend joins the table's column definitions with the code used to
+        generate the data node, builds a consolidated textual description, and
+        embeds that description into a vector representation for smart search.
+
+        This hits:
+            POST /{id}/refresh-table-search-index/
+
+        Parameters
+        ----------
+        timeout:
+            Optional request timeout in seconds.
+        """
+        if self.id is None:
+            raise ValueError("DataNodeStorage must have an id before refreshing the table search index.")
+
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/refresh-table-search-index/"
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+        return r.json() if r.content else None
+
 
 
 
@@ -1490,6 +1528,114 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         df = cls._apply_dtypes_from_meta(df, data_node_storage_map=storage_objs, filter_request=filter_request)
 
         return df
+
+    @classmethod
+    def _deserialize_search_response(cls, data: Any):
+        """
+        Supports both:
+        - paginated DRF responses: {"count": ..., "next": ..., "previous": ..., "results": [...]}
+        - non-paginated list responses: [...]
+        """
+        if isinstance(data, dict) and isinstance(data.get("results"), list):
+            hydrated = dict(data)
+            hydrated["results"] = [cls(**item) for item in hydrated["results"]]
+            return hydrated
+
+        if isinstance(data, list):
+            return [cls(**item) for item in data]
+
+        if isinstance(data, dict):
+            return cls(**data)
+
+        return data
+
+    @classmethod
+    def description_search(
+            cls,
+            q: str,
+            *,
+            q_embedding: Sequence[float] | None = None,
+            trigram_k: int = 200,
+            embed_k: int = 200,
+            w_trgm: float = 0.65,
+            w_emb: float = 0.35,
+            embedding_model: str = "default",
+            **filters,
+    ):
+        """
+        Hits:
+            POST <object_url>/description-search/
+
+        Server behavior:
+        - if q_embedding is omitted, the server generates it from q
+        - returns paginated or non-paginated serialized DynamicTableMetaData rows
+        """
+        q = (q or "").strip()
+        if not q:
+            raise ValueError("q is required")
+
+        url = cls.get_object_url() + "/description-search/"
+        body = {
+            "q": q,
+            "trigram_k": trigram_k,
+            "embed_k": embed_k,
+            "w_trgm": w_trgm,
+            "w_emb": w_emb,
+            "embedding_model": embedding_model,
+        }
+
+        if q_embedding is not None:
+            body["q_embedding"] = [float(x) for x in q_embedding]
+
+        if filters:
+            body.update(filters)
+
+        body = serialize_to_json(body)
+        payload = {"json": body}
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+        )
+        if r.status_code != 200:
+            raise_for_response(r, payload=payload)
+
+        return cls._deserialize_search_response(r.json())
+
+    @classmethod
+    def column_search(cls, q: str, **filters):
+        """
+        Hits:
+            GET <object_url>/column-search/?q=...
+
+        Extra kwargs are passed through as query params so your DRF filters still work
+        (e.g. storage_hash=..., identifier=..., data_source__id=..., page=...).
+        """
+        q = (q or "").strip()
+        if not q:
+            raise ValueError("q is required")
+
+        url = cls.get_object_url() + "/column-search/"
+        params = {"q": q, **filters}
+        params = serialize_to_json(params)
+        payload = {"params": params}
+
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            payload=payload,
+        )
+        if r.status_code != 200:
+            raise_for_response(r, payload=payload)
+
+        return cls._deserialize_search_response(r.json())
 
 
 

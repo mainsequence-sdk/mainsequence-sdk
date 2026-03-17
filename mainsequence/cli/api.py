@@ -1631,6 +1631,88 @@ def list_data_node_storages(
         raise ApiError(f"Data node storages fetch failed: {e}")
 
 
+def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:
+    if isinstance(payload, list):
+        return [_sdk_object_to_dict(item) for item in payload]
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("results"), list):
+            hydrated = dict(payload)
+            hydrated["results"] = [_sdk_object_to_dict(item) for item in payload["results"]]
+            return hydrated
+        return _sdk_object_to_dict(payload)
+
+    return _sdk_object_to_dict(payload)
+
+
+def data_node_storage_description_search(
+    q: str,
+    *,
+    q_embedding: list[float] | None = None,
+    trigram_k: int = 200,
+    embed_k: int = 200,
+    w_trgm: float = 0.65,
+    w_emb: float = 0.35,
+    embedding_model: str = "default",
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """
+    Search data node storages by description via SDK client model.
+
+    Single source of truth:
+      - delegates search behavior and payload parsing to
+        `DataNodeStorage.description_search()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.description_search(
+                q,
+                q_embedding=q_embedding,
+                trigram_k=trigram_k,
+                embed_k=embed_k,
+                w_trgm=w_trgm,
+                w_emb=w_emb,
+                embedding_model=embedding_model,
+                **dict(filters or {}),
+            ),
+        )
+        return _serialize_sdk_search_response(payload)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storage description search failed: {e}")
+
+
+def data_node_storage_column_search(
+    q: str,
+    *,
+    filters: dict[str, Any] | None = None,
+) -> dict[str, Any] | list[dict[str, Any]]:
+    """
+    Search data node storages by column metadata via SDK client model.
+
+    Single source of truth:
+      - delegates search behavior and payload parsing to
+        `DataNodeStorage.column_search()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.column_search(
+                q,
+                **dict(filters or {}),
+            ),
+        )
+        return _serialize_sdk_search_response(payload)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storage column search failed: {e}")
+
+
 def list_constants(
     *,
     filters: dict[str, Any] | None = None,
@@ -2170,6 +2252,41 @@ def get_data_node_storage(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage fetch failed: {e}")
+
+
+def refresh_data_node_storage_search_index(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Refresh one data node storage search index via SDK client model.
+
+    Single source of truth:
+      - delegates the refresh call to `DataNodeStorage.refresh_table_search_index()`
+    """
+    try:
+        def _refresh(ClientDataNodeStorage):
+            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            payload = storage.refresh_table_search_index(timeout=timeout)
+            if isinstance(payload, dict):
+                out = dict(payload)
+                out.setdefault("id", int(storage_id))
+                return out
+            return {"id": int(storage_id)}
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=_refresh,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Data node storage not found: {storage_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node storage search index refresh failed: {e}")
 
 
 def delete_data_node_storage(

@@ -58,6 +58,8 @@ from .api import (
     create_project_job,
     create_project_resource_release,
     create_secret,
+    data_node_storage_column_search,
+    data_node_storage_description_search,
     deep_find_repo_url,
     delete_constant,
     delete_data_node_storage,
@@ -99,6 +101,7 @@ from .api import (
     list_secret_users_can_view,
     list_secrets,
     prime_sync_project_after_commit_sdk,
+    refresh_data_node_storage_search_index,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
     remove_data_node_storage_user_from_edit,
@@ -734,6 +737,28 @@ def _resolve_cli_list_filters(
         raise typer.Exit(1)
 
     return filters
+
+
+def _merge_cli_filter_alias(
+    filters: dict[str, object],
+    *,
+    filter_key: str,
+    value: object | None,
+    option_name: str,
+) -> dict[str, object]:
+    if value is None:
+        return filters
+
+    if filter_key in filters:
+        error(
+            f"Do not pass both `--{option_name}` and `--filter {filter_key}=...`. "
+            f"Use only one."
+        )
+        raise typer.Exit(1)
+
+    merged = dict(filters)
+    merged[filter_key] = str(value)
+    return merged
 
 
 def _prompt_select_id(
@@ -2454,12 +2479,19 @@ def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
     show_filters: bool,
+    data_source_id: int | None = None,
 ) -> None:
     filters = _resolve_cli_list_filters(
         model_ref=DATA_NODE_STORAGE_MODEL_REF,
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label="Data Node Storage",
+    )
+    filters = _merge_cli_filter_alias(
+        filters,
+        filter_key="data_source__id",
+        value=data_source_id,
+        option_name="data-source-id",
     )
     _require_login()
 
@@ -2469,6 +2501,18 @@ def _data_node_storage_list_impl(
         error(f"Data node storages fetch failed: {e}")
         raise typer.Exit(1)
 
+    if storages:
+        print_table(
+            "Data Node Storages",
+            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            _build_data_node_storage_rows(storages),
+        )
+    else:
+        info("No data node storages.")
+    info(f"Total data node storages: {len(storages)}")
+
+
+def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[list[str]]:
     rows: list[list[str]] = []
     for storage in storages:
         rows.append(
@@ -2481,16 +2525,124 @@ def _data_node_storage_list_impl(
                 str(storage.get("data_frequency_id") or "-"),
             ]
         )
+    return rows
 
-    if rows:
+
+def _parse_cli_embedding(value: str | None) -> list[float] | None:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    items = [item.strip() for item in raw.split(",") if item.strip()]
+    if not items:
+        return None
+
+    try:
+        return [float(item) for item in items]
+    except ValueError:
+        error("Invalid --q-embedding value. Use a comma-separated list of floats.")
+        raise typer.Exit(1)
+
+
+def _unpack_data_node_storage_search_response(
+    payload: dict[str, object] | list[dict[str, object]],
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    if isinstance(payload, list):
+        return payload, {}
+
+    if isinstance(payload, dict) and isinstance(payload.get("results"), list):
+        meta = {
+            "count": payload.get("count"),
+            "next": payload.get("next"),
+            "previous": payload.get("previous"),
+        }
+        return list(payload.get("results") or []), meta
+
+    if isinstance(payload, dict):
+        return [payload], {}
+
+    return [], {}
+
+
+def _data_node_storage_search_impl(
+    *,
+    command_label: str,
+    title: str,
+    q: str,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+    search_fn,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label=command_label,
+    )
+    _require_login()
+
+    try:
+        payload = search_fn(filters=filters)
+    except ApiError as e:
+        error(f"{command_label} failed: {e}")
+        raise typer.Exit(1)
+
+    storages, pagination = _unpack_data_node_storage_search_response(payload)
+    if storages:
         print_table(
-            "Data Node Storages",
+            title,
             ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
-            rows,
+            _build_data_node_storage_rows(storages),
         )
     else:
-        info("No data node storages.")
-    info(f"Total data node storages: {len(storages)}")
+        info("No data node storages matched the search.")
+
+    if pagination:
+        print_kv(
+            "Pagination",
+            [
+                ("Query", q),
+                ("Returned", str(len(storages))),
+                ("Count", str(pagination.get("count") or "-")),
+                ("Next", str(pagination.get("next") or "-")),
+                ("Previous", str(pagination.get("previous") or "-")),
+            ],
+        )
+    else:
+        info(f'Returned data node storages for query "{q}": {len(storages)}')
+
+
+def _print_data_node_storage_search_section(
+    *,
+    title: str,
+    q: str,
+    payload: dict[str, object] | list[dict[str, object]],
+) -> int:
+    storages, pagination = _unpack_data_node_storage_search_response(payload)
+    if storages:
+        print_table(
+            title,
+            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            _build_data_node_storage_rows(storages),
+        )
+    else:
+        info(f'No data node storages matched "{q}" for {title.lower()}.')
+
+    if pagination:
+        print_kv(
+            f"{title} Pagination",
+            [
+                ("Query", q),
+                ("Returned", str(len(storages))),
+                ("Count", str(pagination.get("count") or "-")),
+                ("Next", str(pagination.get("next") or "-")),
+                ("Previous", str(pagination.get("previous") or "-")),
+            ],
+        )
+    else:
+        info(f'{title}: {len(storages)} match(es) for "{q}"')
+
+    return len(storages)
 
 
 @constants.command("list")
@@ -3020,6 +3172,7 @@ def _data_node_storage_delete_impl(
 
 @data_node_storage_group.command("list")
 def data_node_storage_list_cmd(
+    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -3039,6 +3192,7 @@ def data_node_storage_list_cmd(
     ```bash
     mainsequence data-node list
     mainsequence data_node list
+    mainsequence data-node list --data-source-id 2
     mainsequence data-node list --timeout 60
     ```
     """
@@ -3046,6 +3200,7 @@ def data_node_storage_list_cmd(
         timeout=timeout,
         filter_entries=filter_entries,
         show_filters=show_filters,
+        data_source_id=data_source_id,
     )
 
 
@@ -3075,6 +3230,251 @@ def data_node_storage_detail_cmd(
     ```
     """
     _data_node_storage_detail_impl(storage_id=storage_id, timeout=timeout)
+
+
+@data_node_storage_group.command("refresh-search-index")
+def data_node_storage_refresh_search_index_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Refresh the semantic search index for one data node storage.
+
+    Uses SDK client `DataNodeStorage.refresh_table_search_index()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node refresh-search-index 123
+    mainsequence data_node refresh-search-index 123
+    mainsequence data-node refresh-search-index 123 --timeout 60
+    ```
+    """
+    _require_login()
+
+    try:
+        payload = refresh_data_node_storage_search_index(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Data node search index refresh failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Data node search index refresh requested: id={storage_id}")
+    print_kv(
+        "Data Node Search Index Refresh",
+        [(str(k), _format_json_value(v)) for k, v in payload.items()],
+    )
+
+
+@data_node_storage_group.command("refresh_search_index", hidden=True)
+def data_node_storage_refresh_search_index_alias_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence data-node refresh-search-index`.
+    """
+    data_node_storage_refresh_search_index_cmd(storage_id=storage_id, timeout=timeout)
+
+
+@data_node_storage_group.command("search")
+def data_node_storage_search_cmd(
+    q: str = typer.Argument(..., help="Natural-language query to match against data node descriptions."),
+    mode: str = typer.Option(
+        "both",
+        "--mode",
+        help="Search scope: description, column, or both.",
+    ),
+    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    q_embedding: str | None = typer.Option(
+        None,
+        "--q-embedding",
+        help="Optional comma-separated embedding vector, for example 0.1,0.2,0.3.",
+    ),
+    trigram_k: int = typer.Option(200, "--trigram-k", help="Candidate count for trigram search."),
+    embed_k: int = typer.Option(200, "--embed-k", help="Candidate count for embedding search."),
+    w_trgm: float = typer.Option(0.65, "--w-trgm", help="Weight for trigram ranking."),
+    w_emb: float = typer.Option(0.35, "--w-emb", help="Weight for embedding ranking."),
+    embedding_model: str = typer.Option(
+        "default",
+        "--embedding-model",
+        help="Embedding model to use when the server generates the query embedding.",
+    ),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+):
+    """
+    Search data node storages by description metadata, column metadata, or both.
+
+    Uses SDK client `DataNodeStorage.description_search()` and
+    `DataNodeStorage.column_search()` as the single sources of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data_node search "close price"
+    mainsequence data-node search "portfolio weights" --mode description --data-source-id 2
+    mainsequence data-node search "portfolio weights" --q-embedding 0.1,0.2,0.3
+    ```
+    """
+    normalized_mode = (mode or "").strip().lower()
+    if normalized_mode not in {"both", "description", "column"}:
+        error("Invalid --mode. Use one of: both, description, column.")
+        raise typer.Exit(1)
+
+    parsed_embedding = _parse_cli_embedding(q_embedding)
+    filters = _resolve_cli_list_filters(
+        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Data Node Search",
+    )
+    filters = _merge_cli_filter_alias(
+        filters,
+        filter_key="data_source__id",
+        value=data_source_id,
+        option_name="data-source-id",
+    )
+    _require_login()
+
+    total_matches = 0
+
+    if normalized_mode in {"both", "description"}:
+        try:
+            description_payload = data_node_storage_description_search(
+                q,
+                q_embedding=parsed_embedding,
+                trigram_k=trigram_k,
+                embed_k=embed_k,
+                w_trgm=w_trgm,
+                w_emb=w_emb,
+                embedding_model=embedding_model,
+                filters=filters,
+            )
+        except ApiError as e:
+            error(f"Data Node Search failed: {e}")
+            raise typer.Exit(1)
+        total_matches += _print_data_node_storage_search_section(
+            title="Description Matches",
+            q=q,
+            payload=description_payload,
+        )
+
+    if normalized_mode in {"both", "column"}:
+        try:
+            column_payload = data_node_storage_column_search(q, filters=filters)
+        except ApiError as e:
+            error(f"Data Node Search failed: {e}")
+            raise typer.Exit(1)
+        total_matches += _print_data_node_storage_search_section(
+            title="Column Matches",
+            q=q,
+            payload=column_payload,
+        )
+
+    info(f'Total search matches for "{q}": {total_matches}')
+
+
+@data_node_storage_group.command("description-search", hidden=True)
+def data_node_storage_description_search_cmd(
+    q: str = typer.Argument(..., help="Natural-language query to match against data node descriptions."),
+    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    q_embedding: str | None = typer.Option(
+        None,
+        "--q-embedding",
+        help="Optional comma-separated embedding vector, for example 0.1,0.2,0.3.",
+    ),
+    trigram_k: int = typer.Option(200, "--trigram-k", help="Candidate count for trigram search."),
+    embed_k: int = typer.Option(200, "--embed-k", help="Candidate count for embedding search."),
+    w_trgm: float = typer.Option(0.65, "--w-trgm", help="Weight for trigram ranking."),
+    w_emb: float = typer.Option(0.35, "--w-emb", help="Weight for embedding ranking."),
+    embedding_model: str = typer.Option(
+        "default",
+        "--embedding-model",
+        help="Embedding model to use when the server generates the query embedding.",
+    ),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+):
+    """
+    Backward-compatible alias for `mainsequence data-node search --mode description`.
+    """
+    parsed_embedding = _parse_cli_embedding(q_embedding)
+    filters = _resolve_cli_list_filters(
+        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Data Node Description Search",
+    )
+    filters = _merge_cli_filter_alias(
+        filters,
+        filter_key="data_source__id",
+        value=data_source_id,
+        option_name="data-source-id",
+    )
+    _require_login()
+    try:
+        payload = data_node_storage_description_search(
+            q,
+            q_embedding=parsed_embedding,
+            trigram_k=trigram_k,
+            embed_k=embed_k,
+            w_trgm=w_trgm,
+            w_emb=w_emb,
+            embedding_model=embedding_model,
+            filters=filters,
+        )
+    except ApiError as e:
+        error(f"Data Node Description Search failed: {e}")
+        raise typer.Exit(1)
+    _print_data_node_storage_search_section(
+        title="Description Matches",
+        q=q,
+        payload=payload,
+    )
+
+
+@data_node_storage_group.command("column-search", hidden=True)
+def data_node_storage_column_search_cmd(
+    q: str = typer.Argument(..., help="Column name or term to search in data node columns."),
+    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+):
+    """
+    Search data node storages by column metadata.
+
+    Uses SDK client `DataNodeStorage.column_search()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node column-search weight
+    mainsequence data-node column-search close --filter storage_hash__contains=portfolio
+    ```
+    """
+    filters = _resolve_cli_list_filters(
+        model_ref=DATA_NODE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Data Node Column Search",
+    )
+    filters = _merge_cli_filter_alias(
+        filters,
+        filter_key="data_source__id",
+        value=data_source_id,
+        option_name="data-source-id",
+    )
+    _require_login()
+    try:
+        payload = data_node_storage_column_search(q, filters=filters)
+    except ApiError as e:
+        error(f"Data Node Column Search failed: {e}")
+        raise typer.Exit(1)
+    _print_data_node_storage_search_section(
+        title="Column Matches",
+        q=q,
+        payload=payload,
+    )
 
 
 @data_node_storage_group.command("delete")

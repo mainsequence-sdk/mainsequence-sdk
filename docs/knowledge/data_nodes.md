@@ -296,6 +296,134 @@ Log useful operational facts:
 
 Avoid logging secrets.
 
+### 10.1) Searchability and semantic discovery
+
+Good metadata is not just for humans reading code. It also powers search and discovery across published data nodes.
+
+`DataNodeStorage` now exposes two complementary search paths:
+
+- `description_search(q, ...)`
+- `column_search(q, ...)`
+
+Use them differently:
+
+- `description_search(...)` is for natural-language discovery:
+  - "close price"
+  - "daily portfolio weights"
+  - "crypto funding rates"
+- `column_search(...)` is for schema-oriented discovery:
+  - "close"
+  - "unique_identifier"
+  - "implied_volatility"
+
+#### `description_search(...)`
+
+This search hits:
+
+- `POST <object_url>/description-search/`
+
+Server behavior:
+
+- if `q_embedding` is omitted, the server generates it from `q`
+- results may come back either paginated or non-paginated
+
+The ranking blends two signals:
+
+- trigram similarity
+- embedding similarity
+
+That is why the method exposes:
+
+- `trigram_k`
+- `embed_k`
+- `w_trgm`
+- `w_emb`
+- `embedding_model`
+
+Use this when the user knows what they want conceptually, but not the exact table name.
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+results = msc.DataNodeStorage.description_search(
+    "daily close price",
+    data_source__id=2,
+)
+```
+
+CLI equivalent:
+
+```bash
+mainsequence data_node search "daily close price" --mode description --data-source-id 2
+```
+
+#### `column_search(...)`
+
+This search hits:
+
+- `GET <object_url>/column-search/?q=...`
+
+Extra keyword arguments are passed through as normal DRF filters, which makes it useful when you want to constrain the search to a known area such as one data source or one identifier family.
+
+Use this when the user remembers a column name or schema fragment, but not the data node name.
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+results = msc.DataNodeStorage.column_search(
+    "close",
+    data_source__id=2,
+)
+```
+
+CLI equivalent:
+
+```bash
+mainsequence data_node search "close" --mode column --data-source-id 2
+```
+
+#### Refreshing the search index
+
+`refresh_table_search_index()` exists for the cases where search quality depends on metadata or code that changed after the table was created.
+
+This method:
+
+- joins the table's column definitions with the code used to generate the data node
+- builds one consolidated textual description
+- embeds that description into the vector representation used for semantic search
+
+It hits:
+
+- `POST /{id}/refresh-table-search-index/`
+
+Use it when:
+
+- you improved `get_table_metadata()` or `get_column_metadata()`
+- you changed code comments or table-generation logic in a way that should improve discovery
+- search results feel stale compared with the current node implementation
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+storage = msc.DataNodeStorage.get(pk=123)
+storage.refresh_table_search_index()
+```
+
+CLI equivalent:
+
+```bash
+mainsequence data-node refresh-search-index 123
+```
+
+!!! tip "Search quality depends on metadata quality"
+    If you want `description_search(...)` to work well, write table and column metadata for humans, not just for machines. Clear descriptions, stable naming, and meaningful column docs directly improve discovery.
+
 ## 11) Testing safely
 
 When tests hit shared backends, isolate hashes/tables.
