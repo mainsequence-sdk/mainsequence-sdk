@@ -145,6 +145,55 @@ if __name__ == "__main__":
     main()
 ```
 
+### Test the node in a namespace first
+
+Before you start running a new `DataNode` against a shared backend, use a namespace first.
+
+Why this matters:
+
+- it isolates your first test runs from shared tables
+- it gives you a safe way to validate schema and update behavior
+- it keeps experimentation separate from production-like resources
+
+Use `hash_namespace(...)` while you are developing or testing:
+
+```python
+from mainsequence.tdag.data_nodes import hash_namespace
+
+from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig
+
+
+def main():
+    with hash_namespace("tutorial_daily_random_number"):
+        daily_node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
+        daily_node.run(debug_mode=True, force_update=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
+This should be your default habit when you are validating a new node for the first time.
+
+For real projects, also keep a small smoke test under `tests/`, for example `tests/test_daily_random_number.py`:
+
+```python
+from mainsequence.tdag.data_nodes import hash_namespace
+
+from src.data_nodes.example_nodes import DailyRandomNumber, RandomDataNodeConfig
+
+
+def test_daily_random_number_smoke():
+    with hash_namespace("pytest_daily_random_number_smoke"):
+        node = DailyRandomNumber(node_configuration=RandomDataNodeConfig(mean=0.0))
+        err, df = node.run(debug_mode=True, force_update=True)
+
+    assert err is False
+    assert df is not None
+```
+
+Once that namespaced run behaves as expected, you can run the same node without a namespace when you are ready to publish or share the real dataset.
+
 To run and debug in VS Code, you can configure a launch file at `.vscode\launch.json`.
 
 You can also ask Copilot or another AI assistant to generate it for `scripts/random_number_launcher.py`:

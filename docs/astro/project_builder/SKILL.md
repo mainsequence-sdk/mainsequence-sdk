@@ -1,21 +1,32 @@
 ---
 name: mainsequence-project
-description: Use this skill for MainSequence-specific work in this Astro-scaffolded repository. This skill does not define SDK behavior. It enforces a docs-first workflow against the latest MainSequence documentation and explains how to maintain astro/brief.md, astro/tasks.md, astro/record.md, astro/status.md, and astro/journal.md.
+description: Use this skill for MainSequence-specific work in this Astro-scaffolded repository. This skill is scaffolded into newly created MainSequence projects together with AGENTS.md and the astro/ files so an agent can resume work with a clean separation between intent, current state, stable facts, and history. It does not define SDK behavior; it enforces a docs-first workflow against the latest MainSequence documentation and explains how to maintain astro/brief.md, astro/tasks.md, astro/record.md, astro/status.md, and astro/journal.md.
 ---
 
 # MainSequence Project Runbook
 
 Use this skill only for MainSequence-specific tasks in this repository.
 
+## Why This Exists
+
+This skill is copied into newly created MainSequence projects as part of the Astro scaffold.
+Its purpose is to keep agent work reproducible by separating:
+
+- goal and acceptance criteria in `astro/brief.md`
+- current implementation work in `astro/tasks.md`
+- stable project facts in `astro/record.md`
+- latest verified state in `astro/status.md`
+- historical investigation notes in `astro/journal.md`
+
+Do not treat this skill as a frozen copy of MainSequence behavior.
+
 ## First Principle
 
-The latest MainSequence docs are the source of truth for SDK, CLI, DataNode, market,
-portfolio, instrument, dashboard, and platform behavior.
+The latest MainSequence docs are the source of truth for SDK, CLI, DataNode, jobs, artifacts,
+RBAC, dashboard, release, market, portfolio, instrument, and platform behavior.
 
 Canonical docs root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
-
-Do not use this skill as a frozen copy of MainSequence behavior.
 
 ## Read Order
 
@@ -34,16 +45,20 @@ Before implementation, debugging, validation, or documentation work:
 Use the latest relevant documentation section for the task at hand.
 
 Typical routing:
-- project setup, local environment, first DataNodes:
-  getting started docs
-- orchestration, jobs, schedules:
+- project setup, local environment, CLI:
+  tutorial setup docs plus CLI docs
+- DataNodes:
+  tutorial data-node chapters plus `knowledge/data_nodes.md`
+- orchestration, jobs, schedules, images:
   orchestration docs
-- markets, assets, portfolios:
-  markets docs
+- constants, secrets, RBAC, releases:
+  RBAC tutorial plus infrastructure docs
+- file-based workflows:
+  artifacts docs
 - dashboards:
   dashboard docs
-- if tutorial coverage is not enough:
-  use examples, then reference, then changelog or project docs
+- markets, assets, portfolios, instruments:
+  the relevant domain docs
 
 ## Workflow
 
@@ -55,10 +70,12 @@ Typical routing:
 6. Confirm project identifiers, checkout path, and orchestration notes in `astro/record.md`.
 7. If there is a failure or repeated issue, check `astro/journal.md`.
 8. Compare the current implementation against the latest docs.
-9. Upgrade to the latest MainSequence SDK if relevant.
-10. Run `mainsequence project refresh_token` before validations or live checks.
-11. Verify real platform state with the CLI or platform tooling when platform facts matter.
-12. Update the Astro files appropriately.
+9. Confirm project context with `mainsequence project current --debug`.
+10. Run `mainsequence project refresh_token --path .` before validations or live checks.
+11. If git push or pull is required, use `mainsequence project open-signed-terminal <PROJECT_ID>`.
+12. If installed CLI behavior appears behind the docs, run `mainsequence project update-sdk --path .`.
+13. Verify real platform state with the CLI or platform tooling when platform facts matter.
+14. Update the Astro files appropriately.
 
 ## Astro File Update Rules
 
@@ -99,7 +116,11 @@ Keep `astro/journal.md` append-only.
 ## Repo-Specific Rules
 
 - Keep all formal docs under `docs/`.
+- Keep `docs/SUMMARY.md` aligned with the docs structure.
 - Keep reusable dashboard UI under `dashboards/components/`.
+- Keep launcher scripts under `scripts/`.
+- Keep tests under `tests/`.
+- Keep recurring schedules in root-level `scheduled_jobs.yaml` when the project has shared recurring jobs.
 - Do not hardcode machine-specific local paths in reusable docs or instructions.
 - Do not hide failures.
 - Prefer strict code.
@@ -109,10 +130,23 @@ Keep `astro/journal.md` append-only.
 
 For any DataNode change:
 - re-read the relevant current docs first
-- fail fast in update paths
-- do not silently skip failures
+- keep the identifier and schema stable unless you are intentionally publishing a new dataset
+- split config correctly across dataset meaning, updater scope, and runtime knobs
+- keep updates incremental and use `UpdateStatistics`
+- keep dependencies deterministic and out of `update()`
+- implement metadata for production-quality tables
+- do not log secrets
+- always do the first development or test run in an explicit namespace before any non-namespaced run
+- use `hash_namespace(...)` only for isolated testing and experimentation
 - for high-volume nodes, test in a test namespace and smaller time range first
-- only then run a full update or backfill
+
+## Jobs, Releases, and Verification
+
+- Sync the project before job or release work when repository state matters.
+- For shared recurring jobs, prefer `scheduled_jobs.yaml` plus `mainsequence project schedule_batch_jobs`.
+- Use project images when reproducibility matters.
+- For deployed resources, verify the current project-resource and release workflow from the docs instead of assuming local-only files are deployable.
+- Verify jobs, runs, logs, images, resources, and releases with the CLI instead of assuming they exist.
 
 ## Documentation Sync
 
