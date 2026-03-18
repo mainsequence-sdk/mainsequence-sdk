@@ -317,3 +317,5 @@ And we are done. The update method follows a simple logic to extract the data fr
 
 
 Now to test your DataNode build a launcher and run it as we have done in the previous examples.
+
+For a deeper explanation of Main Sequence asset identity, custom asset registration, and when to use `Asset.filter(...)` versus `Asset.query(...)`, see [Assets](../../knowledge/markets/assets.md).

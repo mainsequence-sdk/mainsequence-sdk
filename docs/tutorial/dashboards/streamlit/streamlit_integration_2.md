@@ -143,3 +143,5 @@ This version is intentionally narrower and more accurate:
   Use the landing-page refresh button to rebuild the tutorial assets and simulated prices.
 
 At this point, your tutorial project has a current Streamlit dashboard and a current CLI deployment path that matches the SDK behavior in use today.
+
+For the reusable helper layer behind these dashboard chapters, see [Streamlit Helpers](../../../knowledge/dashboards/streamlit/index.md).

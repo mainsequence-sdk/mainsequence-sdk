@@ -4,6 +4,14 @@ If you are building a pricing engine, a research pipeline, or a dashboard, the r
 
 Main Sequence is designed to remove that bottleneck. A project gives you a production-ready workspace where code, data, and compute are already connected, so your team can move from idea to business value faster.
 
+The Main Sequence platform allows you to:
+
+1. rapidly build and deploy data products and data workflows as a unified API with a normalized structure through `DataNode`s
+2. rapidly deploy RBAC-enabled dashboards on the platform
+3. rapidly deploy agents using the Google Agent SDK
+
+The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
+
 In this tutorial, you will create a project using the platform UI and set it up locally with the VS Code extension.
 
 ## Quick Summary
@@ -78,3 +86,5 @@ Open the project context menu and select **Open Folder**. This opens a VS Code w
 You should now see your project in the current project panel.
 
 ![img.png](../img/tutorial/current_project.png)
+
+For the command-line concepts behind this GUI workflow, see [CLI Deep Dive](../knowledge/cli.md).

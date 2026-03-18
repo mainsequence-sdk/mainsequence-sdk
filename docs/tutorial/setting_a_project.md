@@ -4,6 +4,14 @@ If you are building a pricing engine, a research pipeline, or a dashboard, the b
 
 Main Sequence removes that setup overhead. A project gives you a production-ready workspace where code, data, and compute are already connected.
 
+The Main Sequence platform allows you to:
+
+1. rapidly build and deploy data products and data workflows as a unified API with a normalized structure through `DataNode`s
+2. rapidly deploy RBAC-enabled dashboards on the platform
+3. rapidly deploy agents using the Google Agent SDK
+
+The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
+
 This tutorial uses a **CLI-only** flow.
 
 ## Quick Summary
@@ -213,3 +221,5 @@ tutorial-project-cli-130/
 ```
 
 After completion, your project is ready for local development.
+
+For a deeper reference on the CLI workflow behind this setup, see [CLI Deep Dive](../knowledge/cli.md).

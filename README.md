@@ -1,102 +1,180 @@
 <p align="center">
-<img src="https://main-sequence.app/static/media/logos/MS_logo_long_black.png" alt="Main Sequence Logo" width="500"/>
+  <img src="https://main-sequence.app/static/media/logos/MS_logo_long_black.png" alt="Main Sequence Logo" width="500"/>
 </p>
 
 # Main Sequence Python SDK
 
+The Main Sequence Python SDK is the client and development toolkit for the Main Sequence platform.
 
-The Main Sequence Python SDK is a high-performance client library that enables seamless integration with the Main Sequence platform. 
-It provides a unified and intuitive interface for interacting with data, compute, and intelligence services across the platform.
+The Main Sequence platform allows you to:
 
-Main Sequence functions as a centralized engine for data intelligence—integrating information from diverse data sources and systems
-while abstracting away the complexity of underlying storage layers. This allows quants, researchers, analysts,
-and engineers to focus on the data-generating process itself, while Main Sequence optimizes all CRUD operations and manages 
-the mapping between logical data structures and physical storage.
+1. rapidly build and deploy data products and data workflows as a unified API with a normalized structure through `DataNode`s
+2. rapidly deploy RBAC-enabled dashboards on the platform
+3. rapidly deploy agents using the Google Agent SDK
 
-The Main Sequence SDK is also a foundational component of all Main Sequence Platform projects. 
-It acts as the backbone for automation, process orchestration, and the rapid development of dashboards,
-data nodes, and agentic tools built on top of the platform.
+The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
 
+## What this repository contains
 
----
+This repository contains the SDK and the documentation used to build and operate Main Sequence projects.
 
+Main package areas:
 
+- `mainsequence.tdag`: data orchestration, `DataNode`s, update workflows, and persistence
+- `mainsequence.client`: API client models for projects, jobs, data node storages, assets, sharing, and platform resources
+- `mainsequence.virtualfundbuilder`: portfolio construction and portfolio time series workflows
+- `mainsequence.instruments`: pricing-oriented market data and instrument tooling
+- `mainsequence.dashboards.streamlit`: reusable Streamlit scaffolding and dashboard helpers
+- `mainsequence.cli`: the `mainsequence` command-line interface
 
-## How the Repository is Organized
+Repository areas:
 
-The documentation follows the same structure as the SDK. Within each topic, we delve deeper into the logic and usage.
+- `docs/`: tutorials, knowledge guides, CLI docs, and generated reference docs
+- `examples/`: worked examples and usage patterns
+- `tests/`: automated tests
 
-Additionally, we provide an extensive set of examples within the repository here:  
-[Example Repository](https://github.com/mainsequence-sdk/mainsequence-sdk/tree/main/mainsequence).
+## Documentation map
 
-The examples section is organized by use case rather than by individual libraries.
+The documentation is organized into four reading modes:
 
-Recordings of our previous bootcamps will be available on our YouTube channel:  
-[YouTube Channel](https://www.youtube.com/channel/UCHevDrKbbsoWuV4OjTHOrpA).
+1. **Tutorial**: the guided learning path
+2. **Knowledge**: deeper conceptual guides
+3. **CLI**: command-focused operational documentation
+4. **Reference**: generated API reference
 
-### Main Sequence SDK Components
+Recommended entry points:
 
-Below are the main modules that compose the Main Sequence SDK, which are importable from `mainsequence`:
+- Tutorial:
+  - [Setting a Project (CLI)](docs/tutorial/setting_a_project.md)
+  - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
+  - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
+- Knowledge:
+  - [Data Nodes](docs/knowledge/data_nodes.md)
+  - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
+  - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
+  - [Streamlit Helpers](docs/knowledge/dashboards/streamlit/index.md)
+  - [Virtual Fund Builder](docs/knowledge/virtualfundbuilder/index.md)
+  - [Instruments](docs/knowledge/instruments/index.md)
+- CLI:
+  - [CLI Overview](docs/cli/index.md)
 
-1. **TDAG:** A time-series data orchestration and scheduling tool.
-2. **Client:** The Main Sequence client for interacting with the Main Sequence API.
-3. **VirtualFundBuilder:** A collection of classes and methods to quickly build portfolios and interact with our AI agents.
-4. **CLI:** The Main Sequence CLI tool.
-5. **Instruments:** An open-source integration of Main Sequence and QuantLib for quantitative finance.
-6. **Dashboards:** A collection of scaffolding recipes to integrate Streamlit dashboards with Main Sequence.
+## Quick start
 
-### Repository Extra Materials
-
-1. **Examples:** A comprehensive collection of examples demonstrating how to build portfolios and interact with our AI agents.
-2. **Docs:** A collection of documentation and tutorials.
-3. **Scripts:** A collection of scripts for automating common tasks.
-4. **Tests:** Unit tests for the SDK.
-
-
-
-## Developing with the Main Sequence SDK & Platform
-To make it easy to work on Main Sequence projects from your local environment, you have two options:
-
-1. **Use the MainSequence CLI directly in your terminal**, or  
-2. **Use the Main Sequence VS Code extension** (recommended if you already work in VS Code).
-
-The VS Code extension provides a more visual, editor-integrated workflow on top of what the CLI offers.
-
-
-### Visual Studio Code Extension
-
-1. **Open the Extensions view in VS Code**
-
-   - **macOS:** Press `Cmd` + `Shift` + `X`  
-   - **Windows/Linux:** Press `Ctrl` + `Shift` + `X`  
-   - Or click the **Extensions** icon in the Activity Bar on the left side of the window.
-
-2. **Search for the extension**
-
-   In the Extensions search box, type Main Sequence and press Enter or install it from here https://marketplace.visualstudio.com/items?itemName=MainSequenceGmbH.vscode-mainsequence
-
-
-![img.png](/docs/img/vs_code_extension.png)
-
-### MainSequence CLI
-
-MainSequence CLI is a small helper tool to:
-
-- Authenticate against the Main Sequence backend
-- Manage your local project checkouts (clone, open, delete)
-- Set up SSH deploy keys for project repos
-- Generate and maintain a `.env` file with project-specific tokens and endpoints
-- Build & run your project in Docker (via `uv` + `docker`)
-- Bundle and copy AI/LLM instruction markdowns to the clipboard
-
-The CLI is implemented with [Typer](https://typer.tiangolo.com/) and exposes a `mainsequence` command.
-
----
-
-## Installation & Invocation
-
-How you install the CLI depends on how this repository is packaged, but assuming it’s installed in your environment and provides the `mainsequence` entry point:
+Install the package:
 
 ```bash
-# General form
+pip install mainsequence
+```
+
+Authenticate:
+
+```bash
+mainsequence login you@company.com
+```
+
+Check that you can see your projects:
+
+```bash
+mainsequence project list
+```
+
+Create a new project:
+
+```bash
+mainsequence project create my-first-project
+```
+
+Set it up locally:
+
+```bash
+mainsequence project set-up-locally <PROJECT_ID>
+cd my-first-project
+mainsequence project build_local_venv --path .
+```
+
+From there, the normal learning path is:
+
+1. create your first `DataNode`
+2. understand sharing and RBAC
+3. schedule jobs
+4. build dashboards or downstream consumers
+
+## Installation for development
+
+This repository uses `pyproject.toml` and a development dependency group.
+
+With `uv`:
+
+```bash
+uv sync --group dev
+```
+
+Or with `pip`, install the package and the docs/test tools you need separately.
+
+## Common development commands
+
+Run the CLI:
+
+```bash
 mainsequence --help
+```
+
+Run tests:
+
+```bash
+pytest
+```
+
+Serve the docs locally:
+
+```bash
+mkdocs serve
+```
+
+Build the docs:
+
+```bash
+mkdocs build
+```
+
+Lint the code:
+
+```bash
+ruff check .
+```
+
+Format the code:
+
+```bash
+black .
+```
+
+## How to read this repository
+
+If you are evaluating the platform:
+
+- start with the tutorial in `docs/tutorial/`
+
+If you are building a feature and already know the area:
+
+- go straight to the relevant guide in `docs/knowledge/`
+
+If you are operating projects day to day:
+
+- use `docs/cli/` and the `mainsequence --help` command tree
+
+If you need the exact SDK surface:
+
+- use `docs/reference/`
+
+## Package metadata
+
+- Package name: `mainsequence`
+- Python: `>=3.10`
+- CLI entry point: `mainsequence`
+
+Project metadata is defined in [pyproject.toml](pyproject.toml).
+
+## License
+
+This repository is distributed under the terms described in [LICENSE](LICENSE).

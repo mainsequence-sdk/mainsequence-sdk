@@ -230,3 +230,5 @@ This tutorial chapter stays intentionally small:
 - it reuses the data products already created in earlier tutorial chapters
 
 By the end of Part 5.1, you have a working tutorial dashboard in your own project, and Part 5.2 can focus only on deployment.
+
+For a deeper guide to the reusable Streamlit helper package behind this chapter, see [Streamlit Helpers](../../../knowledge/dashboards/streamlit/index.md).

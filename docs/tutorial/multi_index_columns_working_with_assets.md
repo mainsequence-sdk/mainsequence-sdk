@@ -15,7 +15,7 @@ In Part 2, you built a basic `DataNode`. In this part, you will build an asset-b
 
 You can reuse this pattern for prices, signals, news, or any other asset-centric dataset.
 
-For the broader design rules behind this tutorial, see the [Data Nodes knowledge guide](../knowledge/data_nodes.md).
+For the broader design rules behind this tutorial, see the [Data Nodes knowledge guide](../knowledge/data_nodes.md). For a deeper explanation of asset identity, custom assets, and when to use `filter()` versus `query()`, see [Assets](../knowledge/markets/assets.md).
 
 ## What you will build
 
