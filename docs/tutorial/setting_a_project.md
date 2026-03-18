@@ -1,4 +1,6 @@
-# Introduction
+# Part 1: Setting a Project (CLI)
+
+## Introduction
 
 If you are building a pricing engine, a research pipeline, or a dashboard, the bottleneck is usually infrastructure: repositories, environments, storage, compute, permissions, and deployment.
 
@@ -12,7 +14,7 @@ The Main Sequence platform allows you to:
 
 The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
 
-This tutorial uses a **CLI-only** flow.
+This chapter uses a **CLI-only** flow.
 
 ## Quick Summary
 
@@ -26,8 +28,6 @@ In this part, you will:
 DataNodes created in this part: **none**.
 
 For the GUI + VS Code extension flow, see [Setting a Project (GUI + VS Code Extension)](./setting_a_project_gui.md).
-
-## Setting a Project (Part 1 - CLI)
 
 ## 1. Install and Verify the CLI
 

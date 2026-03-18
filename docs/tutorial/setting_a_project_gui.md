@@ -1,4 +1,6 @@
-# Introduction
+# Part 1A: Setting a Project (GUI + VS Code Extension)
+
+## Introduction
 
 If you are building a pricing engine, a research pipeline, or a dashboard, the real bottleneck is usually not code. It is infrastructure: repositories, environments, storage, compute, permissions, and deployment.
 
@@ -24,8 +26,6 @@ In this part, you will:
 - verify project readiness before coding
 
 DataNodes created in this part: **none**.
-
-## Setting a Project (Part 1 - GUI + VS Code Extension)
 
 This guide uses the web application and the VS Code extension flow.
 If you prefer the terminal-only flow, see [Setting a Project (CLI)](./setting_a_project.md).

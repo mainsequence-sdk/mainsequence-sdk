@@ -1,4 +1,4 @@
-# Creating a Data Node (Part 2)
+# Part 2: Creating a Data Node
 
 ## Quick Summary
 
@@ -11,11 +11,13 @@ In this part, you will:
 
 DataNodes created in this part: **`DailyRandomNumber`** and **`DailyRandomAddition`**.
 
-## 2. Creating a Data Node
+## 1. Create Your First DataNode
 
 **Key concepts:** data DAGs, `DataNode`, dependencies, `update_hash`, and `storage_hash`.
 
 Main Sequence encourages you to model workflows as data DAGs (directed acyclic graphs), composing your work into small steps called **data nodes**, each performing a single transformation.
+
+In this chapter, you will start with one standalone node, run it locally, and then extend it with a dependent node.
 
 Create a new file at `src\data_nodes\example_nodes.py` (Windows) or `src/data_nodes/example_nodes.py` (macOS/Linux), and define your first node, `DailyRandomNumber`, by subclassing `DataNode`.
 
@@ -104,7 +106,7 @@ In Pydantic v2, passing `ignore_from_storage_hash` via `json_schema_extra` avoid
 
 ### DataNode Recipe
 
-To create a data node we must follow the same recipe every time:
+Every `DataNode` follows the same basic recipe:
 
 1. Extend the base class `mainsequence.tdag.DataNode`
 2. Implement the constructor method `__init__()`
@@ -113,18 +115,19 @@ To create a data node we must follow the same recipe every time:
 
 #### The update() Method
 
-The update method has only one requirement: it should return a `pandas.DataFrame` with the following characteristics:
+The `update()` method has one hard requirement: it must return a `pandas.DataFrame`.
 
-* The `update()` method must always return a `pd.DataFrame()`.
-##### Data Frame Structure Requirements
-* The first index level must always be of type `datetime.datetime(timezone="UTC")`.
-* All column names in the DataFrame must be lowercase and no more than 63 characters long.
-* Column data types are only allowed to be `float`, `int`, or `str`. Any date information must be transformed to `int` or `float`.
-* If there is new data to return, the DataFrame must not be empty. If there is no new data to return, return an empty `pd.DataFrame()`.
-* A MultiIndex DataFrame is only allowed when the first index level is of type `datetime.datetime(timezone="UTC")`, the second index level is of type `str`, and its name is `unique_identifier`.
-* For a single-index DataFrame, the index must not contain duplicate values. For a MultiIndex DataFrame, there must be no duplicate combinations of `(time_index, unique_identifier)`.
-* The name of the first index level must always be `time_index`, and it is strongly recommended that it represents the observation time of the time series. For example, if the DataFrame stores time bars, `time_index` should represent the moment the bar is observed, not when the bar started.
-* If dates are stored in columns, they must be represented as timestamps.
+##### DataFrame structure requirements
+
+- `update()` must always return a `pd.DataFrame()`
+- the first index level must always be `datetime.datetime(timezone="UTC")`
+- all column names must be lowercase and no more than 63 characters long
+- column types should be `float`, `int`, or `str`; date values should live in the index or be converted to numeric timestamps
+- if there is new data to return, the DataFrame must contain rows; if there is no new data, return an empty `pd.DataFrame()`
+- a MultiIndex DataFrame is only allowed when the first index level is UTC datetimes and the second index level is a string named `unique_identifier`
+- a single-index DataFrame must not contain duplicate index values; a MultiIndex DataFrame must not contain duplicate `(time_index, unique_identifier)` pairs
+- the first index level must always be named `time_index`, and it should represent the observation time of the data
+- if dates are stored in columns, they should be represented as timestamps
 
 
 Next, create `scripts\random_number_launcher.py` to run the node:
@@ -192,9 +195,9 @@ for my file scripts/random_number_launcher.py
 }
 ```
 
-Back to your `random_number_launcher.py`, and at the top right corner of VS Code you will see **Run Python File** dropdown, click on the **Python Debugger: Debug using launch.json** option and finally select the debug configuration you just created.
+Back in `random_number_launcher.py`, use the **Run Python File** dropdown in the top-right corner of VS Code. Choose **Python Debugger: Debug using launch.json**, then select the configuration you just created.
 
-This will execute the configuration. Then open:
+After the launcher runs, open:
 
 https://main-sequence.app/dynamic-table-metadatas/
 
@@ -257,7 +260,7 @@ class DailyRandomAddition(DataNode):
         )
 ```
 
-This simply defines a **dependent** node (`DailyRandomAddition`) that references and uses the output of `DailyRandomNumber`.
+This adds a **dependent** node, `DailyRandomAddition`, that reads the output of `DailyRandomNumber` and uses it in its own update logic.
 
 Create a launcher at `scripts\random_daily_addition_launcher.py`:
 
@@ -300,7 +303,7 @@ Now to run this launcher, add a new debug configuration to your `.vscode/launch.
             "python": "${workspaceFolder}/.venv/bin/python" 
         }
 ```
-Then back to the `random_daily_addition_launcher.py` file and run the configuration from the Run/Debug dropdown at the top-right, choose "Debug random_daily_addition_launcher” and then choose new configuration with "Debug random_daily_addition_launcher" name. After it runs, return to the Dynamic Table Metadatas page to see the new table:
+Then return to `random_daily_addition_launcher.py` and run it from the VS Code Run/Debug dropdown using the `Debug random_daily_addition_launcher` configuration. After it runs, return to the Dynamic Table Metadatas page to see the new table:
 
 https://main-sequence.app/dynamic-table-metadatas/
 
@@ -308,7 +311,7 @@ Because `DailyRandomAddition` does not define `get_table_metadata()` in this exa
 
 ![img.png](../img/tutorial/update_hash.png)
 
-You'll see the dependency graph for this workflow:
+You should now see the dependency graph for this workflow:
 
 ![img.png](../img/tutorial/update_hash_detail.png)
 
@@ -368,6 +371,6 @@ mainsequence project data-node-updates list
 
 ```
 
-Congratulations! You've built your first Data Nodes in Main Sequence. In the next part of the tutorial, we'll explore scheduling and automating these nodes and more.
+At this point, you have built your first `DataNode`s in Main Sequence. In the next part of the tutorial, you will move from local execution to shared access control and then to orchestration.
 
 For further reference on DataNode concepts and best practices, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
