@@ -72,6 +72,8 @@ class BasePydanticModel(BaseModel):
 class BaseObjectOrm:
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = None
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str | Callable[..., Any]]] = {}
+    READ_QUERY_PARAMS: ClassVar[dict[str, str | Callable[..., Any]] | None] = None
+    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
     DESTROY_QUERY_PARAMS: ClassVar[dict[str, str | Callable[..., Any]] | None] = None
     DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
 
@@ -364,16 +366,21 @@ class BaseObjectOrm:
         return normalized
 
     @classmethod
-    def _normalize_destroy_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
-        destroy_query_params = getattr(cls, "DESTROY_QUERY_PARAMS", None)
-        if not destroy_query_params:
+    def _normalize_declared_query_kwargs(
+        cls,
+        kwargs: dict[str, Any],
+        *,
+        declared_params: dict[str, str | Callable[..., Any]] | None,
+        label: str,
+    ) -> dict[str, Any]:
+        if not declared_params:
             return dict(kwargs)
 
-        unexpected = sorted(key for key in kwargs.keys() if key not in destroy_query_params)
+        unexpected = sorted(key for key in kwargs.keys() if key not in declared_params)
         if unexpected:
-            allowed_params = ", ".join(sorted(destroy_query_params.keys()))
+            allowed_params = ", ".join(sorted(declared_params.keys()))
             raise ValueError(
-                f"Unsupported {cls.__name__} delete parameter(s): {', '.join(unexpected)}. "
+                f"Unsupported {cls.__name__} {label}(s): {', '.join(unexpected)}. "
                 f"Allowed parameters: {allowed_params}."
             )
 
@@ -385,20 +392,56 @@ class BaseObjectOrm:
             normalized[param_name] = cls._apply_declared_normalizer(
                 value,
                 field_name=param_name,
-                normalizer=destroy_query_params.get(param_name),
+                normalizer=declared_params.get(param_name),
                 bool_as_query_string=True,
             )
 
         return normalized
 
     @classmethod
+    def _normalize_read_query_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        return cls._normalize_declared_query_kwargs(
+            kwargs,
+            declared_params=getattr(cls, "READ_QUERY_PARAMS", None),
+            label="read parameter",
+        )
+
+    @classmethod
+    def _normalize_destroy_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        return cls._normalize_declared_query_kwargs(
+            kwargs,
+            declared_params=getattr(cls, "DESTROY_QUERY_PARAMS", None),
+            label="delete parameter",
+        )
+
+    @classmethod
+    def _split_filter_and_read_query_kwargs(
+        cls,
+        kwargs: dict[str, Any],
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
+        read_query_params = getattr(cls, "READ_QUERY_PARAMS", None) or {}
+        if not read_query_params:
+            return dict(kwargs), {}
+
+        filter_kwargs: dict[str, Any] = {}
+        read_query_kwargs: dict[str, Any] = {}
+        for key, value in kwargs.items():
+            if key in read_query_params:
+                read_query_kwargs[key] = value
+            else:
+                filter_kwargs[key] = value
+        return filter_kwargs, read_query_kwargs
+
+    @classmethod
     def iter_filter(cls, timeout=None, max_items: int | None = None, **kwargs):
         """
         Generator variant: yields objects across all pages without accumulating into memory.
         """
-        kwargs = cls._normalize_filter_kwargs(kwargs)
+        filter_kwargs, read_query_kwargs = cls._split_filter_and_read_query_kwargs(kwargs)
+        normalized_filters = cls._normalize_filter_kwargs(filter_kwargs)
+        normalized_read_query = cls._normalize_read_query_kwargs(read_query_kwargs)
         base_url = cls.get_object_url()
-        params = cls._parse_parameters_filter(kwargs)
+        params = cls._parse_parameters_filter({**normalized_filters, **normalized_read_query})
 
         next_url = f"{base_url}/"
         yielded = 0
@@ -461,13 +504,19 @@ class BaseObjectOrm:
         if pk is not None:
             base_url = cls.get_object_url()
             detail_url = f"{base_url}/{pk}/"
+            _, read_query_kwargs = cls._split_filter_and_read_query_kwargs(filters)
+            normalized_read_query = cls._normalize_read_query_kwargs(read_query_kwargs)
+            extra_params = {
+                key: value for key, value in filters.items() if key not in read_query_kwargs
+            }
+            params = {**extra_params, **normalized_read_query}
 
             r = make_request(
                 s=cls.build_session(),
                 loaders=cls.LOADERS,
                 r_type="GET",
                 url=detail_url,
-                payload={"params": filters},  # neede to pass special serializer
+                payload={"params": params},  # neede to pass special serializer
                 time_out=timeout,
             )
             raise_for_response(r)

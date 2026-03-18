@@ -201,6 +201,16 @@ class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
 
 
 class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
+    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "include_relations_detail": "bool",
+    }
+    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
+        "include_relations_detail": (
+            "Expand related objects in the serializer response. "
+            "This changes response detail only and does not change which rows are returned."
+        ),
+    }
+
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     data_node_storage: int | DataNodeStorage
@@ -862,6 +872,15 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         "id": "id",
         "id__in": "id",
         "data_source__id": "id",
+    }
+    READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "include_relations_detail": "bool",
+    }
+    READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
+        "include_relations_detail": (
+            "Expand related objects in the serializer response. "
+            "This changes response detail only and does not change which rows are returned."
+        ),
     }
     DESTROY_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "full_delete_selected": "bool",
