@@ -369,7 +369,11 @@ class UpdateRunner:
                 update_map,
             )
         else:
-            self._execute_parallel_distributed_update(dependencies_df)
+            # self._execute_parallel_distributed_update(dependencies_df) Todo: Impplement
+            self._execute_sequential_debug_update(
+                dependencies_df,
+                update_map,
+            )
 
         self.logger.debug(f"Dependency tree evaluation complete for {self.ts}.")
 
