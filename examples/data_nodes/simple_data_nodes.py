@@ -5,6 +5,7 @@ These data nodes do not serve any practical purpose but only exemplify creation 
 
 """
 
+import os
 from typing import Union
 
 import numpy as np
@@ -13,6 +14,8 @@ from pydantic import BaseModel, Field
 
 import mainsequence.client as msc
 from mainsequence.tdag.data_nodes import APIDataNode, DataNode, hash_namespace
+
+PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
 
 
 class VolatilityConfig(BaseModel):
@@ -60,11 +63,7 @@ class DailyRandomNumber(DataNode):
         super().__init__(*args, **kwargs)
 
     def get_table_metadata(self) -> msc.TableMetaData:
-        TS_ID = f"example_random_number_{self.mean}_{self.std}"
-
-        # ✅ ONLY changes identifier when namespaced (tests)
-        if getattr(self, "hash_namespace", ""):
-            TS_ID = f"{self.hash_namespace}__{TS_ID}"
+        TS_ID = f"example_random_number_{PROJECT_ID}_{self.mean}"
 
         meta = msc.TableMetaData(identifier=TS_ID, description="Example Data Node")
         return meta

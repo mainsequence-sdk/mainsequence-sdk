@@ -1070,6 +1070,56 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
 
         return r.json() if r.content else None
 
+    @classmethod
+    def get_org_unique_identifiers(
+        cls,
+        *,
+        timeout: int | None = None,
+    ) -> list[str]:
+        """
+        Return the organization-visible unique identifiers available for this data node storage endpoint.
+
+        This hits:
+            GET /get-org-unique-identifiers/
+
+        Parameters
+        ----------
+        timeout:
+            Optional request timeout in seconds.
+        """
+        url = f"{cls.get_object_url()}/get-org-unique-identifiers/"
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            payload={},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+        if not r.content:
+            return []
+
+        payload = r.json()
+        if isinstance(payload, list):
+            raw_identifiers = payload
+        elif isinstance(payload, dict):
+            if isinstance(payload.get("results"), list):
+                raw_identifiers = payload["results"]
+            elif isinstance(payload.get("unique_identifiers"), list):
+                raw_identifiers = payload["unique_identifiers"]
+            else:
+                raise ValueError(
+                    "Unexpected response payload for DataNodeStorage.get_org_unique_identifiers()."
+                )
+        else:
+            raise ValueError(
+                f"Unexpected response type for DataNodeStorage.get_org_unique_identifiers(): {type(payload)!r}"
+            )
+
+        return [str(item) for item in raw_identifiers if item is not None]
+
 
 
 
@@ -2833,6 +2883,54 @@ class Project(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
+
+    @classmethod
+    def get_org_project_names(
+        cls,
+        *,
+        timeout: int | None = None,
+    ) -> list[str]:
+        """
+        Return the list of project names visible to the authenticated user's organization.
+
+        This hits:
+            GET /get_org_project_names/
+
+        Parameters
+        ----------
+        timeout:
+            Optional request timeout in seconds.
+        """
+        url = cls.get_object_url() + "/get_org_project_names/"
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            payload={},
+            time_out=timeout,
+        )
+        raise_for_response(r)
+
+        if not r.content:
+            return []
+
+        payload = r.json()
+        if isinstance(payload, list):
+            raw_names = payload
+        elif isinstance(payload, dict):
+            if isinstance(payload.get("results"), list):
+                raw_names = payload["results"]
+            elif isinstance(payload.get("project_names"), list):
+                raw_names = payload["project_names"]
+            else:
+                raise ValueError("Unexpected response payload for Project.get_org_project_names().")
+        else:
+            raise ValueError(
+                f"Unexpected response type for Project.get_org_project_names(): {type(payload)!r}"
+            )
+
+        return [str(item) for item in raw_names if item is not None]
 
     @classmethod
     def sync_project_after_commit(

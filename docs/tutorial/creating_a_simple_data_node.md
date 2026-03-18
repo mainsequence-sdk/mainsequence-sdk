@@ -24,6 +24,7 @@ Create a new file at `src\data_nodes\example_nodes.py` (Windows) or `src/data_no
 
 
 ```python
+import os
 from typing import Dict, Union
 
 import pandas as pd
@@ -32,6 +33,8 @@ from mainsequence.tdag.data_nodes import DataNode, APIDataNode
 import mainsequence.client as msc
 import numpy as np
 from pydantic import BaseModel, Field
+
+PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
 
 
 class VolatilityConfig(BaseModel):
@@ -78,7 +81,7 @@ class DailyRandomNumber(DataNode):
         super().__init__(*args, **kwargs)
 
     def get_table_metadata(self) -> msc.TableMetaData:
-        TS_ID = f"example_random_number_{self.mean}_{self.std}"
+        TS_ID = f"example_random_number_{PROJECT_ID}_{self.mean}"
         meta = msc.TableMetaData(identifier=TS_ID,
                                 description="Example Data Node")
 
@@ -101,6 +104,21 @@ class DailyRandomNumber(DataNode):
         """
         return {}
 ```
+
+!!! important
+    `TableMetaData.identifier` must be unique across your organization. In tutorial code, generic names like `example_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
+
+    That is why this example includes `MAIN_SEQUENCE_PROJECT_ID` from the generated `.env` file. It gives each project a stable table name while still keeping the identifier readable.
+
+    This is different from the `unique_identifier` field used later in MultiIndex asset tables. Here, you are naming the table itself, not an individual asset row.
+
+    If you want to inspect the organization-visible DataNode table identifiers before choosing one, run:
+
+    ```bash
+    mainsequence data-node org-unique-identifiers
+    ```
+
+    This command lists DataNode table identifiers, not asset `unique_identifier` values.
 
 In Pydantic v2, passing `ignore_from_storage_hash` via `json_schema_extra` avoids a deprecation warning while preserving the same Main Sequence behavior.
 
@@ -250,7 +268,7 @@ After the launcher runs, open:
 
 https://main-sequence.app/dynamic-table-metadatas/
 
-Search for `example_random_number`. You should see your data node and its table.
+Search for `example_random_number_<your_project_id>` or the exact identifier your node generated. You should see your data node and its table.
 
 ![img.png](../img/tutorial/table_search.png)
 
@@ -398,7 +416,7 @@ daily_node_low.run(debug_mode=True, force_update=True)
 daily_node_high.run(debug_mode=True, force_update=True)
 ```
 
-Here we create two `DailyRandomNumber` nodes with different `std` (Volatility) configurations but the same `mean`. Since we set `ignore_from_storage_hash=True` for the `std` field in `RandomDataNodeConfig`, both nodes will write to the same underlying table.
+Here we create two `DailyRandomNumber` nodes with different `std` (Volatility) configurations but the same `mean`. Since we set `ignore_from_storage_hash=True` for the `std` field in `RandomDataNodeConfig`, both nodes will write to the same underlying table. The tutorial identifier stays stable because it is based on project id and `mean`, not on `std`.
 
 Run the updated launcher in VS Code as before. After it runs, return to the Dynamic Table Metadatas page to see the table for `DailyRandomNumber`.
 

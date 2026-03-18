@@ -57,7 +57,19 @@ You can validate access with:
 mainsequence project list
 ```
 
-## 3. Create a New Project
+## 3. Check Existing Project Names
+
+Before you create a new project, inspect the project names already visible in your organization:
+
+```bash
+mainsequence organization project-names
+```
+
+If your intended name already appears in that list, choose another one before you create the project.
+
+This command helps you avoid name collisions. It does not replace your organization's naming rules, but it is the fastest way to check whether a tutorial name such as `tutorial-project-cli` is already in use.
+
+## 4. Create a New Project
 
 Run:
 
@@ -97,7 +109,7 @@ The CLI will prompt for any missing values and uses sensible defaults. It also p
 
     Instead of switching branches for different deployments, each project is associated with a specific branch. This makes it easier to separate development and production deployments, test changes safely, and keep a consistent project structure and view across environments.
 
-## 4. Confirm Project Creation
+## 5. Confirm Project Creation
 
 List projects and identify the new project ID:
 
@@ -113,7 +125,7 @@ ID   Project               Data Source  Class         Status     Local  Path
 130  tutorial-project-cli  Default DB   timescale_db  AVAILABLE  -      -
 ```
 
-## 5. Set Up the Project Locally
+## 6. Set Up the Project Locally
 
 Use the project ID from the previous step:
 
@@ -135,7 +147,7 @@ mainsequence project list
 
 The `Local` column should show `Local`, and `Path` should point to your local folder.
 
-## 6. Open a Signed Terminal (Required for Git Push/Pull)
+## 7. Open a Signed Terminal (Required for Git Push/Pull)
 
 Before running git commands, open a signed terminal so the project SSH key is loaded in `ssh-agent`.
 
@@ -153,7 +165,7 @@ mainsequence project open-signed-terminal 130
 
 Use the newly opened terminal for `git pull`, `git push`, and any other git operations against the project repository.
 
-## 7. Move Into the Project You Just Created
+## 8. Move Into the Project You Just Created
 
 ### macOS/Linux (bash/zsh)
 
@@ -179,7 +191,7 @@ Get-Location
 
 If `open-signed-terminal` opened directly in the project folder, you can keep working there and skip this step.
 
-## 8. Understand the Folder Structure Created
+## 9. Understand the Folder Structure Created
 
 After `mainsequence project set-up-locally [PROJECT_ID]`, your local project folder should look similar to:
 
@@ -200,7 +212,7 @@ Key points:
 - `src/`, `dashboards/`, `tests/`, `pyproject.toml`, and `requirements.txt` come from the project repository scaffold.
 - `Dockerfile` and `.dockerignore` are scaffolded only when a default base image is present.
 
-## 9. Build the Local Environment
+## 10. Build the Local Environment
 
 Inside the project folder, create and sync a local `.venv`:
 

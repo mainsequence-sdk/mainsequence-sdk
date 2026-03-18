@@ -32,6 +32,14 @@ If you prefer the terminal-only flow, see [Setting a Project (CLI)](./setting_a_
 
 ## 1. Create a Project (GUI)
 
+If you already have the CLI installed and want to check whether a name is already in use before creating the project, run:
+
+```bash
+mainsequence organization project-names
+```
+
+If your intended project name already appears in that list, choose another one before you create it in the UI.
+
 Log in to Main Sequence. You will land on the **Projects** page. Projects help you organize work, data, and compute. Create your first one: click **Create New Project** and name it **Tutorial Project**.
 
 ![img.png](../img/tutorial/projects_search.png)

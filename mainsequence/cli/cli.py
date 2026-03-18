@@ -83,6 +83,7 @@ from .api import (
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
+    list_data_node_org_unique_identifiers,
     list_data_node_storage_users_can_edit,
     list_data_node_storage_users_can_view,
     list_data_node_storages,
@@ -90,6 +91,7 @@ from .api import (
     list_github_organizations,
     list_market_asset_translation_tables,
     list_market_portfolios,
+    list_org_project_names,
     list_project_base_images,
     list_project_images,
     list_project_job_runs,
@@ -156,6 +158,7 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
+organization = typer.Typer(help="Organization commands")
 markets = typer.Typer(help="Markets commands")
 data_node_storage_group = typer.Typer(help="Data node commands")
 markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
@@ -172,6 +175,7 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(constants, name="constants")
 app.add_typer(secrets, name="secrets")
+app.add_typer(organization, name="organization")
 app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
@@ -1874,6 +1878,51 @@ def user_show():
     )
 
 
+@organization.command("project-names")
+def organization_project_names_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List project names visible to the authenticated user's organization.
+
+    Uses SDK client `Project.get_org_project_names()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization project-names
+    mainsequence organization project-names --timeout 60
+    ```
+    """
+    _require_login()
+
+    try:
+        project_names = list_org_project_names(timeout=timeout)
+    except ApiError as e:
+        error(f"Organization project names fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if project_names:
+        print_table(
+            "Organization Project Names",
+            ["Project Name"],
+            [[project_name] for project_name in project_names],
+        )
+    else:
+        info("No organization-visible project names.")
+    info(f"Total organization-visible project names: {len(project_names)}")
+
+
+@organization.command("project_names", hidden=True)
+def organization_project_names_alias_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence organization project-names`.
+    """
+    organization_project_names_cmd(timeout=timeout)
+
+
 @app.command("copy-llm-instructions")
 def copy_llm_instructions(
     dir: str | None = typer.Option(
@@ -3202,6 +3251,52 @@ def data_node_storage_list_cmd(
         show_filters=show_filters,
         data_source_id=data_source_id,
     )
+
+
+@data_node_storage_group.command("org-unique-identifiers")
+def data_node_storage_org_unique_identifiers_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List organization-visible data node unique identifiers.
+
+    Uses SDK client `DataNodeStorage.get_org_unique_identifiers()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence data-node org-unique-identifiers
+    mainsequence data_node org-unique-identifiers
+    mainsequence data-node org-unique-identifiers --timeout 60
+    ```
+    """
+    _require_login()
+
+    try:
+        identifiers = list_data_node_org_unique_identifiers(timeout=timeout)
+    except ApiError as e:
+        error(f"Data node unique identifiers fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if identifiers:
+        print_table(
+            "Organization Data Node Unique Identifiers",
+            ["Unique Identifier"],
+            [[identifier] for identifier in identifiers],
+        )
+    else:
+        info("No organization-visible data node unique identifiers.")
+    info(f"Total organization-visible data node unique identifiers: {len(identifiers)}")
+
+
+@data_node_storage_group.command("org_unique_identifiers", hidden=True)
+def data_node_storage_org_unique_identifiers_alias_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence data-node org-unique-identifiers`.
+    """
+    data_node_storage_org_unique_identifiers_cmd(timeout=timeout)
 
 
 @data_node_storage_group.command("detail")

@@ -36,6 +36,7 @@ mainsequence --help
 mainsequence doctor
 mainsequence constants --help
 mainsequence secrets --help
+mainsequence organization --help
 mainsequence data-node list
 mainsequence markets --help
 mainsequence user
@@ -74,10 +75,12 @@ mainsequence secrets add_to_edit 42 7
 mainsequence secrets remove_from_view 42 7
 mainsequence secrets remove_from_edit 42 7
 mainsequence secrets delete 42
+mainsequence organization project-names
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter id__in=42,43
 mainsequence data-node list --data-source-id 2
+mainsequence data-node org-unique-identifiers
 mainsequence data_node search "close price"
 mainsequence data-node search "close price" --data-source-id 2
 mainsequence data-node search "portfolio weights" --mode description
@@ -186,6 +189,7 @@ mainsequence settings set-base ~/mainsequence
 - If a command says not logged in, run `mainsequence login <email>` again.
 - If your shell cannot use secure token storage, use `--export` mode.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
+- `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
 - `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
 - `mainsequence constants can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Constant`.
@@ -203,6 +207,7 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
+- `mainsequence data-node org-unique-identifiers` lists the organization-visible unique identifiers exposed by the SDK client `DataNodeStorage.get_org_unique_identifiers()` path.
 - `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `DataNodeStorage.description_search()` and `DataNodeStorage.column_search()` paths.
 - `mainsequence data-node search --mode description` only uses `DataNodeStorage.description_search()`.
 - `mainsequence data-node search --mode column` only uses `DataNodeStorage.column_search()`.

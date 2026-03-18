@@ -37,8 +37,8 @@ That distinction is what allows multiple jobs to write safely into the same data
 
 For this tutorial:
 
-- the table identifier in `get_table_metadata()` names the dataset
-- the `unique_identifier` in the `MultiIndex` names each asset row
+- the table `identifier` in `get_table_metadata()` names the dataset and must be unique across your organization
+- the `unique_identifier` in the `MultiIndex` names each asset row and must be unique for the asset it represents
 - `asset_list` is updater scope, so it should usually be ignored from `storage_hash`
 
 ## Create `src/data_nodes/prices_nodes.py`
@@ -47,6 +47,7 @@ Create a file at `src\data_nodes\prices_nodes.py` (Windows) or `src/data_nodes/p
 
 ```python
 import datetime
+import os
 from typing import Union
 
 import numpy as np
@@ -57,7 +58,8 @@ from pydantic import BaseModel, Field
 import mainsequence.client as msc
 from mainsequence.tdag import APIDataNode, DataNode
 
-SIMULATED_PRICES_IDENTIFIER = "simulated_prices_tutorial"
+PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
+SIMULATED_PRICES_IDENTIFIER = f"simulated_prices_tutorial_{PROJECT_ID}"
 
 
 class SimulatedPricesManager:
@@ -240,10 +242,20 @@ Those rules are the minimum needed to make the table predictable for downstream 
 
 Use a stable snake_case identifier that describes the dataset, for example:
 
-- `simulated_prices_tutorial`
-- `simulated_prices_research_demo`
+- `simulated_prices_tutorial_130`
+- `simulated_prices_research_demo_130`
+
+The safest tutorial pattern is to include `MAIN_SEQUENCE_PROJECT_ID` from your `.env` file, as shown in the code example above. This matters because tutorial identifiers are reused by many people, and someone else in your organization has probably already run this chapter. Using the project id keeps the identifier stable for your project and avoids those collisions.
 
 If someone in your organization already created the same table identifier, choose a new stable identifier with a project-specific suffix. Do not rename it on every run.
+
+If you want to inspect the organization-visible DataNode table identifiers first, run:
+
+```bash
+mainsequence data-node org-unique-identifiers
+```
+
+This command helps you check existing table names before publishing a new one. It lists DataNode identifiers, not asset `unique_identifier` values.
 
 ## Launcher script
 
@@ -443,15 +455,15 @@ Why this is the recommended shape:
 
 If the launcher succeeds, you should see two updater jobs writing into the same dataset.
 
-Search for the identifier you chose, for example:
+Search for the identifier you chose, for example `simulated_prices_tutorial_<your_project_id>`:
 
-[Search for `simulated_prices_tutorial`](https://main-sequence.app/dynamic-table-metadatas/?search=simulated_prices_tutorial&storage_hash=&identifier=)
+[Open Dynamic Table Metadatas](https://main-sequence.app/dynamic-table-metadatas/)
 
 If you chose a different identifier, search for that one instead.
 
 ## Common issues
 
-- **Identifier already exists**: choose a new stable identifier with a project-specific suffix.
+- **Identifier already exists**: the table `identifier` must be unique across your organization. Reuse `MAIN_SEQUENCE_PROJECT_ID` or another stable project-specific suffix.
 - **No new rows returned**: you may already be up to date through yesterday 00:00 UTC.
 - **Assets not found**: check your ticker filter, venue filter, or use `unique_identifier` directly.
 - **Auth or environment issues**: make sure your `.env` and Main Sequence login state are valid before running the launcher.

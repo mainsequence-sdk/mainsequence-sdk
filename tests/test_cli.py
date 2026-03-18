@@ -107,6 +107,22 @@ def test_user_show(cli_mod, runner, monkeypatch):
     assert "Main Sequence" in result.output
 
 
+def test_organization_project_names(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_org_project_names",
+        lambda timeout=None: ["alpha-research", "portfolio-live"],
+    )
+
+    result = runner.invoke(cli_mod.app, ["organization", "project-names"])
+    assert result.exit_code == 0
+    assert "Project Name" in result.output
+    assert "alpha-research" in result.output
+    assert "portfolio-live" in result.output
+    assert "Total organization-visible project names: 2" in result.output
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(
@@ -2212,6 +2228,55 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     assert detail["storage_hash"] == "weights_daily"
 
 
+def test_list_data_node_org_unique_identifiers_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeDataNodeStorage:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+
+        @classmethod
+        def get_org_unique_identifiers(cls, *, timeout=None):
+            captured["timeout"] = timeout
+            return ["close_price_daily", "portfolio_weights"]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_data_node_org_unique_identifiers(timeout=25)
+
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["timeout"] == 25
+    assert out == ["close_price_daily", "portfolio_weights"]
+
+
 def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -2848,6 +2913,55 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     assert captured["headers_seen"] == {"X-User-ID": "7"}
     assert captured["headers_reset"] == "token"
     assert out["username"] == "jose"
+
+
+def test_list_org_project_names_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProject:
+        ROOT_URL = "https://old.test/orm/api/pods/projects"
+
+        @classmethod
+        def get_org_project_names(cls, *, timeout=None):
+            captured["timeout"] = timeout
+            return ["alpha-research", "portfolio-live"]
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.Project = FakeProject
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+
+    out = api_mod.list_org_project_names(timeout=12)
+
+    assert captured["jwt"] == ("acc", "ref")
+    assert captured["timeout"] == 12
+    assert out == ["alpha-research", "portfolio-live"]
 
 
 def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
@@ -4082,6 +4196,22 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     assert "PortfolioWei" in result.output
     assert "Default DB" in result.output
     assert "Total data node storages: 1" in result.output
+
+
+def test_data_node_storage_org_unique_identifiers(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_data_node_org_unique_identifiers",
+        lambda timeout=None: ["close_price_daily", "portfolio_weights"],
+    )
+
+    result = runner.invoke(cli_mod.app, ["data-node", "org-unique-identifiers"])
+    assert result.exit_code == 0
+    assert "Unique Identifier" in result.output
+    assert "close_price_daily" in result.output
+    assert "portfolio_weights" in result.output
+    assert "Total organization-visible data node unique identifiers: 2" in result.output
 
 
 def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch):

@@ -41,6 +41,24 @@ Use these conventions consistently:
 - Table identifier: lowercase `snake_case`, stable, meaning-based (`fx_ecb_daily_rates`)
 - Dependency keys: short and descriptive (`"prices"`, `"rates"`, `"raw"`)
 
+### 3.1 Table identifiers must be unique across the organization
+
+Treat a table `identifier` as an organization-level published name.
+
+That means:
+
+- two teams should not publish different datasets under the same identifier,
+- tutorial-style identifiers are likely to collide on shared backends,
+- project-specific suffixes are often the safest starting point while learning.
+
+If you want to inspect the organization-visible DataNode table identifiers from the CLI, run:
+
+```bash
+mainsequence data-node org-unique-identifiers
+```
+
+This command lists DataNode table identifiers exposed by `DataNodeStorage`. It does not list asset `unique_identifier` values.
+
 ## 4) Config design: meaning vs scope vs operational knobs
 
 A simple and scalable pattern is:

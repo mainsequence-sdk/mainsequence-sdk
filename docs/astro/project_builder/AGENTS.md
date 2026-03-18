@@ -72,10 +72,12 @@ Purpose:
 - translated user intent
 - project goal
 - acceptance criteria
+- definition of a successful outcome or workflow
 
 Rules:
 - keep it concise
 - update it when the user goal, scope, or acceptance criteria changes
+- state what success looks like in concrete observable terms
 - do not use it as a task list
 - do not use it as a journal
 
@@ -113,12 +115,14 @@ Purpose:
 - evidence checked
 - blockers or failures
 - next actions
+- which success criteria are verified vs still unmet
 
 Rules:
 - this is the current-state file
 - overwrite it to keep it current
 - do not make it historical
 - summarize the latest verified state, what was checked, what is blocked, and what should happen next
+- make it obvious whether the workflow currently meets the success definition from `astro/brief.md`
 
 ### `astro/journal.md`
 Purpose:
@@ -149,6 +153,30 @@ Before any non-trivial MainSequence-related task:
 5. Read `astro/tasks.md`.
 6. Read `astro/record.md`.
 7. If debugging, resuming work, or investigating a failure, check `astro/journal.md`.
+
+## Define Success Up Front
+
+Before implementation, debugging, or validation, make the success condition explicit.
+
+At minimum, define:
+- what artifact, behavior, dataset, job, dashboard, release, or document should exist at the end
+- what checks will prove it worked
+- what platform objects must be verified
+- what is in scope and what is intentionally not being claimed
+
+A workflow is only successful when the intended result is both produced and verified.
+
+Examples:
+- code change success:
+  the requested code path is implemented and the relevant tests or validations pass
+- DataNode success:
+  the intended table contract is unchanged or intentionally versioned, the update runs, and the resulting data is verified
+- job/schedule success:
+  the job exists with the intended configuration, the run executes successfully, and logs confirm expected behavior
+- dashboard/release success:
+  the resource is present, the release exists for the intended image or commit, and the deployed behavior is verified
+- documentation success:
+  the docs describe the current workflow accurately, navigation is updated, and examples match the current CLI or SDK behavior
 
 ## Route by Task
 
@@ -261,6 +289,17 @@ Do not treat:
 - `.venv` as source code
 - local absolute paths as reusable project instructions
 
+## Dependency Management Rules
+
+Manage project Python dependencies with `uv`.
+
+Rules:
+- add new libraries with `uv add <package>`
+- add development-only libraries with `uv add --dev <package>`
+- do not edit dependency declarations or lockfiles manually when `uv` should manage them
+- do not treat `requirements.txt` as the source of truth for dependency changes
+- when dependency changes matter to the project runtime, keep the `uv`-managed project files and exported requirements in sync
+
 ## Documentation Rules
 
 - All formal project documentation must live under `docs/`.
@@ -364,7 +403,7 @@ For file-based workflows:
 
 Update files as follows:
 
-- update `astro/brief.md` when intent, goal, or acceptance criteria changes
+- update `astro/brief.md` when intent, goal, acceptance criteria, or success definition changes
 - update `astro/tasks.md` when priorities or actionable work changes
 - update `astro/record.md` when stable project facts or orchestration notes change
 - update `astro/status.md` whenever the latest verified state, blockers, evidence, or next actions change

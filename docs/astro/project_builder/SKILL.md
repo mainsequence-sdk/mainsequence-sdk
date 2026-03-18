@@ -20,6 +20,8 @@ Its purpose is to keep agent work reproducible by separating:
 
 Do not treat this skill as a frozen copy of MainSequence behavior.
 
+The expected success condition for a task should also be written down explicitly, not implied.
+
 ## First Principle
 
 The latest MainSequence docs are the source of truth for SDK, CLI, DataNode, jobs, artifacts,
@@ -77,6 +79,18 @@ Typical routing:
 13. Verify real platform state with the CLI or platform tooling when platform facts matter.
 14. Update the Astro files appropriately.
 
+## Define Success Up Front
+
+Before implementation or validation, make the success condition explicit in `astro/brief.md`.
+
+State:
+- what should exist or work at the end
+- what checks will prove it
+- which platform objects or outputs must be verified
+- what remains out of scope
+
+A task is not complete just because code was edited. It is complete when the intended result is produced and verified.
+
 ## Astro File Update Rules
 
 ### Update `astro/brief.md` when:
@@ -84,6 +98,7 @@ Typical routing:
 - scope changes
 - project goal changes
 - acceptance criteria changes
+- success definition changes
 
 ### Update `astro/tasks.md` when:
 - new actionable work is discovered
@@ -101,6 +116,7 @@ Typical routing:
 - blockers appear or are resolved
 - failures change the current situation
 - next actions change
+- the task now meets or no longer meets the stated success condition
 
 Keep `astro/status.md` current, not historical.
 
@@ -121,6 +137,7 @@ Keep `astro/journal.md` append-only.
 - Keep launcher scripts under `scripts/`.
 - Keep tests under `tests/`.
 - Keep recurring schedules in root-level `scheduled_jobs.yaml` when the project has shared recurring jobs.
+- Manage project dependencies with `uv` instead of editing dependency files by hand.
 - Do not hardcode machine-specific local paths in reusable docs or instructions.
 - Do not hide failures.
 - Prefer strict code.

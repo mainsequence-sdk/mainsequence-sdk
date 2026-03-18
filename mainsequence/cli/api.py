@@ -491,6 +491,29 @@ def get_projects() -> list[dict]:
     return data.get("results") or []
 
 
+def list_org_project_names(
+    *,
+    timeout: int | None = None,
+) -> list[str]:
+    """
+    List organization-visible project names via SDK client model.
+
+    Single source of truth:
+      - delegates payload parsing to `Project.get_org_project_names()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Project",
+            operation=lambda ClientProject: ClientProject.get_org_project_names(timeout=timeout),
+        )
+        return [str(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization project names fetch failed: {e}")
+
+
 def get_project(project_id: int | str) -> dict:
     """
     Fetch a single project by id.
@@ -1629,6 +1652,31 @@ def list_data_node_storages(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storages fetch failed: {e}")
+
+
+def list_data_node_org_unique_identifiers(
+    *,
+    timeout: int | None = None,
+) -> list[str]:
+    """
+    List organization-visible data node unique identifiers via SDK client model.
+
+    Single source of truth:
+      - delegates payload parsing to `DataNodeStorage.get_org_unique_identifiers()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get_org_unique_identifiers(
+                timeout=timeout,
+            ),
+        )
+        return [str(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node unique identifiers fetch failed: {e}")
 
 
 def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:
