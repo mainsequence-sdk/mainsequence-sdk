@@ -1,7 +1,9 @@
 # AGENTS.md
 
 This repository is a MainSequence Platform Project and uses the Astro scaffold.
-
+**
+Before any non-trivial MainSequence-related work, verify that this `AGENTS.md` matches the latest version at `file:/Users/jose/code/MainSequenceClientSide/mainsequence-sdk/docs/astro/project_builder/AGENTS.md` and that `.agents/skills/mainsequence-project/SKILL.md` matches the latest version at `file:/Users/jose/code/MainSequenceClientSide/mainsequence-sdk/docs/astro/project_builder/SKILL.md`; if either local file does not match, update it before proceeding.
+**
 Canonical MainSequence documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
 
