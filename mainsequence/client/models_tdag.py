@@ -957,9 +957,11 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         )
         if r.status_code != 200:
             data = r.json()  # guaranteed JSON from your backend
+
+            error=data.get("error") or data.get("detail")
             if r.status_code == 409:
-                raise exceptions.ConflictError(data["error"])
-            raise exceptions.ApiError(data["error"])
+                raise exceptions.ConflictError(error)
+            raise exceptions.ApiError(error)
         return self.__class__(**r.json())
 
     @classmethod
