@@ -1117,6 +1117,8 @@ class DataNode(DataAccessMixin, ABC):
             Result returned by ``UpdateRunner.run()``.
         """
 
+        debug_mode=True # Todo: onle enterpsie distributed has the distribured node update.
+
         def _do_run():
             update_runner = run_operations.UpdateRunner(
                 time_serie=self,
