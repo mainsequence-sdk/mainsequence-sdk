@@ -4,11 +4,11 @@ from __future__ import annotations
 import datetime
 from collections.abc import Mapping
 from contextvars import ContextVar
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
-from .base import BaseObjectOrm, BasePydanticModel
+from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .data_filters import *
 from .exceptions import raise_for_response
 from .utils import (
@@ -125,61 +125,7 @@ class UserSummary(BasePydanticModel):
     )
 
 
-class OrganizationTeam(BasePydanticModel):
-    id: int = Field(
-        ...,
-        title="Organization Team ID",
-        description="Unique identifier of the organization team.",
-        examples=[9],
-    )
-    organization: Organization = Field(
-        ...,
-        title="Organization",
-        description="Organization that owns this team.",
-    )
-    name: str = Field(
-        ...,
-        title="Team Name",
-        description="Human-readable name of the team.",
-        examples=["Research"],
-    )
-    description: str = Field(
-        "",
-        title="Team Description",
-        description="Optional textual description of the team.",
-        examples=["Team responsible for model research and validation."],
-    )
-    created_by: UserSummary | None = Field(
-        None,
-        title="Created By",
-        description="User who created the team, when available.",
-    )
-    members: list[UserSummary] = Field(
-        default_factory=list,
-        title="Members",
-        description="Users who belong to the team.",
-    )
-    is_active: bool = Field(
-        ...,
-        title="Is Active",
-        description="Whether the team is active.",
-        examples=[True],
-    )
-    created_at: datetime.datetime = Field(
-        ...,
-        title="Created At",
-        description="Timestamp when the team was created.",
-        examples=["2026-03-15T09:00:00Z"],
-    )
-    updated_at: datetime.datetime = Field(
-        ...,
-        title="Updated At",
-        description="Timestamp when the team was last updated.",
-        examples=["2026-03-15T10:30:00Z"],
-    )
-
-
-class Team(BasePydanticModel):
+class ShareableTeamSummary(BasePydanticModel):
     id: int = Field(
         ...,
         title="Team ID",
@@ -206,6 +152,103 @@ class Team(BasePydanticModel):
     )
 
 
+class Team(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "id": ["exact", "in"],
+        "name": ["exact", "contains", "in"],
+        "is_active": ["exact"],
+        "organization__id": ["exact", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "id": "id",
+        "name": "str",
+        "organization__id": "id",
+        "is_active": "bool",
+    }
+
+    id: int | None = Field(
+        None,
+        title="Organization Team ID",
+        description="Unique identifier of the organization team.",
+        examples=[9],
+    )
+    organization: Organization | int | None = Field(
+        None,
+        title="Organization",
+        description="Organization that owns this team.",
+    )
+    name: str = Field(
+        ...,
+        title="Team Name",
+        description="Human-readable name of the team.",
+        examples=["Research"],
+    )
+    description: str = Field(
+        "",
+        title="Team Description",
+        description="Optional textual description of the team.",
+        examples=["Team responsible for model research and validation."],
+    )
+    created_by: UserSummary | int | None = Field(
+        None,
+        title="Created By",
+        description="User who created the team, when available.",
+    )
+    members: list[UserSummary | int | dict[str, Any]] = Field(
+        default_factory=list,
+        title="Members",
+        description="Users who belong to the team.",
+    )
+    member_count: int = Field(
+        0,
+        title="Member Count",
+        description="Number of members currently in the team.",
+        examples=[5],
+    )
+    is_active: bool | None = Field(
+        None,
+        title="Is Active",
+        description="Whether the team is active.",
+        examples=[True],
+    )
+    created_at: datetime.datetime | None = Field(
+        None,
+        title="Created At",
+        description="Timestamp when the team was created.",
+        examples=["2026-03-15T09:00:00Z"],
+    )
+    updated_at: datetime.datetime | None = Field(
+        None,
+        title="Updated At",
+        description="Timestamp when the team was last updated.",
+        examples=["2026-03-15T10:30:00Z"],
+    )
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        endpoint_name = custom_endpoint_name or getattr(cls, "ENDPOINT_NAME", cls.class_name())
+        endpoint = cls.END_POINTS.get(endpoint_name) or "organization-team"
+        return f"{cls.ROOT_URL.replace('orm/api', 'user/api')}/{endpoint}"
+
+    @classmethod
+    def create(
+        cls,
+        *,
+        name: str,
+        description: str = "",
+        timeout: int | None = None,
+    ) -> Team:
+        return super().create(name=name, description=description, timeout=timeout)
+
+
+class OrganizationTeam(Team):
+    """
+    Backward-compatible alias for the richer organization team model.
+    """
+
+    pass
+
+
 class ShareableAccessState(BasePydanticModel):
     object_id: int = Field(
         ...,
@@ -230,7 +273,7 @@ class ShareableAccessState(BasePydanticModel):
         title="Users",
         description="Users with this explicit access level on the object.",
     )
-    teams: list[Team] = Field(
+    teams: list[ShareableTeamSummary] = Field(
         default_factory=list,
         title="Teams",
         description="Teams with this access level on the object.",
@@ -349,7 +392,7 @@ class User(BaseObjectOrm, BasePydanticModel):
         description="Direct permission ids assigned to the user.",
         examples=[[101, 202]],
     )
-    organization_teams: list[int | OrganizationTeam | dict[str, Any]] = Field(
+    organization_teams: list[int | Team | dict[str, Any]] = Field(
         default_factory=list,
         title="Organization Teams",
         description="Organization team identifiers or fully-expanded team objects for the user.",

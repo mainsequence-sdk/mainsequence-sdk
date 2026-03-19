@@ -514,6 +514,148 @@ def list_org_project_names(
         raise ApiError(f"Organization project names fetch failed: {e}")
 
 
+def list_organization_teams(
+    *,
+    timeout: int | None = None,
+    filters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List organization teams via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `Team.filter()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=lambda ClientTeam: ClientTeam.filter(timeout=timeout, **(filters or {})),
+        )
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization teams fetch failed: {e}")
+
+
+def get_organization_team(
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one organization team via SDK client model.
+    """
+    try:
+        team = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(team)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Team not found: {team_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization team fetch failed: {e}")
+
+
+def create_organization_team(
+    *,
+    name: str,
+    description: str = "",
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one organization team via SDK client model.
+    """
+    try:
+        team = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=lambda ClientTeam: ClientTeam.create(
+                name=name,
+                description=description,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(team)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization team creation failed: {e}")
+
+
+def update_organization_team(
+    team_id: int | str,
+    *,
+    name: str | None = None,
+    description: str | None = None,
+    is_active: bool | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Update one organization team via SDK client model.
+    """
+    updates = {
+        key: value
+        for key, value in {
+            "name": name,
+            "description": description,
+            "is_active": is_active,
+        }.items()
+        if value is not None
+    }
+    if not updates:
+        raise ApiError("No team fields were provided to update.")
+
+    try:
+        team = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout).patch(**updates),
+        )
+        return _sdk_object_to_dict(team)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Team not found: {team_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization team update failed: {e}")
+
+
+def delete_organization_team(
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one organization team via SDK client model.
+    """
+    try:
+        def _delete(ClientTeam):
+            team = ClientTeam.get(pk=int(team_id), timeout=timeout)
+            payload = _sdk_object_to_dict(team)
+            team.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_user",
+            class_name="Team",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Team not found: {team_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Organization team deletion failed: {e}")
+
+
 def get_project(project_id: int | str) -> dict:
     """
     Fetch a single project by id.
@@ -645,6 +787,168 @@ def remove_project_user_from_edit(
         object_id=project_id,
         action_name="remove_from_edit",
         user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def list_team_users_can_view(
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a team via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_team_users_can_edit(
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a team via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_team_user_to_view(
+    team_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_team_user_to_edit(
+    team_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_team_user_from_view(
+    team_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_team_user_from_edit(
+    team_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_user",
+        class_name="Team",
+        object_id=team_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_project_team_to_view(
+    project_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_project_team_to_edit(
+    project_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_project_team_from_view(
+    project_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_project_team_from_edit(
+    project_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="remove_team_from_edit",
+        team_id=team_id,
         timeout=timeout,
     )
 
@@ -2016,6 +2320,70 @@ def remove_secret_user_from_edit(
     )
 
 
+def add_secret_team_to_view(
+    secret_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_secret_team_to_edit(
+    secret_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_secret_team_from_view(
+    secret_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_secret_team_from_edit(
+    secret_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Secret",
+        object_id=secret_id,
+        action_name="remove_team_from_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
 def get_constant(
     constant_id: int | str,
     *,
@@ -2162,6 +2530,34 @@ def _mutate_shareable_object_access(
         raise ApiError(f"{class_name} share access update failed: {e}")
 
 
+def _mutate_shareable_object_team_access(
+    *,
+    module_name: str,
+    class_name: str,
+    object_id: int | str,
+    action_name: str,
+    team_id: int | str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        payload = _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=lambda ClientObject: getattr(
+                ClientObject.get(pk=int(object_id), timeout=timeout),
+                action_name,
+            )(int(team_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {object_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"{class_name} team share access update failed: {e}")
+
+
 def list_constant_users_can_view(
     constant_id: int | str,
     *,
@@ -2268,6 +2664,70 @@ def remove_constant_user_from_edit(
         object_id=constant_id,
         action_name="remove_from_edit",
         user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_constant_team_to_view(
+    constant_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_constant_team_to_edit(
+    constant_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_constant_team_from_view(
+    constant_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_constant_team_from_edit(
+    constant_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Constant",
+        object_id=constant_id,
+        action_name="remove_team_from_edit",
+        team_id=team_id,
         timeout=timeout,
     )
 
@@ -2485,6 +2945,70 @@ def remove_data_node_storage_user_from_edit(
         object_id=storage_id,
         action_name="remove_from_edit",
         user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_data_node_storage_team_to_view(
+    storage_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_data_node_storage_team_to_edit(
+    storage_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_data_node_storage_team_from_view(
+    storage_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_data_node_storage_team_from_edit(
+    storage_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="remove_team_from_edit",
+        team_id=team_id,
         timeout=timeout,
     )
 

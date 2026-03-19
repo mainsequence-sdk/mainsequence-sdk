@@ -264,29 +264,11 @@ class PersistManager:
         """
         if self.data_node_update is None:
             return None
-        if self.data_node_update.data_node_storage is not None:
-            if self.data_node_update.data_node_storage.sourcetableconfiguration is not None:
-                if (
-                    self.data_node_update.data_node_storage.build_meta_data.get(
-                        "initialize_with_default_partitions", True
-                    )
-                    == False
-                ):
-                    if (
-                        self.data_node_update.data_node_storage.data_source.related_resource_class_type
-                        in CONSTANTS.DATA_SOURCE_TYPE_TIMESCALEDB
-                    ):
-                        self.logger.warning("Default Partitions will not be initialized ")
-
         return self.data_node_update.data_node_storage
 
     @property
     def local_build_configuration(self) -> dict:
         return self.data_node_update.build_configuration
-
-    @property
-    def local_build_metadata(self) -> dict:
-        return self.data_node_update.build_meta_data
 
     def set_data_node_update_lazy_callback(self, fut: Future) -> None:
         """
@@ -545,21 +527,12 @@ class PersistManager:
             # create remote table
 
             try:
-
-                # table may not exist but
-                remote_build_metadata = (
-                    remote_configuration["build_meta_data"]
-                    if "build_meta_data" in remote_configuration.keys()
-                    else {}
-                )
-                remote_configuration.pop("build_meta_data", None)
                 kwargs = dict(
                     storage_hash=storage_hash,
                     time_serie_source_code_git_hash=time_serie_source_code_git_hash,
                     time_serie_source_code=time_serie_source_code,
                     build_configuration=remote_configuration,
                     data_source=data_source.model_dump(),
-                    build_meta_data=remote_build_metadata,
                     build_configuration_json_schema=build_configuration_json_schema,
                     open_to_public=open_to_public
                 )
@@ -585,10 +558,7 @@ class PersistManager:
         """
         local_build_configuration = None
         if self.data_node_update is not None:
-            local_build_configuration, local_build_metadata = (
-                self.local_build_configuration,
-                self.local_build_metadata,
-            )
+            local_build_configuration = self.local_build_configuration
         if local_build_configuration is None:
 
             logger.debug(f"data_node_update {self.update_hash} does not exist creating")
@@ -596,12 +566,6 @@ class PersistManager:
                 update_hash=self.update_hash, remote_table__data_source__id=self.data_source.id
             )
             if local_update is None:
-                local_build_metadata = (
-                    local_configuration["build_meta_data"]
-                    if "build_meta_data" in local_configuration.keys()
-                    else {}
-                )
-                local_configuration.pop("build_meta_data", None)
                 metadata_kwargs = dict(
                     update_hash=self.update_hash,
                     build_configuration=local_configuration,

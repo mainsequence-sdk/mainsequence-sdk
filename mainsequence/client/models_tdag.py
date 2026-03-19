@@ -215,7 +215,6 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     data_node_storage: int | DataNodeStorage
     build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
-    build_meta_data: dict[str, Any] | None = Field(None, description="Optional YAML metadata")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: list[str] | None = Field(default=[], description="List of tags")
     description: str | None = Field(None, description="Optional HTML description")
@@ -916,7 +915,6 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     build_configuration: dict[str, Any] | None = Field(
         None, description="Configuration in JSON format"
     )
-    build_meta_data: dict[str, Any] | None = Field(None, description="Optional YAML metadata")
     time_serie_source_code_git_hash: str | None = Field(
         None, max_length=255, description="Git hash of the time series source code"
     )

@@ -122,17 +122,7 @@ Example:
 !!! note "Asset universe is usually scope, not table meaning"
     For standard `(time_index, unique_identifier)` asset tables, do not include asset universe in `storage_hash`.
 
-## 5.1) Build metadata (`build_meta_data`)
-
-`build_meta_data` controls backend behavior and is not part of hash identity.
-
-Common example:
-
-- `initialize_with_default_partitions` (defaults to `True`)
-
-Only change build metadata when you understand the storage/layout impact.
-
-## 5.2) Hash namespaces: what they actually do
+## 5.1) Hash namespaces: what they actually do
 
 `DataNode` also supports a separate testing and isolation mechanism called `hash_namespace`.
 

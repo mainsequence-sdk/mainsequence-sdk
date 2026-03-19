@@ -143,9 +143,6 @@ def _(value, pickle_ts: bool):
     return value.value
 
 
-class TimeSerieInitMeta(BaseModel): ...
-
-
 def data_source_dir_path(data_source_id: int) -> str:
     path = ogm.pickle_storage_path
     return f"{path}/{data_source_id}"
@@ -167,59 +164,29 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
     """
     local_ts_dict_to_hash = {}
     for key, value in dictionary.items():
-        if key != "build_meta_data":
-            local_ts_dict_to_hash[key] = value
-            if isinstance(value, dict):
-                if "orm_class" in value.keys():
+        local_ts_dict_to_hash[key] = value
+        if isinstance(value, dict):
+            if "orm_class" in value.keys():
 
-                    local_ts_dict_to_hash[key] = value["unique_identifier"]
+                local_ts_dict_to_hash[key] = value["unique_identifier"]
 
-                elif "is_time_series_config" in value.keys():
-                    tmp_local_ts, remote_ts = hash_signature(value["config_data"])
-                    local_ts_dict_to_hash[key] = {
-                        "is_time_series_config": value["is_time_series_config"],
-                        "config_data": tmp_local_ts,
-                    }
+            elif "is_time_series_config" in value.keys():
+                tmp_local_ts, remote_ts = hash_signature(value["config_data"])
+                local_ts_dict_to_hash[key] = {
+                    "is_time_series_config": value["is_time_series_config"],
+                    "config_data": tmp_local_ts,
+                }
 
-                elif isinstance(value, dict) and value.get("__type__") == "orm_model_list":
+            elif isinstance(value, dict) and value.get("__type__") == "orm_model_list":
 
-                    # The value["items"] are already serialized dicts
+                # The value["items"] are already serialized dicts
 
-                    local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
-                else:
-                    # recursively apply hash signature
-                    local_ts_dict_to_hash[key] = parse_dictionary_before_hashing(value)
+                local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
+            else:
+                # recursively apply hash signature
+                local_ts_dict_to_hash[key] = parse_dictionary_before_hashing(value)
 
     return local_ts_dict_to_hash
-
-
-def prepare_config_kwargs(kwargs: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
-    """
-    Separates all meta-arguments from the core configuration arguments and applies defaults.
-    This replaces _separate_meta_kwargs and sanitize_default_build_metadata.
-
-    Returns:
-        A tuple of (core_kwargs, meta_kwargs).
-    """
-    meta_keys = [
-        "init_meta",
-        "build_meta_data",
-    ]
-    meta_kwargs = {}
-
-    for key in meta_keys:
-        if key in kwargs:
-            # Move the argument from the main dict to the meta dict
-            meta_kwargs[key] = kwargs.pop(key)
-
-    # --- Apply Defaults (replaces sanitize_default_build_metadata) ---
-    if meta_kwargs.get("init_meta") is None:
-        meta_kwargs["init_meta"] = TimeSerieInitMeta()
-
-    if meta_kwargs.get("build_meta_data") is None:
-        meta_kwargs["build_meta_data"] = {"initialize_with_default_partitions": True}
-
-    return kwargs, meta_kwargs  # Returns (core_kwargs, meta_kwargs)
 
 
 def verify_backend_git_hash_with_pickle(
@@ -525,8 +492,6 @@ class DeserializerManager:
 class TimeSerieConfig:
     """A container for all computed configuration attributes."""
 
-    init_meta: Any
-    remote_build_metadata: Any
     update_hash: str
     storage_hash: str
     local_initial_configuration: dict[str, Any]
@@ -560,27 +525,23 @@ def create_config(
         build_configuration_json_schema = extract_pydantic_fields_from_dict(kwargs)
     except Exception as e:
         raise e
-    # 1. Use the helper to separate meta args from core args.
-    core_kwargs, meta_kwargs = prepare_config_kwargs(kwargs)
 
-    # 2. Serialize the core arguments
-    serialized_core_kwargs = Serializer().serialize_init_kwargs(core_kwargs)
+    # 1. Serialize the core arguments
+    serialized_core_kwargs = Serializer().serialize_init_kwargs(kwargs)
 
-    # 3. Prepare the dictionary for hashing
+    # 2. Prepare the dictionary for hashing
     dict_to_hash = copy.deepcopy(serialized_core_kwargs)
 
     dict_to_hash["arguments_to_ignore_from_storage_hash"] = arguments_to_ignore_from_storage_hash
 
-    # 4. Generate the hashes
+    # 3. Generate the hashes
     update_hash, storage_hash = hash_signature(dict_to_hash)
 
-    # 5. Create the remote configuration by removing ignored keys
+    # 4. Create the remote configuration by removing ignored keys
     remote_config = copy.deepcopy(dict_to_hash)
 
-    # 6. Return all computed values in the structured dataclass
+    # 5. Return all computed values in the structured dataclass
     return TimeSerieConfig(
-        init_meta=meta_kwargs["init_meta"],
-        remote_build_metadata=meta_kwargs["build_meta_data"],
         update_hash=f"{ts_class_name}_{update_hash}".lower(),
         storage_hash=f"{ts_class_name}_{storage_hash}".lower(),
         local_initial_configuration=dict_to_hash,
@@ -769,7 +730,6 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> "
     time_serie_config = DeserializerManager().rebuild_serialized_config(
         time_serie_config, time_serie_class_name=time_serie_class_name
     )
-    time_serie_config["init_meta"] = {}
 
     # IMPORTANT:
     # When rebuilding from stored config, ignore any ambient test namespace.

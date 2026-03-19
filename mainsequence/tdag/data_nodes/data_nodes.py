@@ -610,8 +610,6 @@ class DataNode(DataAccessMixin, ABC):
 
     def __init__(
         self,
-        init_meta: build_operations.TimeSerieInitMeta | None = None,
-        build_meta_data: dict | None = None,
         *args,
         **kwargs,
     ):
@@ -621,7 +619,6 @@ class DataNode(DataAccessMixin, ABC):
         Subclasses should call ``super().__init__(...)`` and keep their own dataset
         configuration in the subclass constructor.
 
-        ``init_meta`` and ``build_meta_data`` are framework controls (not dataset meaning).
         The initial fallback start date for first-run updates is ``OFFSET_START``.
 
         Important:
@@ -631,23 +628,11 @@ class DataNode(DataAccessMixin, ABC):
 
         Parameters
         ----------
-        init_meta : build_operations.TimeSerieInitMeta | None, optional
-            Optional bootstrap metadata used by build/persistence internals.
-        build_meta_data : dict, optional
-            Optional build controls. Common key:
-            ``initialize_with_default_partitions`` (default: ``True``).
         *args : tuple
             Reserved for subclass extension.
         **kwargs : dict
             Reserved for subclass extension.
         """
-
-        self.init_meta = init_meta
-
-        self.build_meta_data = build_meta_data or {}
-        self.build_meta_data.setdefault("initialize_with_default_partitions", True)
-
-        self.build_meta_data = build_meta_data
 
         self.pre_load_routines_run = False
         self._data_source: DynamicTableDataSource | None = None  # is set later
@@ -686,6 +671,10 @@ class DataNode(DataAccessMixin, ABC):
             # ---- tests-only hashing controls (never forwarded to user __init__) ----
             test_node_flag = bool(kwargs.pop("test_node", False))
             explicit_namespace = kwargs.pop("hash_namespace", None)
+            if "init_meta" in kwargs:
+                raise TypeError(
+                    "init_meta has been removed from DataNode construction; remove this keyword argument."
+                )
 
             # Determine namespace:
             # 1) explicit hash_namespace kwarg wins
@@ -923,7 +912,6 @@ class DataNode(DataAccessMixin, ABC):
             if name in [
                 "local_persist_manager",
                 "logger",
-                "init_meta",
                 "_data_node_update_future",
                 "_data_node_update_lock",
                 "_local_persist_manager",

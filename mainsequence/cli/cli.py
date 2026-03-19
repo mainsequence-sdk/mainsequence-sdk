@@ -43,16 +43,27 @@ from . import config as cfg
 from .api import (
     ApiError,
     NotLoggedIn,
+    add_constant_team_to_edit,
+    add_constant_team_to_view,
     add_constant_user_to_edit,
     add_constant_user_to_view,
+    add_data_node_storage_team_to_edit,
+    add_data_node_storage_team_to_view,
     add_data_node_storage_user_to_edit,
     add_data_node_storage_user_to_view,
     add_deploy_key,
+    add_project_team_to_edit,
+    add_project_team_to_view,
     add_project_user_to_edit,
     add_project_user_to_view,
+    add_secret_team_to_edit,
+    add_secret_team_to_view,
     add_secret_user_to_edit,
     add_secret_user_to_view,
+    add_team_user_to_edit,
+    add_team_user_to_view,
     create_constant,
+    create_organization_team,
     create_project,
     create_project_image,
     create_project_job,
@@ -63,6 +74,7 @@ from .api import (
     deep_find_repo_url,
     delete_constant,
     delete_data_node_storage,
+    delete_organization_team,
     delete_project,
     delete_project_image,
     delete_resource_release,
@@ -73,6 +85,7 @@ from .api import (
     get_data_node_storage,
     get_logged_user_details,
     get_market_asset_translation_table,
+    get_organization_team,
     get_project,
     get_project_data_node_updates,
     get_project_image,
@@ -92,6 +105,7 @@ from .api import (
     list_market_asset_translation_tables,
     list_market_portfolios,
     list_org_project_names,
+    list_organization_teams,
     list_project_base_images,
     list_project_images,
     list_project_job_runs,
@@ -102,21 +116,34 @@ from .api import (
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
+    list_team_users_can_edit,
+    list_team_users_can_view,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
+    remove_constant_team_from_edit,
+    remove_constant_team_from_view,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
+    remove_data_node_storage_team_from_edit,
+    remove_data_node_storage_team_from_view,
     remove_data_node_storage_user_from_edit,
     remove_data_node_storage_user_from_view,
+    remove_project_team_from_edit,
+    remove_project_team_from_view,
     remove_project_user_from_edit,
     remove_project_user_from_view,
+    remove_secret_team_from_edit,
+    remove_secret_team_from_view,
     remove_secret_user_from_edit,
     remove_secret_user_from_view,
+    remove_team_user_from_edit,
+    remove_team_user_from_view,
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
     schedule_batch_project_jobs,
     sync_project_after_commit,
+    update_organization_team,
 )
 from .api import login as api_login
 from .docker_utils import (
@@ -159,6 +186,7 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 organization = typer.Typer(help="Organization commands")
+organization_teams_group = typer.Typer(help="Organization team commands")
 markets = typer.Typer(help="Markets commands")
 data_node_storage_group = typer.Typer(help="Data node commands")
 markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
@@ -208,6 +236,7 @@ PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource
 DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
 CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
+TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
 ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
 JOB_RUN_STATUS_PENDING = "PENDING"
@@ -1923,6 +1952,308 @@ def organization_project_names_alias_cmd(
     organization_project_names_cmd(timeout=timeout)
 
 
+def _organization_teams_list_impl(
+    *,
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=TEAM_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Organization Teams",
+    )
+    _require_login()
+
+    try:
+        teams_payload = list_organization_teams(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Organization teams fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for team in teams_payload:
+        member_count = team.get("member_count")
+        if member_count in (None, ""):
+            members = team.get("members")
+            member_count = len(members) if isinstance(members, list) else "-"
+        rows.append(
+            [
+                str(team.get("id") or "-"),
+                str(team.get("name") or "-"),
+                str(team.get("description") or "-"),
+                str(member_count),
+                str(team.get("is_active")) if team.get("is_active") is not None else "-",
+            ]
+        )
+
+    if rows:
+        print_table("Organization Teams", ["ID", "Name", "Description", "Members", "Active"], rows)
+    else:
+        info("No organization teams.")
+    info(f"Total organization teams: {len(teams_payload)}")
+
+
+def _organization_teams_create_impl(
+    *,
+    name: str | None,
+    description: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    team_name = (name or "").strip() or typer.prompt("Team name").strip()
+    if not team_name:
+        error("Team name is required.")
+        raise typer.Exit(1)
+
+    team_description = description
+    if team_description is None:
+        team_description = typer.prompt("Team description", default="", show_default=False)
+
+    try:
+        created = create_organization_team(
+            name=team_name,
+            description=team_description or "",
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Organization team creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Organization team created: {team_name}")
+    print_kv("Created Team", _format_team_preview(created))
+
+
+def _organization_teams_edit_impl(
+    *,
+    team_id: int,
+    name: str | None,
+    description: str | None,
+    is_active: bool | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        current = get_organization_team(team_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Organization team fetch failed: {e}")
+        raise typer.Exit(1)
+
+    next_name = name
+    next_description = description
+    next_active = is_active
+
+    if next_name is None and next_description is None and next_active is None:
+        next_name = typer.prompt("Team name", default=str(current.get("name") or ""), show_default=True).strip()
+        next_description = typer.prompt(
+            "Team description",
+            default=str(current.get("description") or ""),
+            show_default=True,
+        )
+        current_active = bool(current.get("is_active")) if current.get("is_active") is not None else True
+        next_active = typer.confirm("Team is active?", default=current_active)
+
+    try:
+        updated = update_organization_team(
+            team_id,
+            name=next_name,
+            description=next_description,
+            is_active=next_active,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Organization team update failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Organization team updated: id={team_id}")
+    print_kv("Updated Team", _format_team_preview(updated))
+
+
+def _organization_teams_delete_impl(
+    *,
+    team_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        team = get_organization_team(team_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Organization team fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(team.get("name") or team.get("id") or team_id)
+    _require_delete_verification(
+        preview_title="Organization Team Delete Preview",
+        preview_items=_format_team_preview(team),
+        verification_value=verification_value,
+        verification_label="team name" if team.get("name") else "team id",
+    )
+
+    try:
+        deleted = delete_organization_team(team_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Organization team deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Organization team deleted: id={team_id}")
+    print_kv("Deleted Team", _format_team_preview(deleted))
+
+
+@organization_teams_group.command("list")
+def organization_teams_list_cmd(
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show supported list filters and exit."),
+):
+    """
+    List organization teams visible to the authenticated user.
+    """
+    _organization_teams_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@organization_teams_group.command("create")
+def organization_teams_create_cmd(
+    name: str | None = typer.Argument(None, help="Team name."),
+    description: str | None = typer.Option(None, "--description", help="Optional team description."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create one organization team.
+    """
+    _organization_teams_create_impl(name=name, description=description, timeout=timeout)
+
+
+@organization_teams_group.command("edit")
+def organization_teams_edit_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    name: str | None = typer.Option(None, "--name", help="New team name."),
+    description: str | None = typer.Option(None, "--description", help="New team description."),
+    is_active: bool | None = typer.Option(None, "--active/--inactive", help="Set active status."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Edit one organization team.
+    """
+    _organization_teams_edit_impl(
+        team_id=team_id,
+        name=name,
+        description=description,
+        is_active=is_active,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("delete")
+def organization_teams_delete_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one organization team.
+    """
+    _organization_teams_delete_impl(team_id=team_id, timeout=timeout)
+
+
+@organization_teams_group.command("can_view")
+def organization_teams_can_view_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_list_impl(
+        fetch_fn=list_team_users_can_view,
+        object_label="Team",
+        access_label="view",
+        object_id=team_id,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("can_edit")
+def organization_teams_can_edit_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_list_impl(
+        fetch_fn=list_team_users_can_edit,
+        object_label="Team",
+        access_label="edit",
+        object_id=team_id,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("add_to_view")
+def organization_teams_add_to_view_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=add_team_user_to_view,
+        object_label="Team",
+        action_label="add_to_view",
+        object_id=team_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("add_to_edit")
+def organization_teams_add_to_edit_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=add_team_user_to_edit,
+        object_label="Team",
+        action_label="add_to_edit",
+        object_id=team_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("remove_from_view")
+def organization_teams_remove_from_view_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=remove_team_user_from_view,
+        object_label="Team",
+        action_label="remove_from_view",
+        object_id=team_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@organization_teams_group.command("remove_from_edit")
+def organization_teams_remove_from_edit_cmd(
+    team_id: int = typer.Argument(..., help="Team ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=remove_team_user_from_edit,
+        object_label="Team",
+        action_label="remove_from_edit",
+        object_id=team_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
 @app.command("copy-llm-instructions")
 def copy_llm_instructions(
     dir: str | None = typer.Option(
@@ -2186,6 +2517,28 @@ def _format_secret_preview(secret: dict[str, object]) -> list[tuple[str, str]]:
     ]
 
 
+def _format_team_preview(team: dict[str, object]) -> list[tuple[str, str]]:
+    organization = team.get("organization")
+    if isinstance(organization, dict):
+        organization_label = str(organization.get("name") or organization.get("id") or "-")
+    else:
+        organization_label = str(organization or "-")
+
+    member_count = team.get("member_count")
+    if member_count in (None, ""):
+        members = team.get("members")
+        member_count = len(members) if isinstance(members, list) else "-"
+
+    return [
+        ("ID", str(team.get("id") or "-")),
+        ("Name", str(team.get("name") or "-")),
+        ("Description", str(team.get("description") or "-")),
+        ("Organization", organization_label),
+        ("Members", str(member_count)),
+        ("Active", str(team.get("is_active")) if team.get("is_active") is not None else "-"),
+    ]
+
+
 def _render_shareable_user_name(user: dict[str, object]) -> str:
     first_name = str(user.get("first_name") or "").strip()
     last_name = str(user.get("last_name") or "").strip()
@@ -2199,8 +2552,11 @@ def _render_shareable_team_name(team: dict[str, object]) -> str:
 
 def _format_shareable_permission_change(payload: dict[str, object]) -> list[tuple[str, str]]:
     user = payload.get("user") if isinstance(payload.get("user"), dict) else {}
+    team = payload.get("team") if isinstance(payload.get("team"), dict) else {}
     explicit_view_ids = payload.get("explicit_can_view_user_ids")
     explicit_edit_ids = payload.get("explicit_can_edit_user_ids")
+    explicit_view_team_ids = payload.get("explicit_can_view_team_ids")
+    explicit_edit_team_ids = payload.get("explicit_can_edit_team_ids")
     return [
         ("Action", str(payload.get("action") or "-")),
         ("Detail", str(payload.get("detail") or "-")),
@@ -2210,6 +2566,9 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
         ("Username", str(user.get("username") or "-")),
         ("Email", str(user.get("email") or "-")),
         ("Name", _render_shareable_user_name(user)),
+        ("Team ID", str(team.get("id") or "-")),
+        ("Team Name", _render_shareable_team_name(team)),
+        ("Team Description", str(team.get("description") or "-")),
         ("Explicit Can View", str(payload.get("explicit_can_view"))),
         ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
         (
@@ -2219,6 +2578,18 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
         (
             "Explicit Edit User IDs",
             ", ".join(str(item) for item in explicit_edit_ids) if isinstance(explicit_edit_ids, list) else "-",
+        ),
+        (
+            "Explicit View Team IDs",
+            ", ".join(str(item) for item in explicit_view_team_ids)
+            if isinstance(explicit_view_team_ids, list)
+            else "-",
+        ),
+        (
+            "Explicit Edit Team IDs",
+            ", ".join(str(item) for item in explicit_edit_team_ids)
+            if isinstance(explicit_edit_team_ids, list)
+            else "-",
         ),
     ]
 
@@ -2415,6 +2786,27 @@ def _shareable_user_access_update_impl(
 
     try:
         payload = action_fn(object_id, user_id, timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} {action_label} failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"{object_label} {action_label} completed.")
+    print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
+
+
+def _shareable_team_access_update_impl(
+    *,
+    action_fn,
+    object_label: str,
+    action_label: str,
+    object_id: int,
+    team_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        payload = action_fn(object_id, team_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1)
@@ -2917,6 +3309,70 @@ def constants_remove_from_edit_cmd(
     )
 
 
+@constants.command("add_team_to_view")
+def constants_add_team_to_view_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_constant_team_to_view,
+        object_label="Constant",
+        action_label="add_team_to_view",
+        object_id=constant_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("add_team_to_edit")
+def constants_add_team_to_edit_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_constant_team_to_edit,
+        object_label="Constant",
+        action_label="add_team_to_edit",
+        object_id=constant_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("remove_team_from_view")
+def constants_remove_team_from_view_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_constant_team_from_view,
+        object_label="Constant",
+        action_label="remove_team_from_view",
+        object_id=constant_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@constants.command("remove_team_from_edit")
+def constants_remove_team_from_edit_cmd(
+    constant_id: int = typer.Argument(..., help="Constant ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_constant_team_from_edit,
+        object_label="Constant",
+        action_label="remove_team_from_edit",
+        object_id=constant_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
 @secrets.command("list")
 def secrets_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
@@ -3132,6 +3588,70 @@ def secrets_remove_from_edit_cmd(
     )
 
 
+@secrets.command("add_team_to_view")
+def secrets_add_team_to_view_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_secret_team_to_view,
+        object_label="Secret",
+        action_label="add_team_to_view",
+        object_id=secret_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("add_team_to_edit")
+def secrets_add_team_to_edit_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_secret_team_to_edit,
+        object_label="Secret",
+        action_label="add_team_to_edit",
+        object_id=secret_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("remove_team_from_view")
+def secrets_remove_team_from_view_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_secret_team_from_view,
+        object_label="Secret",
+        action_label="remove_team_from_view",
+        object_id=secret_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@secrets.command("remove_team_from_edit")
+def secrets_remove_team_from_edit_cmd(
+    secret_id: int = typer.Argument(..., help="Secret ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_secret_team_from_edit,
+        object_label="Secret",
+        action_label="remove_team_from_edit",
+        object_id=secret_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
 def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None:
     _require_login()
 
@@ -3162,7 +3682,6 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
         "Data Node Storage Config",
         [
             ("Build Configuration", _format_json_value(storage.get("build_configuration"))),
-            ("Build Metadata", _format_json_value(storage.get("build_meta_data"))),
             ("Source Table Configuration", _format_json_value(storage.get("sourcetableconfiguration"))),
             ("Table Index Names", _format_json_value(storage.get("table_index_names"))),
             ("Compression Policy", _format_json_value(storage.get("compression_policy_config"))),
@@ -3772,6 +4291,70 @@ def data_node_storage_remove_from_edit_cmd(
         action_label="remove_from_edit",
         object_id=storage_id,
         user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("add_team_to_view")
+def data_node_storage_add_team_to_view_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_data_node_storage_team_to_view,
+        object_label="Data Node",
+        action_label="add_team_to_view",
+        object_id=storage_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("add_team_to_edit")
+def data_node_storage_add_team_to_edit_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_data_node_storage_team_to_edit,
+        object_label="Data Node",
+        action_label="add_team_to_edit",
+        object_id=storage_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("remove_team_from_view")
+def data_node_storage_remove_team_from_view_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_data_node_storage_team_from_view,
+        object_label="Data Node",
+        action_label="remove_team_from_view",
+        object_id=storage_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("remove_team_from_edit")
+def data_node_storage_remove_team_from_edit_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_data_node_storage_team_from_edit,
+        object_label="Data Node",
+        action_label="remove_team_from_edit",
+        object_id=storage_id,
+        team_id=team_id,
         timeout=timeout,
     )
 
@@ -4532,6 +5115,70 @@ def project_remove_from_edit_cmd(
         action_label="remove_from_edit",
         object_id=project_id,
         user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@project.command("add_team_to_view")
+def project_add_team_to_view_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_project_team_to_view,
+        object_label="Project",
+        action_label="add_team_to_view",
+        object_id=project_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@project.command("add_team_to_edit")
+def project_add_team_to_edit_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_project_team_to_edit,
+        object_label="Project",
+        action_label="add_team_to_edit",
+        object_id=project_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@project.command("remove_team_from_view")
+def project_remove_team_from_view_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_project_team_from_view,
+        object_label="Project",
+        action_label="remove_team_from_view",
+        object_id=project_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@project.command("remove_team_from_edit")
+def project_remove_team_from_edit_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_project_team_from_edit,
+        object_label="Project",
+        action_label="remove_team_from_edit",
+        object_id=project_id,
+        team_id=team_id,
         timeout=timeout,
     )
 
@@ -6903,3 +7550,4 @@ def project_update_sdk(
         run_uv(uv, ["sync"], cwd=project_dir)
 
     success("SDK update complete.")
+organization.add_typer(organization_teams_group, name="teams")

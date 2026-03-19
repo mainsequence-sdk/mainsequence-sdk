@@ -257,6 +257,37 @@ def test_shareable_action_returns_empty_dict_on_no_content(monkeypatch):
     assert response == {}
 
 
+def test_shareable_team_action_posts_team_id(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"detail":"ok"}'
+
+        @staticmethod
+        def json():
+            return {"detail": "ok"}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    response = DemoShareableModel(11).add_team_to_view(_IdRef(5), timeout=21)
+
+    assert response == {"detail": "ok"}
+    assert captured == {
+        "r_type": "POST",
+        "url": "https://backend.test/demo-shareable/11/add-team-to-view/",
+        "payload": {"json": {"team_id": 5}},
+        "timeout": 21,
+    }
+
+
 def test_shareable_can_view_parses_permission_state(monkeypatch):
     class FakeResponse:
         status_code = 200
@@ -368,6 +399,7 @@ def test_shareable_models_keep_shareable_object_mixin():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     models_tdag_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_tdag.py")
     models_helpers_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_helpers.py")
+    models_user_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_user.py")
 
     expected = {
         "Artifact": models_tdag_bases,
@@ -375,6 +407,7 @@ def test_shareable_models_keep_shareable_object_mixin():
         "Project": models_tdag_bases,
         "Constant": models_tdag_bases,
         "Secret": models_tdag_bases,
+        "Team": models_user_bases,
         "ResourceRelease": models_helpers_bases,
     }
 

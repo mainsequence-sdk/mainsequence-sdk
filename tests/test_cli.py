@@ -123,6 +123,169 @@ def test_organization_project_names(cli_mod, runner, monkeypatch):
     assert "Total organization-visible project names: 2" in result.output
 
 
+def test_organization_teams_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_organization_teams",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 9,
+                "name": "Research",
+                "description": "Model validation",
+                "member_count": 4,
+                "is_active": True,
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["organization", "teams", "list"])
+    assert result.exit_code == 0
+    assert "Organization Teams" in result.output
+    assert "Research" in result.output
+    assert "Model validation" in result.output
+    assert "Total organization teams: 1" in result.output
+
+
+def test_organization_teams_create(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(*, name, description="", timeout=None):
+        captured["name"] = name
+        captured["description"] = description
+        captured["timeout"] = timeout
+        return {"id": 9, "name": name, "description": description, "member_count": 0, "is_active": True}
+
+    monkeypatch.setattr(cli_mod, "create_organization_team", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["organization", "teams", "create", "Research", "--description", "Model validation"],
+    )
+    assert result.exit_code == 0
+    assert captured == {"name": "Research", "description": "Model validation", "timeout": None}
+    assert "Organization team created: Research" in result.output
+
+
+def test_organization_teams_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_organization_team",
+        lambda team_id, timeout=None: {
+            "id": team_id,
+            "name": "Research",
+            "description": "Old description",
+            "member_count": 4,
+            "is_active": True,
+        },
+    )
+
+    def _update(team_id, *, name=None, description=None, is_active=None, timeout=None):
+        captured["team_id"] = team_id
+        captured["name"] = name
+        captured["description"] = description
+        captured["is_active"] = is_active
+        captured["timeout"] = timeout
+        return {
+            "id": team_id,
+            "name": name or "Research",
+            "description": description or "Old description",
+            "member_count": 4,
+            "is_active": is_active,
+        }
+
+    monkeypatch.setattr(cli_mod, "update_organization_team", _update)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["organization", "teams", "edit", "9", "--name", "Research Core", "--inactive"],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "team_id": 9,
+        "name": "Research Core",
+        "description": None,
+        "is_active": False,
+        "timeout": None,
+    }
+    assert "Organization team updated: id=9" in result.output
+
+
+def test_organization_teams_delete(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_organization_team",
+        lambda team_id, timeout=None: {
+            "id": team_id,
+            "name": "Research",
+            "description": "Model validation",
+            "member_count": 4,
+            "is_active": True,
+        },
+    )
+    monkeypatch.setattr(cli_mod, "_require_delete_verification", lambda **kwargs: None)
+
+    def _delete(team_id, *, timeout=None):
+        captured["team_id"] = team_id
+        captured["timeout"] = timeout
+        return {
+            "id": team_id,
+            "name": "Research",
+            "description": "Model validation",
+            "member_count": 4,
+            "is_active": True,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_organization_team", _delete)
+
+    result = runner.invoke(cli_mod.app, ["organization", "teams", "delete", "9"])
+    assert result.exit_code == 0
+    assert captured == {"team_id": 9, "timeout": None}
+    assert "Organization team deleted: id=9" in result.output
+
+
+def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeTeam:
+        def __init__(self, team_id, name):
+            self.id = team_id
+            self.name = name
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "name": self.name}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientTeam:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeTeam(9, "Research")]
+
+        return operation(_ClientTeam)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_organization_teams(timeout=9, filters={"name__contains": "Res"})
+    assert captured == {
+        "module_name": "mainsequence.client.models_user",
+        "class_name": "Team",
+        "timeout": 9,
+        "filters": {"name__contains": "Res"},
+    }
+    assert out == [{"id": 9, "name": "Research"}]
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(
@@ -752,6 +915,40 @@ def test_project_add_to_edit(cli_mod, runner, monkeypatch):
     assert "Project add_to_edit completed." in result.output
     assert "Project Sharing Update" in result.output
     assert "editor@example.com" in result.output
+
+
+def test_project_add_team_to_view(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(project_id, team_id, timeout=None):
+        captured["project_id"] = project_id
+        captured["team_id"] = team_id
+        captured["timeout"] = timeout
+        return {
+            "action": "add_team_to_view",
+            "detail": "Team now has explicit view access.",
+            "object_id": project_id,
+            "object_type": "tdag.project",
+            "team": {
+                "id": team_id,
+                "name": "Research",
+                "description": "Core team",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": False,
+            "explicit_can_view_team_ids": [team_id],
+            "explicit_can_edit_team_ids": [],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_project_team_to_view", _add)
+
+    result = runner.invoke(cli_mod.app, ["project", "add_team_to_view", "4", "3"])
+    assert result.exit_code == 0
+    assert captured == {"project_id": 4, "team_id": 3, "timeout": None}
+    assert "Project add_team_to_view completed." in result.output
+    assert "Research" in result.output
 
 
 def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
@@ -4544,7 +4741,6 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
             "organization_owner": 2,
             "description": "Daily portfolio weights",
             "build_configuration": {"window": 30},
-            "build_meta_data": {"owner": "research"},
             "sourcetableconfiguration": {"time_index_name": "time_index"},
             "table_index_names": {"0": "time_index"},
             "compression_policy_config": {"after": "7 days"},

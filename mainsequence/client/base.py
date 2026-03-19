@@ -672,8 +672,12 @@ class ShareableObjectMixin:
     SHARING_ACTION_PATHS: ClassVar[dict[str, str]] = {
         "add_to_view": "add-to-view",
         "add_to_edit": "add-to-edit",
+        "add_team_to_view": "add-team-to-view",
+        "add_team_to_edit": "add-team-to-edit",
         "remove_from_edit": "remove-from-edit",
         "remove_from_view": "remove-from-view",
+        "remove_team_from_edit": "remove-team-from-edit",
+        "remove_team_from_view": "remove-team-from-view",
         "can_view": "can-view",
         "can_edit": "can-edit",
         "users_can_view": "can-view",
@@ -695,11 +699,12 @@ class ShareableObjectMixin:
         self,
         action_name: str,
         *,
-        user_id: Any,
+        subject_key: str,
+        subject_id: Any,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
-        normalized_user_id = type(self)._coerce_filter_id(user_id, field_name="user_id")
-        payload = {"json": {"user_id": normalized_user_id}}
+        normalized_subject_id = type(self)._coerce_filter_id(subject_id, field_name=subject_key)
+        payload = {"json": {subject_key: normalized_subject_id}}
 
         response = make_request(
             s=type(self).build_session(),
@@ -753,7 +758,8 @@ class ShareableObjectMixin:
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_to_view"],
-            user_id=user_id,
+            subject_key="user_id",
+            subject_id=user_id,
             timeout=timeout,
         )
 
@@ -765,7 +771,8 @@ class ShareableObjectMixin:
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["add_to_edit"],
-            user_id=user_id,
+            subject_key="user_id",
+            subject_id=user_id,
             timeout=timeout,
         )
 
@@ -777,7 +784,8 @@ class ShareableObjectMixin:
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_from_edit"],
-            user_id=user_id,
+            subject_key="user_id",
+            subject_id=user_id,
             timeout=timeout,
         )
 
@@ -789,7 +797,60 @@ class ShareableObjectMixin:
     ) -> dict[str, Any]:
         return self._post_sharing_action(
             self.SHARING_ACTION_PATHS["remove_from_view"],
-            user_id=user_id,
+            subject_key="user_id",
+            subject_id=user_id,
+            timeout=timeout,
+        )
+
+    def add_team_to_view(
+        self,
+        team_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["add_team_to_view"],
+            subject_key="team_id",
+            subject_id=team_id,
+            timeout=timeout,
+        )
+
+    def add_team_to_edit(
+        self,
+        team_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["add_team_to_edit"],
+            subject_key="team_id",
+            subject_id=team_id,
+            timeout=timeout,
+        )
+
+    def remove_team_from_edit(
+        self,
+        team_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["remove_team_from_edit"],
+            subject_key="team_id",
+            subject_id=team_id,
+            timeout=timeout,
+        )
+
+    def remove_team_from_view(
+        self,
+        team_id: Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        return self._post_sharing_action(
+            self.SHARING_ACTION_PATHS["remove_team_from_view"],
+            subject_key="team_id",
+            subject_id=team_id,
             timeout=timeout,
         )
 
