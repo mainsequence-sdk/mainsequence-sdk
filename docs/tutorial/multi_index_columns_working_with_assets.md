@@ -283,47 +283,25 @@ This launches two update processes with different asset batches, but both write 
 
 If ticker filters are ambiguous in your environment, prefer more specific filters or use `unique_identifier__in=[...]` instead.
 
-## Run from VS Code
+## Run from the Terminal
 
-Add a new debug configuration for this launcher.
+Run the launcher directly:
 
-**Windows (`.vscode\launch.json`)**
-
-```json
-{
-    "name": "Debug simulated_prices_launcher",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}\\scripts\\simulated_prices_launcher.py",
-    "console": "integratedTerminal",
-    "envFile": "${workspaceFolder}\\.env",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe",
-    "justMyCode": true
-}
+```bash
+python scripts/simulated_prices_launcher.py
 ```
 
-**macOS/Linux (`.vscode/launch.json`)**
+If your shell uses `python3`, run:
 
-```json
-{
-    "name": "Debug simulated_prices_launcher",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}/scripts/simulated_prices_launcher.py",
-    "console": "integratedTerminal",
-    "envFile": "${workspaceFolder}/.env",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}/.venv/bin/python",
-    "justMyCode": true
-}
+```bash
+python3 scripts/simulated_prices_launcher.py
 ```
 
-Then run `Debug simulated_prices_launcher` from VS Code.
+After the run, inspect the update processes from the CLI:
+
+```bash
+mainsequence project data-node-updates list
+```
 
 ## Testing or experimenting safely on a shared backend
 
@@ -455,11 +433,17 @@ Why this is the recommended shape:
 
 If the launcher succeeds, you should see two updater jobs writing into the same dataset.
 
-Search for the identifier you chose, for example `simulated_prices_tutorial_<your_project_id>`:
+Search for the identifier you chose from the CLI, for example `simulated_prices_tutorial_<your_project_id>`:
 
-[Open Dynamic Table Metadatas](https://main-sequence.app/dynamic-table-metadatas/)
+```bash
+mainsequence data-node list --filter identifier__contains=simulated_prices_tutorial_
+```
 
-If you chose a different identifier, search for that one instead.
+If you want the full record for one row, inspect it directly:
+
+```bash
+mainsequence data-node detail <DATA_NODE_STORAGE_ID>
+```
 
 ## Common issues
 

@@ -668,8 +668,48 @@ class BaseObjectOrm:
         return self.END_POINTS[self.orm_class].split("/")[0]
 
 
-class ShareableObjectMixin:
-    SHARING_ACTION_PATHS: ClassVar[dict[str, str]] = {
+class DetailActionObjectMixin:
+    def get_detail_url(self) -> str:
+        object_id = getattr(self, "id", None)
+        if object_id is None:
+            raise ValueError(f"{type(self).__name__} must have an id before calling detail actions.")
+
+        base = type(self).get_object_url().rstrip("/")
+        return f"{base}/{object_id}/"
+
+    def get_action_url(self, action_name: str) -> str:
+        return f"{self.get_detail_url().rstrip('/')}/{action_name.strip('/')}/"
+
+    def _request_detail_action(
+        self,
+        *,
+        r_type: str,
+        action_name: str,
+        payload: dict[str, Any] | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+        expected_statuses: tuple[int, ...] = (200,),
+        empty_response: Any = None,
+    ) -> Any:
+        payload = payload or {}
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type=r_type,
+            url=self.get_action_url(action_name),
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in expected_statuses:
+            raise_for_response(response, payload=payload or None)
+
+        if not getattr(response, "content", b""):
+            return empty_response
+
+        return response.json()
+
+
+class PermissionManagedObjectMixin(DetailActionObjectMixin):
+    PERMISSION_ACTION_PATHS: ClassVar[dict[str, str]] = {
         "add_to_view": "add-to-view",
         "add_to_edit": "add-to-edit",
         "add_team_to_view": "add-team-to-view",
@@ -683,17 +723,7 @@ class ShareableObjectMixin:
         "users_can_view": "can-view",
         "users_can_edit": "can-edit",
     }
-
-    def get_detail_url(self) -> str:
-        object_id = getattr(self, "id", None)
-        if object_id is None:
-            raise ValueError(f"{type(self).__name__} must have an id before calling detail actions.")
-
-        base = type(self).get_object_url().rstrip("/")
-        return f"{base}/{object_id}/"
-
-    def get_action_url(self, action_name: str) -> str:
-        return f"{self.get_detail_url().rstrip('/')}/{action_name.strip('/')}/"
+    SHARING_ACTION_PATHS: ClassVar[dict[str, str]] = PERMISSION_ACTION_PATHS
 
     def _post_sharing_action(
         self,
@@ -705,22 +735,20 @@ class ShareableObjectMixin:
     ) -> dict[str, Any]:
         normalized_subject_id = type(self)._coerce_filter_id(subject_id, field_name=subject_key)
         payload = {"json": {subject_key: normalized_subject_id}}
-
-        response = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
+        data = self._request_detail_action(
             r_type="POST",
-            url=self.get_action_url(action_name),
+            action_name=action_name,
             payload=payload,
-            time_out=timeout,
+            timeout=timeout,
+            expected_statuses=(200, 201, 202),
+            empty_response={},
         )
-        if response.status_code not in (200, 201, 202):
-            raise_for_response(response, payload=payload)
-
-        if not getattr(response, "content", b""):
-            return {}
-
-        return response.json()
+        if not isinstance(data, dict):
+            raise ApiError(
+                f"Unexpected {type(self).__name__} permission response for action "
+                f"{action_name!r}: {type(data)!r}"
+            )
+        return data
 
     def _get_sharing_state(
         self,
@@ -728,18 +756,13 @@ class ShareableObjectMixin:
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Any:
-        response = make_request(
-            s=type(self).build_session(),
-            loaders=type(self).LOADERS,
+        data = self._request_detail_action(
             r_type="GET",
-            url=self.get_action_url(action_name),
+            action_name=action_name,
             payload={},
-            time_out=timeout,
+            timeout=timeout,
+            expected_statuses=(200,),
         )
-        if response.status_code != 200:
-            raise_for_response(response)
-
-        data = response.json()
         if not isinstance(data, dict):
             raise ApiError(
                 f"Unexpected {type(self).__name__} sharing response for action "
@@ -901,3 +924,11 @@ class ShareableObjectMixin:
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Any:
         return self.can_edit(timeout=timeout)
+
+
+class ShareableObjectMixin(PermissionManagedObjectMixin):
+    """
+    Backward-compatible alias for models that expose permission-sharing detail actions.
+    """
+
+    pass

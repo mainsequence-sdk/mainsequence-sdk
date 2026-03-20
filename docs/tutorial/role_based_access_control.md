@@ -191,4 +191,4 @@ You need to know:
 - who can access the runtime configuration behind them
 - who can access the deployed resources built on top of them
 
-For a deeper reference, see [Constants and Secrets Knowledge Guide](../knowledge/infrastructure/constants_and_secrets.md).
+For a deeper reference, see [Users and Access](../knowledge/infrastructure/users_and_access.md) and [Constants and Secrets](../knowledge/infrastructure/constants_and_secrets.md).

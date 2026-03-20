@@ -27,7 +27,9 @@ In this part, you will:
 
 DataNodes created in this part: **none**.
 
-For the GUI + VS Code extension flow, see [Setting a Project (GUI + VS Code Extension)](./setting_a_project_gui.md).
+This tutorial is intentionally CLI-only.
+
+Some of the setup steps can also be done through the VS Code extension, but that flow is kept separate. A dedicated GUI tutorial will live under `docs/tutorial_gui/`.
 
 ## 1. Install and Verify the CLI
 

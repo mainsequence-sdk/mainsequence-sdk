@@ -1,7 +1,6 @@
 - [Home](index.md)
 - Tutorial
     - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
-    - [Part 1A — Setting a Project (GUI + VS Code Extension)](tutorial/setting_a_project_gui.md)
     - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 2.1 — Role-Based Access Control](tutorial/role_based_access_control.md)
     - [Part 3 — Multi-Index Columns and Working with Assets](tutorial/multi_index_columns_working_with_assets.md)
@@ -23,6 +22,7 @@
     - Markets
         - [Assets](knowledge/markets/assets.md)
     - Infrastructure
+        - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)

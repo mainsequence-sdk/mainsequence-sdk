@@ -6,7 +6,7 @@ In this part, you will:
 
 - create your first DataNode and run it locally
 - add a second DataNode that depends on the first one
-- debug launchers from VS Code and inspect persisted tables
+- run launcher scripts from the terminal and inspect persisted tables from the CLI
 - learn the difference between `update_hash` and `storage_hash`
 
 DataNodes created in this part: **`DailyRandomNumber`** and **`DailyRandomAddition`**.
@@ -212,76 +212,36 @@ def test_daily_random_number_smoke():
 
 Once that namespaced run behaves as expected, you can run the same node without a namespace when you are ready to publish or share the real dataset.
 
-To run and debug in VS Code, you can configure a launch file at `.vscode\launch.json`.
+Run the launcher directly from the terminal:
 
-You can also ask Copilot or another AI assistant to generate it for `scripts/random_number_launcher.py`:
-
-```text
-Build me a debug launcher called "Debug random_number_launcher"
-for my file scripts/random_number_launcher.py
+```bash
+python scripts/random_number_launcher.py
 ```
 
+If your shell uses `python3` instead of `python`, run:
 
-**Windows:**
-```json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Debug random_number_launcher",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}\\scripts\\random_number_launcher.py",
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            },
-            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
-        }
-    ]
-}
+```bash
+python3 scripts/random_number_launcher.py
 ```
 
-**macOS/Linux:**
-```json
-{
-    "version": "0.2.0",
-    "configurations": [
-        {
-            "name": "Debug random_number_launcher",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/scripts/random_number_launcher.py",
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            },
-            "python": "${workspaceFolder}/.venv/bin/python"
-        }
-    ]
-}
-```
+### Verify From the CLI
 
-Back in `random_number_launcher.py`, use the **Run Python File** dropdown in the top-right corner of VS Code. Choose **Python Debugger: Debug using launch.json**, then select the configuration you just created.
-
-After the launcher runs, open:
-
-https://main-sequence.app/dynamic-table-metadatas/
-
-Search for `example_random_number_<your_project_id>` or the exact identifier your node generated. You should see your data node and its table.
-
-![img.png](../img/tutorial/table_search.png)
-
-Click the **storage hash**, then in the table's context menu (the **…** button), select **Explore Table Data** to confirm that your node persisted data.
-
-![img.png](../img/tutorial/random_number_table.png)
-
-### Check Updates From the CLI
-
-You can also confirm that your launcher created `data_node_updates` directly from the terminal:
+Confirm that the launcher created update records:
 
 ```bash
 mainsequence project data-node-updates list
+```
+
+Then locate the published table by its identifier:
+
+```bash
+mainsequence data-node list --filter identifier__contains=example_random_number_
+```
+
+If you want the full record for one row, inspect it directly:
+
+```bash
+mainsequence data-node detail <DATA_NODE_STORAGE_ID>
 ```
 
 If your local project auth has expired or your `.env` does not yet contain fresh project JWTs, refresh them first:
@@ -339,48 +299,21 @@ daily_node = DailyRandomAddition(mean=0.0, std=1.0)
 daily_node.run(debug_mode=True, force_update=True)
 ```
 
-Now to run this launcher, add a new debug configuration to your `.vscode/launch.json` in `configurations` list (or duplicate the existing config and change the program path and name).
+Run the new launcher from the terminal:
 
-
-(Windows): 
-```json
-        {
-            "name": "Debug random_daily_addition_launcher",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}\\scripts\\random_daily_addition_launcher.py",
-            "console": "integratedTerminal",
-            "env": {
-                "PYTHONPATH": "${workspaceFolder}"
-            },
-            "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
-        }
+```bash
+python scripts/random_daily_addition_launcher.py
 ```
-(macOS/Linux): 
-```json
-{ 
-            "name": "Debug random_daily_addition_launcher", 
-            "type": "debugpy", 
-            "request": "launch", 
-            "program": "${workspaceFolder}/scripts/random_daily_addition_launcher.py", 
-            "console": "integratedTerminal", 
-            "env": { 
-                "PYTHONPATH": "${workspaceFolder}" 
-            }, 
-            "python": "${workspaceFolder}/.venv/bin/python" 
-        }
+
+If your shell uses `python3`, run:
+
+```bash
+python3 scripts/random_daily_addition_launcher.py
 ```
-Then return to `random_daily_addition_launcher.py` and run it from the VS Code Run/Debug dropdown using the `Debug random_daily_addition_launcher` configuration. After it runs, return to the Dynamic Table Metadatas page to see the new table:
 
-https://main-sequence.app/dynamic-table-metadatas/
+Because `DailyRandomAddition` does not define `get_table_metadata()` in this example, the new table may not have a friendly identifier yet. Use `mainsequence project data-node-updates list` and `mainsequence data-node list` to locate the newest table created by this run. If you want a predictable human-readable table name, add `get_table_metadata()` to `DailyRandomAddition` as well.
 
-Because `DailyRandomAddition` does not define `get_table_metadata()` in this example, the new table may not have a friendly identifier yet. Open the most recently created table from this run, or match it by its update process, to explore it. If you want a predictable human-readable table name, add `get_table_metadata()` to `DailyRandomAddition` as well. For a visual of the dependency structure, click the **update process** arrow and then the **update hash**.
-
-![img.png](../img/tutorial/update_hash.png)
-
-You should now see the dependency graph for this workflow:
-
-![img.png](../img/tutorial/update_hash_detail.png)
+The important thing to verify here is that the dependent node ran successfully and created a new update process in the current project.
 
 ## 4. `update_hash` vs. `storage_hash`
 
@@ -418,11 +351,26 @@ daily_node_high.run(debug_mode=True, force_update=True)
 
 Here we create two `DailyRandomNumber` nodes with different `std` (Volatility) configurations but the same `mean`. Since we set `ignore_from_storage_hash=True` for the `std` field in `RandomDataNodeConfig`, both nodes will write to the same underlying table. The tutorial identifier stays stable because it is based on project id and `mean`, not on `std`.
 
-Run the updated launcher in VS Code as before. After it runs, return to the Dynamic Table Metadatas page to see the table for `DailyRandomNumber`.
+Run the updated launcher from the terminal as before:
 
-You'll see that you have a single table with three different update processes (you just added two new processes by running the modified launcher):
+```bash
+python scripts/random_number_launcher.py
+```
 
-![img.png](../img/tutorial/update_vs_storage.png)
+If your shell uses `python3`, run:
+
+```bash
+python3 scripts/random_number_launcher.py
+```
+
+Then inspect the result from the CLI:
+
+```bash
+mainsequence project data-node-updates list
+mainsequence data-node list --filter identifier__contains=example_random_number_
+```
+
+You should see that you still have one tutorial table identifier, but additional update processes were created for the different updater configurations.
 
 
 You can also monitor the data nodes updates via the cli by running:

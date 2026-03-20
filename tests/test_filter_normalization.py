@@ -4,6 +4,7 @@ import pathlib
 import pytest
 
 import mainsequence.client.base as base_mod
+import mainsequence.client.models_user as models_user_mod
 from mainsequence.client.base import BaseObjectOrm, ShareableObjectMixin
 
 
@@ -380,6 +381,91 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
     }
 
 
+def test_team_uses_user_api_team_endpoint():
+    assert models_user_mod.Team.get_object_url().endswith("/user/api/team")
+
+
+def test_team_list_members_uses_team_members_endpoint(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return [
+                {
+                    "id": 21,
+                    "first_name": "Ana",
+                    "last_name": "Smith",
+                    "username": "ana@example.com",
+                    "email": "ana@example.com",
+                }
+            ]
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    team = models_user_mod.Team(id=11, name="Platform")
+    members = team.list_members(timeout=12)
+
+    assert len(members) == 1
+    assert members[0].id == 21
+    assert members[0].phone_number is None
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{models_user_mod.Team.get_object_url()}/11/members/",
+        "payload": {},
+        "timeout": 12,
+    }
+
+
+def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "team_id": 11,
+                "member_count": 4,
+                "selected": 2,
+                "added": 2,
+                "removed": 0,
+                "skipped": 0,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    team = models_user_mod.Team(id=11, name="Platform")
+    result = team.add_members([_IdRef(21), 22], timeout=18)
+
+    assert result.team_id == 11
+    assert result.member_count == 4
+    assert result.added == 2
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{models_user_mod.Team.get_object_url()}/11/manage-members/",
+        "payload": {"json": {"action": "add", "user_ids": [21, 22]}},
+        "timeout": 18,
+    }
+
+
 def _class_base_names_from_source(path: pathlib.Path) -> dict[str, list[str]]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     out: dict[str, list[str]] = {}
@@ -399,7 +485,6 @@ def test_shareable_models_keep_shareable_object_mixin():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
     models_tdag_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_tdag.py")
     models_helpers_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_helpers.py")
-    models_user_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_user.py")
 
     expected = {
         "Artifact": models_tdag_bases,
@@ -407,7 +492,6 @@ def test_shareable_models_keep_shareable_object_mixin():
         "Project": models_tdag_bases,
         "Constant": models_tdag_bases,
         "Secret": models_tdag_bases,
-        "Team": models_user_bases,
         "ResourceRelease": models_helpers_bases,
     }
 
@@ -416,3 +500,16 @@ def test_shareable_models_keep_shareable_object_mixin():
         assert "ShareableObjectMixin" in source_bases[class_name], (
             f"{class_name} must inherit ShareableObjectMixin"
         )
+
+
+def test_team_uses_permission_managed_object_mixin():
+    repo_root = pathlib.Path(__file__).resolve().parents[1]
+    models_user_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_user.py")
+
+    assert "Team" in models_user_bases, "Team class not found"
+    assert "PermissionManagedObjectMixin" in models_user_bases["Team"], (
+        "Team must inherit PermissionManagedObjectMixin"
+    )
+    assert "ShareableObjectMixin" not in models_user_bases["Team"], (
+        "Team should not inherit ShareableObjectMixin directly"
+    )

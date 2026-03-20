@@ -31,7 +31,7 @@ To accomplish this, the Main Sequence platform comes with an integrated **Market
 
 and many more from other financial systems.
 
-This enables us to build robust connection layers between our existing systems and our **DataWorkflows**. This information is accessible via the [Main Sequence API](https://main-sequence.app/docs/vam-api-reference) and through the client library by importing the Main Sequence client:
+This enables us to build robust connection layers between our existing systems and our **DataWorkflows**. This information is accessible through the Main Sequence API and through the client library by importing the Main Sequence client:
 
 ![img.png](../../img/tutorial/main_sequence_markets.png)
 
@@ -105,11 +105,11 @@ Now let’s get into the details of how a DataNode update cycle works. Every tim
 
 ### Markets Data Node Open Market
 
-The Main Sequence platform also provides a data marketplace where data providers can offer and publish their data as **DataNodes**. This allows users to easily integrate provider data into their workflows without needing to build custom integrations.
+The Main Sequence platform also provides a data marketplace where data providers can offer and publish their data as **DataNodes**. This allows users to integrate provider data into their workflows without needing to build custom integrations.
 
 As an example, we will use a highly reputable provider of enterprise-quality data, **Algoseek** (https://www.algoseek.com/).
 
-In the data marketplace section (https://main-sequence.app/external-table-metadatas/), you already have demo data from Algoseek ready for testing your workflows. Below, we will demonstrate how we build these integrations.
+Demo data from Algoseek is already available in the marketplace for testing workflows. Below, we will demonstrate how these integrations are built.
 
 
 ### Integrating Algoseek Security Master List

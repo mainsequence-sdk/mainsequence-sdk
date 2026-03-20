@@ -7,14 +7,16 @@ Now that you've built and tested your `DataNode`s locally, it's time to orchestr
 In this part, you will:
 
 - sync local project changes to the platform from the CLI
-- create manual jobs from both GUI and CLI
+- create manual jobs from the CLI
 - freeze jobs to project images for reproducible execution
 - define recurring schedules as code in a batch file (`scheduled_jobs.yaml`)
 - store and reuse platform-managed files with `Artifact` when a workflow starts from file drops instead of APIs
 
 DataNodes created in this part: **none new** (you orchestrate DataNodes built in previous parts).
 
-This tutorial keeps the **GUI flow** and adds the equivalent **CLI flow** next to it. The GUI is useful for discovery. The CLI is faster when you want a repeatable workflow that you can document, automate, or run in CI.
+This chapter is intentionally CLI-only so the workflow stays reproducible and easy to automate.
+
+Some project and job-management steps can also be done through the VS Code extension, but the main tutorial documents only the terminal flow. A separate GUI tutorial will live under `docs/tutorial_gui/`.
 
 ## Before You Start
 
@@ -76,42 +78,11 @@ Before scheduling anything, make sure your environment is consistent and your la
    mainsequence project sync -m "Tutorial files" --no-push
    ```
 
-5. **GUI alternative**
-
-   You can still use the VS Code extension button to compile and freeze dependencies if you prefer:
-
-   ![img.png](../img/tutorial/compile_env.png)
-
 ## 2) Scheduling Jobs
 
 You can run jobs **manually** or **automatically** on a schedule.
 
 ### 2.1 Manual Run
-
-#### GUI
-
-1. Open your Tutorial Project:  
-   <https://main-sequence.app/projects/?search=tutorial>
-
-2. In the file browser, navigate to the project. It should look similar to:
-
-![img.png](../img/tutorial/project_file_browser.png)
-
-3. Click the **scripts** folder and select **Create Job +** on any of the launcher scripts. Name it, for example, **Random Number Launcher - Manual Job**.
-
-![img.png](../img/tutorial/random_number_launcher_create_job.png)
-
-4. After creation, the job will appear under the **Jobs** tab. Because it is not scheduled, nothing has run yet. Click **Run** to execute it manually.
-
-You will see a confirmation toast in the top-right corner:
-
-![img.png](../img/tutorial/job_run_confirmation.png)
-
-5. Click the job to view its **Job Runs**. Wait for the run to complete to see the results.
-
-![img.png](../img/tutorial/manual_job.png)
-
-#### CLI
 
 You can create the same manual job from the terminal.
 
@@ -156,14 +127,6 @@ You can create the same manual job from the terminal.
 ### 2.2 Frozen Jobs with Images
 
 One important concept in building strong systems is being able to guarantee that they will run even when you modify the repository later. To do that, you can freeze a job against a project image. This image captures a pushed commit plus the selected base image, so the job can keep running the same way even if the repository changes afterward.
-
-All project images are stored at the project level in the **Images** tab.
-
-#### GUI
-
-Use the **Images** tab to review the images already created for the project and select one when creating jobs that must stay pinned to a known environment.
-
-#### CLI
 
 1. List existing project images:
 

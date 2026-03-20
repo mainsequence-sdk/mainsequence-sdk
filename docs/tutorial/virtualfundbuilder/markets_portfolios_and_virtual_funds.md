@@ -771,38 +771,17 @@ portfolio_group = msc.PortfolioGroup.get_or_create(
 
 Finally, we are ready to run the script and build the portfolios.
 
-Add a new entry to the `.vscode/launch.json` to the `configurations` array to run this script:
+Run the script directly from the terminal:
 
-(Windows):
-```json
-{
-    "name": "Debug simulated_daily_close_prices",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}\\scripts\\run_simulated_prices.py",
-    "console": "integratedTerminal",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}\\.venv\\Scripts\\python.exe"
-}
-```
-(macOS/Linux):
-```json
-{
-    "name": "Debug simulated_daily_close_prices",
-    "type": "debugpy",
-    "request": "launch",
-    "program": "${workspaceFolder}/scripts/run_simulated_prices.py",
-    "console": "integratedTerminal",
-    "env": {
-        "PYTHONPATH": "${workspaceFolder}"
-    },
-    "python": "${workspaceFolder}/.venv/bin/python"
-}
+```bash
+python scripts/run_simulated_prices.py
 ```
 
-Then back to `run_simulated_prices.py` file and run it from the Run and Debug dropdown at the top right (near the play button) and use `Debug simulated_daily_close_prices` configuration.
+If your shell uses `python3`, run:
+
+```bash
+python3 scripts/run_simulated_prices.py
+```
 
 You’re now ready to use these portfolios in dashboards and deeper analyses.
 

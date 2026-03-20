@@ -1906,12 +1906,6 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
 
 
 class RunConfiguration(BasePydanticModel, BaseObjectOrm):
-    local_time_serie_update_details: int | None = None
-    retry_on_error: int = 0
-    seconds_wait_on_retry: float = 50
-    required_cpus: int = 1
-    required_gpus: int = 0
-    execution_time_out_seconds: float = 50
     update_schedule: str = "*/1 * * * *"
 
     @classmethod

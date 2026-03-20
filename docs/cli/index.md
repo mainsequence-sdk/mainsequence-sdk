@@ -219,8 +219,8 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
-- `mainsequence organization teams can_view` and `can_edit` inspect team sharing through the SDK `ShareableObjectMixin` paths.
-- `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `ShareableObjectMixin` paths.
+- `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
+- `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
 - `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
 - `mainsequence constants can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Constant`.

@@ -8,10 +8,11 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .base import BaseObjectOrm, BasePydanticModel, PermissionManagedObjectMixin
 from .data_filters import *
-from .exceptions import raise_for_response
+from .exceptions import ApiError, raise_for_response
 from .utils import (
+    API_ENDPOINT,
     make_request,
 )
 
@@ -152,17 +153,54 @@ class ShareableTeamSummary(BasePydanticModel):
     )
 
 
-class Team(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class TeamMembershipUpdateResult(BasePydanticModel):
+    team_id: int = Field(
+        ...,
+        title="Team ID",
+        description="Unique identifier of the team whose membership was updated.",
+        examples=[11],
+    )
+    member_count: int = Field(
+        ...,
+        title="Member Count",
+        description="Total number of users in the team after the membership operation completes.",
+        examples=[4],
+    )
+    selected: int = Field(
+        ...,
+        title="Selected Users",
+        description="Number of user ids submitted in the membership update request.",
+        examples=[2],
+    )
+    added: int = Field(
+        0,
+        title="Added Users",
+        description="Number of users added to the team by the operation.",
+        examples=[2],
+    )
+    removed: int = Field(
+        0,
+        title="Removed Users",
+        description="Number of users removed from the team by the operation.",
+        examples=[0],
+    )
+    skipped: int = Field(
+        0,
+        title="Skipped Users",
+        description="Number of submitted users skipped because the requested membership state already existed.",
+        examples=[0],
+    )
+
+
+class Team(PermissionManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
+    ROOT_URL: ClassVar[str] = API_ENDPOINT.replace("/orm/api", "/user/api")
+    ENDPOINT: ClassVar[str] = "team"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
-        "id": ["exact", "in"],
-        "name": ["exact", "contains", "in"],
+        "search": ["exact"],
         "is_active": ["exact"],
-        "organization__id": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "id": "id",
-        "name": "str",
-        "organization__id": "id",
+        "search": "str",
         "is_active": "bool",
     }
 
@@ -225,20 +263,100 @@ class Team(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     )
 
     @classmethod
-    def get_object_url(cls, custom_endpoint_name=None):
-        endpoint_name = custom_endpoint_name or getattr(cls, "ENDPOINT_NAME", cls.class_name())
-        endpoint = cls.END_POINTS.get(endpoint_name) or "organization-team"
-        return f"{cls.ROOT_URL.replace('orm/api', 'user/api')}/{endpoint}"
-
-    @classmethod
     def create(
         cls,
         *,
         name: str,
         description: str = "",
+        is_active: bool = True,
         timeout: int | None = None,
     ) -> Team:
-        return super().create(name=name, description=description, timeout=timeout)
+        return super().create(
+            name=name,
+            description=description,
+            is_active=is_active,
+            timeout=timeout,
+        )
+
+    def _validate_team_user_list_payload(self, payload: Any, *, action_name: str) -> list[UserSummary]:
+        if isinstance(payload, dict):
+            payload = payload.get("results", payload.get("users", payload.get("members")))
+        if not isinstance(payload, list):
+            raise ApiError(
+                f"Unexpected Team response for action {action_name!r}: {type(payload)!r}"
+            )
+        return [UserSummary.model_validate(item) for item in payload]
+
+    def list_members(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[UserSummary]:
+        payload = self._request_detail_action(
+            r_type="GET",
+            action_name="members",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        return self._validate_team_user_list_payload(payload, action_name="members")
+
+    def list_candidate_members(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[UserSummary]:
+        payload = self._request_detail_action(
+            r_type="GET",
+            action_name="candidate-members",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        return self._validate_team_user_list_payload(payload, action_name="candidate-members")
+
+    def manage_members(
+        self,
+        *,
+        action: Literal["add", "remove"],
+        user_ids: list[Any],
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> TeamMembershipUpdateResult:
+        normalized_user_ids = [
+            type(self)._coerce_filter_id(user_id, field_name="user_ids")
+            for user_id in list(user_ids or [])
+        ]
+        if not normalized_user_ids:
+            raise ValueError("user_ids must contain at least one user id.")
+
+        payload = self._request_detail_action(
+            r_type="POST",
+            action_name="manage-members",
+            payload={"json": {"action": action, "user_ids": normalized_user_ids}},
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        if not isinstance(payload, dict):
+            raise ApiError(
+                f"Unexpected Team response for action 'manage-members': {type(payload)!r}"
+            )
+        return TeamMembershipUpdateResult.model_validate(payload)
+
+    def add_members(
+        self,
+        user_ids: list[Any],
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> TeamMembershipUpdateResult:
+        return self.manage_members(action="add", user_ids=user_ids, timeout=timeout)
+
+    def remove_members(
+        self,
+        user_ids: list[Any],
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> TeamMembershipUpdateResult:
+        return self.manage_members(action="remove", user_ids=user_ids, timeout=timeout)
 
 
 class OrganizationTeam(Team):

@@ -797,7 +797,7 @@ def list_team_users_can_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the view-access state for a team via `ShareableObjectMixin.can_view()`.
+    Fetch the view-access state for a team via `Team.can_view()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",
@@ -814,7 +814,7 @@ def list_team_users_can_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Fetch the edit-access state for a team via `ShareableObjectMixin.can_edit()`.
+    Fetch the edit-access state for a team via `Team.can_edit()`.
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_user",

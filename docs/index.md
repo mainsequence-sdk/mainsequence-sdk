@@ -16,10 +16,11 @@ The key idea is that you can focus on development and deployment, while the plat
 
 Use the tutorial if you want a guided path from project setup to data nodes, orchestration, markets workflows, and dashboards.
 
+The main tutorial path is intentionally CLI-only. A separate GUI tutorial will live under `docs/tutorial_gui/`.
+
 Recommended starting points:
 
 - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
-- [Part 1A — Setting a Project (GUI + VS Code Extension)](tutorial/setting_a_project_gui.md)
 - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
 
 ### Knowledge
