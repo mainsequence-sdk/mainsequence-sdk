@@ -425,20 +425,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         if r.status_code != 201:
             raise Exception(f"Error in request {r.url} {r.text}")
 
-    @classmethod
-    def get_mermaid_dependency_diagram(
-        cls, update_hash, data_source_id, desc=True, timeout=None
-    ) -> dict:
-        s = cls.build_session()
-        url = (
-            cls.get_object_url("DataNode")
-            + f"/{update_hash}/dependencies_graph_mermaid?desc={desc}&data_source_id={data_source_id}"
-        )
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
-        if r.status_code != 200:
-            raise Exception(f"Error in request {r.text}")
 
-        return r.json()
 
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
@@ -1907,6 +1894,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
 
 class RunConfiguration(BasePydanticModel, BaseObjectOrm):
     update_schedule: str = "*/1 * * * *"
+    local_time_serie_update_details: int | None = None
 
     @classmethod
     @property
