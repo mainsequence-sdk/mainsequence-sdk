@@ -5,17 +5,16 @@ from examples.data_nodes.simple_simulated_prices import (
     test_features_from_prices_local_storage,
     test_simulated_prices,
 )
-import mainsequence.client as msc
+from examples.data_nodes.simple_tables import build_test_simple_tables
+
 
 def main():
-    curves=msc.DataNodeStorage.get_data_between_dates_from_node_identifier(node_identifier="discount_curves")
-
     parser = argparse.ArgumentParser(
         description="Run data node functions: simulated prices or test time series."
     )
     parser.add_argument(
         "command",
-        choices=["simulated_prices", "random_data_nodes", "duck_features"],
+        choices=["simulated_prices", "random_data_nodes", "duck_features", "simple_tables"],
         help="Function to run: choose 'simulated_prices' or 'random_data_nodes'",
     )
     args = parser.parse_args()
@@ -26,6 +25,8 @@ def main():
         build_test_time_series()
     elif args.command == "duck_features":
         test_features_from_prices_local_storage()
+    elif args.command == "simple_tables":
+        build_test_simple_tables()
 
 
 if __name__ == "__main__":

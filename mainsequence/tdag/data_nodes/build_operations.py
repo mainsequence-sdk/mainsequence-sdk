@@ -22,6 +22,11 @@ from mainsequence.client import POD_PROJECT, BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.instrumentation import tracer, tracer_instrumentator
 from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, bcolors, ogm
+from mainsequence.tdag.pydantic_metadata import (
+    is_serialized_pydantic_model,
+    serialize_pydantic_model,
+    strip_pydantic_hash_exclusions,
+)
 
 from .namespacing import disable_hash_namespace
 from .persist_managers import PersistManager, get_data_node_source_code_git_hash
@@ -71,114 +76,18 @@ def _(value: datetime.datetime, pickle_ts: bool = False) -> str:
 @serialize_argument.register(BaseModel)
 def _(value: BaseModel, pickle_ts: bool = False) -> dict[str, Any]:
     """Serialization logic for any Pydantic BaseModel."""
-    import_path = {"module": value.__class__.__module__, "qualname": value.__class__.__qualname__}
-    serialized_model = {
-        field_name: serialize_argument(getattr(value, field_name), pickle_ts)
-        for field_name in value.__class__.model_fields
-    }
-    update_only_fields: list[str] = []
-    runtime_only_fields: list[str] = []
-    for field_name, field_info in value.__class__.model_fields.items():
-        extra = field_info.json_schema_extra or {}
-        if "ignore_from_storage_hash" in extra:
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} uses removed metadata "
-                "'ignore_from_storage_hash'; use json_schema_extra={\"update_only\": True} instead."
-            )
-
-        is_update_only = extra.get("update_only", False)
-        is_runtime_only = extra.get("runtime_only", False)
-        if not isinstance(is_update_only, bool):
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} metadata 'update_only' must be bool"
-            )
-        if not isinstance(is_runtime_only, bool):
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} metadata 'runtime_only' must be bool"
-            )
-        if is_update_only and is_runtime_only:
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} cannot be both update_only and runtime_only."
-            )
-        if is_runtime_only:
-            runtime_only_fields.append(field_name)
-        elif is_update_only:
-            update_only_fields.append(field_name)
-
-    return {
-        "pydantic_model_import_path": import_path,
-        "serialized_model": serialized_model,
-        "update_only": sorted(update_only_fields),
-        "runtime_only": sorted(runtime_only_fields),
-    }
+    return serialize_pydantic_model(
+        value,
+        serialize_field=lambda field_value: serialize_argument(field_value, pickle_ts),
+    )
 
 
 def _is_serialized_pydantic_model(value: Any) -> bool:
-    if not isinstance(value, dict):
-        return False
-
-    expected_keys = {"pydantic_model_import_path", "serialized_model", "update_only", "runtime_only"}
-    if not {"pydantic_model_import_path", "serialized_model"}.issubset(value):
-        return False
-    if not set(value).issubset(expected_keys):
-        return False
-
-    import_path = value["pydantic_model_import_path"]
-    if not isinstance(import_path, dict):
-        return False
-    if set(import_path) != {"module", "qualname"}:
-        return False
-    if not all(isinstance(import_path[key], str) for key in ("module", "qualname")):
-        return False
-
-    if not isinstance(value["serialized_model"], dict):
-        return False
-
-    for meta_key in ("update_only", "runtime_only"):
-        meta_value = value.get(meta_key, [])
-        if not isinstance(meta_value, list) or not all(isinstance(item, str) for item in meta_value):
-            return False
-
-    return True
+    return is_serialized_pydantic_model(value)
 
 
 def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> Any:
-    if isinstance(value, list):
-        return [
-            _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
-            for item in value
-        ]
-
-    if isinstance(value, tuple):
-        return tuple(
-            _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash) for item in value
-        )
-
-    if not isinstance(value, dict):
-        return value
-
-    if _is_serialized_pydantic_model(value):
-        runtime_only_fields = set(value.get("runtime_only", []))
-        fields_to_remove = set(runtime_only_fields)
-        if for_storage_hash:
-            fields_to_remove.update(value.get("update_only", []))
-
-        serialized_model = {
-            key: _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
-            for key, item in value.get("serialized_model", {}).items()
-            if key not in fields_to_remove
-        }
-
-        sanitized_value = {
-            "pydantic_model_import_path": value["pydantic_model_import_path"],
-            "serialized_model": serialized_model,
-        }
-        return sanitized_value
-
-    return {
-        key: _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
-        for key, item in value.items()
-    }
+    return strip_pydantic_hash_exclusions(value, for_storage_hash=for_storage_hash)
 
 
 @serialize_argument.register(BaseObjectOrm)
