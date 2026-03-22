@@ -4,18 +4,31 @@ import pandas as pd
 
 from mainsequence.client import Asset, AssetCategory
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
+from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 
+class ExternalWeightsConfig(DataNodeConfiguration):
+    signal_assets_configuration: AssetsConfiguration
+    artifact_name: str
+    bucket_name: str
+
+
 class ExternalWeights(WeightsBase, DataNode):
-    def __init__(self, artifact_name: str, bucket_name: str, *args, **kwargs):
-        self.artifact_name = artifact_name
-        self.bucket_name = bucket_name
-        super().__init__(*args, **kwargs)
+    def __init__(self, weights_config: ExternalWeightsConfig, *args, **kwargs):
+        self.weights_config = weights_config
+        self.artifact_name = weights_config.artifact_name
+        self.bucket_name = weights_config.bucket_name
+        super().__init__(
+            signal_assets_configuration=weights_config.signal_assets_configuration,
+            config=weights_config,
+            *args,
+            **kwargs,
+        )
 
     def maximum_forward_fill(self):
         return timedelta(days=1) - TIMEDELTA

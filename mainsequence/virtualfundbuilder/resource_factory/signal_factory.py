@@ -19,7 +19,7 @@ class WeightsBase:
             assets_configuration (AssetsConfiguration): Configuration details for signal assets.
         """
         self.assets_configuration = signal_assets_configuration
-        super().__init__()
+        super().__init__(*args, **kwargs)
 
     def get_explanation(self):
         info = f"""
@@ -113,7 +113,6 @@ class WeightsBase:
         weights_reindex.index.name = "time_index"
 
         return weights_reindex
-
 
 
 

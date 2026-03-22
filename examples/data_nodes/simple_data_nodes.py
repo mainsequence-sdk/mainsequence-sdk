@@ -13,7 +13,12 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 import mainsequence.client as msc
-from mainsequence.tdag.data_nodes import APIDataNode, DataNode, hash_namespace
+from mainsequence.tdag.data_nodes import (
+    APIDataNode,
+    DataNode,
+    DataNodeConfiguration,
+    hash_namespace,
+)
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
 
@@ -31,19 +36,29 @@ class VolatilityConfig(BaseModel):
     skew: bool
 
 
-class RandomDataNodeConfig(BaseModel):
+class RandomDataNodeConfig(DataNodeConfiguration):
     mean: float = Field(
         ...,
-        ignore_from_storage_hash=False,
         title="Mean",
         description="Mean for the random normal distribution generator",
     )
     std: VolatilityConfig = Field(
         VolatilityConfig(center=1, skew=True),
-        ignore_from_storage_hash=True,
+        json_schema_extra={"update_only": True},
         title="Vol Config",
         description="Vol Configuration",
     )
+
+
+class DailyRandomAdditionConfig(DataNodeConfiguration):
+    mean: float
+    std: float
+
+
+class DailyRandomAdditionAPIConfig(DataNodeConfiguration):
+    mean: float
+    std: float
+    dependency_identifier: int
 
 
 class DailyRandomNumber(DataNode):
@@ -60,7 +75,7 @@ class DailyRandomNumber(DataNode):
         self.node_configuration = node_configuration
         self.mean = node_configuration.mean
         self.std = node_configuration.std
-        super().__init__(*args, **kwargs)
+        super().__init__(config=node_configuration, *args, **kwargs)
 
     def get_table_metadata(self) -> msc.TableMetaData:
         TS_ID = f"example_random_number_{PROJECT_ID}_{self.mean}"
@@ -87,13 +102,14 @@ class DailyRandomNumber(DataNode):
 
 
 class DailyRandomAddition(DataNode):
-    def __init__(self, mean: float, std: float, *args, **kwargs):
-        self.mean = mean
-        self.std = std
+    def __init__(self, addition_config: DailyRandomAdditionConfig, *args, **kwargs):
+        self.addition_config = addition_config
+        self.mean = addition_config.mean
+        self.std = addition_config.std
         self.daily_random_number_data_node = DailyRandomNumber(
-            *args, node_configuration=RandomDataNodeConfig(mean=0.0), **kwargs
+            node_configuration=RandomDataNodeConfig(mean=0.0), *args, **kwargs
         )
-        super().__init__(*args, **kwargs)
+        super().__init__(config=addition_config, *args, **kwargs)
 
     def dependencies(self):
         return {"number_generator": self.daily_random_number_data_node}
@@ -117,14 +133,15 @@ class DailyRandomAddition(DataNode):
 
 
 class DailyRandomAdditionAPI(DataNode):
-    def __init__(self, mean: float, std: float, dependency_identifier: int, *args, **kwargs):
-        self.mean = mean
-        self.std = std
+    def __init__(self, addition_api_config: DailyRandomAdditionAPIConfig, *args, **kwargs):
+        self.addition_api_config = addition_api_config
+        self.mean = addition_api_config.mean
+        self.std = addition_api_config.std
 
         self.daily_random_number_data_node = APIDataNode.build_from_identifier(
-            identifier=dependency_identifier
+            identifier=addition_api_config.dependency_identifier
         )
-        super().__init__(*args, **kwargs)
+        super().__init__(config=addition_api_config, *args, **kwargs)
 
     def dependencies(self):
         return {"number_generator": self.daily_random_number_data_node}
@@ -162,7 +179,7 @@ def run_graph(label: str):
     print(f"{label} dependency identifier = {dep_identifier}")
 
     # 2) Node with DataNode dependency (will reuse same underlying table if hashes match)
-    add = DailyRandomAddition(mean=0.0, std=1.0)
+    add = DailyRandomAddition(addition_config=DailyRandomAdditionConfig(mean=0.0, std=1.0))
     print(f"{label} DailyRandomAddition.update_hash  = {add.update_hash}")
     print(f"{label} DailyRandomAddition.storage_hash = {add.storage_hash}")
     print(f"{label}   dep(update_hash) = {add.daily_random_number_data_node.update_hash}")
@@ -170,7 +187,13 @@ def run_graph(label: str):
     add.run(debug_mode=True, force_update=True)
 
     # 3) Node with API dependency (identifier-based)
-    api = DailyRandomAdditionAPI(mean=0.0, std=1.0, dependency_identifier=dep_identifier)
+    api = DailyRandomAdditionAPI(
+        addition_api_config=DailyRandomAdditionAPIConfig(
+            mean=0.0,
+            std=1.0,
+            dependency_identifier=dep_identifier,
+        )
+    )
     print(f"{label} DailyRandomAdditionAPI.update_hash  = {api.update_hash}")
     print(f"{label} DailyRandomAdditionAPI.storage_hash = {api.storage_hash}")
     api.run(debug_mode=True, force_update=True)

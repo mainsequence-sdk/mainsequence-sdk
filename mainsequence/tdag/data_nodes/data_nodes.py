@@ -38,6 +38,7 @@ from mainsequence.logconf import logger
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
+from .models import DataNodeConfiguration
 from .namespacing import current_hash_namespace
 from .namespacing import hash_namespace as _hash_namespace_cm
 from .persist_managers import get_data_node_source_code
@@ -591,7 +592,6 @@ class DataNode(DataAccessMixin, ABC):
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
     OPEN_TO_PUBLIC=False # flag for enterprise data providers that want to open their data nmodes
-    _ARGS_IGNORE_IN_STORAGE_HASH = []
 
     # --- Dunder & Serialization Methods ---
 
@@ -610,29 +610,34 @@ class DataNode(DataAccessMixin, ABC):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
+        config: DataNodeConfiguration,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
     ):
         """
         Initialize framework-level state for the node.
 
-        Subclasses should call ``super().__init__(...)`` and keep their own dataset
-        configuration in the subclass constructor.
+        Preferred pattern:
+        subclasses build a concrete ``DataNodeConfiguration`` and pass it as
+        ``super().__init__(config=...)``.
 
         The initial fallback start date for first-run updates is ``OFFSET_START``.
 
-        Important:
-        ``hash_namespace`` and ``test_node`` are handled by the wrapper installed in
-        ``__init_subclass__``. They are consumed before your subclass constructor runs
-        and are therefore not regular business configuration arguments.
-
         Parameters
         ----------
-        *args : tuple
-            Reserved for subclass extension.
-        **kwargs : dict
-            Reserved for subclass extension.
+        config : DataNodeConfiguration
+            Canonical node configuration for this node.
+        hash_namespace : str | None
+            Optional hash isolation namespace.
+        test_node : bool
+            Convenience flag for the ``"test"`` namespace.
         """
+        if not isinstance(config, DataNodeConfiguration):
+            raise TypeError(
+                f"{self.__class__.__name__} expected config to be a DataNodeConfiguration; "
+                f"got {type(config).__name__}."
+            )
 
         self.pre_load_routines_run = False
         self._data_source: DynamicTableDataSource | None = None  # is set later
@@ -640,6 +645,14 @@ class DataNode(DataAccessMixin, ABC):
 
         self._scheduler_tree_connected = False
         self.update_statistics = None
+        self.config = config
+        self._framework_initialized = True
+
+        explicit_namespace = hash_namespace
+        if explicit_namespace is None and test_node:
+            explicit_namespace = "test"
+        if explicit_namespace is not None:
+            self._hash_namespace = (explicit_namespace or "").strip()
 
     def __init_subclass__(cls, **kwargs):
         """
@@ -662,6 +675,13 @@ class DataNode(DataAccessMixin, ABC):
         test tables when needed.
         """
         super().__init_subclass__(**kwargs)
+
+        if "_ARGS_IGNORE_IN_STORAGE_HASH" in cls.__dict__:
+            raise TypeError(
+                f"{cls.__name__} uses removed class attribute _ARGS_IGNORE_IN_STORAGE_HASH; "
+                "move those fields into DataNodeConfiguration and mark them with "
+                'json_schema_extra={"update_only": True}.'
+            )
 
         # Get the original __init__ from the new subclass
         original_init = cls.__init__
@@ -688,10 +708,22 @@ class DataNode(DataAccessMixin, ABC):
                 namespace = current_hash_namespace()
 
             namespace = (namespace or "").strip()
-            self._hash_namespace = namespace  # stored, but NOT hashed unless non-empty
-
             # 1. Call the original __init__ of the subclass first
-            original_init(self, *args, **kwargs)
+            if namespace:
+                with _hash_namespace_cm(namespace):
+                    original_init(self, *args, **kwargs)
+            else:
+                original_init(self, *args, **kwargs)
+
+            if not getattr(self, "_framework_initialized", False):
+                raise TypeError(
+                    f"{self.__class__.__name__} must call super().__init__(config=..., "
+                    "hash_namespace=..., test_node=...) from its constructor."
+                )
+            if not isinstance(getattr(self, "config", None), DataNodeConfiguration):
+                raise TypeError(
+                    f"{self.__class__.__name__} must pass a DataNodeConfiguration to super().__init__(config=...)."
+                )
 
             # 2. Capture all arguments from __init__ methods in the MRO up to DataNode
             final_kwargs = {}
@@ -732,10 +764,15 @@ class DataNode(DataAccessMixin, ABC):
 
             # Remove `args` as it collects un-named positional arguments which are not part of the config hash.
             final_kwargs.pop("args", None)
+            if final_kwargs.get("config") is None:
+                final_kwargs.pop("config", None)
+            if not final_kwargs:
+                final_kwargs["config"] = self.config
 
             # ---- the surgical part: only change hashes when namespace is non-empty ----
             # Backward compatibility guarantee:
             # - if no test_node + no context => namespace == "" => NOTHING added => hashes identical to old behavior
+            self._hash_namespace = namespace
             if self._hash_namespace:
                 final_kwargs["hash_namespace"] = self._hash_namespace
                 logger.debug(f"Running on namespace {self._hash_namespace}")
@@ -772,13 +809,16 @@ class DataNode(DataAccessMixin, ABC):
         }
 
         config = build_operations.create_config(
-            arguments_to_ignore_from_storage_hash=self._ARGS_IGNORE_IN_STORAGE_HASH,
             kwargs=init_kwargs,
             ts_class_name=self.__class__.__name__,
         )
 
         for field_name, value in asdict(config).items():
             setattr(self, field_name, value)
+
+    def _get_data_node_configuration(self) -> DataNodeConfiguration | None:
+        config = getattr(self, "config", None)
+        return config if isinstance(config, DataNodeConfiguration) else None
 
     @property
     def hash_namespace(self) -> str:
@@ -810,7 +850,23 @@ class DataNode(DataAccessMixin, ABC):
         """
         if self.test_node and hasattr(self, "TEST_OFFSET_START"):
             return self.TEST_OFFSET_START
+        config = self._get_data_node_configuration()
+        if config is not None and config.offset_start is not None:
+            return config.offset_start
         return self.OFFSET_START
+
+    def get_open_to_public(self) -> bool:
+        """
+        Return the publication flag for the node.
+
+        Resolution order:
+        1. explicit ``DataNodeConfiguration.open_to_public`` when set on a config object
+        2. legacy class attribute ``OPEN_TO_PUBLIC``
+        """
+        config = self._get_data_node_configuration()
+        if config is not None and "open_to_public" in getattr(config, "model_fields_set", set()):
+            return config.open_to_public
+        return self.OPEN_TO_PUBLIC
 
     @property
     def is_api(self):
@@ -989,7 +1045,7 @@ class DataNode(DataAccessMixin, ABC):
             time_serie_source_code=time_serie_source_code,
             data_source=self.data_source,
             build_configuration_json_schema=self.build_configuration_json_schema,
-            open_to_public=self.OPEN_TO_PUBLIC
+            open_to_public=self.get_open_to_public(),
         )
 
     def set_relation_tree(self):
@@ -1055,7 +1111,7 @@ class DataNode(DataAccessMixin, ABC):
         self._setted_asset_list = asset_list
 
         update_statistics = update_statistics.update_assets(
-            asset_list, init_fallback_date=self.OFFSET_START
+            asset_list, init_fallback_date=self.get_offset_start()
         )
 
         self.update_statistics = update_statistics
@@ -1144,28 +1200,56 @@ class DataNode(DataAccessMixin, ABC):
         """
         Return metadata that describes the table as a dataset.
 
-        Override this in production nodes so users can understand what the table
-        means and how it should be used.
+        Base behavior:
+        - if the node instance carries a ``DataNodeConfiguration`` with
+          ``node_metadata``, build ``ms_client.TableMetaData`` from it.
+        - otherwise return ``None``.
+
+        Subclasses can still override this for custom behavior.
 
         Returns
         -------
         ms_client.TableMetaData | None
             Table metadata, or ``None`` when not provided.
         """
+        config = self._get_data_node_configuration()
+        if config is None or config.node_metadata is None:
+            return None
 
-        return None
+        node_metadata = config.node_metadata
+        return ms_client.TableMetaData(
+            identifier=node_metadata.identifier,
+            description=node_metadata.description,
+            data_frequency_id=node_metadata.data_frequency_id,
+        )
 
     def get_column_metadata(self) -> list[ColumnMetaData] | None:
         """
         Return metadata for output columns.
 
-        Override this in production nodes to document column meaning, labels,
-        and expected dtypes.
+        Base behavior:
+        - if the node instance carries a ``DataNodeConfiguration`` with
+          ``records``, build ``ColumnMetaData`` from those definitions.
+        - otherwise return ``None``.
+
+        Subclasses can still override this for custom behavior.
 
         Returns:
             A list of ColumnMetaData objects, or None.
         """
-        return None
+        config = self._get_data_node_configuration()
+        if config is None or not config.records:
+            return None
+
+        return [
+            ColumnMetaData(
+                column_name=record.column_name,
+                dtype=record.dtype,
+                label=record.label or record.column_name,
+                description=record.description or "",
+            )
+            for record in config.records
+        ]
 
     def get_asset_list(self) -> list["Asset"] | None:
         """
@@ -1372,9 +1456,11 @@ class DataNode(DataAccessMixin, ABC):
             Data to persist for this run. Return an empty DataFrame when no new rows exist.
         """
         raise NotImplementedError
-    
-   
-    
+
+
+class WrapperDataNodeConfig(DataNodeConfiguration):
+    translation_table: AssetTranslationTable
+
 
 class WrapperDataNode(DataNode):
     """
@@ -1410,14 +1496,24 @@ class WrapperDataNode(DataNode):
     WrapperTimeSeries deep-copies the translation table in __init__ to prevent accidental external mutation.
     """
 
-    def __init__(self, translation_table: AssetTranslationTable, *args, **kwargs):
+    def __init__(
+        self,
+        config: WrapperDataNodeConfig,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
+    ):
         """
         Initialize the WrapperDataNode.
 
         Args:
-            time_series_dict: Dictionary of DataNode objects.
+            config: Wrapper configuration containing the asset translation table.
         """
-        super().__init__(*args, **kwargs)
+        super().__init__(
+            config=config,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
 
         def get_time_serie_from_markets_unique_id(table_identifier: str) -> DataNode:
             """
@@ -1435,7 +1531,7 @@ class WrapperDataNode(DataNode):
             )
             return api_ts
 
-        translation_table = copy.deepcopy(translation_table)
+        translation_table = copy.deepcopy(config.translation_table)
 
         self.api_ts_map = {}
         for rule in translation_table.rules:

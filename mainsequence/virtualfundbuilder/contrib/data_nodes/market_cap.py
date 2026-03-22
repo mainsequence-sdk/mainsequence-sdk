@@ -13,8 +13,14 @@ from mainsequence.client import (
     AssetTranslationTable,
     DoesNotExist,
 )
-from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
-from mainsequence.virtualfundbuilder.models import VFBConfigBaseModel
+from mainsequence.tdag.data_nodes import (
+    APIDataNode,
+    DataNode,
+    DataNodeConfiguration,
+    WrapperDataNode,
+    WrapperDataNodeConfig,
+)
+from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
@@ -26,15 +32,26 @@ class AUIDWeight(VFBConfigBaseModel):
     weight: float
 
 
+class FixedWeightsConfig(DataNodeConfiguration):
+    signal_assets_configuration: AssetsConfiguration
+    asset_unique_identifier_weights: list[AUIDWeight]
+
+
 class FixedWeights(WeightsBase, DataNode):
 
-    def __init__(self, asset_unique_identifier_weights: list[AUIDWeight], *args, **kwargs):
+    def __init__(self, fixed_weights_config: FixedWeightsConfig, *args, **kwargs):
         """
         Args:
             asset_symbol_weights (List[SymbolWeight]): List of SymbolWeights that map asset symbols to weights
         """
-        super().__init__(*args, **kwargs)
-        self.asset_unique_identifier_weights = asset_unique_identifier_weights
+        self.fixed_weights_config = fixed_weights_config
+        self.asset_unique_identifier_weights = fixed_weights_config.asset_unique_identifier_weights
+        super().__init__(
+            signal_assets_configuration=fixed_weights_config.signal_assets_configuration,
+            config=fixed_weights_config,
+            *args,
+            **kwargs,
+        )
 
     def maximum_forward_fill(self):
         return timedelta(days=200 * 365)  # Always forward-fill to avoid filling the DB
@@ -86,19 +103,19 @@ class VolatilityControlConfiguration(BaseModel):
     ann_factor: int = 252
 
 
+class MarketCapConfig(DataNodeConfiguration):
+    signal_assets_configuration: AssetsConfiguration
+    volatility_control_configuration: VolatilityControlConfiguration | None
+    minimum_atvr_ratio: float = 0.1
+    rolling_atvr_volume_windows: list[int] | None = None
+    frequency_trading_percent: float = 0.9
+    source_frequency: str = "1d"
+    min_number_of_assets: int = 3
+    num_top_assets: int | None = None
+
+
 class MarketCap(WeightsBase, DataNode):
-    def __init__(
-        self,
-        volatility_control_configuration: VolatilityControlConfiguration | None,
-        minimum_atvr_ratio: float = 0.1,
-        rolling_atvr_volume_windows: list[int] | None = None,
-        frequency_trading_percent: float = 0.9,
-        source_frequency: str = "1d",
-        min_number_of_assets: int = 3,
-        num_top_assets: int | None = None,
-        *args,
-        **kwargs,
-    ):
+    def __init__(self, market_cap_config: MarketCapConfig, *args, **kwargs):
         """
         Signal Weights using weighting by Market Capitalization or Equal Weights
 
@@ -106,16 +123,23 @@ class MarketCap(WeightsBase, DataNode):
             source_frequency (str): Frequency of market cap source.
             num_top_assets (Optional[int]): Number of largest assets by market cap to use for signals. Leave empty to include all assets.
         """
+        self.market_cap_config = market_cap_config
+        rolling_atvr_volume_windows = market_cap_config.rolling_atvr_volume_windows
         if rolling_atvr_volume_windows is None:
-            rolling_atvr_volume_windows=[60, 360]
+            rolling_atvr_volume_windows = [60, 360]
 
-        super().__init__(*args, **kwargs)
-        self.source_frequency = source_frequency
-        self.num_top_assets = num_top_assets or 50000
-        self.minimum_atvr_ratio = minimum_atvr_ratio
+        super().__init__(
+            signal_assets_configuration=market_cap_config.signal_assets_configuration,
+            config=market_cap_config,
+            *args,
+            **kwargs,
+        )
+        self.source_frequency = market_cap_config.source_frequency
+        self.num_top_assets = market_cap_config.num_top_assets or 50000
+        self.minimum_atvr_ratio = market_cap_config.minimum_atvr_ratio
         self.rolling_atvr_volume_windows = rolling_atvr_volume_windows
-        self.frequency_trading_percent = frequency_trading_percent
-        self.min_number_of_assets = min_number_of_assets
+        self.frequency_trading_percent = market_cap_config.frequency_trading_percent
+        self.min_number_of_assets = market_cap_config.min_number_of_assets
 
         translation_table = "marketcap_translation_table"
         try:
@@ -124,8 +148,10 @@ class MarketCap(WeightsBase, DataNode):
         except DoesNotExist:
             self.logger.error(f"Translation table {translation_table} does not exist")
 
-        self.historical_market_cap_ts = WrapperDataNode(translation_table=translation_table)
-        self.volatility_control_configuration = volatility_control_configuration
+        self.historical_market_cap_ts = WrapperDataNode(
+            config=WrapperDataNodeConfig(translation_table=translation_table)
+        )
+        self.volatility_control_configuration = market_cap_config.volatility_control_configuration
 
     def maximum_forward_fill(self):
         return timedelta(days=1) - TIMEDELTA

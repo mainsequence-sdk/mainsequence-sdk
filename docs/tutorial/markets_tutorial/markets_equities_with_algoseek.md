@@ -231,11 +231,34 @@ by an external process.
 Now, to integrate the daily historical bars, we will first define the constructor with our dependency on the Security Master List node.
 
 ```python
-def __init__(self, daily_dir: str, security_master_path, is_demo: bool, *args, **kwargs):
-        self.daily_dir = daily_dir
-        self.security_master_node = AlgoSeekSecMasDEM(csv_path=security_master_path,is_demo=is_demo)
-        self.is_demo = is_demo
-        super().__init__(*args, **kwargs)
+class AlgoSeekDailyBarsConfig(DataNodeConfiguration):
+    daily_dir: str
+    security_master_path: str
+    is_demo: bool
+
+
+def __init__(
+    self,
+    config: AlgoSeekDailyBarsConfig,
+    *,
+    hash_namespace: str | None = None,
+    test_node: bool = False,
+):
+        self.daily_dir = config.daily_dir
+        self.security_master_node = AlgoSeekSecMasDEM(
+            config=AlgoSeekSecMasConfig(
+                csv_path=config.security_master_path,
+                is_demo=config.is_demo,
+            ),
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
+        self.is_demo = config.is_demo
+        super().__init__(
+            config=config,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
 
 def dependencies(self) -> Dict[str, "DataNode"]:
     # Ensure master runs first

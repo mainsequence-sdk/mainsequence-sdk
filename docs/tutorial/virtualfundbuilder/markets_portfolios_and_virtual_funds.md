@@ -164,44 +164,54 @@ Since this tutorial doesn’t use live market data, we’ll generate simulated d
 # SimulatedDailyClosePrices: generates fake daily OHLCV data for assets
 import datetime, pytz, numpy as np, pandas as pd
 import mainsequence.client as msc
-from mainsequence.tdag import DataNode
-from mainsequence.client.models_tdag import UpdateStatistics, ColumnMetaData
+from mainsequence.tdag import DataNode, DataNodeConfiguration, DataNodeMetaData, RecordDefinition
+from mainsequence.client.models_tdag import UpdateStatistics
+from pydantic import Field
 
 UTC = pytz.utc
 
+class SimulatedDailyClosePricesConfig(DataNodeConfiguration):
+    asset_list: list[msc.AssetMixin]
+    offset_start: datetime.datetime | None = Field(
+        default=datetime.datetime(2024, 1, 1, tzinfo=UTC),
+        json_schema_extra={"update_only": True},
+    )
+    node_metadata: DataNodeMetaData = Field(
+        default_factory=lambda: DataNodeMetaData(
+            identifier="simulated_daily_closes_tutorial",
+            description="Simulated daily OHLCV bars for tutorial assets",
+        ),
+        json_schema_extra={"runtime_only": True},
+    )
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(column_name="close", dtype="float64", description="Simulated close price", label="Close Price"),
+            RecordDefinition(column_name="open", dtype="float64", description="Simulated open price", label="Open Price"),
+            RecordDefinition(column_name="high", dtype="float64", description="Simulated high price", label="High Price"),
+            RecordDefinition(column_name="low", dtype="float64", description="Simulated low price", label="Low Price"),
+            RecordDefinition(column_name="volume", dtype="float64", description="Simulated volume", label="Volume"),
+            RecordDefinition(column_name="duration", dtype="float64", description="Simulated duration", label="Duration"),
+            RecordDefinition(column_name="open_time", dtype="int64", description="Simulated open time", label="Open Time"),
+            RecordDefinition(column_name="first_trade_time", dtype="int64", description="Simulated first trade time", label="First Trade Time"),
+            RecordDefinition(column_name="last_trade_time", dtype="int64", description="Simulated last trade time", label="Last Trade Time"),
+        ]
+    )
+
+
 class SimulatedDailyClosePrices(DataNode):
-    def __init__(self, asset_list, *args, **kwargs):
-        self.asset_list = asset_list
-        super().__init__(*args, **kwargs)
+    def __init__(self, config: SimulatedDailyClosePricesConfig):
+        self.asset_list = config.asset_list
+        super().__init__(config=config)
 
     def dependencies(self): return {}
     def get_asset_list(self): return self.asset_list
-
-    def get_table_metadata(self):
-        return msc.TableMetaData(
-            identifier="simulated_daily_closes_tutorial",
-            description="Simulated daily OHLCV bars for tutorial assets",
-        )
-
-    def get_column_metadata(self):
-        return [
-            ColumnMetaData(column_name="close", dtype="float", description="Simulated close price", label="Close Price"),
-            ColumnMetaData(column_name="open", dtype="float", description="Simulated open price", label="Open Price"),
-            ColumnMetaData(column_name="high", dtype="float", description="Simulated high price", label="High Price"),
-            ColumnMetaData(column_name="low", dtype="float", description="Simulated low price", label="Low Price"),
-            ColumnMetaData(column_name="volume", dtype="float", description="Simulated volume", label="Volume"),
-            ColumnMetaData(column_name="duration", dtype="float", description="Simulated duration", label="Duration"),
-            ColumnMetaData(column_name="open_time", dtype="int", description="Simulated open time", label="Open Time"),
-            ColumnMetaData(column_name="first_trade_time", dtype="int", description="Simulated first trade time", label="First Trade Time"),
-            ColumnMetaData(column_name="last_trade_time", dtype="int", description="Simulated last trade time", label="Last Trade Time"),
-        ]
 
     def update(self) -> pd.DataFrame:
         us: UpdateStatistics = self.update_statistics
         today = datetime.datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
         yday = today - datetime.timedelta(days=1)
 
-        start = (us.max_time_index_value or datetime.datetime(2024, 1, 1, tzinfo=UTC))
+        start = us.max_time_index_value or self.config.offset_start
         start = start.replace(hour=0, minute=0, second=0, microsecond=0) + datetime.timedelta(days=1)
         if start > yday:
             return pd.DataFrame()
@@ -353,17 +363,15 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
 When building dependencies you can use a `WrapperDataNode` initialized with a translation table, so the same code can route to different Data Nodes **dynamically**.
 
 ```python
+class WrapperDataNodeConfig(DataNodeConfiguration):
+    translation_table: AssetTranslationTable
+
+
 class WrapperDataNode(DataNode):
     """A wrapper class for managing multiple DataNode objects."""
 
-    def __init__(self, translation_table: AssetTranslationTable, *args, **kwargs):
-        """
-        Initialize the WrapperDataNode.
-
-        Args:
-            time_series_dict: Dictionary of DataNode objects.
-        """
-        super().__init__(*args, **kwargs)
+    def __init__(self, config: WrapperDataNodeConfig):
+        super().__init__(config=config)
 ```
 
 Add the following rule **after** creating the asset category:
@@ -658,7 +666,7 @@ from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import Immedia
 assets = ensure_test_assets()
 # Instantiate and update the DataNode (platform would orchestrate this)
 prices_node = SimulatedDailyClosePrices(
-    simulation_config=SimulatedDailyClosePricesConfig(asset_list=assets)
+    config=SimulatedDailyClosePricesConfig(asset_list=assets)
 )
 prices_node.run(debug_mode=True, force_update=True)
 

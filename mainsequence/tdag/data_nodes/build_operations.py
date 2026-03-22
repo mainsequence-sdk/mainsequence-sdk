@@ -1,5 +1,6 @@
 import collections
 import copy
+import datetime
 import hashlib
 import importlib
 import json
@@ -62,26 +63,121 @@ def _serialize_api_timeserie(value, pickle_ts: bool):
     return value
 
 
+@serialize_argument.register(datetime.datetime)
+def _(value: datetime.datetime, pickle_ts: bool = False) -> str:
+    return value.isoformat()
+
+
 @serialize_argument.register(BaseModel)
 def _(value: BaseModel, pickle_ts: bool = False) -> dict[str, Any]:
     """Serialization logic for any Pydantic BaseModel."""
     import_path = {"module": value.__class__.__module__, "qualname": value.__class__.__qualname__}
-    # Recursively call serialize_argument on each value in the model's dictionary.
     serialized_model = {
-        k: serialize_argument(v, pickle_ts) for k, v in json.loads(value.model_dump_json()).items()
+        field_name: serialize_argument(getattr(value, field_name), pickle_ts)
+        for field_name in value.__class__.model_fields
     }
+    update_only_fields: list[str] = []
+    runtime_only_fields: list[str] = []
+    for field_name, field_info in value.__class__.model_fields.items():
+        extra = field_info.json_schema_extra or {}
+        if "ignore_from_storage_hash" in extra:
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} uses removed metadata "
+                "'ignore_from_storage_hash'; use json_schema_extra={\"update_only\": True} instead."
+            )
 
-    ignore_from_storage_hash = [
-        k
-        for k, v in value.model_fields.items()
-        if v.json_schema_extra
-        and v.json_schema_extra.get("ignore_from_storage_hash", False) == True
-    ]
+        is_update_only = extra.get("update_only", False)
+        is_runtime_only = extra.get("runtime_only", False)
+        if not isinstance(is_update_only, bool):
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} metadata 'update_only' must be bool"
+            )
+        if not isinstance(is_runtime_only, bool):
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} metadata 'runtime_only' must be bool"
+            )
+        if is_update_only and is_runtime_only:
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} cannot be both update_only and runtime_only."
+            )
+        if is_runtime_only:
+            runtime_only_fields.append(field_name)
+        elif is_update_only:
+            update_only_fields.append(field_name)
 
     return {
         "pydantic_model_import_path": import_path,
         "serialized_model": serialized_model,
-        "ignore_from_storage_hash": ignore_from_storage_hash,
+        "update_only": sorted(update_only_fields),
+        "runtime_only": sorted(runtime_only_fields),
+    }
+
+
+def _is_serialized_pydantic_model(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+
+    expected_keys = {"pydantic_model_import_path", "serialized_model", "update_only", "runtime_only"}
+    if not {"pydantic_model_import_path", "serialized_model"}.issubset(value):
+        return False
+    if not set(value).issubset(expected_keys):
+        return False
+
+    import_path = value["pydantic_model_import_path"]
+    if not isinstance(import_path, dict):
+        return False
+    if set(import_path) != {"module", "qualname"}:
+        return False
+    if not all(isinstance(import_path[key], str) for key in ("module", "qualname")):
+        return False
+
+    if not isinstance(value["serialized_model"], dict):
+        return False
+
+    for meta_key in ("update_only", "runtime_only"):
+        meta_value = value.get(meta_key, [])
+        if not isinstance(meta_value, list) or not all(isinstance(item, str) for item in meta_value):
+            return False
+
+    return True
+
+
+def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> Any:
+    if isinstance(value, list):
+        return [
+            _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
+            for item in value
+        ]
+
+    if isinstance(value, tuple):
+        return tuple(
+            _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash) for item in value
+        )
+
+    if not isinstance(value, dict):
+        return value
+
+    if _is_serialized_pydantic_model(value):
+        runtime_only_fields = set(value.get("runtime_only", []))
+        fields_to_remove = set(runtime_only_fields)
+        if for_storage_hash:
+            fields_to_remove.update(value.get("update_only", []))
+
+        serialized_model = {
+            key: _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
+            for key, item in value.get("serialized_model", {}).items()
+            if key not in fields_to_remove
+        }
+
+        sanitized_value = {
+            "pydantic_model_import_path": value["pydantic_model_import_path"],
+            "serialized_model": serialized_model,
+        }
+        return sanitized_value
+
+    return {
+        key: _strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)
+        for key, item in value.items()
     }
 
 
@@ -227,33 +323,13 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     dhash_remote = hashlib.md5()
 
     # The function expects to receive the full dictionary, including meta-args
-    local_ts_dict_to_hash = parse_dictionary_before_hashing(dictionary)
-    remote_ts_in_db_hash = copy.deepcopy(local_ts_dict_to_hash)
+    parsed_dictionary = parse_dictionary_before_hashing(dictionary)
+    local_ts_dict_to_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=False)
+    remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
 
     # Add project_id for local hash
     if POD_PROJECT is not None:
         local_ts_dict_to_hash["project_id"] = POD_PROJECT.id
-
-    # Handle remote hash filtering internally
-    if "arguments_to_ignore_from_storage_hash" in local_ts_dict_to_hash:
-        keys_to_ignore = sorted(local_ts_dict_to_hash["arguments_to_ignore_from_storage_hash"])
-        for k in keys_to_ignore:
-            remote_ts_in_db_hash.pop(k, None)
-        remote_ts_in_db_hash.pop("arguments_to_ignore_from_storage_hash", None)
-
-    # remove keys from pydantic objects
-    for k, val in local_ts_dict_to_hash.items():
-        if isinstance(val, dict) == False:
-            continue
-        if "pydantic_model_import_path" in val:
-            if "ignore_from_storage_hash" in val:
-                for arg in val["ignore_from_storage_hash"]:
-                    remote_ts_in_db_hash[k]["serialized_model"].pop(arg, None)
-                if (
-                    k in remote_ts_in_db_hash
-                    and "ignore_from_storage_hash" in remote_ts_in_db_hash[k]
-                ):
-                    remote_ts_in_db_hash[k].pop("ignore_from_storage_hash")
     # Encode and hash both versions
     encoded_local = json.dumps(local_ts_dict_to_hash, sort_keys=True).encode()
     encoded_remote = json.dumps(remote_ts_in_db_hash, sort_keys=True).encode()
@@ -341,8 +417,14 @@ class BaseRebuilder(ABC):
 
         # For dictionaries, use the specialized registry
         if isinstance(value, dict):
+            pydantic_handler = self.registry.get("pydantic_model_import_path")
+            if pydantic_handler is not None and _is_serialized_pydantic_model(value):
+                return pydantic_handler(value, **kwargs)
+
             # Find a handler in the registry and use it
             for key, handler in self.registry.items():
+                if key == "pydantic_model_import_path":
+                    continue
                 if key in value:
                     return handler(value, **kwargs)
 
@@ -513,9 +595,7 @@ def extract_pydantic_fields_from_dict(d: Mapping[str, Any]) -> dict[str, dict[st
     return result
 
 
-def create_config(
-    ts_class_name: str, arguments_to_ignore_from_storage_hash: list[str], kwargs: dict[str, Any]
-):
+def create_config(ts_class_name: str, kwargs: dict[str, Any]):
     """
     Creates the configuration and hashes using the original hash_signature logic.
     """
@@ -531,8 +611,6 @@ def create_config(
 
     # 2. Prepare the dictionary for hashing
     dict_to_hash = copy.deepcopy(serialized_core_kwargs)
-
-    dict_to_hash["arguments_to_ignore_from_storage_hash"] = arguments_to_ignore_from_storage_hash
 
     # 3. Generate the hashes
     update_hash, storage_hash = hash_signature(dict_to_hash)

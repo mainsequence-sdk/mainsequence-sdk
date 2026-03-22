@@ -3,11 +3,17 @@ from datetime import datetime
 import pandas as pd
 import pytz
 
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
+from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
+
+
+class MockSignalConfig(DataNodeConfiguration):
+    signal_assets_configuration: AssetsConfiguration
+    source_frequency: str = "30min"
 
 
 class MockSignal(WeightsBase, DataNode):
@@ -15,8 +21,14 @@ class MockSignal(WeightsBase, DataNode):
     Mock Signal to test strategies. Creates a signal with long/short of ETH and BTC in frequency.
     """
 
-    def __init__(self, source_frequency: str = "30min", *args, **kwargs):
-        super().__init__(*args, **kwargs)
+    def __init__(self, signal_config: MockSignalConfig, *args, **kwargs):
+        self.signal_config = signal_config
+        super().__init__(
+            signal_assets_configuration=signal_config.signal_assets_configuration,
+            config=signal_config,
+            *args,
+            **kwargs,
+        )
 
         asset_mapping = {}
         for tmp_asset_universe in self.asset_universe:
@@ -29,7 +41,7 @@ class MockSignal(WeightsBase, DataNode):
             self.asset_1 = asset_list[0]
             self.asset_2 = asset_list[1]
         self.asset_mapping = asset_mapping
-        self.source_frequency = source_frequency
+        self.source_frequency = signal_config.source_frequency
 
     def get_explanation(self):
         return f"The signal will switch between {self.asset_1.symbol} and {self.asset_2.symbol} randomly every 30 minutes"

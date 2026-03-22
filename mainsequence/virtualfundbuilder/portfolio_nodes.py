@@ -11,13 +11,29 @@ import pytz
 
 import mainsequence.client as msc
 from mainsequence.client import Asset, AssetCategory
-from mainsequence.tdag.data_nodes import APIDataNode, DataNode, WrapperDataNode
+from mainsequence.tdag.data_nodes import (
+    APIDataNode,
+    DataNode,
+    DataNodeConfiguration,
+    WrapperDataNode,
+)
 from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
 
 from .. import client as ms_client
 from .models import PortfolioConfiguration
+
+
+class PortfolioFromDFConfig(DataNodeConfiguration):
+    portfolio_name: str
+    calendar_name: str
+    target_portfolio_about: str
+    builds_from_target_weights: bool = True
+
+
+class PortfolioStrategyConfig(DataNodeConfiguration):
+    portfolio_configuration: PortfolioConfiguration
 
 
 def translate_to_pandas_freq(custom_freq):
@@ -145,15 +161,13 @@ def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
 
 class PortfolioFromDF(DataNode):
 
-    def __init__(
-        self, portfolio_name: str, calendar_name: str, target_portfolio_about: str,
-            builds_from_target_weights=True,*args, **kwargs
-    ):
-        self.portfolio_name = portfolio_name
-        self.calendar_name = calendar_name
-        self.target_portfolio_about = target_portfolio_about
-        self.builds_from_target_weights=builds_from_target_weights
-        super().__init__(*args, **kwargs)
+    def __init__(self, portfolio_from_df_config: PortfolioFromDFConfig, *args, **kwargs):
+        self.portfolio_from_df_config = portfolio_from_df_config
+        self.portfolio_name = portfolio_from_df_config.portfolio_name
+        self.calendar_name = portfolio_from_df_config.calendar_name
+        self.target_portfolio_about = portfolio_from_df_config.target_portfolio_about
+        self.builds_from_target_weights = portfolio_from_df_config.builds_from_target_weights
+        super().__init__(config=portfolio_from_df_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
@@ -266,7 +280,7 @@ class PortfolioStrategy(DataNode):
     and rebalancing strategies. Calculates portfolio values and returns while accounting for execution-specific fees.
     """
 
-    def __init__(self, portfolio_configuration: PortfolioConfiguration, *args, **kwargs):
+    def __init__(self, portfolio_strategy_config: PortfolioStrategyConfig, *args, **kwargs):
         """
         Initializes the PortfolioStrategy class with the necessary configurations.
 
@@ -275,6 +289,8 @@ class PortfolioStrategy(DataNode):
                 including assets, execution parameters, and backtesting weights.
             is_live (bool): Flag indicating whether the strategy is running in live mode.
         """
+        self.portfolio_strategy_config = portfolio_strategy_config
+        portfolio_configuration = portfolio_strategy_config.portfolio_configuration
         portfolio_build_configuration=portfolio_configuration.portfolio_build_configuration
         self.portfolio_build_configuration=portfolio_build_configuration
         self.execution_configuration = portfolio_build_configuration.execution_configuration
@@ -317,7 +333,7 @@ class PortfolioStrategy(DataNode):
             copy.deepcopy(self.assets_configuration), asset_list=asset_list
         )
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=portfolio_strategy_config, *args, **kwargs)
 
     def get_asset_list(self):
         """
@@ -832,4 +848,3 @@ rebalance details:"""
         if add_portfolio_to_markets_backend:
             _build_target_portfolio_in_backend(portfolio_ts=self,
                 )
-

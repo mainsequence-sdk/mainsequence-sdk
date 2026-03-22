@@ -30,15 +30,19 @@ from datetime import timedelta
 
 import pandas as pd
 
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag import DataNode, DataNodeConfiguration
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 
+class MySignalConfig(DataNodeConfiguration):
+    my_param: int = 10
+
+
 class MySignal(WeightsBase, DataNode):
-    def __init__(self, my_param: int = 10, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.my_param = my_param
+    def __init__(self, config: MySignalConfig):
+        self.my_param = config.my_param
+        super().__init__(config=config)
 
     def get_asset_list(self):
         ...

@@ -37,8 +37,8 @@ Use these conventions consistently:
 
 - Class name: `PascalCase` (`DailyFxRatesECB`)
 - File name: `snake_case.py` (`daily_fx_rates_ecb.py`)
-- Config model: `<Something>Config` based on `pydantic.BaseModel`
-- Table identifier: lowercase `snake_case`, stable, meaning-based (`fx_ecb_daily_rates`)
+- Config model: `<Something>Config` based on `DataNodeConfiguration`
+- Published identifier: lowercase `snake_case`, readable, and stable when possible (`fx_ecb_daily_rates`)
 - Dependency keys: short and descriptive (`"prices"`, `"rates"`, `"raw"`)
 
 ### 3.1 Table identifiers must be unique across the organization
@@ -50,6 +50,17 @@ That means:
 - two teams should not publish different datasets under the same identifier,
 - tutorial-style identifiers are likely to collide on shared backends,
 - project-specific suffixes are often the safest starting point while learning.
+
+Important architectural point:
+
+- `identifier` is published metadata, not hash identity,
+- it is intentionally runtime-only,
+- you can repoint an identifier from one backing table to another during a migration without rotating `storage_hash` or `update_hash`.
+
+There is no separate `portable_identifier` flag in the current SDK. Portability is
+the default meaning of `DataNodeMetaData.identifier`.
+
+This is useful when you want a portable public handle like `daily_prices` while moving the actual storage implementation underneath it.
 
 If you want to inspect the organization-visible DataNode table identifiers from the CLI, run:
 
@@ -64,7 +75,27 @@ This command lists DataNode table identifiers exposed by `DataNodeStorage`. It d
 A simple and scalable pattern is:
 
 - one Pydantic config object for dataset and scope fields,
+- make the node constructor accept exactly that one config object,
 - operational runtime knobs outside `__init__`.
+
+Preferred constructor shape:
+
+```python
+from mainsequence.tdag import DataNode, DataNodeConfiguration
+
+
+class MyNodeConfig(DataNodeConfiguration):
+    ...
+
+
+class MyNode(DataNode):
+    def __init__(self, config: MyNodeConfig):
+        self.my_field = config.my_field
+        super().__init__(config=config)
+```
+
+`DataNode` is now strict about this contract. New nodes should not rely on raw
+constructor args being reflected back into hashed configuration automatically.
 
 ### 4.1 Meaning fields (affect `storage_hash`)
 
@@ -90,8 +121,12 @@ Examples:
 For Pydantic v2, mark these fields with:
 
 ```python
-Field(..., json_schema_extra={"ignore_from_storage_hash": True})
+Field(..., json_schema_extra={"update_only": True})
 ```
+
+Legacy `ignore_from_storage_hash` field metadata and the older
+`_ARGS_IGNORE_IN_STORAGE_HASH` class attribute are removed. New code should use
+`DataNodeConfiguration` fields plus `update_only` / `runtime_only` explicitly.
 
 ### 4.3 Operational knobs (affect neither hash)
 
@@ -105,6 +140,29 @@ Examples:
 - secrets/credentials
 
 Keep them in env vars or runtime config read inside `update()`.
+
+If you absolutely must keep a Pydantic field on a config/helper model for
+display-only metadata, mark it with:
+
+```python
+Field(..., json_schema_extra={"runtime_only": True})
+```
+
+`runtime_only` fields are excluded from both `update_hash` and `storage_hash`.
+
+Use this only for descriptive fields such as labels or long-form documentation.
+Do not use `runtime_only` for anything that changes:
+
+- output values
+- dependencies
+- `get_column_metadata()` structure
+- table meaning
+- table schema
+
+One explicit exception in this SDK is `DataNodeMetaData`, which is also runtime-only.
+That is intentional: table metadata is treated as published/discovery information,
+not as build identity. In particular, `identifier` is runtime-only so it can serve
+as a portable alias across backing tables.
 
 ## 5) Hashing rules in plain English
 
@@ -197,7 +255,7 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 
 ### 6.1 Single-index pattern
 
-- first run: start at `OFFSET_START` (UTC-aware)
+- first run: start at `config.offset_start` when provided, otherwise legacy `OFFSET_START`
 - subsequent runs: start at `last_time + frequency_step`
 - daily datasets typically end at yesterday 00:00 UTC
 
@@ -294,6 +352,16 @@ For production nodes, implement:
 
 - `get_table_metadata()`
 - `get_column_metadata()`
+
+For simple config-driven nodes, you can often avoid overriding these methods:
+
+- put table metadata in `DataNodeConfiguration.node_metadata`
+- put column metadata in `DataNodeConfiguration.records`
+
+Those config blocks use the SDK models `DataNodeMetaData` and `RecordDefinition`.
+
+The base `DataNode` will build `TableMetaData` and `ColumnMetaData` from those
+config blocks when present.
 
 Log useful operational facts:
 
@@ -445,39 +513,33 @@ This intentionally changes both `storage_hash` and `update_hash` so tests do not
 
 Keep test runs bounded:
 
-- use a narrow `OFFSET_START` for test nodes,
+- prefer a narrow `config.offset_start` for test runs,
 - or pass controlled update statistics/checkpoints,
 - keep integration tests small and deterministic.
 
-### Example: keep integration tests in `tests/` and override `OFFSET_START`
+### Example: keep integration tests in `tests/` and set `config.offset_start`
 
 In real projects, keep these tests in the `tests/` folder, for example:
 
 - `tests/test_my_node.py`
 
-A practical pattern is to create a small test-only subclass with a narrow `OFFSET_START`, then run it inside a namespace:
+A practical pattern is to keep the production class unchanged, pass a narrow
+`offset_start` in the test config, and run the node inside a namespace:
 
 ```python
-import datetime
-
-import pytz
-
 from mainsequence.tdag.data_nodes import hash_namespace
 
 from src.data_nodes.my_node import MyNode, MyNodeConfig
 
-UTC = pytz.utc
-
-
-class TestMyNode(MyNode):
-    OFFSET_START = datetime.datetime(2025, 1, 1, tzinfo=UTC)
-
 
 def test_my_node_smoke():
-    config = MyNodeConfig(...)
+    config = MyNodeConfig(
+        ...,
+        offset_start="2025-01-01T00:00:00+00:00",
+    )
 
     with hash_namespace("pytest_my_node_smoke"):
-        node = TestMyNode(config=config)
+        node = MyNode(config=config)
         err, df = node.run(debug_mode=True, force_update=True)
 
     assert err is False
@@ -487,8 +549,12 @@ def test_my_node_smoke():
 Why this pattern works well:
 
 - the namespace isolates hashes from production-like tables
-- the subclass keeps the production node unchanged
-- the narrower `OFFSET_START` prevents large first-run backfills during tests
+- the production node stays unchanged
+- the narrower `config.offset_start` prevents large first-run backfills during tests
+
+If you already have older nodes that still use class-level `OFFSET_START`, that
+fallback remains supported, but config-driven `offset_start` is the preferred
+pattern for new code and new documentation.
 
 If you want the shortcut form, `test_node=True` is equivalent to using the namespace `"test"`, but explicit namespaces are usually better for parallel test runs.
 

@@ -12,7 +12,14 @@ from sklearn.linear_model import ElasticNet
 
 import mainsequence.client as msc
 from mainsequence.client.models_tdag import ColumnMetaData, UpdateStatistics
-from mainsequence.tdag import APIDataNode, DataNode, WrapperDataNode
+from mainsequence.tdag import (
+    APIDataNode,
+    DataNode,
+    DataNodeConfiguration,
+    RecordDefinition,
+    WrapperDataNode,
+    WrapperDataNodeConfig,
+)
 
 np.NaN = np.nan  # Fix for a pandas-ta compatibility issue
 MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES = "simulated_prices_from_category"
@@ -188,14 +195,89 @@ class SingleIndexTS(DataNode):
         return mts
 
 
-class PriceSimulConfig(BaseModel):
-
+class PriceSimulConfig(DataNodeConfiguration):
     asset_list: list[msc.AssetMixin] = Field(
         ...,
         title="Asset List",
         description="List of assets to simulate",
-        ignore_from_storage_hash=True,
+        json_schema_extra={"update_only": True},
     )
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="close",
+                dtype="float",
+                label="Close",
+                description="Simulated close price",
+            )
+        ]
+    )
+
+
+class VolatilityNodeConfig(DataNodeConfiguration):
+    asset_list: list[msc.AssetMixin] = Field(
+        ...,
+        title="Asset List",
+        description="List of assets used for volatility computation.",
+        json_schema_extra={"update_only": True},
+    )
+    rolling_window: int = Field(..., title="Rolling Window")
+
+
+class CategorySimulatedPricesConfig(DataNodeConfiguration):
+    asset_category_id: str = Field(
+        ...,
+        title="Asset Category Identifier",
+        description="Asset category used to scope the updater.",
+        json_schema_extra={"update_only": True},
+    )
+
+
+class FeatureStoreTAConfig(DataNodeConfiguration):
+    asset_list: list[msc.AssetMixin] = Field(
+        ...,
+        title="Asset List",
+        description="Assets used for the feature store updater.",
+        json_schema_extra={"update_only": True},
+    )
+    ta_feature_config: list[dict[str, Any]] = Field(
+        ...,
+        title="TA Feature Config",
+        description="Technical analysis feature definitions.",
+        json_schema_extra={"update_only": True},
+    )
+
+
+class ModelTrainNodeConfig(DataNodeConfiguration):
+    asset_list: list[msc.Asset]
+    ta_feature_config: list[dict[str, Any]]
+    model_config: Any
+    window_size: int
+    retrain_config_days: int
+
+
+class RollingModelPredictionConfig(DataNodeConfiguration):
+    asset_list: list[msc.Asset]
+    ta_feature_config: list[dict[str, Any]]
+    model_config: Any
+    window_size: int
+    retrain_config_days: int
+
+
+class LivePredictionConfig(DataNodeConfiguration):
+    asset_list: list[msc.Asset]
+    ta_feature_config: list[dict[str, Any]]
+    model_config: Any
+    window_size: int
+    retrain_config_days: int
+
+
+class WorkflowManagerConfig(DataNodeConfiguration):
+    asset_list: list[msc.Asset]
+    ta_feature_config: list[dict[str, Any]]
+    model_config: Any
+    window_size: int
+    retrain_config_days: int
 
 
 class SimulatedPrices(DataNode):
@@ -214,7 +296,7 @@ class SimulatedPrices(DataNode):
         """
         self.asset_list = simulation_config.asset_list
         self.asset_symbols_filter = [a.unique_identifier for a in self.asset_list]
-        super().__init__(*args, **kwargs)
+        super().__init__(config=simulation_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
@@ -227,27 +309,9 @@ class SimulatedPrices(DataNode):
     def get_asset_list(self):
         return self.asset_list
 
-    def get_column_metadata(self):
-        """
-        Add MetaData information to the DataNode Table
-        Returns:
-
-        """
-        from mainsequence.client.models_tdag import ColumnMetaData
-
-        columns_metadata = [
-            ColumnMetaData(
-                column_name="close",
-                dtype="float",
-                label="Close",
-                description=("Simulated Close Price"),
-            ),
-        ]
-        return columns_metadata
-
     def get_table_metadata(self) -> msc.TableMetaData:
         """
-        REturns the market time serie unique identifier, assets to append , or asset to overwrite
+        REturns the market time serie unique identifier,
         Returns:
 
         """
@@ -262,13 +326,14 @@ class SimulatedPrices(DataNode):
 
 
 class Volatility(DataNode):
-    _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list"]
-
-    def __init__(self, asset_list, rolling_window, *args, **kwargs):
-        self.asset_list = asset_list
-        self.rolling_window = rolling_window
-        self.prices = SimulatedPrices(asset_list=self.asset_list)
-        super().__init__(*args, **kwargs)
+    def __init__(self, volatility_config: VolatilityNodeConfig, *args, **kwargs):
+        self.volatility_config = volatility_config
+        self.asset_list = volatility_config.asset_list
+        self.rolling_window = volatility_config.rolling_window
+        self.prices = SimulatedPrices(
+            simulation_config=PriceSimulConfig(asset_list=self.asset_list)
+        )
+        super().__init__(config=volatility_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {"prices": self.prices}
@@ -285,7 +350,7 @@ class Volatility(DataNode):
         # Step 2: Compute percent returns
         returns = price_wide.pct_change()
         # Step 3: 20-period rolling volatility (non-annualized)
-        rolling_vol = returns.rolling(window=20).std()
+        rolling_vol = returns.rolling(window=self.rolling_window).std()
 
         # Step 4 (optional): Annualize if using hourly data → ~252*24 = 6048 trading hours/year
         rolling_vol_annualized = rolling_vol * np.sqrt(6048)
@@ -302,9 +367,8 @@ class CategorySimulatedPrices(DataNode):
     """
 
     OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
-    _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_category_id"]
 
-    def __init__(self, asset_category_id: str, *args, **kwargs):
+    def __init__(self, category_config: CategorySimulatedPricesConfig, *args, **kwargs):
         """
         Initialize the SimpleCryptoFeature time series.
 
@@ -313,12 +377,13 @@ class CategorySimulatedPrices(DataNode):
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
-        self.asset_category_id = asset_category_id
+        self.category_config = category_config
+        self.asset_category_id = category_config.asset_category_id
 
         # this time serie has a dependency to include dependencies is just enough to declared them in the init method
-        self.simple_ts = SingleIndexTS()
+        self.simple_ts = SingleIndexTS(config=DataNodeConfiguration())
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=category_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {"simple_ts": self.simple_ts}
@@ -418,9 +483,7 @@ class FeatureStoreTA(DataNode):
     A derived time series that calculates a technical analysis feature from another price series.
     """
 
-    _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list", "ta_feature_config"]
-
-    def __init__(self, asset_list: list[msc.Asset], ta_feature_config: list[dict], *args, **kwargs):
+    def __init__(self, feature_store_config: FeatureStoreTAConfig, *args, **kwargs):
         """
         Initialize the TA feature time series.
 
@@ -431,15 +494,20 @@ class FeatureStoreTA(DataNode):
             *args: Additional positional arguments.
             **kwargs: Additional keyword arguments.
         """
-        self.asset_list = asset_list
-        self.asset_symbols_filter = [a.unique_identifier for a in asset_list]
-        self.ta_feature_config = ta_feature_config
+        self.feature_store_config = feature_store_config
+        self.asset_list = feature_store_config.asset_list
+        self.asset_symbols_filter = [a.unique_identifier for a in self.asset_list]
+        self.ta_feature_config = feature_store_config.ta_feature_config
 
         # Instantiate the base price simulation.
         # Replace this import with the actual location of SimulatedCryptoPrices if needed.
 
-        self.prices_time_serie = SimulatedPrices(asset_list=asset_list, *args, **kwargs)
-        super().__init__(*args, **kwargs)
+        self.prices_time_serie = SimulatedPrices(
+            simulation_config=PriceSimulConfig(asset_list=self.asset_list),
+            *args,
+            **kwargs,
+        )
+        super().__init__(config=feature_store_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
@@ -555,7 +623,6 @@ class FeatureStoreTA(DataNode):
         return all_features
 
 
-from pydantic import BaseModel
 
 
 class ModelConfiguration(BaseModel):
@@ -659,29 +726,30 @@ class ModelTrainTimeSerie(DataNode):
         retrain_config: when/how often to retrain
     """
 
-    def __init__(
-        self,
-        asset_list: list[msc.Asset],
-        ta_feature_config: list[dict[str, Any]],
-        model_config: Any,  # ModelConfiguration
-        window_size: int,
-        retrain_config_days: int,
-        *args,
-        **kwargs,
-    ):
-        self.asset_list = asset_list
-        self.ta_feature_config = ta_feature_config
-        self.model_config = model_config
-        self.window_size = window_size
-        self.retrain_config_days = retrain_config_days
+    def __init__(self, model_train_config: ModelTrainNodeConfig, *args, **kwargs):
+        self.model_train_config = model_train_config
+        self.asset_list = model_train_config.asset_list
+        self.ta_feature_config = model_train_config.ta_feature_config
+        self.model_config = model_train_config.model_config
+        self.window_size = model_train_config.window_size
+        self.retrain_config_days = model_train_config.retrain_config_days
 
         # downstream TS for features & prices
         self.feature_ts = FeatureStoreTA(
-            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
+            feature_store_config=FeatureStoreTAConfig(
+                asset_list=self.asset_list,
+                ta_feature_config=self.ta_feature_config,
+            ),
+            *args,
+            **kwargs,
         )
-        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
+        self.prices_ts = SimulatedPrices(
+            simulation_config=PriceSimulConfig(asset_list=self.asset_list),
+            *args,
+            **kwargs,
+        )
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=model_train_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, DataNode]:
         return {
@@ -792,27 +860,28 @@ class RollingModelPrediction(DataNode):
             window_size: Number of past observations to use in each rolling regression.
     g"""
 
-    def __init__(
-        self,
-        asset_list: list[msc.Asset],
-        ta_feature_config: list[dict[str, Any]],
-        model_config: ModelConfiguration,
-        window_size: int,
-        retrain_config_days: int,
-        *args,
-        **kwargs,
-    ):
+    def __init__(self, prediction_config: RollingModelPredictionConfig, *args, **kwargs):
         # Core configuration
-        self.asset_list = asset_list
-        self.ta_feature_config = ta_feature_config
-        self.model_config = model_config
-        self.window_size = window_size
+        self.prediction_config = prediction_config
+        self.asset_list = prediction_config.asset_list
+        self.ta_feature_config = prediction_config.ta_feature_config
+        self.model_config = prediction_config.model_config
+        self.window_size = prediction_config.window_size
 
         # Declare dependencies by instantiating them as attributes
         self.feature_ts = FeatureStoreTA(
-            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
+            feature_store_config=FeatureStoreTAConfig(
+                asset_list=self.asset_list,
+                ta_feature_config=self.ta_feature_config,
+            ),
+            *args,
+            **kwargs,
         )
-        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
+        self.prices_ts = SimulatedPrices(
+            simulation_config=PriceSimulConfig(asset_list=self.asset_list),
+            *args,
+            **kwargs,
+        )
 
         # even more prices from a DataNode not in the project using APIDataNode
 
@@ -822,19 +891,23 @@ class RollingModelPrediction(DataNode):
         translation_table = msc.AssetTranslationTable.get(
             unique_identifier=TEST_TRANSLATION_TABLE_UID
         )
-        self.translated_prices_ts = WrapperDataNode(translation_table=translation_table)
+        self.translated_prices_ts = WrapperDataNode(
+            config=WrapperDataNodeConfig(translation_table=translation_table)
+        )
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
+            model_train_config=ModelTrainNodeConfig(
+                asset_list=self.asset_list,
+                ta_feature_config=self.ta_feature_config,
+                model_config=self.model_config,
+                window_size=self.window_size,
+                retrain_config_days=prediction_config.retrain_config_days,
+            ),
             *args,
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            model_config=model_config,
-            window_size=window_size,
-            retrain_config_days=retrain_config_days,
             **kwargs,
         )
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=prediction_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
@@ -914,27 +987,28 @@ class RollingModelPrediction(DataNode):
 
 
 class LivePrediction(DataNode):
-    def __init__(
-        self,
-        asset_list: list[msc.Asset],
-        ta_feature_config: list[dict[str, Any]],
-        model_config: ModelConfiguration,
-        window_size: int,
-        retrain_config_days: int,
-        *args,
-        **kwargs,
-    ):
+    def __init__(self, live_prediction_config: LivePredictionConfig, *args, **kwargs):
         # Core configuration
-        self.asset_list = asset_list
-        self.ta_feature_config = ta_feature_config
-        self.model_config = model_config
-        self.window_size = window_size
+        self.live_prediction_config = live_prediction_config
+        self.asset_list = live_prediction_config.asset_list
+        self.ta_feature_config = live_prediction_config.ta_feature_config
+        self.model_config = live_prediction_config.model_config
+        self.window_size = live_prediction_config.window_size
 
         # Declare dependencies by instantiating them as attributes
         self.feature_ts = FeatureStoreTA(
-            *args, asset_list=asset_list, ta_feature_config=ta_feature_config, **kwargs
+            feature_store_config=FeatureStoreTAConfig(
+                asset_list=self.asset_list,
+                ta_feature_config=self.ta_feature_config,
+            ),
+            *args,
+            **kwargs,
         )
-        self.prices_ts = SimulatedPrices(*args, asset_list=asset_list, **kwargs)
+        self.prices_ts = SimulatedPrices(
+            simulation_config=PriceSimulConfig(asset_list=self.asset_list),
+            *args,
+            **kwargs,
+        )
 
         # even more prices from a DataNode not in the project using APIDataNode
 
@@ -944,19 +1018,23 @@ class LivePrediction(DataNode):
         translation_table = msc.AssetTranslationTable.get(
             unique_identifier=TEST_TRANSLATION_TABLE_UID
         )
-        self.translated_prices_ts = WrapperDataNode(translation_table=translation_table)
+        self.translated_prices_ts = WrapperDataNode(
+            config=WrapperDataNodeConfig(translation_table=translation_table)
+        )
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            model_config=model_config,
-            window_size=window_size,
-            retrain_config_days=retrain_config_days,
+            model_train_config=ModelTrainNodeConfig(
+                asset_list=self.asset_list,
+                ta_feature_config=self.ta_feature_config,
+                model_config=self.model_config,
+                window_size=self.window_size,
+                retrain_config_days=live_prediction_config.retrain_config_days,
+            ),
             *args,
             **kwargs,
         )
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=live_prediction_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
@@ -981,36 +1059,32 @@ class LivePrediction(DataNode):
 
 
 class WorkflowManager(DataNode):
-    def __init__(
-        self,
-        asset_list: list[msc.Asset],
-        ta_feature_config: list[dict[str, Any]],
-        model_config: ModelConfiguration,
-        window_size: int,
-        retrain_config_days: int,
-        *args,
-        **kwargs,
-    ):
+    def __init__(self, workflow_manager_config: WorkflowManagerConfig, *args, **kwargs):
+        self.workflow_manager_config = workflow_manager_config
         self.prediction_back_test = RollingModelPrediction(
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            model_config=model_config,
-            window_size=window_size,
-            retrain_config_days=retrain_config_days,
+            prediction_config=RollingModelPredictionConfig(
+                asset_list=workflow_manager_config.asset_list,
+                ta_feature_config=workflow_manager_config.ta_feature_config,
+                model_config=workflow_manager_config.model_config,
+                window_size=workflow_manager_config.window_size,
+                retrain_config_days=workflow_manager_config.retrain_config_days,
+            ),
             *args,
             **kwargs,
         )
         self.live_back_test = LivePrediction(
-            asset_list=asset_list,
-            ta_feature_config=ta_feature_config,
-            model_config=model_config,
-            window_size=window_size,
-            retrain_config_days=retrain_config_days,
+            live_prediction_config=LivePredictionConfig(
+                asset_list=workflow_manager_config.asset_list,
+                ta_feature_config=workflow_manager_config.ta_feature_config,
+                model_config=workflow_manager_config.model_config,
+                window_size=workflow_manager_config.window_size,
+                retrain_config_days=workflow_manager_config.retrain_config_days,
+            ),
             *args,
             **kwargs,
         )
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=workflow_manager_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {
@@ -1028,12 +1102,14 @@ def test_features_from_prices_local_storage():
     msc.SessionDataSource.set_local_db()
     assets = Asset.filter(ticker__in=["NVDA", "JPM"])
     ts = FeatureStoreTA(
-        asset_list=assets,
-        ta_feature_config=[
-            dict(kind="SMA", length=28),
-            dict(kind="SMA", length=21),
-            dict(kind="RSI", length=21),
-        ],
+        feature_store_config=FeatureStoreTAConfig(
+            asset_list=assets,
+            ta_feature_config=[
+                dict(kind="SMA", length=28),
+                dict(kind="SMA", length=21),
+                dict(kind="RSI", length=21),
+            ],
+        ),
     )
 
     ts.run(debug_mode=True, force_update=True)

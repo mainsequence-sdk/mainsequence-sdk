@@ -7,6 +7,7 @@ import pandas as pd
 import pandas_market_calendars as mcal
 import pytz
 from joblib import Parallel, delayed
+from pydantic import ConfigDict, Field
 from tqdm import tqdm
 
 import mainsequence.client as msc
@@ -15,6 +16,7 @@ from mainsequence.client import (
     AssetCategory,
     AssetTranslationTable,
 )
+from mainsequence.tdag import DataNodeConfiguration, WrapperDataNodeConfig
 from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
@@ -24,6 +26,26 @@ from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 FULL_CALENDAR = "24/7"
+
+
+class InterpolatedPricesConfig(DataNodeConfiguration):
+    model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
+
+    bar_frequency_id: str
+    intraday_bar_interpolation_rule: str
+    asset_category_unique_id: str | None = Field(
+        default=None,
+        json_schema_extra={"update_only": True},
+    )
+    upsample_frequency_id: str | None = None
+    translation_table_unique_id: str | None = None
+    source_bars_data_node: DataNode | None = None
+
+
+class ExternalPricesConfig(DataNodeConfiguration):
+    artifact_name: str
+    bucket_name: str
+    asset_category_unique_id: str
 
 
 @lru_cache(maxsize=256)
@@ -82,12 +104,19 @@ def get_interpolated_prices_timeseries(
 
         if asset_list is None:
             return InterpolatedPrices(
-                asset_category_unique_id=assets_configuration.assets_category_unique_id,
-                **prices_configuration_kwargs,
+                interpolation_config=InterpolatedPricesConfig(
+                    asset_category_unique_id=assets_configuration.assets_category_unique_id,
+                    **prices_configuration_kwargs,
+                )
             )
         else:
 
-            return InterpolatedPrices(asset_list=asset_list, **prices_configuration_kwargs)
+            return InterpolatedPrices(
+                interpolation_config=InterpolatedPricesConfig(
+                    asset_list=asset_list,
+                    **prices_configuration_kwargs,
+                )
+            )
 
     raise Exception("Not implemented prices_configuration Kwargs")
 
@@ -544,23 +573,25 @@ class InterpolatedPrices(DataNode):
     """
 
     OFFSET_START = datetime.datetime(2017, 7, 20).replace(tzinfo=pytz.utc)
-    _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_category_unique_id", "asset_list"]
 
     def __init__(
         self,
-        bar_frequency_id: str,
-        intraday_bar_interpolation_rule: str,
-        asset_category_unique_id: str | None = None,
-        upsample_frequency_id: str | None = None,
-        asset_list: list = None,
-        translation_table_unique_id: str | None = None,
-        source_bars_data_node: DataNode | None = None,
+        interpolation_config: InterpolatedPricesConfig,
         *args,
         **kwargs,
     ):
         """
         Initializes the InterpolatedPrices object.
         """
+        self.interpolation_config = interpolation_config
+        bar_frequency_id = interpolation_config.bar_frequency_id
+        intraday_bar_interpolation_rule = interpolation_config.intraday_bar_interpolation_rule
+        asset_category_unique_id = interpolation_config.asset_category_unique_id
+        upsample_frequency_id = interpolation_config.upsample_frequency_id
+        asset_list = interpolation_config.asset_list
+        translation_table_unique_id = interpolation_config.translation_table_unique_id
+        source_bars_data_node = interpolation_config.source_bars_data_node
+
         assert (
             "d" in bar_frequency_id or "m" in bar_frequency_id
         ), f"bar_frequency_id={bar_frequency_id} should be 'd for days' or 'm for min'"
@@ -592,11 +623,13 @@ class InterpolatedPrices(DataNode):
                 unique_identifier=translation_table_unique_id
             )
 
-            self.bars_ts = WrapperDataNode(translation_table=translation_table)
+            self.bars_ts = WrapperDataNode(
+                config=WrapperDataNodeConfig(translation_table=translation_table)
+            )
         else:
             self.bars_ts = source_bars_data_node
 
-        super().__init__(*args, **kwargs)
+        super().__init__(config=interpolation_config, *args, **kwargs)
 
     def dependencies(self):
         return {"bars_ts": self.bars_ts}
@@ -807,13 +840,12 @@ class InterpolatedPrices(DataNode):
 
 class ExternalPrices(DataNode):
 
-    def __init__(
-        self, artifact_name: str, bucket_name: str, asset_category_unique_id, *args, **kwargs
-    ):
-        self.artifact_name = artifact_name
-        self.bucket_name = bucket_name
-        self.asset_category_unique_id = asset_category_unique_id
-        super().__init__(*args, **kwargs)
+    def __init__(self, external_prices_config: ExternalPricesConfig, *args, **kwargs):
+        self.external_prices_config = external_prices_config
+        self.artifact_name = external_prices_config.artifact_name
+        self.bucket_name = external_prices_config.bucket_name
+        self.asset_category_unique_id = external_prices_config.asset_category_unique_id
+        super().__init__(config=external_prices_config, *args, **kwargs)
 
     def get_asset_list(self):
         """

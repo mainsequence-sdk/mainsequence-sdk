@@ -7,7 +7,7 @@ import pytz
 from pydantic import BaseModel, Field
 
 import mainsequence.client as msc
-from mainsequence.tdag import APIDataNode, DataNode
+from mainsequence.tdag import APIDataNode, DataNode, DataNodeConfiguration
 
 from .curve_codec import compress_curve_to_string
 from .registry import (
@@ -17,30 +17,44 @@ from .registry import (
 
 UTC = pytz.UTC
 
-class CurveConfig(BaseModel):
-    curve_const: str = Field(..., description="Constant name, e.g. ZERO_CURVE__VALMER_TIIE_28",
-                             ignore_from_storage_hash=True
-                             )
-    name: str = Field(..., description="Display name",
-                      ignore_from_storage_hash=True
-                      )
-    curve_points_dependency_node_uid: str | None = Field(None, title="Dependecies curve points", description="",
-                                                                ignore_from_storage_hash=True
-                                                                )
+class CurveConfig(DataNodeConfiguration):
+    curve_const: str = Field(
+        ...,
+        description="Constant name, e.g. ZERO_CURVE__VALMER_TIIE_28",
+        json_schema_extra={"update_only": True},
+    )
+    name: str = Field(
+        ...,
+        description="Display name",
+        json_schema_extra={"update_only": True},
+    )
+    curve_points_dependency_node_uid: str | None = Field(
+        None,
+        title="Dependecies curve points",
+        description="",
+        json_schema_extra={"update_only": True},
+    )
 
 class RateConfig(BaseModel):
-    rate_const: str = Field(..., description="Constant name, e.g. REFERENCE_RATE__TIIE_28",
-                            ignore_from_storage_hash=True
-                            )
-    name: str = Field(..., title="asset name", description="string name of curve to create",
-                      ignore_from_storage_hash=True
-                      )
+    rate_const: str = Field(
+        ...,
+        description="Constant name, e.g. REFERENCE_RATE__TIIE_28",
+        json_schema_extra={"update_only": True},
+    )
+    name: str = Field(
+        ...,
+        title="asset name",
+        description="string name of curve to create",
+        json_schema_extra={"update_only": True},
+    )
 
-class FixingRateConfig(BaseModel):
-    rates: list[RateConfig] = Field(..., title="Interest rates build",
-                                                description="string name of curve to create",
-                                                ignore_from_storage_hash=True
-                                                )
+class FixingRateConfig(DataNodeConfiguration):
+    rates: list[RateConfig] = Field(
+        ...,
+        title="Interest rates build",
+        description="string name of curve to create",
+        json_schema_extra={"update_only": True},
+    )
 
 
 class DiscountCurvesNode(DataNode):
@@ -54,7 +68,7 @@ class DiscountCurvesNode(DataNode):
             self.base_node_curve_points = APIDataNode.build_from_identifier(
                 identifier=curve_config.curve_points_dependency_node_uid
             )
-        super().__init__(*args, **kwargs)
+        super().__init__(config=curve_config, *args, **kwargs)
 
     def dependencies(self) -> dict[str, DataNode | APIDataNode]:
         if self.base_node_curve_points is None:
@@ -103,7 +117,7 @@ class FixingRatesNode(DataNode):
 
     def __init__(self, rates_config: FixingRateConfig, *args, **kwargs):
         self.rates_config = rates_config
-        super().__init__(*args, **kwargs)
+        super().__init__(config=rates_config, *args, **kwargs)
 
     def get_asset_list(self):
         payload = []

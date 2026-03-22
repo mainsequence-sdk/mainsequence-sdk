@@ -6,29 +6,42 @@ import pandas as pd
 import pandas_market_calendars as mcal
 import pytz
 
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 from mainsequence.virtualfundbuilder import TIMEDELTA
 from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
+from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
 
 
+class IntradayTrendConfig(DataNodeConfiguration):
+    signal_assets_configuration: AssetsConfiguration
+    calendar: str
+    source_frequency: str = "1d"
+
+
 class IntradayTrend(WeightsBase, DataNode):
 
-    def __init__(self, calendar: str, source_frequency: str = "1d", *args, **kwargs):
+    def __init__(self, trend_config: IntradayTrendConfig, *args, **kwargs):
         """
         Signal Weights
 
         Arguments
             source_frequency (str): Frequency of market cap source
         """
-        super().__init__(*args, **kwargs)
+        self.trend_config = trend_config
+        super().__init__(
+            signal_assets_configuration=trend_config.signal_assets_configuration,
+            config=trend_config,
+            *args,
+            **kwargs,
+        )
 
-        self.source_frequency = source_frequency
-        self.calendar = calendar
+        self.source_frequency = trend_config.source_frequency
+        self.calendar = trend_config.calendar
         self.bars_ts, self.asset_symbols = get_interpolated_prices_timeseries(
             copy.deepcopy(self.assets_configuration)
         )

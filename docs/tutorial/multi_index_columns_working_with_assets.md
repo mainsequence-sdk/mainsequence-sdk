@@ -37,7 +37,7 @@ That distinction is what allows multiple jobs to write safely into the same data
 
 For this tutorial:
 
-- the table `identifier` in `get_table_metadata()` names the dataset and must be unique across your organization
+- the table `identifier` in `node_metadata` names the dataset and must be unique across your organization
 - the `unique_identifier` in the `MultiIndex` names each asset row and must be unique for the asset it represents
 - `asset_list` is updater scope, so it should usually be ignored from `storage_hash`
 
@@ -53,10 +53,16 @@ from typing import Union
 import numpy as np
 import pandas as pd
 import pytz
-from pydantic import BaseModel, Field
+from pydantic import Field
 
 import mainsequence.client as msc
-from mainsequence.tdag import APIDataNode, DataNode
+from mainsequence.tdag import (
+    APIDataNode,
+    DataNode,
+    DataNodeConfiguration,
+    DataNodeMetaData,
+    RecordDefinition,
+)
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
 SIMULATED_PRICES_IDENTIFIER = f"simulated_prices_tutorial_{PROJECT_ID}"
@@ -144,23 +150,54 @@ class SimulatedPricesManager:
         return data
 
 
-class PriceSimulConfig(BaseModel):
+class PriceSimulConfig(DataNodeConfiguration):
+    offset_start: datetime.datetime | None = Field(
+        default=datetime.datetime(2024, 1, 1, tzinfo=pytz.utc),
+        description="First-run fallback start date for tutorial backfills.",
+        json_schema_extra={"update_only": True},
+    )
     asset_list: list[msc.AssetMixin] = Field(
         ...,
         title="Asset List",
         description="List of assets to simulate",
-        json_schema_extra={"ignore_from_storage_hash": True},
+        json_schema_extra={"update_only": True},
+    )
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="close",
+                dtype="float64",
+                label="Close",
+                description="Simulated daily close price",
+            )
+        ]
+    )
+    node_metadata: DataNodeMetaData = Field(
+        default_factory=lambda: DataNodeMetaData(
+            identifier=SIMULATED_PRICES_IDENTIFIER,
+            data_frequency_id=msc.DataFrequency.one_d,
+            description="Simulated daily close prices for tutorial assets.",
+        ),
+        json_schema_extra={"runtime_only": True},
     )
 
 
 class SimulatedPrices(DataNode):
     """Simulates daily close prices for a fixed batch of assets."""
 
-    OFFSET_START = datetime.datetime(2024, 1, 1, tzinfo=pytz.utc)
-
-    def __init__(self, simulation_config: PriceSimulConfig, *args, **kwargs):
-        self.asset_list = simulation_config.asset_list
-        super().__init__(*args, **kwargs)
+    def __init__(
+        self,
+        config: PriceSimulConfig,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
+    ):
+        self.asset_list = config.asset_list
+        super().__init__(
+            config=config,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
@@ -170,23 +207,6 @@ class SimulatedPrices(DataNode):
 
     def get_asset_list(self):
         return self.asset_list
-
-    def get_column_metadata(self):
-        return [
-            msc.ColumnMetaData(
-                column_name="close",
-                dtype="float",
-                label="Close",
-                description="Simulated daily close price",
-            )
-        ]
-
-    def get_table_metadata(self) -> msc.TableMetaData:
-        return msc.TableMetaData(
-            identifier=SIMULATED_PRICES_IDENTIFIER,
-            data_frequency_id=msc.DataFrequency.one_d,
-            description="Simulated daily close prices for tutorial assets.",
-        )
 ```
 
 You can also compare against the full SDK example here:
@@ -201,7 +221,7 @@ We ignore `asset_list` in `storage_hash` because the asset batch defines which u
 That is why this field uses:
 
 ```python
-Field(..., json_schema_extra={"ignore_from_storage_hash": True})
+Field(..., json_schema_extra={"update_only": True})
 ```
 
 This keeps multiple update processes pointed at the same table while still allowing each updater to have its own `update_hash`.
@@ -212,9 +232,14 @@ When a node works with assets, `get_asset_list()` tells the platform which asset
 
 If your updater produces asset identifiers that do not already exist in Main Sequence, resolve or register them idempotently inside `get_asset_list()` before returning them.
 
-### `get_table_metadata()` and `get_column_metadata()` make the table usable
+### `node_metadata` and `records` make the table usable
 
 Production-quality nodes should describe the table and its columns. Other users, dashboards, and agents may not have code access, so metadata is part of the dataset contract.
+
+For simple nodes, put that metadata directly in `PriceSimulConfig`:
+
+- `node_metadata` drives the base `get_table_metadata()`
+- `records` drives the base `get_column_metadata()`
 
 ### `update()` should be incremental
 
@@ -272,10 +297,10 @@ config = PriceSimulConfig(asset_list=assets)
 batch_2_assets = Asset.filter(ticker__in=["JPM", "GS"])
 config_2 = PriceSimulConfig(asset_list=batch_2_assets)
 
-node_1 = SimulatedPrices(simulation_config=config)
+node_1 = SimulatedPrices(config=config)
 node_1.run(debug_mode=True, force_update=True)
 
-node_2 = SimulatedPrices(simulation_config=config_2)
+node_2 = SimulatedPrices(config=config_2)
 node_2.run(debug_mode=True, force_update=True)
 ```
 
@@ -326,14 +351,14 @@ Preferred pattern:
 from mainsequence.tdag.data_nodes import hash_namespace
 
 with hash_namespace("tutorial_alice"):
-    node = SimulatedPrices(simulation_config=config)
+    node = SimulatedPrices(config=config)
     err, df = node.run(debug_mode=True, force_update=True)
 ```
 
 Shortcut form:
 
 ```python
-node = SimulatedPrices(simulation_config=config, test_node=True)
+node = SimulatedPrices(config=config, test_node=True)
 err, df = node.run(debug_mode=True, force_update=True)
 ```
 
@@ -379,27 +404,17 @@ For real projects, keep your tests under `tests/`. For this tutorial, a good exa
 
 One useful testing pattern is:
 
-1. create a test-only subclass of `SimulatedPrices`
-2. override `OFFSET_START` so the first run stays small
+1. keep the production class unchanged
+2. pass a narrow `offset_start` in the test config so the first run stays small
 3. run the node inside a namespace so the test hashes do not collide with shared tables
 
 Example:
 
 ```python
-import datetime
-
-import pytz
-
 import mainsequence.client as msc
 from mainsequence.tdag.data_nodes import hash_namespace
 
 from src.data_nodes.prices_nodes import PriceSimulConfig, SimulatedPrices
-
-UTC = pytz.utc
-
-
-class TestSimulatedPrices(SimulatedPrices):
-    OFFSET_START = datetime.datetime(2025, 1, 1, tzinfo=UTC)
 
 
 def test_simulated_prices_smoke():
@@ -410,10 +425,13 @@ def test_simulated_prices_smoke():
         ]
     )
 
-    config = PriceSimulConfig(asset_list=assets)
+    config = PriceSimulConfig(
+        asset_list=assets,
+        offset_start="2025-01-01T00:00:00+00:00",
+    )
 
     with hash_namespace("pytest_simulated_prices_smoke"):
-        node = TestSimulatedPrices(simulation_config=config)
+        node = SimulatedPrices(config=config)
         err, df = node.run(debug_mode=True, force_update=True)
 
     assert err is False
@@ -426,7 +444,7 @@ Why this is the recommended shape:
 
 - the test lives in the normal `tests/` folder
 - `hash_namespace(...)` isolates both `storage_hash` and `update_hash`
-- overriding `OFFSET_START` keeps the first-run backfill small and fast
+- the narrower `config.offset_start` keeps the first-run backfill small and fast
 - the production `SimulatedPrices` class stays unchanged
 
 ## What success looks like

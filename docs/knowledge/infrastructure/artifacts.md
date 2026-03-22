@@ -154,14 +154,19 @@ This is a common pattern when an upstream system gives you files, but your downs
 import pandas as pd
 
 from mainsequence.client import Artifact
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag import DataNode, DataNodeConfiguration
+
+
+class ExternalPricesConfig(DataNodeConfiguration):
+    artifact_name: str
+    bucket_name: str
 
 
 class ExternalPrices(DataNode):
-    def __init__(self, artifact_name: str, bucket_name: str, *args, **kwargs):
-        self.artifact_name = artifact_name
-        self.bucket_name = bucket_name
-        super().__init__(*args, **kwargs)
+    def __init__(self, config: ExternalPricesConfig):
+        self.artifact_name = config.artifact_name
+        self.bucket_name = config.bucket_name
+        super().__init__(config=config)
 
     def update(self):
         source_artifact = Artifact.get(
