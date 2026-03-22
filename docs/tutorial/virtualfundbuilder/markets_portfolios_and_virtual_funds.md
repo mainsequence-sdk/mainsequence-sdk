@@ -407,6 +407,8 @@ from src.helpers_mock import ensure_test_assets, SECURITY_TYPE_MOCK, SIMULATED_P
 
 Now you have a translation table that maps all assets with `security_type=MOCK_ASSET` to the `simulated_daily_closes_tutorial` prices table.
 
+For a deeper explanation of how translation tables work, see [Translation Tables](../../knowledge/markets/translation_tables.md).
+
 ---
 
 ## 4) Building a Portfolio

@@ -21,6 +21,7 @@
             - [Instrument Forms](knowledge/dashboards/streamlit/instrument_forms.md)
     - Markets
         - [Assets](knowledge/markets/assets.md)
+        - [Translation Tables](knowledge/markets/translation_tables.md)
     - Infrastructure
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)

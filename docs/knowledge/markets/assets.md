@@ -219,3 +219,5 @@ That flow is idempotent, easy to reason about, and consistent with the rest of t
 - pricing details are what make an asset usable in instrument valuation
 - `filter()` is the normal lookup tool
 - `query()` is the better option for large filter payloads, especially big `__in` searches
+
+If you want the routing layer that maps assets into upstream price tables, continue with [Translation Tables](./translation_tables.md).

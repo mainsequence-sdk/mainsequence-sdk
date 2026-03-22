@@ -1895,6 +1895,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         examples=[False],
         json_schema_extra={"label": "Builds From Target Positions"},
     )
+    creation_date:str | None = Field()
 
     def pretty_print(self) -> str:
         def format_field(name, value):

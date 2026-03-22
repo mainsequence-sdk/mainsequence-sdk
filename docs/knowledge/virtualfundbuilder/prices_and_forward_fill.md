@@ -49,6 +49,8 @@ VFB needs a stable way to say:
 
 - "for this asset, use this upstream time series"
 
+For the routing model in detail, see [Translation Tables](../markets/translation_tables.md).
+
 ## `InterpolatedPrices` in practice
 
 `InterpolatedPrices` is the main price node in the VFB pipeline.
