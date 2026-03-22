@@ -10,12 +10,12 @@ from examples.data_nodes.simple_tables import build_test_simple_tables
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run data node functions: simulated prices or test time series."
+        description="Run SDK examples for data nodes and simple-table updaters."
     )
     parser.add_argument(
         "command",
         choices=["simulated_prices", "random_data_nodes", "duck_features", "simple_tables"],
-        help="Function to run: choose 'simulated_prices' or 'random_data_nodes'",
+        help="Example to run.",
     )
     args = parser.parse_args()
 

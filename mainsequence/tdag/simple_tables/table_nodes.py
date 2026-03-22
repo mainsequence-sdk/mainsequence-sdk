@@ -7,15 +7,16 @@ import logging
 from abc import ABC, abstractmethod
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
 from ..pydantic_metadata import serialize_pydantic_model, strip_pydantic_hash_exclusions
 from .models import Index, SimpleTable
+from .persist_managers import SimpleTablePersistManager
 
 
-class SimpleTableNodeConfiguration(BaseModel):
+class SimpleTableUpdaterConfiguration(BaseModel):
     """
     Base class for simple-table node configuration.
 
@@ -30,7 +31,7 @@ class SimpleTableNodeConfiguration(BaseModel):
     def serialized_configuration(self) -> dict[str, Any]:
         serialized = _serialize_simple_table_value(self)
         if not isinstance(serialized, dict):
-            raise TypeError("SimpleTableNodeConfiguration must serialize to a dictionary.")
+            raise TypeError("SimpleTableUpdaterConfiguration must serialize to a dictionary.")
         return serialized
 
     def update_configuration(self) -> dict[str, Any]:
@@ -44,15 +45,6 @@ class SimpleTableNodeConfiguration(BaseModel):
             self.serialized_configuration(),
             for_storage_hash=True,
         )
-
-    def hashes(self) -> tuple[str, str]:
-        update_configuration = self.update_configuration()
-        storage_configuration = self.storage_configuration()
-        return (
-            hashlib.md5(json.dumps(update_configuration, sort_keys=True).encode()).hexdigest(),
-            hashlib.md5(json.dumps(storage_configuration, sort_keys=True).encode()).hexdigest(),
-        )
-
 
 def _serialize_simple_table_value(value: Any) -> Any:
     if isinstance(value, BaseModel):
@@ -134,20 +126,50 @@ class BaseNode(ABC):
         raise NotImplementedError
 
 
-class SimpleTableNode(BaseNode):
+class SimpleTableUpdater(BaseNode):
+    SIMPLE_TABLE_SCHEMA: ClassVar[type[SimpleTable] | None] = None
+
     def __init__(
         self,
-        simple_table_schema: type[SimpleTable],
-        configuration: SimpleTableNodeConfiguration | None = None,
+        configuration: SimpleTableUpdaterConfiguration | None = None,
     ):
         super().__init__()
-        if not isinstance(simple_table_schema, type) or not issubclass(
-            simple_table_schema, SimpleTable
-        ):
-            raise TypeError("simple_table_schema must be a SimpleTable subclass")
+        simple_table_schema = self.SIMPLE_TABLE_SCHEMA
+        if not isinstance(simple_table_schema, type) or not issubclass(simple_table_schema, SimpleTable):
+            raise TypeError(
+                f"{self.__class__.__name__} must define SIMPLE_TABLE_SCHEMA as a SimpleTable subclass"
+            )
 
         self.simple_table_schema = simple_table_schema
-        self.configuration = configuration or SimpleTableNodeConfiguration()
+        self.configuration = configuration or SimpleTableUpdaterConfiguration()
+        self.persist_manager = SimpleTablePersistManager(
+            simple_table_schema=self.simple_table_schema,
+            configuration=self.configuration,
+            class_name=self.__class__.__name__,
+        )
+
+    def schema_configuration(self) -> dict[str, Any]:
+        return self.simple_table_schema.schema().to_canonical_dict()
+
+    def update_configuration(self) -> dict[str, Any]:
+        return {
+            "simple_table_schema": self.schema_configuration(),
+            "configuration": self.configuration.update_configuration(),
+        }
+
+    def storage_configuration(self) -> dict[str, Any]:
+        return {
+            "simple_table_schema": self.schema_configuration(),
+            "configuration": self.configuration.storage_configuration(),
+        }
+
+    def hashes(self) -> tuple[str, str]:
+        update_configuration = self.update_configuration()
+        storage_configuration = self.storage_configuration()
+        return (
+            hashlib.md5(json.dumps(update_configuration, sort_keys=True).encode()).hexdigest(),
+            hashlib.md5(json.dumps(storage_configuration, sort_keys=True).encode()).hexdigest(),
+        )
 
     @classmethod
     def _field_has_index_marker(cls, field_info: Any) -> bool:
@@ -164,9 +186,7 @@ class SimpleTableNode(BaseNode):
         ]
 
     def persist_records(self, records: list[SimpleTable]) -> Any:
-        raise NotImplementedError(
-            f"{self.__class__.__name__}.persist_records() must write to the simple-table backend."
-        )
+        return self.persist_manager.insert_records(records)
 
     def insert_records(
         self, records: list[SimpleTable | dict[str, Any]]
@@ -178,3 +198,21 @@ class SimpleTableNode(BaseNode):
         ]
         self.persist_records(validated)
         return validated
+
+    def upsert_records(
+        self, records: list[SimpleTable | dict[str, Any]]
+    ) -> list[SimpleTable]:
+        table_model = self.simple_table_schema
+        validated = [
+            record if isinstance(record, table_model) else table_model.model_validate(record)
+            for record in records
+        ]
+        return self.persist_manager.upsert_records(validated)
+
+    def delete_record(
+        self,
+        record_or_id: SimpleTable | Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> None:
+        self.persist_manager.delete(record_or_id, timeout=timeout)

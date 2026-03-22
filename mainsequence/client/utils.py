@@ -76,6 +76,34 @@ def _jwt_reauth_hint() -> str:
         "use `mainsequence login <email> --export` and load the exported env vars there."
     )
 
+
+def _env_has_value(name: str) -> bool:
+    return bool((os.getenv(name) or "").strip())
+
+
+def _default_auth_provider_kind() -> str | None:
+    mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower()
+    has_drf = _env_has_value("MAINSEQUENCE_TOKEN")
+    has_jwt = _env_has_value("MAINSEQUENCE_ACCESS_TOKEN") or _env_has_value(
+        "MAINSEQUENCE_REFRESH_TOKEN"
+    )
+
+    # The pod/runtime token must dominate any JWT state in the process.
+    if has_drf:
+        return "drf"
+
+    if mode == "drf":
+        return "drf"
+
+    if mode == "jwt":
+        return "jwt"
+
+    if has_jwt:
+        return "jwt"
+
+    return None
+
+
 def _decode_jwt_exp(token: str | None) -> int | None:
     """
     Decode JWT payload without signature verification.
@@ -269,25 +297,13 @@ def request_to_datetime(string_date: str):
     return date
 
 def build_default_auth_provider() -> BaseAuthProvider:
-    mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower()
+    provider_kind = _default_auth_provider_kind()
 
-    has_drf = bool(os.getenv("MAINSEQUENCE_TOKEN"))
-    has_jwt = bool(
-        os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
-        or os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
-    )
-
-    if mode == "drf":
+    if provider_kind == "drf":
         return DRFTokenAuthProvider()
 
-    if mode == "jwt":
+    if provider_kind == "jwt":
         return JWTAuthProvider()
-
-    if has_jwt:
-        return JWTAuthProvider()
-
-    if has_drf:
-        return DRFTokenAuthProvider()
 
     raise AuthError(
         "No auth configured. Set MAINSEQUENCE_ACCESS_TOKEN / "
@@ -304,7 +320,13 @@ class AuthLoaders:
         self.provider = provider
 
     def _provider(self) -> BaseAuthProvider:
-        if self.provider is None:
+        provider_kind = _default_auth_provider_kind()
+
+        if provider_kind == "drf" and not isinstance(self.provider, DRFTokenAuthProvider):
+            self.provider = DRFTokenAuthProvider()
+        elif provider_kind == "jwt" and not isinstance(self.provider, JWTAuthProvider):
+            self.provider = JWTAuthProvider()
+        elif self.provider is None:
             self.provider = build_default_auth_provider()
         return self.provider
 

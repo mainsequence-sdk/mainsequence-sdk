@@ -59,7 +59,7 @@ class CustomConsoleRenderer(ConsoleRenderer):
 
 def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     """
-    Fetch startup state from backend using current env vars (JWT preferred, endpoint, command_id).
+    Fetch startup state from backend using current env vars (legacy pod token preferred, endpoint, command_id).
     Safe to call later after auth when access/refresh tokens become available.
     """
     if not is_running_in_pod():
@@ -76,15 +76,15 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         headers = CaseInsensitiveDict()
         headers["Content-Type"] = "application/json"
 
-        access_token = (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
-        if access_token:
-            headers["Authorization"] = "Bearer " + access_token
-            return headers, True
-
         legacy_token = (os.getenv("MAINSEQUENCE_TOKEN") or "").strip()
         if legacy_token:
             headers["Authorization"] = "Token " + legacy_token
             return headers, False
+
+        access_token = (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
+        if access_token:
+            headers["Authorization"] = "Bearer " + access_token
+            return headers, True
 
         return headers, False
 
@@ -121,7 +121,11 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = new_refresh_token
         return True
 
-    if not os.getenv("MAINSEQUENCE_ACCESS_TOKEN") and os.getenv("MAINSEQUENCE_REFRESH_TOKEN"):
+    if (
+        not os.getenv("MAINSEQUENCE_TOKEN")
+        and not os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
+        and os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+    ):
         _refresh_access_token()
 
     headers, using_jwt = _auth_headers()
