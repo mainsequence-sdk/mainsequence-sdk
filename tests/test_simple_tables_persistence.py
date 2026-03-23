@@ -13,9 +13,12 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 import mainsequence.client.models_simple_tables as client_simple_table_models
+from mainsequence.client.models_tdag import UpdateStatistics
 from mainsequence.client.utils import API_ENDPOINT
 from mainsequence.tdag.simple_tables import (
+    ForeignKey,
     Index,
+    Ops,
     SimpleTable,
     SimpleTablePersistManager,
     SimpleTableUpdater,
@@ -44,14 +47,12 @@ def _build_update(*, update_hash: str = "order_updater_hash") -> client_simple_t
     return client_simple_table_models.SimpleTableUpdate(
         id=11,
         update_hash=update_hash,
-        simple_table=client_simple_table_models.SimpleTableStorage(
+        remote_table=client_simple_table_models.SimpleTableStorage(
             id=41,
             storage_hash="storage_hash",
             data_source={"id": 1},
             build_configuration={"configuration": {}},
             schema={"model": "tests.test_simple_tables_persistence.OrderRow", "fields": []},
-            schema_fingerprint="schema-fingerprint",
-            physical_name="t_schema_fingerprint",
             source_class_name="OrderUpdater",
         ),
         build_configuration={"configuration": {}},
@@ -88,11 +89,9 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
             build_configuration_json_schema=kwargs["build_configuration_json_schema"],
-            time_serie_source_code_git_hash=kwargs["time_serie_source_code_git_hash"],
-            time_serie_source_code=kwargs["time_serie_source_code"],
+            time_serie_source_code_git_hash=kwargs["source_code_git_hash"],
+            time_serie_source_code=kwargs["source_code"],
             schema=kwargs["schema"],
-            schema_fingerprint=kwargs["schema_fingerprint"],
-            physical_name=kwargs["physical_name"],
             source_class_name=kwargs["source_class_name"],
             open_for_everyone=kwargs["open_to_public"],
         )
@@ -164,17 +163,15 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     kwargs = captured["get_or_create_kwargs"]
     storage_kwargs = captured["storage_get_or_create_kwargs"]
     assert storage_kwargs["storage_hash"] == "storage_hash"
-    assert storage_kwargs["time_serie_source_code_git_hash"] == "git-hash"
-    assert storage_kwargs["time_serie_source_code"] == "source"
+    assert storage_kwargs["source_code_git_hash"] == "git-hash"
+    assert storage_kwargs["source_code"] == "source"
     assert storage_kwargs["build_configuration"] == {"configuration": {"tenant": "desk_a"}}
     assert storage_kwargs["build_configuration_json_schema"] == {}
     assert storage_kwargs["open_to_public"] is True
-    assert storage_kwargs["schema_fingerprint"] == OrderRow.schema_fingerprint()
-    assert storage_kwargs["physical_name"] == OrderRow.physical_name()
     assert storage_kwargs["schema"]["model"].endswith("OrderRow")
     assert kwargs["update_hash"] == "order_updater_hash"
     assert kwargs["open_for_everyone"] is True
-    assert kwargs["simple_table"] == 41
+    assert kwargs["remote_table"] == 41
 
     insert_calls = captured["insert_calls"]
     assert insert_calls[0]["data_node_update_id"] == 11
@@ -193,11 +190,9 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
             build_configuration_json_schema=kwargs["build_configuration_json_schema"],
-            time_serie_source_code_git_hash=kwargs["time_serie_source_code_git_hash"],
-            time_serie_source_code=kwargs["time_serie_source_code"],
+            time_serie_source_code_git_hash=kwargs["source_code_git_hash"],
+            time_serie_source_code=kwargs["source_code"],
             schema=kwargs["schema"],
-            schema_fingerprint=kwargs["schema_fingerprint"],
-            physical_name=kwargs["physical_name"],
             source_class_name=kwargs["source_class_name"],
             open_for_everyone=kwargs["open_to_public"],
         )
@@ -261,7 +256,7 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
     insert_calls = captured["insert_calls"]
     assert insert_calls[0]["overwrite"] is False
     assert insert_calls[1]["overwrite"] is True
-    assert captured["get_or_create_kwargs"]["simple_table"] == 41
+    assert captured["get_or_create_kwargs"]["remote_table"] == 41
     assert captured["storage_get_or_create_kwargs"]["schema"]["model"].endswith("OrderRow")
 
 
@@ -297,8 +292,6 @@ def test_simple_table_persist_manager_skips_storage_create_when_remote_loaded(mo
         data_source={"id": 1},
         build_configuration={"configuration": {"tenant": "desk_a"}},
         schema={"model": "tests.test_simple_tables_persistence.OrderRow", "fields": []},
-        schema_fingerprint="schema-fingerprint",
-        physical_name="t_schema_fingerprint",
         source_class_name="OrderUpdater",
     )
 
@@ -380,6 +373,42 @@ def test_simple_table_delete_uses_detail_delete(monkeypatch):
     assert captured["url"] == f"{API_ENDPOINT}/ts_manager/simple_tables/9/"
 
 
+def test_simple_table_storage_accepts_relations_payloads():
+    storage = client_simple_table_models.SimpleTableStorage(
+        id=41,
+        storage_hash="storage_hash",
+        data_source={"id": 1},
+        schema={"model": "tests.test_simple_tables_persistence.OrderRow", "fields": []},
+        source_class_name="OrderUpdater",
+        columns=[
+            {
+                "id": 9,
+                "attr_name": "order_code",
+                "column_name": "order_code",
+                "db_type": "text",
+                "is_pk": False,
+                "nullable": False,
+                "is_unique": True,
+            }
+        ],
+        foreign_keys=[],
+        incoming_fks=[],
+        indexes_meta=[
+            {
+                "id": 5,
+                "name": "uq_order_code",
+                "columns": ["order_code"],
+            }
+        ],
+    )
+
+    assert storage.columns[0].attr_name == "order_code"
+    assert storage.columns[0].is_unique is True
+    assert storage.indexes_meta[0].name == "uq_order_code"
+    assert storage.foreign_keys == []
+    assert storage.incoming_fks == []
+
+
 def test_simple_table_updater_requires_class_level_schema():
     class InvalidUpdater(SimpleTableUpdater):
         def set_data_source(self, data_source=None):
@@ -390,3 +419,246 @@ def test_simple_table_updater_requires_class_level_schema():
 
     with pytest.raises(TypeError, match="SIMPLE_TABLE_SCHEMA"):
         InvalidUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+
+
+def test_simple_table_updater_persists_returned_schema_instances(monkeypatch):
+    captured: dict[str, object] = {}
+    record = OrderRow(
+        id=15,
+        order_code="RUN-15",
+        created_at=datetime.datetime(2026, 3, 22, 12, 0, tzinfo=datetime.UTC),
+    )
+
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return [record], True
+
+    updater = OrderUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+    updater._local_persist_manager = SimpleNamespace(
+        persist_records=lambda *, records, overwrite: captured.update(
+            {"records": records, "overwrite": overwrite}
+        )
+    )
+
+    result = updater._execute_local_update(historical_update=None)
+
+    assert result == [record]
+    assert captured["records"] == [record]
+    assert captured["overwrite"] is True
+
+
+def test_simple_table_updater_rejects_non_schema_update_results():
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return [{"id": 1, "order_code": "BAD", "created_at": datetime.datetime.now(datetime.UTC)}]
+
+    updater = OrderUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+    updater._local_persist_manager = SimpleNamespace(persist_records=lambda **kwargs: None)
+
+    with pytest.raises(TypeError, match="must return OrderRow instances"):
+        updater._execute_local_update(historical_update=None)
+
+
+def test_simple_table_updater_set_update_statistics_is_passthrough():
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return []
+
+    updater = OrderUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+    update_statistics = UpdateStatistics()
+
+    returned = updater._set_update_statistics(update_statistics)
+
+    assert returned is update_statistics
+    assert updater.update_statistics is update_statistics
+
+
+def test_simple_table_historical_update_statistics_is_optional():
+    historical_cls = client_simple_table_models.SimpleTableUpdateHistorical
+
+    assert historical_cls.model_fields["update_statistics"].is_required() is False
+    assert historical_cls.model_fields["must_update"].is_required() is False
+    assert historical_cls.model_fields["direct_dependencies_ids"].is_required() is False
+
+    historical = historical_cls(
+        update_time_start=datetime.datetime.now(datetime.UTC),
+        related_table=1,
+    )
+
+    assert historical.update_statistics is None
+    assert historical.must_update is None
+    assert historical.direct_dependencies_ids is None
+
+
+def test_simple_table_updater_resolves_foreign_keys_to_storage_ids(monkeypatch):
+    captured_storage_calls: list[dict[str, object]] = []
+
+    class CustomerRow(SimpleTable):
+        id: int
+        customer_code: Annotated[str, Index(unique=True)] = Field(...)
+
+    class BalanceRow(SimpleTable):
+        id: int
+        customer_id: Annotated[
+            int,
+            ForeignKey(CustomerRow, on_delete="cascade"),
+            Index(),
+            Ops(filter=True),
+        ] = Field(...)
+        balance_usd: float
+
+    def fake_storage_get_or_create(cls, **kwargs):
+        captured_storage_calls.append(kwargs)
+        schema_model = kwargs["schema"]["model"]
+        storage_id = 101 if schema_model.endswith("CustomerRow") else 202
+        return client_simple_table_models.SimpleTableStorage(
+            id=storage_id,
+            storage_hash=kwargs["storage_hash"],
+            data_source=kwargs["data_source"],
+            build_configuration=kwargs["build_configuration"],
+            build_configuration_json_schema=kwargs["build_configuration_json_schema"],
+            time_serie_source_code_git_hash=kwargs["source_code_git_hash"],
+            time_serie_source_code=kwargs["source_code"],
+            schema=kwargs["schema"],
+            source_class_name=kwargs["source_class_name"],
+            open_for_everyone=kwargs["open_to_public"],
+        )
+
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "get_or_create",
+        classmethod(fake_storage_get_or_create),
+    )
+
+    class BalanceUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = BalanceRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return []
+
+    updater = BalanceUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+
+    resolved_schema = updater.local_initial_configuration["simple_table_schema"]
+    foreign_key = next(
+        field["foreign_key"]
+        for field in resolved_schema["fields"]
+        if field["name"] == "customer_id"
+    )
+
+    assert any(
+        storage_call["schema"]["model"].endswith("CustomerRow")
+        for storage_call in captured_storage_calls
+    )
+    assert foreign_key == {"target": 101, "on_delete": "cascade"}
+
+
+def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypatch):
+    captured_storage_calls: list[dict[str, object]] = []
+
+    class CountryRow(SimpleTable):
+        id: int
+        country_code: Annotated[str, Index(unique=True)] = Field(...)
+
+    class CustomerRow(SimpleTable):
+        id: int
+        country_id: Annotated[
+            int,
+            ForeignKey(CountryRow, on_delete="restrict"),
+            Index(),
+        ] = Field(...)
+        customer_code: Annotated[str, Index(unique=True)] = Field(...)
+
+    class BalanceRow(SimpleTable):
+        id: int
+        customer_id: Annotated[
+            int,
+            ForeignKey(CustomerRow, on_delete="cascade"),
+            Index(),
+            Ops(filter=True),
+        ] = Field(...)
+        balance_usd: float
+
+    storage_ids = {
+        "CountryRow": 301,
+        "CustomerRow": 302,
+        "BalanceRow": 303,
+    }
+
+    def fake_storage_get_or_create(cls, **kwargs):
+        captured_storage_calls.append(kwargs)
+        model_name = kwargs["schema"]["model"].split(".")[-1]
+        return client_simple_table_models.SimpleTableStorage(
+            id=storage_ids[model_name],
+            storage_hash=kwargs["storage_hash"],
+            data_source=kwargs["data_source"],
+            build_configuration=kwargs["build_configuration"],
+            build_configuration_json_schema=kwargs["build_configuration_json_schema"],
+            time_serie_source_code_git_hash=kwargs["source_code_git_hash"],
+            time_serie_source_code=kwargs["source_code"],
+            schema=kwargs["schema"],
+            source_class_name=kwargs["source_class_name"],
+            open_for_everyone=kwargs["open_to_public"],
+        )
+
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "get_or_create",
+        classmethod(fake_storage_get_or_create),
+    )
+
+    class BalanceUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = BalanceRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return []
+
+    updater = BalanceUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+
+    resolved_schema = updater.local_initial_configuration["simple_table_schema"]
+    balance_fk = next(
+        field["foreign_key"]
+        for field in resolved_schema["fields"]
+        if field["name"] == "customer_id"
+    )
+    customer_storage_call = next(
+        storage_call
+        for storage_call in captured_storage_calls
+        if storage_call["schema"]["model"].endswith("CustomerRow")
+    )
+    customer_fk = next(
+        field["foreign_key"]
+        for field in customer_storage_call["schema"]["fields"]
+        if field["name"] == "country_id"
+    )
+
+    assert any(
+        storage_call["schema"]["model"].endswith("CountryRow")
+        for storage_call in captured_storage_calls
+    )
+    assert any(
+        storage_call["schema"]["model"].endswith("CustomerRow")
+        for storage_call in captured_storage_calls
+    )
+    assert balance_fk == {"target": 302, "on_delete": "cascade"}
+    assert customer_fk == {"target": 301, "on_delete": "restrict"}

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import types
 from collections.abc import Sequence
@@ -115,16 +114,6 @@ class TableSchema:
             ],
         }
 
-    @property
-    def fingerprint(self) -> str:
-        canonical = json.dumps(self.to_canonical_dict(), sort_keys=True, separators=(",", ":"))
-        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-    @property
-    def physical_name(self) -> str:
-        return f"t_{self.fingerprint[:24]}"
-
-
 class SimpleTableSchemaMixin:
     @classmethod
     def field_spec(cls, field_name: str) -> TableFieldSpec:
@@ -142,14 +131,6 @@ class SimpleTableSchemaMixin:
     @classmethod
     def schema(cls) -> TableSchema:
         return _build_table_schema(cls)
-
-    @classmethod
-    def schema_fingerprint(cls) -> str:
-        return cls.schema().fingerprint
-
-    @classmethod
-    def physical_name(cls) -> str:
-        return cls.schema().physical_name
 
 
 def _build_table_schema(model: type[SimpleTable]) -> TableSchema:

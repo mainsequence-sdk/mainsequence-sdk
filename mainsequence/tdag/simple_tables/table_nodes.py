@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
+from collections.abc import Sequence
 from decimal import Decimal
 from enum import Enum
 from typing import Any, ClassVar
@@ -13,6 +14,10 @@ import mainsequence.client as ms_client
 from ..configuration_models import BaseConfiguration
 from ..data_nodes import build_operations
 from ..data_nodes.data_nodes import DataNode
+from ..data_nodes.persist_managers import (
+    get_data_node_source_code,
+    get_data_node_source_code_git_hash,
+)
 from ..pydantic_metadata import serialize_pydantic_model, strip_pydantic_hash_exclusions
 from .models import SimpleTable
 from .persist_managers import SimpleTablePersistManager
@@ -100,6 +105,7 @@ _ANNOTATION_DTYPE_MAP: dict[Any, str] = {
 
 
 class SimpleTableUpdater(DataNode):
+    DATA_NODE_UPDATE_CLASS = ms_client.SimpleTableUpdate
     SIMPLE_TABLE_SCHEMA: ClassVar[type[SimpleTable] | None] = None
 
     def __init__(
@@ -123,7 +129,24 @@ class SimpleTableUpdater(DataNode):
         )
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:
-        init_kwargs["simple_table_schema"] = self.simple_table_schema.schema().to_canonical_dict()
+        """
+        Build the updater configuration and hashes using a resolved simple-table schema.
+
+        Foreign-key declarations are authored against ``SimpleTable`` classes, but
+        the hashed/backend schema must point to canonical backend table storages.
+        This method therefore:
+
+        - ensures a data source is available for storage resolution,
+        - resolves every foreign-key target to its canonical ``SimpleTableStorage.id``,
+        - injects the resolved schema into the hashed init kwargs,
+        - stores the resolved schema on the updater so the persist manager can
+          reuse the exact same payload during backend registration.
+        """
+        data_source = self._ensure_data_source_for_schema_resolution()
+        resolved_schema = self._build_resolved_simple_table_schema(data_source=data_source)
+        self.resolved_simple_table_schema = resolved_schema
+
+        init_kwargs["simple_table_schema"] = resolved_schema
         init_kwargs["time_series_class_import_path"] = {
             "module": self.__class__.__module__,
             "qualname": self.__class__.__qualname__,
@@ -137,6 +160,116 @@ class SimpleTableUpdater(DataNode):
         for field_name, value in config.__dict__.items():
             setattr(self, field_name, value)
 
+    def _ensure_data_source_for_schema_resolution(self) -> Any:
+        if getattr(self, "_data_source", None) is None:
+            self.set_data_source()
+        return self.data_source
+
+    @staticmethod
+    def _resolved_schema_storage_hash(resolved_schema: dict[str, Any]) -> str:
+        _, storage_hash = build_operations.hash_signature({"simple_table_schema": resolved_schema})
+        return f"simpletable_{storage_hash}".lower()
+
+    def _build_foreign_table_storage_kwargs(
+        self,
+        *,
+        schema_cls: type[SimpleTable],
+        resolved_schema: dict[str, Any],
+        data_source: Any,
+    ) -> dict[str, Any]:
+        return {
+            "storage_hash": self._resolved_schema_storage_hash(resolved_schema),
+            "build_configuration": {"simple_table_schema": resolved_schema},
+            "data_source": data_source.model_dump(),
+            "build_configuration_json_schema": {},
+            "open_to_public": False,
+            "source_code_git_hash": get_data_node_source_code_git_hash(schema_cls),
+            "source_code": get_data_node_source_code(schema_cls),
+            "schema": resolved_schema,
+            "source_class_name": schema_cls.__name__,
+        }
+
+    def _resolve_simple_table_storage(
+        self,
+        *,
+        schema_cls: type[SimpleTable],
+        data_source: Any,
+        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
+        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage],
+        resolution_stack: set[type[SimpleTable]],
+    ) -> ms_client.SimpleTableStorage:
+        cached_storage = resolved_storage_cache.get(schema_cls)
+        if cached_storage is not None:
+            return cached_storage
+
+        if schema_cls in resolution_stack:
+            cycle = " -> ".join(cls.__name__ for cls in [*resolution_stack, schema_cls])
+            raise ValueError(f"Cyclic simple-table foreign-key resolution is not supported: {cycle}")
+
+        resolution_stack.add(schema_cls)
+        try:
+            resolved_schema = self._resolve_simple_table_schema_dict(
+                schema_cls=schema_cls,
+                data_source=data_source,
+                resolved_schema_cache=resolved_schema_cache,
+                resolved_storage_cache=resolved_storage_cache,
+                resolution_stack=resolution_stack,
+            )
+            storage = ms_client.SimpleTableStorage.get_or_create(
+                **self._build_foreign_table_storage_kwargs(
+                    schema_cls=schema_cls,
+                    resolved_schema=resolved_schema,
+                    data_source=data_source,
+                )
+            )
+            resolved_storage_cache[schema_cls] = storage
+            return storage
+        finally:
+            resolution_stack.remove(schema_cls)
+
+    def _resolve_simple_table_schema_dict(
+        self,
+        *,
+        schema_cls: type[SimpleTable],
+        data_source: Any,
+        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
+        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage],
+        resolution_stack: set[type[SimpleTable]],
+    ) -> dict[str, Any]:
+        cached_schema = resolved_schema_cache.get(schema_cls)
+        if cached_schema is not None:
+            return cached_schema
+
+        table_schema = schema_cls.schema()
+        resolved_schema = json.loads(json.dumps(table_schema.to_canonical_dict()))
+
+        for index, field_spec in enumerate(table_schema.fields):
+            if field_spec.foreign_key is None:
+                continue
+
+            target_storage = self._resolve_simple_table_storage(
+                schema_cls=field_spec.foreign_key.target,
+                data_source=data_source,
+                resolved_schema_cache=resolved_schema_cache,
+                resolved_storage_cache=resolved_storage_cache,
+                resolution_stack=resolution_stack,
+            )
+            resolved_schema["fields"][index]["foreign_key"]["target"] = target_storage.id
+
+        resolved_schema_cache[schema_cls] = resolved_schema
+        return resolved_schema
+
+    def _build_resolved_simple_table_schema(self, data_source: Any) -> dict[str, Any]:
+        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]] = {}
+        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage] = {}
+        return self._resolve_simple_table_schema_dict(
+            schema_cls=self.simple_table_schema,
+            data_source=data_source,
+            resolved_schema_cache=resolved_schema_cache,
+            resolved_storage_cache=resolved_storage_cache,
+            resolution_stack=set(),
+        )
+
     def _set_local_persist_manager(
         self,
         update_hash: str,
@@ -148,6 +281,7 @@ class SimpleTableUpdater(DataNode):
             data_node_update=data_node_update,
             data_source=self.data_source,
             simple_table_schema=self.simple_table_schema,
+            resolved_simple_table_schema=getattr(self, "resolved_simple_table_schema", None),
             configuration=self.config,
         )
 
@@ -171,6 +305,78 @@ class SimpleTableUpdater(DataNode):
                 )
             )
         return columns
+
+    def _set_update_statistics(
+        self,
+        update_statistics: ms_client.BaseUpdateStatistics | None,
+    ) -> ms_client.BaseUpdateStatistics | None:
+        self.update_statistics = update_statistics
+        return update_statistics
+
+    def _normalize_update_records(
+        self,
+        update_result: Any,
+    ) -> tuple[list[SimpleTable], bool]:
+        overwrite = False
+        records = update_result
+
+        if (
+            isinstance(update_result, tuple)
+            and len(update_result) == 2
+            and isinstance(update_result[1], bool)
+        ):
+            records, overwrite = update_result
+
+        if not isinstance(records, Sequence) or isinstance(records, (str, bytes, bytearray)):
+            raise TypeError(
+                f"{self} update(...) must return a sequence of {self.simple_table_schema.__name__} "
+                "instances, or a tuple of (records, overwrite)."
+            )
+
+        validated_records = list(records)
+        invalid_record = next(
+            (
+                record
+                for record in validated_records
+                if not isinstance(record, self.simple_table_schema)
+            ),
+            None,
+        )
+        if invalid_record is not None:
+            raise TypeError(
+                f"{self} update(...) must return {self.simple_table_schema.__name__} instances; "
+                f"received {type(invalid_record).__name__}."
+            )
+
+        return validated_records, overwrite
+
+    def _execute_local_update(
+        self,
+        historical_update: Any,
+    ) -> Any:
+        del historical_update
+
+        self.logger.debug(f"Calculating update for {self}...")
+        update_result = self.update()
+        if update_result is None:
+            raise Exception(
+                f" {self} update(...) method needs to return {self.simple_table_schema.__name__} "
+                "instances or (instances, overwrite)"
+            )
+
+        records, overwrite = self._normalize_update_records(update_result)
+
+        if len(records) == 0:
+            self.logger.warning(f"No new data returned from update for {self}.")
+            return records
+
+        self.logger.info(f"Persisting {len(records)} new rows for {self}.")
+        self.local_persist_manager.persist_records(
+            records=records,
+            overwrite=overwrite,
+        )
+        self.logger.info(f"Successfully updated {self} with {len(records)} records.")
+        return records
 
     def insert_records(
         self, records: list[SimpleTable | dict[str, Any]]

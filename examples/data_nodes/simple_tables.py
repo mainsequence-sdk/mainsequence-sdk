@@ -26,7 +26,7 @@ class CustomerRecord(SimpleTable):
         title="Name",
         description="Human-readable customer name.",
     )
-    region: Annotated[str, Ops(filter=True)] = Field(
+    region: Annotated[str, Index(), Ops(filter=True)] = Field(
         ...,
         title="Region",
         description="Commercial region for the customer.",
@@ -83,8 +83,11 @@ class CustomersUpdater(SimpleTableUpdater):
             {"id": 101, "customer_code": "BETA", "name": "Beta Treasury", "region": "EU"},
         ]
 
-    def update(self) -> list[CustomerRecord]:
-        return self.upsert_records(self.build_seed_rows())
+    def update(self) -> tuple[list[CustomerRecord], bool]:
+        return (
+            [CustomerRecord.model_validate(row) for row in self.build_seed_rows()],
+            True,
+        )
 
 
 class CustomerBalancesUpdater(SimpleTableUpdater):
@@ -121,8 +124,11 @@ class CustomerBalancesUpdater(SimpleTableUpdater):
             },
         ]
 
-    def update(self) -> list[CustomerBalanceRecord]:
-        return self.upsert_records(self.build_seed_rows())
+    def update(self) -> tuple[list[CustomerBalanceRecord], bool]:
+        return (
+            [CustomerBalanceRecord.model_validate(row) for row in self.build_seed_rows()],
+            True,
+        )
 
     def dependencies(self) -> dict[str, SimpleTableUpdater]:
         return {"customers": self.customers_updater}
@@ -143,20 +149,6 @@ def build_test_simple_tables() -> None:
         limit=25,
     ).model_dump(mode="json")
 
-    print("Customer schema:")
-    print(
-        {
-            "schema_fingerprint": CustomerRecord.schema_fingerprint(),
-            "physical_name": CustomerRecord.physical_name(),
-        }
-    )
-    print("Balance schema:")
-    print(
-        {
-            "schema_fingerprint": CustomerBalanceRecord.schema_fingerprint(),
-            "physical_name": CustomerBalanceRecord.physical_name(),
-        }
-    )
     print("Balance configuration hashes:")
     print(
         {

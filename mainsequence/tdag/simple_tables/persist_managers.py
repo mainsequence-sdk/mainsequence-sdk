@@ -17,8 +17,8 @@ class SimpleTablePersistManager(BasePersistManager):
     STORAGE_CLASS = SimpleTableStorage
     UPDATE_CLASS = SimpleTableUpdate
     UPDATE_DETAILS_CLASS = SimpleTableUpdateDetails
-    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "simple_table__data_source__id"
-    UPDATE_CREATE_STORAGE_LOOKUP = "simple_table"
+    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "remote_table__data_source__id"
+    UPDATE_CREATE_STORAGE_LOOKUP = "remote_table"
 
     def __init__(
         self,
@@ -29,9 +29,11 @@ class SimpleTablePersistManager(BasePersistManager):
         data_node_storage: dict | None = None,
         data_node_update: SimpleTableUpdate | None = None,
         simple_table_schema: type[SimpleTable] | None = None,
+        resolved_simple_table_schema: dict[str, Any] | None = None,
         configuration: Any = None,
     ):
         self.simple_table_schema = simple_table_schema
+        self.resolved_simple_table_schema = resolved_simple_table_schema
         self.configuration = configuration
         super().__init__(
             data_source=data_source,
@@ -68,11 +70,20 @@ class SimpleTablePersistManager(BasePersistManager):
             build_configuration_json_schema=build_configuration_json_schema,
             open_to_public=open_to_public,
         )
+        kwargs.pop("time_serie_source_code_git_hash")
+        kwargs.pop("time_serie_source_code")
+
+        kwargs["source_code_git_hash"]=time_serie_source_code_git_hash
+        kwargs["source_code"]=time_serie_source_code
+
+
         if self.simple_table_schema is not None:
             kwargs.update(
-                schema=self.simple_table_schema.schema().to_canonical_dict(),
-                schema_fingerprint=self.simple_table_schema.schema_fingerprint(),
-                physical_name=self.simple_table_schema.physical_name(),
+                schema=(
+                    self.resolved_simple_table_schema
+                    if self.resolved_simple_table_schema is not None
+                    else self.simple_table_schema.schema().to_canonical_dict()
+                ),
                 source_class_name=self.class_name,
             )
         return kwargs
@@ -92,7 +103,7 @@ class SimpleTablePersistManager(BasePersistManager):
             update_hash=self.update_hash,
             build_configuration=local_configuration,
             data_source_id=self.data_source.id,
-            simple_table=storage_reference,
+            remote_table=storage_reference,
         )
         kwargs["open_for_everyone"] = open_to_public
         return kwargs
@@ -106,14 +117,11 @@ class SimpleTablePersistManager(BasePersistManager):
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[SimpleTable]:
-        del timeout
-        payload = [record.model_dump(mode="python") for record in records]
-        self.UPDATE_CLASS.insert_data_into_table(
-            data_node_update_id=self.data_node_update.id,
-            records=payload,
+        return self.persist_records(
+            records,
             overwrite=False,
+            timeout=timeout,
         )
-        return records
 
     def upsert_records(
         self,
@@ -121,12 +129,25 @@ class SimpleTablePersistManager(BasePersistManager):
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[SimpleTable]:
+        return self.persist_records(
+            records,
+            overwrite=True,
+            timeout=timeout,
+        )
+
+    def persist_records(
+        self,
+        records: list[SimpleTable],
+        *,
+        overwrite: bool = False,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[SimpleTable]:
         del timeout
         payload = [record.model_dump(mode="python") for record in records]
         self.UPDATE_CLASS.insert_data_into_table(
             data_node_update_id=self.data_node_update.id,
             records=payload,
-            overwrite=True,
+            overwrite=overwrite,
         )
         return records
 

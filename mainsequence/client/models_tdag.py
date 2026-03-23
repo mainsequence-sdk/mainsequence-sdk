@@ -12,7 +12,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Generic, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -109,6 +109,16 @@ class SourceTableConfigurationBase:
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
 
+    def get_data_updates(self) -> BaseUpdateStatistics:
+        raise NotImplementedError
+
+    def set_or_update_columns_metadata(
+        self,
+        columns_metadata: list[ColumnMetaData],
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        raise NotImplementedError
+
 class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, BaseObjectOrm):
     related_table: int | DataNodeStorage
     time_index_name: str = Field(..., max_length=100, description="Time index name")
@@ -129,7 +139,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     # todo remove
     column_index_names: list | None = [None]
 
-    def get_data_updates(self):
+    def get_data_updates(self) -> UpdateStatistics:
         max_per_asset = None
 
         url = self.get_object_url() + f"/{self.related_table}/get_stats/"
@@ -170,8 +180,10 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         return r.json()
 
     def set_or_update_columns_metadata(
-        self, columns_metadata: list[ColumnMetaData], timeout=None
-    ) -> None:
+        self,
+        columns_metadata: list[ColumnMetaData],
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
         """ """
 
         columns_metadata = [c.model_dump(exclude={"orm_class"}) for c in columns_metadata]
@@ -657,15 +669,26 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
-        r = r.json()
-        r["source_table_config_map"] = {
+        response_json = r.json()
+        source_table_config_map = {
             int(k): SourceTableConfiguration(**v) if v is not None else v
-            for k, v in r["source_table_config_map"].items()
+            for k, v in response_json["source_table_config_map"].items()
         }
-        r["state_data"] = {int(k): DataNodeUpdateDetails(**v) for k, v in r["state_data"].items()}
-        r["all_index_stats"] = {int(k): v for k, v in r["all_index_stats"].items()}
-        r["data_node_updates"] = [DataNodeUpdate(**v) for v in r["local_metadatas"]]
-        return r
+        state_data = {
+            int(k): DataNodeUpdateDetails(**v) for k, v in response_json["state_data"].items()
+        }
+        all_index_stats = {int(k): v for k, v in response_json["all_index_stats"].items()}
+        data_node_updates = [DataNodeUpdate(**v) for v in response_json["local_metadatas"]]
+        return UpdateBatchResponse[
+            DataNodeUpdate,
+            DataNodeUpdateDetails,
+            SourceTableConfiguration,
+        ](
+            source_table_config_map=source_table_config_map,
+            state_data=state_data,
+            all_index_stats=all_index_stats,
+            data_node_updates=data_node_updates,
+        )
 
     def depends_on_connect(self, target_time_serie_id):
 
@@ -831,11 +854,10 @@ class BaseUpdateDetails:
     update_priority: int = Field(default=0, description="Priority level of the update")
     last_updated_by_user: int | None = Field(None, description="Foreign key reference to User")
 
-    run_configuration: RunConfiguration | None = None
-
 
 class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
     related_table: int | DataNodeUpdate
+    run_configuration: RunConfiguration | None = None
 
 
     @staticmethod
@@ -1768,6 +1790,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         delink_all_ts: bool = False,
         remove_from_other_schedulers: bool = True,
         timeout=None,
+        is_simple_table_updater:bool=False,
         **kwargs,
     ):
         """
@@ -1785,6 +1808,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
                 "time_serie_ids": time_serie_ids,
                 "delink_all_ts": delink_all_ts,
                 "remove_from_other_schedulers": remove_from_other_schedulers,
+                "is_simple_table_updater":is_simple_table_updater,
                 "scheduler_kwargs": kwargs or {},
             }
         }
@@ -1908,9 +1932,17 @@ class RunConfiguration(BasePydanticModel, BaseObjectOrm):
         return None
 
 
-class UpdateStatistics(BaseModel):
+class BaseUpdateStatistics(BaseModel):
     """
-    This class contains the  update details of the table in the main sequence engine
+    Backend-agnostic update-state envelope shared by updater types.
+    """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+
+class UpdateStatistics(BaseUpdateStatistics):
+    """
+    Time-series-specific update statistics used by DataNode updaters.
     """
 
     asset_time_statistics: dict[str, datetime.datetime | None | dict] | None = None
@@ -1926,9 +1958,6 @@ class UpdateStatistics(BaseModel):
     # when working with DuckDb and column based storage we want to have also stats by  column
     multi_index_column_stats: dict[str, Any] | None = None
     is_backfill: bool = False
-
-    class Config:
-        arbitrary_types_allowed = True
 
     @staticmethod
     def _to_utc_datetime(value: Any):
@@ -2471,14 +2500,28 @@ class HistoricalUpdateRecord:
     trace_id: str | None = Field(default=None, max_length=255)
     updated_by_user: int | None = None  # Assuming you're using the ID of the user
     # extra fields for local control
-    update_statistics: UpdateStatistics | None
-    must_update: bool | None
-    direct_dependencies_ids: list[int] | None
+    update_statistics: BaseUpdateStatistics | None = None
+    must_update: bool | None = None
+    direct_dependencies_ids: list[int] | None = None
 
 class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
 
     related_table: int
     last_time_index_value: datetime.datetime | None = None
+
+
+UpdateT = TypeVar("UpdateT")
+UpdateDetailsT = TypeVar("UpdateDetailsT")
+SourceTableConfigurationT = TypeVar("SourceTableConfigurationT")
+
+
+class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, SourceTableConfigurationT]):
+    model_config = ConfigDict(extra="forbid")
+
+    source_table_config_map: dict[int, SourceTableConfigurationT | None]
+    state_data: dict[int, UpdateDetailsT]
+    all_index_stats: dict[int, Any]
+    data_node_updates: list[UpdateT]
 
 
 

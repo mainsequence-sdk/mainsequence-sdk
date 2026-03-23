@@ -6,6 +6,7 @@ import logging
 import os
 import tempfile
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from dataclasses import asdict
 from functools import wraps
 from typing import Any, Union
@@ -27,6 +28,7 @@ from mainsequence.client import (
     Scheduler,
 )
 from mainsequence.client.models_tdag import (
+    BaseUpdateStatistics,
     ColumnMetaData,
     DataSource,
     UniqueIdentifierRangeMap,
@@ -50,6 +52,9 @@ def get_data_source_from_orm() -> Any:
     if SessionDataSource.data_source.related_resource is None:
         raise Exception("This Pod does not have a default data source")
     return SessionDataSource.data_source
+
+
+LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
 
 
 def get_latest_update_by_assets_filter(
@@ -592,6 +597,7 @@ class DataNode(DataAccessMixin, ABC):
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
     OPEN_TO_PUBLIC=False # flag for enterprise data providers that want to open their data nmodes
+    DATA_NODE_UPDATE_CLASS = ms_client.DataNodeUpdate
 
     # --- Dunder & Serialization Methods ---
 
@@ -1127,7 +1133,7 @@ class DataNode(DataAccessMixin, ABC):
         force_update: bool = False,
         update_only_tree: bool = False,
         remote_scheduler: object | None = None,
-        override_update_stats: UpdateStatistics | None = None,
+        override_update_stats: BaseUpdateStatistics | None = None,
     ):
         """
         Run one update cycle for this node.
@@ -1153,8 +1159,8 @@ class DataNode(DataAccessMixin, ABC):
             If ``True``, update dependencies only (skip this node update).
         remote_scheduler : object | None, optional
             Optional scheduler context.
-        override_update_stats : UpdateStatistics | None, optional
-            Optional explicit update statistics (useful in tests or controlled runs).
+        override_update_stats : BaseUpdateStatistics | None, optional
+            Optional explicit update-state object (useful in tests or controlled runs).
 
         Returns
         -------
@@ -1281,6 +1287,58 @@ class DataNode(DataAccessMixin, ABC):
         """Should be overwritten by subclass"""
         pass
 
+    def _resolve_latest_persisted_time_index(
+        self,
+        historical_update: Any,
+    ) -> datetime.datetime | None:
+        if hasattr(self, "latest_persisted_time_index"):
+            return self.latest_persisted_time_index
+        if hasattr(self, "overwrite_latest_value"):
+            return self.overwrite_latest_value
+        return getattr(historical_update, "last_time_index_value", None)
+
+    def _validate_update_output(self, temp_df: pd.DataFrame) -> None:
+        run_operations.UpdateRunner.validate_data_frame(
+            temp_df,
+            self.data_source.related_resource.class_type,
+        )
+
+    def _execute_local_update(
+        self,
+        historical_update: Any,
+    ) -> LocalUpdateResult:
+        self.logger.debug(f"Calculating update for {self}...")
+
+        temp_df = self.update()
+        latest_persisted_time_index = self._resolve_latest_persisted_time_index(historical_update)
+
+        if temp_df is None:
+            raise Exception(f" {self} update(...) method needs to return a data frame")
+
+        if temp_df.empty:
+            self.logger.warning(f"No new data returned from update for {self}.")
+            return temp_df
+
+        if (
+            latest_persisted_time_index is None
+            and ms_client.SessionDataSource.is_local_duck_db == False
+        ):
+            temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
+
+        if temp_df.empty:
+            self.logger.warning(f"No new data to persist for {self} after filtering.")
+            return temp_df
+
+        self._validate_update_output(temp_df)
+
+        self.logger.info(f"Persisting {len(temp_df)} new rows for {self}.")
+        self.local_persist_manager.persist_updated_data(
+            temp_df=temp_df,
+            overwrite=(latest_persisted_time_index is not None),
+        )
+        self.logger.info(f"Successfully updated {self}.")
+        return temp_df
+
 
 
         
@@ -1299,14 +1357,18 @@ class DataNode(DataAccessMixin, ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def update(self) -> pd.DataFrame:
+    def update(self) -> LocalUpdateResult:
         """
-        Build and return the rows to persist in this run.
+        Build and return the update payload for this run.
 
-        Use ``self.update_statistics`` to compute an incremental window and avoid
-        returning full history on every run.
+        Default ``DataNode`` execution expects a ``pd.DataFrame`` and will use
+        ``self.update_statistics`` to compute an incremental window before
+        persistence.
 
-        Expected output shape:
+        Specialized subclasses that override ``_execute_local_update(...)``
+        may return a different ``LocalUpdateResult`` shape instead.
+
+        For the default DataFrame-based path, the expected output shape is:
 
         - index starts with ``time_index`` (UTC-aware datetimes),
         - column names are lowercase and schema-stable,
@@ -1318,8 +1380,9 @@ class DataNode(DataAccessMixin, ABC):
 
         Returns
         -------
-        pd.DataFrame
-            Data to persist for this run. Return an empty DataFrame when no new rows exist.
+        LocalUpdateResult
+            The payload produced for this run. Return ``None`` or an empty
+            result when there is nothing new to persist.
         """
         raise NotImplementedError
 

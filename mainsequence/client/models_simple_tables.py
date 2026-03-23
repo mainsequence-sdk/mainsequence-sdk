@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import requests
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from mainsequence import logger
 
@@ -24,9 +24,8 @@ from .models_tdag import (
     BaseUpdateDetails,
     DynamicTableDataSource,
     HistoricalUpdateRecord,
-    Scheduler,
-    SourceTableConfiguration,
     SourceTableConfigurationBase,
+    UpdateBatchResponse,
     _executor,
     get_chunk_stats,
     request_to_datetime,
@@ -37,11 +36,82 @@ if TYPE_CHECKING:
     from mainsequence.tdag.simple_tables.models import SimpleTable
 
 
+class SimpleTableColumnPayload(BasePydanticModel):
+    id: int | None = Field(
+        None,
+        description="Primary key of the column metadata row.",
+    )
+    attr_name: str = Field(
+        ...,
+        description="Logical attribute name for the column in the simple-table schema.",
+    )
+    column_name: str = Field(
+        ...,
+        description="Physical column name stored in the backing table.",
+    )
+    db_type: str = Field(
+        ...,
+        description="Declared data type for the column.",
+    )
+    is_pk: bool = Field(
+        False,
+        description="Whether the column is part of the primary key.",
+    )
+    nullable: bool = Field(
+        False,
+        description="Whether the column accepts null values.",
+    )
+    is_unique: bool = Field(
+        False,
+        description="Whether the column has a uniqueness constraint.",
+    )
+
+
+class SimpleTableForeignKeyPayload(BasePydanticModel):
+    id: int | None = Field(
+        None,
+        description="Primary key of the foreign-key metadata row.",
+    )
+    source_column: str = Field(
+        ...,
+        description="Column on the source simple table that points to the target table.",
+    )
+    target_table: int = Field(
+        ...,
+        description="Primary key of the target simple table referenced by this foreign key.",
+    )
+    target_column: str = Field(
+        ...,
+        description="Column on the target simple table that is referenced.",
+    )
+    on_delete: str = Field(
+        ...,
+        description="Deletion behavior recorded for the foreign-key relationship.",
+    )
+
+
+class SimpleTableIncomingForeignKeyPayload(SimpleTableForeignKeyPayload):
+    pass
+
+
+class SimpleTableIndexMetaPayload(BasePydanticModel):
+    id: int | None = Field(
+        None,
+        description="Primary key of the index metadata row.",
+    )
+    name: str = Field(
+        ...,
+        description="Index name.",
+    )
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Ordered list of column names included in the index.",
+    )
+
+
 class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/simple_table_storage"
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_table"
     model_config = ConfigDict(populate_by_name=True)
-    RECORDS_ENDPOINT: ClassVar[str] = "ts_manager/simple_tables"
-    RECORDS_UPSERT_ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update"
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     storage_hash: str | None = Field(
@@ -49,15 +119,30 @@ class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
         max_length=63,
         description="Stable physical hash identifier for the simple table storage.",
     )
-    creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
-    created_by_user: int | None = Field(None, description="Foreign key reference to User")
-    organization_owner: int | None = Field(None, description="Foreign key reference to Organization")
-    open_for_everyone: bool = Field(
-        default=False, description="Whether the table is open for everyone"
+    source_class_name: str | None = None
+    data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
+    simple_table_schema: dict[str, Any] | None = Field(
+        None,
+        alias="schema",
+        description="Canonical simple-table schema",
     )
-    data_source_open_for_everyone: bool = Field(
-        default=False, description="Whether the data source is open for everyone"
+    columns: list[SimpleTableColumnPayload] = Field(
+        default_factory=list,
+        description="Column metadata exposed by the backend for this simple table.",
     )
+    foreign_keys: list[SimpleTableForeignKeyPayload] = Field(
+        default_factory=list,
+        description="Outgoing foreign-key relations exposed by the backend for this simple table.",
+    )
+    incoming_fks: list[SimpleTableIncomingForeignKeyPayload] = Field(
+        default_factory=list,
+        description="Incoming foreign-key relations exposed by the backend for this simple table.",
+    )
+    indexes_meta: list[SimpleTableIndexMetaPayload] = Field(
+        default_factory=list,
+        description="Index metadata exposed by the backend for this simple table.",
+    )
+    sourcetableconfiguration: STSourceTableConfiguration | None = None
     build_configuration: dict[str, Any] | None = Field(
         None, description="Storage/build configuration in JSON format"
     )
@@ -65,29 +150,26 @@ class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
         None, description="JSON schema describing the build configuration"
     )
     time_serie_source_code_git_hash: str | None = Field(
-        None, max_length=255, description="Git hash of the source code used by the updater"
+        None, max_length=255, description="Git hash of the simple-table updater source code"
     )
     time_serie_source_code: str | None = Field(
-        None, description="Source code path or source code payload for the updater"
-    )
-    protect_from_deletion: bool = Field(
-        default=False, description="Flag to protect the record from deletion"
-    )
-    data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
-    source_class_name: str | None = None
-    simple_table_schema: dict[str, Any] | None = Field(
-        None,
-        alias="schema",
-        description="Canonical simple-table schema",
-    )
-    schema_fingerprint: str | None = Field(
-        None, description="Stable schema fingerprint derived from the canonical schema"
-    )
-    physical_name: str | None = Field(
-        None, description="Backend physical table name derived from the schema fingerprint"
+        None, description="Source code for the simple-table updater"
     )
     identifier: str | None = None
     description: str | None = None
+    open_for_everyone: bool = Field(
+        default=False, description="Whether the table is open for everyone"
+    )
+    data_source_open_for_everyone: bool = Field(
+        default=False, description="Whether the data source is open for everyone"
+    )
+
+    protect_from_deletion: bool = Field(
+        default=False, description="Flag to protect the record from deletion"
+    )
+    creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
+    created_by_user: int | None = Field(None, description="Foreign key reference to User")
+    organization_owner: int | None = Field(None, description="Foreign key reference to Organization")
 
     @classmethod
     def get_or_create(cls, **kwargs):
@@ -103,11 +185,11 @@ class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_records_url(cls) -> str:
-        return f"{cls.ROOT_URL.rstrip('/')}/{cls.RECORDS_ENDPOINT.strip('/')}"
+        return f"{cls.ROOT_URL.rstrip('/')}/ts_manager/simple_tables"
 
     @classmethod
     def get_records_upsert_url(cls) -> str:
-        return f"{cls.ROOT_URL.rstrip('/')}/{cls.RECORDS_UPSERT_ENDPOINT.strip('/')}"
+        return f"{cls.ROOT_URL.rstrip('/')}/ts_manager/simple_tables_update"
 
     @classmethod
     def insert_records(
@@ -204,6 +286,14 @@ class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel,
 
     related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
 
+    def set_or_update_columns_metadata(
+        self,
+        columns_metadata: list[ColumnMetaData],
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Any:
+        del columns_metadata, timeout
+        return None
+
 class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_run_configuration"
     update_schedule: str = "*/1 * * * *"
@@ -236,7 +326,11 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
-    simple_table: int | SimpleTableStorage = Field(..., description="Simple table")
+    remote_table: int | SimpleTableStorage = Field(
+        ...,
+        validation_alias=AliasChoices("remote_table", "simple_table"),
+        description="Simple table storage referenced by this update.",
+    )
     build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: list[str] | None = Field(default=[], description="List of tags")
@@ -249,20 +343,20 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     @property
     def data_source_id(self):
-        if isinstance(self.simple_table, int):
+        if isinstance(self.remote_table, int):
             return None
-        if isinstance(self.simple_table.data_source, dict):
-            return self.simple_table.data_source.get("id")
-        if isinstance(self.simple_table.data_source, int):
-            return self.simple_table.data_source
-        if self.simple_table.data_source is None:
+        if isinstance(self.remote_table.data_source, dict):
+            return self.remote_table.data_source.get("id")
+        if isinstance(self.remote_table.data_source, int):
+            return self.remote_table.data_source
+        if self.remote_table.data_source is None:
             return None
         else:
-            return self.simple_table.data_source.id
+            return self.remote_table.data_source.id
 
     @property
     def data_node_storage(self):
-        return self.simple_table
+        return self.remote_table
 
     @classmethod
     def get_or_create(cls, **kwargs):
@@ -633,15 +727,26 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
-        r = r.json()
-        r["source_table_config_map"] = {
-            int(k): SourceTableConfiguration(**v) if v is not None else v
-            for k, v in r["source_table_config_map"].items()
+        response_json = r.json()
+        source_table_config_map = {
+            int(k): STSourceTableConfiguration(**v) if v is not None else v
+            for k, v in response_json["source_table_config_map"].items()
         }
-        r["state_data"] = {int(k): SimpleTableUpdateDetails(**v) for k, v in r["state_data"].items()}
-        r["all_index_stats"] = {int(k): v for k, v in r["all_index_stats"].items()}
-        r["data_node_updates"] = [SimpleTableUpdate(**v) for v in r["local_metadatas"]]
-        return r
+        state_data = {
+            int(k): SimpleTableUpdateDetails(**v) for k, v in response_json["state_data"].items()
+        }
+        all_index_stats = {int(k): v for k, v in response_json["all_index_stats"].items()}
+        data_node_updates = [SimpleTableUpdate(**v) for v in response_json["local_metadatas"]]
+        return UpdateBatchResponse[
+            SimpleTableUpdate,
+            SimpleTableUpdateDetails,
+            STSourceTableConfiguration,
+        ](
+            source_table_config_map=source_table_config_map,
+            state_data=state_data,
+            all_index_stats=all_index_stats,
+            data_node_updates=data_node_updates,
+        )
 
     def depends_on_connect(self, target_time_serie_id):
 
@@ -695,8 +800,9 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     def upsert_data_into_table(
         self,
-        data: pd.DataFrame,
-        data_source: DynamicTableDataSource,overwrite:bool
+        data: Any,
+        data_source: DynamicTableDataSource | None = None,
+        overwrite: bool = False,
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
@@ -790,23 +896,6 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 class SimpleTableUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update_details"
     related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
-    active_update: bool = Field(default=False, description="Flag to indicate if update is active")
-    update_pid: int = Field(default=0, description="Process ID of the update")
-    error_on_last_update: bool = Field(
-        default=False, description="Flag to indicate if there was an error in the last update"
-    )
-    last_update: datetime.datetime | None = Field(None, description="Timestamp of the last update")
-    next_update: datetime.datetime | None = Field(None, description="Timestamp of the next update")
-
-    active_update_status: str = Field(
-        default="Q", max_length=20, description="Current update status"
-    )
-    active_update_scheduler: int | Scheduler | None = Field(
-        None, description="Scheduler  for active update"
-    )
-    update_priority: int = Field(default=0, description="Priority level of the update")
-    last_updated_by_user: int | None = Field(None, description="Foreign key reference to User")
-
     run_configuration: SimpleTableRunConfiguration | None = None
 
     @staticmethod
