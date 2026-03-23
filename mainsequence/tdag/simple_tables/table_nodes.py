@@ -1,32 +1,32 @@
 from __future__ import annotations
 
 import datetime
-import hashlib
 import json
-import logging
-from abc import ABC, abstractmethod
 from decimal import Decimal
 from enum import Enum
 from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
+import mainsequence.client as ms_client
+
+from ..configuration_models import BaseConfiguration
+from ..data_nodes import build_operations
+from ..data_nodes.data_nodes import DataNode
 from ..pydantic_metadata import serialize_pydantic_model, strip_pydantic_hash_exclusions
-from .models import Index, SimpleTable
+from .models import SimpleTable
 from .persist_managers import SimpleTablePersistManager
 
 
-class SimpleTableUpdaterConfiguration(BaseModel):
+class SimpleTableUpdaterConfiguration(BaseConfiguration):
     """
-    Base class for simple-table node configuration.
+    Base class for simple-table updater configuration.
 
     Fields participate in the update hash by default. Mark a field with
     ``json_schema_extra={"update_only": True}`` to exclude it from the
     storage hash, or ``json_schema_extra={"runtime_only": True}`` to
     exclude it from both hashes.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     def serialized_configuration(self) -> dict[str, Any]:
         serialized = _serialize_simple_table_value(self)
@@ -45,6 +45,7 @@ class SimpleTableUpdaterConfiguration(BaseModel):
             self.serialized_configuration(),
             for_storage_hash=True,
         )
+
 
 def _serialize_simple_table_value(value: Any) -> Any:
     if isinstance(value, BaseModel):
@@ -87,53 +88,27 @@ def _serialize_simple_table_value(value: Any) -> Any:
     return value
 
 
-class BaseNode(ABC):
-    """
-    Minimal node abstraction local to `simple_tables`.
-
-    This intentionally avoids any `DataNode` / time-series backend coupling while
-    still preserving a familiar node lifecycle:
-    - declared dependencies
-    - `run()` that updates the dependency tree first
-    """
-
-    def __init__(self):
-        self.logger = logging.getLogger(
-            f"{self.__class__.__module__}.{self.__class__.__qualname__}"
-        )
-
-    def dependencies(self) -> dict[str, BaseNode]:
-        return {}
-
-    def run(self, *, update_tree: bool = True) -> Any:
-        seen: set[int] = set()
-        return self._run_with_seen(update_tree=update_tree, seen=seen)
-
-    def _run_with_seen(self, *, update_tree: bool, seen: set[int]) -> Any:
-        node_id = id(self)
-        if node_id in seen:
-            return None
-        seen.add(node_id)
-
-        if update_tree:
-            for dependency in self.dependencies().values():
-                dependency._run_with_seen(update_tree=True, seen=seen)
-
-        return self.update()
-
-    @abstractmethod
-    def update(self) -> Any:
-        raise NotImplementedError
+_ANNOTATION_DTYPE_MAP: dict[Any, str] = {
+    bool: "bool",
+    int: "int64",
+    float: "float64",
+    Decimal: "float64",
+    datetime.datetime: "datetime64[ns, UTC]",
+    datetime.date: "string",
+    str: "string",
+}
 
 
-class SimpleTableUpdater(BaseNode):
+class SimpleTableUpdater(DataNode):
     SIMPLE_TABLE_SCHEMA: ClassVar[type[SimpleTable] | None] = None
 
     def __init__(
         self,
-        configuration: SimpleTableUpdaterConfiguration | None = None,
+        configuration: SimpleTableUpdaterConfiguration,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
     ):
-        super().__init__()
         simple_table_schema = self.SIMPLE_TABLE_SCHEMA
         if not isinstance(simple_table_schema, type) or not issubclass(simple_table_schema, SimpleTable):
             raise TypeError(
@@ -141,52 +116,61 @@ class SimpleTableUpdater(BaseNode):
             )
 
         self.simple_table_schema = simple_table_schema
-        self.configuration = configuration or SimpleTableUpdaterConfiguration()
-        self.persist_manager = SimpleTablePersistManager(
-            simple_table_schema=self.simple_table_schema,
-            configuration=self.configuration,
-            class_name=self.__class__.__name__,
+        super().__init__(
+            config=configuration,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
         )
 
-    def schema_configuration(self) -> dict[str, Any]:
-        return self.simple_table_schema.schema().to_canonical_dict()
-
-    def update_configuration(self) -> dict[str, Any]:
-        return {
-            "simple_table_schema": self.schema_configuration(),
-            "configuration": self.configuration.update_configuration(),
+    def _initialize_configuration(self, init_kwargs: dict) -> None:
+        init_kwargs["simple_table_schema"] = self.simple_table_schema.schema().to_canonical_dict()
+        init_kwargs["time_series_class_import_path"] = {
+            "module": self.__class__.__module__,
+            "qualname": self.__class__.__qualname__,
         }
 
-    def storage_configuration(self) -> dict[str, Any]:
-        return {
-            "simple_table_schema": self.schema_configuration(),
-            "configuration": self.configuration.storage_configuration(),
-        }
+        config = build_operations.create_config(
+            kwargs=init_kwargs,
+            ts_class_name=self.__class__.__name__,
+        )
+
+        for field_name, value in config.__dict__.items():
+            setattr(self, field_name, value)
+
+    def _set_local_persist_manager(
+        self,
+        update_hash: str,
+        data_node_update: None | dict = None,
+    ) -> None:
+        self._local_persist_manager = SimpleTablePersistManager(
+            update_hash=update_hash,
+            class_name=self.__class__.__name__,
+            data_node_update=data_node_update,
+            data_source=self.data_source,
+            simple_table_schema=self.simple_table_schema,
+            configuration=self.config,
+        )
+
+    def dependencies(self) -> dict[str, DataNode]:
+        return {}
 
     def hashes(self) -> tuple[str, str]:
-        update_configuration = self.update_configuration()
-        storage_configuration = self.storage_configuration()
-        return (
-            hashlib.md5(json.dumps(update_configuration, sort_keys=True).encode()).hexdigest(),
-            hashlib.md5(json.dumps(storage_configuration, sort_keys=True).encode()).hexdigest(),
-        )
+        return self.update_hash, self.storage_hash
 
-    @classmethod
-    def _field_has_index_marker(cls, field_info: Any) -> bool:
-        return any(
-            isinstance(item, Index)
-            for item in tuple(getattr(field_info, "metadata", ()) or ())
-        )
-
-    def get_index_field_names(self) -> list[str]:
-        return [
-            field_name
-            for field_name, field_info in self.simple_table_schema.model_fields.items()
-            if self._field_has_index_marker(field_info)
-        ]
-
-    def persist_records(self, records: list[SimpleTable]) -> Any:
-        return self.persist_manager.insert_records(records)
+    def get_column_metadata(self) -> list[ms_client.ColumnMetaData] | None:
+        columns: list[ms_client.ColumnMetaData] = []
+        for field_spec in self.simple_table_schema.field_specs():
+            dtype = _ANNOTATION_DTYPE_MAP.get(field_spec.annotation, "string")
+            label = field_spec.name.replace("_", " ").title()
+            columns.append(
+                ms_client.ColumnMetaData(
+                    column_name=field_spec.name,
+                    dtype=dtype,
+                    label=label,
+                    description=label,
+                )
+            )
+        return columns
 
     def insert_records(
         self, records: list[SimpleTable | dict[str, Any]]
@@ -196,7 +180,7 @@ class SimpleTableUpdater(BaseNode):
             record if isinstance(record, table_model) else table_model.model_validate(record)
             for record in records
         ]
-        self.persist_records(validated)
+        self.local_persist_manager.insert_records(validated)
         return validated
 
     def upsert_records(
@@ -207,7 +191,8 @@ class SimpleTableUpdater(BaseNode):
             record if isinstance(record, table_model) else table_model.model_validate(record)
             for record in records
         ]
-        return self.persist_manager.upsert_records(validated)
+        self.local_persist_manager.upsert_records(validated)
+        return validated
 
     def delete_record(
         self,
@@ -215,4 +200,4 @@ class SimpleTableUpdater(BaseNode):
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
-        self.persist_manager.delete(record_or_id, timeout=timeout)
+        self.local_persist_manager.delete(record_or_id, timeout=timeout)

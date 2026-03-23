@@ -1,9 +1,8 @@
 from .models import ForeignKey, Index, Ops, SimpleTable
 from .persist_managers import SimpleTablePersistManager
-from .table_nodes import BaseNode, SimpleTableUpdater, SimpleTableUpdaterConfiguration
+from .table_nodes import SimpleTableUpdater, SimpleTableUpdaterConfiguration
 
 __all__ = [
-    "BaseNode",
     "ForeignKey",
     "Index",
     "Ops",

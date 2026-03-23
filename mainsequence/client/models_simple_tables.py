@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import requests
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from mainsequence import logger
 
@@ -21,77 +21,108 @@ from .base import BaseObjectOrm, BasePydanticModel
 from .exceptions import raise_for_response
 from .models_tdag import (
     POD_PROJECT,
+    BaseUpdateDetails,
     DynamicTableDataSource,
+    HistoricalUpdateRecord,
     Scheduler,
     SourceTableConfiguration,
+    SourceTableConfigurationBase,
     _executor,
     get_chunk_stats,
     request_to_datetime,
 )
-from .utils import API_ENDPOINT, loaders, make_request, serialize_to_json, session
+from .utils import make_request, serialize_to_json
 
 if TYPE_CHECKING:
     from mainsequence.tdag.simple_tables.models import SimpleTable
 
 
-class SimpleTableClientMixin:
-    ROOT_URL: ClassVar[str] = API_ENDPOINT
-    LOADERS: ClassVar[Any] = loaders
-    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables"
-    UPSERT_ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update"
+class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/simple_table_storage"
+    model_config = ConfigDict(populate_by_name=True)
+    RECORDS_ENDPOINT: ClassVar[str] = "ts_manager/simple_tables"
+    RECORDS_UPSERT_ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update"
+
+    id: int | None = Field(None, description="Primary key, auto-incremented ID")
+    storage_hash: str | None = Field(
+        None,
+        max_length=63,
+        description="Stable physical hash identifier for the simple table storage.",
+    )
+    creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
+    created_by_user: int | None = Field(None, description="Foreign key reference to User")
+    organization_owner: int | None = Field(None, description="Foreign key reference to Organization")
+    open_for_everyone: bool = Field(
+        default=False, description="Whether the table is open for everyone"
+    )
+    data_source_open_for_everyone: bool = Field(
+        default=False, description="Whether the data source is open for everyone"
+    )
+    build_configuration: dict[str, Any] | None = Field(
+        None, description="Storage/build configuration in JSON format"
+    )
+    build_configuration_json_schema: dict[str, Any] | None = Field(
+        None, description="JSON schema describing the build configuration"
+    )
+    time_serie_source_code_git_hash: str | None = Field(
+        None, max_length=255, description="Git hash of the source code used by the updater"
+    )
+    time_serie_source_code: str | None = Field(
+        None, description="Source code path or source code payload for the updater"
+    )
+    protect_from_deletion: bool = Field(
+        default=False, description="Flag to protect the record from deletion"
+    )
+    data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
+    source_class_name: str | None = None
+    simple_table_schema: dict[str, Any] | None = Field(
+        None,
+        alias="schema",
+        description="Canonical simple-table schema",
+    )
+    schema_fingerprint: str | None = Field(
+        None, description="Stable schema fingerprint derived from the canonical schema"
+    )
+    physical_name: str | None = Field(
+        None, description="Backend physical table name derived from the schema fingerprint"
+    )
+    identifier: str | None = None
+    description: str | None = None
 
     @classmethod
-    def build_session(cls):
-        return session
+    def get_or_create(cls, **kwargs):
+        kwargs = serialize_to_json(kwargs)
+        url = cls.get_object_url() + "/get_or_create/"
+        payload = {"json": kwargs}
+        s = cls.build_session()
+        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
+        if r.status_code not in [201, 200]:
+            raise_for_response(r, payload=payload)
+
+        return cls(**r.json())
 
     @classmethod
-    def get_object_url(cls) -> str:
-        return f"{cls.ROOT_URL.rstrip('/')}/{cls.ENDPOINT.strip('/')}"
+    def get_records_url(cls) -> str:
+        return f"{cls.ROOT_URL.rstrip('/')}/{cls.RECORDS_ENDPOINT.strip('/')}"
 
     @classmethod
-    def get_upsert_url(cls) -> str:
-        return f"{cls.ROOT_URL.rstrip('/')}/{cls.UPSERT_ENDPOINT.strip('/')}"
-
-    @classmethod
-    def _serialize_record_payload(
-        cls,
-        record: SimpleTable | dict[str, Any],
-    ) -> dict[str, Any]:
-        if isinstance(record, cls):
-            return serialize_to_json(record.model_dump(mode="python"))
-        if isinstance(record, BaseModel):
-            return serialize_to_json(record.model_dump(mode="python"))
-        if isinstance(record, dict):
-            return serialize_to_json(record)
-        raise TypeError(f"Unsupported record type for {cls.__name__}: {type(record)!r}")
-
-    @classmethod
-    def _validate_record_response_payload(cls, payload: Any) -> list[SimpleTable]:
-        if isinstance(payload, dict):
-            if isinstance(payload.get("results"), list):
-                payload = payload["results"]
-            elif isinstance(payload.get("records"), list):
-                payload = payload["records"]
-            else:
-                payload = [payload]
-
-        if not isinstance(payload, list):
-            raise TypeError(
-                f"Expected list or dict response for {cls.__name__} records, got {type(payload)!r}."
-            )
-
-        return [cls.model_validate(item) for item in payload]
+    def get_records_upsert_url(cls) -> str:
+        return f"{cls.ROOT_URL.rstrip('/')}/{cls.RECORDS_UPSERT_ENDPOINT.strip('/')}"
 
     @classmethod
     def insert_records(
         cls,
+        record_model: type[SimpleTable],
         records: Sequence[SimpleTable | dict[str, Any]],
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[SimpleTable]:
-        url = f"{cls.get_object_url().rstrip('/')}/"
+        url = f"{cls.get_records_url().rstrip('/')}/"
         payload = {
-            "json": [cls._serialize_record_payload(record) for record in records],
+            "json": [
+                serialize_to_json(record_model.serialize_record_payload(record))
+                for record in records
+            ],
         }
         response = make_request(
             s=cls.build_session(),
@@ -103,18 +134,22 @@ class SimpleTableClientMixin:
         )
         if response.status_code not in (200, 201):
             raise_for_response(response, payload=payload)
-        return cls._validate_record_response_payload(response.json())
+        return record_model.validate_record_response_payload(response.json())
 
     @classmethod
     def upsert_records(
         cls,
+        record_model: type[SimpleTable],
         records: Sequence[SimpleTable | dict[str, Any]],
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[SimpleTable]:
-        url = f"{cls.get_upsert_url().rstrip('/')}/"
+        url = f"{cls.get_records_upsert_url().rstrip('/')}/"
         payload = {
-            "json": [cls._serialize_record_payload(record) for record in records],
+            "json": [
+                serialize_to_json(record_model.serialize_record_payload(record))
+                for record in records
+            ],
         }
         response = make_request(
             s=cls.build_session(),
@@ -126,7 +161,7 @@ class SimpleTableClientMixin:
         )
         if response.status_code not in (200, 201):
             raise_for_response(response, payload=payload)
-        return cls._validate_record_response_payload(response.json())
+        return record_model.validate_record_response_payload(response.json())
 
     @classmethod
     def delete_by_id(
@@ -135,7 +170,7 @@ class SimpleTableClientMixin:
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
-        url = f"{cls.get_object_url().rstrip('/')}/{record_id}/"
+        url = f"{cls.get_records_url().rstrip('/')}/{record_id}/"
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -147,19 +182,27 @@ class SimpleTableClientMixin:
         if response.status_code != 204:
             raise_for_response(response)
 
-    def delete(
-        self,
+    @classmethod
+    def delete_record(
+        cls,
+        record_or_id: SimpleTable | Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
-        record_id = getattr(self, "id", None)
-        if record_id is None:
-            raise ValueError(
-                f"{type(self).__name__} must have an id before calling delete()."
-            )
-        type(self).delete_by_id(record_id, timeout=timeout)
+        if isinstance(record_or_id, BaseModel):
+            record_id = getattr(record_or_id, "id", None)
+            if record_id is None:
+                raise ValueError(
+                    f"{type(record_or_id).__name__} must have an id before calling delete."
+                )
+        else:
+            record_id = record_or_id
+        cls.delete_by_id(record_id, timeout=timeout)
 
+class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel, BaseObjectOrm):
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/source_table_configuration"
 
+    related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
 
 class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_run_configuration"
@@ -170,20 +213,14 @@ class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
     def ROOT_URL(cls):
         return None
 
-class SimpleTableUpdateHistorical(BasePydanticModel, BaseObjectOrm):
+class SimpleTableUpdateRecord(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update_historical"
-    id: int | None = None
-    related_table: int  # Assuming you're using the ID of the related table
-    update_time_start: datetime.datetime
-    update_time_end: datetime.datetime | None = None
-    error_on_update: bool = False
-    trace_id: str | None = Field(default=None, max_length=255)
-    updated_by_user: int | None = None  # Assuming you're using the ID of the user
+
+    related_table: int | SimpleTableStorage
 
 
-    # extra fields for local control
-    must_update: bool | None
-    direct_dependencies_ids: list[int] | None
+SimpleTableUpdateHistorical = SimpleTableUpdateRecord
+
 
 class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update"
@@ -199,7 +236,7 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
-    simple_table: int | SimpleTable = Field(..., description="Simple table")
+    simple_table: int | SimpleTableStorage = Field(..., description="Simple table")
     build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: list[str] | None = Field(default=[], description="List of tags")
@@ -212,10 +249,20 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     @property
     def data_source_id(self):
+        if isinstance(self.simple_table, int):
+            return None
+        if isinstance(self.simple_table.data_source, dict):
+            return self.simple_table.data_source.get("id")
         if isinstance(self.simple_table.data_source, int):
             return self.simple_table.data_source
+        if self.simple_table.data_source is None:
+            return None
         else:
             return self.simple_table.data_source.id
+
+    @property
+    def data_node_storage(self):
+        return self.simple_table
 
     @classmethod
     def get_or_create(cls, **kwargs):
@@ -377,7 +424,7 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
     def get_upstream_nodes(cls, storage_hash, data_source_id, timeout=None):
         s = cls.build_session()
         url = (
-            SimpleTableClientMixin.get_object_url()
+            SimpleTableStorage.get_records_url()
             + f"/{storage_hash}/get_upstream_nodes?data_source_id={data_source_id}"
         )
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
@@ -389,7 +436,7 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def create(cls, timeout=None, *args, **kwargs):
-        url = SimpleTableClientMixin.get_object_url() + "/"
+        url = SimpleTableStorage.get_records_url() + "/"
         payload = {"json": serialize_to_json(kwargs)}
         s = cls.build_session()
         r = make_request(
@@ -740,9 +787,9 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
             time.sleep(time_to_wait)
 
 
-class SimpleTableUpdateDetails(BasePydanticModel, BaseObjectOrm):
+class SimpleTableUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update_details"
-    related_table: int | SimpleTable | None = Field(None, description="Related table")
+    related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
     active_update: bool = Field(default=False, description="Flag to indicate if update is active")
     update_pid: int = Field(default=0, description="Process ID of the update")
     error_on_last_update: bool = Field(
@@ -771,8 +818,12 @@ class SimpleTableUpdateDetails(BasePydanticModel, BaseObjectOrm):
         return parameters
 
 
+
+
+
+
 __all__ = [
-    "SimpleTableClientMixin",
+    "SimpleTableStorage",
     "SimpleTableRunConfiguration",
     "SimpleTableUpdate",
     "SimpleTableUpdateDetails",

@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 import mainsequence.client as ms_client
 
+from ..configuration_models import BaseConfiguration
+
 
 class RecordDefinition(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -77,7 +79,7 @@ class DataNodeMetaData(BaseModel):
     )
 
 
-class DataNodeConfiguration(BaseModel):
+class DataNodeConfiguration(BaseConfiguration):
     """
     Base class for DataNode build configuration.
 
@@ -86,8 +88,6 @@ class DataNodeConfiguration(BaseModel):
     storage hash, or ``json_schema_extra={"runtime_only": True}`` to
     exclude it from both hashes.
     """
-
-    model_config = ConfigDict(extra="forbid")
     offset_start: datetime.datetime | None = Field(
         default=None,
         description=(
@@ -95,14 +95,6 @@ class DataNodeConfiguration(BaseModel):
             "behavior but should not rotate the storage hash."
         ),
         json_schema_extra={"update_only": True},
-    )
-    open_to_public: bool = Field(
-        default=False,
-        description=(
-            "Optional publication flag for exposing the node publicly. This is "
-            "runtime-only operational metadata and does not affect hashes."
-        ),
-        json_schema_extra={"runtime_only": True},
     )
     asset_list: list[ms_client.AssetMixin] | None = Field(
         default=None,

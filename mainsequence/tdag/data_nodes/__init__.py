@@ -1,3 +1,4 @@
+from ..configuration_models import BaseConfiguration
 from .data_nodes import (
     APIDataNode,
     DataNode,

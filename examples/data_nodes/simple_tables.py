@@ -90,6 +90,20 @@ class CustomersUpdater(SimpleTableUpdater):
 class CustomerBalancesUpdater(SimpleTableUpdater):
     SIMPLE_TABLE_SCHEMA = CustomerBalanceRecord
 
+    def __init__(
+        self,
+        configuration: CustomerBalancesUpdaterConfiguration,
+        *,
+        hash_namespace: str | None = None,
+        test_node: bool = False,
+    ):
+        self.customers_updater = CustomersUpdater(configuration=CustomersUpdaterConfiguration())
+        super().__init__(
+            configuration=configuration,
+            hash_namespace=hash_namespace,
+            test_node=test_node,
+        )
+
     @staticmethod
     def build_seed_rows() -> list[dict[str, object]]:
         return [
@@ -110,18 +124,16 @@ class CustomerBalancesUpdater(SimpleTableUpdater):
     def update(self) -> list[CustomerBalanceRecord]:
         return self.upsert_records(self.build_seed_rows())
 
+    def dependencies(self) -> dict[str, SimpleTableUpdater]:
+        return {"customers": self.customers_updater}
+
 
 def build_test_simple_tables() -> None:
     """
     Requires a configured MainSequence backend/auth environment.
     """
 
-    customers_updater = CustomersUpdater(configuration=CustomersUpdaterConfiguration())
-    balances_updater = CustomerBalancesUpdater(
-        configuration=CustomerBalancesUpdaterConfiguration()
-    )
-
-    customers_updater.run()
+    balances_updater = CustomerBalancesUpdater(configuration=CustomerBalancesUpdaterConfiguration())
     inserted_balances = balances_updater.run()
 
     typed_filter = CustomerBalanceRecord.filters.balance_usd.gte(100_000.0)

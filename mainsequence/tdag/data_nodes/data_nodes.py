@@ -37,6 +37,7 @@ from mainsequence.logconf import logger
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
+from ..configuration_models import BaseConfiguration
 from .models import DataNodeConfiguration
 from .namespacing import current_hash_namespace
 from .namespacing import hash_namespace as _hash_namespace_cm
@@ -609,7 +610,7 @@ class DataNode(DataAccessMixin, ABC):
 
     def __init__(
         self,
-        config: DataNodeConfiguration,
+        config: BaseConfiguration,
         *,
         hash_namespace: str | None = None,
         test_node: bool = False,
@@ -625,16 +626,16 @@ class DataNode(DataAccessMixin, ABC):
 
         Parameters
         ----------
-        config : DataNodeConfiguration
+        config : BaseConfiguration
             Canonical node configuration for this node.
         hash_namespace : str | None
             Optional hash isolation namespace.
         test_node : bool
             Convenience flag for the ``"test"`` namespace.
         """
-        if not isinstance(config, DataNodeConfiguration):
+        if not isinstance(config, BaseConfiguration):
             raise TypeError(
-                f"{self.__class__.__name__} expected config to be a DataNodeConfiguration; "
+                f"{self.__class__.__name__} expected config to be a BaseConfiguration; "
                 f"got {type(config).__name__}."
             )
 
@@ -719,9 +720,9 @@ class DataNode(DataAccessMixin, ABC):
                     f"{self.__class__.__name__} must call super().__init__(config=..., "
                     "hash_namespace=..., test_node=...) from its constructor."
                 )
-            if not isinstance(getattr(self, "config", None), DataNodeConfiguration):
+            if not isinstance(getattr(self, "config", None), BaseConfiguration):
                 raise TypeError(
-                    f"{self.__class__.__name__} must pass a DataNodeConfiguration to super().__init__(config=...)."
+                    f"{self.__class__.__name__} must pass a BaseConfiguration to super().__init__(config=...)."
                 )
 
             # 2. Capture all arguments from __init__ methods in the MRO up to DataNode
@@ -815,9 +816,9 @@ class DataNode(DataAccessMixin, ABC):
         for field_name, value in asdict(config).items():
             setattr(self, field_name, value)
 
-    def _get_data_node_configuration(self) -> DataNodeConfiguration | None:
+    def _get_data_node_configuration(self) -> BaseConfiguration | None:
         config = getattr(self, "config", None)
-        return config if isinstance(config, DataNodeConfiguration) else None
+        return config if isinstance(config, BaseConfiguration) else None
 
     @property
     def hash_namespace(self) -> str:
@@ -850,7 +851,8 @@ class DataNode(DataAccessMixin, ABC):
         if self.test_node and hasattr(self, "TEST_OFFSET_START"):
             return self.TEST_OFFSET_START
         config = self._get_data_node_configuration()
-        if config is not None and config.offset_start is not None:
+        offset_start = getattr(config, "offset_start", None) if config is not None else None
+        if offset_start is not None:
             return config.offset_start
         return self.OFFSET_START
 
@@ -1212,10 +1214,10 @@ class DataNode(DataAccessMixin, ABC):
             Table metadata, or ``None`` when not provided.
         """
         config = self._get_data_node_configuration()
-        if config is None or config.node_metadata is None:
+        node_metadata = getattr(config, "node_metadata", None) if config is not None else None
+        if node_metadata is None:
             return None
 
-        node_metadata = config.node_metadata
         return ms_client.TableMetaData(
             identifier=node_metadata.identifier,
             description=node_metadata.description,
@@ -1237,7 +1239,8 @@ class DataNode(DataAccessMixin, ABC):
             A list of ColumnMetaData objects, or None.
         """
         config = self._get_data_node_configuration()
-        if config is None or not config.records:
+        records = getattr(config, "records", None) if config is not None else None
+        if not records:
             return None
 
         return [
@@ -1247,7 +1250,7 @@ class DataNode(DataAccessMixin, ABC):
                 label=record.label or record.column_name,
                 description=record.description or "",
             )
-            for record in config.records
+            for record in records
         ]
 
     def get_asset_list(self) -> list["Asset"] | None:

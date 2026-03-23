@@ -104,12 +104,14 @@ class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
     description: str = Field(..., description="Longer description of the column")
 
 
-class SourceTableConfiguration(BasePydanticModel, BaseObjectOrm):
+class SourceTableConfigurationBase:
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
-    related_table: int | DataNodeStorage
-    time_index_name: str = Field(..., max_length=100, description="Time index name")
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
+
+class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, BaseObjectOrm):
+    related_table: int | DataNodeStorage
+    time_index_name: str = Field(..., max_length=100, description="Time index name")
     last_time_index_value: datetime.datetime | None = Field(
         None, description="Last time index value"
     )
@@ -809,8 +811,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
             time.sleep(time_to_wait)
 
 
-class DataNodeUpdateDetails(BasePydanticModel, BaseObjectOrm):
-    related_table: int | DataNodeUpdate
+class BaseUpdateDetails:
     active_update: bool = Field(default=False, description="Flag to indicate if update is active")
     update_pid: int = Field(default=0, description="Process ID of the update")
     error_on_last_update: bool = Field(
@@ -831,6 +832,11 @@ class DataNodeUpdateDetails(BasePydanticModel, BaseObjectOrm):
     last_updated_by_user: int | None = Field(None, description="Foreign key reference to User")
 
     run_configuration: RunConfiguration | None = None
+
+
+class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
+    related_table: int | DataNodeUpdate
+
 
     @staticmethod
     def _parse_parameters_filter(parameters):
@@ -2456,21 +2462,25 @@ def get_chunk_stats(chunk_df, time_index_name, index_names):
     return chunk_stats, grouped_dates
 
 
-class LocalTimeSeriesHistoricalUpdate(BasePydanticModel, BaseObjectOrm):
+
+class HistoricalUpdateRecord:
     id: int | None = None
-    related_table: int  # Assuming you're using the ID of the related table
     update_time_start: datetime.datetime
     update_time_end: datetime.datetime | None = None
     error_on_update: bool = False
     trace_id: str | None = Field(default=None, max_length=255)
     updated_by_user: int | None = None  # Assuming you're using the ID of the user
-
-    last_time_index_value: datetime.datetime | None = None
-
     # extra fields for local control
     update_statistics: UpdateStatistics | None
     must_update: bool | None
     direct_dependencies_ids: list[int] | None
+
+class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
+
+    related_table: int
+    last_time_index_value: datetime.datetime | None = None
+
+
 
 
 class DataSource(BasePydanticModel, BaseObjectOrm):
