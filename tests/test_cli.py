@@ -286,6 +286,137 @@ def test_list_organization_teams_uses_client_model(cli_mod, monkeypatch):
     assert out == [{"id": 9, "name": "Research"}]
 
 
+def test_list_simple_table_storages_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeStorage:
+        def __init__(self, storage_id, source_class_name):
+            self.id = storage_id
+            self.source_class_name = source_class_name
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "source_class_name": self.source_class_name}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientSimpleTableStorage:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeStorage(41, "OrdersTable")]
+
+        return operation(_ClientSimpleTableStorage)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_simple_table_storages(timeout=5, filters={"id": 41})
+    assert captured == {
+        "module_name": "mainsequence.client.models_simple_tables",
+        "class_name": "SimpleTableStorage",
+        "timeout": 5,
+        "filters": {"id": 41},
+    }
+    assert out == [{"id": 41, "source_class_name": "OrdersTable"}]
+
+
+def test_simple_tables_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_simple_table_storages",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 41,
+                "source_class_name": "OrdersTable",
+                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+                "columns": [{"column_name": "id"}, {"column_name": "symbol"}],
+                "open_for_everyone": False,
+                "creation_date": "2026-03-24T09:00:00Z",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["simple_table", "list"])
+    assert result.exit_code == 0
+    assert "Simple Tables" in result.output
+    assert "OrdersTable" in result.output
+    assert "Default DB" in result.output
+    assert "timescale_db" in result.output
+    assert "Total simple tables: 1" in result.output
+
+
+def test_simple_tables_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_simple_table_storage",
+        lambda storage_id, timeout=None: {
+            "id": storage_id,
+            "source_class_name": "OrdersTable",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "columns": [{"column_name": "id"}, {"column_name": "symbol"}],
+            "foreign_keys": [],
+            "incoming_fks": [],
+            "indexes_meta": [{"name": "orders_symbol_idx"}],
+            "schema": {"name": "orders"},
+            "build_configuration": {"mode": "append"},
+            "open_for_everyone": False,
+            "creation_date": "2026-03-24T09:00:00Z",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["simple_table", "detail", "41"])
+    assert result.exit_code == 0
+    assert "Simple Table" in result.output
+    assert "OrdersTable" in result.output
+    assert "orders_symbol_idx" in result.output
+
+
+def test_simple_tables_delete(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_simple_table_storage",
+        lambda storage_id, timeout=None: {
+            "id": storage_id,
+            "source_class_name": "OrdersTable",
+            "columns": [{"column_name": "id"}],
+            "foreign_keys": [],
+            "incoming_fks": [],
+            "indexes_meta": [],
+            "open_for_everyone": False,
+            "creation_date": "2026-03-24T09:00:00Z",
+        },
+    )
+    monkeypatch.setattr(cli_mod, "_require_delete_verification", lambda **kwargs: None)
+
+    def _delete(storage_id, *, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["timeout"] = timeout
+        return {
+            "id": storage_id,
+            "source_class_name": "OrdersTable",
+            "columns": [{"column_name": "id"}],
+            "foreign_keys": [],
+            "incoming_fks": [],
+            "indexes_meta": [],
+            "open_for_everyone": False,
+            "creation_date": "2026-03-24T09:00:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_simple_table_storage", _delete)
+
+    result = runner.invoke(cli_mod.app, ["simple_table", "delete", "41"])
+    assert result.exit_code == 0
+    assert captured == {"storage_id": 41, "timeout": None}
+    assert "Simple table deleted: id=41" in result.output
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(

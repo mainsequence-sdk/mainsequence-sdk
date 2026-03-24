@@ -37,7 +37,6 @@ class _FakeDataSource:
 
 
 class OrderRow(SimpleTable):
-    id: int
     order_code: Annotated[str, Index(unique=True)] = Field(...)
     created_at: datetime.datetime
 
@@ -270,6 +269,61 @@ def test_simple_table_storage_upsert_records_into_table_targets_sparse_upsert_ur
     assert _decode_chunk_records(captured["payload"]) == [
         {"id": 1, "as_of_date": "2026-03-25"},
         {"id": 2, "balance_usd": 150.0},
+    ]
+
+
+def test_simple_table_rejects_user_declared_id_field():
+    class InvalidRow(SimpleTable):
+        id: int
+        order_code: Annotated[str, Index(unique=True)] = Field(...)
+
+    with pytest.raises(TypeError, match="must not declare an 'id' field"):
+        InvalidRow.schema()
+
+
+def test_simple_table_runtime_id_is_not_serialized_when_missing():
+    row = OrderRow(
+        order_code="ORD-001",
+        created_at=datetime.datetime(2026, 3, 24, tzinfo=datetime.UTC),
+    )
+
+    assert OrderRow.serialize_record_payload(row) == {
+        "order_code": "ORD-001",
+        "created_at": datetime.datetime(2026, 3, 24, tzinfo=datetime.UTC),
+    }
+
+
+def test_simple_table_update_insert_records_drops_none_id(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_make_request(**kwargs):
+        captured["payload"] = kwargs["payload"]
+        return _HttpResponse(204)
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "raise_for_response",
+        lambda response, payload=None: None,
+    )
+
+    client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
+        data_node_update_id=1226,
+        records=[
+            {
+                "id": None,
+                "order_code": "ORD-001",
+                "created_at": datetime.datetime(2026, 3, 24, tzinfo=datetime.UTC),
+            }
+        ],
+        overwrite=False,
+    )
+
+    assert _decode_chunk_records(captured["payload"]) == [
+        {
+            "order_code": "ORD-001",
+            "created_at": "2026-03-24T00:00:00Z",
+        }
     ]
 
 
@@ -865,11 +919,9 @@ def test_simple_table_updater_resolves_foreign_keys_to_storage_ids(monkeypatch):
     captured_storage_calls: list[dict[str, object]] = []
 
     class CustomerRow(SimpleTable):
-        id: int
         customer_code: Annotated[str, Index(unique=True)] = Field(...)
 
     class BalanceRow(SimpleTable):
-        id: int
         customer_id: Annotated[
             int,
             ForeignKey(CustomerRow, on_delete="cascade"),
@@ -930,11 +982,9 @@ def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypat
     captured_storage_calls: list[dict[str, object]] = []
 
     class CountryRow(SimpleTable):
-        id: int
         country_code: Annotated[str, Index(unique=True)] = Field(...)
 
     class CustomerRow(SimpleTable):
-        id: int
         country_id: Annotated[
             int,
             ForeignKey(CountryRow, on_delete="restrict"),
@@ -943,7 +993,6 @@ def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypat
         customer_code: Annotated[str, Index(unique=True)] = Field(...)
 
     class BalanceRow(SimpleTable):
-        id: int
         customer_id: Annotated[
             int,
             ForeignKey(CustomerRow, on_delete="cascade"),
@@ -1018,3 +1067,84 @@ def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypat
     )
     assert balance_fk == {"target": 302, "on_delete": "cascade"}
     assert customer_fk == {"target": 301, "on_delete": "restrict"}
+
+
+def test_bound_simple_table_request_defaults_to_physical_table_name():
+    bound_table = OrderRow.bind("order_storage_hash")
+
+    request = bound_table.request(
+        filter=OrderRow.filters.id.in_([1, 2]),
+        limit=25,
+        offset=5,
+    )
+
+    assert request.storage_hash == "order_storage_hash"
+    assert request.limit == 25
+    assert request.offset == 5
+
+
+def test_simple_table_updater_resolve_table_binds_storage_hash():
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def update(self):
+            return []
+
+    updater = object.__new__(OrderUpdater)
+    updater.simple_table_schema = OrderRow
+    updater._local_persist_manager = SimpleNamespace(
+        data_node_storage=SimpleNamespace(storage_hash="resolved_order_storage")
+    )
+
+    resolved_table = updater.resolve_table()
+
+    assert resolved_table.table is OrderRow
+    assert resolved_table.physical_table_name == "resolved_order_storage"
+
+
+def test_simple_table_updater_execute_filter_uses_resolved_table_request(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_get_data_from_filter(cls, filter_request, *, batch_limit=14000):
+        captured["filter_request"] = filter_request
+        captured["batch_limit"] = batch_limit
+        return [
+            {
+                "id": 1,
+                "order_code": "ORD-001",
+                "created_at": "2026-03-24T00:00:00+00:00",
+            }
+        ]
+
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "get_data_from_filter",
+        classmethod(fake_get_data_from_filter),
+    )
+
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def update(self):
+            return []
+
+    updater = object.__new__(OrderUpdater)
+    updater.simple_table_schema = OrderRow
+    updater._local_persist_manager = SimpleNamespace(
+        data_node_storage=SimpleNamespace(storage_hash="resolved_order_storage")
+    )
+
+    rows = updater.execute_filter(
+        OrderRow.filters.id.in_([1]),
+        limit=25,
+        offset=5,
+    )
+
+    request = captured["filter_request"]
+    assert request.storage_hash == "resolved_order_storage"
+    assert request.limit == 25
+    assert request.offset == 5
+    assert captured["batch_limit"] == 25
+    assert len(rows) == 1
+    assert isinstance(rows[0], OrderRow)
+    assert rows[0].order_code == "ORD-001"

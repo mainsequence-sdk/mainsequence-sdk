@@ -191,11 +191,19 @@ class BasePersistManager:
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
     def set_data_node_update(self, data_node_update: Any) -> None:
+        previous_storage = self._data_node_storage_cached
         self._data_node_update_cached = data_node_update
         try:
-            self._data_node_storage_cached = self._extract_storage_from_update(data_node_update)
+            extracted_storage = self._extract_storage_from_update(data_node_update)
         except Exception:
-            self._data_node_storage_cached = None
+            extracted_storage = None
+
+        if extracted_storage is None:
+            self._data_node_storage_cached = previous_storage
+        elif previous_storage is not None and isinstance(extracted_storage, int):
+            self._data_node_storage_cached = previous_storage
+        else:
+            self._data_node_storage_cached = extracted_storage
 
     @property
     def data_node_update(self) -> Any:

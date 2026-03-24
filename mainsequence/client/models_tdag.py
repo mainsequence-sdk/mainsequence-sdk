@@ -12,7 +12,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -28,7 +28,6 @@ from mainsequence.logconf import logger
 
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
-from .data_filters import *
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .data_sources_interfaces.duckdb import DuckDBInterface
 from .exceptions import raise_for_response
@@ -58,6 +57,9 @@ JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 DUCK_DB = "duck_db"
+
+if TYPE_CHECKING:
+    from mainsequence.tdag.data_nodes.filters import SearchRequest
 
 
 class AlreadyExist(Exception):
@@ -1529,6 +1531,8 @@ class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, Ba
                     pass
 
         # 3) Set index ONLY when join keys are exactly time_index + unique_identifier for every join
+        from mainsequence.tdag.data_nodes.filters import JoinKey
+
         join_keys_ok = True
         if getattr(filter_request, "joins", None):
             for j in filter_request.joins:

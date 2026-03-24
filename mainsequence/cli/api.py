@@ -1958,6 +1958,89 @@ def list_data_node_storages(
         raise ApiError(f"Data node storages fetch failed: {e}")
 
 
+def list_simple_table_storages(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List simple table storages via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `SimpleTableStorage.filter()`
+    """
+    try:
+        storages = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_simple_tables",
+            class_name="SimpleTableStorage",
+            operation=lambda ClientSimpleTableStorage: ClientSimpleTableStorage.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(storage) for storage in storages]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Simple table storages fetch failed: {e}")
+
+
+def get_simple_table_storage(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one simple table storage via SDK client model.
+    """
+    try:
+        storage = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_simple_tables",
+            class_name="SimpleTableStorage",
+            operation=lambda ClientSimpleTableStorage: ClientSimpleTableStorage.get(
+                pk=int(storage_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(storage)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Simple table storage not found: {storage_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Simple table storage fetch failed: {e}")
+
+
+def delete_simple_table_storage(
+    storage_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one simple table storage via SDK client model.
+    """
+    try:
+        def _delete(ClientSimpleTableStorage):
+            storage = ClientSimpleTableStorage.get(pk=int(storage_id), timeout=timeout)
+            payload = _sdk_object_to_dict(storage)
+            storage.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_simple_tables",
+            class_name="SimpleTableStorage",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Simple table storage not found: {storage_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Simple table storage deletion failed: {e}")
+
+
 def list_data_node_org_unique_identifiers(
     *,
     timeout: int | None = None,

@@ -9,7 +9,6 @@ from typing import Any, ClassVar, Literal
 from pydantic import Field
 
 from .base import BaseObjectOrm, BasePydanticModel, PermissionManagedObjectMixin
-from .data_filters import *
 from .exceptions import ApiError, raise_for_response
 from .utils import (
     API_ENDPOINT,

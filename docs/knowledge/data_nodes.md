@@ -631,13 +631,13 @@ Use this approach when building:
 - notebook analysis with ad-hoc slices,
 - joins between dynamic tables (for example prices + fundamentals).
 
-The main entry point is `mainsequence.client.data_filters.SearchRequest`, which you submit through `DataNodeStorage.get_data_from_filter(...)`.
+The main entry point is `mainsequence.tdag.data_nodes.filters.SearchRequest`, which you submit through `DataNodeStorage.get_data_from_filter(...)`.
 
 ```python
 import datetime as dt
 
 import mainsequence.client as msc
-from mainsequence.client.data_filters import F, SearchRequest, and_
+from mainsequence.tdag.data_nodes.filters import F, SearchRequest, and_
 
 request = SearchRequest(
     node_unique_identifier="simulated_prices_tutorial",

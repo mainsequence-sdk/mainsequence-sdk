@@ -12,9 +12,9 @@ preserving the existing import surface from `mainsequence.tdag.simple_tables`.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from .filters import (
     Condition,
@@ -23,7 +23,6 @@ from .filters import (
     FilterExpr,
     Group,
     JoinHandle,
-    JoinKey,
     JoinSpec,
     JoinType,
     Logic,
@@ -49,19 +48,30 @@ class SimpleTable(SimpleTableSchemaMixin, SimpleTableQueryMixin, BaseModel):
     """Base class for user-facing logical table declarations."""
 
     model_config = ConfigDict(extra="forbid", ignored_types=(classproperty,))
+    physical_table_name: ClassVar[str | None] = None
+    id: int | None = Field(
+        default=None,
+        description="Backend-managed row identifier. Do not declare this field in subclasses.",
+    )
 
     @classmethod
     def serialize_record_payload(
         cls,
         record: SimpleTable | dict[str, Any] | BaseModel,
     ) -> dict[str, Any]:
+        payload: dict[str, Any]
         if isinstance(record, cls):
-            return record.model_dump(mode="python")
-        if isinstance(record, BaseModel):
-            return record.model_dump(mode="python")
-        if isinstance(record, dict):
-            return record
-        raise TypeError(f"Unsupported record type for {cls.__name__}: {type(record)!r}")
+            payload = record.model_dump(mode="python")
+        elif isinstance(record, BaseModel):
+            payload = record.model_dump(mode="python")
+        elif isinstance(record, dict):
+            payload = dict(record)
+        else:
+            raise TypeError(f"Unsupported record type for {cls.__name__}: {type(record)!r}")
+
+        if payload.get("id") is None:
+            payload.pop("id", None)
+        return payload
 
     @classmethod
     def validate_record_response_payload(cls, payload: Any) -> list[SimpleTable]:
@@ -90,7 +100,6 @@ __all__ = [
     "Group",
     "Index",
     "JoinHandle",
-    "JoinKey",
     "JoinSpec",
     "JoinType",
     "Logic",

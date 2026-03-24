@@ -25,12 +25,10 @@ class _FakeDataSource:
 
 
 class OrderRow(SimpleTable):
-    id: int
     order_code: Annotated[str, Index(unique=True)] = Field(...)
 
 
 class OrderRowWithDesk(SimpleTable):
-    id: int
     order_code: Annotated[str, Index(unique=True)] = Field(...)
     desk: str
 

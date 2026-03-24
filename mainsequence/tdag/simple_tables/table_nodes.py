@@ -19,7 +19,7 @@ from ..data_nodes.persist_managers import (
     get_data_node_source_code_git_hash,
 )
 from ..pydantic_metadata import serialize_pydantic_model, strip_pydantic_hash_exclusions
-from .models import SimpleTable
+from .models import JoinHandle, JoinSpec, SimpleTable, TableRef
 from .persist_managers import SimpleTablePersistManager
 
 
@@ -238,7 +238,7 @@ class SimpleTableUpdater(DataNode):
         schema_cls: type[SimpleTable],
         data_source: Any,
         resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
-        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage],
+        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage],
         resolution_stack: set[type[SimpleTable]],
     ) -> dict[str, Any]:
         cached_schema = resolved_schema_cache.get(schema_cls)
@@ -440,13 +440,27 @@ class SimpleTableUpdater(DataNode):
     ) -> None:
         self.delete_record(record_or_id, timeout=timeout)
 
+    def resolve_table(self) -> TableRef:
+        return self.simple_table_schema.bind(
+            physical_table_name=self.storage_hash,
+        )
 
-    def execute_filter(self,
-                        filter_expr=None,
-                        *,
-                        limit: int = 50,
-                        offset: int = 0,)-> list[SimpleTable]:
-
-        #build filter expression
-
-        msc.SimpleTableStorage.get_data_from_filter(filter_expr, limit, offset)
+    def execute_filter(
+        self,
+        filter_expr=None,
+        *,
+        joins: Sequence[JoinSpec | JoinHandle] | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[SimpleTable]:
+        request = self.resolve_table().request(
+            joins=joins,
+            filter=filter_expr,
+            limit=limit,
+            offset=offset,
+        )
+        records = msc.SimpleTableStorage.get_data_from_filter(
+            request,
+            batch_limit=limit,
+        )
+        return self.simple_table_schema.validate_record_response_payload(records)

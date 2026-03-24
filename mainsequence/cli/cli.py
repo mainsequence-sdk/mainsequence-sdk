@@ -79,6 +79,7 @@ from .api import (
     delete_project_image,
     delete_resource_release,
     delete_secret,
+    delete_simple_table_storage,
     fetch_project_env_text,
     get_constant,
     get_current_user_profile,
@@ -93,6 +94,7 @@ from .api import (
     get_projects,
     get_resource_release,
     get_secret,
+    get_simple_table_storage,
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
@@ -116,6 +118,7 @@ from .api import (
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
+    list_simple_table_storages,
     list_team_users_can_edit,
     list_team_users_can_view,
     prime_sync_project_after_commit_sdk,
@@ -185,6 +188,7 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
+simple_table = typer.Typer(help="Simple table commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 markets = typer.Typer(help="Markets commands")
@@ -203,6 +207,10 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(constants, name="constants")
 app.add_typer(secrets, name="secrets")
+app.add_typer(simple_table, name="simple_table")
+app.add_typer(simple_table, name="simple-table", hidden=True)
+app.add_typer(simple_table, name="simple_tables", hidden=True)
+app.add_typer(simple_table, name="simple-tables", hidden=True)
 app.add_typer(organization, name="organization")
 app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
@@ -236,6 +244,7 @@ PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource
 DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
 CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
+SIMPLE_TABLE_STORAGE_MODEL_REF = "mainsequence.client.models_simple_tables.SimpleTableStorage"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
 ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
@@ -2916,6 +2925,129 @@ def _secrets_delete_impl(
     print_kv("Deleted Secret", _format_secret_preview(deleted))
 
 
+def _format_simple_table_storage_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
+    columns = storage.get("columns")
+    foreign_keys = storage.get("foreign_keys")
+    incoming_fks = storage.get("incoming_fks")
+    indexes_meta = storage.get("indexes_meta")
+    return [
+        ("ID", str(storage.get("id") or "-")),
+        ("Source Class", str(storage.get("source_class_name") or "-")),
+        ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
+        ("Columns", str(len(columns)) if isinstance(columns, list) else "-"),
+        ("Foreign Keys", str(len(foreign_keys)) if isinstance(foreign_keys, list) else "-"),
+        ("Incoming FKs", str(len(incoming_fks)) if isinstance(incoming_fks, list) else "-"),
+        ("Indexes", str(len(indexes_meta)) if isinstance(indexes_meta, list) else "-"),
+        ("Open For Everyone", str(storage.get("open_for_everyone"))),
+        ("Creation Date", str(storage.get("creation_date") or "-")),
+    ]
+
+
+def _simple_tables_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=SIMPLE_TABLE_STORAGE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Simple Tables",
+    )
+    _require_login()
+
+    try:
+        storages = list_simple_table_storages(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Simple tables fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for storage in storages:
+        columns = storage.get("columns")
+        rows.append(
+            [
+                str(storage.get("id") or "-"),
+                str(storage.get("source_class_name") or "-"),
+                _format_data_node_storage_data_source(storage.get("data_source")),
+                str(len(columns)) if isinstance(columns, list) else "-",
+                str(storage.get("open_for_everyone")),
+                str(storage.get("creation_date") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Simple Tables",
+            ["ID", "Source Class", "Data Source", "Columns", "Open", "Creation Date"],
+            rows,
+        )
+    else:
+        info("No simple tables.")
+    info(f"Total simple tables: {len(storages)}")
+
+
+def _simple_tables_detail_impl(
+    *,
+    storage_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        storage = get_simple_table_storage(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Simple table fetch failed: {e}")
+        raise typer.Exit(1)
+
+    print_kv("Simple Table", _format_simple_table_storage_preview(storage))
+    print_kv(
+        "Simple Table Details",
+        [
+            ("Schema", _format_json_value(storage.get("schema") or storage.get("simple_table_schema"))),
+            ("Build Configuration", _format_json_value(storage.get("build_configuration"))),
+            ("Source Code Git Hash", str(storage.get("time_serie_source_code_git_hash") or "-")),
+            ("Organization Owner", str(storage.get("organization_owner") or "-")),
+            ("Created By User", str(storage.get("created_by_user") or "-")),
+            ("Columns Payload", _format_json_value(storage.get("columns"))),
+            ("Foreign Keys Payload", _format_json_value(storage.get("foreign_keys"))),
+            ("Incoming FKs Payload", _format_json_value(storage.get("incoming_fks"))),
+            ("Indexes Payload", _format_json_value(storage.get("indexes_meta"))),
+        ],
+    )
+
+
+def _simple_tables_delete_impl(
+    *,
+    storage_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        storage = get_simple_table_storage(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Simple table fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(storage.get("source_class_name") or storage.get("id") or storage_id)
+    _require_delete_verification(
+        preview_title="Simple Table Delete Preview",
+        preview_items=_format_simple_table_storage_preview(storage),
+        verification_value=verification_value,
+        verification_label="source class name" if storage.get("source_class_name") else "simple table id",
+    )
+
+    try:
+        deleted = delete_simple_table_storage(storage_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Simple table deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Simple table deleted: id={storage_id}")
+    print_kv("Deleted Simple Table", _format_simple_table_storage_preview(deleted))
+
+
 def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -3084,6 +3216,44 @@ def _print_data_node_storage_search_section(
         info(f'{title}: {len(storages)} match(es) for "{q}"')
 
     return len(storages)
+
+
+@simple_table.command("list")
+def simple_tables_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List simple table storages visible to the authenticated user.
+    """
+    _simple_tables_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@simple_table.command("detail")
+def simple_tables_detail_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one simple table storage in detail.
+    """
+    _simple_tables_detail_impl(storage_id=storage_id, timeout=timeout)
+
+
+@simple_table.command("delete")
+def simple_tables_delete_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one simple table storage.
+    """
+    _simple_tables_delete_impl(storage_id=storage_id, timeout=timeout)
 
 
 @constants.command("list")

@@ -744,27 +744,80 @@ class DataNode(DataAccessMixin, ABC):
                 # Fallback if DataNode is not in the MRO.
                 classes_to_inspect = [self.__class__]
 
+            def _bind_supported_arguments(sig: inspect.Signature) -> inspect.BoundArguments:
+                remaining_args = list(args)
+                positional_args: list[Any] = []
+                consumed_positionally: set[str] = set()
+                accepts_var_keyword = False
+
+                for param in sig.parameters.values():
+                    if param.name == "self":
+                        continue
+
+                    if param.kind in (
+                        inspect.Parameter.POSITIONAL_ONLY,
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    ):
+                        if remaining_args:
+                            positional_args.append(remaining_args.pop(0))
+                            consumed_positionally.add(param.name)
+                    elif param.kind == inspect.Parameter.VAR_POSITIONAL:
+                        positional_args.extend(remaining_args)
+                        remaining_args.clear()
+                    elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                        accepts_var_keyword = True
+
+                filtered_kwargs: dict[str, Any] = {}
+                extra_kwargs: dict[str, Any] = {}
+
+                for key, value in kwargs.items():
+                    param = sig.parameters.get(key)
+
+                    if param is None:
+                        if accepts_var_keyword:
+                            extra_kwargs[key] = value
+                        continue
+
+                    if key in consumed_positionally:
+                        continue
+
+                    if param.kind in (
+                        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                        inspect.Parameter.KEYWORD_ONLY,
+                    ):
+                        filtered_kwargs[key] = value
+                    elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                        extra_kwargs[key] = value
+
+                if accepts_var_keyword:
+                    filtered_kwargs.update(extra_kwargs)
+
+                return sig.bind_partial(self, *positional_args, **filtered_kwargs)
+
             for cls_to_inspect in classes_to_inspect:
                 # Only inspect the __init__ defined on the class itself.
                 if "__init__" in cls_to_inspect.__dict__:
                     sig = inspect.signature(cls_to_inspect.__init__)
                     try:
-                        # Use bind_partial as the full set of args might not match this specific signature.
-                        bound_args = sig.bind_partial(self, *args, **kwargs)
+                        bound_args = _bind_supported_arguments(sig)
                         bound_args.apply_defaults()
 
-                        current_args = bound_args.arguments
+                        current_args = dict(bound_args.arguments)
                         current_args.pop("self", None)
 
-                        # If the signature has **kwargs, it collects extraneous arguments. Unpack them.
-                        if "kwargs" in current_args:
-                            final_kwargs.update(current_args.pop("kwargs"))
+                        for param in sig.parameters.values():
+                            if param.kind == inspect.Parameter.VAR_POSITIONAL:
+                                current_args.pop(param.name, None)
+                            elif param.kind == inspect.Parameter.VAR_KEYWORD:
+                                final_kwargs.update(current_args.pop(param.name, {}))
 
                         # Update the final arguments. Overwrites parent args with child args.
                         final_kwargs.update(current_args)
-                    except TypeError:
+                    except TypeError as exc:
                         logger.warning(
-                            f"Could not bind arguments for {cls_to_inspect.__name__}.__init__; skipping for config."
+                            f"Could not bind filtered arguments for "
+                            f"{cls_to_inspect.__name__}.__init__; skipping for config. "
+                            f"Error: {exc}"
                         )
                         continue
 

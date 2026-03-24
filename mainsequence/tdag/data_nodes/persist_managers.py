@@ -5,6 +5,7 @@ from concurrent.futures import Future
 
 import pandas as pd
 
+import mainsequence.client as msc
 from mainsequence.client import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.client import DataNodeStorage, DataNodeUpdate, DynamicTableDataSource
 from mainsequence.client.models_tdag import DataNodeUpdateDetails
@@ -56,7 +57,7 @@ class APIPersistManager:
         finally:
             future_registry.remove_future(self._data_node_storage_future)
 
-    def get_last_observation(self, asset_list: list[Asset] | None):
+    def get_last_observation(self, asset_list: list[msc.Asset] | None):
         unique_identifier_list = []
         if asset_list is not None:
             unique_identifier_list = [a.unique_identifier for a in asset_list]

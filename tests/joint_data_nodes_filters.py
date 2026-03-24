@@ -4,7 +4,8 @@ import re
 import pandas as pd
 import pandas.testing as pdt
 
-from mainsequence.client.data_filters import (
+from mainsequence.client.models_tdag import DataNodeStorage
+from mainsequence.tdag.data_nodes.filters import (
     F,
     JoinKey,
     JoinSpec,
@@ -12,7 +13,6 @@ from mainsequence.client.data_filters import (
     SearchRequest,
     and_,
 )  # tests/test_full_outer_join_filters.py
-from mainsequence.client.models_tdag import DataNodeStorage
 
 UTC = getattr(dt, "UTC", dt.UTC)
 

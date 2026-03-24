@@ -37,6 +37,7 @@ from .models_tdag import (
 from .utils import make_request, serialize_to_json
 
 if TYPE_CHECKING:
+    from mainsequence.tdag.filters import BaseSearchRequest
     from mainsequence.tdag.simple_tables.models import SimpleTable
 
 
@@ -125,9 +126,17 @@ def _json_default(value: Any) -> Any:
 
 
 def _serialize_records_for_upload(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized_records = [
+        {
+            key: value
+            for key, value in record.items()
+            if not (key == "id" and value is None)
+        }
+        for record in records
+    ]
     return json.loads(
         json.dumps(
-            serialize_to_json({"records": records})["records"],
+            serialize_to_json({"records": sanitized_records})["records"],
             default=_json_default,
         )
     )
@@ -485,7 +494,7 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
             return
 
         s = cls.build_session()
-        url = SimpleTableUpdate.get_object_url() + f"/{data_node_update_id}/delete_records_from_table/"
+        url = cls.get_object_url()  + f"/{data_node_update_id}/delete_records_from_table/"
         payload = {"json": {"records_ids": records_ids}}
 
         response = make_request(
@@ -501,11 +510,55 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_data_from_filter(
-            cls,
-            filter_expression,
-            *,
-            batch_limit: int = 14000, ) ->list:
-        pass
+        cls,
+        filter_request: BaseSearchRequest,
+        *,
+        batch_limit: int = 14000,
+    ) -> list[dict[str, Any]]:
+        url = cls.get_object_url() + "/get-data-from-filter/"
+        s = cls.build_session()
+
+        offset = int(filter_request.offset or 0)
+        all_results: list[dict[str, Any]] = []
+
+        while True:
+            req = filter_request.model_copy(deep=True)
+            req.limit = int(batch_limit)
+            req.offset = int(offset)
+
+            payload_json = req.model_dump(mode="json", exclude_none=True)
+            payload = {"json": payload_json}
+
+            r = make_request(
+                s=s,
+                loaders=cls.LOADERS,
+                payload=payload,
+                r_type="POST",
+                url=url,
+            )
+
+            if r.status_code != 200:
+                err = r.json().get("error") or {}
+                msg=f"[{err.get('kind')}:{err.get('code')}] {err.get('message')}"
+                logger.exception(msg)
+                raise RuntimeError(
+                    msg
+                )
+
+            response_data = r.json() or {}
+            if isinstance(response_data, list):
+                all_results.extend(response_data)
+                break
+
+            chunk = response_data.get("results", []) or []
+            all_results.extend(chunk)
+
+            next_offset = response_data.get("next_offset")
+            if not next_offset:
+                break
+            offset = int(next_offset)
+
+        return all_results
 
 class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/source_table_configuration"

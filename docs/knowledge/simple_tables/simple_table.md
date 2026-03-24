@@ -1,46 +1,39 @@
 # What Is a `SimpleTable`?
 
-`SimpleTable` is the table model you use when your data is **not naturally a time series**.
+`SimpleTable` is the schema model you use when your data is not naturally a time series.
 
-That is the main idea.
-
-If your data looks like:
+Use it for tables such as:
 
 - customers
-- accounts
-- products
-- reference lists
+- portfolios
 - mappings
-- balances where time is just one field among others
+- reference lists
+- balance snapshots where time is just another column
 
-then `SimpleTable` is usually the right fit.
+If your data is fundamentally built around `time_index` and `unique_identifier`, you usually want a `DataNode` table instead.
 
-If your data is fundamentally built around:
+## The Core Idea
 
-- `time_index`
-- `unique_identifier`
-- normalized time-series storage
+A `SimpleTable` defines one logical row.
 
-then you are usually in `DataNode` territory instead.
+That definition becomes:
 
-## The Concept
+- the Python row model you instantiate in code
+- the schema sent to the backend
+- the typed surface used for filtering
 
-A `SimpleTable` is a **schema declaration**.
-
-It defines:
-
-- what columns exist
-- what their Python types are
-- which fields are indexed
-- which fields are filterable
-- which fields participate in ordering
-- which fields point to another `SimpleTable`
-
-Here is a small example:
+Example:
 
 ```python
+import datetime
+from typing import Annotated
+
+from pydantic import Field
+
+from mainsequence.tdag.simple_tables import ForeignKey, Index, Ops, SimpleTable
+
+
 class CustomerRecord(SimpleTable):
-    id: int
     customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(
         ...,
         title="Customer Code",
@@ -56,106 +49,101 @@ class CustomerRecord(SimpleTable):
         title="Region",
         description="Commercial region for the customer.",
     )
+
+
+class CustomerBalanceRecord(SimpleTable):
+    customer_id: Annotated[
+        int,
+        ForeignKey(CustomerRecord, on_delete="cascade"),
+        Index(),
+        Ops(filter=True),
+    ] = Field(
+        ...,
+        title="Customer Id",
+        description="Foreign key to the customer table.",
+    )
+    as_of_date: Annotated[datetime.date, Ops(filter=True, order=True)] = Field(
+        ...,
+        title="As Of Date",
+        description="Balance snapshot date.",
+    )
+    balance_usd: Annotated[float, Ops(filter=True, order=True)] = Field(
+        ...,
+        title="Balance USD",
+        description="Customer balance in USD.",
+    )
 ```
 
-This class is doing two jobs at once:
+## Important: Do Not Declare `id`
 
-1. it defines the shape of one row
-2. it defines the schema of the backend table
+!!! important
+    `SimpleTable` rows always have a backend-managed `id`, but users must not declare that field in subclasses.
 
-## Why `SimpleTable` Exists
+    Why:
 
-Time-series storage is optimized around a very specific model:
+    - the backend assigns the row id
+    - the row id is not part of schema hashing
+    - allowing users to declare it would create collisions and inconsistent schemas
 
-- one time axis
-- one identity axis
-- append or overwrite patterns that follow that model
+Correct:
 
-But many useful tables do not fit that shape.
+```python
+class CustomerRecord(SimpleTable):
+    customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(...)
+```
 
-Examples:
-
-- one row per customer
-- one row per legal entity
-- one row per portfolio
-- one row per account relationship
-- one row per snapshot record keyed by a business id
-
-For these cases, `SimpleTable` gives you a lighter model:
-
-- plain columns
-- primary key
-- optional foreign keys
-- optional indexes
-- filtering and querying support
-- row-oriented insert / upsert / delete flows
-
-## The Required `id` Field
-
-In current usage, a `SimpleTable` normally has an `id` field:
+Wrong:
 
 ```python
 class CustomerRecord(SimpleTable):
     id: int
+    customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(...)
 ```
 
-This acts as the primary key in the schema layer.
+The runtime behavior is:
 
-You usually do not need to annotate `id` with extra metadata for the common case.
+- inserts do not send an `id`
+- reads return rows with `id`
+- later updates and deletes can use that returned `id`
 
-The system already treats it specially:
-
-- it is the primary key
-- it is filterable
-- it is orderable
-- it is not meant to be updated like a normal mutable field
+So `id` is a system field available at runtime, not part of the user-authored schema DSL.
 
 ## Why `Annotated[...]` Is Used
 
-Python’s `Annotated[...]` lets you attach schema metadata to a type.
+`Annotated[...]` keeps the field type and the schema/runtime metadata together.
 
-Example:
-
-```python
-customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)]
-```
-
-The base type is still:
-
-```python
-str
-```
-
-But now it also carries extra declarations:
-
-- `Index(unique=True)`
-- `Ops(filter=True, order=True)`
-
-This is useful because it keeps the field definition compact and readable:
-
-- the type says what kind of value the field holds
-- the annotations say how the system should treat that field
-
-## Reading `Annotated[...]` in Plain English
-
-Take this field:
+This:
 
 ```python
 customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)]
 ```
 
-You can read it like this:
+means:
 
-- the value is a string
-- it should have a unique index in the backend
+- the value is a `str`
+- it has a unique index
 - it can be used in filters
 - it can be used in ordering
 
-That is the pattern to keep in mind.
+That is the main pattern to remember.
 
-## `Field(...)` Is Still Important
+## `Field(...)` vs `Annotated[...]`
 
-You will usually combine `Annotated[...]` with `pydantic.Field(...)`:
+These two pieces do different jobs.
+
+`Annotated[...]` carries schema/runtime behavior:
+
+- `Index(...)`
+- `ForeignKey(...)`
+- `Ops(...)`
+
+`Field(...)` carries validation and documentation metadata:
+
+- required vs optional
+- title
+- description
+
+Example:
 
 ```python
 customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(
@@ -165,91 +153,33 @@ customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] 
 )
 ```
 
-The two parts do different jobs:
-
-- `Annotated[...]` carries schema/runtime metadata
-- `Field(...)` carries validation/documentation metadata
-
-Typical `Field(...)` usage:
-
-- `...` means the field is required
-- `title=...` gives a human-readable label
-- `description=...` documents the field
-
 ## Indexes
 
-Indexes are declared with `Index(...)`.
+Declare an index with `Index(...)`.
 
-### Plain index
+Plain index:
 
 ```python
 region: Annotated[str, Index(), Ops(filter=True)] = Field(...)
 ```
 
-This means:
-
-- create a backend index for the column
-- it is useful for filtering or lookup workloads
-- uniqueness is **not** enforced
-
-### Unique index
+Unique index:
 
 ```python
 customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(...)
 ```
 
-This means:
+Use indexes for fields you expect to:
 
-- create an index
-- enforce uniqueness
+- filter often
+- join often
+- treat as a business key
 
-In practice, a unique index is a good fit for business keys like:
+Do not add them to every column automatically.
 
-- customer code
-- account number
-- external identifier
+## `Ops(...)`
 
-### Named index
-
-You can also provide a name:
-
-```python
-region: Annotated[str, Index(name="idx_customer_region"), Ops(filter=True)] = Field(...)
-```
-
-This is optional. If you do not give a name, the backend can generate one.
-
-## What an Index Means
-
-An index is not just “extra metadata”.
-
-It is a statement about how the field will be used.
-
-Use an index when the field is likely to be:
-
-- filtered often
-- joined often
-- used as a lookup key
-- expected to be unique
-
-Do **not** add indexes to every field automatically.
-
-Indexes make reads faster for the indexed access pattern, but they also add maintenance cost on writes.
-
-Good examples:
-
-- `customer_code`
-- `region`
-- foreign-key fields like `customer_id`
-
-Less obvious examples:
-
-- free-text description fields
-- rarely filtered columns
-
-## `Ops(...)`: What the Field Is Allowed To Do
-
-`Ops(...)` describes how the field participates in record operations.
+`Ops(...)` tells the system how a field participates in row operations.
 
 Example:
 
@@ -257,50 +187,30 @@ Example:
 Ops(filter=True, order=True)
 ```
 
-Available flags are:
+Available flags:
 
 - `insert`
 - `update`
 - `filter`
 - `order`
 
-### Meaning of each flag
+Meaning:
 
-- `insert=True`
-  - field can be part of inserted data
-- `update=True`
-  - field can be changed in updates/upserts
-- `filter=True`
-  - field can be used in query filters
-- `order=True`
-  - field can be used for ordering
+- `insert=True`: the field can be part of inserted rows
+- `update=True`: the field can be changed in updates or upserts
+- `filter=True`: the field can be used in filters
+- `order=True`: the field can be used in ordering
 
-### Example
-
-```python
-name: Annotated[str, Ops(filter=True, order=True)] = Field(...)
-```
-
-This means:
-
-- it is a normal data column
-- users can filter on it
-- users can sort on it
-
-### If `Ops(...)` is omitted
-
-For normal fields, the default behavior is permissive:
+If you omit `Ops(...)`, the default for normal user fields is permissive:
 
 - insertable
 - updatable
 - filterable
 - not orderable
 
-For `id`, the system applies a special default appropriate for a primary key.
-
 ## Foreign Keys
 
-A foreign key is declared with `ForeignKey(...)`.
+Declare a relation with `ForeignKey(...)`.
 
 Example:
 
@@ -315,243 +225,73 @@ customer_id: Annotated[
 
 This means:
 
-- the column stores an integer id
-- that id points to `CustomerRecord`
-- if the referenced customer is deleted, the delete policy is `"cascade"`
+- the stored value is an integer
+- it refers to the `CustomerRecord` table
+- the backend should enforce the declared delete behavior
 - the field is indexed
-- the field can be filtered
+- the field is filterable
 
-### Why the field type is still `int`
+The client-side schema payload keeps the foreign-key contract small:
 
-The stored value is still the referenced row id:
+- `target`
+- `on_delete`
 
-```python
-customer_id: int
-```
+The backend is responsible for mapping that relation to the physical table details.
 
-The `ForeignKey(...)` metadata explains what that integer means.
+## `SimpleTable` vs `SimpleTableUpdater`
 
-### Common delete policies
+The split is:
 
-Current supported values are:
-
-- `"cascade"`
-- `"restrict"`
-- `"set_null"`
-
-Use them the same way you would think about relational database foreign keys.
-
-## Example: A Parent / Child Relationship
-
-```python
-class CustomerRecord(SimpleTable):
-    id: int
-    customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(...)
-    name: Annotated[str, Ops(filter=True, order=True)] = Field(...)
-    region: Annotated[str, Index(), Ops(filter=True)] = Field(...)
-
-
-class CustomerBalanceRecord(SimpleTable):
-    id: int
-    customer_id: Annotated[
-        int,
-        ForeignKey(CustomerRecord, on_delete="cascade"),
-        Index(),
-        Ops(filter=True),
-    ] = Field(...)
-    as_of_date: Annotated[datetime.date, Ops(filter=True, order=True)] = Field(...)
-    balance_usd: Annotated[float, Ops(filter=True, order=True)] = Field(...)
-```
-
-Read this schema as:
-
-- `CustomerRecord` is the parent table
-- `CustomerBalanceRecord` depends on it
-- each balance row points to one customer
-- balances can be filtered by customer
-- balances can be filtered or ordered by date and amount
-
-## How a `SimpleTable` Gets Data
-
-A `SimpleTable` only defines the schema.
-
-To populate it in a pipeline, you normally pair it with a `SimpleTableUpdater`.
+- `SimpleTable` defines the schema and row model
+- `SimpleTableUpdater` owns the actual backend table, hashing, dependencies, and read/write workflow
 
 Example:
 
 ```python
+from mainsequence.tdag.simple_tables import SimpleTableUpdater
+
+
 class CustomersUpdater(SimpleTableUpdater):
     SIMPLE_TABLE_SCHEMA = CustomerRecord
 
     def update(self) -> tuple[list[CustomerRecord], bool]:
         return (
             [
-                CustomerRecord(id=100, customer_code="ACME", name="Acme Capital", region="US"),
-                CustomerRecord(id=101, customer_code="BETA", name="Beta Treasury", region="EU"),
+                CustomerRecord(customer_code="ACME", name="Acme Capital", region="US"),
+                CustomerRecord(customer_code="BETA", name="Beta Treasury", region="EU"),
             ],
             True,
         )
 ```
 
-That means:
+That updater can:
 
-- the updater owns the table lifecycle
-- `CustomerRecord` defines the schema
-- `update()` returns rows to insert or upsert
+- build or resolve the backend table
+- insert rows returned by `update()`
+- execute typed filters
+- expose the resolved table identity through its storage
 
-So the conceptual split is:
+## Why Backend `id` Matters in Practice
 
-- `SimpleTable` = what the table looks like
-- `SimpleTableUpdater` = how rows get created, changed, or deleted
+Because `id` is assigned by the backend, the usual pattern is:
 
-## Validation Behavior
+1. insert rows without `id`
+2. read them back
+3. use the returned `id` for sparse upserts or deletes
 
-Because `SimpleTable` is a Pydantic model, rows are validated as normal model instances.
+That is exactly what the example in
+[`examples/data_nodes/simple_tables.py`](../../../examples/data_nodes/simple_tables.py)
+does for the `CustomerRecord`, `CustomerBalanceRecord`, and `CustomerDebtRecord` tables.
 
-Example:
+## A Good Mental Model
 
-```python
-record = CustomerRecord(
-    id=100,
-    customer_code="ACME",
-    name="Acme Capital",
-    region="US",
-)
-```
+Ask these questions when designing a `SimpleTable`:
 
-If a required field is missing, or a type is wrong, validation fails before the row is sent.
+1. What does one row represent?
+2. Which fields are business lookup fields?
+3. Which fields should be indexed?
+4. Which fields should be filterable?
+5. Which fields should be orderable?
+6. Which fields point to another simple table?
 
-This is useful because:
-
-- your row schema is explicit
-- backend writes are cleaner
-- code that creates rows is easier to trust
-
-## A Good Way To Think About Design
-
-When designing a `SimpleTable`, ask:
-
-### 1. What is one row?
-
-Examples:
-
-- one customer
-- one balance snapshot
-- one account relationship
-
-### 2. What is the primary key?
-
-In the common pattern, that is `id`.
-
-### 3. Which fields are business lookup keys?
-
-Those are often good candidates for:
-
-- `Index(unique=True)`
-- `Ops(filter=True)`
-
-### 4. Which fields should be filterable?
-
-Typical examples:
-
-- region
-- customer_id
-- as_of_date
-- balance_usd
-
-### 5. Which fields should be orderable?
-
-Typical examples:
-
-- names
-- dates
-- numeric values used in reports
-
-### 6. Which fields reference another table?
-
-Those should usually be:
-
-- typed as `int`
-- annotated with `ForeignKey(...)`
-- indexed
-
-## Practical Example
-
-This is a realistic small schema:
-
-```python
-class CustomerRecord(SimpleTable):
-    id: int
-    customer_code: Annotated[str, Index(unique=True), Ops(filter=True, order=True)] = Field(
-        ...,
-        title="Customer Code",
-        description="Stable customer identifier.",
-    )
-    name: Annotated[str, Ops(filter=True, order=True)] = Field(
-        ...,
-        title="Name",
-        description="Human-readable customer name.",
-    )
-    region: Annotated[str, Index(), Ops(filter=True)] = Field(
-        ...,
-        title="Region",
-        description="Commercial region for the customer.",
-    )
-```
-
-Why this design makes sense:
-
-- `id`: primary key
-- `customer_code`: unique business identifier
-- `name`: readable field used in filters and sorting
-- `region`: indexed filter field
-
-## Common Mistakes
-
-### Putting metadata in `Field(...)` instead of `Annotated[...]`
-
-Use:
-
-```python
-Annotated[str, Index(), Ops(filter=True)]
-```
-
-for schema/runtime behavior.
-
-Use:
-
-```python
-Field(title="...", description="...")
-```
-
-for validation/documentation metadata.
-
-### Forgetting to index a foreign key
-
-This is usually a bad idea:
-
-```python
-customer_id: Annotated[int, ForeignKey(CustomerRecord)] = Field(...)
-```
-
-This is usually better:
-
-```python
-customer_id: Annotated[int, ForeignKey(CustomerRecord), Index(), Ops(filter=True)] = Field(...)
-```
-
-### Marking everything as indexed
-
-Only add indexes where they match real query patterns.
-
-### Forgetting `Ops(filter=True)` on fields you plan to query
-
-If a field is not declared filterable, the filter DSL will reject it.
-
-## Related Reading
-
-After understanding `SimpleTable` itself, the next useful page is:
-
-- [`filtering.md`](/Users/jose/code/MainSequenceClientSide/mainsequence-sdk/docs/knowledge/simple_tables/filtering.md)
-
-That page explains how to query `SimpleTable` data with field-based filters, boolean combinations, and request builders.
+That gives you a clean, row-oriented schema that can still live inside the same dependency graph system as `DataNode`.

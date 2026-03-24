@@ -80,18 +80,18 @@ It is a good fit for dashboards because:
 
 In other words, this is the "I know which table I want, now give me a reader" entry point.
 
-### When should you switch to `mainsequence.client.data_filters`?
+### When should you switch to `mainsequence.tdag.data_nodes.filters`?
 
 `APIDataNode.build_from_identifier(...)` is the right tool for straightforward reads of one table.
 
-When the dashboard starts building ad-hoc filters dynamically, or when it needs joins across dynamic tables, move to the structured filter DSL from `mainsequence.client.data_filters`.
+When the dashboard starts building ad-hoc filters dynamically, or when it needs joins across dynamic tables, move to the structured filter DSL from `mainsequence.tdag.data_nodes.filters`.
 
 For example:
 
 ```python
 import datetime as dt
 
-from mainsequence.client.data_filters import F, SearchRequest, and_
+from mainsequence.tdag.data_nodes.filters import F, SearchRequest, and_
 
 request = SearchRequest(
     node_unique_identifier=SIMULATED_PRICES_TABLE,

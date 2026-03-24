@@ -11,6 +11,7 @@ if TYPE_CHECKING:
 
 
 _ALLOWED_ON_DELETE = {"cascade", "restrict", "set_null"}
+_SYSTEM_FIELD_NAMES = {"id"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class TableFieldSpec:
     foreign_key: ForeignKey | None
     index: Index | None
     ops: Ops
+    system_field: bool = False
 
     @property
     def physical_column_name(self) -> str:
@@ -121,7 +123,10 @@ class SimpleTableSchemaMixin:
         for spec in schema.fields:
             if spec.name == field_name:
                 return spec
-        valid = ", ".join(sorted(cls.model_fields.keys()))
+        system_spec = _build_system_field_spec(cls, field_name)
+        if system_spec is not None:
+            return system_spec
+        valid = ", ".join(sorted(set(field.name for field in schema.fields) | _SYSTEM_FIELD_NAMES))
         raise KeyError(f"Unknown field '{field_name}' for {cls.__name__}. Valid fields: {valid}")
 
     @classmethod
@@ -138,25 +143,33 @@ def _build_table_schema(model: type[SimpleTable]) -> TableSchema:
     if cache is not None:
         return cache
 
+    user_annotations = getattr(model, "__dict__", {}).get("__annotations__", {})
+    if "id" in user_annotations:
+        raise TypeError(
+            f"{model.__name__} must not declare an 'id' field. "
+            "SimpleTable row ids are assigned by the backend and exposed automatically."
+        )
+
     fields: list[TableFieldSpec] = []
     for name, field_info in model.model_fields.items():
+        if name in _SYSTEM_FIELD_NAMES:
+            continue
         metadata = list(field_info.metadata)
         foreign_key = _extract_single(metadata, ForeignKey, field_name=name, model=model)
         index = _extract_single(metadata, Index, field_name=name, model=model)
         ops = _extract_single(metadata, Ops, field_name=name, model=model)
 
         annotation, nullable = _unwrap_optional(field_info.annotation)
-        primary_key = name == "id"
         effective_ops = _effective_ops(name=name, explicit_ops=ops)
 
         fields.append(
             TableFieldSpec(
                 name=name,
                 annotation=annotation,
-                nullable=False if primary_key else nullable,
+                nullable=nullable,
                 required=field_info.is_required(),
                 default=None if field_info.is_required() else field_info.default,
-                primary_key=primary_key,
+                primary_key=False,
                 foreign_key=foreign_key,
                 index=index,
                 ops=effective_ops,
@@ -186,9 +199,30 @@ def _extract_single(
 def _effective_ops(*, name: str, explicit_ops: Ops | None) -> Ops:
     if explicit_ops is not None:
         return explicit_ops
-    if name == "id":
-        return Ops(insert=True, update=False, filter=True, order=True)
     return Ops()
+
+
+def _build_system_field_spec(model: type[SimpleTable], field_name: str) -> TableFieldSpec | None:
+    if field_name not in _SYSTEM_FIELD_NAMES:
+        return None
+
+    field_info = model.model_fields.get(field_name)
+    if field_info is None:
+        return None
+
+    annotation, nullable = _unwrap_optional(field_info.annotation)
+    return TableFieldSpec(
+        name=field_name,
+        annotation=annotation,
+        nullable=nullable,
+        required=field_info.is_required(),
+        default=None if field_info.is_required() else field_info.default,
+        primary_key=False,
+        foreign_key=None,
+        index=None,
+        ops=Ops(insert=False, update=False, filter=True, order=True),
+        system_field=True,
+    )
 
 
 def _unwrap_optional(annotation: Any) -> tuple[Any, bool]:
