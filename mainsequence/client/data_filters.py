@@ -1,4 +1,4 @@
-# data_filters.py
+# mainsequence/client/data_filters.py
 """
 Filter and join request payload models.
 
@@ -167,7 +167,6 @@ class JoinKey(str, Enum):
     """Allowed join keys."""
     time_index = "time_index"
     unique_identifier = "unique_identifier"
-
 
 class JoinSpec(BaseModel):
     """

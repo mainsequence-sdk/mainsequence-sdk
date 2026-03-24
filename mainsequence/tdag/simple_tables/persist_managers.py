@@ -157,8 +157,14 @@ class SimpleTablePersistManager(BasePersistManager):
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
-        SimpleTableStorage.delete_record(record_or_id, timeout=timeout)
-
+        record_id = record_or_id if isinstance(record_or_id, int) else getattr(record_or_id, "id", None)
+        if record_id is None:
+            raise ValueError("delete(...) requires a record id or a record with an 'id' field value.")
+        SimpleTableStorage.delete_records_from_table(
+            data_node_update_id=self.data_node_update.id,
+            records_ids=[record_id],
+            timeout=timeout,
+        )
 
 PersistManager = SimpleTablePersistManager
 

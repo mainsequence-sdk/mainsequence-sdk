@@ -207,6 +207,194 @@ def test_insert_records_into_table_splits_413_chunks(monkeypatch):
     assert len(warning_messages) == 1
 
 
+def test_simple_table_storage_insert_records_into_table_targets_storage_url(monkeypatch):
+    requests_payloads: list[dict[str, object]] = []
+    urls: list[str] = []
+
+    def fake_make_request(**kwargs):
+        urls.append(kwargs["url"])
+        requests_payloads.append(kwargs["payload"])
+        return _HttpResponse(200)
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", lambda response, payload=None: None)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "logger",
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    client_simple_table_models.SimpleTableStorage.insert_records_into_table(
+        simple_table_id=41,
+        records=[{"id": 1, "as_of_date": datetime.date(2026, 3, 24)}],
+    )
+
+    assert urls == [f"{client_simple_table_models.SimpleTableStorage.get_object_url()}/41/insert_records_into_table/"]
+    assert requests_payloads[0]["json"]["chunk_index"] == 0
+    assert requests_payloads[0]["json"]["total_chunks"] == 1
+    assert _decode_chunk_records(requests_payloads[0]) == [
+        {"id": 1, "as_of_date": "2026-03-24"},
+    ]
+
+
+def test_simple_table_storage_upsert_records_into_table_targets_sparse_upsert_url(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_make_request(**kwargs):
+        captured["url"] = kwargs["url"]
+        captured["payload"] = kwargs["payload"]
+        captured["r_type"] = kwargs["r_type"]
+        return _HttpResponse(204)
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", lambda response, payload=None: None)
+
+    client_simple_table_models.SimpleTableStorage.upsert_records_into_table(
+        simple_table_id=41,
+        records=[
+            {"id": 1, "as_of_date": datetime.date(2026, 3, 25)},
+            {"id": 2, "balance_usd": 150.0},
+        ],
+    )
+
+    assert captured["r_type"] == "POST"
+    assert captured["url"] == (
+        f"{client_simple_table_models.SimpleTableStorage.get_object_url()}/41/upsert_records_into_table/"
+    )
+    assert captured["payload"].keys() == {"json"}
+    assert captured["payload"]["json"].keys() == {"data"}
+    assert _decode_chunk_records(captured["payload"]) == [
+        {"id": 1, "as_of_date": "2026-03-25"},
+        {"id": 2, "balance_usd": 150.0},
+    ]
+
+
+def test_delete_records_from_table_posts_ids(monkeypatch):
+    captured: dict[str, object] = {}
+
+    def fake_make_request(**kwargs):
+        captured["url"] = kwargs["url"]
+        captured["payload"] = kwargs["payload"]
+        captured["r_type"] = kwargs["r_type"]
+        return _HttpResponse(204)
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "raise_for_response",
+        lambda response, payload=None: None,
+    )
+
+    client_simple_table_models.SimpleTableStorage.delete_records_from_table(
+        data_node_update_id=1226,
+        records_ids=[10, 11, 12],
+    )
+
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/1226/delete_records_from_table/")
+    assert captured["payload"] == {"json": {"records_ids": [10, 11, 12]}}
+
+
+def test_delete_records_from_table_raises_on_http_error(monkeypatch):
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "make_request",
+        lambda **kwargs: _HttpResponse(500, '{"detail":"delete failed"}'),
+    )
+
+    def fake_raise_for_response(response, payload=None):
+        raise RuntimeError(response.text)
+
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", fake_raise_for_response)
+
+    with pytest.raises(RuntimeError, match="delete failed"):
+        client_simple_table_models.SimpleTableStorage.delete_records_from_table(
+            data_node_update_id=1226,
+            records_ids=[10, 11],
+        )
+
+
+def test_simple_table_updater_convenience_methods_delegate_to_persist_manager():
+    captured: dict[str, object] = {}
+
+    row = OrderRow(
+        id=9,
+        order_code="ROW-9",
+        created_at=datetime.datetime(2026, 3, 22, 12, 0, tzinfo=datetime.UTC),
+    )
+
+    class OrderUpdater(SimpleTableUpdater):
+        SIMPLE_TABLE_SCHEMA = OrderRow
+
+        def set_data_source(self, data_source=None):
+            self._data_source = _FakeDataSource()
+
+        def update(self):
+            return []
+
+    updater = OrderUpdater(configuration=OrderUpdaterConfiguration(tenant="desk_a"))
+    updater._local_persist_manager = SimpleNamespace(
+        insert_records=lambda records: captured.setdefault("insert_calls", []).append(records),
+        upsert_records=lambda records: captured.setdefault("upsert_calls", []).append(records),
+        delete=lambda record_or_id, timeout=None: captured.update(
+            {"delete_call": {"record_or_id": record_or_id, "timeout": timeout}}
+        ),
+    )
+
+    assert updater.insert(row) is row
+    assert updater.upsert(row) is row
+    updater.delete(row, timeout=55)
+
+    assert captured["insert_calls"] == [[row]]
+    assert captured["upsert_calls"] == [[row]]
+    assert captured["delete_call"] == {"record_or_id": row, "timeout": 55}
+
+
+def test_simple_table_persist_manager_delete_uses_update_delete_records_endpoint(monkeypatch):
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "delete_records_from_table",
+        classmethod(
+            lambda cls, *, data_node_update_id, records_ids, timeout=None: captured.update(
+                {
+                    "data_node_update_id": data_node_update_id,
+                    "records_ids": records_ids,
+                    "timeout": timeout,
+                }
+            )
+        ),
+    )
+
+    manager = SimpleTablePersistManager(
+        update_hash="order_updater_hash",
+        class_name="OrderUpdater",
+        data_source=_FakeDataSource(),
+        simple_table_schema=OrderRow,
+        configuration=OrderUpdaterConfiguration(tenant="desk_a"),
+        data_node_update=_build_update(),
+    )
+
+    row = OrderRow(
+        id=9,
+        order_code="DEL-9",
+        created_at=datetime.datetime(2026, 3, 22, 12, 0, tzinfo=datetime.UTC),
+    )
+
+    manager.delete(row, timeout=33)
+
+    assert captured == {
+        "data_node_update_id": 11,
+        "records_ids": [9],
+        "timeout": 33,
+    }
+
+
 def _build_update(*, update_hash: str = "order_updater_hash") -> client_simple_table_models.SimpleTableUpdate:
     return client_simple_table_models.SimpleTableUpdate(
         id=11,
@@ -230,15 +418,15 @@ def _build_update(*, update_hash: str = "order_updater_hash") -> client_simple_t
 def test_simple_table_update_model_endpoints():
     assert (
         client_simple_table_models.SimpleTableUpdate.get_object_url()
-        == f"{API_ENDPOINT}/ts_manager/simple_tables_update"
+        == f"{API_ENDPOINT}/{client_simple_table_models.SimpleTableUpdate.ENDPOINT}"
     )
     assert (
         client_simple_table_models.SimpleTableUpdateHistorical.get_object_url()
-        == f"{API_ENDPOINT}/ts_manager/simple_tables_update_historical"
+        == f"{API_ENDPOINT}/{client_simple_table_models.SimpleTableUpdateHistorical.ENDPOINT}"
     )
     assert (
         client_simple_table_models.SimpleTableUpdateDetails.get_object_url()
-        == f"{API_ENDPOINT}/ts_manager/simple_tables_update_details"
+        == f"{API_ENDPOINT}/{client_simple_table_models.SimpleTableUpdateDetails.ENDPOINT}"
     )
 
 

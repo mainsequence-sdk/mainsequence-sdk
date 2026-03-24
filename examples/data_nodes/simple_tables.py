@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import Field
 
+from mainsequence.client import DataNodeStorage, SimpleTableStorage
 from mainsequence.tdag.simple_tables import (
     ForeignKey,
     Index,
@@ -11,6 +12,8 @@ from mainsequence.tdag.simple_tables import (
     SimpleTable,
     SimpleTableUpdater,
     SimpleTableUpdaterConfiguration,
+    and_,
+    or_,
 )
 
 
@@ -134,32 +137,248 @@ class CustomerBalancesUpdater(SimpleTableUpdater):
         return {"customers": self.customers_updater}
 
 
+def _read_simple_table_records(
+    table_model: type[SimpleTable],
+    *,
+    storage_hash: str,
+    filter_expr=None,
+    limit: int = 250,
+) -> list[SimpleTable]:
+    request = table_model.request(
+        storage_hash=storage_hash,
+        filter=filter_expr,
+        limit=limit,
+    )
+    df = DataNodeStorage.get_data_from_filter(request, batch_limit=limit)
+    if df.empty:
+        return []
+
+    df = df.reset_index(drop=False)
+    rename_map = {
+        column: column.removeprefix("base__")
+        for column in df.columns
+        if column.startswith("base__")
+    }
+    if rename_map:
+        df = df.rename(columns=rename_map)
+
+    model_fields = set(table_model.model_fields.keys())
+    records: list[SimpleTable] = []
+    for row in df.to_dict(orient="records"):
+        normalized = {key: value for key, value in row.items() if key in model_fields}
+        records.append(table_model.model_validate(normalized))
+    return records
+
+
+def _records_as_json(records: list[SimpleTable]) -> list[dict[str, object]]:
+    return [
+        record.model_dump(mode="json")
+        for record in sorted(records, key=lambda item: item.id)
+    ]
+
+
+def _assert_records_equal(
+    *,
+    actual: list[SimpleTable],
+    expected: list[SimpleTable],
+    step_name: str,
+) -> None:
+    actual_json = _records_as_json(actual)
+    expected_json = _records_as_json(expected)
+    if actual_json != expected_json:
+        raise AssertionError(
+            f"{step_name} failed.\nExpected:\n{json.dumps(expected_json, indent=2)}\n"
+            f"Actual:\n{json.dumps(actual_json, indent=2)}"
+        )
+
+
+def _delete_records_if_present(
+    updater: SimpleTableUpdater,
+    table_model: type[SimpleTable],
+    *,
+    storage_hash: str,
+    record_ids: list[int],
+) -> None:
+    existing_records = _read_simple_table_records(
+        table_model,
+        storage_hash=storage_hash,
+        filter_expr=table_model.filters.id.in_(record_ids),
+    )
+    for record in existing_records:
+        updater.delete(record.id)
+
+
 def build_test_simple_tables() -> None:
     """
     Requires a configured MainSequence backend/auth environment.
     """
 
     balances_updater = CustomerBalancesUpdater(configuration=CustomerBalancesUpdaterConfiguration())
-    inserted_balances = balances_updater.run()
+    customers_updater = balances_updater.customers_updater
+
+    customers_updater.verify_and_build_remote_objects()
+    balances_updater.verify_and_build_remote_objects()
+
+    customer_seed = [
+        CustomerRecord.model_validate(row)
+        for row in CustomersUpdater.build_seed_rows()
+    ]
+    balance_seed = [
+        CustomerBalanceRecord.model_validate(row)
+        for row in CustomerBalancesUpdater.build_seed_rows()
+    ]
+
+    customer_storage_hash = customers_updater.hashes()[1]
+    balance_storage_hash = balances_updater.hashes()[1]
+
+    # Keep the example repeatable across runs by removing the specific demo rows first.
+    _delete_records_if_present(
+        balances_updater,
+        CustomerBalanceRecord,
+        storage_hash=balance_storage_hash,
+        record_ids=[record.id for record in balance_seed],
+    )
+    _delete_records_if_present(
+        customers_updater,
+        CustomerRecord,
+        storage_hash=customer_storage_hash,
+        record_ids=[record.id for record in customer_seed],
+    )
+
+    for record in customer_seed:
+        customers_updater.insert(record)
+
+    inserted_customers = _read_simple_table_records(
+        CustomerRecord,
+        storage_hash=customer_storage_hash,
+        filter_expr=CustomerRecord.filters.id.in_([record.id for record in customer_seed]),
+    )
+    _assert_records_equal(
+        actual=inserted_customers,
+        expected=customer_seed,
+        step_name="Customer insert verification",
+    )
+
+    for record in balance_seed:
+        balances_updater.insert(record)
+
+    inserted_balances = _read_simple_table_records(
+        CustomerBalanceRecord,
+        storage_hash=balance_storage_hash,
+        filter_expr=CustomerBalanceRecord.filters.id.in_([record.id for record in balance_seed]),
+    )
+    _assert_records_equal(
+        actual=inserted_balances,
+        expected=balance_seed,
+        step_name="Balance insert verification",
+    )
+
+    SimpleTableStorage.upsert_records_into_table(
+        simple_table_id=balances_updater.data_node_storage.id,
+        records=[
+            {"id": 1, "balance_usd": 150_000.0},
+            {"id": 2, "balance_usd": 91_250.0},
+        ],
+    )
+
+    upserted_balance_seed = [
+        CustomerBalanceRecord(
+            id=1,
+            customer_id=100,
+            as_of_date=datetime.date(2026, 3, 22),
+            balance_usd=150_000.0,
+        ),
+        CustomerBalanceRecord(
+            id=2,
+            customer_id=101,
+            as_of_date=datetime.date(2026, 3, 22),
+            balance_usd=91_250.0,
+        ),
+    ]
+    upserted_balances = _read_simple_table_records(
+        CustomerBalanceRecord,
+        storage_hash=balance_storage_hash,
+        filter_expr=CustomerBalanceRecord.filters.id.in_([1, 2]),
+    )
+    _assert_records_equal(
+        actual=upserted_balances,
+        expected=upserted_balance_seed,
+        step_name="Balance upsert verification",
+    )
+
+    for record in upserted_balance_seed:
+        balances_updater.delete(record.id)
+
+    remaining_balances = _read_simple_table_records(
+        CustomerBalanceRecord,
+        storage_hash=balance_storage_hash,
+        filter_expr=CustomerBalanceRecord.filters.id.in_([record.id for record in upserted_balance_seed]),
+    )
+    if remaining_balances:
+        raise AssertionError(
+            "Balance delete verification failed.\nRemaining rows:\n"
+            + json.dumps(_records_as_json(remaining_balances), indent=2)
+        )
+
+    for record in customer_seed:
+        customers_updater.delete(record.id)
+
+    remaining_customers = _read_simple_table_records(
+        CustomerRecord,
+        storage_hash=customer_storage_hash,
+        filter_expr=CustomerRecord.filters.id.in_([record.id for record in customer_seed]),
+    )
+    if remaining_customers:
+        raise AssertionError(
+            "Customer delete verification failed.\nRemaining rows:\n"
+            + json.dumps(_records_as_json(remaining_customers), indent=2)
+        )
 
     typed_filter = CustomerBalanceRecord.filters.balance_usd.gte(100_000.0)
     request_payload = CustomerBalanceRecord.request(
-        node_unique_identifier="customer-balances-demo",
+        storage_hash=balance_storage_hash,
         filter=typed_filter,
         limit=25,
     ).model_dump(mode="json")
+    complex_filter = and_(
+        CustomerBalanceRecord.filters.as_of_date.between(
+            datetime.date(2026, 3, 1),
+            datetime.date(2026, 3, 31),
+        ),
+        or_(
+            CustomerBalanceRecord.filters.customer_id.in_([100, 101, 102]),
+            CustomerBalanceRecord.filters.balance_usd.gte(250_000.0),
+        ),
+        CustomerBalanceRecord.filters.balance_usd.not_in([0.0]),
+    )
+    complex_request_payload = CustomerBalanceRecord.request(
+        storage_hash=balance_storage_hash,
+        filter=complex_filter,
+        limit=25,
+    ).model_dump(mode="json")
 
-    print("Balance configuration hashes:")
-    print(
-        {
+    print("Configuration hashes:")
+    print({
+        "customers": {
+            "update_hash": customers_updater.hashes()[0],
+            "storage_hash": customers_updater.hashes()[1],
+        },
+        "balances": {
             "update_hash": balances_updater.hashes()[0],
             "storage_hash": balances_updater.hashes()[1],
-        }
-    )
+        },
+    })
     print("Typed filter request payload:")
     print(json.dumps(request_payload, indent=2, default=str))
-    print("Inserted or updated balance rows:")
-    print(inserted_balances)
+    print("Complex filter request payload:")
+    print(json.dumps(complex_request_payload, indent=2, default=str))
+    print("Inserted customer rows:")
+    print(json.dumps(_records_as_json(inserted_customers), indent=2))
+    print("Inserted balance rows:")
+    print(json.dumps(_records_as_json(inserted_balances), indent=2))
+    print("Upserted balance rows:")
+    print(json.dumps(_records_as_json(upserted_balances), indent=2))
+    print("Delete verification passed for customer and balance demo rows.")
 
 
 if __name__ == "__main__":

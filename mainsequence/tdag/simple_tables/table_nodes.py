@@ -9,7 +9,7 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel
 
-import mainsequence.client as ms_client
+import mainsequence.client as msc
 
 from ..configuration_models import BaseConfiguration
 from ..data_nodes import build_operations
@@ -105,7 +105,7 @@ _ANNOTATION_DTYPE_MAP: dict[Any, str] = {
 
 
 class SimpleTableUpdater(DataNode):
-    DATA_NODE_UPDATE_CLASS = ms_client.SimpleTableUpdate
+    DATA_NODE_UPDATE_CLASS = msc.SimpleTableUpdate
     SIMPLE_TABLE_SCHEMA: ClassVar[type[SimpleTable] | None] = None
 
     def __init__(
@@ -200,9 +200,9 @@ class SimpleTableUpdater(DataNode):
         schema_cls: type[SimpleTable],
         data_source: Any,
         resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
-        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage],
+        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage],
         resolution_stack: set[type[SimpleTable]],
-    ) -> ms_client.SimpleTableStorage:
+    ) -> msc.SimpleTableStorage:
         cached_storage = resolved_storage_cache.get(schema_cls)
         if cached_storage is not None:
             return cached_storage
@@ -220,7 +220,7 @@ class SimpleTableUpdater(DataNode):
                 resolved_storage_cache=resolved_storage_cache,
                 resolution_stack=resolution_stack,
             )
-            storage = ms_client.SimpleTableStorage.get_or_create(
+            storage = msc.SimpleTableStorage.get_or_create(
                 **self._build_foreign_table_storage_kwargs(
                     schema_cls=schema_cls,
                     resolved_schema=resolved_schema,
@@ -266,7 +266,7 @@ class SimpleTableUpdater(DataNode):
 
     def _build_resolved_simple_table_schema(self, data_source: Any) -> dict[str, Any]:
         resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]] = {}
-        resolved_storage_cache: dict[type[SimpleTable], ms_client.SimpleTableStorage] = {}
+        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage] = {}
         return self._resolve_simple_table_schema_dict(
             schema_cls=self.simple_table_schema,
             data_source=data_source,
@@ -290,19 +290,26 @@ class SimpleTableUpdater(DataNode):
             configuration=self.config,
         )
 
+    @property
+    def local_persist_manager(self) -> SimpleTablePersistManager:
+        if self._local_persist_manager is None:
+            self.logger.debug(f"Setting local persist manager for {self.storage_hash}")
+            self._set_local_persist_manager(update_hash=self.update_hash)
+        return self._local_persist_manager
+
     def dependencies(self) -> dict[str, DataNode]:
         return {}
 
     def hashes(self) -> tuple[str, str]:
         return self.update_hash, self.storage_hash
 
-    def get_column_metadata(self) -> list[ms_client.ColumnMetaData] | None:
-        columns: list[ms_client.ColumnMetaData] = []
+    def get_column_metadata(self) -> list[msc.ColumnMetaData] | None:
+        columns: list[msc.ColumnMetaData] = []
         for field_spec in self.simple_table_schema.field_specs():
             dtype = _ANNOTATION_DTYPE_MAP.get(field_spec.annotation, "string")
             label = field_spec.name.replace("_", " ").title()
             columns.append(
-                ms_client.ColumnMetaData(
+                msc.ColumnMetaData(
                     column_name=field_spec.name,
                     dtype=dtype,
                     label=label,
@@ -313,8 +320,8 @@ class SimpleTableUpdater(DataNode):
 
     def _set_update_statistics(
         self,
-        update_statistics: ms_client.BaseUpdateStatistics | None,
-    ) -> ms_client.BaseUpdateStatistics | None:
+        update_statistics: msc.BaseUpdateStatistics | None,
+    ) -> msc.BaseUpdateStatistics | None:
         self.update_statistics = update_statistics
         return update_statistics
 
@@ -394,6 +401,12 @@ class SimpleTableUpdater(DataNode):
         self.local_persist_manager.insert_records(validated)
         return validated
 
+    def insert(
+        self,
+        record: SimpleTable | dict[str, Any],
+    ) -> SimpleTable:
+        return self.insert_records([record])[0]
+
     def upsert_records(
         self, records: list[SimpleTable | dict[str, Any]]
     ) -> list[SimpleTable]:
@@ -405,6 +418,12 @@ class SimpleTableUpdater(DataNode):
         self.local_persist_manager.upsert_records(validated)
         return validated
 
+    def upsert(
+        self,
+        record: SimpleTable | dict[str, Any],
+    ) -> SimpleTable:
+        return self.upsert_records([record])[0]
+
     def delete_record(
         self,
         record_or_id: SimpleTable | Any,
@@ -412,3 +431,22 @@ class SimpleTableUpdater(DataNode):
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
         self.local_persist_manager.delete(record_or_id, timeout=timeout)
+
+    def delete(
+        self,
+        record_or_id: SimpleTable | Any,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> None:
+        self.delete_record(record_or_id, timeout=timeout)
+
+
+    def execute_filter(self,
+                        filter_expr=None,
+                        *,
+                        limit: int = 50,
+                        offset: int = 0,)-> list[SimpleTable]:
+
+        #build filter expression
+
+        msc.SimpleTableStorage.get_data_from_filter(filter_expr, limit, offset)

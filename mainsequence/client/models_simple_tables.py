@@ -5,7 +5,6 @@ import datetime
 import gzip
 import json
 import math
-import sys
 import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -14,7 +13,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import requests
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field
 
 from mainsequence import logger
 
@@ -112,6 +111,146 @@ class SimpleTableIndexMetaPayload(BasePydanticModel):
         default_factory=list,
         description="Ordered list of column names included in the index.",
     )
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    if hasattr(value, "model_dump"):
+        try:
+            return value.model_dump(mode="json", exclude_none=True)
+        except TypeError:
+            return value.model_dump()
+    return str(value)
+
+
+def _serialize_records_for_upload(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return json.loads(
+        json.dumps(
+            serialize_to_json({"records": records})["records"],
+            default=_json_default,
+        )
+    )
+
+
+def _compress_records_payload(records: list[dict[str, Any]]) -> str:
+    chunk_json_str = json.dumps(records)
+    compressed = gzip.compress(chunk_json_str.encode("utf-8"))
+    return base64.b64encode(compressed).decode("utf-8")
+
+
+def _insert_records_in_chunks(
+    *,
+    owner_label: str,
+    url: str,
+    records: list[dict],
+    overwrite: bool,
+    chunk_size: int,
+    timeout: int | float | tuple[float, float] | None,
+    add_insertion_time: bool = False,
+) -> None:
+    del add_insertion_time
+
+    serialized_records = _serialize_records_for_upload(records)
+    if not serialized_records:
+        logger.info("No records to upload.")
+        return
+
+    s = SimpleTableStorage.build_session()
+
+    def _build_payload(
+        records_chunk: list[dict[str, Any]],
+        *,
+        chunk_index: int,
+        total_chunks: int,
+    ) -> dict[str, Any]:
+        return {
+            "json": {
+                "data": _compress_records_payload(records_chunk),
+                "chunk_stats": None,
+                "overwrite": overwrite,
+                "chunk_index": chunk_index,
+                "total_chunks": total_chunks,
+            }
+        }
+
+    def _send_chunk_recursively(
+        records_chunk: list[dict[str, Any]],
+        chunk_idx: int,
+        total_chunks: int,
+        *,
+        is_sub_chunk: bool = False,
+    ) -> None:
+        if not records_chunk:
+            return
+
+        part_label = (
+            f"{chunk_idx + 1}/{total_chunks}"
+            if not is_sub_chunk
+            else f"sub-chunk of {chunk_idx + 1}"
+        )
+        payload = _build_payload(
+            records_chunk,
+            chunk_index=0 if is_sub_chunk else chunk_idx,
+            total_chunks=1 if is_sub_chunk else total_chunks,
+        )
+
+        try:
+            response = make_request(
+                s=s,
+                loaders=None,
+                payload=payload,
+                r_type="POST",
+                url=url,
+                time_out=timeout,
+            )
+        except requests.exceptions.RequestException as exc:
+            logger.exception(f"Error uploading {owner_label} chunk {part_label}: {exc}")
+            raise
+
+        if response.status_code in [200, 204]:
+            logger.info("Chunk uploaded successfully.")
+            return
+
+        if response.status_code == 413:
+            logger.warning(
+                f"Chunk {part_label} ({len(records_chunk)} rows) is too large (413). "
+                "Splitting in half and retrying as new uploads."
+            )
+            if len(records_chunk) <= 1:
+                raise Exception(
+                    f"A single row from chunk {part_label} is too large to upload."
+                )
+
+            mid_point = len(records_chunk) // 2
+            _send_chunk_recursively(
+                records_chunk[:mid_point],
+                chunk_idx,
+                total_chunks,
+                is_sub_chunk=True,
+            )
+            _send_chunk_recursively(
+                records_chunk[mid_point:],
+                chunk_idx,
+                total_chunks,
+                is_sub_chunk=True,
+            )
+            return
+
+        raise_for_response(response, payload=payload)
+
+    total_rows = len(serialized_records)
+    effective_chunk_size = chunk_size if chunk_size > 0 else total_rows
+    total_chunks = math.ceil(total_rows / effective_chunk_size) if total_rows > 0 else 1
+
+    for chunk_idx in range(total_chunks):
+        start_idx = chunk_idx * effective_chunk_size
+        end_idx = min((chunk_idx + 1) * effective_chunk_size, total_rows)
+        _send_chunk_recursively(
+            serialized_records[start_idx:end_idx],
+            chunk_idx,
+            total_chunks,
+        )
 
 
 class STColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
@@ -265,19 +404,108 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
     @classmethod
     def delete_record(
         cls,
-        record_or_id: SimpleTable | Any,
+        record: Any,
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
-        if isinstance(record_or_id, BaseModel):
-            record_id = getattr(record_or_id, "id", None)
-            if record_id is None:
-                raise ValueError(
-                    f"{type(record_or_id).__name__} must have an id before calling delete."
-                )
-        else:
-            record_id = record_or_id
+        record_id = getattr(record, "id", None)
+        if record_id is None:
+            raise ValueError("delete_record(...) requires a record with an 'id' field value.")
         cls.delete_by_id(record_id, timeout=timeout)
+
+    @classmethod
+    def insert_records_into_table(
+        cls,
+        simple_table_id: int,
+        records: list[dict[str, Any]],
+        overwrite: bool = True,
+        add_insertion_time: bool = False,
+        *,
+        chunk_size: int = 50_000,
+        timeout: int | float | tuple[float, float] | None = 60 * 15,
+    ) -> None:
+        url = cls.get_object_url() + f"/{simple_table_id}/insert_records_into_table/"
+        _insert_records_in_chunks(
+            owner_label=f"simple table {simple_table_id}",
+            url=url,
+            records=records,
+            overwrite=overwrite,
+            chunk_size=chunk_size,
+            timeout=timeout,
+            add_insertion_time=add_insertion_time,
+        )
+
+    @classmethod
+    def upsert_records_into_table(
+        cls,
+        simple_table_id: int,
+        records: list[dict[str, Any]],
+        *,
+        timeout: int | float | tuple[float, float] | None = 60 * 15,
+    ) -> None:
+        """Perform sparse upserts into an existing simple table.
+
+        This endpoint is intended for sparse insertion workloads: the table must
+        define a primary key, every input record must include all primary-key
+        columns, and records may provide different non-primary-key fields.
+
+        The request body is sent as ``{"data": "<base64+gzip encoded JSON list>"}``.
+        """
+        serialized_records = _serialize_records_for_upload(records)
+        if not serialized_records:
+            logger.info("No records to upsert.")
+            return
+
+        url = cls.get_object_url() + f"/{simple_table_id}/upsert_records_into_table/"
+        payload = {
+            "json": {
+                "data": _compress_records_payload(serialized_records),
+            }
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=None,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 204):
+            raise_for_response(response, payload=payload)
+
+    @classmethod
+    def delete_records_from_table(
+        cls,
+        data_node_update_id,
+        records_ids: list[int],
+        *,
+        timeout: int | float | tuple[float, float] | None = 60 * 15,
+    ):
+        if not records_ids:
+            return
+
+        s = cls.build_session()
+        url = SimpleTableUpdate.get_object_url() + f"/{data_node_update_id}/delete_records_from_table/"
+        payload = {"json": {"records_ids": records_ids}}
+
+        response = make_request(
+            s=s,
+            loaders=None,
+            payload=payload,
+            r_type="POST",
+            url=url,
+            time_out=timeout,
+        )
+        if response.status_code not in [200, 204]:
+            raise_for_response(response, payload=payload)
+
+    @classmethod
+    def get_data_from_filter(
+            cls,
+            filter_expression,
+            *,
+            batch_limit: int = 14000, ) ->list:
+        pass
 
 class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/source_table_configuration"
@@ -576,133 +804,16 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         chunk_size: int = 50_000,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
     ):
-        del add_insertion_time
-
-        module = sys.modules[cls.__module__]
-        make_request_fn = module.make_request
-        raise_for_response_fn = module.raise_for_response
-        logger_obj = module.logger
-        serialize_to_json_fn = module.serialize_to_json
-
-        def _json_default(value: Any) -> Any:
-            if isinstance(value, (datetime.datetime, datetime.date)):
-                return value.isoformat()
-            if hasattr(value, "model_dump"):
-                try:
-                    return value.model_dump(mode="json", exclude_none=True)
-                except TypeError:
-                    return value.model_dump()
-            return str(value)
-
-        serialized_records = json.loads(
-            json.dumps(
-                serialize_to_json_fn({"records": records})["records"],
-                default=_json_default,
-            )
+        url = cls.get_object_url() + f"/{data_node_update_id}/insert_records_into_table/"
+        _insert_records_in_chunks(
+            owner_label=f"simple table update {data_node_update_id}",
+            url=url,
+            records=records,
+            overwrite=overwrite,
+            chunk_size=chunk_size,
+            timeout=timeout,
+            add_insertion_time=add_insertion_time,
         )
-        if not serialized_records:
-            logger_obj.info("No records to upload.")
-            return
-
-        s = cls.build_session()
-        url = cls.get_object_url() + f"/{data_node_update_id}/insert_data_into_table/"
-
-        def _build_payload(
-            records_chunk: list[dict[str, Any]],
-            *,
-            chunk_index: int,
-            total_chunks: int,
-        ) -> dict[str, Any]:
-            chunk_json_str = json.dumps(records_chunk)
-            compressed = gzip.compress(chunk_json_str.encode("utf-8"))
-            compressed_b64 = base64.b64encode(compressed).decode("utf-8")
-            return {
-                "json": {
-                    "data": compressed_b64,
-                    "chunk_stats": None,
-                    "overwrite": overwrite,
-                    "chunk_index": chunk_index,
-                    "total_chunks": total_chunks,
-                }
-            }
-
-        def _send_chunk_recursively(
-            records_chunk: list[dict[str, Any]],
-            chunk_idx: int,
-            total_chunks: int,
-            *,
-            is_sub_chunk: bool = False,
-        ) -> None:
-            if not records_chunk:
-                return
-
-            part_label = (
-                f"{chunk_idx + 1}/{total_chunks}"
-                if not is_sub_chunk
-                else f"sub-chunk of {chunk_idx + 1}"
-            )
-            payload = _build_payload(
-                records_chunk,
-                chunk_index=0 if is_sub_chunk else chunk_idx,
-                total_chunks=1 if is_sub_chunk else total_chunks,
-            )
-
-            try:
-                response = make_request_fn(
-                    s=s,
-                    loaders=None,
-                    payload=payload,
-                    r_type="POST",
-                    url=url,
-                    time_out=timeout,
-                )
-            except requests.exceptions.RequestException as exc:
-                logger_obj.exception(f"Error uploading chunk {part_label}: {exc}")
-                raise
-
-            if response.status_code in [200, 204]:
-                logger_obj.info("Chunk uploaded successfully.")
-                return
-
-            if response.status_code == 413:
-                logger_obj.warning(
-                    f"Chunk {part_label} ({len(records_chunk)} rows) is too large (413). "
-                    "Splitting in half and retrying as new uploads."
-                )
-                if len(records_chunk) <= 1:
-                    raise Exception(
-                        f"A single row from chunk {part_label} is too large to upload."
-                    )
-
-                mid_point = len(records_chunk) // 2
-                _send_chunk_recursively(
-                    records_chunk[:mid_point],
-                    chunk_idx,
-                    total_chunks,
-                    is_sub_chunk=True,
-                )
-                _send_chunk_recursively(
-                    records_chunk[mid_point:],
-                    chunk_idx,
-                    total_chunks,
-                    is_sub_chunk=True,
-                )
-                return
-
-            raise_for_response_fn(response, payload=payload)
-
-        total_rows = len(serialized_records)
-        effective_chunk_size = chunk_size if chunk_size > 0 else total_rows
-        total_chunks = math.ceil(total_rows / effective_chunk_size) if total_rows > 0 else 1
-
-        for chunk_idx in range(total_chunks):
-            start_idx = chunk_idx * effective_chunk_size
-            end_idx = min((chunk_idx + 1) * effective_chunk_size, total_rows)
-            _send_chunk_recursively(
-                serialized_records[start_idx:end_idx],
-                chunk_idx,
-                total_chunks,
-            )
 
     @classmethod
     def insert_data_into_table(
@@ -723,7 +834,6 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             chunk_size=chunk_size,
             timeout=timeout,
         )
-
 
     @classmethod
     def get_data_nodes_and_set_updates(

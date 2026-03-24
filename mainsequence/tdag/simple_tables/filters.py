@@ -1,3 +1,4 @@
+# mainsequence/tdag/simple_tables/filters.py
 from __future__ import annotations
 
 from collections.abc import Sequence
