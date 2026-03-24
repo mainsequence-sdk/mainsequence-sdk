@@ -14,10 +14,6 @@ import mainsequence.client as msc
 from ..configuration_models import BaseConfiguration
 from ..data_nodes import build_operations
 from ..data_nodes.data_nodes import DataNode
-from ..data_nodes.persist_managers import (
-    get_data_node_source_code,
-    get_data_node_source_code_git_hash,
-)
 from ..pydantic_metadata import serialize_pydantic_model, strip_pydantic_hash_exclusions
 from .models import JoinHandle, JoinSpec, SimpleTable, TableRef
 from .persist_managers import SimpleTablePersistManager
@@ -132,18 +128,21 @@ class SimpleTableUpdater(DataNode):
         """
         Build the updater configuration and hashes using a resolved simple-table schema.
 
-        Foreign-key declarations are authored against ``SimpleTable`` classes, but
-        the hashed/backend schema must point to canonical backend table storages.
+        Foreign-key declarations are authored against dependency keys declared by
+        ``dependencies()``, and the hashed/backend schema must point to canonical
+        backend table storages owned by those dependency updaters.
         This method therefore:
 
         - ensures a data source is available for storage resolution,
-        - resolves every foreign-key target to its canonical ``SimpleTableStorage.id``,
+        - verifies foreign-key targets are declared in ``dependencies()``,
+        - resolves every foreign-key target to the dependency updater's canonical
+          ``SimpleTableStorage.id``,
         - injects the resolved schema into the hashed init kwargs,
         - stores the resolved schema on the updater so the persist manager can
           reuse the exact same payload during backend registration.
         """
-        data_source = self._ensure_data_source_for_schema_resolution()
-        resolved_schema = self._build_resolved_simple_table_schema(data_source=data_source)
+        self._ensure_data_source_for_schema_resolution()
+        resolved_schema = self._build_resolved_simple_table_schema()
         self.resolved_simple_table_schema = resolved_schema
 
         init_kwargs["simple_table_schema"] = resolved_schema
@@ -167,110 +166,87 @@ class SimpleTableUpdater(DataNode):
             self.set_data_source()
         return self.data_source
 
-    @staticmethod
-    def _resolved_schema_storage_hash(
-        schema_cls: type[SimpleTable],
-        resolved_schema: dict[str, Any],
-    ) -> str:
-        _, storage_hash = build_operations.hash_signature({"simple_table_schema": resolved_schema})
-        return f"{schema_cls.__name__}_{storage_hash}".lower()
-
-    def _build_foreign_table_storage_kwargs(
+    def _resolve_foreign_key_target_updater(
         self,
         *,
-        schema_cls: type[SimpleTable],
-        resolved_schema: dict[str, Any],
-        data_source: Any,
-    ) -> dict[str, Any]:
-        return {
-            "storage_hash": self._resolved_schema_storage_hash(schema_cls, resolved_schema),
-            "build_configuration": {"simple_table_schema": resolved_schema},
-            "data_source": data_source.model_dump(),
-            "build_configuration_json_schema": {},
-            "open_to_public": False,
-            "source_code_git_hash": get_data_node_source_code_git_hash(schema_cls),
-            "source_code": get_data_node_source_code(schema_cls),
-            "schema": resolved_schema,
-            "source_class_name": schema_cls.__name__,
-        }
+        dependency_key: str,
+    ) -> SimpleTableUpdater:
+        declared_dependencies = self.dependencies() or {}
+        target_updater = declared_dependencies.get(dependency_key)
+        if target_updater is None:
+            available = ", ".join(sorted(declared_dependencies)) or "<none>"
+            raise ValueError(
+                f"{self.__class__.__name__} foreign key target '{dependency_key}' is not declared in "
+                f"dependencies(). Available dependency keys: {available}."
+            )
+        if not isinstance(target_updater, SimpleTableUpdater):
+            raise TypeError(
+                f"{self.__class__.__name__} foreign key target '{dependency_key}' must resolve to a "
+                f"SimpleTableUpdater, received {type(target_updater).__name__}."
+            )
+        return target_updater
 
-    def _resolve_simple_table_storage(
+    def _resolve_foreign_key_target_storage(
         self,
         *,
-        schema_cls: type[SimpleTable],
-        data_source: Any,
-        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
-        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage],
-        resolution_stack: set[type[SimpleTable]],
+        dependency_key: str,
+        resolved_storage_cache: dict[str, msc.SimpleTableStorage],
+        resolution_stack: set[str],
     ) -> msc.SimpleTableStorage:
-        cached_storage = resolved_storage_cache.get(schema_cls)
+        cached_storage = resolved_storage_cache.get(dependency_key)
         if cached_storage is not None:
             return cached_storage
 
-        if schema_cls in resolution_stack:
-            cycle = " -> ".join(cls.__name__ for cls in [*resolution_stack, schema_cls])
-            raise ValueError(f"Cyclic simple-table foreign-key resolution is not supported: {cycle}")
+        target_updater = self._resolve_foreign_key_target_updater(dependency_key=dependency_key)
+        if target_updater is self:
+            raise ValueError(
+                f"{self.__class__.__name__} foreign key target '{dependency_key}' cannot point to itself."
+            )
+        if dependency_key in resolution_stack:
+            cycle = " -> ".join([*resolution_stack, dependency_key])
+            raise ValueError(
+                f"Cyclic simple-table foreign-key resolution is not supported: {cycle}"
+            )
 
-        resolution_stack.add(schema_cls)
+        resolution_stack.add(dependency_key)
         try:
-            resolved_schema = self._resolve_simple_table_schema_dict(
-                schema_cls=schema_cls,
-                data_source=data_source,
-                resolved_schema_cache=resolved_schema_cache,
-                resolved_storage_cache=resolved_storage_cache,
-                resolution_stack=resolution_stack,
-            )
-            storage = msc.SimpleTableStorage.get_or_create(
-                **self._build_foreign_table_storage_kwargs(
-                    schema_cls=schema_cls,
-                    resolved_schema=resolved_schema,
-                    data_source=data_source,
+            target_updater.verify_and_build_remote_objects()
+            storage = target_updater.data_node_storage
+            if storage is None or isinstance(storage, int):
+                raise ValueError(
+                    f"{self.__class__.__name__} foreign key target '{dependency_key}' did not resolve "
+                    "to a concrete SimpleTableStorage."
                 )
-            )
-            resolved_storage_cache[schema_cls] = storage
+            resolved_storage_cache[dependency_key] = storage
             return storage
         finally:
-            resolution_stack.remove(schema_cls)
+            resolution_stack.remove(dependency_key)
 
     def _resolve_simple_table_schema_dict(
         self,
         *,
-        schema_cls: type[SimpleTable],
-        data_source: Any,
-        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]],
-        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage],
-        resolution_stack: set[type[SimpleTable]],
+        resolved_storage_cache: dict[str, msc.SimpleTableStorage],
+        resolution_stack: set[str],
     ) -> dict[str, Any]:
-        cached_schema = resolved_schema_cache.get(schema_cls)
-        if cached_schema is not None:
-            return cached_schema
-
-        table_schema = schema_cls.schema()
+        table_schema = self.simple_table_schema.schema()
         resolved_schema = json.loads(json.dumps(table_schema.to_canonical_dict()))
 
         for index, field_spec in enumerate(table_schema.fields):
             if field_spec.foreign_key is None:
                 continue
 
-            target_storage = self._resolve_simple_table_storage(
-                schema_cls=field_spec.foreign_key.target,
-                data_source=data_source,
-                resolved_schema_cache=resolved_schema_cache,
+            target_storage = self._resolve_foreign_key_target_storage(
+                dependency_key=field_spec.foreign_key.target,
                 resolved_storage_cache=resolved_storage_cache,
                 resolution_stack=resolution_stack,
             )
             resolved_schema["fields"][index]["foreign_key"]["target"] = target_storage.id
 
-        resolved_schema_cache[schema_cls] = resolved_schema
         return resolved_schema
 
-    def _build_resolved_simple_table_schema(self, data_source: Any) -> dict[str, Any]:
-        resolved_schema_cache: dict[type[SimpleTable], dict[str, Any]] = {}
-        resolved_storage_cache: dict[type[SimpleTable], msc.SimpleTableStorage] = {}
+    def _build_resolved_simple_table_schema(self) -> dict[str, Any]:
+        resolved_storage_cache: dict[str, msc.SimpleTableStorage] = {}
         return self._resolve_simple_table_schema_dict(
-            schema_cls=self.simple_table_schema,
-            data_source=data_source,
-            resolved_schema_cache=resolved_schema_cache,
             resolved_storage_cache=resolved_storage_cache,
             resolution_stack=set(),
         )
@@ -324,6 +300,39 @@ class SimpleTableUpdater(DataNode):
     ) -> msc.BaseUpdateStatistics | None:
         self.update_statistics = update_statistics
         return update_statistics
+
+    def _ensure_remote_objects_ready(self, *, require_update: bool) -> None:
+        manager = getattr(self, "_local_persist_manager", None)
+        if manager is None:
+            if (
+                not require_update
+                and not getattr(self, "_framework_initialized", False)
+                and getattr(self, "storage_hash", None)
+            ):
+                return
+            manager = self.local_persist_manager
+
+        if not hasattr(manager, "local_persist_exist_set_config"):
+            return
+
+        cached_storage = getattr(manager, "_data_node_storage_cached", None)
+        cached_update = getattr(manager, "_data_node_update_cached", None)
+
+        if cached_storage is None or (require_update and cached_update is None):
+            self.verify_and_build_remote_objects()
+            self.set_relation_tree()
+            manager = self.local_persist_manager
+            cached_storage = getattr(manager, "_data_node_storage_cached", None)
+            cached_update = getattr(manager, "_data_node_update_cached", None)
+
+        if cached_storage is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} could not resolve remote simple-table storage."
+            )
+        if require_update and cached_update is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} could not resolve remote simple-table update metadata."
+            )
 
     def _normalize_update_records(
         self,
@@ -398,6 +407,7 @@ class SimpleTableUpdater(DataNode):
             record if isinstance(record, table_model) else table_model.model_validate(record)
             for record in records
         ]
+        self._ensure_remote_objects_ready(require_update=True)
         self.local_persist_manager.insert_records(validated)
         return validated
 
@@ -415,6 +425,7 @@ class SimpleTableUpdater(DataNode):
             record if isinstance(record, table_model) else table_model.model_validate(record)
             for record in records
         ]
+        self._ensure_remote_objects_ready(require_update=True)
         self.local_persist_manager.upsert_records(validated)
         return validated
 
@@ -430,6 +441,7 @@ class SimpleTableUpdater(DataNode):
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> None:
+        self._ensure_remote_objects_ready(require_update=True)
         self.local_persist_manager.delete(record_or_id, timeout=timeout)
 
     def delete(
@@ -453,6 +465,7 @@ class SimpleTableUpdater(DataNode):
         limit: int = 50,
         offset: int = 0,
     ) -> list[SimpleTable]:
+        self._ensure_remote_objects_ready(require_update=False)
         request = self.resolve_table().request(
             joins=joins,
             filter=filter_expr,

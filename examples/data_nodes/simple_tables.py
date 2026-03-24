@@ -38,7 +38,7 @@ class CustomerRecord(SimpleTable):
 class CustomerBalanceRecord(SimpleTable):
     customer_id: Annotated[
         int,
-        ForeignKey(CustomerRecord, on_delete="cascade"),
+        ForeignKey("customers", on_delete="cascade"),
         Index(),
         Ops(filter=True),
     ] = Field(
@@ -61,7 +61,7 @@ class CustomerBalanceRecord(SimpleTable):
 class CustomerDebtRecord(SimpleTable):
     balance_id: Annotated[
         int,
-        ForeignKey(CustomerBalanceRecord, on_delete="cascade"),
+        ForeignKey("balances", on_delete="cascade"),
         Index(),
         Ops(filter=True),
     ] = Field(

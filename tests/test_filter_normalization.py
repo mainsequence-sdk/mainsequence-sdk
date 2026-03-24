@@ -2,6 +2,7 @@ import ast
 import pathlib
 
 import pytest
+from pydantic import ConfigDict, Field
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_user as models_user_mod
@@ -79,6 +80,21 @@ class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
 class DemoPatchModel(BasePydanticModel, BaseObjectOrm):
     id: int
     label: str | None = None
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        return "https://backend.test/demo-patch"
+
+    @classmethod
+    def build_session(cls):
+        return object()
+
+
+class DemoAliasedPatchModel(BasePydanticModel, BaseObjectOrm):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    schema_payload: dict | None = Field(default=None, alias="schema")
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
@@ -264,6 +280,30 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
         "payload": {"json": {"label": "patched"}},
         "timeout": None,
     }
+
+
+def test_patch_by_id_updates_aliased_field_on_existing_instance(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "id": 9,
+                "schema": {"name": "customers"},
+            }
+
+    monkeypatch.setattr(
+        base_mod,
+        "make_request",
+        lambda *args, **kwargs: FakeResponse(),
+    )
+
+    instance = DemoAliasedPatchModel(id=9)
+    patched = DemoAliasedPatchModel.patch_by_id(9, _into=instance)
+
+    assert patched is instance
+    assert instance.schema_payload == {"name": "customers"}
 
 
 def test_shareable_action_posts_user_id(monkeypatch):

@@ -50,8 +50,8 @@ class SimpleTablePersistManager(BasePersistManager):
     ) -> SimpleTablePersistManager:
         return cls(data_source=data_source, *args, **kwargs)
 
+    @staticmethod
     def _build_storage_get_or_create_kwargs(
-        self,
         *,
         storage_hash: str,
         remote_configuration: dict,
@@ -60,8 +60,10 @@ class SimpleTablePersistManager(BasePersistManager):
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
+        schema: dict[str, Any] | None = None,
+        source_class_name: str | None = None,
     ) -> dict[str, Any]:
-        kwargs = super()._build_storage_get_or_create_kwargs(
+        kwargs = BasePersistManager._build_storage_get_or_create_kwargs(
             storage_hash=storage_hash,
             remote_configuration=remote_configuration,
             data_source=data_source,
@@ -73,20 +75,28 @@ class SimpleTablePersistManager(BasePersistManager):
         kwargs.pop("time_serie_source_code_git_hash")
         kwargs.pop("time_serie_source_code")
 
-        kwargs["source_code_git_hash"]=time_serie_source_code_git_hash
-        kwargs["source_code"]=time_serie_source_code
+        kwargs["source_code_git_hash"] = time_serie_source_code_git_hash
+        kwargs["source_code"] = time_serie_source_code
 
-
-        if self.simple_table_schema is not None:
-            kwargs.update(
-                schema=(
-                    self.resolved_simple_table_schema
-                    if self.resolved_simple_table_schema is not None
-                    else self.simple_table_schema.schema().to_canonical_dict()
-                ),
-                source_class_name=self.class_name,
-            )
+        if schema is not None:
+            kwargs["schema"] = schema
+        if source_class_name is not None:
+            kwargs["source_class_name"] = source_class_name
         return kwargs
+
+    def _get_storage_get_or_create_extra_kwargs(self) -> dict[str, Any]:
+        schema = None
+        if self.simple_table_schema is not None:
+            schema = (
+                self.resolved_simple_table_schema
+                if self.resolved_simple_table_schema is not None
+                else self.simple_table_schema.schema().to_canonical_dict()
+            )
+
+        return {
+            "schema": schema,
+            "source_class_name": self.class_name,
+        }
 
     def _build_update_get_or_create_kwargs(
         self,
@@ -164,7 +174,7 @@ class SimpleTablePersistManager(BasePersistManager):
         if record_id is None:
             raise ValueError("delete(...) requires a record id or a record with an 'id' field value.")
         SimpleTableStorage.delete_records_from_table(
-            data_node_update_id=self.data_node_update.id,
+            data_node_storage_id=self.data_node_storage.id,
             records_ids=[record_id],
             timeout=timeout,
         )

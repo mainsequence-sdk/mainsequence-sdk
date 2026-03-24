@@ -132,8 +132,8 @@ class BasePersistManager:
             kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = data_source_id
         return kwargs
 
+    @staticmethod
     def _build_storage_get_or_create_kwargs(
-        self,
         *,
         storage_hash: str,
         remote_configuration: dict,
@@ -142,8 +142,9 @@ class BasePersistManager:
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
+        **extra_kwargs: Any,
     ) -> dict[str, Any]:
-        return dict(
+        kwargs = dict(
             storage_hash=storage_hash,
             time_serie_source_code_git_hash=time_serie_source_code_git_hash,
             time_serie_source_code=time_serie_source_code,
@@ -152,6 +153,11 @@ class BasePersistManager:
             build_configuration_json_schema=build_configuration_json_schema,
             open_to_public=open_to_public,
         )
+        kwargs.update(extra_kwargs)
+        return kwargs
+
+    def _get_storage_get_or_create_extra_kwargs(self) -> dict[str, Any]:
+        return {}
 
     def _build_update_get_or_create_kwargs(
         self,
@@ -350,6 +356,7 @@ class BasePersistManager:
                     time_serie_source_code=time_serie_source_code,
                     build_configuration_json_schema=build_configuration_json_schema,
                     open_to_public=open_to_public,
+                    **self._get_storage_get_or_create_extra_kwargs(),
                 )
 
                 dtd_metadata = self.STORAGE_CLASS.get_or_create(**kwargs)

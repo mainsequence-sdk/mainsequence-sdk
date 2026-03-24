@@ -119,7 +119,7 @@ class CustomerRecord(SimpleTable):
 class CustomerBalanceRecord(SimpleTable):
     customer_id: Annotated[
         int,
-        ForeignKey(CustomerRecord, on_delete="cascade"),
+        ForeignKey("customers", on_delete="cascade"),
         Index(),
         Ops(filter=True),
     ] = Field(
@@ -142,7 +142,7 @@ class CustomerBalanceRecord(SimpleTable):
 class CustomerDebtRecord(SimpleTable):
     balance_id: Annotated[
         int,
-        ForeignKey(CustomerBalanceRecord, on_delete="cascade"),
+        ForeignKey("balances", on_delete="cascade"),
         Index(),
         Ops(filter=True),
     ] = Field(
@@ -167,7 +167,7 @@ What each schema feature is doing:
 - `Annotated[...]` keeps the field type and metadata together
 - `Index(...)` declares useful read paths
 - `Ops(...)` declares which fields are filterable or orderable
-- `ForeignKey(...)` declares the table-to-table relation
+- `ForeignKey(...)` declares the relation to a dependency updater key
 
 For a deeper explanation of the schema DSL, see
 [`docs/knowledge/simple_tables/simple_table.md`](../knowledge/simple_tables/simple_table.md).

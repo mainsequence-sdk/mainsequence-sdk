@@ -18,14 +18,15 @@ _SYSTEM_FIELD_NAMES = {"id"}
 class ForeignKey:
     """Logical foreign-key declaration attached through ``Annotated`` metadata."""
 
-    target: type[SimpleTable]
+    target: str
     on_delete: str = "restrict"
 
     def __post_init__(self) -> None:
-        from .models import SimpleTable
-
-        if not issubclass(self.target, SimpleTable):
-            raise TypeError("ForeignKey.target must be a SimpleTable subclass.")
+        if not isinstance(self.target, str) or not self.target.strip():
+            raise TypeError(
+                "ForeignKey.target must be a non-empty dependency key declared by "
+                "SimpleTableUpdater.dependencies()."
+            )
         if self.on_delete not in _ALLOWED_ON_DELETE:
             raise ValueError(
                 "ForeignKey.on_delete must be one of "
@@ -103,10 +104,7 @@ class TableSchema:
                     "foreign_key": None
                     if field.foreign_key is None
                     else {
-                        "target": (
-                            f"{field.foreign_key.target.__module__}."
-                            f"{field.foreign_key.target.__qualname__}"
-                        ),
+                        "target": field.foreign_key.target,
                         "on_delete": field.foreign_key.on_delete,
                     },
                     "index": None if field.index is None else asdict(field.index),

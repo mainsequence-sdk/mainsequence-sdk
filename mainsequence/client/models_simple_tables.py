@@ -485,7 +485,7 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
     @classmethod
     def delete_records_from_table(
         cls,
-        data_node_update_id,
+        data_node_storage_id: int,
         records_ids: list[int],
         *,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
@@ -494,7 +494,7 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
             return
 
         s = cls.build_session()
-        url = cls.get_object_url()  + f"/{data_node_update_id}/delete_records_from_table/"
+        url = cls.get_object_url()  + f"/{data_node_storage_id}/delete_records_from_table/"
         payload = {"json": {"records_ids": records_ids}}
 
         response = make_request(

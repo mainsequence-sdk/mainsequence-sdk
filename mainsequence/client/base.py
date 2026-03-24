@@ -630,11 +630,50 @@ class BaseObjectOrm:
 
         body = r.json()
 
+        def _iter_field_aliases(field_info) -> set[str]:
+            aliases: set[str] = set()
+
+            for attr_name in ("alias", "serialization_alias"):
+                alias_value = getattr(field_info, attr_name, None)
+                if isinstance(alias_value, str) and alias_value:
+                    aliases.add(alias_value)
+
+            validation_alias = getattr(field_info, "validation_alias", None)
+            if isinstance(validation_alias, str) and validation_alias:
+                aliases.add(validation_alias)
+            elif validation_alias is not None:
+                choices = getattr(validation_alias, "choices", None)
+                if choices is not None:
+                    for choice in choices:
+                        if isinstance(choice, str) and choice:
+                            aliases.add(choice)
+                else:
+                    path = getattr(validation_alias, "path", None)
+                    if isinstance(path, (list, tuple)) and len(path) == 1 and isinstance(path[0], str):
+                        aliases.add(path[0])
+
+            return aliases
+
+        def _resolve_model_field_name(obj, raw_key: str) -> str:
+            if not isinstance(obj, BaseModel):
+                return raw_key
+
+            model_fields = getattr(type(obj), "model_fields", {})
+            if raw_key in model_fields:
+                return raw_key
+
+            for field_name, field_info in model_fields.items():
+                if raw_key in _iter_field_aliases(field_info):
+                    return field_name
+
+            return raw_key
+
         def recursive_update(obj, update_dict, path=()):
             for k, v in update_dict.items():
                 current_path = (*path, k)
+                field_name = _resolve_model_field_name(obj, k)
                 # Get the existing nested object, defaulting to None if it doesn't exist
-                nested_obj = getattr(obj, k, None)
+                nested_obj = getattr(obj, field_name, None)
 
                 # Only recurse if the update value is a dict AND the existing
                 # attribute is an instance of a Pydantic model.
@@ -643,7 +682,7 @@ class BaseObjectOrm:
                 else:
                     # Otherwise, just set the value directly.
                     try:
-                        setattr(obj, k, v)
+                        setattr(obj, field_name, v)
                     except Exception as exc:
                         field_path = ".".join(current_path)
                         response_fragment = repr({k: v})

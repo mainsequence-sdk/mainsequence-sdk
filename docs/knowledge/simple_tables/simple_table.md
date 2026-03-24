@@ -54,7 +54,7 @@ class CustomerRecord(SimpleTable):
 class CustomerBalanceRecord(SimpleTable):
     customer_id: Annotated[
         int,
-        ForeignKey(CustomerRecord, on_delete="cascade"),
+        ForeignKey("customers", on_delete="cascade"),
         Index(),
         Ops(filter=True),
     ] = Field(
@@ -217,7 +217,7 @@ Example:
 ```python
 customer_id: Annotated[
     int,
-    ForeignKey(CustomerRecord, on_delete="cascade"),
+    ForeignKey("customers", on_delete="cascade"),
     Index(),
     Ops(filter=True),
 ] = Field(...)
@@ -226,12 +226,22 @@ customer_id: Annotated[
 This means:
 
 - the stored value is an integer
-- it refers to the `CustomerRecord` table
+- it refers to the updater exposed under the `"customers"` dependency key
 - the backend should enforce the declared delete behavior
 - the field is indexed
 - the field is filterable
 
-The client-side schema payload keeps the foreign-key contract small:
+`ForeignKey.target` is the dependency key declared by the owning updater's
+`dependencies()` method, not a `SimpleTable` class.
+
+Example:
+
+```python
+def dependencies(self) -> dict[str, SimpleTableUpdater]:
+    return {"customers": self.customers_updater}
+```
+
+The client-side schema payload keeps the resolved foreign-key contract small:
 
 - `target`
 - `on_delete`
