@@ -6,8 +6,6 @@ from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict
 
-from mainsequence import logger
-
 from .exceptions import ApiError, raise_for_response
 from .utils import (
     API_ENDPOINT,
@@ -632,21 +630,30 @@ class BaseObjectOrm:
 
         body = r.json()
 
-        def recursive_update(obj, update_dict):
+        def recursive_update(obj, update_dict, path=()):
             for k, v in update_dict.items():
+                current_path = (*path, k)
                 # Get the existing nested object, defaulting to None if it doesn't exist
                 nested_obj = getattr(obj, k, None)
 
                 # Only recurse if the update value is a dict AND the existing
                 # attribute is an instance of a Pydantic model.
                 if isinstance(v, dict) and isinstance(nested_obj, BaseModel):
-                    recursive_update(nested_obj, v)
+                    recursive_update(nested_obj, v, path=current_path)
                 else:
                     # Otherwise, just set the value directly.
                     try:
                         setattr(obj, k, v)
-                    except Exception as e:
-                        logger.exception(e)
+                    except Exception as exc:
+                        field_path = ".".join(current_path)
+                        response_fragment = repr({k: v})
+                        if len(response_fragment) > 300:
+                            response_fragment = f"{response_fragment[:297]}..."
+                        raise ValueError(
+                            f"Failed to apply PATCH response to {type(obj).__name__} at field "
+                            f"'{field_path}'. Response fragment: {response_fragment}. "
+                            f"Original error: {exc}"
+                        ) from exc
 
             return obj
 

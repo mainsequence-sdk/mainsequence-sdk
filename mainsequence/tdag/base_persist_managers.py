@@ -16,7 +16,7 @@ from mainsequence.logconf import logger
 from . import future_registry
 
 
-def get_data_node_source_code(DataNodeClass: DataNode) -> str:
+def get_data_node_source_code(DataNodeClass: type[Any]) -> str:
     """
     Gets the source code of a DataNode class.
 
@@ -47,7 +47,7 @@ def get_data_node_source_code(DataNodeClass: DataNode) -> str:
     return "Source code unavailable."
 
 
-def get_data_node_source_code_git_hash(DataNodeClass: DataNode) -> str:
+def get_data_node_source_code_git_hash(DataNodeClass: type[Any]) -> str:
     """
     Hashes the source code of a DataNode class using SHA-1 (Git style).
 
@@ -267,7 +267,7 @@ class BasePersistManager:
         )
         thread.start()
 
-    def depends_on_connect(self, new_ts: DataNode, is_api: bool) -> None:
+    def depends_on_connect(self, new_ts: Any, is_api: bool) -> None:
         if not is_api:
             self.data_node_update.depends_on_connect(
                 target_time_serie_id=new_ts.data_node_update.id

@@ -144,7 +144,7 @@ class SimpleTablePersistManager(BasePersistManager):
     ) -> list[SimpleTable]:
         del timeout
         payload = [record.model_dump(mode="python") for record in records]
-        self.UPDATE_CLASS.insert_data_into_table(
+        self.UPDATE_CLASS.insert_records_into_table(
             data_node_update_id=self.data_node_update.id,
             records=payload,
             overwrite=overwrite,

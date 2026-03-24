@@ -5,7 +5,7 @@ import pytest
 
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_user as models_user_mod
-from mainsequence.client.base import BaseObjectOrm, ShareableObjectMixin
+from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 
 
 class _IdRef:
@@ -70,6 +70,19 @@ class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
         return "https://backend.test/demo-shareable"
+
+    @classmethod
+    def build_session(cls):
+        return object()
+
+
+class DemoPatchModel(BasePydanticModel, BaseObjectOrm):
+    id: int
+    label: str | None = None
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        return "https://backend.test/demo-patch"
 
     @classmethod
     def build_session(cls):
@@ -212,6 +225,44 @@ def test_get_by_pk_normalizes_read_query_params(monkeypatch):
         "url": "https://backend.test/demo-read/9/",
         "payload": {"params": {"include_relations_detail": "false"}},
         "timeout": 8,
+    }
+
+
+def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "id": 9,
+                "schema": {"name": "customers"},
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    with pytest.raises(ValueError) as exc_info:
+        DemoPatchModel.patch_by_id(9, _into=DemoPatchModel(id=9), label="patched")
+
+    assert str(exc_info.value) == (
+        "Failed to apply PATCH response to DemoPatchModel at field 'schema'. "
+        "Response fragment: {'schema': {'name': 'customers'}}. "
+        'Original error: "DemoPatchModel" object has no field "schema"'
+    )
+    assert captured == {
+        "r_type": "PATCH",
+        "url": "https://backend.test/demo-patch/9/",
+        "payload": {"json": {"label": "patched"}},
+        "timeout": None,
     }
 
 

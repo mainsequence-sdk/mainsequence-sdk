@@ -155,6 +155,8 @@ class SimpleTableUpdater(DataNode):
         config = build_operations.create_config(
             kwargs=init_kwargs,
             ts_class_name=self.__class__.__name__,
+            update_hash_prefix=self.__class__.__name__,
+            storage_hash_prefix=self.simple_table_schema.__name__,
         )
 
         for field_name, value in config.__dict__.items():
@@ -166,9 +168,12 @@ class SimpleTableUpdater(DataNode):
         return self.data_source
 
     @staticmethod
-    def _resolved_schema_storage_hash(resolved_schema: dict[str, Any]) -> str:
+    def _resolved_schema_storage_hash(
+        schema_cls: type[SimpleTable],
+        resolved_schema: dict[str, Any],
+    ) -> str:
         _, storage_hash = build_operations.hash_signature({"simple_table_schema": resolved_schema})
-        return f"simpletable_{storage_hash}".lower()
+        return f"{schema_cls.__name__}_{storage_hash}".lower()
 
     def _build_foreign_table_storage_kwargs(
         self,
@@ -178,7 +183,7 @@ class SimpleTableUpdater(DataNode):
         data_source: Any,
     ) -> dict[str, Any]:
         return {
-            "storage_hash": self._resolved_schema_storage_hash(resolved_schema),
+            "storage_hash": self._resolved_schema_storage_hash(schema_cls, resolved_schema),
             "build_configuration": {"simple_table_schema": resolved_schema},
             "data_source": data_source.model_dump(),
             "build_configuration_json_schema": {},

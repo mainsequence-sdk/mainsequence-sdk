@@ -5,6 +5,7 @@ import datetime
 import gzip
 import json
 import math
+import sys
 import time
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -21,10 +22,14 @@ from .base import BaseObjectOrm, BasePydanticModel
 from .exceptions import raise_for_response
 from .models_tdag import (
     POD_PROJECT,
+    AbstractTable,
+    BaseColumnMetaData,
     BaseUpdateDetails,
+    BaseUpdateStatistics,
     DynamicTableDataSource,
     HistoricalUpdateRecord,
     SourceTableConfigurationBase,
+    TableUpdateNode,
     UpdateBatchResponse,
     _executor,
     get_chunk_stats,
@@ -109,16 +114,18 @@ class SimpleTableIndexMetaPayload(BasePydanticModel):
     )
 
 
-class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
+class STColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
+    source_config_id: int | None = Field(
+        None,
+        description="Primary key of the related STSourceTableConfiguration",
+    )
+
+
+class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table"
     model_config = ConfigDict(populate_by_name=True)
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
-    storage_hash: str | None = Field(
-        None,
-        max_length=63,
-        description="Stable physical hash identifier for the simple table storage.",
-    )
     source_class_name: str | None = None
     data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
     simple_table_schema: dict[str, Any] | None = Field(
@@ -146,26 +153,17 @@ class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
     build_configuration: dict[str, Any] | None = Field(
         None, description="Storage/build configuration in JSON format"
     )
-    build_configuration_json_schema: dict[str, Any] | None = Field(
-        None, description="JSON schema describing the build configuration"
-    )
     time_serie_source_code_git_hash: str | None = Field(
         None, max_length=255, description="Git hash of the simple-table updater source code"
     )
     time_serie_source_code: str | None = Field(
         None, description="Source code for the simple-table updater"
     )
-    identifier: str | None = None
-    description: str | None = None
     open_for_everyone: bool = Field(
         default=False, description="Whether the table is open for everyone"
     )
     data_source_open_for_everyone: bool = Field(
         default=False, description="Whether the data source is open for everyone"
-    )
-
-    protect_from_deletion: bool = Field(
-        default=False, description="Flag to protect the record from deletion"
     )
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
     created_by_user: int | None = Field(None, description="Foreign key reference to User")
@@ -189,7 +187,7 @@ class SimpleTableStorage(BasePydanticModel, BaseObjectOrm):
 
     @classmethod
     def get_records_upsert_url(cls) -> str:
-        return f"{cls.ROOT_URL.rstrip('/')}/ts_manager/simple_tables_update"
+        return f"{cls.ROOT_URL.rstrip('/')}/ts_manager/simple_tables/update"
 
     @classmethod
     def insert_records(
@@ -285,17 +283,22 @@ class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel,
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/source_table_configuration"
 
     related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
+    columns_metadata: list[STColumnMetaData] | None = None
 
     def set_or_update_columns_metadata(
         self,
-        columns_metadata: list[ColumnMetaData],
+        columns_metadata: list[STColumnMetaData],
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Any:
         del columns_metadata, timeout
         return None
 
+    def get_data_updates(self) -> BaseUpdateStatistics:
+        #no op
+        return BaseUpdateStatistics()
+
 class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_run_configuration"
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_table/run_configuration"
     update_schedule: str = "*/1 * * * *"
 
     @classmethod
@@ -304,7 +307,7 @@ class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
         return None
 
 class SimpleTableUpdateRecord(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update_historical"
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_table/update_historical"
 
     related_table: int | SimpleTableStorage
 
@@ -312,8 +315,9 @@ class SimpleTableUpdateRecord(HistoricalUpdateRecord,BasePydanticModel, BaseObje
 SimpleTableUpdateHistorical = SimpleTableUpdateRecord
 
 
-class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
-    ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update"
+class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
+    model_config = ConfigDict(extra="forbid")
+    ENDPOINT: ClassVar[str] = "ts_manager/simple_table/update"
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
     }
@@ -324,15 +328,11 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
         ),
     }
 
-    id: int | None = Field(None, description="Primary key, auto-incremented ID")
-    update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     remote_table: int | SimpleTableStorage = Field(
         ...,
         validation_alias=AliasChoices("remote_table", "simple_table"),
         description="Simple table storage referenced by this update.",
     )
-    build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
-    ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: list[str] | None = Field(default=[], description="List of tags")
     description: str | None = Field(None, description="Optional HTML description")
     update_details: SimpleTableUpdateDetails | int | None = None
@@ -509,8 +509,13 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
         depth_df = pd.DataFrame(r.json())
 
         if not depth_df.empty:
-            # hot fix for compatiblity with backend
-            depth_df = depth_df.rename(columns={"local_time_serie_id": "data_node_update_id"})
+            # Normalize legacy backend keys to the current dependency id column.
+            depth_df = depth_df.rename(
+                columns={
+                    "local_time_serie_id": "update_node_id",
+                    "data_node_update_id": "update_node_id",
+                }
+            )
 
         return depth_df
 
@@ -559,67 +564,76 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
 
         return self.data_node_storage.get_data_between_dates_from_api(*args, **kwargs)
 
+
     @classmethod
-    def insert_data_into_table(
-        cls, data_node_update_id, records: list[dict], overwrite=True, add_insertion_time=False
+    def insert_records_into_table(
+        cls,
+        data_node_update_id,
+        records: list[dict],
+        overwrite: bool = True,
+        add_insertion_time: bool = False,
+        *,
+        chunk_size: int = 50_000,
+        timeout: int | float | tuple[float, float] | None = 60 * 15,
     ):
+        del add_insertion_time
+
+        module = sys.modules[cls.__module__]
+        make_request_fn = module.make_request
+        raise_for_response_fn = module.raise_for_response
+        logger_obj = module.logger
+        serialize_to_json_fn = module.serialize_to_json
+
+        def _json_default(value: Any) -> Any:
+            if isinstance(value, (datetime.datetime, datetime.date)):
+                return value.isoformat()
+            if hasattr(value, "model_dump"):
+                try:
+                    return value.model_dump(mode="json", exclude_none=True)
+                except TypeError:
+                    return value.model_dump()
+            return str(value)
+
+        serialized_records = json.loads(
+            json.dumps(
+                serialize_to_json_fn({"records": records})["records"],
+                default=_json_default,
+            )
+        )
+        if not serialized_records:
+            logger_obj.info("No records to upload.")
+            return
+
         s = cls.build_session()
         url = cls.get_object_url() + f"/{data_node_update_id}/insert_data_into_table/"
 
-        chunk_json_str = json.dumps(records)
-        compressed = gzip.compress(chunk_json_str.encode("utf-8"))
-        compressed_b64 = base64.b64encode(compressed).decode("utf-8")
-
-        payload = dict(
-            json={
-                "data": compressed_b64,  # compressed JSON data
-                "chunk_stats": None,
-                "overwrite": overwrite,
-                "chunk_index": 0,
-                "total_chunks": 1,
+        def _build_payload(
+            records_chunk: list[dict[str, Any]],
+            *,
+            chunk_index: int,
+            total_chunks: int,
+        ) -> dict[str, Any]:
+            chunk_json_str = json.dumps(records_chunk)
+            compressed = gzip.compress(chunk_json_str.encode("utf-8"))
+            compressed_b64 = base64.b64encode(compressed).decode("utf-8")
+            return {
+                "json": {
+                    "data": compressed_b64,
+                    "chunk_stats": None,
+                    "overwrite": overwrite,
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks,
+                }
             }
-        )
-
-        try:
-            r = make_request(
-                s=s, loaders=None, payload=payload, r_type="POST", url=url, time_out=60 * 15
-            )
-            if r.status_code not in [200, 204]:
-                logger.warning(f"Error in request: {r.text}")
-            logger.info("Chunk uploaded successfully.")
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error uploading chunk : {e}")
-            # Optionally, you could retry or break here
-            raise e
-        if r.status_code not in [200, 204]:
-            raise_for_response(r)
-
-    @classmethod
-    def post_data_frame_in_chunks(
-        cls,
-        serialized_data_frame: pd.DataFrame,
-        chunk_size: int = 50_000,
-        data_node_update: SimpleTableUpdate = None,
-        data_source: str = None,
-        index_names: list = None,
-        time_index_name: str = "timestamp",
-        overwrite: bool = False,
-    ):
-        """
-        Sends a large DataFrame to a Django backend in multiple chunks.
-        If a chunk is too large (HTTP 413), it's automatically split in half and retried.
-        """
-        s = cls.build_session()
-        url = cls.get_object_url() + f"/{data_node_update.id}/insert_data_into_table/"
 
         def _send_chunk_recursively(
-            df_chunk: pd.DataFrame, chunk_idx: int, total_chunks: int, is_sub_chunk: bool = False
-        ):
-            """
-            Internal helper to send a chunk. If it receives a 413 error, it splits
-            the chunk and calls itself on the two halves.
-            """
-            if df_chunk.empty:
+            records_chunk: list[dict[str, Any]],
+            chunk_idx: int,
+            total_chunks: int,
+            *,
+            is_sub_chunk: bool = False,
+        ) -> None:
+            if not records_chunk:
                 return
 
             part_label = (
@@ -627,79 +641,89 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
                 if not is_sub_chunk
                 else f"sub-chunk of {chunk_idx + 1}"
             )
-
-            # Prepare the payload
-            chunk_stats, _ = get_chunk_stats(
-                chunk_df=df_chunk, index_names=index_names, time_index_name=time_index_name
-            )
-            chunk_json_str = df_chunk.to_json(orient="records", date_format="iso")
-            compressed = gzip.compress(chunk_json_str.encode("utf-8"))
-            compressed_b64 = base64.b64encode(compressed).decode("utf-8")
-
-            # For sub-chunks, we treat it as a new, single-chunk upload.
-            payload = dict(
-                json={
-                    "data": compressed_b64,
-                    "chunk_stats": chunk_stats,
-                    "overwrite": overwrite,
-                    "chunk_index": 0 if is_sub_chunk else chunk_idx,
-                    "total_chunks": 1 if is_sub_chunk else total_chunks,
-                }
+            payload = _build_payload(
+                records_chunk,
+                chunk_index=0 if is_sub_chunk else chunk_idx,
+                total_chunks=1 if is_sub_chunk else total_chunks,
             )
 
             try:
-                r = make_request(
-                    s=s, loaders=None, payload=payload, r_type="POST", url=url, time_out=60 * 15
+                response = make_request_fn(
+                    s=s,
+                    loaders=None,
+                    payload=payload,
+                    r_type="POST",
+                    url=url,
+                    time_out=timeout,
                 )
+            except requests.exceptions.RequestException as exc:
+                logger_obj.exception(f"Error uploading chunk {part_label}: {exc}")
+                raise
 
-                if r.status_code in [200, 204]:
-                    logger.info(f"Chunk {part_label} ({len(df_chunk)} rows) uploaded successfully.")
-                    return
+            if response.status_code in [200, 204]:
+                logger_obj.info("Chunk uploaded successfully.")
+                return
 
-                if r.status_code == 413:
-                    logger.warning(
-                        f"Chunk {part_label} ({len(df_chunk)} rows) is too large (413). "
-                        f"Splitting in half and retrying as new uploads."
+            if response.status_code == 413:
+                logger_obj.warning(
+                    f"Chunk {part_label} ({len(records_chunk)} rows) is too large (413). "
+                    "Splitting in half and retrying as new uploads."
+                )
+                if len(records_chunk) <= 1:
+                    raise Exception(
+                        f"A single row from chunk {part_label} is too large to upload."
                     )
-                    if len(df_chunk) <= 1:
-                        logger.error(
-                            f"A single row is too large to upload (from chunk {part_label}). Cannot split further."
-                        )
-                        raise Exception(
-                            f"A single row from chunk {part_label} is too large to upload."
-                        )
 
-                    mid_point = len(df_chunk) // 2
-                    first_half = df_chunk.iloc[:mid_point]
-                    second_half = df_chunk.iloc[mid_point:]
+                mid_point = len(records_chunk) // 2
+                _send_chunk_recursively(
+                    records_chunk[:mid_point],
+                    chunk_idx,
+                    total_chunks,
+                    is_sub_chunk=True,
+                )
+                _send_chunk_recursively(
+                    records_chunk[mid_point:],
+                    chunk_idx,
+                    total_chunks,
+                    is_sub_chunk=True,
+                )
+                return
 
-                    # Recursively call for each half, marking them as sub-chunks.
-                    _send_chunk_recursively(first_half, chunk_idx, total_chunks, is_sub_chunk=True)
-                    _send_chunk_recursively(second_half, chunk_idx, total_chunks, is_sub_chunk=True)
-                    return
+            raise_for_response_fn(response, payload=payload)
 
-                logger.warning(f"Error in request for chunk {part_label}: {r.text}")
-                raise_for_response(r, )
+        total_rows = len(serialized_records)
+        effective_chunk_size = chunk_size if chunk_size > 0 else total_rows
+        total_chunks = math.ceil(total_rows / effective_chunk_size) if total_rows > 0 else 1
 
+        for chunk_idx in range(total_chunks):
+            start_idx = chunk_idx * effective_chunk_size
+            end_idx = min((chunk_idx + 1) * effective_chunk_size, total_rows)
+            _send_chunk_recursively(
+                serialized_records[start_idx:end_idx],
+                chunk_idx,
+                total_chunks,
+            )
 
-            except requests.exceptions.RequestException as e:
-                logger.exception(f"Network error uploading chunk {part_label}: {e}")
-                raise e
+    @classmethod
+    def insert_data_into_table(
+        cls,
+        data_node_update_id,
+        records: list[dict],
+        overwrite: bool = True,
+        add_insertion_time: bool = False,
+        *,
+        chunk_size: int = 50_000,
+        timeout: int | float | tuple[float, float] | None = 60 * 15,
+    ):
+        return cls.insert_records_into_table(
+            data_node_update_id=data_node_update_id,
+            records=records,
+            overwrite=overwrite,
+            add_insertion_time=add_insertion_time,
+            chunk_size=chunk_size,
+            timeout=timeout,
+        )
 
-        total_rows = len(serialized_data_frame)
-        if total_rows == 0:
-            logger.info("DataFrame is empty, nothing to upload.")
-            return
-
-        total_chunks = math.ceil(total_rows / chunk_size) if chunk_size > 0 else 1
-        logger.info(f"Starting upload of {total_rows} rows in {total_chunks} initial chunk(s).")
-
-        for i in range(total_chunks):
-            start_idx = i * chunk_size
-            end_idx = min((i + 1) * chunk_size, total_rows)
-            chunk_df = serialized_data_frame.iloc[start_idx:end_idx]
-
-            _send_chunk_recursively(chunk_df, i, total_chunks)
 
     @classmethod
     def get_data_nodes_and_set_updates(
@@ -717,7 +741,7 @@ class SimpleTableUpdate(BasePydanticModel, BaseObjectOrm):
         s = cls.build_session()
         payload = {
             "json": dict(
-                local_time_series_ids=local_time_series_ids,
+                simple_table_update_ids=local_time_series_ids,
                 update_details_kwargs=update_details_kwargs,
                 update_priority_dict=update_priority_dict,
             )

@@ -86,12 +86,7 @@ class SourceTableConfigurationDoesNotExist(Exception):
 
 
 
-class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
-    source_config_id: int | None = Field(
-        None,
-
-        description="Primary key of the related SourceTableConfiguration",
-    )
+class BaseColumnMetaData(BasePydanticModel):
     column_name: str = Field(
         ..., max_length=63, description="Name of the column (must match column_dtypes_map key)"
     )
@@ -104,6 +99,13 @@ class ColumnMetaData(BasePydanticModel, BaseObjectOrm):
     description: str = Field(..., description="Longer description of the column")
 
 
+class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
+    source_config_id: int | None = Field(
+        None,
+        description="Primary key of the related SourceTableConfiguration",
+    )
+
+
 class SourceTableConfigurationBase:
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
@@ -114,7 +116,7 @@ class SourceTableConfigurationBase:
 
     def set_or_update_columns_metadata(
         self,
-        columns_metadata: list[ColumnMetaData],
+        columns_metadata: list[BaseColumnMetaData],
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Any:
         raise NotImplementedError
@@ -181,7 +183,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
 
     def set_or_update_columns_metadata(
         self,
-        columns_metadata: list[ColumnMetaData],
+        columns_metadata: list[BaseColumnMetaData],
         timeout: int | float | tuple[float, float] | None = None,
     ) -> Any:
         """ """
@@ -214,7 +216,27 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
 
 
 
-class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
+class TableUpdateNode(BasePydanticModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: int | None = Field(None, description="Primary key, auto-incremented ID")
+    update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
+    build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
+    ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
+    downstream_direct_dependencies: list[TableUpdateNode] | None = Field(
+        None,
+        description="Optional serialized downstream direct dependency payloads.",
+    )
+    all_dependencies_update_priority: list[dict[str, Any]] | None = Field(
+        None,
+        description="Optional serialized dependency priority payloads.",
+    )
+
+
+
+
+class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
+    model_config = ConfigDict(extra="forbid")
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
     }
@@ -225,11 +247,7 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         ),
     }
 
-    id: int | None = Field(None, description="Primary key, auto-incremented ID")
-    update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     data_node_storage: int | DataNodeStorage
-    build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
-    ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
     tags: list[str] | None = Field(default=[], description="List of tags")
     description: str | None = Field(None, description="Optional HTML description")
     update_details: DataNodeUpdateDetails | int | None = None
@@ -451,8 +469,13 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
         depth_df = pd.DataFrame(r.json())
 
         if not depth_df.empty:
-            # hot fix for compatiblity with backend
-            depth_df = depth_df.rename(columns={"local_time_serie_id": "data_node_update_id"})
+            # Normalize legacy backend keys to the current dependency id column.
+            depth_df = depth_df.rename(
+                columns={
+                    "local_time_serie_id": "update_node_id",
+                    "data_node_update_id": "update_node_id",
+                }
+            )
 
         return depth_df
 
@@ -500,41 +523,6 @@ class DataNodeUpdate(BasePydanticModel, BaseObjectOrm):
     def get_data_between_dates_from_api(self, *args, **kwargs):
 
         return self.data_node_storage.get_data_between_dates_from_api(*args, **kwargs)
-
-    @classmethod
-    def insert_data_into_table(
-        cls, data_node_update_id, records: list[dict], overwrite=True, add_insertion_time=False
-    ):
-        s = cls.build_session()
-        url = cls.get_object_url() + f"/{data_node_update_id}/insert_data_into_table/"
-
-        chunk_json_str = json.dumps(records)
-        compressed = gzip.compress(chunk_json_str.encode("utf-8"))
-        compressed_b64 = base64.b64encode(compressed).decode("utf-8")
-
-        payload = dict(
-            json={
-                "data": compressed_b64,  # compressed JSON data
-                "chunk_stats": None,
-                "overwrite": overwrite,
-                "chunk_index": 0,
-                "total_chunks": 1,
-            }
-        )
-
-        try:
-            r = make_request(
-                s=s, loaders=None, payload=payload, r_type="POST", url=url, time_out=60 * 15
-            )
-            if r.status_code not in [200, 204]:
-                logger.warning(f"Error in request: {r.text}")
-            logger.info("Chunk uploaded successfully.")
-        except requests.exceptions.RequestException as e:
-            logger.exception(f"Error uploading chunk : {e}")
-            # Optionally, you could retry or break here
-            raise e
-        if r.status_code not in [200, 204]:
-            raise_for_response(r)
 
     @classmethod
     def post_data_frame_in_chunks(
@@ -875,7 +863,21 @@ class TableMetaData(BaseModel):
     data_frequency_id: DataFrequency | None = None
 
 
-class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class AbstractTable:
+    storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
+    build_configuration_json_schema: dict[str, Any] | None = Field(
+        None,
+        description="JSON schema describing the build configuration",
+    )
+    identifier: str | None = None
+    protect_from_deletion: bool = Field(
+        default=False,
+        description="Flag to protect the record from deletion",
+    )
+    description: str | None = None
+
+
+class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
@@ -916,7 +918,6 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     }
 
     id: int = Field(None, description="Primary key, auto-incremented ID")
-    storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
 
     creation_date: datetime.datetime = Field(..., description="Creation timestamp")
     created_by_user: int | None = Field(None, description="Foreign key reference to User")
@@ -936,9 +937,6 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     time_serie_source_code: str | None = Field(
         None, description="File path for time series source code"
     )
-    protect_from_deletion: bool = Field(
-        default=False, description="Flag to protect the record from deletion"
-    )
     data_source: int | DynamicTableDataSource
     source_class_name: str
     sourcetableconfiguration: SourceTableConfiguration | None = None
@@ -949,8 +947,6 @@ class DataNodeStorage(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     retention_policy_config: dict | None = None
 
     # MetaData
-    identifier: str | None = None
-    description: str | None = None
     data_frequency_id: DataFrequency | None = None
 
     _drop_indices: bool = False  # for direct incertion we can pass this values
@@ -1734,9 +1730,9 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     api_address: str | None
     api_port: int | None
     last_heart_beat: datetime.datetime | None = None
-    pre_loads_in_tree: list[DataNodeUpdate] | None = None  # Assuming this is a list of strings
-    in_active_tree: list[DataNodeUpdate] | None = None  # Assuming this is a list of strings
-    schedules_to: list[DataNodeUpdate] | None = None
+    pre_loads_in_tree: list[TableUpdateNode] | None = None
+    in_active_tree: list[TableUpdateNode] | None = None
+    schedules_to: list[TableUpdateNode] | None = None
     # for heartbeat
     _stop_heart_beat: bool = False
     _executor: object | None = None
@@ -1760,55 +1756,32 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         r.raise_for_status()
         return cls(**r.json())
 
-    @classmethod
-    def initialize_debug_for_ts(
-        cls,
-        time_serie_id: int,
-        name_suffix: str | None = None,
-    ):
-        """
-        POST /schedulers/initialize‑debug/
-        body: { time_serie_id, name_suffix? }
-        """
-        s = cls.build_session()
-        url = cls.get_object_url() + "/initialize-debug/"
-        payload = {
-            "json": {
-                "time_serie_id": time_serie_id,
-                **({"name_suffix": name_suffix} if name_suffix is not None else {}),
-            }
-        }
-        r = make_request(s=s, r_type="POST", url=url, payload=payload, loaders=cls.LOADERS)
-        r.raise_for_status()
-        return cls(**r.json())
 
     @classmethod
-    def build_and_assign_to_ts(
+    def build_and_assign_to_update_nodes(
         cls,
         scheduler_name: str,
-        time_serie_ids: list[int],
+        update_nodes_ids: list[int],
         delink_all_ts: bool = False,
         remove_from_other_schedulers: bool = True,
         timeout=None,
-        is_simple_table_updater:bool=False,
         **kwargs,
     ):
         """
-        POST /schedulers/build-and-assign/
+        POST /schedulers/build_and_assign_to_update_nodes/
         body: {
           scheduler_name, time_serie_ids, delink_all_ts?,
           remove_from_other_schedulers?, scheduler_kwargs?
         }
         """
         s = cls.build_session()
-        url = cls.get_object_url() + "/build_and_assign_to_ts/"
+        url = cls.get_object_url() + "/build_and_assign_to_update_nodes/"
         payload = {
             "json": {
                 "scheduler_name": scheduler_name,
-                "time_serie_ids": time_serie_ids,
-                "delink_all_ts": delink_all_ts,
+                "update_nodes_ids": update_nodes_ids,
+                "delink_all_update_nodes": delink_all_ts,
                 "remove_from_other_schedulers": remove_from_other_schedulers,
-                "is_simple_table_updater":is_simple_table_updater,
                 "scheduler_kwargs": kwargs or {},
             }
         }

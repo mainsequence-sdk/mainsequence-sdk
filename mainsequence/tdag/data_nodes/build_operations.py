@@ -504,7 +504,13 @@ def extract_pydantic_fields_from_dict(d: Mapping[str, Any]) -> dict[str, dict[st
     return result
 
 
-def create_config(ts_class_name: str, kwargs: dict[str, Any]):
+def create_config(
+    ts_class_name: str,
+    kwargs: dict[str, Any],
+    *,
+    update_hash_prefix: str | None = None,
+    storage_hash_prefix: str | None = None,
+):
     """
     Creates the configuration and hashes using the original hash_signature logic.
     """
@@ -527,10 +533,13 @@ def create_config(ts_class_name: str, kwargs: dict[str, Any]):
     # 4. Create the remote configuration by removing ignored keys
     remote_config = copy.deepcopy(dict_to_hash)
 
+    update_prefix = (update_hash_prefix or ts_class_name).lower()
+    storage_prefix = (storage_hash_prefix or ts_class_name).lower()
+
     # 5. Return all computed values in the structured dataclass
     return TimeSerieConfig(
-        update_hash=f"{ts_class_name}_{update_hash}".lower(),
-        storage_hash=f"{ts_class_name}_{storage_hash}".lower(),
+        update_hash=f"{update_prefix}_{update_hash}".lower(),
+        storage_hash=f"{storage_prefix}_{storage_hash}".lower(),
         local_initial_configuration=dict_to_hash,
         remote_initial_configuration=remote_config,
         build_configuration_json_schema=build_configuration_json_schema,

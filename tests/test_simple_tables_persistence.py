@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import base64
 import datetime
+import gzip
+import json
 import os
 from types import SimpleNamespace
 from typing import Annotated
@@ -41,6 +44,167 @@ class OrderRow(SimpleTable):
 
 class OrderUpdaterConfiguration(SimpleTableUpdaterConfiguration):
     tenant: str = Field(..., json_schema_extra={"update_only": True})
+
+
+class _HttpResponse:
+    def __init__(self, status_code: int, text: str = ""):
+        self.status_code = status_code
+        self.text = text
+
+
+def test_insert_records_into_table_raises_before_success_log_on_http_error(monkeypatch):
+    info_messages: list[str] = []
+
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "make_request",
+        lambda **kwargs: _HttpResponse(
+            500,
+            '{"detail":"insert_data_into_table is intentionally not implemented"}',
+        ),
+    )
+
+    def fake_raise_for_response(response, payload=None):
+        raise RuntimeError(response.text)
+
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", fake_raise_for_response)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "logger",
+        SimpleNamespace(info=info_messages.append, exception=lambda *_args, **_kwargs: None),
+    )
+
+    with pytest.raises(RuntimeError, match="intentionally not implemented"):
+        client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
+            data_node_update_id=1226,
+            records=[{"id": 1, "name": "Alice"}],
+        )
+
+    assert info_messages == []
+
+def test_insert_records_into_table_logs_success_only_on_success(monkeypatch):
+    info_messages: list[str] = []
+    raise_calls: list[int] = []
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", lambda **kwargs: _HttpResponse(200))
+
+    def fake_raise_for_response(response, payload=None):
+        raise_calls.append(response.status_code)
+
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", fake_raise_for_response)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "logger",
+        SimpleNamespace(info=info_messages.append, exception=lambda *_args, **_kwargs: None),
+    )
+
+    client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
+        data_node_update_id=1226,
+        records=[{"id": 1, "name": "Alice"}],
+    )
+
+    assert raise_calls == []
+    assert info_messages == ["Chunk uploaded successfully."]
+
+
+def _decode_chunk_records(payload: dict[str, object]) -> list[dict[str, object]]:
+    compressed_b64 = payload["json"]["data"]
+    compressed = base64.b64decode(compressed_b64)
+    return json.loads(gzip.decompress(compressed).decode("utf-8"))
+
+
+def test_insert_records_into_table_sends_record_chunks(monkeypatch):
+    requests_payloads: list[dict[str, object]] = []
+    info_messages: list[str] = []
+
+    def fake_make_request(**kwargs):
+        requests_payloads.append(kwargs["payload"])
+        return _HttpResponse(200)
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(client_simple_table_models, "raise_for_response", lambda response, payload=None: None)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "logger",
+        SimpleNamespace(
+            info=info_messages.append,
+            warning=lambda *_args, **_kwargs: None,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
+        data_node_update_id=1226,
+        records=[
+            {"id": 1, "as_of_date": datetime.date(2026, 3, 24)},
+            {"id": 2, "as_of_date": datetime.date(2026, 3, 25)},
+            {"id": 3, "as_of_date": datetime.date(2026, 3, 26)},
+        ],
+        chunk_size=2,
+    )
+
+    assert len(requests_payloads) == 2
+    assert requests_payloads[0]["json"]["chunk_index"] == 0
+    assert requests_payloads[0]["json"]["total_chunks"] == 2
+    assert requests_payloads[0]["json"]["chunk_stats"] is None
+    assert _decode_chunk_records(requests_payloads[0]) == [
+        {"id": 1, "as_of_date": "2026-03-24"},
+        {"id": 2, "as_of_date": "2026-03-25"},
+    ]
+    assert requests_payloads[1]["json"]["chunk_index"] == 1
+    assert requests_payloads[1]["json"]["total_chunks"] == 2
+    assert requests_payloads[1]["json"]["chunk_stats"] is None
+    assert _decode_chunk_records(requests_payloads[1]) == [
+        {"id": 3, "as_of_date": "2026-03-26"},
+    ]
+    assert info_messages == [
+        "Chunk uploaded successfully.",
+        "Chunk uploaded successfully.",
+    ]
+
+
+def test_insert_records_into_table_splits_413_chunks(monkeypatch):
+    requests_payloads: list[dict[str, object]] = []
+    statuses = iter([413, 200, 200])
+    warning_messages: list[str] = []
+
+    def fake_make_request(**kwargs):
+        requests_payloads.append(kwargs["payload"])
+        return _HttpResponse(next(statuses))
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "raise_for_response",
+        lambda response, payload=None: None,
+    )
+    monkeypatch.setattr(
+        client_simple_table_models,
+        "logger",
+        SimpleNamespace(
+            info=lambda *_args, **_kwargs: None,
+            warning=warning_messages.append,
+            exception=lambda *_args, **_kwargs: None,
+        ),
+    )
+
+    client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
+        data_node_update_id=1226,
+        records=[{"id": 1}, {"id": 2}, {"id": 3}],
+        chunk_size=10,
+    )
+
+    assert len(requests_payloads) == 3
+    assert requests_payloads[0]["json"]["chunk_index"] == 0
+    assert requests_payloads[0]["json"]["total_chunks"] == 1
+    assert _decode_chunk_records(requests_payloads[0]) == [{"id": 1}, {"id": 2}, {"id": 3}]
+    assert requests_payloads[1]["json"]["chunk_index"] == 0
+    assert requests_payloads[1]["json"]["total_chunks"] == 1
+    assert _decode_chunk_records(requests_payloads[1]) == [{"id": 1}]
+    assert requests_payloads[2]["json"]["chunk_index"] == 0
+    assert requests_payloads[2]["json"]["total_chunks"] == 1
+    assert _decode_chunk_records(requests_payloads[2]) == [{"id": 2}, {"id": 3}]
+    assert len(warning_messages) == 1
 
 
 def _build_update(*, update_hash: str = "order_updater_hash") -> client_simple_table_models.SimpleTableUpdate:
@@ -100,7 +264,9 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
         captured["get_or_create_kwargs"] = kwargs
         return _build_update(update_hash=kwargs["update_hash"])
 
-    def fake_insert_data_into_table(cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False):
+    def fake_insert_records_into_table(
+        cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False
+    ):
         calls = captured.setdefault("insert_calls", [])
         calls.append(
             {
@@ -128,8 +294,8 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     )
     monkeypatch.setattr(
         client_simple_table_models.SimpleTableUpdate,
-        "insert_data_into_table",
-        classmethod(fake_insert_data_into_table),
+        "insert_records_into_table",
+        classmethod(fake_insert_records_into_table),
     )
 
     manager = SimpleTablePersistManager(
@@ -201,7 +367,9 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
         captured["get_or_create_kwargs"] = kwargs
         return _build_update(update_hash=kwargs["update_hash"])
 
-    def fake_insert_data_into_table(cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False):
+    def fake_insert_records_into_table(
+        cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False
+    ):
         calls = captured.setdefault("insert_calls", [])
         calls.append(
             {
@@ -228,8 +396,8 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
     )
     monkeypatch.setattr(
         client_simple_table_models.SimpleTableUpdate,
-        "insert_data_into_table",
-        classmethod(fake_insert_data_into_table),
+        "insert_records_into_table",
+        classmethod(fake_insert_records_into_table),
     )
 
     class OrderUpdater(SimpleTableUpdater):

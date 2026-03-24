@@ -66,9 +66,9 @@ class UpdateRunner:
             return
 
         name_prefix = "DEBUG_" if self.debug_mode else ""
-        self.scheduler = ms_client.Scheduler.build_and_assign_to_ts(
+        self.scheduler = ms_client.Scheduler.build_and_assign_to_update_nodes(
             scheduler_name=f"{name_prefix}{self.ts.data_node_update.id}",
-            time_serie_ids=[self.ts.data_node_update.id],
+            update_nodes_ids=[self.ts.data_node_update.id],
             remove_from_other_schedulers=True,
             running_in_debug_mode=self.debug_mode,
         )
@@ -116,7 +116,7 @@ class UpdateRunner:
         if not self.ts._scheduler_tree_connected and self.update_tree:
             self.logger.debug("Connecting dependency tree to scheduler...")
             if not self.ts.depth_df.empty:
-                all_ids = self.ts.depth_df["data_node_update_id"].to_list() + [
+                all_ids = self.ts.depth_df["update_node_id"].to_list() + [
                     self.ts.data_node_update.id
                 ]
                 self.scheduler.in_active_tree_connect(local_time_series_ids=all_ids)
@@ -125,7 +125,7 @@ class UpdateRunner:
         # 3. Collect all IDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.ts.depth_df.empty:
-            all_ids_in_tree = self.ts.depth_df["data_node_update_id"].to_list()
+            all_ids_in_tree = self.ts.depth_df["update_node_id"].to_list()
         else:
             all_ids_in_tree = []
 
@@ -329,7 +329,7 @@ class UpdateRunner:
         dependencies_df = self.ts.dependencies_df
 
         if any([a is None for a in deps_ids]) or any(
-            [d not in dependencies_df["data_node_update_id"].to_list() for d in deps_ids]
+            [d not in dependencies_df["update_node_id"].to_list() for d in deps_ids]
         ):
             # Datanode not update set
             self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)
