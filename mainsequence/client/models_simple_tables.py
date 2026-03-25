@@ -790,19 +790,27 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         depth_df = pd.DataFrame(r.json())
 
         if not depth_df.empty:
-            if "local_time_serie_id" in depth_df.columns and "data_node_update_id" in depth_df.columns:
-                depth_df["update_node_id"] = depth_df["local_time_serie_id"].fillna(
-                    depth_df["data_node_update_id"]
-                )
-            elif "local_time_serie_id" in depth_df.columns:
-                depth_df = depth_df.rename(columns={"local_time_serie_id": "update_node_id"})
-            elif "data_node_update_id" in depth_df.columns:
-                depth_df = depth_df.rename(columns={"data_node_update_id": "update_node_id"})
+            id_candidates = [
+                c
+                for c in ["update_node_id", "local_time_serie_id", "data_node_update_id"]
+                if c in depth_df.columns
+            ]
 
-            depth_df = depth_df.drop(
-                columns=["local_time_serie_id", "data_node_update_id"],
-                errors="ignore",
-            )
+            if id_candidates:
+                update_node_id = None
+                for col in id_candidates:
+                    series = depth_df[col]
+                    if isinstance(series, pd.DataFrame):
+                        series = series.iloc[:, 0]
+                    update_node_id = (
+                        series if update_node_id is None else update_node_id.fillna(series)
+                    )
+
+                depth_df = depth_df.drop(
+                    columns=["update_node_id", "local_time_serie_id", "data_node_update_id"],
+                    errors="ignore",
+                )
+                depth_df["update_node_id"] = update_node_id
 
         return depth_df
 
