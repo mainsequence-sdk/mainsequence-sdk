@@ -68,7 +68,7 @@ class MSInterface:
         instrument_configuration=msc.InstrumentsConfiguration.filter()[0]
 
         if instrument_configuration.discount_curves_storage_node is None:
-            raise Exception("discount_curves_storage_node needs to be set in https://main-sequence.app/instruments/config/")
+            raise Exception("discount_curves_storage_node needs to be set in https://main-sequence.app Instruments Section")
 
         data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.discount_curves_storage_node)
 
@@ -127,7 +127,7 @@ class MSInterface:
 
         instrument_configuration = msc.InstrumentsConfiguration.filter()[0]
         if instrument_configuration.reference_rates_fixings_storage_node is None:
-            raise Exception("reference_rates_fixings_storage_node needs to be set in https://main-sequence.app/instruments/config/")
+            raise Exception("reference_rates_fixings_storage_node needs to be set in https://main-sequence.app  Instruments Section")
 
         data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.reference_rates_fixings_storage_node)
 

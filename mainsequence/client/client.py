@@ -19,7 +19,7 @@ class MainSequenceClientConfig:
     endpoint: str = (
         os.getenv("MAINSEQUENCE_ENDPOINT")
         or os.getenv("TDAG_ENDPOINT")
-        or "https://main-sequence.app"
+        or "https://api.main-sequence.app"
     )
     api_prefix: str = "/orm/api"
     # (connect, read) — align with your utils DEFAULT_TIMEOUT behavior

@@ -27,7 +27,7 @@ from mainsequence.logconf import logger
 TDAG_ENDPOINT = (
     os.environ.get("TDAG_ENDPOINT")
     or os.environ.get("MAINSEQUENCE_ENDPOINT")
-    or "https://main-sequence.app"
+    or "https://api.main-sequence.app"
 )
 API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
 AUTH_ENDPOINT = TDAG_ENDPOINT.rstrip("/")

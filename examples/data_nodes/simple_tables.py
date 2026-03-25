@@ -363,6 +363,18 @@ def _require_record_ids(
     return record_ids
 
 
+def _assert_no_records(
+    *,
+    actual: list[SimpleTable],
+    step_name: str,
+) -> None:
+    if actual:
+        raise AssertionError(
+            f"{step_name} failed.\nRemaining rows:\n"
+            + json.dumps(_records_as_json(actual, include_id=True), indent=2)
+        )
+
+
 def build_test_simple_tables() -> None:
     """
     Requires a configured MainSequence backend/auth environment.
@@ -535,51 +547,149 @@ def build_test_simple_tables() -> None:
         expected=upserted_balance_seed,
         step_name="Balance upsert verification",
     )
+    inserted_customer_by_code = {
+        record.customer_code: record
+        for record in inserted_customers
+        if record.id is not None
+    }
+    upserted_balance_by_customer_id = {
+        record.customer_id: record
+        for record in upserted_balances
+        if record.id is not None
+    }
+    inserted_debt_by_balance_id = {
+        record.balance_id: record
+        for record in inserted_debts
+        if record.id is not None
+    }
 
-    for record in inserted_debts:
-        debts_updater.delete(record.id)
+    acme_customer = inserted_customer_by_code["ACME"]
+    beta_customer = inserted_customer_by_code["BETA"]
+    acme_balance = upserted_balance_by_customer_id[customer_id_by_code["ACME"]]
+    beta_balance = upserted_balance_by_customer_id[customer_id_by_code["BETA"]]
+    acme_debt = inserted_debt_by_balance_id[acme_balance.id]
+    beta_debt = inserted_debt_by_balance_id[beta_balance.id]
 
-    remaining_debts = _read_simple_table_records(
-        debts_updater,
-        filter_expr=and_(
-            CustomerDebtRecord.filters.balance_id.in_(balance_ids),
-            CustomerDebtRecord.filters.debt_type.in_(debt_types),
+    customers_updater.delete(acme_customer.id)
+
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            customers_updater,
+            filter_expr=CustomerRecord.filters.customer_code.eq("ACME"),
         ),
+        step_name="Customer->balance cascade customer verification",
     )
-    if remaining_debts:
-        raise AssertionError(
-            "Debt delete verification failed.\nRemaining rows:\n"
-            + json.dumps(_records_as_json(remaining_debts, include_id=True), indent=2)
-        )
-
-    for record in upserted_balances:
-        balances_updater.delete(record.id)
-
-    remaining_balances = _read_simple_table_records(
-        balances_updater,
-        filter_expr=and_(
-            CustomerBalanceRecord.filters.customer_id.in_(list(customer_id_by_code.values())),
-            CustomerBalanceRecord.filters.as_of_date.in_(balance_dates),
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            balances_updater,
+            filter_expr=and_(
+                CustomerBalanceRecord.filters.customer_id.eq(acme_customer.id),
+                CustomerBalanceRecord.filters.as_of_date.eq(datetime.date(2026, 3, 22)),
+            ),
         ),
+        step_name="Customer->balance cascade balance verification",
     )
-    if remaining_balances:
-        raise AssertionError(
-            "Balance delete verification failed.\nRemaining rows:\n"
-            + json.dumps(_records_as_json(remaining_balances, include_id=True), indent=2)
-        )
-
-    for record in inserted_customers:
-        customers_updater.delete(record.id)
-
-    remaining_customers = _read_simple_table_records(
-        customers_updater,
-        filter_expr=CustomerRecord.filters.customer_code.in_(customer_codes),
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            debts_updater,
+            filter_expr=and_(
+                CustomerDebtRecord.filters.balance_id.eq(acme_balance.id),
+                CustomerDebtRecord.filters.debt_type.eq(acme_debt.debt_type),
+            ),
+        ),
+        step_name="Customer->balance->debt cascade debt verification",
     )
-    if remaining_customers:
-        raise AssertionError(
-            "Customer delete verification failed.\nRemaining rows:\n"
-            + json.dumps(_records_as_json(remaining_customers, include_id=True), indent=2)
-        )
+    _assert_records_equal(
+        actual=_read_simple_table_records(
+            customers_updater,
+            filter_expr=CustomerRecord.filters.customer_code.eq("BETA"),
+        ),
+        expected=[customer_seed[1]],
+        step_name="Customer cascade preserves unrelated customers",
+    )
+    _assert_records_equal(
+        actual=_read_simple_table_records(
+            balances_updater,
+            filter_expr=and_(
+                CustomerBalanceRecord.filters.customer_id.eq(beta_customer.id),
+                CustomerBalanceRecord.filters.as_of_date.eq(datetime.date(2026, 3, 22)),
+            ),
+        ),
+        expected=[upserted_balance_seed[1]],
+        step_name="Customer cascade preserves unrelated balances",
+    )
+    _assert_records_equal(
+        actual=_read_simple_table_records(
+            debts_updater,
+            filter_expr=and_(
+                CustomerDebtRecord.filters.balance_id.eq(beta_balance.id),
+                CustomerDebtRecord.filters.debt_type.eq(beta_debt.debt_type),
+            ),
+        ),
+        expected=[debt_seed[1]],
+        step_name="Customer cascade preserves unrelated debts",
+    )
+
+    balances_updater.delete(beta_balance.id)
+
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            balances_updater,
+            filter_expr=and_(
+                CustomerBalanceRecord.filters.customer_id.eq(beta_customer.id),
+                CustomerBalanceRecord.filters.as_of_date.eq(datetime.date(2026, 3, 22)),
+            ),
+        ),
+        step_name="Balance->debt cascade balance verification",
+    )
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            debts_updater,
+            filter_expr=and_(
+                CustomerDebtRecord.filters.balance_id.eq(beta_balance.id),
+                CustomerDebtRecord.filters.debt_type.eq(beta_debt.debt_type),
+            ),
+        ),
+        step_name="Balance->debt cascade debt verification",
+    )
+    _assert_records_equal(
+        actual=_read_simple_table_records(
+            customers_updater,
+            filter_expr=CustomerRecord.filters.customer_code.eq("BETA"),
+        ),
+        expected=[customer_seed[1]],
+        step_name="Balance cascade preserves parent customer",
+    )
+
+    customers_updater.delete(beta_customer.id)
+
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            customers_updater,
+            filter_expr=CustomerRecord.filters.customer_code.in_(customer_codes),
+        ),
+        step_name="Final customer cleanup verification",
+    )
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            balances_updater,
+            filter_expr=and_(
+                CustomerBalanceRecord.filters.customer_id.in_(list(customer_id_by_code.values())),
+                CustomerBalanceRecord.filters.as_of_date.in_(balance_dates),
+            ),
+        ),
+        step_name="Final balance cleanup verification",
+    )
+    _assert_no_records(
+        actual=_read_simple_table_records(
+            debts_updater,
+            filter_expr=and_(
+                CustomerDebtRecord.filters.balance_id.in_(balance_ids),
+                CustomerDebtRecord.filters.debt_type.in_(debt_types),
+            ),
+        ),
+        step_name="Final debt cleanup verification",
+    )
 
     resolved_balances = balances_updater.resolve_table()
     resolved_customers = customers_updater.resolve_table()
@@ -638,7 +748,7 @@ def build_test_simple_tables() -> None:
     print(json.dumps(_records_as_json(inserted_debts, include_id=True), indent=2))
     print("Upserted balance rows:")
     print(json.dumps(_records_as_json(upserted_balances, include_id=True), indent=2))
-    print("Delete verification passed for customer, balance, and debt demo rows.")
+    print("Cascade delete verification passed for customer->balance->debt and balance->debt paths.")
 
 
 if __name__ == "__main__":

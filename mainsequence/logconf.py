@@ -69,7 +69,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         return (
             os.getenv("TDAG_ENDPOINT")
             or os.getenv("MAINSEQUENCE_ENDPOINT")
-            or "https://main-sequence.app"
+            or "https://api.main-sequence.app"
         ).rstrip("/")
 
     def _auth_headers() -> tuple[CaseInsensitiveDict, bool]:

@@ -2402,7 +2402,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
 
 @settings.command("set-backend")
 def settings_set_backend(
-    url: str = typer.Argument(..., help="Backend base URL, e.g. https://main-sequence.app")
+    url: str = typer.Argument(..., help="Backend base URL, e.g. https://api.main-sequence.app")
 ):
     """
     Set backend base URL used by CLI API calls.
@@ -2410,12 +2410,12 @@ def settings_set_backend(
     Parameters
     ----------
     url:
-        Backend base URL (for example `https://main-sequence.app`).
+        Backend base URL (for example `https://api.main-sequence.app`).
 
     Examples
     --------
     ```bash
-    mainsequence settings set-backend https://main-sequence.app
+    mainsequence settings set-backend https://api.main-sequence.app
     ```
     """
     out = cfg.set_backend_url(url)

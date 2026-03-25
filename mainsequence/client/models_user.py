@@ -43,7 +43,7 @@ class Organization(BasePydanticModel):
         None,
         title="Organization URL",
         description="Optional public or internal URL for the organization.",
-        examples=["https://main-sequence.app"],
+        examples=["https://api.main-sequence.app"],
     )
     organization_domain: str = Field(
         ...,
