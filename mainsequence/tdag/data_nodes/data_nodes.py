@@ -36,6 +36,7 @@ from mainsequence.client.models_tdag import (
 )
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
+from mainsequence.tdag.base_persist_managers import get_data_node_source_code
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
@@ -43,7 +44,6 @@ from ..configuration_models import BaseConfiguration
 from .models import DataNodeConfiguration
 from .namespacing import current_hash_namespace
 from .namespacing import hash_namespace as _hash_namespace_cm
-from .persist_managers import get_data_node_source_code
 
 
 def get_data_source_from_orm() -> Any:
