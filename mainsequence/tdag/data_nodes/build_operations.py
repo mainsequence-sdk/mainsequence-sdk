@@ -28,8 +28,9 @@ from mainsequence.tdag.pydantic_metadata import (
     strip_pydantic_hash_exclusions,
 )
 
+from ..base_persist_managers import get_data_node_source_code_git_hash
 from .namespacing import disable_hash_namespace
-from .persist_managers import PersistManager, get_data_node_source_code_git_hash
+from .persist_managers import PersistManager
 
 build_model = lambda model_data: get_model_class(model_data["orm_class"])(**model_data)
 
