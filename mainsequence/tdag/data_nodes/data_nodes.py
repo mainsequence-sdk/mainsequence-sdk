@@ -1139,6 +1139,8 @@ class DataNode(DataAccessMixin, ABC):
             self.dependencies_df = depth_df[
                 depth_df["update_node_id"] != self.data_node_update.id
             ].copy()
+
+
         else:
             self.dependencies_df = pd.DataFrame()
 
