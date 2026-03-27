@@ -31,8 +31,7 @@ The CLI stores config and tokens in a platform-specific directory:
 ## Quickstart
 
 ```bash
-mainsequence settings set-backend https://main-sequence.app
-mainsequence settings set-base ~/mainsequence
+
 
 mainsequence login you@company.com
 

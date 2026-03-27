@@ -210,7 +210,6 @@ Rules:
 
 ```bash
 mainsequence settings show
-mainsequence settings set-backend https://main-sequence.app
 mainsequence settings set-base ~/mainsequence
 ```
 
