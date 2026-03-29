@@ -3452,13 +3452,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         examples=["daily_positions_report.pdf"],
         json_schema_extra={"label": "Artifact Name"},
     )
-    created_by_resource_name: str = Field(
-        ...,
-        title="Created By Resource Name",
-        description="Name of the job, agent, workflow, or resource that produced this artifact.",
-        examples=["portfolio-rebalance-job"],
-        json_schema_extra={"label": "Created By Resource Name"},
-    )
+
     bucket_name: str = Field(
         ...,
         title="Bucket Name",
@@ -3482,23 +3476,21 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     )
 
     @classmethod
-    def upload_file(cls, filepath, name, created_by_resource_name, bucket_name=None):
+    def upload_file(cls, filepath, name,  bucket_name=None):
         bucket_name=bucket_name if bucket_name else "default_bucket"
         return cls.get_or_create(
             filepath=filepath,
             name=name,
-            created_by_resource_name=created_by_resource_name,
             bucket_name=bucket_name,
         )
 
     @classmethod
-    def get_or_create(cls, filepath, name, created_by_resource_name, bucket_name):
+    def get_or_create(cls, filepath, name,  bucket_name):
         url = cls.get_object_url() + "/get_or_create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
             data = {
                 "name": name,
-                "created_by_resource_name": created_by_resource_name,
                 "bucket_name": bucket_name if bucket_name else "default_bucket",
             }
             files = {"content": (str(filepath), f, "application/pdf")}
