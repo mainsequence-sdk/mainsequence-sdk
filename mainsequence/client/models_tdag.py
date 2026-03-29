@@ -3463,7 +3463,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     content: Any = Field(
         ...,
         title="Artifact Content",
-        description="Artifact payload returned by the API. This may be raw file content, a serialized object, or metadata depending on the endpoint.",
+        description="signed url pointed to the download link of the content",
         examples=["<binary-or-serialized-artifact-content>"],
         json_schema_extra={"label": "Artifact Content"},
     )
