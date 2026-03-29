@@ -502,9 +502,9 @@ class BasePersistManager:
 
     def delete_table(self) -> None:
         if self.data_source.related_resource.class_type == "duck_db":
-            from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
+            from mainsequence.client.data_sources_interfaces import get_duckdb_interface_class
 
-            db_interface = DuckDBInterface()
+            db_interface = get_duckdb_interface_class()()
             db_interface.drop_table(self.data_node_storage.storage_hash)
 
         self.data_node_storage.delete()

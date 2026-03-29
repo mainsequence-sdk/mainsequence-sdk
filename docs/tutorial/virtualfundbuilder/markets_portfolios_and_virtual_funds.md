@@ -306,6 +306,8 @@ asset_category.append_assets(assets=assets)
 
 Perfect! You learned how to create an asset category and populate it with assets.
 
+For a deeper explanation of asset categories as reusable market universes, see [Asset Categories](../../knowledge/markets/asset_categories.md).
+
 ---
 
 ## 3) Building a Translation Table

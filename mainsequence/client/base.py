@@ -132,6 +132,7 @@ class BaseObjectOrm:
         "JobApi":"pods/job-api",
         "ProjectResource":"pods/project-resource",
         "ResourceRelease":"pods/resource-release",
+        "Bucket":"pods/bucket",
 
 
 

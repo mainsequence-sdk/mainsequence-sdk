@@ -28,8 +28,8 @@ from mainsequence.logconf import logger
 
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .data_sources_interfaces import get_duckdb_interface_class
 from .data_sources_interfaces import timescale as TimeScaleInterface
-from .data_sources_interfaces.duckdb import DuckDBInterface
 from .exceptions import raise_for_response
 from .utils import (
     TDAG_CONSTANTS,
@@ -64,6 +64,10 @@ if TYPE_CHECKING:
 
 class AlreadyExist(Exception):
     pass
+
+
+def _duckdb_interface():
+    return get_duckdb_interface_class()()
 
 
 
@@ -1182,7 +1186,7 @@ class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, Ba
             not isinstance(self.data_source, int)
             and self.data_source.related_resource.class_type == DUCK_DB
         ):
-            db_interface = DuckDBInterface()
+            db_interface = _duckdb_interface()
             db_interface.drop_table(self.storage_hash)
 
         self.delete()
@@ -2553,7 +2557,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     ):
 
         if self.class_type == DUCK_DB:
-            DuckDBInterface().upsert(
+            _duckdb_interface().upsert(
                 df=serialized_data_frame, table=data_node_update.data_node_storage.storage_hash
             )
         else:
@@ -2600,7 +2604,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
     ) -> pd.DataFrame:
 
         if self.class_type == DUCK_DB:
-            db_interface = DuckDBInterface()
+            db_interface = _duckdb_interface()
             table_name = data_node_update.data_node_storage.storage_hash
 
             adjusted_start, adjusted_end, adjusted_uirm, _ = db_interface.constrain_read(
@@ -2669,7 +2673,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         data_node_update: DataNodeUpdate,
     ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
         if self.class_type == DUCK_DB:
-            db_interface = DuckDBInterface()
+            db_interface = _duckdb_interface()
             table_name = data_node_update.data_node_storage.table_name
             return db_interface.time_index_minima(table=table_name)
 
@@ -3561,9 +3565,7 @@ class PodDataSource:
             data_source__id=duckdb_dynamic_data_source.id, list_tables=True
         )
         remote_table_names = [t.storage_hash for t in remote_node_storages]
-        from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
-
-        db_interface = DuckDBInterface()
+        db_interface = _duckdb_interface()
         local_table_names = db_interface.list_tables()
 
         tables_to_delete_locally = set(local_table_names) - set(remote_table_names)

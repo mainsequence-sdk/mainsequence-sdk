@@ -221,3 +221,5 @@ That flow is idempotent, easy to reason about, and consistent with the rest of t
 - `query()` is the better option for large filter payloads, especially big `__in` searches
 
 If you want the routing layer that maps assets into upstream price tables, continue with [Translation Tables](./translation_tables.md).
+
+If you want the reusable-universe layer that groups many assets into one named object, continue with [Asset Categories](./asset_categories.md).

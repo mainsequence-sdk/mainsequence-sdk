@@ -81,6 +81,8 @@ Important fields:
 
 If `assets_category_unique_id` is present, VFB resolves the portfolio universe from that asset category.
 
+For the asset-category concept itself, see [Asset Categories](../markets/asset_categories.md).
+
 If it is missing, the signal node is expected to define the universe itself through `get_asset_list()`.
 
 #### `PricesConfiguration`
