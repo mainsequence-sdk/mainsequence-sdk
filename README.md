@@ -4,6 +4,11 @@
 
 # Main Sequence Python SDK
 
+[![Docs](https://img.shields.io/badge/docs-online-blue)](https://mainsequence-sdk.github.io/mainsequence-sdk/)
+[![Open Issues](https://img.shields.io/github/issues/mainsequence-sdk/mainsequence-sdk)](https://github.com/mainsequence-sdk/mainsequence-sdk/issues)
+[![Last Commit](https://img.shields.io/github/last-commit/mainsequence-sdk/mainsequence-sdk)](https://github.com/mainsequence-sdk/mainsequence-sdk/commits/main/)
+[![Maintained](https://img.shields.io/badge/maintained-actively-green.svg)](https://github.com/mainsequence-sdk/mainsequence-sdk/commits/main/)
+
 The Main Sequence Python SDK is the client and development toolkit for the Main Sequence platform.
 
 The Main Sequence platform allows you to:
@@ -13,6 +18,15 @@ The Main Sequence platform allows you to:
 3. rapidly deploy agents using the Google Agent SDK
 
 The key idea is that you can focus on development and deployment, while the platform handles the DevOps layer.
+
+## Project Status
+
+- Status: actively maintained
+- Last commit: `2026-03-27` - [`6aa5dea`](https://github.com/mainsequence-sdk/mainsequence-sdk/commit/6aa5deab73586226c7b267abf2e3f02f4f7e7669) - `docs logo fix v.3.17.6`
+- Open issues: [GitHub Issues](https://github.com/mainsequence-sdk/mainsequence-sdk/issues)
+- Documentation: [Documentation Site](https://mainsequence-sdk.github.io/mainsequence-sdk/)
+- Security policy: [SECURITY.md](SECURITY.md)
+- Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ## What this repository contains
 
