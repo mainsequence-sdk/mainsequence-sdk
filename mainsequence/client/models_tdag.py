@@ -3463,7 +3463,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     content: Any = Field(
         ...,
         title="Artifact Content",
-        description="signed url pointed to the download link of the content",
+         description="signed url pointed to the download link of the content",
         examples=["<binary-or-serialized-artifact-content>"],
         json_schema_extra={"label": "Artifact Content"},
     )
