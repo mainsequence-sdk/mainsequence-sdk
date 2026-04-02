@@ -388,7 +388,7 @@ class SimpleTableUpdater(DataNode):
         records, overwrite = self._normalize_update_records(update_result)
 
         if len(records) == 0:
-            self.logger.warning(f"No new data returned from update for {self}.")
+            self.logger.warning(f"{self} produced no new data in this update round.")
             return records
 
         self.logger.info(f"Persisting {len(records)} new rows for {self}.")

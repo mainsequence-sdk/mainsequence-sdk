@@ -125,12 +125,21 @@ class UpdateRunner:
         # 3. Collect all IDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.ts.depth_df.empty:
-            all_ids_in_tree = self.ts.depth_df["update_node_id"].to_list()
+            update_nodes_in_tree = self.ts.depth_df[
+                ["id", "node_type", "update_hash", "remote_table_hash_id"]
+            ].to_dict("records")
         else:
-            all_ids_in_tree = []
+            update_nodes_in_tree = []
 
         # Always include the head node itself.
-        all_ids_in_tree.append(self.ts.data_node_update.id)
+        update_nodes_in_tree.append(
+            {
+                "id": self.ts.data_node_update.id,
+                "update_hash": self.ts.data_node_update.update_hash,
+                "remote_table_hash_id": self.ts.data_node_update.data_node_storage.storage_hash,
+                "node_type": self.ts.data_node_update.NODE_TYPE,
+            }
+        )
 
         # 4. Fetch the latest metadata for the entire tree from the backend.
         update_details_batch = dict(
@@ -141,7 +150,7 @@ class UpdateRunner:
 
         update_class = self.ts.DATA_NODE_UPDATE_CLASS
         all_metadatas_response = update_class.get_data_nodes_and_set_updates(
-            local_time_series_ids=all_ids_in_tree,
+            update_nodes=update_nodes_in_tree,
             update_details_kwargs=update_details_batch,
             update_priority_dict=None,
         )
@@ -433,6 +442,8 @@ class UpdateRunner:
 
         def refresh_update_statistics_of_deps(ts):
             for _, ts_dep in ts.dependencies().items():
+                if ts_dep.is_api:
+                    continue # No need to update statistics for API dependencies
                 ts_dep.update_statistics = (
                     ts_dep.local_persist_manager.get_update_statistics_for_table()
                 )

@@ -81,6 +81,17 @@ The normal lifecycle is:
 
 This is especially important for foreign-key workflows. Downstream rows usually need parent ids that were assigned by the backend during earlier inserts.
 
+!!! warning
+    `Index(unique=True)` helps with lookup and constraints, but it is not the key used for overwrite/upsert writes.
+
+    If `update()` returns `(records, True)`, overwrite is keyed by the backend-managed row `id`.
+
+    That means:
+
+    - `Index(unique=True)` does not make a field the write key for overwrite
+    - returning `(records, True)` requires id-populated rows
+    - if your business key is something like `customer_code`, first read existing rows, map `customer_code -> id`, insert any missing rows, then return rows that include those ids
+
 ## 3. Define the Table Schemas
 
 The tutorial example uses three tables:
@@ -176,6 +187,21 @@ For a deeper explanation of the schema DSL, see
 
 `SimpleTable` defines the schema. `SimpleTableUpdater` owns the real backend table and the actual read/write workflow.
 
+### Insert-only vs overwrite/upsert in `SimpleTableUpdater.update()`
+
+`SimpleTableUpdater.update()` can return either:
+
+- `records`
+- `(records, overwrite)`
+
+If you only return `records`, the updater behaves like `overwrite=False`.
+
+Use `overwrite=False` when you are inserting new rows that do not have backend ids yet. That is the safe default for seed-style examples.
+
+Use `overwrite=True` only when the returned rows already include backend-managed ids. In other words, overwrite/upsert is not keyed by `customer_code`, `unique_identifier`, or any other business key unless you first resolve that business key back to the backend id.
+
+The first updater example below is intentionally insert-only for that reason.
+
 The customer updater is the simplest case:
 
 ```python
@@ -192,8 +218,57 @@ class CustomersUpdater(SimpleTableUpdater):
     def update(self) -> tuple[list[CustomerRecord], bool]:
         return (
             [CustomerRecord.model_validate(row) for row in self.build_seed_rows()],
-            True,
+            False,
         )
+```
+
+This updater is seeding new customer rows. Those rows do not carry backend ids yet, so returning `False` is the correct behavior.
+
+If you wanted an id-aware overwrite path instead, the pattern would be:
+
+```python
+def update(self) -> tuple[list[CustomerRecord], bool]:
+    seed_rows = self.build_seed_rows()
+    customer_codes = [row["customer_code"] for row in seed_rows]
+
+    existing_rows = self.execute_filter(
+        CustomerRecord.filters.customer_code.in_(customer_codes),
+        limit=len(customer_codes),
+    )
+    customer_id_by_code = {
+        row.customer_code: row.id
+        for row in existing_rows
+        if row.id is not None
+    }
+
+    missing_rows = [
+        row
+        for row in seed_rows
+        if row["customer_code"] not in customer_id_by_code
+    ]
+    if missing_rows:
+        self.insert_records(
+            [CustomerRecord.model_validate(row) for row in missing_rows]
+        )
+        existing_rows = self.execute_filter(
+            CustomerRecord.filters.customer_code.in_(customer_codes),
+            limit=len(customer_codes),
+        )
+        customer_id_by_code = {
+            row.customer_code: row.id
+            for row in existing_rows
+            if row.id is not None
+        }
+
+    return (
+        [
+            CustomerRecord.model_validate(
+                {"id": customer_id_by_code[row["customer_code"]], **row}
+            )
+            for row in seed_rows
+        ],
+        True,
+    )
 ```
 
 The balance updater depends on the customer updater:
@@ -341,7 +416,7 @@ This is exactly why backend-managed ids are workable:
 - read back ids
 - upsert by id later
 
-In other words, you do not need a user-declared primary key in the schema to mutate rows after they exist.
+In other words, you do not need a user-declared primary key in the schema to mutate rows after they exist. You do, however, need the backend `id` before using overwrite/upsert payloads.
 
 ## 9. Delete Rows
 

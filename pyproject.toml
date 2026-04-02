@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "3.17.10"
+version = "3.17.11"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.10"
@@ -24,7 +24,6 @@ dependencies = [
   "cachetools",
   "cloudpickle",
   "concurrent-log-handler",
-  "jsonschema",
   "numpy",
   "opentelemetry-api",
   "opentelemetry-exporter-otlp",

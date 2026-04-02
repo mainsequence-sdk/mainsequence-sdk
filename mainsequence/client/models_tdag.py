@@ -9,10 +9,10 @@ import json
 import math
 import os
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypedDict, TypeVar
 
 import numpy as np
 import pandas as pd
@@ -20,8 +20,6 @@ import pytz
 import requests
 import yaml
 from cachetools import TTLCache, cachedmethod
-from jsonschema import Draft202012Validator
-from jsonschema.exceptions import SchemaError
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from mainsequence.logconf import logger
@@ -89,6 +87,11 @@ class SourceTableConfigurationDoesNotExist(Exception):
     pass
 
 
+class UpdateNodeRef(TypedDict):
+    id: int
+    node_type: str
+    update_hash: str
+    remote_table_hash_id: str
 
 
 
@@ -252,6 +255,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             "This changes response detail only and does not change which rows are returned."
         ),
     }
+
+    NODE_TYPE: ClassVar[str] = "local_time_serie"
 
     data_node_storage: int | DataNodeStorage
     tags: list[str] | None = Field(default=[], description="List of tags")
@@ -654,7 +659,10 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def get_data_nodes_and_set_updates(
-        cls, local_time_series_ids: list, update_details_kwargs, update_priority_dict
+        cls,
+        update_nodes: Sequence[UpdateNodeRef],
+        update_details_kwargs: Mapping[str, Any],
+        update_priority_dict: Mapping[int, int] | None,
     ):
         """
         {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_id': 1},
@@ -668,7 +676,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         s = cls.build_session()
         payload = {
             "json": dict(
-                local_time_series_ids=local_time_series_ids,
+                update_nodes=list(update_nodes),
                 update_details_kwargs=update_details_kwargs,
                 update_priority_dict=update_priority_dict,
             )
@@ -3172,93 +3180,6 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         if r.status_code not in (200, 201, 202):
             raise_for_response(r, payload=request_payload)
         return cls(**r.json())
-
-
-
-
-
-class JobApi(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
-    uid: str
-    name: str = Field(..., max_length=255)
-    description: str | None = None
-
-    entrypoint: str = Field(
-        ...,
-        max_length=255,
-        description="The python path to the module/class. Example: job_apis.example_apis.SimpleApi"
-    )
-
-    input_schema: dict[str, Any] | None = None
-    output_schema: dict[str, Any] | None = None
-    source_code: str | None = None
-
-
-    related_job_id: int
-    related_update_job_id: int | None = None
-
-    is_ready: bool = False
-
-    model_config = ConfigDict(from_attributes=True)
-
-    @field_validator("input_schema", "output_schema", mode="before")
-    @classmethod
-    def validate_json_schema(cls, value: Any, info) -> dict[str, Any] | None:
-        if value is None:
-            return None
-
-        if not isinstance(value, dict):
-            raise ValueError(f"{info.field_name} must be a JSON object or null")
-
-        try:
-            Draft202012Validator.check_schema(value)
-        except SchemaError as exc:
-            raise ValueError(f"Invalid JSON Schema for {info.field_name}: {exc.message}")
-
-        return value
-
-    @classmethod
-    def update_metadata(cls, job_run_id:int,description, output_schema, input_schema, timeout=None):
-        url = cls.get_object_url() + "/update_metadata/"
-        s = cls.build_session()
-
-        data = {
-            "description": description,
-            "output_schema": output_schema,
-            "input_schema": input_schema,
-            "job_run_id": job_run_id
-        }
-
-
-        payload = {"json": data, }
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout)
-
-        if r.status_code not in [200]:
-            raise Exception(f"Failed to get artifact: {r.status_code} - {r.text}")
-
-    @classmethod
-    def report_job_run_result(cls, job_run_id: int,status: str, output: Any, error: dict[str, Any] | None, timeout=None):
-        """
-        Adds the envelope response of the job run to
-        """
-        url = cls.get_object_url() + "/report_job_run_result/"
-        s = cls.build_session()
-        data = {
-            "job_run_id": job_run_id,
-            "status": status,
-            "output":output,
-            "error":error
-
-        }
-        payload = {"json": data, }
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload,
-                         time_out=timeout)
-
-        if r.status_code not in [200]:
-            raise Exception(f"Failed to get add tool response to job run: {r.status_code} - {r.text}")
-
-
-
 
 class TimeScaleDB(DataSource):
     database_user: str

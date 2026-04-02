@@ -1371,7 +1371,7 @@ class DataNode(DataAccessMixin, ABC):
             raise Exception(f" {self} update(...) method needs to return a data frame")
 
         if temp_df.empty:
-            self.logger.warning(f"No new data returned from update for {self}.")
+            self.logger.warning(f"{self} produced no new data in this update round.")
             return temp_df
 
         if (

@@ -129,7 +129,6 @@ class BaseObjectOrm:
         "ProjectBaseImage":"pods/project-base-image",
         "ProjectImage":"pods/project-image",
         "GithubOrganization": "pods/github-organization",
-        "JobApi":"pods/job-api",
         "ProjectResource":"pods/project-resource",
         "ResourceRelease":"pods/resource-release",
         "Bucket":"pods/bucket",

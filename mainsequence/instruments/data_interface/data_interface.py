@@ -1,16 +1,17 @@
-import base64
 import datetime
-import gzip
-import json
 import os
 from operator import attrgetter
 from threading import RLock
-from typing import Any, TypedDict
+from typing import TypedDict
 
 import pandas as pd
 from cachetools import LRUCache, cachedmethod
 
 import mainsequence.client as msc
+
+from ..interest_rates.etl.curve_codec import (
+    decompress_string_to_curve as _decompress_string_to_curve,
+)
 
 
 class DateInfo(TypedDict, total=False):
@@ -34,31 +35,6 @@ class MSInterface:
 
     _fixings_cache = LRUCache(maxsize=4096)
     _fixings_cache_lock = RLock()
-
-    @staticmethod
-    def decompress_string_to_curve(b64_string: str) -> dict[Any, Any]:
-        """
-        Decodes, decompresses, and deserializes a string back into a curve dictionary.
-
-        Pipeline: Base64 (text) -> Gzip (binary) -> JSON -> Dict
-
-        Args:
-            b64_string: The Base64-encoded string from the database or API.
-
-        Returns:
-            The reconstructed Python dictionary.
-        """
-        # 1. Encode the ASCII string back into Base64 bytes
-        base64_bytes = b64_string.encode("ascii")
-
-        # 2. Decode the Base64 to get the compressed Gzip bytes
-        compressed_bytes = base64.b64decode(base64_bytes)
-
-        # 3. Decompress the Gzip bytes to get the original JSON bytes
-        json_bytes = gzip.decompress(compressed_bytes)
-
-        # 4. Decode the JSON bytes to a string and parse back into a dictionary
-        return json.loads(json_bytes.decode("utf-8"))
 
     # NOTE: caching is applied at the method boundary; body is unchanged.
     @cachedmethod(cache=attrgetter("_curve_cache"), lock=attrgetter("_curve_cache_lock"))
@@ -97,7 +73,7 @@ class MSInterface:
 
         if curve.empty:
             raise Exception(f"{target_date} is empty. If you want to  use the latest curve available set USE_LAST_OBSERVATION_MS_INSTRUMENT=true")
-        zeros = self.decompress_string_to_curve(curve["curve"].iloc[0])
+        zeros = _decompress_string_to_curve(curve["curve"].iloc[0])
         zeros = pd.Series(zeros).reset_index()
         zeros["index"] = pd.to_numeric(zeros["index"])
         zeros = zeros.set_index("index")[0]

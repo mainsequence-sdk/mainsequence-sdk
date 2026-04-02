@@ -118,7 +118,7 @@ class CustomersUpdater(SimpleTableUpdater):
     def update(self) -> tuple[list[CustomerRecord], bool]:
         return (
             [CustomerRecord.model_validate(row) for row in self.build_seed_rows()],
-            True,
+            False,
         )
 
 
@@ -191,7 +191,7 @@ class CustomerBalancesUpdater(SimpleTableUpdater):
                 CustomerBalanceRecord.model_validate(row)
                 for row in self.build_seed_rows(customer_id_by_code=customer_id_by_code)
             ],
-            True,
+            False,
         )
 
     def dependencies(self) -> dict[str, SimpleTableUpdater]:
@@ -289,7 +289,7 @@ class CustomerDebtsUpdater(SimpleTableUpdater):
                     balance_id_by_customer_and_date=balance_id_by_customer_and_date,
                 )
             ],
-            True,
+            False,
         )
 
     def dependencies(self) -> dict[str, SimpleTableUpdater]:

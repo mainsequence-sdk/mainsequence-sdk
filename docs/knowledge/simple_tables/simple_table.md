@@ -108,6 +108,11 @@ The runtime behavior is:
 
 So `id` is a system field available at runtime, not part of the user-authored schema DSL.
 
+!!! warning
+    A unique index helps lookup and uniqueness constraints, but it does not replace the backend-managed `id` for overwrite/upsert payloads.
+
+    If a `SimpleTableUpdater.update()` implementation returns `(records, True)`, those records should already include backend ids.
+
 ## Why `Annotated[...]` Is Used
 
 `Annotated[...]` keeps the field type and the schema/runtime metadata together.
@@ -176,6 +181,8 @@ Use indexes for fields you expect to:
 - treat as a business key
 
 Do not add them to every column automatically.
+
+A business key such as `customer_code` is still useful, but it is not the overwrite key for row mutations. For overwrite/upsert flows, resolve the business key back to the backend `id` first.
 
 ## `Ops(...)`
 

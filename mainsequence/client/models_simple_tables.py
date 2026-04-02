@@ -6,7 +6,7 @@ import gzip
 import json
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any, ClassVar
 
 import numpy as np
@@ -30,6 +30,7 @@ from .models_tdag import (
     SourceTableConfigurationBase,
     TableUpdateNode,
     UpdateBatchResponse,
+    UpdateNodeRef,
     _executor,
     get_chunk_stats,
     request_to_datetime,
@@ -608,6 +609,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             "This changes response detail only and does not change which rows are returned."
         ),
     }
+    NODE_TYPE: ClassVar[str] = "simple_table_update"
 
     remote_table: int | SimpleTableStorage = Field(
         ...,
@@ -904,7 +906,10 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def get_data_nodes_and_set_updates(
-        cls, local_time_series_ids: list, update_details_kwargs, update_priority_dict
+        cls,
+        update_nodes: Sequence[UpdateNodeRef],
+        update_details_kwargs: Mapping[str, Any],
+        update_priority_dict: Mapping[int, int] | None,
     ):
         """
         {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_id': 1},
@@ -918,7 +923,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         s = cls.build_session()
         payload = {
             "json": dict(
-                simple_table_update_ids=local_time_series_ids,
+                update_nodes=list(update_nodes),
                 update_details_kwargs=update_details_kwargs,
                 update_priority_dict=update_priority_dict,
             )
