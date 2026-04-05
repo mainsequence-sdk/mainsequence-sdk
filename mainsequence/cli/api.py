@@ -33,6 +33,7 @@ AUTH_PATHS = {
 
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
+_UNSET = object()
 
 
 class ApiError(RuntimeError):
@@ -1983,6 +1984,229 @@ def list_simple_table_storages(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table storages fetch failed: {e}")
+
+
+def list_workspaces(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List command-center workspaces via SDK client model.
+    """
+    try:
+        workspaces = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="Workspace",
+            operation=lambda ClientWorkspace: ClientWorkspace.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(workspace) for workspace in workspaces]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Workspaces fetch failed: {e}")
+
+
+def get_workspace(
+    workspace_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one workspace via SDK client model.
+    """
+    try:
+        workspace = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="Workspace",
+            operation=lambda ClientWorkspace: ClientWorkspace.get(
+                pk=int(workspace_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(workspace)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Workspace not found: {workspace_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Workspace fetch failed: {e}")
+
+
+def create_workspace(
+    *,
+    title: str,
+    description: str = "",
+    labels: list[str] | None = None,
+    category: str = "Custom",
+    source: str = "user",
+    schema_version: int = 1,
+    required_permissions: list[str] | None = None,
+    grid: dict[str, Any] | None = None,
+    layout_kind: str = "custom",
+    auto_grid: dict[str, Any] | None = None,
+    companions: list[dict[str, Any]] | None = None,
+    controls: dict[str, Any] | None = None,
+    widgets: list[dict[str, Any]] | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one command-center workspace via SDK client model.
+    """
+    try:
+        workspace = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="Workspace",
+            operation=lambda ClientWorkspace: ClientWorkspace.create(
+                title=title,
+                description=description,
+                labels=list(labels or []),
+                category=category,
+                source=source,
+                schemaVersion=schema_version,
+                requiredPermissions=required_permissions,
+                grid=dict(grid or {}),
+                layoutKind=layout_kind,
+                autoGrid=dict(auto_grid or {}),
+                companions=list(companions or []),
+                controls=dict(controls or {}),
+                widgets=list(widgets or []),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(workspace)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Workspace creation failed: {e}")
+
+
+def update_workspace(
+    workspace_id: int | str,
+    *,
+    title: Any = _UNSET,
+    description: Any = _UNSET,
+    labels: Any = _UNSET,
+    category: Any = _UNSET,
+    source: Any = _UNSET,
+    schema_version: Any = _UNSET,
+    required_permissions: Any = _UNSET,
+    grid: Any = _UNSET,
+    layout_kind: Any = _UNSET,
+    auto_grid: Any = _UNSET,
+    companions: Any = _UNSET,
+    controls: Any = _UNSET,
+    widgets: Any = _UNSET,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Update one command-center workspace via SDK client model.
+    """
+    patch_kwargs: dict[str, Any] = {}
+    if title is not _UNSET:
+        patch_kwargs["title"] = title
+    if description is not _UNSET:
+        patch_kwargs["description"] = description
+    if labels is not _UNSET:
+        patch_kwargs["labels"] = None if labels is None else list(labels)
+    if category is not _UNSET:
+        patch_kwargs["category"] = category
+    if source is not _UNSET:
+        patch_kwargs["source"] = source
+    if schema_version is not _UNSET:
+        patch_kwargs["schemaVersion"] = schema_version
+    if required_permissions is not _UNSET:
+        patch_kwargs["requiredPermissions"] = required_permissions
+    if grid is not _UNSET:
+        patch_kwargs["grid"] = None if grid is None else dict(grid)
+    if layout_kind is not _UNSET:
+        patch_kwargs["layoutKind"] = layout_kind
+    if auto_grid is not _UNSET:
+        patch_kwargs["autoGrid"] = None if auto_grid is None else dict(auto_grid)
+    if companions is not _UNSET:
+        patch_kwargs["companions"] = None if companions is None else list(companions)
+    if controls is not _UNSET:
+        patch_kwargs["controls"] = None if controls is None else dict(controls)
+    if widgets is not _UNSET:
+        patch_kwargs["widgets"] = None if widgets is None else list(widgets)
+
+    if not patch_kwargs:
+        raise ApiError("Workspace update payload does not include any writable fields.")
+
+    try:
+        workspace = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="Workspace",
+            operation=lambda ClientWorkspace: ClientWorkspace.get(
+                pk=int(workspace_id),
+                timeout=timeout,
+            ).patch(**patch_kwargs),
+        )
+        return _sdk_object_to_dict(workspace)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Workspace not found: {workspace_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Workspace update failed: {e}")
+
+
+def delete_workspace(
+    workspace_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one workspace via SDK client model.
+    """
+    try:
+        def _delete(ClientWorkspace):
+            workspace = ClientWorkspace.get(pk=int(workspace_id), timeout=timeout)
+            payload = _sdk_object_to_dict(workspace)
+            workspace.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="Workspace",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Workspace not found: {workspace_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Workspace deletion failed: {e}")
+
+
+def list_registered_widget_types(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List registered widget types via SDK client model.
+    """
+    try:
+        widgets = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="RegisteredWidgetType",
+            operation=lambda ClientWidgetType: ClientWidgetType.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(widget) for widget in widgets]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Registered widget types fetch failed: {e}")
 
 
 def get_simple_table_storage(

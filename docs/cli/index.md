@@ -37,6 +37,7 @@ mainsequence doctor
 mainsequence constants --help
 mainsequence secrets --help
 mainsequence simple_table --help
+mainsequence cc --help
 mainsequence organization --help
 mainsequence data-node list
 mainsequence markets --help
@@ -50,6 +51,36 @@ mainsequence sdk latest
 ```bash
 mainsequence project --help
 ```
+
+## Command Center
+
+```bash
+mainsequence cc --help
+mainsequence cc workspace list
+mainsequence cc workspace detail 7
+mainsequence cc workspace create "Rates Desk" --description "Shared workspace"
+mainsequence cc workspace create --file workspace.json
+mainsequence cc workspace update 7 --file workspace.json
+mainsequence cc workspace delete 7
+mainsequence cc registered_widget_type list
+mainsequence cc registered_widget_type list --filter widget_id=markdown-note
+mainsequence cc registered_widget_type list --show-filters
+```
+
+Command Center commands are grouped under `cc`:
+
+- `workspace`
+  create, detail, update, list, and delete shared workspaces
+- `registered_widget_type`
+  inspect the widget catalog available to workspaces
+
+For widget-specific workspace mutations, prefer the SDK workspace methods instead of rewriting the full workspace document:
+
+- `Workspace.patch_workspace_widget(...)`
+- `Workspace.delete_workspace_widget(...)`
+- `Workspace.move_workspace_widget(...)`
+
+Those methods mutate one mounted widget instance directly without requiring a full workspace fetch/update round-trip.
 
 Most frequently used flows:
 

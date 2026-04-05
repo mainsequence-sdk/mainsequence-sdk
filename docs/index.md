@@ -32,6 +32,7 @@ Key entry points:
 - [Data Nodes](knowledge/data_nodes.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
+- [Command Center Workspaces](knowledge/dashboards/command_center_workspaces.md)
 - [Streamlit Helpers](knowledge/dashboards/streamlit/index.md)
 - [Virtual Fund Builder](knowledge/virtualfundbuilder/index.md)
 - [Instruments](knowledge/instruments/index.md)

@@ -1,6 +1,7 @@
 from mainsequence.logconf import logger
 
 from .agent import *
+from .command_center import *
 from .models_helpers import *
 from .models_simple_tables import *
 from .models_tdag import *

@@ -417,6 +417,368 @@ def test_simple_tables_delete(cli_mod, runner, monkeypatch):
     assert "Simple table deleted: id=41" in result.output
 
 
+def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeWorkspace:
+        def __init__(self, workspace_id, title):
+            self.id = workspace_id
+            self.title = title
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "title": self.title}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientWorkspace:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeWorkspace(7, "Rates Desk")]
+
+        return operation(_ClientWorkspace)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_workspaces(timeout=8, filters={"title__contains": "Rates"})
+    assert captured == {
+        "module_name": "mainsequence.client.command_center",
+        "class_name": "Workspace",
+        "timeout": 8,
+        "filters": {"title__contains": "Rates"},
+    }
+    assert out == [{"id": 7, "title": "Rates Desk"}]
+
+
+def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeWorkspace:
+        def __init__(self, workspace_id):
+            self.id = workspace_id
+
+        def patch(self, **kwargs):
+            captured["patch_kwargs"] = kwargs
+
+            class _UpdatedWorkspace:
+                id = 7
+
+                @staticmethod
+                def model_dump(mode="json"):
+                    return {
+                        "id": 7,
+                        "title": kwargs.get("title", "Rates Desk"),
+                        "layoutKind": kwargs.get("layoutKind", "custom"),
+                    }
+
+            return _UpdatedWorkspace()
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientWorkspace:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+                return FakeWorkspace(pk)
+
+        return operation(_ClientWorkspace)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.update_workspace(
+        7,
+        title="Updated Rates Desk",
+        layout_kind="auto-grid",
+        widgets=[{"id": "widget-1", "widgetId": "markdown-note"}],
+        timeout=11,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.command_center",
+        "class_name": "Workspace",
+        "pk": 7,
+        "timeout": 11,
+        "patch_kwargs": {
+            "title": "Updated Rates Desk",
+            "layoutKind": "auto-grid",
+            "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
+        },
+    }
+    assert out == {"id": 7, "title": "Updated Rates Desk", "layoutKind": "auto-grid"}
+
+
+def test_workspace_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_workspaces",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 7,
+                "title": "Rates Desk",
+                "category": "Trading",
+                "source": "user",
+                "layoutKind": "custom",
+                "labels": ["rates", "desk"],
+                "updatedAt": "2026-04-04T10:30:00Z",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "workspace", "list"])
+    assert result.exit_code == 0
+    assert "Workspaces" in result.output
+    assert "Rates Desk" in result.output
+    assert "Total workspaces: 1" in result.output
+
+
+def test_workspace_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_workspace",
+        lambda workspace_id, timeout=None: {
+            "id": workspace_id,
+            "title": "Rates Desk",
+            "description": "Shared workspace",
+            "category": "Trading",
+            "source": "user",
+            "schemaVersion": 1,
+            "requiredPermissions": ["dashboard:view"],
+            "grid": {"columns": 12},
+            "layoutKind": "custom",
+            "autoGrid": {},
+            "companions": [],
+            "controls": {"refresh": {"enabled": True}},
+            "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
+            "updatedAt": "2026-04-04T10:30:00Z",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "workspace", "detail", "7"])
+    assert result.exit_code == 0
+    assert "Workspace Details" in result.output
+    assert "markdown-note" in result.output
+    assert "dashboard:view" in result.output
+
+
+def test_workspace_create(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 7,
+            "title": kwargs["title"],
+            "description": kwargs["description"],
+            "category": kwargs["category"],
+            "source": kwargs["source"],
+            "layoutKind": kwargs["layout_kind"],
+            "labels": kwargs["labels"],
+            "updatedAt": "2026-04-04T10:30:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "create_workspace", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "cc",
+            "workspace",
+            "create",
+            "Rates Desk",
+            "--description",
+            "Shared workspace",
+            "--label",
+            "rates,desk",
+            "--category",
+            "Trading",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["title"] == "Rates Desk"
+    assert captured["description"] == "Shared workspace"
+    assert captured["labels"] == ["rates", "desk"]
+    assert captured["category"] == "Trading"
+    assert "Workspace created: Rates Desk" in result.output
+
+
+def test_workspace_create_from_file(cli_mod, runner, monkeypatch, tmp_path):
+    captured = {}
+    workspace_file = tmp_path / "workspace.yaml"
+    workspace_file.write_text(
+        yaml.safe_dump(
+            {
+                "title": "Rates Desk",
+                "description": "Shared workspace",
+                "labels": ["rates", "desk"],
+                "category": "Trading",
+                "source": "user",
+                "schemaVersion": 1,
+                "requiredPermissions": ["dashboard:view"],
+                "grid": {"columns": 12},
+                "layoutKind": "custom",
+                "autoGrid": {},
+                "companions": [],
+                "controls": {"refresh": {"enabled": True}},
+                "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 7,
+            "title": kwargs["title"],
+            "description": kwargs["description"],
+            "category": kwargs["category"],
+            "source": kwargs["source"],
+            "layoutKind": kwargs["layout_kind"],
+            "labels": kwargs["labels"],
+            "updatedAt": "2026-04-04T10:30:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "create_workspace", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["cc", "workspace", "create", "--file", str(workspace_file)],
+    )
+    assert result.exit_code == 0
+    assert captured["schema_version"] == 1
+    assert captured["required_permissions"] == ["dashboard:view"]
+    assert captured["controls"] == {"refresh": {"enabled": True}}
+    assert captured["widgets"] == [{"id": "widget-1", "widgetId": "markdown-note"}]
+    assert "Workspace created: Rates Desk" in result.output
+
+
+def test_workspace_update_from_file(cli_mod, runner, monkeypatch, tmp_path):
+    captured = {}
+    workspace_file = tmp_path / "workspace-update.yaml"
+    workspace_file.write_text(
+        yaml.safe_dump(
+            {
+                "description": "Updated workspace",
+                "layoutKind": "auto-grid",
+                "controls": {"refresh": {"selectedIntervalMs": 60000}},
+                "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _update(workspace_id, **kwargs):
+        captured["workspace_id"] = workspace_id
+        captured.update(kwargs)
+        return {
+            "id": workspace_id,
+            "title": "Rates Desk",
+            "description": "Updated workspace",
+            "category": "Trading",
+            "source": "user",
+            "schemaVersion": 1,
+            "layoutKind": "auto-grid",
+            "controls": {"refresh": {"selectedIntervalMs": 60000}},
+            "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
+            "updatedAt": "2026-04-04T10:45:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "update_workspace", _update)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["cc", "workspace", "update", "7", "--file", str(workspace_file)],
+    )
+    assert result.exit_code == 0
+    assert captured["workspace_id"] == 7
+    assert captured["layout_kind"] == "auto-grid"
+    assert captured["controls"] == {"refresh": {"selectedIntervalMs": 60000}}
+    assert captured["widgets"] == [{"id": "widget-1", "widgetId": "markdown-note"}]
+    assert "Workspace updated: id=7" in result.output
+
+
+def test_workspace_delete(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_workspace",
+        lambda workspace_id, timeout=None: {
+            "id": workspace_id,
+            "title": "Rates Desk",
+            "description": "Shared workspace",
+            "category": "Trading",
+            "source": "user",
+            "layoutKind": "custom",
+            "labels": ["rates", "desk"],
+            "updatedAt": "2026-04-04T10:30:00Z",
+        },
+    )
+    monkeypatch.setattr(cli_mod, "_require_delete_verification", lambda **kwargs: None)
+
+    def _delete(workspace_id, *, timeout=None):
+        captured["workspace_id"] = workspace_id
+        captured["timeout"] = timeout
+        return {
+            "id": workspace_id,
+            "title": "Rates Desk",
+            "description": "Shared workspace",
+            "category": "Trading",
+            "source": "user",
+            "layoutKind": "custom",
+            "labels": ["rates", "desk"],
+            "updatedAt": "2026-04-04T10:30:00Z",
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_workspace", _delete)
+
+    result = runner.invoke(cli_mod.app, ["cc", "workspace", "delete", "7"])
+    assert result.exit_code == 0
+    assert captured == {"workspace_id": 7, "timeout": None}
+    assert "Workspace deleted: id=7" in result.output
+
+
+def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_registered_widget_types",
+        lambda timeout=None, filters=None: [
+            {
+                "widget_id": "main-sequence-data-node",
+                "title": "Data Node",
+                "category": "Main Sequence",
+                "kind": "custom",
+                "source": "main-sequence",
+                "is_active": True,
+                "registry_version": "2026.04.04",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "registered_widget_type", "list"])
+    assert result.exit_code == 0
+    assert "Registered Widget Types" in result.output
+    assert "main-sequ" in result.output
+    assert "ence-data" in result.output
+    assert "-node" in result.output
+    assert "Total registered widget types: 1" in result.output
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(

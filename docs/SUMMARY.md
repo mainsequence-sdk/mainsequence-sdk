@@ -14,6 +14,7 @@
     - [Data Nodes](knowledge/data_nodes.md)
     - [CLI Deep Dive](knowledge/cli.md)
     - Dashboards
+        - [Command Center Workspaces](knowledge/dashboards/command_center_workspaces.md)
         - Streamlit
             - [Overview](knowledge/dashboards/streamlit/index.md)
             - [Scaffold and Theming](knowledge/dashboards/streamlit/scaffold_and_theming.md)

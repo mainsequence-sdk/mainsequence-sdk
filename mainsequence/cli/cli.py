@@ -69,6 +69,7 @@ from .api import (
     create_project_job,
     create_project_resource_release,
     create_secret,
+    create_workspace,
     data_node_storage_column_search,
     data_node_storage_description_search,
     deep_find_repo_url,
@@ -80,6 +81,7 @@ from .api import (
     delete_resource_release,
     delete_secret,
     delete_simple_table_storage,
+    delete_workspace,
     fetch_project_env_text,
     get_constant,
     get_current_user_profile,
@@ -95,6 +97,7 @@ from .api import (
     get_resource_release,
     get_secret,
     get_simple_table_storage,
+    get_workspace,
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
@@ -115,12 +118,14 @@ from .api import (
     list_project_resources,
     list_project_users_can_edit,
     list_project_users_can_view,
+    list_registered_widget_types,
     list_secret_users_can_edit,
     list_secret_users_can_view,
     list_secrets,
     list_simple_table_storages,
     list_team_users_can_edit,
     list_team_users_can_view,
+    list_workspaces,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
     remove_constant_team_from_edit,
@@ -147,6 +152,7 @@ from .api import (
     schedule_batch_project_jobs,
     sync_project_after_commit,
     update_organization_team,
+    update_workspace,
 )
 from .api import login as api_login
 from .docker_utils import (
@@ -189,6 +195,9 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)")
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 simple_table = typer.Typer(help="Simple table commands")
+cc = typer.Typer(help="Command Center commands")
+workspace = typer.Typer(help="Workspace commands")
+registered_widget_type = typer.Typer(help="Registered widget type commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 markets = typer.Typer(help="Markets commands")
@@ -211,6 +220,14 @@ app.add_typer(simple_table, name="simple_table")
 app.add_typer(simple_table, name="simple-table", hidden=True)
 app.add_typer(simple_table, name="simple_tables", hidden=True)
 app.add_typer(simple_table, name="simple-tables", hidden=True)
+app.add_typer(cc, name="cc")
+app.add_typer(cc, name="command_center", hidden=True)
+cc.add_typer(workspace, name="workspace")
+cc.add_typer(registered_widget_type, name="registered_widget_type")
+cc.add_typer(registered_widget_type, name="registered-widget-type", hidden=True)
+app.add_typer(workspace, name="workspace", hidden=True)
+app.add_typer(registered_widget_type, name="registered_widget_type", hidden=True)
+app.add_typer(registered_widget_type, name="registered-widget-type", hidden=True)
 app.add_typer(organization, name="organization")
 app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
@@ -245,6 +262,8 @@ DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
 CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
 SIMPLE_TABLE_STORAGE_MODEL_REF = "mainsequence.client.models_simple_tables.SimpleTableStorage"
+WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
+REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.RegisteredWidgetType"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
 ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
@@ -3048,6 +3067,345 @@ def _simple_tables_delete_impl(
     print_kv("Deleted Simple Table", _format_simple_table_storage_preview(deleted))
 
 
+def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
+    items: list[str] = []
+    for raw in values or []:
+        for part in str(raw).split(","):
+            value = part.strip()
+            if value:
+                items.append(value)
+    return items
+
+
+def _format_workspace_preview(workspace_payload: dict[str, object]) -> list[tuple[str, str]]:
+    labels = workspace_payload.get("labels")
+    return [
+        ("ID", str(workspace_payload.get("id") or "-")),
+        ("Title", str(workspace_payload.get("title") or "-")),
+        ("Description", str(workspace_payload.get("description") or "-")),
+        ("Category", str(workspace_payload.get("category") or "-")),
+        ("Source", str(workspace_payload.get("source") or "-")),
+        ("Layout Kind", str(workspace_payload.get("layoutKind") or workspace_payload.get("layout_kind") or "-")),
+        ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
+        ("Updated At", str(workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-")),
+    ]
+
+
+WORKSPACE_FILE_OPTION_HELP = "Path to a JSON or YAML workspace document."
+WORKSPACE_WRITE_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "title": ("title",),
+    "description": ("description",),
+    "labels": ("labels",),
+    "category": ("category",),
+    "source": ("source",),
+    "schema_version": ("schema_version", "schemaVersion"),
+    "required_permissions": ("required_permissions", "requiredPermissions"),
+    "grid": ("grid",),
+    "layout_kind": ("layout_kind", "layoutKind"),
+    "auto_grid": ("auto_grid", "autoGrid"),
+    "companions": ("companions",),
+    "controls": ("controls",),
+    "widgets": ("widgets",),
+}
+
+
+def _load_workspace_payload_file(file_path: pathlib.Path) -> dict[str, object]:
+    try:
+        payload = yaml.safe_load(file_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as e:
+        raise ValueError(f"Workspace file not found: {file_path}") from e
+    except Exception as e:
+        raise ValueError(f"Could not read workspace file {file_path}: {e}") from e
+
+    if not isinstance(payload, dict):
+        raise ValueError("Workspace file must contain a JSON/YAML object at the top level.")
+    return dict(payload)
+
+
+def _workspace_write_kwargs_from_payload(
+    payload: dict[str, object],
+) -> dict[str, object]:
+    kwargs: dict[str, object] = {}
+    for field_name, aliases in WORKSPACE_WRITE_FIELD_ALIASES.items():
+        for alias in aliases:
+            if alias in payload:
+                kwargs[field_name] = payload[alias]
+                break
+    return kwargs
+
+
+def _apply_workspace_cli_overrides(
+    workspace_kwargs: dict[str, object],
+    *,
+    title: str | None,
+    description: str | None,
+    labels: list[str] | None,
+    category: str | None,
+    source: str | None,
+    layout_kind: str | None,
+) -> dict[str, object]:
+    if title is not None:
+        workspace_kwargs["title"] = title
+    if description is not None:
+        workspace_kwargs["description"] = description
+    if labels is not None:
+        workspace_kwargs["labels"] = _parse_cli_csv_list(labels)
+    if category is not None:
+        workspace_kwargs["category"] = category
+    if source is not None:
+        workspace_kwargs["source"] = source
+    if layout_kind is not None:
+        workspace_kwargs["layout_kind"] = layout_kind
+    return workspace_kwargs
+
+
+def _format_workspace_details(workspace_payload: dict[str, object]) -> list[tuple[str, str]]:
+    widgets = workspace_payload.get("widgets")
+    companions = workspace_payload.get("companions")
+    return [
+        ("Schema Version", str(workspace_payload.get("schemaVersion") or workspace_payload.get("schema_version") or "-")),
+        ("Required Permissions", _format_json_value(workspace_payload.get("requiredPermissions") or workspace_payload.get("required_permissions"))),
+        ("Created At", str(workspace_payload.get("createdAt") or workspace_payload.get("created_at") or "-")),
+        ("Grid", _format_json_value(workspace_payload.get("grid"))),
+        ("Auto Grid", _format_json_value(workspace_payload.get("autoGrid") or workspace_payload.get("auto_grid"))),
+        ("Controls", _format_json_value(workspace_payload.get("controls"))),
+        ("Widgets", _format_json_value(widgets)),
+        ("Widget Count", str(len(widgets)) if isinstance(widgets, list) else "-"),
+        ("Companions", _format_json_value(companions)),
+        ("Companion Count", str(len(companions)) if isinstance(companions, list) else "-"),
+    ]
+
+
+def _workspace_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=WORKSPACE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Workspaces",
+    )
+    _require_login()
+
+    try:
+        workspaces = list_workspaces(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Workspaces fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for workspace_payload in workspaces:
+        labels = workspace_payload.get("labels")
+        rows.append(
+            [
+                str(workspace_payload.get("id") or "-"),
+                str(workspace_payload.get("title") or "-"),
+                str(workspace_payload.get("category") or "-"),
+                str(workspace_payload.get("source") or "-"),
+                str(workspace_payload.get("layoutKind") or workspace_payload.get("layout_kind") or "-"),
+                str(len(labels)) if isinstance(labels, list) else "-",
+                str(workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Workspaces",
+            ["ID", "Title", "Category", "Source", "Layout", "Labels", "Updated At"],
+            rows,
+        )
+    else:
+        info("No workspaces.")
+    info(f"Total workspaces: {len(workspaces)}")
+
+
+def _workspace_create_impl(
+    *,
+    title: str | None,
+    file_path: pathlib.Path | None,
+    description: str | None,
+    labels: list[str] | None,
+    category: str | None,
+    source: str | None,
+    layout_kind: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    workspace_kwargs: dict[str, object]
+    if file_path is not None:
+        try:
+            workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
+        except ValueError as e:
+            error(str(e))
+            raise typer.Exit(1)
+    else:
+        workspace_title = (title or "").strip() or typer.prompt("Workspace title").strip()
+        if not workspace_title:
+            error("Workspace title is required.")
+            raise typer.Exit(1)
+
+        workspace_description = description
+        if workspace_description is None:
+            workspace_description = typer.prompt("Workspace description", default="", show_default=False)
+
+        workspace_kwargs = {
+            "title": workspace_title,
+            "description": workspace_description or "",
+            "labels": _parse_cli_csv_list(labels),
+            "category": category or "Custom",
+            "source": source or "user",
+            "layout_kind": layout_kind or "custom",
+        }
+
+    workspace_kwargs = _apply_workspace_cli_overrides(
+        workspace_kwargs,
+        title=(title.strip() if title is not None else None),
+        description=description,
+        labels=labels,
+        category=category,
+        source=source,
+        layout_kind=layout_kind,
+    )
+
+    workspace_title = str(workspace_kwargs.get("title") or "").strip()
+    if not workspace_title:
+        error("Workspace title is required.")
+        raise typer.Exit(1)
+
+    try:
+        created = create_workspace(timeout=timeout, **workspace_kwargs)
+    except ApiError as e:
+        error(f"Workspace creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Workspace created: {workspace_title}")
+    print_kv("Created Workspace", _format_workspace_preview(created))
+
+
+def _workspace_detail_impl(
+    *,
+    workspace_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        workspace_payload = get_workspace(workspace_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Workspace fetch failed: {e}")
+        raise typer.Exit(1)
+
+    print_kv("Workspace", _format_workspace_preview(workspace_payload))
+    print_kv("Workspace Details", _format_workspace_details(workspace_payload))
+
+
+def _workspace_update_impl(
+    *,
+    workspace_id: int,
+    file_path: pathlib.Path,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    if not workspace_kwargs:
+        error("Workspace update payload does not include any writable fields.")
+        raise typer.Exit(1)
+
+    try:
+        updated = update_workspace(workspace_id, timeout=timeout, **workspace_kwargs)
+    except ApiError as e:
+        error(f"Workspace update failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Workspace updated: id={workspace_id}")
+    print_kv("Updated Workspace", _format_workspace_preview(updated))
+    print_kv("Workspace Details", _format_workspace_details(updated))
+
+
+def _workspace_delete_impl(
+    *,
+    workspace_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        workspace_payload = get_workspace(workspace_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Workspace fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(workspace_payload.get("title") or workspace_payload.get("id") or workspace_id)
+    _require_delete_verification(
+        preview_title="Workspace Delete Preview",
+        preview_items=_format_workspace_preview(workspace_payload),
+        verification_value=verification_value,
+        verification_label="workspace title" if workspace_payload.get("title") else "workspace id",
+    )
+
+    try:
+        deleted = delete_workspace(workspace_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Workspace deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Workspace deleted: id={workspace_id}")
+    print_kv("Deleted Workspace", _format_workspace_preview(deleted))
+
+
+def _registered_widget_type_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=REGISTERED_WIDGET_TYPE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Registered Widget Types",
+    )
+    _require_login()
+
+    try:
+        widgets = list_registered_widget_types(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Registered widget types fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for widget in widgets:
+        rows.append(
+            [
+                str(widget.get("widget_id") or "-"),
+                str(widget.get("title") or "-"),
+                str(widget.get("category") or "-"),
+                str(widget.get("kind") or "-"),
+                str(widget.get("source") or "-"),
+                str(widget.get("is_active")),
+                str(widget.get("registry_version") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Registered Widget Types",
+            ["Widget ID", "Title", "Category", "Kind", "Source", "Active", "Registry Version"],
+            rows,
+        )
+    else:
+        info("No registered widget types.")
+    info(f"Total registered widget types: {len(widgets)}")
+
+
 def _data_node_storage_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -3254,6 +3612,120 @@ def simple_tables_delete_cmd(
     Delete one simple table storage.
     """
     _simple_tables_delete_impl(storage_id=storage_id, timeout=timeout)
+
+
+@workspace.command("list")
+def workspace_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List command-center workspaces visible to the authenticated user.
+    """
+    _workspace_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@workspace.command("create")
+def workspace_create_cmd(
+    title: str | None = typer.Argument(None, help="Workspace title."),
+    file_path: pathlib.Path | None = typer.Option(
+        None,
+        "--file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help=WORKSPACE_FILE_OPTION_HELP,
+    ),
+    description: str | None = typer.Option(None, "--description", help="Optional workspace description."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated workspace label."),
+    category: str | None = typer.Option(None, "--category", help="Workspace category."),
+    source: str | None = typer.Option(None, "--source", help="Workspace source."),
+    layout_kind: str | None = typer.Option(None, "--layout-kind", help="Workspace layout kind."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create one command-center workspace.
+    """
+    _workspace_create_impl(
+        title=title,
+        file_path=file_path,
+        description=description,
+        labels=labels,
+        category=category,
+        source=source,
+        layout_kind=layout_kind,
+        timeout=timeout,
+    )
+
+
+@workspace.command("detail")
+def workspace_detail_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one command-center workspace in detail.
+    """
+    _workspace_detail_impl(workspace_id=workspace_id, timeout=timeout)
+
+
+@workspace.command("update")
+def workspace_update_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    file_path: pathlib.Path = typer.Option(
+        ...,
+        "--file",
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help=WORKSPACE_FILE_OPTION_HELP,
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Update one command-center workspace from a JSON or YAML document.
+    """
+    _workspace_update_impl(
+        workspace_id=workspace_id,
+        file_path=file_path,
+        timeout=timeout,
+    )
+
+
+@workspace.command("delete")
+def workspace_delete_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one command-center workspace.
+    """
+    _workspace_delete_impl(workspace_id=workspace_id, timeout=timeout)
+
+
+@registered_widget_type.command("list")
+def registered_widget_type_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List registered widget types visible to the authenticated user.
+    """
+    _registered_widget_type_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
 
 
 @constants.command("list")
