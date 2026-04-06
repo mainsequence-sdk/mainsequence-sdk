@@ -272,6 +272,12 @@ JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
     "streamlit_dashboard": "dashboard",
     "agent": "agent",
+    "fastapi": "fastapi",
+}
+RESOURCE_RELEASE_LABEL_MAP = {
+    "streamlit_dashboard": "dashboard release",
+    "agent": "agent release",
+    "fastapi": "FastAPI release",
 }
 LIST_FILTER_OPTION_HELP = (
     "Repeatable filter in KEY=VALUE form. "
@@ -6161,6 +6167,42 @@ def project_project_resource_create_agent_cmd(
     )
 
 
+@project_project_resource_group.command("create_fastapi")
+def project_project_resource_create_fastapi_cmd(
+    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
+    readme_resource_id: int | None = typer.Option(None, "--readme-resource-id", help="Optional README resource ID."),
+    cpu_request: str | None = typer.Option(None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."),
+    memory_request: str | None = typer.Option(None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."),
+    gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
+    gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
+    spot: bool | None = typer.Option(None, "--spot/--no-spot", help="Whether to prefer spot capacity."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create a FastAPI release from a project resource.
+
+    The command first lets the user select a project image and then filters resources so
+    only resources with `repo_commit_sha == related_image.project_repo_hash` are eligible.
+    """
+    _project_resource_release_create_impl(
+        release_kind="fastapi",
+        project_id=project_id,
+        resource_id=resource_id,
+        path=path,
+        related_image_id=related_image_id,
+        readme_resource_id=readme_resource_id,
+        cpu_request=cpu_request,
+        memory_request=memory_request,
+        gpu_request=gpu_request,
+        gpu_type=gpu_type,
+        spot=spot,
+        timeout=timeout,
+    )
+
+
 def _project_resource_release_delete_impl(
     *,
     release_id: int,
@@ -6180,7 +6222,10 @@ def _project_resource_release_delete_impl(
         error(f"Project resource release fetch failed: {e}")
         raise typer.Exit(1)
 
-    release_label = "dashboard release" if expected_release_kind == "streamlit_dashboard" else "agent release"
+    release_label = RESOURCE_RELEASE_LABEL_MAP.get(
+        expected_release_kind,
+        f"{expected_release_kind} release",
+    )
     _confirm_delete_action(
         preview_title="Project Resource Release Delete Preview",
         preview_items=_format_resource_release_delete_preview(release),
@@ -6245,6 +6290,30 @@ def project_project_resource_delete_agent_cmd(
     _project_resource_release_delete_impl(
         release_id=release_id,
         expected_release_kind="agent",
+        yes=yes,
+        timeout=timeout,
+    )
+
+
+@project_project_resource_group.command("delete_fastapi")
+def project_project_resource_delete_fastapi_cmd(
+    release_id: int = typer.Argument(..., help="FastAPI resource release ID."),
+    yes: bool = typer.Option(False, "--yes", help="Delete without confirmation."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete a FastAPI resource release.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project project_resource delete_fastapi 701
+    mainsequence project project_resource delete_fastapi 701 --yes
+    ```
+    """
+    _project_resource_release_delete_impl(
+        release_id=release_id,
+        expected_release_kind="fastapi",
         yes=yes,
         timeout=timeout,
     )

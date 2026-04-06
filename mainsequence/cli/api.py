@@ -1712,7 +1712,8 @@ def create_project_resource_release(
     Create a resource release via SDK client model.
 
     Single source of truth:
-      - delegates to `ProjectResource.create_dashboard()` / `ProjectResource.create_agent()`
+      - delegates to `ProjectResource.create_dashboard()`, `ProjectResource.create_agent()`,
+        or `ProjectResource.create_fastapi()`
       - which in turn use `ResourceRelease.create()`
     """
     tokens = get_tokens()
@@ -1775,12 +1776,22 @@ def create_project_resource_release(
             "timeout": timeout,
         }
 
-        if release_kind == "streamlit_dashboard":
-            created = resource.create_dashboard(**create_kwargs)
-        elif release_kind == "agent":
-            created = resource.create_agent(**create_kwargs)
-        else:
-            raise ApiError("release_kind must be either 'streamlit_dashboard' or 'agent'.")
+        create_method_name = {
+            "streamlit_dashboard": "create_dashboard",
+            "agent": "create_agent",
+            "fastapi": "create_fastapi",
+        }.get(str(release_kind).strip())
+        if not create_method_name:
+            raise ApiError(
+                "release_kind must be one of: 'streamlit_dashboard', 'agent', 'fastapi'."
+            )
+
+        create_method = getattr(resource, create_method_name, None)
+        if not callable(create_method):
+            raise ApiError(
+                f"ProjectResource does not implement {create_method_name}()."
+            )
+        created = create_method(**create_kwargs)
 
         if isinstance(created, dict):
             return created

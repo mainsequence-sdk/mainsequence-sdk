@@ -192,6 +192,11 @@ mainsequence project data-node-updates list 123
 mainsequence project project_resource list
 mainsequence project project_resource list --show-filters
 mainsequence project project_resource list --filter resource_type=dashboard
+mainsequence project project_resource list --filter resource_type=fastapi
+mainsequence project project_resource create_fastapi
+mainsequence project project_resource create_fastapi 123
+mainsequence project project_resource delete_fastapi 701
+mainsequence project project_resource delete_fastapi 701 --yes
 
 # 2) Set up locally
 mainsequence project set-up-locally 123

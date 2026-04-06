@@ -7,8 +7,8 @@ from urllib.parse import quote
 
 from pydantic import ConfigDict, Field
 
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
-from .exceptions import ApiError
+from ..base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from ..exceptions import ApiError
 
 RegisteredWidgetKind = Literal["kpi", "chart", "table", "feed", "custom"]
 
@@ -147,8 +147,8 @@ class Workspace(ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticMo
         expected_statuses: tuple[int, ...] = (200,),
         empty_response: Any = None,
     ) -> Any:
-        from .exceptions import raise_for_response
-        from .utils import make_request
+        from ..exceptions import raise_for_response
+        from ..utils import make_request
 
         request_payload = payload or {}
         url = self._get_widget_detail_url(widget_instance_id)

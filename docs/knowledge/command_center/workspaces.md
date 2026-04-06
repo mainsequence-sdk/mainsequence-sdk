@@ -1,6 +1,6 @@
 # Command Center Workspaces
 
-Command Center workspaces store shared dashboard structure:
+Command Center workspaces store shared application structure:
 
 - workspace metadata
 - shared controls
@@ -139,3 +139,5 @@ When a user asks to mutate a specific widget:
 If the target widget instance id is ambiguous, confirm it before mutating.
 
 That is especially important when a workspace contains multiple widgets of the same registered `widgetId`.
+
+For custom application inputs rendered inside AppComponent widgets, see [Forms](forms.md).

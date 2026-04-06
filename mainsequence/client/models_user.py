@@ -20,6 +20,11 @@ _CURRENT_AUTH_HEADERS: ContextVar[Mapping[str, Any] | None] = ContextVar(
     default=None,
 )
 
+_CURRENT_USER: ContextVar[Any | None] = ContextVar(
+    "_CURRENT_USER",
+    default=None,
+)
+
 class Organization(BasePydanticModel):
     id: int = Field(
         ...,
@@ -545,6 +550,11 @@ class User(BaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def get_logged_user(cls) -> User:
+
+        cached_user = _CURRENT_USER.get()
+        if cached_user is not None:
+            return cached_user
+
         headers = _CURRENT_AUTH_HEADERS.get()
 
         if not headers:
@@ -574,7 +584,14 @@ class User(BaseObjectOrm, BasePydanticModel):
                 or normalized_headers.get("http_x_user_id")
         )
 
+
+
         if user_id_raw in (None, ""):
+
+            if normalized_headers.get("authorization") and "Bearer" in normalized_headers.get("authorization"):
+                return cls.get_authenticated_user_details()
+
+
             raise RuntimeError("Missing X-User-ID in request headers.")
 
         try:

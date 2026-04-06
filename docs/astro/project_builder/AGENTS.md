@@ -376,6 +376,19 @@ If working on deployed resources such as dashboards or agents:
 - verify both the resource and the resulting `ResourceRelease`
 - do not assume a local file is deployable until it is part of a pushed commit and visible as a project resource
 
+## Fast API Release Rules
+- When a user build an API in a mainsequence project always assume is Fast API. 
+- For FastAPI code under api/, always provide rich OpenAPI.`api/app_name/main.py` should have the main app
+- Every route should have a summary.
+- Every route should have a description.
+- Always an explicit response_model whenever practical.
+- Pydantic models should use Field(...) descriptions and examples.
+- Add route-level response examples, including failure examples when meaningful.
+- Use Enum or Literal for finite input choices instead of regex validation.
+- Always write a README.md file in the api folder `api/app_name/README.md` explaining what the API does. 
+
+
+
 ## RBAC, Constants, Secrets, and Artifacts
 
 MainSequence work often crosses resource boundaries. Treat these as operationally important:

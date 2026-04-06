@@ -1,4 +1,4 @@
-# Working With Simple Tables
+# Part 3.1: Working With Simple Tables
 
 ## Quick Summary
 
@@ -567,6 +567,9 @@ Or the reverse:
 
 After this tutorial, the most useful follow-ups are:
 
+- continue with
+  [`docs/tutorial/create_your_first_api.md`](create_your_first_api.md)
+  to expose these rows through a project API
 - read the schema guide in
   [`docs/knowledge/simple_tables/simple_table.md`](../knowledge/simple_tables/simple_table.md)
 - read the filtering guide in

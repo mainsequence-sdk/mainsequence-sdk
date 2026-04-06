@@ -887,11 +887,11 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         description="Display name of the resource discovered in the project's repository.",
         examples=["analytics_dashboard.py"],
     )
-    resource_type: Literal["dashboard", "agent", "markdown"] | None = Field(
+    resource_type: Literal["dashboard", "agent", "fastapi", "markdown"] | None = Field(
         None,
         title="Resource Type",
-        description="Type of the project resource. Allowed values are `dashboard`, `agent`, and `markdown`.",
-        examples=["dashboard", "markdown"],
+        description="Type of the project resource. Allowed values are `dashboard`, `agent`, `fastapi`, and `markdown`.",
+        examples=["dashboard", "fastapi", "markdown"],
     )
     code: str | None = Field(
         None,
@@ -969,10 +969,20 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
             **kwargs,
         )
 
+    def create_fastapi(self, timeout=None, files=None, *args, **kwargs) -> ResourceRelease:
+        return self._create_release(
+            ResourceReleaseKind.FAST_API,
+            timeout,
+            files,
+            *args,
+            **kwargs,
+        )
+
 
 class ResourceReleaseKind(str, Enum):
     STREAMLIT_DASHBOARD = "streamlit_dashboard"
     AGENT = "agent"
+    FAST_API = "fastapi"
 
 
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):

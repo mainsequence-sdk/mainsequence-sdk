@@ -61,9 +61,13 @@ Recommended entry points:
 - Tutorial:
   - [Setting a Project (CLI)](docs/tutorial/setting_a_project.md)
   - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
+  - [Working With Simple Tables](docs/tutorial/working_with_simple_tables.md)
+  - [Create Your First API](docs/tutorial/create_your_first_api.md)
   - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
 - Knowledge:
   - [Data Nodes](docs/knowledge/data_nodes.md)
+  - [Command Center](docs/knowledge/command_center/index.md)
+  - [Simple Tables](docs/knowledge/simple_tables/simple_table.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
   - [Streamlit Helpers](docs/knowledge/dashboards/streamlit/index.md)
@@ -109,9 +113,11 @@ mainsequence project build_local_venv --path .
 From there, the normal learning path is:
 
 1. create your first `DataNode`
-2. understand sharing and RBAC
-3. schedule jobs
-4. build dashboards or downstream consumers
+2. model app-facing data with `SimpleTable` when needed
+3. add an API or another application surface
+4. understand sharing and RBAC
+5. schedule jobs
+6. build dashboards or downstream consumers
 
 ## Installation for development
 

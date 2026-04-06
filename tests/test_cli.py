@@ -2666,6 +2666,10 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
                     captured["create_agent"] = kwargs
                     return types.SimpleNamespace(model_dump=lambda: {"id": 502, "resource": pk, "related_image": kwargs["related_image_id"]})
 
+                def create_fastapi(self, **kwargs):
+                    captured["create_fastapi"] = kwargs
+                    return types.SimpleNamespace(model_dump=lambda: {"id": 503, "resource": pk, "related_image": kwargs["related_image_id"]})
+
             return _Resource()
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
@@ -2694,6 +2698,73 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     assert captured["create_dashboard"]["memory_request"] == "1"
     assert captured["jwt"] == ("acc", "ref")
     assert out == {"id": 501, "resource": 381, "related_image": 94}
+
+
+def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_helpers = types.ModuleType("mainsequence.client.models_helpers")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeProjectResource:
+        ROOT_URL = "https://old.test/orm/api/pods/project-resource"
+
+        @classmethod
+        def get(cls, pk=None, timeout=None, **filters):
+            captured["get"] = {"pk": pk, "timeout": timeout, "filters": filters}
+
+            class _Resource:
+                def create_fastapi(self, **kwargs):
+                    captured["create_fastapi"] = kwargs
+                    return types.SimpleNamespace(model_dump=lambda: {"id": 503, "resource": pk, "related_image": kwargs["related_image_id"]})
+
+            return _Resource()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_helpers.ProjectResource = FakeProjectResource
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
+
+    out = api_mod.create_project_resource_release(
+        release_kind="fastapi",
+        resource_id=381,
+        related_image_id=94,
+        spot=False,
+        cpu_request="0.5",
+        memory_request="1",
+        gpu_request="",
+        gpu_type="",
+    )
+    assert captured["get"] == {"pk": 381, "timeout": None, "filters": {}}
+    assert captured["create_fastapi"]["related_image_id"] == 94
+    assert captured["create_fastapi"]["spot"] is False
+    assert captured["create_fastapi"]["cpu_request"] == "0.5"
+    assert captured["create_fastapi"]["memory_request"] == "1"
+    assert captured["jwt"] == ("acc", "ref")
+    assert out == {"id": 503, "resource": 381, "related_image": 94}
 
 
 def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
@@ -4388,6 +4459,72 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     assert "Project resource release created: id=501" in result.output
 
 
+def test_project_project_resource_create_fastapi_filters_resources_by_selected_image(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    captured = {}
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, timeout=None: [
+            {"id": 94, "project_repo_hash": "sha-94", "base_image": {"id": 1, "title": "py311"}},
+            {"id": 95, "project_repo_hash": "sha-95", "base_image": {"id": 2, "title": "py312"}},
+        ],
+    )
+
+    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, timeout=None):
+        captured["project_id"] = project_id
+        captured["repo_commit_sha"] = repo_commit_sha
+        captured["resource_type"] = resource_type
+        return [
+            {
+                "id": 382,
+                "name": "tutorial_api",
+                "resource_type": "fastapi",
+                "path": "src/apis/tutorial_api/main.py",
+                "filesize": 4096,
+                "last_modified": "2026-04-05T10:30:00Z",
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "list_project_resources", _list_project_resources)
+
+    def _create_release(**kwargs):
+        captured["create_release"] = kwargs
+        return {
+            "id": 503,
+            "resource": kwargs["resource_id"],
+            "related_image": kwargs["related_image_id"],
+            "cpu_request": kwargs["cpu_request"],
+            "memory_request": kwargs["memory_request"],
+            "spot": kwargs["spot"],
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_resource_release", _create_release)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "project_resource", "create_fastapi"],
+        input="94\n382\n",
+    )
+    assert result.exit_code == 0
+    assert captured["project_id"] == 123
+    assert captured["repo_commit_sha"] == "sha-94"
+    assert captured["resource_type"] == "fastapi"
+    assert captured["create_release"]["release_kind"] == "fastapi"
+    assert captured["create_release"]["related_image_id"] == 94
+    assert captured["create_release"]["resource_id"] == 382
+    assert captured["create_release"]["cpu_request"] == "0.25"
+    assert captured["create_release"]["memory_request"] == "0.5"
+    assert captured["create_release"]["spot"] is False
+    assert "Using defaults: cpu_request=0.25, memory_request=0.5, spot=false." in result.output
+    assert "Project resource release created: id=503" in result.output
+
+
 def test_project_project_resource_delete_dashboard_requires_confirmation(cli_mod, runner, monkeypatch):
     captured = {}
 
@@ -4468,6 +4605,47 @@ def test_project_project_resource_delete_agent_yes_skips_confirmation(cli_mod, r
     assert captured["expected_release_kind"] == "agent"
     assert "Delete agent release 601?" not in result.output
     assert "Project resource release deleted: id=601" in result.output
+
+
+def test_project_project_resource_delete_fastapi_requires_confirmation(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_resource_release",
+        lambda release_id, expected_release_kind=None, timeout=None: {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "api-123",
+            "resource": 382,
+            "related_image": 94,
+        },
+    )
+
+    def _delete_resource_release(release_id, expected_release_kind=None, timeout=None):
+        captured["release_id"] = release_id
+        captured["expected_release_kind"] = expected_release_kind
+        return {
+            "id": release_id,
+            "release_kind": expected_release_kind,
+            "subdomain": "api-123",
+            "resource": 382,
+            "related_image": 94,
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_resource_release", _delete_resource_release)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "project_resource", "delete_fastapi", "701"],
+        input="y\n",
+    )
+    assert result.exit_code == 0
+    assert captured["release_id"] == 701
+    assert captured["expected_release_kind"] == "fastapi"
+    assert "Delete FastAPI release 701?" in result.output
+    assert "Project resource release deleted: id=701" in result.output
 
 
 def test_markets_portfolios_list(cli_mod, runner, monkeypatch):

@@ -4,6 +4,11 @@
     - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 2.1 — Role-Based Access Control](tutorial/role_based_access_control.md)
     - [Part 3 — Multi-Index Columns and Working with Assets](tutorial/multi_index_columns_working_with_assets.md)
+    - [Part 3.1 — Working With Simple Tables](tutorial/working_with_simple_tables.md)
+    - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)
+    - FastAPI Tutorial
+        - [Overview](tutorial/fastapi_tutorial/index.md)
+        - [Implementation Details](tutorial/fastapi_tutorial/implementation_details.md)
     - [Part 4 — Orchestration](tutorial/scheduling_jobs.md)
     - [Part 4.1 — Markets: Equities example with Algoseek](tutorial/markets_tutorial/markets_equities_with_algoseek.md)
     - [Part 4.2 — Markets: Fixed Income Custom Assets](tutorial/markets_tutorial/markets_fixed_income_custom_assets.md)
@@ -12,9 +17,15 @@
     - [Part 5.2 — Streamlit Integration II](tutorial/dashboards/streamlit/streamlit_integration_2.md)
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
+    - Command Center
+        - [Overview](knowledge/command_center/index.md)
+        - [Workspaces](knowledge/command_center/workspaces.md)
+        - [Forms](knowledge/command_center/forms.md)
+    - Simple Tables
+        - [Overview](knowledge/simple_tables/simple_table.md)
+        - [Filtering](knowledge/simple_tables/filtering.md)
     - [CLI Deep Dive](knowledge/cli.md)
     - Dashboards
-        - [Command Center Workspaces](knowledge/dashboards/command_center_workspaces.md)
         - Streamlit
             - [Overview](knowledge/dashboards/streamlit/index.md)
             - [Scaffold and Theming](knowledge/dashboards/streamlit/scaffold_and_theming.md)
