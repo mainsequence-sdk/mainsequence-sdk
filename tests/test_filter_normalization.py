@@ -1,4 +1,5 @@
 import ast
+import datetime
 import pathlib
 
 import pytest
@@ -121,6 +122,28 @@ def test_normalize_filter_kwargs_coerces_supported_values():
         "parent__id__in": [1, 2, 3],
         "active__isnull": True,
     }
+
+
+def test_project_image_accepts_creation_date():
+    from mainsequence.client.models_tdag import ProjectImage
+
+    image = ProjectImage(
+        id=77,
+        project_repo_hash="abc123",
+        related_project=123,
+        base_image=None,
+        is_ready=False,
+        creation_date="2026-04-07T09:00:00Z",
+    )
+
+    assert image.creation_date == datetime.datetime(
+        2026,
+        4,
+        7,
+        9,
+        0,
+        tzinfo=datetime.UTC,
+    )
 
 
 def test_normalize_filter_kwargs_rejects_unsupported_filters():

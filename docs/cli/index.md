@@ -300,6 +300,7 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence markets asset-translation-table list` lists translation tables through the SDK client `AssetTranslationTable.filter()` path.
 - `mainsequence markets asset-translation-table detail` fetches one translation table through `AssetTranslationTable.get()` and renders each rule as a readable `match => target` mapping in the terminal.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
+- `ProjectImage` responses include backend metadata such as `creation_date`, and the SDK model accepts that field.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.
 - `mainsequence project images create` only accepts pushed commits for `project_repo_hash`. If omitted, it lists commits from the current branch upstream (or remote refs as fallback), shows which commits already have image ids, and waits until `is_ready=true` by polling every 30 seconds for up to 5 minutes by default.
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.

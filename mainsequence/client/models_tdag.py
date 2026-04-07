@@ -3113,6 +3113,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     related_project: int | Project  = None
     base_image:int | ProjectBaseImage | None  = None #backward compatiblity old Images iwth None
     is_ready:bool
+    creation_date: datetime.datetime | None = None
 
     @staticmethod
     def _coerce_id(obj: Any, *, field_name: str) -> int | None:

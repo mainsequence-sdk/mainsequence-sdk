@@ -2305,6 +2305,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
                     "project_repo_hash": project_repo_hash,
                     "related_project": related_project_id,
                     "base_image": base_image_id,
+                    "creation_date": "2026-04-07T09:00:00Z",
                 }
             )
 
@@ -2368,6 +2369,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
                             "project_repo_hash": "abc123",
                             "related_project": 123,
                             "base_image": {"id": 22, "title": "Python 3.12"},
+                            "creation_date": "2026-04-07T09:00:00Z",
                         }
                     )
                 ]
@@ -2398,6 +2400,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
             "project_repo_hash": "abc123",
             "related_project": 123,
             "base_image": {"id": 22, "title": "Python 3.12"},
+            "creation_date": "2026-04-07T09:00:00Z",
         }
     ]
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
