@@ -127,7 +127,7 @@ That keeps the contract explicit:
 - the `DataNode` itself remains the producer
 - the API is only the consumer layer
 
-## 5. Bind The Authenticated User At Request Entry
+## 5. Bind Request User Context At Request Entry
 
 If you want route handlers or helper code to know who is calling the API, add the Main Sequence middleware when the app starts.
 
@@ -136,7 +136,7 @@ Example:
 ```python
 from fastapi import FastAPI, Request
 
-from mainsequence.client.fastapi import AuthenticatedUserMiddleware
+from mainsequence.client.fastapi import LoggedUserContextMiddleware
 
 
 app = FastAPI(
@@ -144,7 +144,7 @@ app = FastAPI(
     version="0.1.0",
 )
 
-app.add_middleware(AuthenticatedUserMiddleware)
+app.add_middleware(LoggedUserContextMiddleware)
 
 
 @app.get("/me")
@@ -152,8 +152,8 @@ def get_authenticated_user(request: Request) -> dict[str, object]:
     user = request.state.user
     return {
         "id": request.state.user_id,
-        "username": user.username,
-        "email": user.email,
+        "username": user.username if user else None,
+        "email": user.email if user else None,
     }
 ```
 
@@ -161,13 +161,19 @@ What this gives you:
 
 - `request.state.user`
 - `request.state.user_id`
-- `User.get_logged_user()` working inside request-scoped helper code
+- request-scoped header binding for `User.get_logged_user()`
 
-Without this middleware, the SDK has no FastAPI request headers bound into `_CURRENT_AUTH_HEADERS`, so logged-user lookup is not available by default.
+What this does not give you:
+
+- authentication
+- authorization
+- automatic `401` responses
+
+If no user can be resolved, the request still continues and the state values remain `None`.
 
 For the focused knowledge page, see:
 
-- [FastAPI Authenticated User Context](../../knowledge/fastapi/index.md)
+- [FastAPI Request User Context](../../knowledge/fastapi/index.md)
 
 ## 6. Returning Exact Widget Contracts
 

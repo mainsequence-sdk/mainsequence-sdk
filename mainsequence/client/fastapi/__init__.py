@@ -1,3 +1,3 @@
-from .auth import AuthenticatedUserMiddleware
+from .auth import LoggedUserContextMiddleware
 
-__all__ = ["AuthenticatedUserMiddleware"]
+__all__ = ["LoggedUserContextMiddleware"]

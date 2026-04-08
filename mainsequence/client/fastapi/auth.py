@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from starlette.concurrency import run_in_threadpool
 from starlette.requests import Request
-from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+from mainsequence.logconf import logger
 
 
 def _load_auth_bindings():
@@ -12,7 +13,9 @@ def _load_auth_bindings():
     return User, _CURRENT_AUTH_HEADERS
 
 
-class AuthenticatedUserMiddleware:
+class LoggedUserContextMiddleware:
+    """Bind request headers into the client auth context and populate request.state when possible."""
+
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
@@ -24,27 +27,32 @@ class AuthenticatedUserMiddleware:
         request = Request(scope)
         User, current_auth_headers = _load_auth_bindings()
         headers_token = current_auth_headers.set(request.headers)
+        request.state.user = None
+        request.state.user_id = None
 
         try:
-            user = await run_in_threadpool(User.get_logged_user)
-            if user is None:
-                raise RuntimeError("User is not authenticated.")
+            try:
+                user = await run_in_threadpool(User.get_logged_user)
+            except Exception as exc:
+                logger.debug(
+                    "LoggedUserContextMiddleware could not resolve user for %s %s: %s",
+                    request.method,
+                    request.url.path,
+                    exc,
+                )
+            else:
+                if user is not None:
+                    request.state.user = user
+                    request.state.user_id = getattr(user, "id", None)
+                    logger.debug(
+                        "LoggedUserContextMiddleware resolved user_id=%s for %s %s",
+                        request.state.user_id,
+                        request.method,
+                        request.url.path,
+                    )
 
-            request.state.user = user
-            request.state.user_id = user.id
-        except Exception:
-            current_auth_headers.reset(headers_token)
-            response = JSONResponse(
-                {"detail": "User is not authenticated."},
-                status_code=401,
-            )
-            await response(scope, receive, send)
-            return
-
-        try:
             await self.app(scope, receive, send)
         finally:
             current_auth_headers.reset(headers_token)
 
-
-__all__ = ["AuthenticatedUserMiddleware"]
+__all__ = ["LoggedUserContextMiddleware"]

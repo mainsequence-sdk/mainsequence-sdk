@@ -33,7 +33,7 @@
             - [Components](knowledge/dashboards/streamlit/components.md)
             - [Instrument Forms](knowledge/dashboards/streamlit/instrument_forms.md)
     - FastAPI
-        - [Authenticated User Context](knowledge/fastapi/index.md)
+        - [Request User Context](knowledge/fastapi/index.md)
     - Markets
         - [Assets](knowledge/markets/assets.md)
         - [Asset Categories](knowledge/markets/asset_categories.md)

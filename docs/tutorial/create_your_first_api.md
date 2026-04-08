@@ -68,7 +68,7 @@ import os
 
 from fastapi import FastAPI, Query, Request
 
-from mainsequence.client.fastapi import AuthenticatedUserMiddleware
+from mainsequence.client.fastapi import LoggedUserContextMiddleware
 from mainsequence.tdag import APIDataNode
 
 from examples.data_nodes.simple_tables import (
@@ -87,7 +87,7 @@ app = FastAPI(
     description="Small API that exposes tutorial SimpleTable and DataNode data.",
 )
 
-app.add_middleware(AuthenticatedUserMiddleware)
+app.add_middleware(LoggedUserContextMiddleware)
 
 
 @app.get("/health")
@@ -100,8 +100,8 @@ def get_authenticated_user(request: Request) -> dict[str, object]:
     user = request.state.user
     return {
         "id": request.state.user_id,
-        "username": user.username,
-        "email": user.email,
+        "username": user.username if user else None,
+        "email": user.email if user else None,
     }
 
 
@@ -143,9 +143,9 @@ Why this is a good tutorial example:
 
 Important:
 
-- if you want authenticated-user context inside FastAPI, add `app.add_middleware(AuthenticatedUserMiddleware)`
-- that middleware binds request headers into the SDK auth context and sets `request.state.user`
-- without it, `User.get_logged_user()` cannot resolve the caller in a normal FastAPI request
+- if you want the resolved Main Sequence user attached to `request.state`, add `app.add_middleware(LoggedUserContextMiddleware)`
+- that middleware binds request headers into the SDK auth context and populates `request.state.user` when a user can be resolved
+- it does not authenticate requests or return `401` by itself
 
 ## 4. Why `APIDataNode` Fits Naturally in an API
 
