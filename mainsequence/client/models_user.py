@@ -125,6 +125,8 @@ class Group(BasePydanticModel):
         examples=["Portfolio Managers"],
     )
 
+    normalized_name:str = Field()
+
 
 
 class UserSummary(BasePydanticModel):
@@ -630,8 +632,30 @@ class User(BaseObjectOrm, BasePydanticModel):
 
         if user_id_raw in (None, ""):
             if normalized_headers.get("authorization") and "Bearer" in normalized_headers.get("authorization"):
+                outgoing_authorization = None
+                outgoing_authorization_scheme = None
                 try:
-                    return cls.get_authenticated_user_details()
+                    outgoing_headers = cls.LOADERS.auth_headers
+                    outgoing_authorization = (
+                        outgoing_headers.get("Authorization")
+                        or outgoing_headers.get("authorization")
+                    )
+                    if outgoing_authorization:
+                        outgoing_authorization_scheme = str(outgoing_authorization).split(" ", 1)[0]
+                except Exception as auth_exc:
+                    logger.exception(
+                        "User.get_logged_user could not inspect outgoing auth headers "
+                        "for /user/api/user/get_user_details/: %s",
+                        auth_exc,
+                    )
+                logger.info(
+                    "User.get_logged_user bearer fallback to /user/api/user/get_user_details/ "
+                    "outgoing_authorization_present=%s outgoing_authorization_scheme=%r",
+                    bool(outgoing_authorization),
+                    outgoing_authorization_scheme,
+                )
+                try:
+                    user = cls.get_authenticated_user_details()
                 except Exception:
                     context = _logged_user_header_context(headers, header_source=header_source)
                     logger.exception(
@@ -645,6 +669,11 @@ class User(BaseObjectOrm, BasePydanticModel):
                         context["authorization_scheme"],
                     )
                     raise
+                logger.info(
+                    "User.get_logged_user resolved user_id=%s via bearer fallback",
+                    user.id,
+                )
+                return user
 
             context = _logged_user_header_context(headers, header_source=header_source)
             logger.error(
@@ -675,4 +704,9 @@ class User(BaseObjectOrm, BasePydanticModel):
             )
             raise RuntimeError(f"Invalid X-User-ID value: {user_id_raw!r}") from exc
 
-        return cls.get(pk=user_id, serializer="full")
+        user = cls.get(pk=user_id, serializer="full")
+        logger.info(
+            "User.get_logged_user resolved user_id=%s via X-User-ID header",
+            user.id,
+        )
+        return user
