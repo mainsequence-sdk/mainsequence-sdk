@@ -83,12 +83,7 @@ class Group(BasePydanticModel):
         description="Human-readable name of the permission group.",
         examples=["Portfolio Managers"],
     )
-    permissions: list[int] = Field(
-        default_factory=list,
-        title="Permissions",
-        description="List of permission ids assigned to the group.",
-        examples=[[101, 102, 205]],
-    )
+
 
 
 class UserSummary(BasePydanticModel):
