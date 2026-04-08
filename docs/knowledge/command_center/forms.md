@@ -183,8 +183,19 @@ The usual pattern is:
 
 So the custom form is an override for richer UX, not a requirement for every AppComponent.
 
+It is also important not to mix this with widget output contracts.
+
+- `EditableFormDefinition` describes how the widget should collect input
+- the models in `mainsequence.client.command_center.data_models` describe the exact output shape expected by some widgets when your API feeds them directly
+
+If your API is powering a widget end-to-end, you may use both:
+
+- a form contract for the widget input
+- a widget data contract for the widget output
+
 ## Related Pages
 
 - [Command Center Overview](index.md)
 - [Command Center Workspaces](workspaces.md)
+- [Widget Data Contracts](widget_data_contracts.md)
 - [CLI Overview](../../cli/index.md)

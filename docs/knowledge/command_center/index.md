@@ -17,10 +17,16 @@ The practical split is:
 - an AppComponent widget connects a UI widget to an application endpoint
 - forms define how richer inputs should be rendered and edited
 
+There are two different contract surfaces to keep separate:
+
+- input contracts, such as `EditableFormDefinition`, when a widget needs a specialized form
+- output contracts, such as the models in `mainsequence.client.command_center.data_models`, when an API should feed a Main Sequence widget directly
+
 ## What This Section Covers
 
 - [Workspaces](workspaces.md): how to think about workspace structure and when to mutate a single widget instead of rewriting the whole workspace
 - [Forms](forms.md): when an AppComponent should rely on the default argument resolution and when it should return a custom `EditableFormDefinition`
+- [Widget Data Contracts](widget_data_contracts.md): the exact response shapes some Main Sequence widgets expect when an API feeds them directly
 
 ## Operational Rule
 

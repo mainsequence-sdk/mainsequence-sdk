@@ -9,6 +9,7 @@ In this tutorial, you will:
 - expose a health endpoint
 - read tutorial `SimpleTable` rows from an API endpoint
 - read tutorial `DataNode` output through `APIDataNode`
+- understand how to return exact Command Center widget contracts when the API should feed a Main Sequence widget directly
 - run the API locally
 - understand how API deployment fits the same image/resource/release model used elsewhere in Main Sequence
 
@@ -136,7 +137,70 @@ Inside an API handler, `APIDataNode` is usually the right reader when:
 
 That is the same reason it was introduced earlier for dashboard readers. The API layer is not rebuilding the `DataNode`; it is consuming the published table contract.
 
-## 5. Run the API Locally
+## 5. If The API Should Feed A Main Sequence Widget Directly
+
+Sometimes the API is not meant for a generic frontend client. It is meant to feed a Main Sequence widget directly.
+
+That is a different situation.
+
+In that case, do not hand-build arbitrary JSON and hope the widget accepts it. Use the Command Center contracts in:
+
+```python
+mainsequence.client.command_center.data_models
+```
+
+For the Data Node Table widget, the two important models are:
+
+- `DataNodeTableSourceInputResponse`
+- `DataNodeTableWidgetPropsResponse`
+
+The practical split is:
+
+- `DataNodeTableSourceInputResponse`: the dataset the widget should display
+- `DataNodeTableWidgetPropsResponse`: how the widget should display it
+
+Declare these as the FastAPI `response_model` for widget-facing endpoints. That way the contract is validated in Python before the widget sees it.
+
+Example:
+
+```python
+from mainsequence.client.command_center.data_models import (
+    DataNodeTableSourceInputResponse,
+    SourceMetadataResponse,
+    TableFieldResponse,
+)
+
+
+@app.get(
+    "/widgets/customers/source",
+    response_model=DataNodeTableSourceInputResponse,
+)
+def get_customers_widget_source() -> DataNodeTableSourceInputResponse:
+    rows = list_customers(region=None, limit=50)
+    return DataNodeTableSourceInputResponse(
+        status="ready",
+        columns=["id", "customer_code", "name", "region"],
+        rows=rows,
+        fields=[
+            TableFieldResponse(key="id", label="Id", type="integer", provenance="manual"),
+            TableFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
+            TableFieldResponse(key="name", label="Name", type="string", provenance="manual"),
+            TableFieldResponse(key="region", label="Region", type="string", provenance="manual"),
+        ],
+        source=SourceMetadataResponse(
+            kind="custom-api",
+            label="Tutorial Customers API",
+        ),
+    )
+```
+
+This matters because these models give you the exact structure expected by the widget.
+
+For the full contract breakdown, including the distinction between source rows and widget-props rows, see:
+
+- [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
+
+## 6. Run the API Locally
 
 From the project root:
 
@@ -151,7 +215,7 @@ Then open:
 
 The automatic FastAPI docs are useful here because they let you verify the request and response shape before you think about deployment.
 
-## 6. Test It Against the Tutorial Data
+## 7. Test It Against the Tutorial Data
 
 The `/customers` route expects that you already created the tutorial simple-table data.
 
@@ -176,7 +240,7 @@ curl "http://127.0.0.1:8000/customers?region=US"
 curl "http://127.0.0.1:8000/random-numbers?start_date=2026-03-01&end_date=2026-03-31"
 ```
 
-## 7. How API Deployment Fits the Platform Model
+## 8. How API Deployment Fits the Platform Model
 
 The deployment model is the same one you later use for dashboards:
 
@@ -207,7 +271,7 @@ The CLI uses the same deployment model as dashboards and agents:
 - discovered project resource
 - release created from that resource
 
-## 8. What To Keep Stable
+## 9. What To Keep Stable
 
 Treat the API as a contract just like you treat a `DataNode` identifier or a `SimpleTable` schema as a contract.
 
@@ -220,11 +284,12 @@ Keep these stable unless you mean to introduce a breaking change:
 
 If the API is going to be consumed across projects, dashboards, or agents, stability matters just as much here as it does for tables.
 
-## 9. Further Reading
+## 10. Further Reading
 
 For the data layer behind this chapter, see:
 
 - [Data Nodes](../knowledge/data_nodes.md)
+- [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
 - [Simple Tables Overview](../knowledge/simple_tables/simple_table.md)
 - [Simple Tables Filtering](../knowledge/simple_tables/filtering.md)
 - [FastAPI Tutorial Overview](fastapi_tutorial/index.md)

@@ -9,6 +9,7 @@ The focus here is implementation quality:
 - how to structure the app
 - how to keep routes thin
 - how to read from `SimpleTable` and `APIDataNode` cleanly
+- how to return exact Command Center widget contracts when the API feeds a widget directly
 - how to think about request validation and response contracts
 - how FastAPI resources are discovered and deployed by the platform
 
@@ -125,7 +126,63 @@ That keeps the contract explicit:
 - the `DataNode` itself remains the producer
 - the API is only the consumer layer
 
-## 5. Prefer Explicit Response Models
+## 5. Returning Exact Widget Contracts
+
+If the API should feed a Main Sequence widget directly, use the contract models from:
+
+```python
+mainsequence.client.command_center.data_models
+```
+
+For the Data Node Table widget, the key models are:
+
+- `DataNodeTableSourceInputResponse`
+- `DataNodeTableWidgetPropsResponse`
+
+The important distinction is:
+
+- source input uses row objects keyed by column name
+- widget props use positional row arrays aligned with `columns`
+
+That distinction is easy to get wrong if you build JSON by hand.
+
+If the endpoint exists specifically to feed a Main Sequence widget, declare the Command Center model as the FastAPI `response_model`. That gives you validation, documentation, and a contract that matches the frontend runtime.
+
+Minimal source-contract example:
+
+```python
+from mainsequence.client.command_center.data_models import (
+    DataNodeTableSourceInputResponse,
+    SourceMetadataResponse,
+    TableFieldResponse,
+)
+
+
+def get_customer_widget_source() -> DataNodeTableSourceInputResponse:
+    rows = [
+        {"customer_code": "ACME", "name": "Acme Capital", "region": "US"},
+        {"customer_code": "BETA", "name": "Beta Treasury", "region": "EU"},
+    ]
+    return DataNodeTableSourceInputResponse(
+        status="ready",
+        columns=["customer_code", "name", "region"],
+        rows=rows,
+        fields=[
+            TableFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
+            TableFieldResponse(key="name", label="Name", type="string", provenance="manual"),
+            TableFieldResponse(key="region", label="Region", type="string", provenance="manual"),
+        ],
+        source=SourceMetadataResponse(kind="custom-api", label="Tutorial Customers API"),
+    )
+```
+
+If you also want to drive widget-owned presentation behavior such as column formatting, chip labels, and conditional rules, use `DataNodeTableWidgetPropsResponse`.
+
+For the full contract breakdown, use:
+
+- [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
+
+## 6. Prefer Explicit Response Models
 
 Returning raw dictionaries is fine for the first tutorial step, but real APIs should use response models.
 
@@ -156,7 +213,7 @@ Why this is worth it:
 - clients get a stable contract
 - accidental response-shape drift becomes easier to catch
 
-## 6. Validate Inputs Early
+## 7. Validate Inputs Early
 
 FastAPI already validates query parameters, path parameters, and body payloads.
 
@@ -170,7 +227,7 @@ Examples:
 
 That keeps bad requests out of the data access layer.
 
-## 7. Think In Contracts, Not Just Routes
+## 8. Think In Contracts, Not Just Routes
 
 Treat each endpoint as a product surface.
 
@@ -187,7 +244,7 @@ This is the same discipline already used for:
 - `SimpleTable` schemas
 - dashboard and agent interfaces
 
-## 8. Local Development Flow
+## 9. Local Development Flow
 
 A practical local loop is:
 
@@ -206,7 +263,7 @@ curl "http://127.0.0.1:8000/customers?region=US"
 curl "http://127.0.0.1:8000/random-numbers?start_date=2026-03-01&end_date=2026-03-31"
 ```
 
-## 9. Deployment Model For FastAPI Resources
+## 10. Deployment Model For FastAPI Resources
 
 FastAPI follows the same project-resource model used elsewhere in the platform.
 
@@ -234,18 +291,20 @@ Important continuity point:
 
 This is the same deployment pattern you already see with Streamlit dashboards and agents.
 
-## 10. Common Mistakes
+## 11. Common Mistakes
 
 - putting all business logic directly in route functions
 - returning unstable ad-hoc dictionaries as responses
 - rebuilding producer logic in the API instead of consuming published `DataNode` outputs
+- handcrafting widget payloads instead of using the Command Center contract models
 - querying by business meaning but forgetting to keep the endpoint contract stable
 - trying to deploy code that has not been pushed yet
 
-## 11. Related Pages
+## 12. Related Pages
 
 - [Part 3.2 — Create Your First API](../create_your_first_api.md)
 - [Part 3.1 — Working With Simple Tables](../working_with_simple_tables.md)
+- [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
 - [Data Nodes](../../knowledge/data_nodes.md)
 - [Simple Tables Overview](../../knowledge/simple_tables/simple_table.md)
 - [Part 5.2 — Streamlit Integration II](../dashboards/streamlit/streamlit_integration_2.md)

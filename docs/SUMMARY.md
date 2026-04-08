@@ -21,6 +21,7 @@
         - [Overview](knowledge/command_center/index.md)
         - [Workspaces](knowledge/command_center/workspaces.md)
         - [Forms](knowledge/command_center/forms.md)
+        - [Widget Data Contracts](knowledge/command_center/widget_data_contracts.md)
     - Simple Tables
         - [Overview](knowledge/simple_tables/simple_table.md)
         - [Filtering](knowledge/simple_tables/filtering.md)
