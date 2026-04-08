@@ -152,8 +152,8 @@ def get_authenticated_user(request: Request) -> dict[str, object]:
     user = request.state.user
     return {
         "id": request.state.user_id,
-        "username": user.username if user else None,
-        "email": user.email if user else None,
+        "username": user.username,
+        "email": user.email,
     }
 ```
 
@@ -168,8 +168,6 @@ What this does not give you:
 - authentication
 - authorization
 - automatic `401` responses
-
-If no user can be resolved, the request still continues and the state values remain `None`.
 
 For the focused knowledge page, see:
 

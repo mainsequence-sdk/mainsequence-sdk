@@ -100,8 +100,8 @@ def get_authenticated_user(request: Request) -> dict[str, object]:
     user = request.state.user
     return {
         "id": request.state.user_id,
-        "username": user.username if user else None,
-        "email": user.email if user else None,
+        "username": user.username,
+        "email": user.email,
     }
 
 
@@ -144,8 +144,8 @@ Why this is a good tutorial example:
 Important:
 
 - if you want the resolved Main Sequence user attached to `request.state`, add `app.add_middleware(LoggedUserContextMiddleware)`
-- that middleware binds request headers into the SDK auth context and populates `request.state.user` when a user can be resolved
-- it does not authenticate requests or return `401` by itself
+- that middleware binds request headers into the SDK auth context and populates `request.state.user`
+- it does not perform authentication itself; it exposes the already-authenticated platform user on the request state
 
 ## 4. Why `APIDataNode` Fits Naturally in an API
 

@@ -14,7 +14,7 @@ def _load_auth_bindings():
 
 
 class LoggedUserContextMiddleware:
-    """Bind request headers into the client auth context and populate request.state when possible."""
+    """Bind request headers into the client auth context and populate request.state."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -27,29 +27,17 @@ class LoggedUserContextMiddleware:
         request = Request(scope)
         User, current_auth_headers = _load_auth_bindings()
         headers_token = current_auth_headers.set(request.headers)
-        request.state.user = None
-        request.state.user_id = None
 
         try:
-            try:
-                user = await run_in_threadpool(User.get_logged_user)
-            except Exception as exc:
-                logger.debug(
-                    "LoggedUserContextMiddleware could not resolve user for %s %s: %s",
-                    request.method,
-                    request.url.path,
-                    exc,
-                )
-            else:
-                if user is not None:
-                    request.state.user = user
-                    request.state.user_id = getattr(user, "id", None)
-                    logger.debug(
-                        "LoggedUserContextMiddleware resolved user_id=%s for %s %s",
-                        request.state.user_id,
-                        request.method,
-                        request.url.path,
-                    )
+            user = await run_in_threadpool(User.get_logged_user)
+            request.state.user = user
+            request.state.user_id = user.id
+            logger.debug(
+                "LoggedUserContextMiddleware resolved user_id=%s for %s %s",
+                request.state.user_id,
+                request.method,
+                request.url.path,
+            )
 
             await self.app(scope, receive, send)
         finally:

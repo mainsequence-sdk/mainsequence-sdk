@@ -8,6 +8,8 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
+from mainsequence.logconf import logger
+
 from .base import BaseObjectOrm, BasePydanticModel, PermissionManagedObjectMixin
 from .exceptions import ApiError, raise_for_response
 from .utils import (
@@ -24,6 +26,45 @@ _CURRENT_USER: ContextVar[Any | None] = ContextVar(
     "_CURRENT_USER",
     default=None,
 )
+
+
+def _logged_user_header_context(
+    headers: Mapping[str, Any] | None,
+    *,
+    header_source: str,
+) -> dict[str, Any]:
+    if not headers:
+        return {
+            "header_source": header_source,
+            "header_keys": [],
+            "x_user_id": None,
+            "authorization_present": False,
+            "authorization_scheme": None,
+        }
+
+    normalized_headers: dict[str, Any] = {}
+    for key, value in headers.items():
+        key_str = str(key)
+        normalized_headers[key_str] = value
+        normalized_headers[key_str.lower()] = value
+
+    authorization = normalized_headers.get("authorization")
+    authorization_scheme = None
+    if authorization:
+        authorization_scheme = str(authorization).split(" ", 1)[0]
+
+    return {
+        "header_source": header_source,
+        "header_keys": sorted(str(key) for key in headers.keys()),
+        "x_user_id": (
+            normalized_headers.get("X-User-ID")
+            or normalized_headers.get("x-user-id")
+            or normalized_headers.get("HTTP_X_USER_ID")
+            or normalized_headers.get("http_x_user_id")
+        ),
+        "authorization_present": bool(authorization),
+        "authorization_scheme": authorization_scheme,
+    }
 
 class Organization(BasePydanticModel):
     id: int = Field(
@@ -545,21 +586,29 @@ class User(BaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def get_logged_user(cls) -> User:
-
         cached_user = _CURRENT_USER.get()
         if cached_user is not None:
             return cached_user
 
         headers = _CURRENT_AUTH_HEADERS.get()
+        header_source = "_CURRENT_AUTH_HEADERS"
 
         if not headers:
             try:
                 import streamlit as st
+
                 headers = st.context.headers
+                header_source = "streamlit"
             except Exception:
                 headers = None
 
         if not headers:
+            logger.error(
+                "User.get_logged_user failed: no auth headers are available; "
+                "header_source=%s header_keys=%s",
+                header_source,
+                [],
+            )
             raise RuntimeError(
                 "No auth headers are available. "
                 "In Streamlit, this requires st.context.headers to be available. "
@@ -573,25 +622,57 @@ class User(BaseObjectOrm, BasePydanticModel):
             normalized_headers[key_str.lower()] = value
 
         user_id_raw = (
-                normalized_headers.get("X-User-ID")
-                or normalized_headers.get("x-user-id")
-                or normalized_headers.get("HTTP_X_USER_ID")
-                or normalized_headers.get("http_x_user_id")
+            normalized_headers.get("X-User-ID")
+            or normalized_headers.get("x-user-id")
+            or normalized_headers.get("HTTP_X_USER_ID")
+            or normalized_headers.get("http_x_user_id")
         )
 
-
-
         if user_id_raw in (None, ""):
-
             if normalized_headers.get("authorization") and "Bearer" in normalized_headers.get("authorization"):
-                return cls.get_authenticated_user_details()
+                try:
+                    return cls.get_authenticated_user_details()
+                except Exception:
+                    context = _logged_user_header_context(headers, header_source=header_source)
+                    logger.exception(
+                        "User.get_logged_user failed during bearer fallback; "
+                        "header_source=%s header_keys=%s X-User-ID=%r "
+                        "authorization_present=%s authorization_scheme=%r",
+                        context["header_source"],
+                        context["header_keys"],
+                        context["x_user_id"],
+                        context["authorization_present"],
+                        context["authorization_scheme"],
+                    )
+                    raise
 
-
+            context = _logged_user_header_context(headers, header_source=header_source)
+            logger.error(
+                "User.get_logged_user failed: missing X-User-ID in request headers; "
+                "header_source=%s header_keys=%s X-User-ID=%r "
+                "authorization_present=%s authorization_scheme=%r",
+                context["header_source"],
+                context["header_keys"],
+                context["x_user_id"],
+                context["authorization_present"],
+                context["authorization_scheme"],
+            )
             raise RuntimeError("Missing X-User-ID in request headers.")
 
         try:
             user_id = int(str(user_id_raw).strip())
         except (TypeError, ValueError) as exc:
+            context = _logged_user_header_context(headers, header_source=header_source)
+            logger.exception(
+                "User.get_logged_user failed: invalid X-User-ID value; "
+                "header_source=%s header_keys=%s X-User-ID=%r "
+                "authorization_present=%s authorization_scheme=%r",
+                context["header_source"],
+                context["header_keys"],
+                context["x_user_id"],
+                context["authorization_present"],
+                context["authorization_scheme"],
+            )
             raise RuntimeError(f"Invalid X-User-ID value: {user_id_raw!r}") from exc
 
         return cls.get(pk=user_id, serializer="full")
