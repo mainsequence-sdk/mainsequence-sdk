@@ -1,42 +1,50 @@
 from __future__ import annotations
 
 """
-Pydantic contracts for the Command Center `Data Node Table` widget.
+Pydantic contracts for Main Sequence `Data Node`-family widgets in Command Center.
 
-This module describes the validated Python-side models that mirror the frontend
-runtime contract used by the Main Sequence `data-node-table-visualizer` widget
-inside Command Center.
+This module defines Python-side models that mirror the frontend runtime contracts
+used by the following widgets inside Command Center:
 
-How this fits into Command Center
----------------------------------
-The Data Node Table widget is not a raw backend query interface. It is a UI
-consumer widget that expects two layers of information:
+- `main-sequence-data-node` (`Data Node`)
+- `data-node-table-visualizer` (`Data Node Table`)
 
-1. An upstream tabular dataset
-   This is the data published by a Data Node or any compatible widget that
-   emits the shared Main Sequence tabular-frame contract. In this file, that
-   upstream layer is represented by `DataNodeTableSourceInputResponse`.
+Why this file exists
+--------------------
+These widgets share the same upstream dataset contract but use different widget
+instance props:
 
-2. Widget instance configuration
-   This is the table-specific UI state that controls how the data should be
-   rendered in Command Center: schema, labels, value formatting, heatmaps,
-   pagination, rules, and other visual behaviors. In this file, that layer is
-   represented by `DataNodeTableWidgetPropsResponse`.
+1. Shared upstream dataset contract
+   Any compatible producer, including an App Component, can publish a tabular
+   dataset into the widget graph as long as it matches the shared Data Node-family
+   input shape.
 
-When agents should use this file
---------------------------------
-Use these models when an agent, backend service, or integration needs to:
+2. Widget-specific props contract
+   Each widget also has its own local configuration:
+   - `Data Node` owns source settings, transforms, and publication behavior.
+   - `Data Node Table` owns table formatting and presentation behavior.
 
-- construct a valid payload for the Command Center Data Node Table widget
-- validate incoming or outgoing widget state before sending it to the frontend
-- document the exact shape of the data consumed by the table widget
-- serialize Python-native datetimes into the JavaScript timestamp format that
-  Command Center expects
+This file is intentionally DRY:
+- shared upstream types live once
+- Data Node and Data Node Table reuse them
+- widget-specific props are split into separate models
+
+Command Center mental model
+---------------------------
+Agents should think in terms of two layers:
+
+- `DataNodeWidgetInputResponse`
+  "What dataset is being published into the widget graph?"
+
+- `DataNodeWidgetPropsResponse`
+  "How should the Data Node widget source/transform/publish that dataset?"
+
+- `DataNodeTableWidgetPropsResponse`
+  "How should the Data Node Table widget render that dataset?"
 
 Important timestamp note
 ------------------------
-All `*Ms` fields in this contract are serialized for the frontend as JavaScript
-epoch timestamps in milliseconds.
+All `*Ms` fields serialize to JavaScript epoch milliseconds for the frontend.
 
 Python-side validation accepts:
 - timezone-aware `datetime`
@@ -45,19 +53,6 @@ Python-side validation accepts:
 
 Serialization always emits:
 - JavaScript epoch milliseconds
-
-Practical mental model for agents
----------------------------------
-Think of this file as two contract layers:
-
-- `DataNodeTableSourceInputResponse`
-  "What data should the table display?"
-
-- `DataNodeTableWidgetPropsResponse`
-  "How should the table display it?"
-
-This module intentionally models the widget/runtime boundary, not the lower-level
-backend fetch request used to query raw Data Node rows from the server.
 """
 
 from datetime import UTC, datetime
@@ -72,33 +67,9 @@ from pydantic import (
     WithJsonSchema,
 )
 
-#
-# Shared timestamp adapter
-# Accept:
-# - timezone-aware datetime
-# - ISO 8601 string with timezone
-# - JavaScript epoch milliseconds
-# Serialize:
-# - JavaScript epoch milliseconds
-#
-
 
 def _parse_js_epoch_ms_datetime(value: Any) -> datetime:
-    """
-    Normalize incoming timestamp values into timezone-aware UTC datetimes.
-
-    This adapter exists because Command Center expects timestamp fields in JSON
-    as JavaScript epoch milliseconds, while Python producers often work with
-    `datetime` instances or ISO 8601 strings.
-
-    Accepted inputs:
-    - timezone-aware `datetime`
-    - ISO 8601 string with timezone
-    - integer/float JavaScript epoch milliseconds
-
-    Returns:
-        A timezone-aware UTC `datetime` suitable for internal validation.
-    """
+    """Normalize timestamp inputs into timezone-aware UTC datetimes."""
     if isinstance(value, datetime):
         if value.tzinfo is None:
             raise ValueError("Timestamp datetimes must be timezone-aware.")
@@ -133,12 +104,7 @@ def _parse_js_epoch_ms_datetime(value: Any) -> datetime:
 
 
 def _serialize_js_epoch_ms_datetime(value: datetime) -> int:
-    """
-    Serialize a validated UTC-aware Python datetime into JavaScript epoch milliseconds.
-
-    Command Center expects `*Ms` fields in the widget contract to be numeric
-    millisecond timestamps, not ISO strings.
-    """
+    """Serialize UTC-aware datetimes into JavaScript epoch milliseconds."""
     if value.tzinfo is None:
         raise ValueError("Timestamp datetimes must be timezone-aware before serialization.")
     return int(value.astimezone(UTC).timestamp() * 1000)
@@ -168,26 +134,13 @@ JavaScriptEpochMsDateTime = Annotated[
 
 
 class ContractBaseModel(BaseModel):
-    """
-    Shared base model for Command Center widget contracts.
-
-    Rules enforced here:
-    - forbid unexpected fields so payload drift is caught early
-    - allow explicit field-name population in a stable Python-friendly way
-
-    Agents and services should inherit from this base whenever they are modeling
-    frontend widget contracts for Command Center.
-    """
+    """Shared strict base model for Command Center widget contracts."""
 
     model_config = ConfigDict(
         extra="forbid",
         populate_by_name=True,
     )
 
-
-#
-# Shared upstream source contract
-#
 
 TableStatus = Literal["idle", "loading", "ready", "error"]
 FieldType = Literal[
@@ -206,19 +159,7 @@ DateRangeMode = Literal["dashboard", "fixed"]
 
 
 class TableFieldResponse(ContractBaseModel):
-    """
-    Field-level schema metadata for a tabular dataset consumed by Command Center.
-
-    This is the schema layer attached to upstream tabular data. The Data Node
-    Table widget uses these field definitions to make better formatting and UI
-    decisions before falling back to row-sample inference.
-
-    In Command Center this metadata is especially useful for:
-    - choosing numeric vs text formatting
-    - identifying temporal fields
-    - preserving backend or derived schema lineage
-    - surfacing field warnings to the user
-    """
+    """Field-level schema metadata for a published tabular dataset."""
 
     key: str = Field(
         ...,
@@ -263,18 +204,7 @@ class TableFieldResponse(ContractBaseModel):
 
 
 class SourceContextResponse(ContractBaseModel):
-    """
-    Optional Main Sequence-specific source context attached to a published dataset.
-
-    This is not the dataset itself. It is metadata about how that dataset was
-    produced or scoped.
-
-    Command Center uses this context to preserve source semantics such as:
-    - whether the source follows the dashboard range or a fixed range
-    - what fixed timestamps were used
-    - what `unique_identifier` filter was applied
-    - what effective row limit was used
-    """
+    """Optional Main Sequence-specific metadata attached to the published source."""
 
     dateRangeMode: DateRangeMode | None = Field(
         default=None,
@@ -300,19 +230,7 @@ class SourceContextResponse(ContractBaseModel):
 
 
 class SourceMetadataResponse(ContractBaseModel):
-    """
-    Metadata describing where an upstream dataset came from.
-
-    The Data Node Table widget does not require this block to render rows, but
-    Command Center can use it to preserve provenance, display source labels, and
-    recover source-specific context when the dataset originated from a Main
-    Sequence Data Node.
-
-    In practice, for Data Node-family widgets:
-    - `kind` is often `main-sequence-data-node`
-    - `id` is often the Data Node id
-    - `context` may include range mode, fixed timestamps, filters, and limit
-    """
+    """Metadata describing where a published dataset came from."""
 
     kind: str = Field(
         ...,
@@ -336,22 +254,15 @@ class SourceMetadataResponse(ContractBaseModel):
     )
 
 
-class DataNodeTableSourceInputResponse(ContractBaseModel):
+class DataNodeWidgetInputResponse(ContractBaseModel):
     """
-    Upstream tabular dataset consumed by the Command Center Data Node Table widget.
+    Shared upstream dataset contract accepted by Data Node-family widgets.
 
-    This is the runtime data payload that feeds the table. It mirrors the shared
-    Main Sequence tabular-frame contract published by a Data Node or another
-    compatible source widget.
-
-    This model answers:
-    - what rows are available right now
-    - what columns exist
-    - what the current loading/error state is
-    - what optional schema metadata and source provenance are attached
-
-    In Command Center this is the primary incoming data layer for
-    `data-node-table-visualizer`.
+    This is the generic tabular-frame payload that can feed:
+    - `Data Node`
+    - `Data Node Table`
+    - `Data Node Graph`
+    - other compatible Main Sequence consumers
     """
 
     status: TableStatus = Field(
@@ -406,11 +317,148 @@ class DataNodeTableSourceInputResponse(ContractBaseModel):
     )
 
 
+class DataNodeTableSourceInputResponse(DataNodeWidgetInputResponse):
+    """
+    Table-specific alias for the shared Data Node-family input contract.
+
+    This adds no fields. It exists only so table-oriented code can reference a
+    more specific name while reusing the generic `DataNodeWidgetInputResponse`.
+    """
+
+    pass
+
+
+#
+# Shared widget-source props
+#
+
+DataNodeWidgetSourceMode = Literal["direct", "filter_widget", "manual"]
+
+
+class ManualDataNodeColumnDefinitionResponse(ContractBaseModel):
+    """Manual column definition used when a Data Node is authored in manual-table mode."""
+
+    key: str = Field(
+        ...,
+        description="Stable column key for a manually authored Data Node table.",
+    )
+    type: FieldType = Field(
+        ...,
+        description="Declared field type for the manually authored column.",
+    )
+
+
+#
+# Data Node widget props contract
+#
+
+DataNodeGroupAggregateMode = Literal["first", "last", "sum", "mean", "min", "max"]
+DataNodeTransformMode = Literal["none", "aggregate", "pivot", "unpivot"]
+DataNodeFilterChromeMode = Literal["default", "minimal"]
+
+
+class DataNodeWidgetPropsResponse(ContractBaseModel):
+    """
+    Full widget-instance configuration for the `Data Node` widget.
+
+    This model represents the configuration layer of the executable Data Node
+    widget itself. Unlike `Data Node Table`, this widget owns source selection,
+    transforms, and publication of the canonical dataset used by downstream
+    consumers in Command Center.
+    """
+
+    sourceMode: DataNodeWidgetSourceMode | None = Field(
+        default=None,
+        description="How this Data Node resolves its source: direct backend query, another Data Node widget, or an authored manual table.",
+    )
+    sourceWidgetId: str | None = Field(
+        default=None,
+        description="Optional upstream widget instance id when `sourceMode` is `filter_widget`.",
+    )
+    dataNodeId: int | None = Field(
+        default=None,
+        ge=1,
+        description="Selected backend Data Node id when this widget is configured for direct query mode.",
+    )
+    dateRangeMode: DateRangeMode | None = Field(
+        default=None,
+        description="Whether the Data Node follows the dashboard date range or stores its own fixed range.",
+    )
+    fixedStartMs: JavaScriptEpochMsDateTime | None = Field(
+        default=None,
+        description="Optional fixed range start used when `dateRangeMode` is `fixed`.",
+    )
+    fixedEndMs: JavaScriptEpochMsDateTime | None = Field(
+        default=None,
+        description="Optional fixed range end used when `dateRangeMode` is `fixed`.",
+    )
+    manualColumns: list[ManualDataNodeColumnDefinitionResponse] = Field(
+        default_factory=list,
+        description="Manual table column definitions used when `sourceMode` is `manual`.",
+    )
+    manualRows: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Manual table rows used when `sourceMode` is `manual`.",
+    )
+    uniqueIdentifierList: list[str] | None = Field(
+        default=None,
+        description="Optional `unique_identifier` filter applied to the selected source.",
+    )
+    aggregateMode: DataNodeGroupAggregateMode | None = Field(
+        default=None,
+        description="Aggregate strategy used when `transformMode` is `aggregate` or `pivot`.",
+    )
+    chromeMode: DataNodeFilterChromeMode | None = Field(
+        default=None,
+        description="Visual chrome mode for the mounted Data Node token.",
+    )
+    keyFields: list[str] | None = Field(
+        default=None,
+        description="Grouping or key fields used by aggregate, pivot, and unpivot transforms.",
+    )
+    limit: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum number of source rows requested or published by this widget.",
+    )
+    pivotField: str | None = Field(
+        default=None,
+        description="Categorical field expanded into columns when `transformMode` is `pivot`.",
+    )
+    pivotValueField: str | None = Field(
+        default=None,
+        description="Value field used to fill generated pivot columns.",
+    )
+    projectFields: list[str] | None = Field(
+        default=None,
+        description="Optional final output column projection applied after transform resolution.",
+    )
+    showHeader: bool | None = Field(
+        default=None,
+        description="Whether the Data Node widget renders its header in mounted mode.",
+    )
+    transformMode: DataNodeTransformMode | None = Field(
+        default=None,
+        description="Transform mode applied before the dataset is republished downstream.",
+    )
+    unpivotFieldName: str | None = Field(
+        default=None,
+        description="Output field name that receives melted source column names in `unpivot` mode.",
+    )
+    unpivotValueFieldName: str | None = Field(
+        default=None,
+        description="Output field name that receives melted source values in `unpivot` mode.",
+    )
+    unpivotValueFields: list[str] | None = Field(
+        default=None,
+        description="Wide source columns selected for melting in `unpivot` mode.",
+    )
+
+
 #
 # Data Node Table widget props contract
 #
 
-DataNodeWidgetSourceMode = Literal["direct", "filter_widget", "manual"]
 DataNodeTableVisualizerDateRangeMode = Literal["dashboard", "fixed"]
 DataNodeTableVisualizerColumnFormat = Literal["auto", "text", "number", "currency", "percent", "bps"]
 DataNodeTableVisualizerDensity = Literal["compact", "comfortable"]
@@ -437,20 +485,7 @@ DataNodeTableVisualizerCellValue = str | int | float | bool | None
 
 
 class DataNodeTableColumnSchemaResponse(ContractBaseModel):
-    """
-    Base per-column schema used by the Data Node Table widget instance.
-
-    This is the table's local schema layer, not the upstream dataset schema.
-    Command Center uses it to define how each visible column should be presented
-    once the upstream data has already been adapted into the table frame.
-
-    This model is where the widget stores decisions such as:
-    - display label
-    - base format
-    - width/flex behavior
-    - pinning
-    - numeric formatting defaults
-    """
+    """Base per-column schema used by the Data Node Table widget instance."""
 
     key: str = Field(
         ...,
@@ -511,19 +546,7 @@ class DataNodeTableColumnSchemaResponse(ContractBaseModel):
 
 
 class DataNodeTableColumnOverrideResponse(ContractBaseModel):
-    """
-    Per-column presentation override layer for the Data Node Table widget.
-
-    This model sits on top of the base schema and lets Command Center persist
-    instance-specific UI choices without rewriting the whole schema definition.
-
-    Use this for widget-level presentation controls such as:
-    - visibility and relabeling
-    - display format override
-    - heatmap/data-bar/gauge behavior
-    - fixed visual ranges
-    - alignment and pinning tweaks
-    """
+    """Per-column presentation override layer for the Data Node Table widget."""
 
     visible: bool | None = Field(
         default=None,
@@ -598,17 +621,7 @@ class DataNodeTableColumnOverrideResponse(ContractBaseModel):
 
 
 class DataNodeTableValueLabelResponse(ContractBaseModel):
-    """
-    Explicit value-to-chip mapping for categorical or text cell rendering.
-
-    Command Center uses these mappings to replace raw values with labeled chips
-    and optional semantic coloring. This is useful for states such as:
-    - Active / Watch / Critical
-    - Long / Short
-    - Healthy / Warning / Risk
-
-    These mappings are instance-owned formatting rules, not upstream data.
-    """
+    """Explicit value-to-chip mapping for categorical or text cell rendering."""
 
     columnKey: str = Field(
         ...,
@@ -637,17 +650,7 @@ class DataNodeTableValueLabelResponse(ContractBaseModel):
 
 
 class DataNodeTableConditionalRuleResponse(ContractBaseModel):
-    """
-    Numeric conditional formatting rule for the Data Node Table widget.
-
-    Command Center evaluates these rules against numeric cell values at render
-    time and applies semantic tones or explicit colors when a rule matches.
-
-    These rules are typically used for table-level threshold semantics such as:
-    - values greater than 0
-    - drawdown below -5
-    - utilization above 80
-    """
+    """Numeric conditional formatting rule for the Data Node Table widget."""
 
     id: str = Field(
         ...,
@@ -683,35 +686,10 @@ class DataNodeTableWidgetPropsResponse(ContractBaseModel):
     """
     Full widget-instance configuration for the Command Center Data Node Table.
 
-    This model represents the table widget's local UI state and formatter
-    settings. It is the non-data half of the contract that Command Center needs
-    in order to render the table correctly once the upstream dataset has been
-    resolved.
-
-    This model includes:
-    - source/binding metadata
-    - legacy source-derived metadata preserved on the instance
-    - the locally adapted table frame
-    - schema and column overrides
-    - toolbar, pagination, density, and zebra settings
-    - value labels and conditional formatting rules
-
-    Practical agent guidance
-    ------------------------
-    Use this model when you want to control presentation without changing the
-    upstream data itself.
-
-    Examples:
-    - hide a column
-    - rename a header
-    - apply heatmap formatting
-    - add chip labels for categorical values
-    - add threshold-based warning rules
+    This is the table's local presentation/configuration layer. It does not own
+    the source dataset; it only controls how that dataset is rendered.
     """
 
-    #
-    # Source / binding metadata
-    #
     sourceMode: DataNodeWidgetSourceMode | None = Field(
         default=None,
         description="Optional source mode metadata. In current practice the table is a bound consumer and typically uses `filter_widget`.",
@@ -720,10 +698,6 @@ class DataNodeTableWidgetPropsResponse(ContractBaseModel):
         default=None,
         description="Optional bound upstream widget instance id. This is how the table identifies the Data Node it consumes.",
     )
-
-    #
-    # Legacy / source-derived metadata
-    #
     dataNodeId: int | None = Field(
         default=None,
         ge=1,
@@ -750,10 +724,6 @@ class DataNodeTableWidgetPropsResponse(ContractBaseModel):
         ge=1,
         description="Optional effective source row limit metadata.",
     )
-
-    #
-    # Local adapted frame
-    #
     columns: list[str] = Field(
         default_factory=list,
         description="Local table frame column order after adapting the incoming source dataset.",
@@ -766,10 +736,6 @@ class DataNodeTableWidgetPropsResponse(ContractBaseModel):
         default_factory=list,
         description="Per-instance base schema used to describe and format table columns.",
     )
-
-    #
-    # Surface controls
-    #
     density: DataNodeTableVisualizerDensity | None = Field(
         default=None,
         description="Table density setting for row height and spacing.",
@@ -796,10 +762,6 @@ class DataNodeTableWidgetPropsResponse(ContractBaseModel):
         le=200,
         description="Page size used when pagination is enabled.",
     )
-
-    #
-    # Column presentation overrides
-    #
     columnOverrides: dict[str, DataNodeTableColumnOverrideResponse] = Field(
         default_factory=dict,
         description="Per-column presentation overrides keyed by column key.",

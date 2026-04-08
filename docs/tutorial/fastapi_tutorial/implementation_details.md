@@ -9,6 +9,7 @@ The focus here is implementation quality:
 - how to structure the app
 - how to keep routes thin
 - how to read from `SimpleTable` and `APIDataNode` cleanly
+- how to bind the authenticated platform user into FastAPI request handling
 - how to return exact Command Center widget contracts when the API feeds a widget directly
 - how to think about request validation and response contracts
 - how FastAPI resources are discovered and deployed by the platform
@@ -32,7 +33,7 @@ Suggested responsibility split:
 - `main.py`: create the FastAPI app and register routes
 - `schemas.py`: request and response models
 - `services.py`: data access and business logic
-- `dependencies.py`: shared helpers such as updater factories
+- `dependencies.py`: shared helpers such as updater factories and authenticated-user helpers
 
 This matters because APIs become hard to maintain very quickly if route functions also contain all the data-access logic.
 
@@ -126,7 +127,49 @@ That keeps the contract explicit:
 - the `DataNode` itself remains the producer
 - the API is only the consumer layer
 
-## 5. Returning Exact Widget Contracts
+## 5. Bind The Authenticated User At Request Entry
+
+If you want route handlers or helper code to know who is calling the API, add the Main Sequence middleware when the app starts.
+
+Example:
+
+```python
+from fastapi import FastAPI, Request
+
+from mainsequence.client.fastapi import AuthenticatedUserMiddleware
+
+
+app = FastAPI(
+    title="Tutorial API",
+    version="0.1.0",
+)
+
+app.add_middleware(AuthenticatedUserMiddleware)
+
+
+@app.get("/me")
+def get_authenticated_user(request: Request) -> dict[str, object]:
+    user = request.state.user
+    return {
+        "id": request.state.user_id,
+        "username": user.username,
+        "email": user.email,
+    }
+```
+
+What this gives you:
+
+- `request.state.user`
+- `request.state.user_id`
+- `User.get_logged_user()` working inside request-scoped helper code
+
+Without this middleware, the SDK has no FastAPI request headers bound into `_CURRENT_AUTH_HEADERS`, so logged-user lookup is not available by default.
+
+For the focused knowledge page, see:
+
+- [FastAPI Authenticated User Context](../../knowledge/fastapi/index.md)
+
+## 6. Returning Exact Widget Contracts
 
 If the API should feed a Main Sequence widget directly, use the contract models from:
 
@@ -182,7 +225,7 @@ For the full contract breakdown, use:
 
 - [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
 
-## 6. Prefer Explicit Response Models
+## 7. Prefer Explicit Response Models
 
 Returning raw dictionaries is fine for the first tutorial step, but real APIs should use response models.
 
@@ -213,7 +256,7 @@ Why this is worth it:
 - clients get a stable contract
 - accidental response-shape drift becomes easier to catch
 
-## 7. Validate Inputs Early
+## 8. Validate Inputs Early
 
 FastAPI already validates query parameters, path parameters, and body payloads.
 
@@ -227,7 +270,7 @@ Examples:
 
 That keeps bad requests out of the data access layer.
 
-## 8. Think In Contracts, Not Just Routes
+## 9. Think In Contracts, Not Just Routes
 
 Treat each endpoint as a product surface.
 
@@ -244,7 +287,7 @@ This is the same discipline already used for:
 - `SimpleTable` schemas
 - dashboard and agent interfaces
 
-## 9. Local Development Flow
+## 10. Local Development Flow
 
 A practical local loop is:
 
@@ -263,7 +306,7 @@ curl "http://127.0.0.1:8000/customers?region=US"
 curl "http://127.0.0.1:8000/random-numbers?start_date=2026-03-01&end_date=2026-03-31"
 ```
 
-## 10. Deployment Model For FastAPI Resources
+## 11. Deployment Model For FastAPI Resources
 
 FastAPI follows the same project-resource model used elsewhere in the platform.
 

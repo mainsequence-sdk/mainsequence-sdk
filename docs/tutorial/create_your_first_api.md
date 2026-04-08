@@ -66,8 +66,9 @@ Example:
 import datetime as dt
 import os
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 
+from mainsequence.client.fastapi import AuthenticatedUserMiddleware
 from mainsequence.tdag import APIDataNode
 
 from examples.data_nodes.simple_tables import (
@@ -86,10 +87,22 @@ app = FastAPI(
     description="Small API that exposes tutorial SimpleTable and DataNode data.",
 )
 
+app.add_middleware(AuthenticatedUserMiddleware)
+
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/me")
+def get_authenticated_user(request: Request) -> dict[str, object]:
+    user = request.state.user
+    return {
+        "id": request.state.user_id,
+        "username": user.username,
+        "email": user.email,
+    }
 
 
 @app.get("/customers")
@@ -123,9 +136,16 @@ def list_random_numbers(
 
 Why this is a good tutorial example:
 
+- `/me` shows how to read the currently authenticated Main Sequence user inside FastAPI
 - `/customers` uses the `SimpleTable` objects you just created
 - `/random-numbers` uses `APIDataNode.build_from_identifier(...)` to read a published table
 - the API layer is thin and explicit
+
+Important:
+
+- if you want authenticated-user context inside FastAPI, add `app.add_middleware(AuthenticatedUserMiddleware)`
+- that middleware binds request headers into the SDK auth context and sets `request.state.user`
+- without it, `User.get_logged_user()` cannot resolve the caller in a normal FastAPI request
 
 ## 4. Why `APIDataNode` Fits Naturally in an API
 
@@ -211,6 +231,7 @@ uv run uvicorn src.apis.tutorial_api.main:app --reload
 Then open:
 
 - `http://127.0.0.1:8000/health`
+- `http://127.0.0.1:8000/me`
 - `http://127.0.0.1:8000/docs`
 
 The automatic FastAPI docs are useful here because they let you verify the request and response shape before you think about deployment.
@@ -218,6 +239,8 @@ The automatic FastAPI docs are useful here because they let you verify the reque
 ## 7. Test It Against the Tutorial Data
 
 The `/customers` route expects that you already created the tutorial simple-table data.
+
+The `/me` route expects that the request is coming through a Main Sequence-authenticated context, because the middleware resolves the current platform user from request headers.
 
 If you have not done that yet, run the example from the previous chapter:
 
