@@ -1,0 +1,602 @@
+# AI Refactor Plan
+
+Temporary working document for the Astro skill refactor.
+
+This file exists so the full plan, boundaries, and execution order stay in the repository while the refactor is in progress.
+
+## Goal
+
+Refactor `docs/astro` from one oversized project skill plus a few special cases into a concept-based set of agent skills.
+
+The target design is:
+
+- one thin bootstrap/router skill
+- a small set of domain skills
+- clear ownership boundaries
+- explicit non-scope rules
+- explicit routing when work belongs to another skill
+
+These Astro files are not docs-site navigation pages. They are open agent skill files. They should describe:
+
+- scope
+- invariants
+- decision rules
+- validation rules
+- failure conditions
+- what is outside the skill
+- where out-of-scope work should be routed
+
+They should not read like tutorials.
+
+## Non-Negotiable Design Rules
+
+1. Do not mirror the docs tree one-to-one.
+2. Do not create a skill per tutorial chapter.
+3. Do not use beginner tutorial language like "first DataNode".
+4. Do not make the bootstrap skill own every Main Sequence topic.
+5. Every skill must state:
+   - `Scope`
+   - `What This Is Not`
+   - `Route Out Of Scope Work`
+6. Skills must be organized in folders for domain clarity.
+7. Each skill must route out-of-scope work to sibling skills by exact path or skill name.
+
+## Target Skill Tree
+
+```text
+docs/astro/
+  AGENTS.md
+  project_builder/
+    SKILL.md
+  data_publishing/
+    data_nodes/
+      SKILL.md
+    simple_tables/
+      SKILL.md
+  application_surfaces/
+    api_surfaces/
+      SKILL.md
+  command_center/
+    workspace_builder/
+      SKILL.md
+    app_components/
+      SKILL.md
+  platform_operations/
+    orchestration_and_releases/
+      SKILL.md
+    access_control_and_sharing/
+      SKILL.md
+  markets/
+    assets_and_translation/
+      SKILL.md
+    virtualfundbuilder/
+      SKILL.md
+    instruments_and_pricing/
+      SKILL.md
+  dashboards/
+    streamlit/
+      SKILL.md
+```
+
+## Skill Ownership Model
+
+### 1. `docs/astro/project_builder/SKILL.md`
+
+Purpose:
+
+- bootstrap skill
+- Astro file discipline
+- docs-first rule
+- project context verification
+- routing to the correct domain skill
+
+This skill must not teach full domain behavior.
+
+It should own:
+
+- mandatory read order
+- `astro/brief.md`, `astro/tasks.md`, `astro/status.md`, `astro/record.md`, `astro/journal.md`
+- project-context checks
+- docs-first workflow
+- namespace-first rule as a global safety rule
+- routing to the correct specialized skill
+
+It should not own:
+
+- DataNode design
+- SimpleTable semantics
+- FastAPI design
+- workspace design
+- job/release semantics
+- RBAC semantics
+- markets/VFB/instruments semantics
+
+### 2. `docs/astro/data_publishing/data_nodes/SKILL.md`
+
+Purpose:
+
+- all DataNode engineering in one place
+
+It should own:
+
+- DataNode identifiers
+- hashing model
+- storage vs update hash
+- hash namespaces
+- dependencies
+- `update()` expectations
+- metadata
+- test patterns
+- MultiIndex DataNodes
+- asset-indexed DataNodes
+- `get_asset_list()`
+- validation and safety rules for DataNodes
+- `APIDataNode` as the read-side concept when relevant to DataNode consumers
+
+It should not own:
+
+- SimpleTable behavior
+- FastAPI architecture
+- workspace payloads
+- orchestration/release workflows
+- RBAC
+- portfolio construction
+
+Out-of-scope routing:
+
+- SimpleTable work -> `docs/astro/data_publishing/simple_tables/SKILL.md`
+- API route design -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- jobs/releases -> `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+- sharing/access -> `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+
+### 3. `docs/astro/data_publishing/simple_tables/SKILL.md`
+
+Purpose:
+
+- all SimpleTable engineering in one place
+
+It should own:
+
+- schema design
+- updater rules
+- row id semantics
+- insert-only vs overwrite/upsert
+- filter DSL
+- typed row contracts
+- validation rules
+
+It should not own:
+
+- DataNodes
+- time-series publishing semantics
+- FastAPI architecture
+- orchestration/release workflows
+
+Out-of-scope routing:
+
+- DataNodes -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+- APIs -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- operations -> `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+
+### 4. `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+
+Purpose:
+
+- application-facing API implementation
+
+It should own:
+
+- FastAPI application structure
+- request and response contract discipline
+- `APIDataNode` in APIs
+- `SimpleTable` reads in APIs
+- exact widget-facing API contracts
+- `mainsequence.client.command_center.data_models`
+- when to return generic business JSON vs exact widget contracts
+
+It should not own:
+
+- workspace document CRUD
+- AppComponent workspace mounting
+- raw DataNode publishing rules
+- SimpleTable schema rules
+- Streamlit dashboards
+
+Out-of-scope routing:
+
+- workspace mutation -> `docs/astro/command_center/workspace_builder/SKILL.md`
+- AppComponent forms/contracts -> `docs/astro/command_center/app_components/SKILL.md`
+- DataNode publishing -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+- SimpleTables -> `docs/astro/data_publishing/simple_tables/SKILL.md`
+- Streamlit dashboards -> `docs/astro/dashboards/streamlit/SKILL.md`
+
+### 5. `docs/astro/command_center/workspace_builder/SKILL.md`
+
+Purpose:
+
+- workspace creation and widget mounting
+
+It should own:
+
+- workspace documents
+- registered widget type discovery
+- widget instance payloads
+- layout decisions
+- shared vs user state
+- widget-scoped mutations
+
+It should not own:
+
+- FastAPI implementation
+- AppComponent backend contracts
+- Streamlit implementation
+
+Out-of-scope routing:
+
+- AppComponent input/output contracts -> `docs/astro/command_center/app_components/SKILL.md`
+- APIs -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- Streamlit -> `docs/astro/dashboards/streamlit/SKILL.md`
+
+### 6. `docs/astro/command_center/app_components/SKILL.md`
+
+Purpose:
+
+- AppComponent-specific backend/UI contracts
+
+It should own:
+
+- `EditableFormDefinition`
+- custom forms
+- sections and nested field definitions
+- default argument resolution vs custom forms
+- widget-facing response contracts when an app feeds a Main Sequence widget directly
+
+It should not own:
+
+- workspace CRUD
+- generic FastAPI architecture
+- Streamlit dashboards
+
+Out-of-scope routing:
+
+- workspaces -> `docs/astro/command_center/workspace_builder/SKILL.md`
+- APIs -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- Streamlit -> `docs/astro/dashboards/streamlit/SKILL.md`
+
+### 7. `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+
+Purpose:
+
+- platform operations and deployment workflows
+
+It should own:
+
+- jobs
+- schedules
+- batch scheduling from file
+- project images
+- logs
+- project resources
+- releases
+- artifacts as operational inputs
+- deployment verification
+
+It should not own:
+
+- DataNode authoring semantics
+- SimpleTable semantics
+- RBAC semantics
+
+Out-of-scope routing:
+
+- Data publishing -> `docs/astro/data_publishing/data_nodes/SKILL.md` or `docs/astro/data_publishing/simple_tables/SKILL.md`
+- sharing/access -> `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+
+### 8. `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+
+Purpose:
+
+- RBAC and sharing
+
+It should own:
+
+- organization/user/team model
+- view/edit semantics
+- sharing of projects
+- sharing of DataNodeStorage
+- sharing of constants
+- sharing of secrets
+- sharing of buckets
+- sharing of artifacts
+- sharing of releases
+- access verification expectations
+
+It should not own:
+
+- job scheduling
+- DataNode implementation
+- API implementation
+
+Out-of-scope routing:
+
+- operations/deployments -> `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+- DataNode authoring -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+- APIs -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+
+### 9. `docs/astro/markets/assets_and_translation/SKILL.md`
+
+Purpose:
+
+- asset identity and mapping concepts
+
+It should own:
+
+- public asset registration
+- custom assets
+- asset identity rules
+- asset categories
+- translation tables
+- asset lookup/query patterns
+
+It should not own:
+
+- DataNode core engineering
+- portfolio construction
+- pricing runtime internals
+
+Out-of-scope routing:
+
+- DataNode implementation -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+- VFB -> `docs/astro/markets/virtualfundbuilder/SKILL.md`
+- instruments/pricing -> `docs/astro/markets/instruments_and_pricing/SKILL.md`
+
+### 10. `docs/astro/markets/virtualfundbuilder/SKILL.md`
+
+Purpose:
+
+- portfolio and VFB semantics
+
+It should own:
+
+- VFB mental model
+- portfolio pipeline
+- configurations
+- strategies
+- data contracts
+- price and forward-fill rules
+- translation table usage in portfolio workflows
+
+It should not own:
+
+- standalone asset registration basics
+- raw DataNode engineering
+- instrument pricing internals
+
+Out-of-scope routing:
+
+- assets/categories/translation tables -> `docs/astro/markets/assets_and_translation/SKILL.md`
+- DataNodes -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+- instruments/pricing -> `docs/astro/markets/instruments_and_pricing/SKILL.md`
+
+### 11. `docs/astro/markets/instruments_and_pricing/SKILL.md`
+
+Purpose:
+
+- instruments and pricing semantics
+
+It should own:
+
+- instruments concepts
+- pricing details
+- pricing runtime
+- valuation context
+- curve data expectations
+- pricing data assumptions
+
+It should not own:
+
+- generic asset identity
+- portfolio construction
+- DataNode core semantics
+
+Out-of-scope routing:
+
+- assets/translation -> `docs/astro/markets/assets_and_translation/SKILL.md`
+- VFB -> `docs/astro/markets/virtualfundbuilder/SKILL.md`
+- DataNodes -> `docs/astro/data_publishing/data_nodes/SKILL.md`
+
+### 12. `docs/astro/dashboards/streamlit/SKILL.md`
+
+Purpose:
+
+- Streamlit dashboard implementation
+
+It should own:
+
+- Streamlit dashboard patterns
+- Main Sequence Streamlit helpers
+- tested components
+- dashboard structure
+- packaging expectations
+- release expectations relevant to Streamlit dashboards
+
+It should not own:
+
+- Command Center workspace design
+- AppComponent form contracts
+- generic FastAPI architecture
+
+Out-of-scope routing:
+
+- workspaces -> `docs/astro/command_center/workspace_builder/SKILL.md`
+- AppComponents -> `docs/astro/command_center/app_components/SKILL.md`
+- FastAPI APIs -> `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+
+## Required Sections In Every SKILL.md
+
+Every Astro skill must contain these sections:
+
+1. `Overview`
+2. `Scope`
+3. `What This Is Not`
+4. `Route Out Of Scope Work`
+5. `Source Of Truth`
+6. `Core Concepts And Invariants`
+7. `Decision Rules`
+8. `Validation Rules`
+9. `Failure Conditions`
+10. `Astro Update Obligations`
+
+## Source Documents By Skill
+
+### `project_builder`
+
+- `docs/astro/AGENTS.md`
+- relevant Main Sequence docs depending on routed task
+
+### `data_nodes`
+
+- `docs/tutorial/creating_a_simple_data_node.md`
+- `docs/tutorial/multi_index_columns_working_with_assets.md`
+- `docs/knowledge/data_nodes.md`
+- `docs/knowledge/markets/assets.md`
+
+### `simple_tables`
+
+- `docs/tutorial/working_with_simple_tables.md`
+- `docs/knowledge/simple_tables/simple_table.md`
+- `docs/knowledge/simple_tables/filtering.md`
+
+### `api_surfaces`
+
+- `docs/tutorial/create_your_first_api.md`
+- `docs/tutorial/fastapi_tutorial/index.md`
+- `docs/tutorial/fastapi_tutorial/implementation_details.md`
+- `docs/knowledge/fastapi/index.md`
+- `docs/knowledge/command_center/forms.md`
+- `docs/knowledge/command_center/widget_data_contracts.md`
+
+### `workspace_builder`
+
+- current `docs/astro/workspace_builder/SKILL.md`
+- `docs/knowledge/command_center/workspaces.md`
+
+### `app_components`
+
+- `docs/knowledge/command_center/forms.md`
+- `docs/knowledge/command_center/widget_data_contracts.md`
+
+### `orchestration_and_releases`
+
+- `docs/tutorial/scheduling_jobs.md`
+- `docs/knowledge/infrastructure/scheduling_jobs.md`
+- `docs/knowledge/infrastructure/artifacts.md`
+
+### `access_control_and_sharing`
+
+- `docs/tutorial/role_based_access_control.md`
+- `docs/knowledge/infrastructure/users_and_access.md`
+- `docs/knowledge/infrastructure/constants_and_secrets.md`
+
+### `assets_and_translation`
+
+- `docs/tutorial/markets_tutorial/markets_equities_with_algoseek.md`
+- `docs/knowledge/markets/assets.md`
+- `docs/knowledge/markets/asset_categories.md`
+- `docs/knowledge/markets/translation_tables.md`
+
+### `virtualfundbuilder`
+
+- `docs/tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md`
+- all of `docs/knowledge/virtualfundbuilder/`
+
+### `instruments_and_pricing`
+
+- all of `docs/knowledge/instruments/`
+- `docs/tutorial/markets_tutorial/markets_fixed_income_custom_assets.md`
+
+### `dashboards/streamlit`
+
+- `docs/tutorial/dashboards/streamlit/streamlit_integration_1.md`
+- `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md`
+- all of `docs/knowledge/dashboards/streamlit/`
+
+## Migration Strategy
+
+### Phase 1: Fix the bootstrap layer
+
+- rewrite `docs/astro/project_builder/SKILL.md` into a thin router/bootstrap skill
+- fix broken references in `docs/astro/AGENTS.md`
+
+### Phase 2: Create the publishing skills
+
+- create `docs/astro/data_publishing/data_nodes/SKILL.md`
+- create `docs/astro/data_publishing/simple_tables/SKILL.md`
+
+### Phase 3: Create application and Command Center skills
+
+- create `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- move/refactor `docs/astro/workspace_builder/SKILL.md` into `docs/astro/command_center/workspace_builder/SKILL.md`
+- create `docs/astro/command_center/app_components/SKILL.md`
+
+### Phase 4: Create platform operations skills
+
+- create `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+- create `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+
+### Phase 5: Create domain skills
+
+- create `docs/astro/markets/assets_and_translation/SKILL.md`
+- create `docs/astro/markets/virtualfundbuilder/SKILL.md`
+- create `docs/astro/markets/instruments_and_pricing/SKILL.md`
+
+### Phase 6: Create dashboard skill
+
+- create `docs/astro/dashboards/streamlit/SKILL.md`
+
+### Phase 7: Cleanup
+
+- remove duplicated domain guidance from `docs/astro/project_builder/SKILL.md`
+- ensure every skill contains:
+  - `Scope`
+  - `What This Is Not`
+  - `Route Out Of Scope Work`
+
+## Execution Order
+
+Recommended implementation order:
+
+1. Rewrite `docs/astro/project_builder/SKILL.md`
+2. Fix `docs/astro/AGENTS.md`
+3. Create `docs/astro/data_publishing/data_nodes/SKILL.md`
+4. Create `docs/astro/data_publishing/simple_tables/SKILL.md`
+5. Create `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+6. Move/refactor `docs/astro/workspace_builder/SKILL.md`
+7. Create `docs/astro/command_center/app_components/SKILL.md`
+8. Create `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+9. Create `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+10. Create `docs/astro/markets/assets_and_translation/SKILL.md`
+11. Create `docs/astro/markets/virtualfundbuilder/SKILL.md`
+12. Create `docs/astro/markets/instruments_and_pricing/SKILL.md`
+13. Create `docs/astro/dashboards/streamlit/SKILL.md`
+14. Final cleanup pass on all skills
+
+## Checklist
+
+- [ ] Rewrite `docs/astro/project_builder/SKILL.md` into a thin bootstrap/router skill
+- [ ] Fix the broken `docs/astro/AGENTS.md` reference to the canonical Astro bootstrap files
+- [ ] Create `docs/astro/data_publishing/data_nodes/SKILL.md`
+- [ ] Create `docs/astro/data_publishing/simple_tables/SKILL.md`
+- [ ] Create `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- [ ] Move/refactor `docs/astro/workspace_builder/SKILL.md` into `docs/astro/command_center/workspace_builder/SKILL.md`
+- [ ] Create `docs/astro/command_center/app_components/SKILL.md`
+- [ ] Create `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+- [ ] Create `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+- [ ] Create `docs/astro/markets/assets_and_translation/SKILL.md`
+- [ ] Create `docs/astro/markets/virtualfundbuilder/SKILL.md`
+- [ ] Create `docs/astro/markets/instruments_and_pricing/SKILL.md`
+- [ ] Create `docs/astro/dashboards/streamlit/SKILL.md`
+- [ ] Ensure every Astro skill contains `Scope`
+- [ ] Ensure every Astro skill contains `What This Is Not`
+- [ ] Ensure every Astro skill contains `Route Out Of Scope Work`
+- [ ] Remove duplicated domain guidance from `docs/astro/project_builder/SKILL.md`
