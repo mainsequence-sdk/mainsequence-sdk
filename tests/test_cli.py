@@ -842,6 +842,7 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.create_agent(
         name="Research Copilot",
+        agent_unique_id="research-copilot",
         description="Desk agent",
         status="active",
         labels=["research", "desk"],
@@ -859,6 +860,71 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
         "timeout": 14,
         "create_kwargs": {
             "name": "Research Copilot",
+            "agent_unique_id": "research-copilot",
+            "description": "Desk agent",
+            "status": "active",
+            "labels": ["research", "desk"],
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "runtime_config": {"temperature": 0},
+            "configuration": {"mode": "analysis"},
+            "metadata": {"owner": "quant"},
+        },
+    }
+    assert out["id"] == 12
+
+
+def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgent:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "id": 12,
+                "name": "Research Copilot",
+                "agent_unique_id": "research-copilot",
+                "status": "active",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get_or_create(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["get_or_create_kwargs"] = kwargs
+                return FakeAgent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_or_create_agent(
+        name="Research Copilot",
+        agent_unique_id="research-copilot",
+        description="Desk agent",
+        status="active",
+        labels=["research", "desk"],
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        engine_name="codex",
+        runtime_config={"temperature": 0},
+        configuration={"mode": "analysis"},
+        metadata={"owner": "quant"},
+        timeout=14,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "timeout": 14,
+        "get_or_create_kwargs": {
+            "name": "Research Copilot",
+            "agent_unique_id": "research-copilot",
             "description": "Desk agent",
             "status": "active",
             "labels": ["research", "desk"],
@@ -5199,6 +5265,8 @@ def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
             "agent",
             "create",
             "Research Copilot",
+            "--agent-unique-id",
+            "research-copilot",
             "--description",
             "Desk agent",
             "--status",
@@ -5221,12 +5289,71 @@ def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert captured["name"] == "Research Copilot"
+    assert captured["agent_unique_id"] == "research-copilot"
     assert captured["status"] == "active"
     assert captured["labels"] == ["research", "desk"]
     assert captured["runtime_config"] == {"temperature": 0}
     assert captured["configuration"] == {"mode": "analysis"}
     assert captured["metadata"] == {"owner": "quant"}
     assert "Agent created: Research Copilot" in result.output
+
+
+def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _get_or_create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 12,
+            "name": kwargs["name"],
+            "agent_unique_id": kwargs["agent_unique_id"],
+            "status": kwargs.get("status") or "draft",
+            "labels": kwargs.get("labels") or [],
+            "llm_provider": kwargs.get("llm_provider") or "",
+            "llm_model": kwargs.get("llm_model") or "",
+            "engine_name": kwargs.get("engine_name") or "",
+        }
+
+    monkeypatch.setattr(cli_mod, "get_or_create_agent", _get_or_create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "get_or_create",
+            "Research Copilot",
+            "--agent-unique-id",
+            "research-copilot",
+            "--description",
+            "Desk agent",
+            "--status",
+            "active",
+            "--label",
+            "research,desk",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "gpt-5.4",
+            "--engine-name",
+            "codex",
+            "--runtime-config",
+            '{"temperature":0}',
+            "--configuration",
+            '{"mode":"analysis"}',
+            "--metadata",
+            '{"owner":"quant"}',
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["name"] == "Research Copilot"
+    assert captured["agent_unique_id"] == "research-copilot"
+    assert captured["status"] == "active"
+    assert captured["labels"] == ["research", "desk"]
+    assert captured["runtime_config"] == {"temperature": 0}
+    assert captured["configuration"] == {"mode": "analysis"}
+    assert captured["metadata"] == {"owner": "quant"}
+    assert "Agent resolved via get_or_create: Research Copilot" in result.output
 
 
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):

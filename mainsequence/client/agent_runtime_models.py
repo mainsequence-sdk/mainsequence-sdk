@@ -7,7 +7,9 @@ from typing import Any, ClassVar
 from pydantic import Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .exceptions import raise_for_response
 from .models_user import UserSummary
+from .utils import make_request, serialize_to_json
 
 
 class AgentStatus(str, Enum):
@@ -85,7 +87,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     name: str = Field(..., description="Human-readable display name for the agent inside the organization.")
     agent_unique_id: str = Field(
         ...,
-        description="Organization-scoped stable identifier for the agent. Users may provide it explicitly, or the backend will generate it from the agent name when omitted.",
+        description="Client-supplied organization-scoped stable identifier for the agent. Use this for deterministic existence checks and idempotent create flows.",
     )
     description: str = Field("", description="Optional long-form description explaining what the agent is for.")
     status: AgentStatus = Field(
@@ -124,6 +126,23 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Timestamp of the most recent run recorded for this agent.",
     )
+
+    @classmethod
+    def get_or_create(cls, timeout=None, **kwargs):
+        data = serialize_to_json(kwargs)
+        payload = {"json": data}
+        url = f"{cls.get_object_url()}/get_or_create/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+        return cls(**response.json())
 
 
 class AgentCapability(BaseObjectOrm, BasePydanticModel):

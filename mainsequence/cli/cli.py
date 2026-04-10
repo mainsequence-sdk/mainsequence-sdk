@@ -96,6 +96,7 @@ from .api import (
     get_data_node_storage,
     get_logged_user_details,
     get_market_asset_translation_table,
+    get_or_create_agent,
     get_organization_team,
     get_project,
     get_project_data_node_updates,
@@ -2754,6 +2755,7 @@ def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, s
     return [
         ("ID", str(agent_payload.get("id") or "-")),
         ("Name", str(agent_payload.get("name") or "-")),
+        ("Unique ID", str(agent_payload.get("agent_unique_id") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
         ("Status", str(agent_payload.get("status") or "-")),
         ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
@@ -2877,6 +2879,7 @@ def _agent_detail_impl(
 def _agent_create_impl(
     *,
     name: str | None,
+    agent_unique_id: str | None,
     description: str | None,
     status_value: str | None,
     labels: list[str] | None,
@@ -2893,6 +2896,12 @@ def _agent_create_impl(
     agent_name = (name or "").strip() or typer.prompt(pydantic_prompt_text(AGENT_MODEL_REF, "name")).strip()
     if not agent_name:
         error("Agent name is required.")
+        raise typer.Exit(1)
+    unique_id = (agent_unique_id or "").strip() or typer.prompt(
+        pydantic_prompt_text(AGENT_MODEL_REF, "agent_unique_id")
+    ).strip()
+    if not unique_id:
+        error("Agent unique id is required.")
         raise typer.Exit(1)
 
     try:
@@ -2918,6 +2927,7 @@ def _agent_create_impl(
     try:
         created = create_agent(
             name=agent_name,
+            agent_unique_id=unique_id,
             description=description,
             status=status_value,
             labels=_parse_cli_csv_list(labels),
@@ -2935,6 +2945,77 @@ def _agent_create_impl(
 
     success(f"Agent created: {agent_name}")
     print_kv("Created Agent", _format_agent_preview(created))
+
+
+def _agent_get_or_create_impl(
+    *,
+    name: str | None,
+    agent_unique_id: str | None,
+    description: str | None,
+    status_value: str | None,
+    labels: list[str] | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+    engine_name: str | None,
+    runtime_config: str | None,
+    configuration: str | None,
+    metadata: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    agent_name = (name or "").strip() or typer.prompt(pydantic_prompt_text(AGENT_MODEL_REF, "name")).strip()
+    if not agent_name:
+        error("Agent name is required.")
+        raise typer.Exit(1)
+    unique_id = (agent_unique_id or "").strip() or typer.prompt(
+        pydantic_prompt_text(AGENT_MODEL_REF, "agent_unique_id")
+    ).strip()
+    if not unique_id:
+        error("Agent unique id is required.")
+        raise typer.Exit(1)
+
+    try:
+        runtime_config_payload = (
+            _parse_json_dict_option(runtime_config, field_label="runtime_config")
+            if runtime_config is not None
+            else None
+        )
+        configuration_payload = (
+            _parse_json_dict_option(configuration, field_label="configuration")
+            if configuration is not None
+            else None
+        )
+        metadata_payload = (
+            _parse_json_dict_option(metadata, field_label="metadata")
+            if metadata is not None
+            else None
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    try:
+        created = get_or_create_agent(
+            name=agent_name,
+            agent_unique_id=unique_id,
+            description=description,
+            status=status_value,
+            labels=_parse_cli_csv_list(labels),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            engine_name=engine_name,
+            runtime_config=runtime_config_payload,
+            configuration=configuration_payload,
+            metadata=metadata_payload,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent get_or_create failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Agent resolved via get_or_create: {agent_name}")
+    print_kv("Resolved Agent", _format_agent_preview(created))
 
 
 def _agent_delete_impl(
@@ -4156,6 +4237,9 @@ def agent_detail_cmd(
 @agent.command("create")
 def agent_create_cmd(
     name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
+    agent_unique_id: str | None = pydantic_option(
+        AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
+    ),
     description: str | None = pydantic_option(AGENT_MODEL_REF, "description", None, "--description"),
     status_value: str | None = typer.Option(
         None,
@@ -4188,6 +4272,59 @@ def agent_create_cmd(
     """
     _agent_create_impl(
         name=name,
+        agent_unique_id=agent_unique_id,
+        description=description,
+        status_value=status_value,
+        labels=labels,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        engine_name=engine_name,
+        runtime_config=runtime_config,
+        configuration=configuration,
+        metadata=metadata,
+        timeout=timeout,
+    )
+
+
+@agent.command("get_or_create")
+def agent_get_or_create_cmd(
+    name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
+    agent_unique_id: str | None = pydantic_option(
+        AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
+    ),
+    description: str | None = pydantic_option(AGENT_MODEL_REF, "description", None, "--description"),
+    status_value: str | None = typer.Option(
+        None,
+        "--status",
+        help="Lifecycle status for the agent. One of: draft, active, archived.",
+    ),
+    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
+    llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
+    llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
+    engine_name: str | None = pydantic_option(AGENT_MODEL_REF, "engine_name", None, "--engine-name"),
+    runtime_config: str | None = typer.Option(
+        None,
+        "--runtime-config",
+        help="Runtime config JSON object to store on the agent.",
+    ),
+    configuration: str | None = typer.Option(
+        None,
+        "--configuration",
+        help="Additional configuration JSON object to store on the agent.",
+    ),
+    metadata: str | None = typer.Option(
+        None,
+        "--metadata",
+        help="Additional metadata JSON object to store on the agent.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Get or create one agent by deterministic unique id.
+    """
+    _agent_get_or_create_impl(
+        name=name,
+        agent_unique_id=agent_unique_id,
         description=description,
         status_value=status_value,
         labels=labels,

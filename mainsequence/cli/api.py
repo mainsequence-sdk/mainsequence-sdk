@@ -732,6 +732,7 @@ def get_agent(
 def create_agent(
     *,
     name: str,
+    agent_unique_id: str,
     description: str | None = None,
     status: str | None = None,
     labels: list[str] | None = None,
@@ -750,6 +751,7 @@ def create_agent(
         key: value
         for key, value in {
             "name": name,
+            "agent_unique_id": agent_unique_id,
             "description": description,
             "status": status,
             "labels": labels,
@@ -774,6 +776,55 @@ def create_agent(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent creation failed: {e}")
+
+
+def get_or_create_agent(
+    *,
+    name: str,
+    agent_unique_id: str,
+    description: str | None = None,
+    status: str | None = None,
+    labels: list[str] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    engine_name: str | None = None,
+    runtime_config: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Get or create one agent via SDK client model.
+    """
+    payload = {
+        key: value
+        for key, value in {
+            "name": name,
+            "agent_unique_id": agent_unique_id,
+            "description": description,
+            "status": status,
+            "labels": labels,
+            "llm_provider": llm_provider,
+            "llm_model": llm_model,
+            "engine_name": engine_name,
+            "runtime_config": runtime_config,
+            "configuration": configuration,
+            "metadata": metadata,
+        }.items()
+        if value is not None
+    }
+
+    try:
+        agent = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=lambda ClientAgent: ClientAgent.get_or_create(timeout=timeout, **payload),
+        )
+        return _sdk_object_to_dict(agent)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent get_or_create failed: {e}")
 
 
 def delete_agent(
