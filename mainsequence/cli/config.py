@@ -7,7 +7,8 @@ mainsequence.cli.config
 Configuration and auth handling for the MainSequence CLI.
 
 This module stores non-secret config on disk and keeps auth tokens in env,
-with secure persistence via OS keychain on supported platforms.
+with persistent storage via OS keychain on supported platforms and a
+CLI-managed local auth store elsewhere.
 """
 
 import hashlib
@@ -46,8 +47,9 @@ CFG_DIR.mkdir(parents=True, exist_ok=True)
 
 CONFIG_JSON = CFG_DIR / "config.json"
 SESSION_OVERRIDES_DIR = CFG_DIR / "session_overrides"
-# Deprecated compatibility constant (token file persistence is disabled).
+# Deprecated compatibility constant kept for cleanup of legacy installs.
 TOKENS_JSON = CFG_DIR / "token.json"
+AUTH_JSON = CFG_DIR / "auth.json"
 
 # Session-scoped auth environment variables (no token file persistence).
 ENV_USERNAME = "MAINSEQUENCE_USERNAME"
@@ -280,9 +282,73 @@ def normalize_mainsequence_path(path: str | None) -> str:
     return str((pathlib.Path.home() / raw).resolve())
 
 
+def _normalize_token_payload(data: dict | None) -> dict:
+    if not isinstance(data, dict):
+        return {}
+    return {
+        "username": str(data.get("username") or ""),
+        "access": str(data.get("access") or ""),
+        "refresh": str(data.get("refresh") or ""),
+    }
+
+
+def _read_local_tokens() -> dict:
+    """
+    Read persisted tokens from the CLI-managed local auth store.
+    """
+    try:
+        return _normalize_token_payload(read_json(AUTH_JSON, {}))
+    except Exception:
+        return {}
+
+
+def _write_local_tokens(*, username: str, access: str, refresh: str) -> bool:
+    """
+    Persist tokens in the CLI-managed local auth store.
+    """
+    try:
+        write_json(
+            AUTH_JSON,
+            {
+                "username": username or "",
+                "access": access or "",
+                "refresh": refresh or "",
+            },
+        )
+        if os.name == "posix":
+            try:
+                os.chmod(AUTH_JSON, 0o600)
+            except Exception:
+                pass
+        return True
+    except Exception:
+        return False
+
+
+def _clear_local_tokens() -> bool:
+    """
+    Delete the CLI-managed local auth store. Missing file is treated as success.
+    """
+    try:
+        if AUTH_JSON.exists():
+            AUTH_JSON.unlink()
+        return True
+    except Exception:
+        return False
+
+
+def auth_persistence_label() -> str:
+    """
+    Return the human-readable auth persistence backend label.
+    """
+    if _macos_security_exists():
+        return "secure OS storage"
+    return "local CLI auth storage"
+
+
 def get_tokens() -> dict:
     """
-    Return auth tokens from environment variables, with secure-store fallback.
+    Return auth tokens from environment variables, with persistent-store fallback.
     """
     tokens = {
         "username": os.environ.get(ENV_USERNAME) or os.environ.get(LEGACY_ENV_USERNAME, ""),
@@ -292,27 +358,29 @@ def get_tokens() -> dict:
     if tokens["access"] and tokens["refresh"]:
         return tokens
 
-    # Fallback to OS keychain if available.
-    secret = _read_secure_tokens()
-    if secret:
+    for secret in (_read_secure_tokens(), _read_local_tokens()):
+        if not secret:
+            continue
         tokens = {
             "username": tokens["username"] or secret.get("username", ""),
             "access": tokens["access"] or secret.get("access", ""),
             "refresh": tokens["refresh"] or secret.get("refresh", ""),
         }
+        if tokens["access"] and tokens["refresh"]:
+            break
     return tokens
 
 
 def save_tokens(username: str, access: str, refresh: str) -> bool:
     """
-    Save auth tokens in process environment and secure store (when supported).
+    Save auth tokens in process environment and the active persistent store.
 
     Args:
         username: email/username used to login
         access: access token string
         refresh: refresh token string
     Returns:
-        bool: True if secure persistence succeeded (or is not applicable), False otherwise.
+        bool: True if persistent storage succeeded, False otherwise.
     """
     if username:
         os.environ[ENV_USERNAME] = username
@@ -321,16 +389,18 @@ def save_tokens(username: str, access: str, refresh: str) -> bool:
     os.environ.pop(LEGACY_ENV_USERNAME, None)
     os.environ.pop(LEGACY_ENV_ACCESS, None)
     os.environ.pop(LEGACY_ENV_REFRESH, None)
-    return _write_secure_tokens(username=username, access=access, refresh=refresh)
+    if _macos_security_exists():
+        return _write_secure_tokens(username=username, access=access, refresh=refresh)
+    return _write_local_tokens(username=username, access=access, refresh=refresh)
 
 
 def clear_tokens() -> bool:
     """
     Clear session auth env vars for current process.
-    Also remove legacy token.json if present.
+    Also remove persisted auth state from the active local/secure store.
 
     Returns:
-        bool: True on success; False if legacy token file removal fails.
+        bool: True on success; False if any persisted auth state could not be removed.
     """
     ok = True
     try:
@@ -346,6 +416,8 @@ def clear_tokens() -> bool:
     os.environ.pop(LEGACY_ENV_REFRESH, None)
     os.environ.pop(LEGACY_ENV_USERNAME, None)
     if not _clear_secure_tokens():
+        ok = False
+    if not _clear_local_tokens():
         ok = False
     return ok
 
@@ -387,14 +459,7 @@ def _read_secure_tokens() -> dict:
         raw = (proc.stdout or "").strip()
         if not raw:
             return {}
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            return {}
-        return {
-            "username": str(data.get("username") or ""),
-            "access": str(data.get("access") or ""),
-            "refresh": str(data.get("refresh") or ""),
-        }
+        return _normalize_token_payload(json.loads(raw))
     except Exception:
         return {}
 

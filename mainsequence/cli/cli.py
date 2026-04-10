@@ -1777,7 +1777,7 @@ def login(
     """
     Authenticate to the MainSequence platform.
 
-    Persists auth tokens in secure OS storage (when available) so subsequent
+    Persists auth tokens in the active CLI auth store so subsequent
     CLI invocations can run without re-authentication. Backend/base-folder
     overrides passed to `login` are scoped to the current terminal session.
 
@@ -1802,7 +1802,7 @@ def login(
     no_status:
         If True, skip printing the project table after login.
     export:
-        If True, print shell export lines instead of storing auth state.
+        If True, print shell export lines for auth variables.
 
     Examples
     --------
@@ -1918,13 +1918,11 @@ def login(
     else:
         success(f"Signed in with JWT tokens (Backend: {res['backend']})")
     info(f"Projects base folder: {base}")
-    if cfg.secure_store_available():
-        if res.get("persisted", True):
-            info("Auth tokens are persisted in secure OS storage for subsequent CLI commands.")
-        else:
-            warn("Could not persist auth tokens in secure OS storage. Use --export for shell-based auth.")
+    auth_store_label = cfg.auth_persistence_label()
+    if res.get("persisted", True):
+        info(f"Auth tokens are persisted in {auth_store_label} for subsequent CLI commands.")
     else:
-        warn("Secure token storage is unavailable on this platform. Use --export for shell-based auth.")
+        warn(f"Could not persist auth tokens in {auth_store_label}. Use --export for shell-based auth.")
 
     if not no_status:
         try:

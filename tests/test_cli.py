@@ -1145,7 +1145,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
@@ -1183,7 +1183,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
         lambda **kwargs: session_override.update(kwargs) or kwargs,
     )
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
     monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
@@ -1265,7 +1265,6 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
@@ -1296,7 +1295,7 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
@@ -1315,6 +1314,7 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert saved == {"username": "", "access": "acc-123", "refresh": "ref-456"}
     assert "Signed in with JWT tokens" in result.output
+    assert "Auth tokens are persisted in local CLI auth storage" in result.output
     assert cleared["called"] is True
 
 
@@ -1331,7 +1331,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
         "set_session_overrides",
         lambda **kwargs: session_override.update(kwargs) or kwargs,
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
     monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
@@ -1400,7 +1400,6 @@ def test_login_export_env_with_jwt_tokens_omits_username(cli_mod, runner, monkey
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
 
     result = runner.invoke(
@@ -1438,7 +1437,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
@@ -1477,6 +1476,7 @@ def test_config_get_tokens_fallback_secure_store(cli_mod, monkeypatch):
     monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
     monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
     monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setattr(cli_mod.cfg, "_read_local_tokens", lambda: {})
     monkeypatch.setattr(
         cli_mod.cfg,
         "_read_secure_tokens",
@@ -1499,6 +1499,42 @@ def test_config_get_tokens_fallback_legacy_env(cli_mod, monkeypatch):
     assert out["username"] == "legacy@example.com"
     assert out["access"] == "legacy-acc"
     assert out["refresh"] == "legacy-ref"
+
+
+def test_config_get_tokens_fallback_local_store(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    cli_mod.cfg.write_json(
+        auth_json,
+        {"username": "u@example.com", "access": "acc", "refresh": "ref"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
+
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "u@example.com"
+    assert out["access"] == "acc"
+    assert out["refresh"] == "ref"
+
+
+def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    cli_mod.cfg.write_json(
+        auth_json,
+        {"username": "file@example.com", "access": "file-acc", "refresh": "file-ref"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
+    monkeypatch.setenv(cli_mod.cfg.ENV_USERNAME, "env@example.com")
+    monkeypatch.setenv(cli_mod.cfg.ENV_ACCESS, "env-acc")
+    monkeypatch.setenv(cli_mod.cfg.ENV_REFRESH, "env-ref")
+
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "env@example.com"
+    assert out["access"] == "env-acc"
+    assert out["refresh"] == "env-ref"
 
 
 def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_path):
@@ -1576,8 +1612,45 @@ def test_config_save_tokens_writes_secure_store(cli_mod, monkeypatch):
         return True
 
     monkeypatch.setattr(cli_mod.cfg, "_write_secure_tokens", _write_secure_tokens)
+    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: True)
     cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
     assert captured == {"username": "u@example.com", "access": "acc", "refresh": "ref"}
+
+
+def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: False)
+
+    ok = cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
+
+    assert ok is True
+    assert cli_mod.cfg.read_json(auth_json, {}) == {
+        "username": "u@example.com",
+        "access": "acc",
+        "refresh": "ref",
+    }
+
+
+def test_config_clear_tokens_removes_local_store(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    cli_mod.cfg.write_json(
+        auth_json,
+        {"username": "u@example.com", "access": "acc", "refresh": "ref"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setattr(cli_mod.cfg, "_clear_secure_tokens", lambda: True)
+    monkeypatch.setenv(cli_mod.cfg.ENV_USERNAME, "u@example.com")
+    monkeypatch.setenv(cli_mod.cfg.ENV_ACCESS, "acc")
+    monkeypatch.setenv(cli_mod.cfg.ENV_REFRESH, "ref")
+
+    ok = cli_mod.cfg.clear_tokens()
+
+    assert ok is True
+    assert not auth_json.exists()
+    assert os.environ.get(cli_mod.cfg.ENV_USERNAME) is None
+    assert os.environ.get(cli_mod.cfg.ENV_ACCESS) is None
+    assert os.environ.get(cli_mod.cfg.ENV_REFRESH) is None
 
 
 def test_doctor_command(cli_mod, runner, monkeypatch):

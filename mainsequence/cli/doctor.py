@@ -41,7 +41,7 @@ def run_doctor() -> None:
             ("Backend", cfg.backend_url()),
             ("Config dir", str(cfg.CFG_DIR)),
             ("Config file", str(cfg.CONFIG_JSON)),
-            ("Auth storage", "session environment variables"),
+            ("Auth storage", cfg.auth_persistence_label()),
             ("Projects base", str(c.get("mainsequence_path"))),
             ("Logged in user", tokens.get("username") or "-"),
         ],

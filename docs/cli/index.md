@@ -22,6 +22,13 @@ mainsequence logout
 
 Backend/base-folder overrides passed to `login` are terminal-session only. They do not rewrite the persisted CLI settings for other terminals.
 
+By default, `mainsequence login` persists auth tokens for later CLI commands:
+
+- macOS: secure OS storage
+- Linux and other platforms without secure-store support: local CLI auth storage under the MainSequence config directory
+
+You only need `--export` if you explicitly want shell-managed environment variables.
+
 If you prefer shell-managed environment variables:
 
 ```bash
@@ -273,7 +280,7 @@ mainsequence settings set-base ~/mainsequence
 
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
 - If a command says not logged in, run `mainsequence login <email>` again.
-- If your shell cannot use secure token storage, use `--export` mode.
+- `mainsequence login` persists tokens for later CLI runs. Use `--export` only when you explicitly want shell-managed auth variables instead.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
