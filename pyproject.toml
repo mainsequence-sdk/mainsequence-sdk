@@ -33,7 +33,8 @@ dependencies = [
   "pydantic",
   "pytz",
   "pyyaml",
-  "requests",
+  "requests",:
+    q
   "structlog",
   "tqdm",
   "typer",
