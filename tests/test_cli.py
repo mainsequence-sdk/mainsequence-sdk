@@ -1234,8 +1234,11 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -1271,8 +1274,11 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
     monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
 
     result = runner.invoke(
@@ -1353,8 +1359,11 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -1384,8 +1393,11 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -1419,8 +1431,11 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
         lambda **kwargs: session_override.update(kwargs) or kwargs,
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
     monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
 
     result = runner.invoke(
@@ -1526,8 +1541,11 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
-    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
-    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -1537,7 +1555,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     assert "Could not persist auth tokens in secure OS storage" in result.output
 
 
-def test_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, monkeypatch):
+def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "api_login",
@@ -1559,7 +1577,7 @@ def test_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, m
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
-        lambda: (_ for _ in ()).throw(cli_mod.ApiError("Projects fetch failed (403).")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
     result = runner.invoke(
@@ -1568,11 +1586,10 @@ def test_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, m
     )
     assert result.exit_code == 0
     assert "Signed in as user@example.com" in result.output
-    assert "Signed in, but project status fetch failed: Projects fetch failed (403)." in result.output
-    assert "Use --no-status to skip the post-login project listing." in result.output
+    assert "Projects:" not in result.output
 
 
-def test_jwt_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, monkeypatch):
+def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1584,7 +1601,7 @@ def test_jwt_login_succeeds_when_post_login_project_listing_fails(cli_mod, runne
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
-        lambda: (_ for _ in ()).throw(cli_mod.ApiError("Projects fetch failed (403).")),
+        lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
 
     result = runner.invoke(
@@ -1593,8 +1610,7 @@ def test_jwt_login_succeeds_when_post_login_project_listing_fails(cli_mod, runne
     )
     assert result.exit_code == 0
     assert "Signed in with JWT tokens" in result.output
-    assert "Signed in, but project status fetch failed: Projects fetch failed (403)." in result.output
-    assert "Use --no-status to skip the post-login project listing." in result.output
+    assert "Projects:" not in result.output
 
 
 def test_logout(cli_mod, runner, monkeypatch):

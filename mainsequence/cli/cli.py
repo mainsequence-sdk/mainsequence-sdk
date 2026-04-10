@@ -1838,7 +1838,12 @@ def login(
         "--base-folder",
         help="Local projects base folder for this terminal session, for example mainsequence-dev.",
     ),
-    no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login"),
+    no_status: bool = typer.Option(
+        False,
+        "--no-status",
+        hidden=True,
+        help="Deprecated no-op kept only for backward compatibility.",
+    ),
     export: bool = typer.Option(
         False,
         "--export",
@@ -1871,8 +1876,6 @@ def login(
         Backend override for this terminal session.
     projects_base_option:
         Projects base-folder override for this terminal session.
-    no_status:
-        If True, skip printing the project table after login.
     export:
         If True, print shell export lines for auth variables.
 
@@ -1883,7 +1886,6 @@ def login(
     mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
-    mainsequence login you@company.com --no-status
     mainsequence login you@company.com --export
     ```
     """
@@ -1995,18 +1997,6 @@ def login(
         info(f"Auth tokens are persisted in {auth_store_label} for subsequent CLI commands.")
     else:
         warn(f"Could not persist auth tokens in {auth_store_label}. Use --export for shell-based auth.")
-
-    if not no_status:
-        try:
-            items = get_projects()
-            org_slug = _org_slug_from_profile()
-            typer.echo("\nProjects:")
-            typer.echo(_render_projects_table(items, base, org_slug))
-        except NotLoggedIn:
-            error("Not logged in. Run: mainsequence login <email>")
-        except ApiError as exc:
-            warn(f"Signed in, but project status fetch failed: {exc}")
-            info("Use --no-status to skip the post-login project listing.")
 
 
 @app.command("logout")

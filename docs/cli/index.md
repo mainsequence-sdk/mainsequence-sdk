@@ -17,7 +17,6 @@ mainsequence login you@company.com
 mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --projects-base mainsequence-dev
-mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --no-status
 mainsequence logout
 ```
 
@@ -29,8 +28,6 @@ By default, `mainsequence login` persists auth tokens for later CLI commands:
 - Linux and other platforms without secure-store support: local CLI auth storage under the MainSequence config directory
 
 You only need `--export` if you explicitly want shell-managed environment variables.
-
-Use `--no-status` for non-interactive environments or when the projects endpoint is restricted and you only want to persist auth successfully.
 
 If you prefer shell-managed environment variables:
 
