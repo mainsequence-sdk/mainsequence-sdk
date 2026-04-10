@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import pathlib
 import sys
@@ -105,6 +106,26 @@ def test_user_show(cli_mod, runner, monkeypatch):
     assert "jose" in result.output
     assert "jose@main-sequence.io" in result.output
     assert "Main Sequence" in result.output
+
+
+def test_user_show_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "get_logged_user_details",
+        lambda: {
+            "id": 7,
+            "username": "jose",
+            "email": "jose@main-sequence.io",
+            "organization": {"id": 2, "name": "Main Sequence"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["user", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["id"] == 7
+    assert payload["username"] == "jose"
+    assert payload["organization"]["name"] == "Main Sequence"
 
 
 def test_organization_project_names(cli_mod, runner, monkeypatch):
@@ -4751,6 +4772,34 @@ def test_project_images_defaults_to_env_project_id(cli_mod, runner, monkeypatch,
     assert "Total images: 1" in result.output
 
 
+def test_project_images_list_json(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+
+    monkeypatch.chdir(target)
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_project_images",
+        lambda related_project_id, filters=None, timeout=None: [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123",
+                "base_image": {"id": 22, "title": "Python 3.12"},
+                "creation_date": "2026-04-10T12:00:00Z",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "images", "list", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["id"] == 77
+    assert payload[0]["project_repo_hash"] == "abc123"
+    assert payload[0]["creation_date"] == "2026-04-10T12:00:00Z"
+
+
 def test_project_images_list_rejects_reserved_filter(cli_mod, runner, monkeypatch):
     def _parse(model_ref, entries):
         return {"related_project__id__in": ["999"]}
@@ -5239,6 +5288,34 @@ def test_agent_list(cli_mod, runner, monkeypatch):
     assert "Research" in result.output
     assert "Copilot" in result.output
     assert "Total agents: 1" in result.output
+
+
+def test_agent_list_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_agents",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 12,
+                "agent_unique_id": "research-copilot",
+                "name": "Research Copilot",
+                "status": "active",
+                "labels": ["research", "desk"],
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+                "last_run_at": "2026-04-10T09:15:00Z",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "list", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["id"] == 12
+    assert payload[0]["agent_unique_id"] == "research-copilot"
+    assert payload[0]["llm_model"] == "gpt-5.4"
 
 
 def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):

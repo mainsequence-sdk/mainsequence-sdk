@@ -21,6 +21,7 @@ Parity with VS Code extension:
 All commands have docstrings so `--help` is useful.
 """
 
+import dataclasses
 import datetime
 import json
 import os
@@ -33,8 +34,10 @@ import sys
 import tempfile
 import time
 from decimal import ROUND_UP, Decimal
+from enum import Enum as PyEnum
 from textwrap import dedent
 
+import click
 import typer
 import yaml
 
@@ -207,7 +210,75 @@ from .ssh_utils import (
 )
 from .ui import error, info, print_kv, print_table, status, success, warn
 
-app = typer.Typer(help="MainSequence CLI (login + project operations)")
+JSON_OUTPUT_CONTEXT_KEY = "json_output"
+
+
+class MainSequenceGroup(typer.core.TyperGroup):
+    """
+    Typer group that accepts `--json` anywhere in the command line.
+
+    The flag is stripped before the normal Typer/Click parsing path runs and is
+    stored on the root context for later rendering decisions.
+    """
+
+    def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+        filtered_args: list[str] = []
+        json_output = False
+        for arg in args:
+            if arg == "--json":
+                json_output = True
+                continue
+            filtered_args.append(arg)
+
+        ctx.ensure_object(dict)
+        if json_output:
+            ctx.obj[JSON_OUTPUT_CONTEXT_KEY] = True
+        return super().parse_args(ctx, filtered_args)
+
+
+def _json_output_enabled() -> bool:
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return False
+    root = ctx.find_root()
+    obj = getattr(root, "obj", None) or {}
+    return bool(obj.get(JSON_OUTPUT_CONTEXT_KEY))
+
+
+def _to_jsonable(value):
+    if hasattr(value, "model_dump_json"):
+        try:
+            return json.loads(value.model_dump_json())
+        except Exception:
+            pass
+    if hasattr(value, "model_dump"):
+        try:
+            return value.model_dump(mode="json")
+        except Exception:
+            pass
+    if dataclasses.is_dataclass(value):
+        return dataclasses.asdict(value)
+    if isinstance(value, dict):
+        return {str(key): _to_jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_to_jsonable(item) for item in value]
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, pathlib.Path):
+        return str(value)
+    if isinstance(value, PyEnum):
+        return value.value
+    return value
+
+
+def _emit_json(payload) -> bool:
+    if not _json_output_enabled():
+        return False
+    typer.echo(json.dumps(_to_jsonable(payload), indent=2, ensure_ascii=False))
+    return True
+
+
+app = typer.Typer(help="MainSequence CLI (login + project operations)", cls=MainSequenceGroup)
 
 agent = typer.Typer(help="Agent commands")
 agent_run_group = typer.Typer(help="Agent runtime commands")
@@ -2018,6 +2089,9 @@ def user_show():
         error(str(e))
         raise typer.Exit(1)
 
+    if _emit_json(user):
+        return
+
     organization = user.get("organization")
     if isinstance(organization, dict):
         organization_name = str(organization.get("name") or organization.get("id") or "-")
@@ -2064,6 +2138,9 @@ def organization_project_names_cmd(
         error(f"Organization project names fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(project_names):
+        return
+
     if project_names:
         print_table(
             "Organization Project Names",
@@ -2104,6 +2181,9 @@ def _organization_teams_list_impl(
     except ApiError as e:
         error(f"Organization teams fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(teams_payload):
+        return
 
     rows: list[list[str]] = []
     for team in teams_payload:
@@ -2155,6 +2235,9 @@ def _organization_teams_create_impl(
         error(f"Organization team creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Organization team created: {team_name}")
     print_kv("Created Team", _format_team_preview(created))
 
@@ -2201,6 +2284,9 @@ def _organization_teams_edit_impl(
         error(f"Organization team update failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(updated):
+        return
+
     success(f"Organization team updated: id={team_id}")
     print_kv("Updated Team", _format_team_preview(updated))
 
@@ -2231,6 +2317,9 @@ def _organization_teams_delete_impl(
     except ApiError as e:
         error(f"Organization team deletion failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(deleted):
+        return
 
     success(f"Organization team deleted: id={team_id}")
     print_kv("Deleted Team", _format_team_preview(deleted))
@@ -2595,6 +2684,9 @@ def _markets_portfolios_list_impl(
         error(f"Markets portfolios fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(portfolios):
+        return
+
     rows: list[list[str]] = []
     for portfolio in portfolios:
         rows.append(
@@ -2836,6 +2928,9 @@ def _agent_list_impl(
         error(f"Agents fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(agents):
+        return
+
     rows: list[list[str]] = []
     for agent_payload in agents:
         labels = agent_payload.get("labels")
@@ -2871,6 +2966,9 @@ def _agent_detail_impl(
     except ApiError as e:
         error(f"Agent fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(agent_payload):
+        return
 
     print_kv("Agent", _format_agent_preview(agent_payload))
     print_kv("Agent Details", _format_agent_details(agent_payload))
@@ -2943,6 +3041,9 @@ def _agent_create_impl(
         error(f"Agent creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Agent created: {agent_name}")
     print_kv("Created Agent", _format_agent_preview(created))
 
@@ -3014,6 +3115,9 @@ def _agent_get_or_create_impl(
         error(f"Agent get_or_create failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Agent resolved via get_or_create: {agent_name}")
     print_kv("Resolved Agent", _format_agent_preview(created))
 
@@ -3045,6 +3149,9 @@ def _agent_delete_impl(
         error(f"Agent deletion failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(deleted):
+        return
+
     success(f"Agent deleted: id={agent_id}")
     print_kv("Deleted Agent", _format_agent_preview(deleted))
 
@@ -3067,6 +3174,9 @@ def _agent_run_list_impl(
     except ApiError as e:
         error(f"Agent runs fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(agent_runs):
+        return
 
     rows: list[list[str]] = []
     for agent_run_payload in agent_runs:
@@ -3107,6 +3217,9 @@ def _agent_run_detail_impl(
         error(f"Agent run fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(agent_run_payload):
+        return
+
     print_kv("Agent Run", _format_agent_run_preview(agent_run_payload))
     print_kv("Agent Run Details", _format_agent_run_details(agent_run_payload))
 
@@ -3129,6 +3242,9 @@ def _constants_list_impl(
     except ApiError as e:
         error(f"Constants fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(constants_payload):
+        return
 
     rows: list[list[str]] = []
     for constant in constants_payload:
@@ -3178,6 +3294,9 @@ def _constants_create_impl(
         error(f"Constant creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Constant created: {constant_name}")
     print_kv("Created Constant", _format_constant_delete_preview(created))
 
@@ -3209,6 +3328,9 @@ def _constants_delete_impl(
         error(f"Constant deletion failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(deleted):
+        return
+
     success(f"Constant deleted: id={constant_id}")
     print_kv("Deleted Constant", _format_constant_delete_preview(deleted))
 
@@ -3228,6 +3350,9 @@ def _shareable_user_list_impl(
     except ApiError as e:
         error(f"{object_label} {access_label} fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(access_state):
+        return
 
     if isinstance(access_state, dict):
         effective_access_label = str(access_state.get("access_level") or access_label)
@@ -3297,6 +3422,9 @@ def _shareable_user_access_update_impl(
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(payload):
+        return
+
     success(f"{object_label} {action_label} completed.")
     print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
 
@@ -3317,6 +3445,9 @@ def _shareable_team_access_update_impl(
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(payload):
+        return
 
     success(f"{object_label} {action_label} completed.")
     print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
@@ -3340,6 +3471,9 @@ def _secrets_list_impl(
     except ApiError as e:
         error(f"Secrets fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(secrets_payload):
+        return
 
     rows: list[list[str]] = []
     for secret in secrets_payload:
@@ -3388,6 +3522,9 @@ def _secrets_create_impl(
         error(f"Secret creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Secret created: {secret_name}")
     print_kv("Created Secret", _format_secret_preview(created))
 
@@ -3418,6 +3555,9 @@ def _secrets_delete_impl(
     except ApiError as e:
         error(f"Secret deletion failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(deleted):
+        return
 
     success(f"Secret deleted: id={secret_id}")
     print_kv("Deleted Secret", _format_secret_preview(deleted))
@@ -3460,6 +3600,9 @@ def _simple_tables_list_impl(
         error(f"Simple tables fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(storages):
+        return
+
     rows: list[list[str]] = []
     for storage in storages:
         columns = storage.get("columns")
@@ -3497,6 +3640,9 @@ def _simple_tables_detail_impl(
     except ApiError as e:
         error(f"Simple table fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(storage):
+        return
 
     print_kv("Simple Table", _format_simple_table_storage_preview(storage))
     print_kv(
@@ -3541,6 +3687,9 @@ def _simple_tables_delete_impl(
     except ApiError as e:
         error(f"Simple table deletion failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(deleted):
+        return
 
     success(f"Simple table deleted: id={storage_id}")
     print_kv("Deleted Simple Table", _format_simple_table_storage_preview(deleted))
@@ -3674,6 +3823,9 @@ def _workspace_list_impl(
         error(f"Workspaces fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(workspaces):
+        return
+
     rows: list[list[str]] = []
     for workspace_payload in workspaces:
         labels = workspace_payload.get("labels")
@@ -3760,6 +3912,9 @@ def _workspace_create_impl(
         error(f"Workspace creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Workspace created: {workspace_title}")
     print_kv("Created Workspace", _format_workspace_preview(created))
 
@@ -3776,6 +3931,9 @@ def _workspace_detail_impl(
     except ApiError as e:
         error(f"Workspace fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(workspace_payload):
+        return
 
     print_kv("Workspace", _format_workspace_preview(workspace_payload))
     print_kv("Workspace Details", _format_workspace_details(workspace_payload))
@@ -3804,6 +3962,9 @@ def _workspace_update_impl(
     except ApiError as e:
         error(f"Workspace update failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(updated):
+        return
 
     success(f"Workspace updated: id={workspace_id}")
     print_kv("Updated Workspace", _format_workspace_preview(updated))
@@ -3837,6 +3998,9 @@ def _workspace_delete_impl(
         error(f"Workspace deletion failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(deleted):
+        return
+
     success(f"Workspace deleted: id={workspace_id}")
     print_kv("Deleted Workspace", _format_workspace_preview(deleted))
 
@@ -3859,6 +4023,9 @@ def _registered_widget_type_list_impl(
     except ApiError as e:
         error(f"Registered widget types fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(widgets):
+        return
 
     rows: list[list[str]] = []
     for widget in widgets:
@@ -3910,6 +4077,9 @@ def _data_node_storage_list_impl(
     except ApiError as e:
         error(f"Data node storages fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(storages):
+        return
 
     if storages:
         print_table(
@@ -3996,6 +4166,9 @@ def _data_node_storage_search_impl(
     except ApiError as e:
         error(f"{command_label} failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(payload):
+        return
 
     storages, pagination = _unpack_data_node_storage_search_response(payload)
     if storages:
@@ -5107,6 +5280,9 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
         error(f"Data node storage fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(storage):
+        return
+
     print_kv(
         "Data Node Storage",
         [
@@ -5179,6 +5355,9 @@ def _data_node_storage_delete_impl(
     except ApiError as e:
         error(f"Data node storage deletion failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(deleted):
+        return
 
     success(f"Data node storage deleted: id={storage_id}")
     print_kv("Deleted Data Node Storage", _format_data_node_storage_delete_preview(deleted))
@@ -5271,6 +5450,9 @@ def data_node_storage_refresh_search_index_cmd(
         error(f"Data node search index refresh failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(payload):
+        return
+
     success(f"Data node search index refresh requested: id={storage_id}")
     print_kv(
         "Data Node Search Index Refresh",
@@ -5350,6 +5532,8 @@ def data_node_storage_search_cmd(
     _require_login()
 
     total_matches = 0
+    description_payload = None
+    column_payload = None
 
     if normalized_mode in {"both", "description"}:
         try:
@@ -5366,11 +5550,8 @@ def data_node_storage_search_cmd(
         except ApiError as e:
             error(f"Data Node Search failed: {e}")
             raise typer.Exit(1)
-        total_matches += _print_data_node_storage_search_section(
-            title="Description Matches",
-            q=q,
-            payload=description_payload,
-        )
+        storages, _ = _unpack_data_node_storage_search_response(description_payload)
+        total_matches += len(storages)
 
     if normalized_mode in {"both", "column"}:
         try:
@@ -5378,7 +5559,29 @@ def data_node_storage_search_cmd(
         except ApiError as e:
             error(f"Data Node Search failed: {e}")
             raise typer.Exit(1)
-        total_matches += _print_data_node_storage_search_section(
+        storages, _ = _unpack_data_node_storage_search_response(column_payload)
+        total_matches += len(storages)
+
+    if _emit_json(
+        {
+            "query": q,
+            "mode": normalized_mode,
+            "description": description_payload if normalized_mode in {"both", "description"} else None,
+            "column": column_payload if normalized_mode in {"both", "column"} else None,
+            "total_matches": total_matches,
+        }
+    ):
+        return
+
+    if normalized_mode in {"both", "description"} and description_payload is not None:
+        _print_data_node_storage_search_section(
+            title="Description Matches",
+            q=q,
+            payload=description_payload,
+        )
+
+    if normalized_mode in {"both", "column"} and column_payload is not None:
+        _print_data_node_storage_search_section(
             title="Column Matches",
             q=q,
             payload=column_payload,
@@ -5439,6 +5642,8 @@ def data_node_storage_description_search_cmd(
     except ApiError as e:
         error(f"Data Node Description Search failed: {e}")
         raise typer.Exit(1)
+    if _emit_json(payload):
+        return
     _print_data_node_storage_search_section(
         title="Description Matches",
         q=q,
@@ -5483,6 +5688,8 @@ def data_node_storage_column_search_cmd(
     except ApiError as e:
         error(f"Data Node Column Search failed: {e}")
         raise typer.Exit(1)
+    if _emit_json(payload):
+        return
     _print_data_node_storage_search_section(
         title="Column Matches",
         q=q,
@@ -5807,6 +6014,9 @@ def _markets_asset_translation_table_list_impl(
         error(f"Markets asset translation tables fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(tables):
+        return
+
     rows: list[list[str]] = []
     for table in tables:
         rules = table.get("rules")
@@ -5839,6 +6049,9 @@ def _markets_asset_translation_table_detail_impl(table_id: int, timeout: int | N
     except ApiError as e:
         error(f"Markets asset translation table fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(table):
+        return
 
     rules = table.get("rules")
     rule_count = len(rules) if isinstance(rules, list) else 0
@@ -5967,6 +6180,8 @@ def project_list(
     base = cfg_obj["mainsequence_path"]
     org_slug = _org_slug_from_profile()
     items = get_projects()
+    if _emit_json(items):
+        return
     typer.echo(_render_projects_table(items, base, org_slug))
 
 
@@ -6017,6 +6232,9 @@ def _print_project_data_node_updates(
     except ApiError as e:
         error(str(e))
         raise typer.Exit(1)
+
+    if _emit_json(updates):
+        return
 
     if not updates:
         info("No data node updates found.")
@@ -6142,6 +6360,9 @@ def project_validate_name_cmd(
     except ApiError as e:
         error(f"Project name validation failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(payload):
+        return
 
     normalized = payload.get("normalized") or {}
     print_kv(
@@ -6342,6 +6563,10 @@ def project_create_cmd(
         raise typer.Exit(1)
 
     pid = created.get("id")
+
+    if _emit_json(created):
+        return
+
     success(f"Project created: {created.get('project_name') or project_name} (id={pid})")
 
     # A freshly created project can take several minutes to initialize on backend.
@@ -6445,6 +6670,9 @@ def project_delete_remote_cmd(
     except ApiError as e:
         error(f"Project deletion failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(resp):
+        return
 
     success(f"Project deleted: {project_name} (id={project_id})")
     if isinstance(resp, dict) and resp:
@@ -6708,6 +6936,9 @@ def _project_resources_list_impl(
         error(f"Project resources fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(resources):
+        return
+
     info(f"Using repo_commit_sha={repo_commit_sha} from {upstream}.")
 
     rows: list[list[str]] = []
@@ -6914,6 +7145,9 @@ def _project_resource_release_create_impl(
         error(f"Project resource release creation failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(created):
+        return
+
     success(f"Project resource release created: id={created.get('id') or '-'}")
     print_kv(
         "Project Resource Release",
@@ -7079,6 +7313,9 @@ def _project_resource_release_delete_impl(
         error(f"Project resource release deletion failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(deleted):
+        return
+
     success(f"Project resource release deleted: id={release_id}")
     print_kv("Deleted Project Resource Release", _format_resource_release_delete_preview(deleted))
 
@@ -7183,6 +7420,9 @@ def _project_images_list_impl(
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(images):
+        return
+
     rows: list[list[str]] = []
     for image in images:
         rows.append(
@@ -7266,6 +7506,9 @@ def _project_images_delete_impl(
         error(f"Project image deletion failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(deleted):
+        return
+
     success(f"Project image deleted: id={image_id}")
     print_kv("Deleted Project Image", _format_project_image_delete_preview(deleted))
 
@@ -7309,6 +7552,8 @@ def _project_images_create_impl(
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1)
     images_by_hash = _group_project_images_by_hash(existing_images)
+
+    emit_json = _json_output_enabled()
 
     pending_commits = _list_unpushed_commits(project_dir)
     if pending_commits:
@@ -7383,7 +7628,8 @@ def _project_images_create_impl(
         error(str(e))
         raise typer.Exit(1)
 
-    success(f"Project image created: id={created.get('id') or '-'}")
+    if not emit_json:
+        success(f"Project image created: id={created.get('id') or '-'}")
 
     image_id = created.get("id")
     if image_id is not None and created.get("is_ready") is False:
@@ -7414,14 +7660,20 @@ def _project_images_create_impl(
 
             created = latest
             if created.get("is_ready") is True:
-                success("Project image is ready.")
+                if not emit_json:
+                    success("Project image is ready.")
                 break
-            info("Project image still building. Continuing to poll...")
+            if not emit_json:
+                info("Project image still building. Continuing to poll...")
         else:
-            warn(
-                f"Timed out after {timeout}s waiting for project image {image_id} to become ready. "
-                "It may still be building on the backend."
-            )
+            if not emit_json:
+                warn(
+                    f"Timed out after {timeout}s waiting for project image {image_id} to become ready. "
+                    "It may still be building on the backend."
+                )
+
+    if _emit_json(created):
+        return
 
     base_image_value = created.get("base_image")
     if isinstance(base_image_value, dict):
@@ -7547,6 +7799,9 @@ def _project_jobs_list_impl(
         error(f"Project jobs fetch failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(jobs):
+        return
+
     rows: list[list[str]] = []
     for job in jobs:
         rows.append(
@@ -7593,6 +7848,9 @@ def _project_job_runs_list_impl(
     except ApiError as e:
         error(f"Project job runs fetch failed: {e}")
         raise typer.Exit(1)
+
+    if _emit_json(runs):
+        return
 
     rows: list[list[str]] = []
     for run in runs:
@@ -7699,6 +7957,9 @@ def project_jobs_run_cmd(
         error(f"Project job run failed: {e}")
         raise typer.Exit(1)
 
+    if _emit_json(payload):
+        return
+
     success(f"Project job run requested: job_id={job_id}")
 
     if payload:
@@ -7791,6 +8052,9 @@ def project_job_runs_logs_cmd(
         except ApiError as e:
             error(f"Project job run logs fetch failed: {e}")
             raise typer.Exit(1)
+
+        if _emit_json(payload):
+            return
 
         status_value = str(payload.get("status") or "-")
         rows = payload.get("rows") or []
@@ -7975,6 +8239,9 @@ def _project_jobs_create_impl(
     except RuntimeError as e:
         error(str(e))
         raise typer.Exit(1)
+
+    if _emit_json(created):
+        return
 
     success(f"Project job created: id={created.get('id') or '-'}")
     print_kv(
@@ -8208,6 +8475,9 @@ def project_schedule_batch_jobs_cmd(
                 prepared_batch_file.unlink(missing_ok=True)
             except Exception:
                 pass
+
+    if _emit_json(created):
+        return
 
     if isinstance(created, list):
         success(f"Scheduled {len(created)} jobs from {batch_file.name}.")

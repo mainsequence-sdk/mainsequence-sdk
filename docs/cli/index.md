@@ -40,6 +40,21 @@ mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --export
 mainsequence logout --export
 ```
 
+## Structured Output
+
+Commands that return a structured object or a list of objects also accept `--json`.
+
+The flag is global and can be placed after the command you are running, for example:
+
+```bash
+mainsequence user --json
+mainsequence agent list --json
+mainsequence project images list --json
+mainsequence cc workspace detail 7 --json
+```
+
+When the underlying SDK result is a Pydantic model, the CLI serializes it through the model's JSON dump path before printing.
+
 ## Core Command Groups
 
 ## Top-Level Commands

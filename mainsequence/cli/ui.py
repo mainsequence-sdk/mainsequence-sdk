@@ -14,6 +14,7 @@ from collections.abc import Iterable, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 
+import click
 import typer
 
 
@@ -32,18 +33,33 @@ def rich_support() -> RichSupport:
         return RichSupport(available=False)
 
 
+def _json_output_enabled() -> bool:
+    ctx = click.get_current_context(silent=True)
+    if ctx is None:
+        return False
+    root = ctx.find_root()
+    obj = getattr(root, "obj", None) or {}
+    return bool(obj.get("json_output"))
+
+
 def info(msg: str) -> None:
     """Informational message."""
+    if _json_output_enabled():
+        return
     typer.secho(msg, fg=typer.colors.CYAN)
 
 
 def success(msg: str) -> None:
     """Success message."""
+    if _json_output_enabled():
+        return
     typer.secho(msg, fg=typer.colors.GREEN)
 
 
 def warn(msg: str) -> None:
     """Warning message."""
+    if _json_output_enabled():
+        return
     typer.secho(msg, fg=typer.colors.YELLOW)
 
 
@@ -110,6 +126,9 @@ def status(message: str):
     """
     Context manager for a progress spinner if Rich is available.
     """
+    if _json_output_enabled():
+        yield
+        return
     rs = rich_support()
     if rs.available:
         from rich.console import Console
