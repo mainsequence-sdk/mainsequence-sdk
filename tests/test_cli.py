@@ -1450,6 +1450,66 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     assert "Could not persist auth tokens in secure OS storage" in result.output
 
 
+def test_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "api_login",
+        lambda email, password: {
+            "username": email,
+            "backend": "https://example.test",
+            "access": "acc-123",
+            "refresh": "ref-456",
+            "persisted": True,
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(cli_mod.ApiError("Projects fetch failed (403).")),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "user@example.com", "--password", "secret"],
+    )
+    assert result.exit_code == 0
+    assert "Signed in as user@example.com" in result.output
+    assert "Signed in, but project status fetch failed: Projects fetch failed (403)." in result.output
+    assert "Use --no-status to skip the post-login project listing." in result.output
+
+
+def test_jwt_login_succeeds_when_post_login_project_listing_fails(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: (_ for _ in ()).throw(cli_mod.ApiError("Projects fetch failed (403).")),
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "--access-token", "acc-123", "--refresh-token", "ref-456"],
+    )
+    assert result.exit_code == 0
+    assert "Signed in with JWT tokens" in result.output
+    assert "Signed in, but project status fetch failed: Projects fetch failed (403)." in result.output
+    assert "Use --no-status to skip the post-login project listing." in result.output
+
+
 def test_logout(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)

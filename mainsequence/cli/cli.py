@@ -1932,6 +1932,9 @@ def login(
             typer.echo(_render_projects_table(items, base, org_slug))
         except NotLoggedIn:
             error("Not logged in. Run: mainsequence login <email>")
+        except ApiError as exc:
+            warn(f"Signed in, but project status fetch failed: {exc}")
+            info("Use --no-status to skip the post-login project listing.")
 
 
 @app.command("logout")
