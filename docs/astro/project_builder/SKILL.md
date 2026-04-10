@@ -1,184 +1,228 @@
 ---
 name: mainsequence-project
-description: Use this skill for MainSequence-specific work in this Astro-scaffolded repository. This skill is scaffolded into newly created MainSequence projects together with AGENTS.md and the astro/ files so an agent can resume work with a clean separation between intent, current state, stable facts, and history. It does not define SDK behavior; it enforces a docs-first workflow against the latest MainSequence documentation and explains how to maintain astro/brief.md, astro/tasks.md, astro/record.md, astro/status.md, and astro/journal.md.
+description: Use this skill to bootstrap work in a Main Sequence repository. This skill owns project context verification, docs-first behavior, success-definition discipline, and routing between specialized domain skills and the maintenance skill. It does not own domain implementation semantics or direct reconciliation of the project-state files under `astro/`.
 ---
 
-# MainSequence Project Runbook
+# Main Sequence Project Bootstrap
 
-Use this skill only for MainSequence-specific tasks in this repository.
+## Overview
 
-## Why This Exists
+Use this skill to start work correctly in a Main Sequence repository before moving into a domain skill.
 
-This skill is copied into newly created MainSequence projects as part of the Astro scaffold.
-Its purpose is to keep agent work reproducible by separating:
+This skill is for:
 
-- goal and acceptance criteria in `astro/brief.md`
-- current implementation work in `astro/tasks.md`
-- stable project facts in `astro/record.md`
-- latest verified state in `astro/status.md`
-- historical investigation notes in `astro/journal.md`
+- establishing project context
+- defining success up front
+- enforcing a docs-first workflow
+- deciding when `astro/` maintenance is required
+- verifying platform context before making claims
+- routing work to the correct specialized skill
 
-Do not treat this skill as a frozen copy of MainSequence behavior.
+## This Skill Can Do
 
-The expected success condition for a task should also be written down explicitly, not implied.
+- determine the correct startup and read order
+- define a concrete success condition before implementation starts
+- verify current project and platform context
+- decide which specialized skill owns the actual domain work
+- decide when to hand off to `docs/astro/maintenance/local_journal/SKILL.md`
+- enforce standard Main Sequence repository structure expectations
+- separate verified facts from assumptions
+- record documentation mismatches and route follow-up work
+- enforce the namespace-first safety rule for new or modified DataNodes
 
-## First Principle
+## This Skill Must Not Claim
 
-The latest MainSequence docs are the source of truth for SDK, CLI, DataNode, jobs, artifacts,
-RBAC, dashboard, release, market, portfolio, instrument, and platform behavior.
+This skill must not claim ownership of:
 
-Canonical docs root:
+- DataNode engineering
+- SimpleTable design
+- FastAPI or application API design
+- Command Center workspace payloads
+- AppComponent contracts
+- jobs, schedules, images, resources, or releases
+- RBAC or sharing semantics
+- assets, translation tables, or portfolio construction
+- Streamlit dashboard implementation
+- instruments or pricing-runtime semantics
+
+Do not let this skill become a domain manual.
+
+## Route Adjacent Work
+
+- DataNodes:
+  `docs/astro/data_publishing/data_nodes/SKILL.md`
+- SimpleTables:
+  `docs/astro/data_publishing/simple_tables/SKILL.md`
+- platform data discovery before implementation:
+  `docs/astro/data_access/exploration/SKILL.md`
+- FastAPI and application-facing APIs:
+  `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+- Command Center workspace creation and widget mounting:
+  `docs/astro/command_center/workspace_builder/SKILL.md`
+- AppComponents, custom forms, and widget-facing API contracts:
+  `docs/astro/command_center/app_components/SKILL.md`
+- project-state reconciliation and local history under `astro/`:
+  `docs/astro/maintenance/local_journal/SKILL.md`
+- project status audits, blocker analysis, and upstream SDK assessment:
+  `docs/astro/maintenance/bug_auditor/SKILL.md`
+- jobs, schedules, artifacts, images, resources, and releases:
+  `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+- RBAC and sharing:
+  `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+- assets, categories, and translation tables:
+  `docs/astro/markets_platform/assets_and_translation/SKILL.md`
+- Virtual Fund Builder:
+  `docs/astro/markets_platform/virtualfundbuilder/SKILL.md`
+- instruments and pricing:
+  `docs/astro/markets_platform/instruments_and_pricing/SKILL.md`
+- Streamlit dashboards:
+  `docs/astro/dashboards/streamlit/SKILL.md`
+
+## Read First
+
+1. `docs/astro/AGENTS.md`
+2. `docs/astro/maintenance/local_journal/SKILL.md`
+3. the latest relevant Main Sequence docs for the task
+4. `astro/brief.md`
+5. `astro/status.md`
+6. `astro/tasks.md`
+7. `astro/record.md`
+8. `astro/journal.md` when resuming, debugging, or investigating a repeated issue
+
+Canonical documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
 
-## Read Order
+## Inputs This Skill Needs
 
-Before implementation, debugging, validation, or documentation work:
+Before starting non-trivial work, collect or infer:
 
-1. Read `AGENTS.md`.
-2. Read the latest relevant MainSequence docs.
-3. Read `astro/brief.md`.
-4. Read `astro/status.md`.
-5. Read `astro/tasks.md`.
-6. Read `astro/record.md`.
-7. If debugging or resuming, check `astro/journal.md`.
+- the user goal
+- the concrete success condition
+- the repository path and current project context
+- whether live platform verification is required
+- which specialized skill should own the domain behavior
+- whether the maintenance skill will need to run after the domain step
 
-## Route by Task
+If the user goal or project context is unclear, stop before routing domain work.
 
-Use the latest relevant documentation section for the task at hand.
+## Required Decisions
 
-Typical routing:
-- project setup, local environment, CLI:
-  tutorial setup docs plus CLI docs
-- DataNodes:
-  tutorial data-node chapters plus `knowledge/data_nodes.md`
-- orchestration, jobs, schedules, images:
-  orchestration docs
-- constants, secrets, RBAC, releases:
-  RBAC tutorial plus infrastructure docs
-- file-based workflows:
-  artifacts docs
-- dashboards:
-  dashboard docs
-- markets, assets, portfolios, instruments:
-  the relevant domain docs
+For every non-trivial task, decide:
 
-## Workflow
+1. What does success look like in observable terms?
+2. Which specialized skill owns the domain behavior?
+3. Does platform state need live verification?
+4. Will the maintenance skill need to run after this step?
+5. Are the docs and local implementation aligned, or is there a discrepancy to record?
 
-1. Read `AGENTS.md`.
-2. Read the latest relevant MainSequence docs.
-3. Confirm the goal and acceptance criteria in `astro/brief.md`.
-4. Confirm the latest known state in `astro/status.md`.
-5. Confirm current priorities in `astro/tasks.md`.
-6. Confirm project identifiers, checkout path, and orchestration notes in `astro/record.md`.
-7. If there is a failure or repeated issue, check `astro/journal.md`.
-8. Compare the current implementation against the latest docs.
-9. Confirm project context with `mainsequence project current --debug`.
-10. Run `mainsequence project refresh_token --path .` before validations or live checks.
-11. If git push or pull is required, use `mainsequence project open-signed-terminal <PROJECT_ID>`.
-12. If installed CLI behavior appears behind the docs, run `mainsequence project update-sdk --path .`.
-13. Verify real platform state with the CLI or platform tooling when platform facts matter.
-14. Update the Astro files appropriately.
+## Build Rules
 
-## Define Success Up Front
+### 1. The latest docs are the source of truth
 
-Before implementation or validation, make the success condition explicit in `astro/brief.md`.
+Do not rely on memory or copied snippets when the current Main Sequence docs should be checked.
 
-State:
-- what should exist or work at the end
-- what checks will prove it
-- which platform objects or outputs must be verified
-- what remains out of scope
+### 2. Maintain the standard Main Sequence project structure
 
-A task is not complete just because code was edited. It is complete when the intended result is produced and verified.
+Also maintain these standard project areas when relevant:
 
-## Astro File Update Rules
+- `src/`
+- `scripts/`
+- `tests/`
+- `docs/`
+- `api/`
+- `dashboards/`
+- `dashboards/components/`
 
-### Update `astro/brief.md` when:
-- user intent changes
-- scope changes
-- project goal changes
-- acceptance criteria changes
-- success definition changes
+If the project has recurring scheduled jobs, keep:
 
-### Update `astro/tasks.md` when:
-- new actionable work is discovered
-- priorities change
-- a task is completed, blocked, or superseded
+- `scheduled_jobs.yaml`
 
-### Update `astro/record.md` when:
-- project id or project name changes
-- checkout path changes
-- orchestration notes or stable operational identifiers change
+Use the standard Main Sequence project structure unless the repository explicitly documents a different layout.
 
-### Update `astro/status.md` when:
-- new evidence is checked
-- latest state changes
-- blockers appear or are resolved
-- failures change the current situation
-- next actions change
-- the task now meets or no longer meets the stated success condition
+Repository-local execution paths for jobs must:
 
-Keep `astro/status.md` current, not historical.
+- be relative to the repository root
+- use forward slashes, even on Windows
+- point to a supported file inside the repository
 
-### Update `astro/journal.md` when:
-- a meaningful implementation milestone is reached
-- a failure occurs
-- a repeated issue is investigated
-- a possible MainSequence SDK or platform issue is found
-- important historical context should be preserved
+Do not treat:
 
-Keep `astro/journal.md` append-only.
+- `.env` as long-term documentation
+- `.venv` as source code
+- local absolute paths as reusable project instructions
 
-## Repo-Specific Rules
+### 3. Define success before implementation
 
-- Keep all formal docs under `docs/`.
-- Keep `docs/SUMMARY.md` aligned with the docs structure.
-- Keep reusable dashboard UI under `dashboards/components/`.
-- Keep launcher scripts under `scripts/`.
-- Keep tests under `tests/`.
-- Keep recurring schedules in root-level `scheduled_jobs.yaml` when the project has shared recurring jobs.
-- Manage project dependencies with `uv` instead of editing dependency files by hand.
-- Do not hardcode machine-specific local paths in reusable docs or instructions.
-- Do not hide failures.
-- Prefer strict code.
-- Fail fast in `DataNode` update paths.
+Make the end state explicit before changing code, docs, or platform objects.
 
-## DataNode Safety
+Do not start domain work with a vague target.
 
-For any DataNode change:
-- re-read the relevant current docs first
-- keep the identifier and schema stable unless you are intentionally publishing a new dataset
-- split config correctly across dataset meaning, updater scope, and runtime knobs
-- keep updates incremental and use `UpdateStatistics`
-- keep dependencies deterministic and out of `update()`
-- implement metadata for production-quality tables
-- do not log secrets
-- always do the first development or test run in an explicit namespace before any non-namespaced run
-- use `hash_namespace(...)` only for isolated testing and experimentation
-- for high-volume nodes, test in a test namespace and smaller time range first
+### 4. Verify project context before making platform claims
 
-## Jobs, Releases, and Verification
+Use the CLI to confirm the active project and refresh credentials before live checks when needed.
 
-- Sync the project before job or release work when repository state matters.
-- For shared recurring jobs, prefer `scheduled_jobs.yaml` plus `mainsequence project schedule_batch_jobs`.
-- Use project images when reproducibility matters.
-- For deployed resources, verify the current project-resource and release workflow from the docs instead of assuming local-only files are deployable.
-- Verify jobs, runs, logs, images, resources, and releases with the CLI instead of assuming they exist.
+Typical bootstrap checks:
 
+- `mainsequence project current --debug`
+- `mainsequence project refresh_token --path .`
 
-## Documentation Sync
+### 5. Route domain work instead of expanding the bootstrap skill
 
-When code, workflows, or platform assumptions change:
-- update `docs/`
-- keep `README.md` aligned with the docs map
-- create follow-up tasks for unresolved documentation mismatches
+Once the task boundary is clear, move into the correct specialized skill.
 
-## Possible MainSequence Issues
+Do not teach domain semantics here.
 
-If behavior appears to be an SDK, docs, or platform problem:
-- record what failed
-- explain why it may be a MainSequence issue
-- suggest a concrete improvement
-- append the history to `astro/journal.md`
-- track open work in `astro/tasks.md`
-- reflect the current blocker and next action in `astro/status.md`
+### 6. Hand off to maintenance after material work
+
+After material domain work, route to:
+
+- `docs/astro/maintenance/local_journal/SKILL.md`
+
+Use that handoff when the turn changed:
+
+- verified state
+- blockers
+- next actions
+- scope
+- stable operational references
+- a meaningful milestone
+- a failure
+- a repeated issue
+- a suspected SDK or platform issue
+- an investigation result worth preserving historically
+
+### 7. Use namespaces first for new or modified DataNodes
+
+Before first-running or validating a new or changed DataNode, use an explicit namespace before any non-namespaced run.
+
+## Review Rules
+
+When reviewing bootstrap behavior, look for:
+
+- domain work happening without a clear owner skill
+- material domain work finishing without a maintenance handoff
+- implementation starting without a concrete success condition
+- platform claims made without verification
+- docs mismatches that were noticed but not recorded
+- the bootstrap skill growing back into a catch-all domain manual
+
+## Validation Checklist
+
+Do not claim bootstrap success until you have checked:
+
+- the correct project context is selected
+- the relevant docs were checked
+- the success condition is explicit
+- the correct specialized skill was chosen
+- the maintenance handoff was made when project state materially changed
+- any platform-state claims were verified with CLI or platform tooling
+
+## This Skill Must Stop And Escalate When
+
+- the relevant docs cannot be accessed
+- the project context is unclear
+- the success condition is still ambiguous
+- live platform state is required but has not been verified
+- domain work is proceeding without the relevant specialized skill or docs
+
+Do not guess through missing context.

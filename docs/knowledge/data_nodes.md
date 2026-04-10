@@ -62,13 +62,13 @@ the default meaning of `DataNodeMetaData.identifier`.
 
 This is useful when you want a portable public handle like `daily_prices` while moving the actual storage implementation underneath it.
 
-If you want to inspect the organization-visible DataNode table identifiers from the CLI, run:
+If you want to inspect existing DataNode table identifiers from the CLI, run:
 
 ```bash
-mainsequence data-node org-unique-identifiers
+mainsequence data-node list
 ```
 
-This command lists DataNode table identifiers exposed by `DataNodeStorage`. It does not list asset `unique_identifier` values.
+The `Identifier` column lists DataNode table identifiers exposed by `DataNodeStorage`. It does not list asset `unique_identifier` values.
 
 ## 4) Config design: meaning vs scope vs operational knobs
 

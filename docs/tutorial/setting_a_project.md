@@ -71,6 +71,14 @@ If your intended name already appears in that list, choose another one before yo
 
 This command helps you avoid name collisions. It does not replace your organization's naming rules, but it is the fastest way to check whether a tutorial name such as `tutorial-project-cli` is already in use.
 
+You can also validate the exact candidate name directly:
+
+```bash
+mainsequence project validate-name "tutorial-project-cli"
+```
+
+This command checks whether the name is available, shows the normalized slug/library names the platform will derive from it, and prints suggested alternatives when the name is already taken.
+
 ## 4. Create a New Project
 
 Run:
@@ -85,7 +93,7 @@ Example:
 mainsequence project create tutorial-project-cli
 ```
 
-The CLI will prompt for any missing values and uses sensible defaults. It also polls the backend every 30 seconds until `is_initialized=true`.
+The CLI validates the project name before continuing, prompts for any missing values, and uses sensible defaults. It also polls the backend every 30 seconds until `is_initialized=true`.
 
 !!! note "Default parameter: data source (`--data-source-id`)"
     The CLI defaults to the first available data source.

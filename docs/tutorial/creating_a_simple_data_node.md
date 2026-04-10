@@ -144,13 +144,13 @@ builds `msc.TableMetaData` for you, so you do not need to override
 
     This is different from the `unique_identifier` field used later in MultiIndex asset tables. Here, you are naming the table itself, not an individual asset row.
 
-    If you want to inspect the organization-visible DataNode table identifiers before choosing one, run:
+    If you want to inspect existing DataNode table identifiers before choosing one, run:
 
     ```bash
-    mainsequence data-node org-unique-identifiers
+    mainsequence data-node list
     ```
 
-    This command lists DataNode table identifiers, not asset `unique_identifier` values.
+    The `Identifier` column lists DataNode table identifiers, not asset `unique_identifier` values.
 
 In Pydantic v2, mark updater-scope fields with `json_schema_extra={"update_only": True}` when they should affect `update_hash` but not `storage_hash`.
 

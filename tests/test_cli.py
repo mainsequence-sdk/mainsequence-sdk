@@ -779,6 +779,175 @@ def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
     assert "Total registered widget types: 1" in result.output
 
 
+def test_list_agents_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgent:
+        def __init__(self, agent_id, name):
+            self.id = agent_id
+            self.name = name
+
+        def model_dump(self, mode="json"):
+            return {"id": self.id, "name": self.name, "status": "draft"}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeAgent(12, "Research Copilot")]
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_agents(timeout=9, filters={"status": "active"})
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "timeout": 9,
+        "filters": {"status": "active"},
+    }
+    assert out == [{"id": 12, "name": "Research Copilot", "status": "draft"}]
+
+
+def test_create_agent_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgent:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {"id": 12, "name": "Research Copilot", "status": "active"}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def create(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["create_kwargs"] = kwargs
+                return FakeAgent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.create_agent(
+        name="Research Copilot",
+        description="Desk agent",
+        status="active",
+        labels=["research", "desk"],
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        engine_name="codex",
+        runtime_config={"temperature": 0},
+        configuration={"mode": "analysis"},
+        metadata={"owner": "quant"},
+        timeout=14,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "timeout": 14,
+        "create_kwargs": {
+            "name": "Research Copilot",
+            "description": "Desk agent",
+            "status": "active",
+            "labels": ["research", "desk"],
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "runtime_config": {"temperature": 0},
+            "configuration": {"mode": "analysis"},
+            "metadata": {"owner": "quant"},
+        },
+    }
+    assert out["id"] == 12
+
+
+def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+
+                class _Agent:
+                    def can_view(self, timeout=None):
+                        captured["can_view_timeout"] = timeout
+                        return types.SimpleNamespace(
+                            model_dump=lambda mode="json": {
+                                "access_level": "view",
+                                "users": [{"id": 7, "username": "viewer"}],
+                                "teams": [],
+                            }
+                        )
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_agent_users_can_view(12, timeout=16)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "pk": 12,
+        "timeout": 16,
+        "can_view_timeout": 16,
+    }
+    assert out["users"][0]["username"] == "viewer"
+
+
+def test_list_agent_runs_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgentRun:
+        def model_dump(self, mode="json"):
+            return {"id": 501, "status": "running", "agent": {"id": 12, "name": "Research Copilot"}}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentRun:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeAgentRun()]
+
+        return operation(_ClientAgentRun)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_agent_runs(timeout=10, filters={"status": "running"})
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "AgentRun",
+        "timeout": 10,
+        "filters": {"status": "running"},
+    }
+    assert out == [{"id": 501, "status": "running", "agent": {"id": 12, "name": "Research Copilot"}}]
+
+
 def test_pydantic_cli_metadata_from_source():
     metadata_mod = importlib.import_module("mainsequence.cli.pydantic_cli")
     meta = metadata_mod.get_cli_field_metadata(
@@ -1109,6 +1278,147 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
     assert 'export MAINSEQUENCE_ACCESS_TOKEN="acc-123"' in result.output
     assert 'export MAINSEQUENCE_REFRESH_TOKEN="ref-456"' in result.output
     assert 'export MAINSEQUENCE_USERNAME="user@example.com"' in result.output
+
+
+def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
+    saved = {}
+    cleared = {"called": False}
+
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "save_tokens",
+        lambda username, access, refresh: saved.update(
+            {"username": username, "access": access, "refresh": refresh}
+        ) or True,
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--access-token",
+            "acc-123",
+            "--refresh-token",
+            "ref-456",
+            "--no-status",
+        ],
+    )
+    assert result.exit_code == 0
+    assert saved == {"username": "", "access": "acc-123", "refresh": "ref-456"}
+    assert "Signed in with JWT tokens" in result.output
+    assert cleared["called"] is True
+
+
+def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch):
+    session_override = {}
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod, "get_projects", lambda: [])
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "default")
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--access-token",
+            "acc-123",
+            "--refresh-token",
+            "ref-456",
+            "--backend",
+            "http://127.0.0.1:80",
+            "--projects-base",
+            "mainsequence-dev",
+            "--no-status",
+        ],
+    )
+    assert result.exit_code == 0
+    assert session_override == {
+        "backend_url": "http://127.0.0.1:80",
+        "mainsequence_path": "mainsequence-dev",
+    }
+    assert "http://127.0.0.1:80" in result.output
+    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+
+
+def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
+    called = {"save_tokens": False}
+
+    def _save_tokens(username, access, refresh):
+        called["save_tokens"] = True
+        return True
+
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", _save_tokens)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--access-token",
+            "acc-123",
+            "--refresh-token",
+            "ref-456",
+            "--backend",
+            "127.0.0.1:8000",
+            "--no-status",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "must also specify a different projects base folder" in result.output
+    assert called["save_tokens"] is False
+
+
+def test_login_export_env_with_jwt_tokens_omits_username(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "secure_store_available", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--access-token",
+            "acc-123",
+            "--refresh-token",
+            "ref-456",
+            "--export",
+            "--no-status",
+        ],
+    )
+    assert result.exit_code == 0
+    assert 'export MAINSEQUENCE_ACCESS_TOKEN="acc-123"' in result.output
+    assert 'export MAINSEQUENCE_REFRESH_TOKEN="ref-456"' in result.output
+    assert "MAINSEQUENCE_USERNAME" not in result.output
 
 
 def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
@@ -2992,7 +3302,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     assert detail["storage_hash"] == "weights_daily"
 
 
-def test_list_data_node_org_unique_identifiers_uses_client_model(cli_mod, monkeypatch):
+def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -3017,16 +3327,28 @@ def test_list_data_node_org_unique_identifiers_uses_client_model(cli_mod, monkey
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/orm/api"
 
-    class FakeDataNodeStorage:
-        ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
+    class FakeProject:
+        ROOT_URL = "https://old.test/orm/api/pods/projects"
 
         @classmethod
-        def get_org_unique_identifiers(cls, *, timeout=None):
+        def validate_name(cls, *, project_name, timeout=None):
+            captured["project_name"] = project_name
             captured["timeout"] = timeout
-            return ["close_price_daily", "portfolio_weights"]
+            return types.SimpleNamespace(
+                model_dump=lambda mode="json": {
+                    "project_name": project_name,
+                    "available": False,
+                    "reason": "A project with this name already exists in your organization.",
+                    "normalized": {
+                        "slugified_project_name": "rates-platform",
+                        "project_library_name": "rates_platform",
+                    },
+                    "suggestions": ["Rates Platform 2", "Rates Platform 3"],
+                }
+            )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.Project = FakeProject
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -3034,11 +3356,13 @@ def test_list_data_node_org_unique_identifiers_uses_client_model(cli_mod, monkey
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.list_data_node_org_unique_identifiers(timeout=25)
+    out = api_mod.validate_project_name(project_name="Rates Platform", timeout=25)
 
     assert captured["jwt"] == ("acc", "ref")
+    assert captured["project_name"] == "Rates Platform"
     assert captured["timeout"] == 25
-    assert out == ["close_price_daily", "portfolio_weights"]
+    assert out["available"] is False
+    assert out["normalized"]["project_library_name"] == "rates_platform"
 
 
 def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeypatch):
@@ -4691,6 +5015,245 @@ def test_markets_portfolios_list_show_filters(cli_mod, runner, monkeypatch):
     assert "integer IDs" in result.output
 
 
+def test_agent_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_agents",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 12,
+                "name": "Research Copilot",
+                "status": "active",
+                "labels": ["research", "desk"],
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+                "last_run_at": "2026-04-10T09:15:00Z",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "list"])
+    assert result.exit_code == 0
+    assert "Agents" in result.output
+    assert "Research" in result.output
+    assert "Copilot" in result.output
+    assert "Total agents: 1" in result.output
+
+
+def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _create(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 12,
+            "name": kwargs["name"],
+            "status": kwargs.get("status") or "draft",
+            "labels": kwargs.get("labels") or [],
+            "llm_provider": kwargs.get("llm_provider") or "",
+            "llm_model": kwargs.get("llm_model") or "",
+            "engine_name": kwargs.get("engine_name") or "",
+        }
+
+    monkeypatch.setattr(cli_mod, "create_agent", _create)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "create",
+            "Research Copilot",
+            "--description",
+            "Desk agent",
+            "--status",
+            "active",
+            "--label",
+            "research,desk",
+            "--llm-provider",
+            "openai",
+            "--llm-model",
+            "gpt-5.4",
+            "--engine-name",
+            "codex",
+            "--runtime-config",
+            '{"temperature":0}',
+            "--configuration",
+            '{"mode":"analysis"}',
+            "--metadata",
+            '{"owner":"quant"}',
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured["name"] == "Research Copilot"
+    assert captured["status"] == "active"
+    assert captured["labels"] == ["research", "desk"]
+    assert captured["runtime_config"] == {"temperature": 0}
+    assert captured["configuration"] == {"mode": "analysis"}
+    assert captured["metadata"] == {"owner": "quant"}
+    assert "Agent created: Research Copilot" in result.output
+
+
+def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_agent",
+        lambda agent_id, timeout=None: {
+            "id": agent_id,
+            "name": "Research Copilot",
+            "status": "active",
+            "labels": ["research"],
+        },
+    )
+
+    def _delete(agent_id, timeout=None):
+        captured["agent_id"] = agent_id
+        captured["timeout"] = timeout
+        return {
+            "id": agent_id,
+            "name": "Research Copilot",
+            "status": "active",
+            "labels": ["research"],
+        }
+
+    monkeypatch.setattr(cli_mod, "delete_agent", _delete)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "delete", "12"],
+        input="Research Copilot\n",
+    )
+    assert result.exit_code == 0
+    assert "Agent Delete Preview" in result.output
+    assert "Type agent name 'Research Copilot' to confirm deletion" in result.output
+    assert captured["agent_id"] == 12
+    assert "Agent deleted: id=12" in result.output
+
+
+def test_agent_can_edit(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_agent_users_can_edit",
+        lambda agent_id, timeout=None: {
+            "access_level": "edit",
+            "users": [
+                {
+                    "id": 9,
+                    "username": "editor",
+                    "email": "editor@example.com",
+                    "first_name": "Edit",
+                    "last_name": "User",
+                }
+            ],
+            "teams": [{"id": 3, "name": "Research", "description": "Core team", "member_count": 6}],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "can_edit", "12"])
+    assert result.exit_code == 0
+    assert "Agent Users Who Can Edit" in result.output
+    assert "Agent Teams Who Can Edit" in result.output
+    assert "editor@example.com" in result.output
+    assert "Total users who can edit: 1" in result.output
+    assert "Total teams who can edit: 1" in result.output
+
+
+def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(agent_id, team_id, timeout=None):
+        captured["agent_id"] = agent_id
+        captured["team_id"] = team_id
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "action": "add_team_to_edit",
+            "detail": "Team now has explicit edit access.",
+            "object_id": agent_id,
+            "object_type": "agent.agent",
+            "team": {
+                "id": team_id,
+                "name": "Research",
+                "description": "Core team",
+            },
+            "explicit_can_view": True,
+            "explicit_can_edit": True,
+            "explicit_can_view_team_ids": [team_id],
+            "explicit_can_edit_team_ids": [team_id],
+        }
+
+    monkeypatch.setattr(cli_mod, "add_agent_team_to_edit", _add)
+
+    result = runner.invoke(cli_mod.app, ["agent", "add_team_to_edit", "12", "3"])
+    assert result.exit_code == 0
+    assert captured == {"agent_id": 12, "team_id": 3, "timeout": None}
+    assert "Agent add_team_to_edit completed." in result.output
+
+
+def test_agent_run_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_agent_runs",
+        lambda timeout=None, filters=None: [
+            {
+                "id": 501,
+                "agent": {"id": 12, "name": "Research Copilot"},
+                "status": "running",
+                "started_at": "2026-04-10T09:15:00Z",
+                "ended_at": None,
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "run", "list"])
+    assert result.exit_code == 0
+    assert "Agent Runs" in result.output
+    assert "Research" in result.output
+    assert "Copilot" in result.output
+    assert "Total agent runs: 1" in result.output
+
+
+def test_agent_run_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_agent_run",
+        lambda agent_run_id, timeout=None: {
+            "id": agent_run_id,
+            "agent": {"id": 12, "name": "Research Copilot"},
+            "status": "completed",
+            "started_at": "2026-04-10T09:15:00Z",
+            "ended_at": "2026-04-10T09:16:00Z",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "triggered_by_user": {"id": 7, "username": "jose"},
+            "input_text": "Summarize rates moves",
+            "output_text": "Bunds rallied 4bp.",
+            "runtime_config_snapshot": {"temperature": 0},
+            "usage_summary": {"prompt_tokens": 100},
+            "run_metadata": {"origin": "cli"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "run", "detail", "501"])
+    assert result.exit_code == 0
+    assert "Agent Run Details" in result.output
+    assert "Summarize rates moves" in result.output
+    assert "Bunds rallied 4bp." in result.output
+    assert "prompt_tokens" in result.output
+
+
 def test_constants_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -5069,20 +5632,30 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     assert "Total data node storages: 1" in result.output
 
 
-def test_data_node_storage_org_unique_identifiers(cli_mod, runner, monkeypatch):
+def test_project_validate_name_cmd(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "list_data_node_org_unique_identifiers",
-        lambda timeout=None: ["close_price_daily", "portfolio_weights"],
+        "validate_project_name",
+        lambda project_name, timeout=None: {
+            "project_name": project_name,
+            "available": False,
+            "reason": "A project with this name already exists in your organization.",
+            "normalized": {
+                "slugified_project_name": "rates-platform",
+                "project_library_name": "rates_platform",
+            },
+            "suggestions": ["Rates Platform 2", "Rates Platform 3"],
+        },
     )
 
-    result = runner.invoke(cli_mod.app, ["data-node", "org-unique-identifiers"])
-    assert result.exit_code == 0
-    assert "Unique Identifier" in result.output
-    assert "close_price_daily" in result.output
-    assert "portfolio_weights" in result.output
-    assert "Total organization-visible data node unique identifiers: 2" in result.output
+    result = runner.invoke(cli_mod.app, ["project", "validate-name", "Rates Platform"])
+    assert result.exit_code == 1
+    assert "Project Name Validation" in result.output
+    assert "rates-platform" in result.output
+    assert "rates_platform" in result.output
+    assert "Rates Platform 2" in result.output
+    assert "Rates Platform 3" in result.output
 
 
 def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch):
@@ -6101,6 +6674,20 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
+        "validate_project_name",
+        lambda project_name, timeout=None: {
+            "project_name": project_name,
+            "available": True,
+            "reason": None,
+            "normalized": {
+                "slugified_project_name": "demo-project",
+                "project_library_name": "demo_project",
+            },
+            "suggestions": [],
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "list_dynamic_table_data_sources",
         lambda status="AVAILABLE": [
             {
@@ -6157,6 +6744,20 @@ def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
+        "validate_project_name",
+        lambda project_name, timeout=None: {
+            "project_name": project_name,
+            "available": True,
+            "reason": None,
+            "normalized": {
+                "slugified_project_name": "demo-project",
+                "project_library_name": "demo_project",
+            },
+            "suggestions": [],
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "create_project",
         lambda **kwargs: {
             "id": 777,
@@ -6208,6 +6809,32 @@ def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
     assert sleep_calls == [30, 30]
     assert "Project is still initializing." in result.output
     assert "Project is initialized and ready." in result.output
+
+
+def test_project_create_rejects_unavailable_name(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "validate_project_name",
+        lambda project_name, timeout=None: {
+            "project_name": project_name,
+            "available": False,
+            "reason": "A project with this name already exists in your organization.",
+            "normalized": {
+                "slugified_project_name": "demo-project",
+                "project_library_name": "demo_project",
+            },
+            "suggestions": ["Demo Project 2", "Demo Project 3"],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "create", "Demo Project"])
+
+    assert result.exit_code == 1
+    assert "A project with this name already exists in your organization." in result.output
+    assert "Project Name Validation" in result.output
+    assert "Demo Project 2" in result.output
+    assert "Demo Project 3" in result.output
 
 
 def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):

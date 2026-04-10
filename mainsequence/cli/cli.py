@@ -43,6 +43,10 @@ from . import config as cfg
 from .api import (
     ApiError,
     NotLoggedIn,
+    add_agent_team_to_edit,
+    add_agent_team_to_view,
+    add_agent_user_to_edit,
+    add_agent_user_to_view,
     add_constant_team_to_edit,
     add_constant_team_to_view,
     add_constant_user_to_edit,
@@ -62,6 +66,7 @@ from .api import (
     add_secret_user_to_view,
     add_team_user_to_edit,
     add_team_user_to_view,
+    create_agent,
     create_constant,
     create_organization_team,
     create_project,
@@ -73,6 +78,7 @@ from .api import (
     data_node_storage_column_search,
     data_node_storage_description_search,
     deep_find_repo_url,
+    delete_agent,
     delete_constant,
     delete_data_node_storage,
     delete_organization_team,
@@ -83,6 +89,8 @@ from .api import (
     delete_simple_table_storage,
     delete_workspace,
     fetch_project_env_text,
+    get_agent,
+    get_agent_run,
     get_constant,
     get_current_user_profile,
     get_data_node_storage,
@@ -98,10 +106,13 @@ from .api import (
     get_secret,
     get_simple_table_storage,
     get_workspace,
+    list_agent_runs,
+    list_agent_users_can_edit,
+    list_agent_users_can_view,
+    list_agents,
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
-    list_data_node_org_unique_identifiers,
     list_data_node_storage_users_can_edit,
     list_data_node_storage_users_can_view,
     list_data_node_storages,
@@ -128,6 +139,10 @@ from .api import (
     list_workspaces,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
+    remove_agent_team_from_edit,
+    remove_agent_team_from_view,
+    remove_agent_user_from_edit,
+    remove_agent_user_from_view,
     remove_constant_team_from_edit,
     remove_constant_team_from_view,
     remove_constant_user_from_edit,
@@ -153,6 +168,7 @@ from .api import (
     sync_project_after_commit,
     update_organization_team,
     update_workspace,
+    validate_project_name,
 )
 from .api import login as api_login
 from .docker_utils import (
@@ -192,6 +208,8 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 
 app = typer.Typer(help="MainSequence CLI (login + project operations)")
 
+agent = typer.Typer(help="Agent commands")
+agent_run_group = typer.Typer(help="Agent runtime commands")
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 simple_table = typer.Typer(help="Simple table commands")
@@ -214,6 +232,10 @@ project_job_runs_group = typer.Typer(help="Project job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
+app.add_typer(agent, name="agent")
+agent.add_typer(agent_run_group, name="run")
+app.add_typer(agent_run_group, name="agent_runtime", hidden=True)
+app.add_typer(agent_run_group, name="agent-runtime", hidden=True)
 app.add_typer(constants, name="constants")
 app.add_typer(secrets, name="secrets")
 app.add_typer(simple_table, name="simple_table")
@@ -252,6 +274,8 @@ JOB_MEMORY_PER_CPU_MAX = Decimal("6.5")
 JOB_DEFAULT_SPOT = False
 JOB_DEFAULT_MAX_RUNTIME_SECONDS = 86400
 JOB_ALLOWED_INTERVAL_PERIODS = ("seconds", "minutes", "hours", "days")
+AGENT_MODEL_REF = "mainsequence.client.agent_runtime_models.Agent"
+AGENT_RUN_MODEL_REF = "mainsequence.client.agent_runtime_models.AgentRun"
 JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
 CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
@@ -1719,16 +1743,29 @@ def _render_project_runtime_env_text(
 
 @app.command()
 def login(
-    email: str = typer.Argument(..., help="Email/username (server expects 'email' field)"),
+    email: str | None = typer.Argument(None, help="Email/username (server expects 'email' field)."),
     backend: str | None = typer.Argument(
         None,
-        help="Optional backend URL or host[:port], for example 127.0.0.1:8000",
+        help="Optional backend URL or host[:port], for example 127.0.0.1:8000.",
     ),
     projects_base: str | None = typer.Argument(
         None,
-        help="Optional local projects base folder, for example mainsequence-dev",
+        help="Optional local projects base folder, for example mainsequence-dev.",
     ),
-    password: str | None = typer.Option(None, prompt=True, hide_input=True, help="Password"),
+    password: str | None = typer.Option(None, "--password", hide_input=True, help="Password."),
+    access_token: str | None = typer.Option(None, "--access-token", help="JWT access token."),
+    refresh_token: str | None = typer.Option(None, "--refresh-token", help="JWT refresh token."),
+    backend_option: str | None = typer.Option(
+        None,
+        "--backend",
+        help="Backend URL or host[:port], for example http://127.0.0.1:8000.",
+    ),
+    projects_base_option: str | None = typer.Option(
+        None,
+        "--projects-base",
+        "--base-folder",
+        help="Local projects base folder for this terminal session, for example mainsequence-dev.",
+    ),
     no_status: bool = typer.Option(False, "--no-status", help="Do not print projects table after login"),
     export: bool = typer.Option(
         False,
@@ -1747,14 +1784,21 @@ def login(
     Parameters
     ----------
     email:
-        Login email.
+        Login email for password-based authentication. Omit when using JWT tokens.
     backend:
-        Optional backend override for this login. It applies only to the current terminal session.
+        Optional positional backend override for backward compatibility.
     projects_base:
-        Optional projects base folder for the current terminal session. A bare
-        name like `mainsequence-dev` maps to `~/mainsequence-dev`.
+        Optional positional projects base folder for backward compatibility.
     password:
-        Password (prompted if omitted).
+        Password for email-based authentication.
+    access_token:
+        JWT access token for token-based authentication.
+    refresh_token:
+        JWT refresh token for token-based authentication.
+    backend_option:
+        Backend override for this terminal session.
+    projects_base_option:
+        Projects base-folder override for this terminal session.
     no_status:
         If True, skip printing the project table after login.
     export:
@@ -1765,17 +1809,54 @@ def login(
     ```bash
     mainsequence login you@company.com
     mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
+    mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
+    mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
     mainsequence login you@company.com --no-status
     mainsequence login you@company.com --export
     ```
     """
+    using_jwt = bool((access_token or "").strip() or (refresh_token or "").strip())
+
+    if backend and backend_option:
+        if cfg.normalize_backend_url(backend) != cfg.normalize_backend_url(backend_option):
+            error("Pass backend either positionally or with --backend, not both.")
+            raise typer.Exit(1)
+    effective_backend_input = backend_option if backend_option is not None else backend
+
+    if projects_base and projects_base_option:
+        if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(projects_base_option):
+            error("Pass projects base either positionally or with --projects-base/--base-folder, not both.")
+            raise typer.Exit(1)
+    effective_projects_base_input = (
+        projects_base_option if projects_base_option is not None else projects_base
+    )
+
+    if using_jwt:
+        if not (access_token or "").strip() or not (refresh_token or "").strip():
+            error("JWT login requires both --access-token and --refresh-token.")
+            raise typer.Exit(1)
+        if email is not None:
+            error("Do not pass email when using --access-token/--refresh-token.")
+            raise typer.Exit(1)
+        if password is not None:
+            error("Do not pass --password when using --access-token/--refresh-token.")
+            raise typer.Exit(1)
+    else:
+        if email is None:
+            error("Email is required unless you use --access-token and --refresh-token.")
+            raise typer.Exit(1)
+        if password is None:
+            password = typer.prompt("Password", hide_input=True)
+
     current_backend = cfg.backend_url()
     current_projects_base = cfg.normalize_mainsequence_path(cfg.get_config().get("mainsequence_path"))
-    normalized_backend = cfg.normalize_backend_url(backend) if backend else None
-    normalized_projects_base = cfg.normalize_mainsequence_path(projects_base) if projects_base else None
+    normalized_backend = cfg.normalize_backend_url(effective_backend_input) if effective_backend_input else None
+    normalized_projects_base = (
+        cfg.normalize_mainsequence_path(effective_projects_base_input) if effective_projects_base_input else None
+    )
 
     if normalized_backend and normalized_backend != current_backend:
-        if not projects_base:
+        if not effective_projects_base_input:
             error("When using a different backend, you must also specify a different projects base folder.")
             raise typer.Exit(1)
         if normalized_projects_base == current_projects_base:
@@ -1787,7 +1868,19 @@ def login(
         os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
 
     try:
-        res = api_login(email, password)
+        if using_jwt:
+            os.environ.pop(cfg.ENV_USERNAME, None)
+            os.environ.pop(cfg.LEGACY_ENV_USERNAME, None)
+            persisted = cfg.save_tokens("", (access_token or "").strip(), (refresh_token or "").strip())
+            res = {
+                "username": "",
+                "backend": normalized_backend or current_backend,
+                "access": (access_token or "").strip(),
+                "refresh": (refresh_token or "").strip(),
+                "persisted": bool(persisted),
+            }
+        else:
+            res = api_login(email, password)
     except ApiError as e:
         error(f"Login failed: {e}")
         raise typer.Exit(1)
@@ -1798,10 +1891,10 @@ def login(
             else:
                 os.environ["MAIN_SEQUENCE_BACKEND_URL"] = previous_backend_override
 
-    if normalized_backend or projects_base:
+    if normalized_backend or effective_projects_base_input:
         cfg.set_session_overrides(
             backend_url=normalized_backend,
-            mainsequence_path=projects_base,
+            mainsequence_path=effective_projects_base_input,
         )
     else:
         cfg.clear_session_overrides()
@@ -1812,14 +1905,18 @@ def login(
         username = (res.get("username") or "").replace('"', '\\"')
         typer.echo(f'export MAINSEQUENCE_ACCESS_TOKEN="{access}"')
         typer.echo(f'export MAINSEQUENCE_REFRESH_TOKEN="{refresh}"')
-        typer.echo(f'export MAINSEQUENCE_USERNAME="{username}"')
+        if username:
+            typer.echo(f'export MAINSEQUENCE_USERNAME="{username}"')
         return
 
     cfg_obj = cfg.get_config()
     base = cfg_obj["mainsequence_path"]
     typer.echo(_mainsequence_ascii_banner())
     typer.echo("MAIN SEQUENCE")
-    success(f"Signed in as {res['username']} (Backend: {res['backend']})")
+    if res.get("username"):
+        success(f"Signed in as {res['username']} (Backend: {res['backend']})")
+    else:
+        success(f"Signed in with JWT tokens (Backend: {res['backend']})")
     info(f"Projects base folder: {base}")
     if cfg.secure_store_available():
         if res.get("persisted", True):
@@ -2636,6 +2733,300 @@ def _parse_constant_value(raw_value: str) -> object:
         return json.loads(text)
     except Exception:
         return raw_value
+
+
+def _parse_json_dict_option(raw_value: str, *, field_label: str) -> dict[str, object]:
+    text = (raw_value or "").strip()
+    if text == "":
+        return {}
+    try:
+        parsed = json.loads(text)
+    except Exception as e:
+        raise ValueError(f"{field_label} must be valid JSON: {e}") from e
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{field_label} must be a JSON object.")
+    return parsed
+
+
+def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
+    labels = agent_payload.get("labels")
+    return [
+        ("ID", str(agent_payload.get("id") or "-")),
+        ("Name", str(agent_payload.get("name") or "-")),
+        ("Description", str(agent_payload.get("description") or "-")),
+        ("Status", str(agent_payload.get("status") or "-")),
+        ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
+        ("LLM Provider", str(agent_payload.get("llm_provider") or "-")),
+        ("LLM Model", str(agent_payload.get("llm_model") or "-")),
+        ("Engine", str(agent_payload.get("engine_name") or "-")),
+        ("Last Run At", str(agent_payload.get("last_run_at") or "-")),
+    ]
+
+
+def _format_agent_details(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Runtime Config", _format_json_value(agent_payload.get("runtime_config"))),
+        ("Configuration", _format_json_value(agent_payload.get("configuration"))),
+        ("Metadata", _format_json_value(agent_payload.get("metadata"))),
+    ]
+
+
+def _format_agent_ref_label(agent_ref: object) -> str:
+    if isinstance(agent_ref, dict):
+        return str(agent_ref.get("name") or agent_ref.get("id") or "-")
+    return str(agent_ref or "-")
+
+
+def _format_user_summary_label(user_ref: object) -> str:
+    if isinstance(user_ref, dict):
+        return str(user_ref.get("username") or user_ref.get("email") or user_ref.get("id") or "-")
+    return str(user_ref or "-")
+
+
+def _format_agent_run_preview(agent_run_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(agent_run_payload.get("id") or "-")),
+        ("Agent", _format_agent_ref_label(agent_run_payload.get("agent"))),
+        ("Status", str(agent_run_payload.get("status") or "-")),
+        ("Started At", str(agent_run_payload.get("started_at") or "-")),
+        ("Ended At", str(agent_run_payload.get("ended_at") or "-")),
+        ("LLM Provider", str(agent_run_payload.get("llm_provider") or "-")),
+        ("LLM Model", str(agent_run_payload.get("llm_model") or "-")),
+        ("Engine", str(agent_run_payload.get("engine_name") or "-")),
+    ]
+
+
+def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Triggered By", _format_user_summary_label(agent_run_payload.get("triggered_by_user"))),
+        ("Parent Run", str(agent_run_payload.get("parent_run") or "-")),
+        ("Root Run", str(agent_run_payload.get("root_run") or "-")),
+        ("Spawned By Step", str(agent_run_payload.get("spawned_by_step") or "-")),
+        ("Session ID", str(agent_run_payload.get("session_id") or "-")),
+        ("Thread ID", str(agent_run_payload.get("thread_id") or "-")),
+        ("External Run ID", str(agent_run_payload.get("external_run_id") or "-")),
+        ("Input Text", str(agent_run_payload.get("input_text") or "-")),
+        ("Output Text", str(agent_run_payload.get("output_text") or "-")),
+        ("Error Detail", str(agent_run_payload.get("error_detail") or "-")),
+        ("Runtime Config Snapshot", _format_json_value(agent_run_payload.get("runtime_config_snapshot"))),
+        ("Usage Summary", _format_json_value(agent_run_payload.get("usage_summary"))),
+        ("Run Metadata", _format_json_value(agent_run_payload.get("run_metadata"))),
+    ]
+
+
+def _agent_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=AGENT_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Agents",
+    )
+    _require_login()
+
+    try:
+        agents = list_agents(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Agents fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for agent_payload in agents:
+        labels = agent_payload.get("labels")
+        rows.append(
+            [
+                str(agent_payload.get("id") or "-"),
+                str(agent_payload.get("name") or "-"),
+                str(agent_payload.get("status") or "-"),
+                ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
+                str(agent_payload.get("llm_provider") or "-"),
+                str(agent_payload.get("llm_model") or "-"),
+                str(agent_payload.get("engine_name") or "-"),
+                str(agent_payload.get("last_run_at") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table("Agents", ["ID", "Name", "Status", "Labels", "Provider", "Model", "Engine", "Last Run"], rows)
+    else:
+        info("No agents.")
+    info(f"Total agents: {len(agents)}")
+
+
+def _agent_detail_impl(
+    *,
+    agent_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_payload = get_agent(agent_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent fetch failed: {e}")
+        raise typer.Exit(1)
+
+    print_kv("Agent", _format_agent_preview(agent_payload))
+    print_kv("Agent Details", _format_agent_details(agent_payload))
+
+
+def _agent_create_impl(
+    *,
+    name: str | None,
+    description: str | None,
+    status_value: str | None,
+    labels: list[str] | None,
+    llm_provider: str | None,
+    llm_model: str | None,
+    engine_name: str | None,
+    runtime_config: str | None,
+    configuration: str | None,
+    metadata: str | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    agent_name = (name or "").strip() or typer.prompt(pydantic_prompt_text(AGENT_MODEL_REF, "name")).strip()
+    if not agent_name:
+        error("Agent name is required.")
+        raise typer.Exit(1)
+
+    try:
+        runtime_config_payload = (
+            _parse_json_dict_option(runtime_config, field_label="runtime_config")
+            if runtime_config is not None
+            else None
+        )
+        configuration_payload = (
+            _parse_json_dict_option(configuration, field_label="configuration")
+            if configuration is not None
+            else None
+        )
+        metadata_payload = (
+            _parse_json_dict_option(metadata, field_label="metadata")
+            if metadata is not None
+            else None
+        )
+    except ValueError as e:
+        error(str(e))
+        raise typer.Exit(1)
+
+    try:
+        created = create_agent(
+            name=agent_name,
+            description=description,
+            status=status_value,
+            labels=_parse_cli_csv_list(labels),
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            engine_name=engine_name,
+            runtime_config=runtime_config_payload,
+            configuration=configuration_payload,
+            metadata=metadata_payload,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent creation failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Agent created: {agent_name}")
+    print_kv("Created Agent", _format_agent_preview(created))
+
+
+def _agent_delete_impl(
+    *,
+    agent_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_payload = get_agent(agent_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent fetch failed: {e}")
+        raise typer.Exit(1)
+
+    verification_value = str(agent_payload.get("name") or agent_payload.get("id") or agent_id)
+    _require_delete_verification(
+        preview_title="Agent Delete Preview",
+        preview_items=_format_agent_preview(agent_payload),
+        verification_value=verification_value,
+        verification_label="agent name" if agent_payload.get("name") else "agent id",
+    )
+
+    try:
+        deleted = delete_agent(agent_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent deletion failed: {e}")
+        raise typer.Exit(1)
+
+    success(f"Agent deleted: id={agent_id}")
+    print_kv("Deleted Agent", _format_agent_preview(deleted))
+
+
+def _agent_run_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=AGENT_RUN_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Agent Runs",
+    )
+    _require_login()
+
+    try:
+        agent_runs = list_agent_runs(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Agent runs fetch failed: {e}")
+        raise typer.Exit(1)
+
+    rows: list[list[str]] = []
+    for agent_run_payload in agent_runs:
+        rows.append(
+            [
+                str(agent_run_payload.get("id") or "-"),
+                _format_agent_ref_label(agent_run_payload.get("agent")),
+                str(agent_run_payload.get("status") or "-"),
+                str(agent_run_payload.get("started_at") or "-"),
+                str(agent_run_payload.get("ended_at") or "-"),
+                str(agent_run_payload.get("llm_provider") or "-"),
+                str(agent_run_payload.get("llm_model") or "-"),
+                str(agent_run_payload.get("engine_name") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Agent Runs",
+            ["ID", "Agent", "Status", "Started At", "Ended At", "Provider", "Model", "Engine"],
+            rows,
+        )
+    else:
+        info("No agent runs.")
+    info(f"Total agent runs: {len(agent_runs)}")
+
+
+def _agent_run_detail_impl(
+    *,
+    agent_run_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_run_payload = get_agent_run(agent_run_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent run fetch failed: {e}")
+        raise typer.Exit(1)
+
+    print_kv("Agent Run", _format_agent_run_preview(agent_run_payload))
+    print_kv("Agent Run Details", _format_agent_run_details(agent_run_payload))
 
 
 def _constants_list_impl(
@@ -3734,6 +4125,275 @@ def registered_widget_type_list_cmd(
     )
 
 
+@agent.command("list")
+def agent_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List agents visible to the authenticated user.
+    """
+    _agent_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@agent.command("detail")
+def agent_detail_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one agent in detail.
+    """
+    _agent_detail_impl(agent_id=agent_id, timeout=timeout)
+
+
+@agent.command("create")
+def agent_create_cmd(
+    name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
+    description: str | None = pydantic_option(AGENT_MODEL_REF, "description", None, "--description"),
+    status_value: str | None = typer.Option(
+        None,
+        "--status",
+        help="Lifecycle status for the agent. One of: draft, active, archived.",
+    ),
+    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
+    llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
+    llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
+    engine_name: str | None = pydantic_option(AGENT_MODEL_REF, "engine_name", None, "--engine-name"),
+    runtime_config: str | None = typer.Option(
+        None,
+        "--runtime-config",
+        help="Runtime config JSON object to store on the agent.",
+    ),
+    configuration: str | None = typer.Option(
+        None,
+        "--configuration",
+        help="Additional configuration JSON object to store on the agent.",
+    ),
+    metadata: str | None = typer.Option(
+        None,
+        "--metadata",
+        help="Additional metadata JSON object to store on the agent.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Create one agent.
+    """
+    _agent_create_impl(
+        name=name,
+        description=description,
+        status_value=status_value,
+        labels=labels,
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        engine_name=engine_name,
+        runtime_config=runtime_config,
+        configuration=configuration,
+        metadata=metadata,
+        timeout=timeout,
+    )
+
+
+@agent.command("delete")
+def agent_delete_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one agent.
+    """
+    _agent_delete_impl(agent_id=agent_id, timeout=timeout)
+
+
+@agent.command("can_view")
+def agent_can_view_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_list_impl(
+        fetch_fn=list_agent_users_can_view,
+        object_label="Agent",
+        access_label="view",
+        object_id=agent_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("can_edit")
+def agent_can_edit_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_list_impl(
+        fetch_fn=list_agent_users_can_edit,
+        object_label="Agent",
+        access_label="edit",
+        object_id=agent_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("add_to_view")
+def agent_add_to_view_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=add_agent_user_to_view,
+        object_label="Agent",
+        action_label="add_to_view",
+        object_id=agent_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("add_to_edit")
+def agent_add_to_edit_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=add_agent_user_to_edit,
+        object_label="Agent",
+        action_label="add_to_edit",
+        object_id=agent_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("remove_from_view")
+def agent_remove_from_view_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=remove_agent_user_from_view,
+        object_label="Agent",
+        action_label="remove_from_view",
+        object_id=agent_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("remove_from_edit")
+def agent_remove_from_edit_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_user_access_update_impl(
+        action_fn=remove_agent_user_from_edit,
+        object_label="Agent",
+        action_label="remove_from_edit",
+        object_id=agent_id,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("add_team_to_view")
+def agent_add_team_to_view_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_agent_team_to_view,
+        object_label="Agent",
+        action_label="add_team_to_view",
+        object_id=agent_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("add_team_to_edit")
+def agent_add_team_to_edit_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_agent_team_to_edit,
+        object_label="Agent",
+        action_label="add_team_to_edit",
+        object_id=agent_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("remove_team_from_view")
+def agent_remove_team_from_view_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_agent_team_from_view,
+        object_label="Agent",
+        action_label="remove_team_from_view",
+        object_id=agent_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@agent.command("remove_team_from_edit")
+def agent_remove_team_from_edit_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_agent_team_from_edit,
+        object_label="Agent",
+        action_label="remove_team_from_edit",
+        object_id=agent_id,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@agent_run_group.command("list")
+def agent_run_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List agent runtime records.
+    """
+    _agent_run_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@agent_run_group.command("detail")
+def agent_run_detail_cmd(
+    agent_run_id: int = pydantic_argument(AGENT_RUN_MODEL_REF, "id", ..., help="Agent run ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one agent runtime record in detail.
+    """
+    _agent_run_detail_impl(agent_run_id=agent_run_id, timeout=timeout)
+
+
 @constants.command("list")
 def constants_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
@@ -4418,53 +5078,6 @@ def data_node_storage_list_cmd(
         show_filters=show_filters,
         data_source_id=data_source_id,
     )
-
-
-@data_node_storage_group.command("org-unique-identifiers")
-def data_node_storage_org_unique_identifiers_cmd(
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List organization-visible data node unique identifiers.
-
-    Uses SDK client `DataNodeStorage.get_org_unique_identifiers()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence data-node org-unique-identifiers
-    mainsequence data_node org-unique-identifiers
-    mainsequence data-node org-unique-identifiers --timeout 60
-    ```
-    """
-    _require_login()
-
-    try:
-        identifiers = list_data_node_org_unique_identifiers(timeout=timeout)
-    except ApiError as e:
-        error(f"Data node unique identifiers fetch failed: {e}")
-        raise typer.Exit(1)
-
-    if identifiers:
-        print_table(
-            "Organization Data Node Unique Identifiers",
-            ["Unique Identifier"],
-            [[identifier] for identifier in identifiers],
-        )
-    else:
-        info("No organization-visible data node unique identifiers.")
-    info(f"Total organization-visible data node unique identifiers: {len(identifiers)}")
-
-
-@data_node_storage_group.command("org_unique_identifiers", hidden=True)
-def data_node_storage_org_unique_identifiers_alias_cmd(
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence data-node org-unique-identifiers`.
-    """
-    data_node_storage_org_unique_identifiers_cmd(timeout=timeout)
-
 
 @data_node_storage_group.command("detail")
 def data_node_storage_detail_cmd(
@@ -5364,6 +5977,69 @@ def project_get_data_node_updates_cmd(
     )
 
 
+@project.command("validate-name")
+def project_validate_name_cmd(
+    project_name: str = typer.Argument(..., help="Project name to validate."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Validate whether a project name is available for creation on the platform.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project validate-name "Rates Platform"
+    mainsequence project validate-name tutorial-project --timeout 60
+    ```
+    """
+    _require_login()
+
+    normalized_project_name = (project_name or "").strip()
+    if not normalized_project_name:
+        error("Project name is required.")
+        raise typer.Exit(1)
+
+    try:
+        payload = validate_project_name(project_name=normalized_project_name, timeout=timeout)
+    except ApiError as e:
+        error(f"Project name validation failed: {e}")
+        raise typer.Exit(1)
+
+    normalized = payload.get("normalized") or {}
+    print_kv(
+        "Project Name Validation",
+        [
+            ("Project Name", str(payload.get("project_name") or normalized_project_name)),
+            ("Available", "yes" if payload.get("available") else "no"),
+            ("Reason", str(payload.get("reason") or "-")),
+            ("Slugified Project Name", str(normalized.get("slugified_project_name") or "-")),
+            ("Project Library Name", str(normalized.get("project_library_name") or "-")),
+        ],
+    )
+
+    suggestions = [str(item) for item in list(payload.get("suggestions") or []) if item is not None]
+    if suggestions:
+        print_table("Suggested Project Names", ["Project Name"], [[item] for item in suggestions])
+
+    if payload.get("available"):
+        success(f"Project name is available: {normalized_project_name}")
+        return
+
+    warn(f"Project name is not available: {normalized_project_name}")
+    raise typer.Exit(1)
+
+
+@project.command("validate_name", hidden=True)
+def project_validate_name_alias_cmd(
+    project_name: str = typer.Argument(..., help="Project name to validate."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Backward-compatible alias for `mainsequence project validate-name`.
+    """
+    project_validate_name_cmd(project_name=project_name, timeout=timeout)
+
+
 @project.command("create")
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
@@ -5418,6 +6094,28 @@ def project_create_cmd(
         project_name = (project_name or "").strip()
         if not project_name:
             error("Project name is required.")
+            raise typer.Exit(1)
+
+        name_validation = validate_project_name(project_name=project_name)
+        if not name_validation.get("available"):
+            normalized = name_validation.get("normalized") or {}
+            reason = str(name_validation.get("reason") or "Project name is not available.")
+            error(reason)
+            print_kv(
+                "Project Name Validation",
+                [
+                    ("Project Name", str(name_validation.get("project_name") or project_name)),
+                    ("Available", "no"),
+                    ("Reason", reason),
+                    ("Slugified Project Name", str(normalized.get("slugified_project_name") or "-")),
+                    ("Project Library Name", str(normalized.get("project_library_name") or "-")),
+                ],
+            )
+            suggestions = [
+                str(item) for item in list(name_validation.get("suggestions") or []) if item is not None
+            ]
+            if suggestions:
+                print_table("Suggested Project Names", ["Project Name"], [[item] for item in suggestions])
             raise typer.Exit(1)
 
         if data_source_id is None:

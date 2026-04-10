@@ -15,6 +15,8 @@ pip install mainsequence
 ```bash
 mainsequence login you@company.com
 mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
+mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
+mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --projects-base mainsequence-dev
 mainsequence logout
 ```
 
@@ -24,6 +26,7 @@ If you prefer shell-managed environment variables:
 
 ```bash
 mainsequence login you@company.com --export
+mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --export
 mainsequence logout --export
 ```
 
@@ -36,6 +39,7 @@ mainsequence --help
 mainsequence doctor
 mainsequence constants --help
 mainsequence secrets --help
+mainsequence agent --help
 mainsequence simple_table --help
 mainsequence cc --help
 mainsequence organization --help
@@ -86,6 +90,22 @@ Most frequently used flows:
 
 ```bash
 # Markets
+mainsequence agent list
+mainsequence agent detail 12
+mainsequence agent create "Research Copilot" --description "Desk agent"
+mainsequence agent can_view 12
+mainsequence agent can_edit 12
+mainsequence agent add_to_view 12 7
+mainsequence agent add_to_edit 12 7
+mainsequence agent add_team_to_view 12 9
+mainsequence agent add_team_to_edit 12 9
+mainsequence agent remove_from_view 12 7
+mainsequence agent remove_from_edit 12 7
+mainsequence agent remove_team_from_view 12 9
+mainsequence agent remove_team_from_edit 12 9
+mainsequence agent delete 12
+mainsequence agent run list
+mainsequence agent run detail 501
 mainsequence constants list
 mainsequence constants list --show-filters
 mainsequence constants create APP__MODE production
@@ -134,7 +154,6 @@ mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter id__in=42,43
 mainsequence data-node list --data-source-id 2
-mainsequence data-node org-unique-identifiers
 mainsequence data_node search "close price"
 mainsequence data-node search "close price" --data-source-id 2
 mainsequence data-node search "portfolio weights" --mode description
@@ -197,6 +216,7 @@ mainsequence project project_resource create_fastapi
 mainsequence project project_resource create_fastapi 123
 mainsequence project project_resource delete_fastapi 701
 mainsequence project project_resource delete_fastapi 701 --yes
+mainsequence project validate-name "Rates Platform"
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
@@ -260,6 +280,12 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
 - `mainsequence organization teams add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on teams through the SDK `Team` permission-action paths.
+- `mainsequence agent list`, `detail`, `create`, and `delete` use the SDK client `mainsequence.client.agent_runtime_models.Agent` paths.
+- `mainsequence agent can_view` and `can_edit` inspect agent sharing through the SDK `ShareableObjectMixin` access-state paths on `Agent`.
+- `mainsequence agent add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate explicit user access on agents through the SDK `ShareableObjectMixin` permission-action paths.
+- `mainsequence agent add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate explicit team access on agents through the SDK `ShareableObjectMixin` team-action paths.
+- `mainsequence agent run list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentRun` paths for runtime inspection.
+- `mainsequence agent_runtime` is kept as a compatibility alias for the `agent run` command group.
 - `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
 - `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
 - `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
@@ -282,7 +308,6 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
-- `mainsequence data-node org-unique-identifiers` lists the organization-visible unique identifiers exposed by the SDK client `DataNodeStorage.get_org_unique_identifiers()` path.
 - `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `DataNodeStorage.description_search()` and `DataNodeStorage.column_search()` paths.
 - `mainsequence data-node search --mode description` only uses `DataNodeStorage.description_search()`.
 - `mainsequence data-node search --mode column` only uses `DataNodeStorage.column_search()`.
@@ -290,6 +315,7 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
+- `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.

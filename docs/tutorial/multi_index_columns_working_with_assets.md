@@ -274,13 +274,13 @@ The safest tutorial pattern is to include `MAIN_SEQUENCE_PROJECT_ID` from your `
 
 If someone in your organization already created the same table identifier, choose a new stable identifier with a project-specific suffix. Do not rename it on every run.
 
-If you want to inspect the organization-visible DataNode table identifiers first, run:
+If you want to inspect the existing DataNode table identifiers first, run:
 
 ```bash
-mainsequence data-node org-unique-identifiers
+mainsequence data-node list
 ```
 
-This command helps you check existing table names before publishing a new one. It lists DataNode identifiers, not asset `unique_identifier` values.
+This command helps you check existing table names before publishing a new one. Use the `Identifier` column; it lists DataNode identifiers, not asset `unique_identifier` values.
 
 ## Launcher script
 

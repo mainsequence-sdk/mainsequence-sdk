@@ -515,6 +515,33 @@ def list_org_project_names(
         raise ApiError(f"Organization project names fetch failed: {e}")
 
 
+def validate_project_name(
+    *,
+    project_name: str,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Validate whether a project name is available for creation.
+
+    Single source of truth:
+      - delegates payload parsing to `Project.validate_name()`
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="Project",
+            operation=lambda ClientProject: ClientProject.validate_name(
+                project_name=project_name,
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Project name validation failed: {e}")
+
+
 def list_organization_teams(
     *,
     timeout: int | None = None,
@@ -655,6 +682,334 @@ def delete_organization_team(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Organization team deletion failed: {e}")
+
+
+def list_agents(
+    *,
+    timeout: int | None = None,
+    filters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List agents via SDK client model.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=lambda ClientAgent: ClientAgent.filter(timeout=timeout, **(filters or {})),
+        )
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agents fetch failed: {e}")
+
+
+def get_agent(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one agent via SDK client model.
+    """
+    try:
+        agent = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=lambda ClientAgent: ClientAgent.get(pk=int(agent_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(agent)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent not found: {agent_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent fetch failed: {e}")
+
+
+def create_agent(
+    *,
+    name: str,
+    description: str | None = None,
+    status: str | None = None,
+    labels: list[str] | None = None,
+    llm_provider: str | None = None,
+    llm_model: str | None = None,
+    engine_name: str | None = None,
+    runtime_config: dict[str, Any] | None = None,
+    configuration: dict[str, Any] | None = None,
+    metadata: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Create one agent via SDK client model.
+    """
+    payload = {
+        key: value
+        for key, value in {
+            "name": name,
+            "description": description,
+            "status": status,
+            "labels": labels,
+            "llm_provider": llm_provider,
+            "llm_model": llm_model,
+            "engine_name": engine_name,
+            "runtime_config": runtime_config,
+            "configuration": configuration,
+            "metadata": metadata,
+        }.items()
+        if value is not None
+    }
+
+    try:
+        agent = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=lambda ClientAgent: ClientAgent.create(timeout=timeout, **payload),
+        )
+        return _sdk_object_to_dict(agent)
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent creation failed: {e}")
+
+
+def delete_agent(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one agent via SDK client model.
+    """
+    try:
+        def _delete(ClientAgent):
+            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            payload = _sdk_object_to_dict(agent)
+            agent.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent not found: {agent_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent deletion failed: {e}")
+
+
+def list_agent_users_can_view(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for an agent via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_agent_users_can_edit(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for an agent via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def add_agent_user_to_view(
+    agent_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_agent_user_to_edit(
+    agent_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_agent_user_from_view(
+    agent_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_agent_user_from_edit(
+    agent_id: int | str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_agent_team_to_view(
+    agent_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_agent_team_to_edit(
+    agent_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_agent_team_from_view(
+    agent_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_agent_team_from_edit(
+    agent_id: int | str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.agent_runtime_models",
+        class_name="Agent",
+        object_id=agent_id,
+        action_name="remove_team_from_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def list_agent_runs(
+    *,
+    timeout: int | None = None,
+    filters: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List agent runs via SDK client model.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentRun",
+            operation=lambda ClientAgentRun: ClientAgentRun.filter(timeout=timeout, **(filters or {})),
+        )
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent runs fetch failed: {e}")
+
+
+def get_agent_run(
+    agent_run_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one agent run via SDK client model.
+    """
+    try:
+        agent_run = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentRun",
+            operation=lambda ClientAgentRun: ClientAgentRun.get(pk=int(agent_run_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(agent_run)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent run not found: {agent_run_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent run fetch failed: {e}")
 
 
 def get_project(project_id: int | str) -> dict:
@@ -2274,31 +2629,6 @@ def delete_simple_table_storage(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table storage deletion failed: {e}")
-
-
-def list_data_node_org_unique_identifiers(
-    *,
-    timeout: int | None = None,
-) -> list[str]:
-    """
-    List organization-visible data node unique identifiers via SDK client model.
-
-    Single source of truth:
-      - delegates payload parsing to `DataNodeStorage.get_org_unique_identifiers()`
-    """
-    try:
-        payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
-            operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get_org_unique_identifiers(
-                timeout=timeout,
-            ),
-        )
-        return [str(item) for item in list(payload or [])]
-    except Exception as e:
-        if isinstance(e, (ApiError, NotLoggedIn)):
-            raise
-        raise ApiError(f"Data node unique identifiers fetch failed: {e}")
 
 
 def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:

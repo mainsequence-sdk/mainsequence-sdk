@@ -7,6 +7,7 @@ from typing import Any, ClassVar
 from pydantic import Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .models_user import UserSummary
 
 
 class AgentStatus(str, Enum):
@@ -78,46 +79,58 @@ class AgentArtifactType(str, Enum):
 
 
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent"
+    ENDPOINT: ClassVar[str] = "agents/v1/agents"
 
     id: int | None = Field(None, description="Primary key of the agent.")
-    name: str = Field(..., description="Human-readable agent name.")
-    slugified_name: str = Field(
+    name: str = Field(..., description="Human-readable display name for the agent inside the organization.")
+    agent_unique_id: str = Field(
         ...,
-        description="Organization-scoped slug used as the stable identifier for the agent.",
+        description="Organization-scoped stable identifier for the agent. Users may provide it explicitly, or the backend will generate it from the agent name when omitted.",
     )
-    description: str = Field("", description="Free-form description of the agent.")
+    description: str = Field("", description="Optional long-form description explaining what the agent is for.")
     status: AgentStatus = Field(
         AgentStatus.DRAFT,
-        description="Lifecycle status of the agent.",
+        description="Lifecycle status of the agent definition.",
     )
     labels: list[str] = Field(
         default_factory=list,
-        description="Labels associated with the agent.",
+        description="Free-form labels used to group or classify agents in the UI.",
+    )
+    llm_provider: str = Field(
+        "",
+        description="Optional default provider for future runs, for example openai, anthropic, or google. This is only a default on the Agent and is not the authoritative runtime record.",
+    )
+    llm_model: str = Field(
+        "",
+        description="Optional default model identifier for future runs, for example gpt-5.4. This is only a default on the Agent and is not the authoritative runtime record.",
+    )
+    engine_name: str = Field(
+        "",
+        description="Optional default higher-level runtime or orchestrator name for future runs. Use this for the wrapper above the raw model, such as an agent runtime, workflow engine, or orchestration layer.",
+    )
+    runtime_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional default runtime configuration for future runs. Store provider-specific or engine-specific settings here when they do not deserve their own top-level field.",
     )
     configuration: dict[str, Any] = Field(
         default_factory=dict,
-        description="Arbitrary runtime configuration for the agent.",
+        description="Additional agent configuration unrelated to runtime resolution.",
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional metadata associated with the agent.",
+        description="Arbitrary metadata for UI or integration use.",
     )
     last_run_at: datetime.datetime | None = Field(
         None,
-        description="Timestamp of the most recent run for this agent.",
+        description="Timestamp of the most recent run recorded for this agent.",
     )
 
 
 class AgentCapability(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-capability"
+    ENDPOINT: ClassVar[str] = "agents/v1/capabilities"
 
     id: int | None = Field(None, description="Primary key of the capability.")
     name: str = Field(..., description="Human-readable capability name.")
-    slugified_name: str = Field(
-        ...,
-        description="Organization-scoped slug used as the stable identifier for the capability.",
-    )
     kind: AgentCapabilityKind = Field(
         ...,
         description="Capability kind exposed to the agent runtime.",
@@ -154,7 +167,7 @@ class AgentCapability(BaseObjectOrm, BasePydanticModel):
 
 
 class AgentCapabilityBinding(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-capability-binding"
+    ENDPOINT: ClassVar[str] = "agents/v1/bindings"
 
     id: int | None = Field(None, description="Primary key of the binding.")
     agent: int | Agent | None = Field(
@@ -187,8 +200,42 @@ class AgentCapabilityBinding(BaseObjectOrm, BasePydanticModel):
     )
 
 
+class AgentSubagentBinding(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/subagent-bindings"
+
+    id: int | None = Field(None, description="Primary key of the subagent binding.")
+    parent_agent: int | Agent | None = Field(
+        None,
+        description="Parent agent allowed to spawn the child agent.",
+    )
+    child_agent: int | Agent | None = Field(
+        None,
+        description="Child agent available as a subagent.",
+    )
+    role: str = Field(
+        "",
+        description="Optional alias or orchestration role used when invoking the child agent from the parent agent.",
+    )
+    sort_order: int = Field(
+        0,
+        description="Ordering index applied when listing subagent bindings.",
+    )
+    enabled: bool = Field(
+        True,
+        description="Whether the subagent binding is enabled.",
+    )
+    configuration: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Binding-specific configuration payload.",
+    )
+    updated_at: datetime.datetime | None = Field(
+        None,
+        description="Last update timestamp for the subagent binding.",
+    )
+
+
 class AgentRun(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-run"
+    ENDPOINT: ClassVar[str] = "agents/v1/runs"
 
     id: int | None = Field(None, description="Primary key of the agent run.")
     agent: int | Agent | None = Field(
@@ -198,6 +245,18 @@ class AgentRun(BaseObjectOrm, BasePydanticModel):
     triggered_by_user: int | UserSummary | None = Field(
         None,
         description="User who triggered the run, as either a user id or expanded user payload.",
+    )
+    parent_run: int | AgentRun | None = Field(
+        None,
+        description="Optional parent run when this run was spawned as a subagent execution by another run.",
+    )
+    root_run: int | AgentRun | None = Field(
+        None,
+        description="Root run of the run tree. Child and descendant runs point back to the same root for visualization and querying.",
+    )
+    spawned_by_step: int | AgentRunStep | None = Field(
+        None,
+        description="Run step that spawned this run, when applicable. This links subagent executions back to the exact parent timeline step.",
     )
     status: AgentRunStatus = Field(
         AgentRunStatus.PENDING,
@@ -210,6 +269,22 @@ class AgentRun(BaseObjectOrm, BasePydanticModel):
     ended_at: datetime.datetime | None = Field(
         None,
         description="Timestamp when the run ended.",
+    )
+    llm_provider: str = Field(
+        ...,
+        description="Resolved LLM provider actually used for this run. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
+    )
+    llm_model: str = Field(
+        ...,
+        description="Resolved LLM model actually used for this run. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
+    )
+    engine_name: str = Field(
+        ...,
+        description="Resolved higher-level runtime or engine actually used for this run. This records the wrapper above the raw model, such as the agent runtime, workflow engine, router, or orchestration layer.",
+    )
+    runtime_config_snapshot: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Immutable runtime configuration snapshot used by this run after defaults and overrides were resolved.",
     )
     input_text: str = Field(
         "",
@@ -246,7 +321,7 @@ class AgentRun(BaseObjectOrm, BasePydanticModel):
 
 
 class AgentRunCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-run-capability-snapshot"
+    ENDPOINT: ClassVar[str] = "agents/v1/run-capability-snapshots"
 
     id: int | None = Field(None, description="Primary key of the run capability snapshot.")
     agent_run: int | AgentRun | None = Field(
@@ -292,7 +367,7 @@ class AgentRunCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
 
 
 class AgentRunStep(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-run-step"
+    ENDPOINT: ClassVar[str] = "agents/v1/run-steps"
 
     id: int | None = Field(None, description="Primary key of the run step.")
     agent_run: int | AgentRun | None = Field(
@@ -339,6 +414,22 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
         None,
         description="Timestamp when the step ended.",
     )
+    llm_provider: str = Field(
+        "",
+        description="Optional step-level override for the LLM provider when a particular step runs on a different provider than the run default.",
+    )
+    llm_model: str = Field(
+        "",
+        description="Optional step-level override for the LLM model when a particular step runs on a different model than the run default.",
+    )
+    engine_name: str = Field(
+        "",
+        description="Optional step-level override for the higher-level runtime or engine when a particular step uses a different orchestration layer.",
+    )
+    runtime_config_override: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Optional step-level runtime override merged on top of the run-level runtime snapshot.",
+    )
     input_payload: dict[str, Any] = Field(
         default_factory=dict,
         description="Structured input payload captured for the step.",
@@ -362,7 +453,7 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
 
 
 class AgentRunArtifact(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/agent-run-artifact"
+    ENDPOINT: ClassVar[str] = "agents/v1/run-artifacts"
 
     id: int | None = Field(None, description="Primary key of the run artifact.")
     agent_run: int | AgentRun | None = Field(
@@ -416,4 +507,5 @@ __all__ = [
     "AgentRunStepStatus",
     "AgentRunStepType",
     "AgentStatus",
+    "AgentSubagentBinding",
 ]
