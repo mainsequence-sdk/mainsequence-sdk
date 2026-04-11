@@ -68,6 +68,9 @@ mainsequence agent --help
 mainsequence simple_table --help
 mainsequence cc --help
 mainsequence organization --help
+mainsequence skills list
+mainsequence skills path
+mainsequence skills path project_builder
 mainsequence data-node list
 mainsequence markets --help
 mainsequence user
@@ -302,11 +305,26 @@ mainsequence settings show
 mainsequence settings set-base ~/mainsequence
 ```
 
+## Skills
+
+```bash
+mainsequence skills list
+mainsequence skills list --json
+mainsequence skills path
+mainsequence skills path project_builder
+mainsequence skills path command_center/workspace_builder
+mainsequence skills path workspace_builder
+mainsequence skills path workspace_builder --json
+```
+
 ## Troubleshooting
 
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
 - If a command says not logged in, run `mainsequence login <email>` again.
 - `mainsequence login` persists tokens for later CLI runs. Use `--export` only when you explicitly want shell-managed auth variables instead.
+- `mainsequence skills list` lists installed scaffold skills from the current CLI installation by recursively discovering `SKILL.md` files under the installed `agent_scaffold` bundle.
+- `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
+- `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspace_builder` and unique leaf names such as `workspace_builder`.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
@@ -351,7 +369,7 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then copies `AGENTS.md` from that project's installed SDK bundle in `.venv` into the project root, overwriting the existing `AGENTS.md` when present.
-- `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agents_scaffold/` bundle in `.venv` into `.agents/skills/`, overwriting only folders with the same names. It does not copy bundle-root files such as `AGENTS.md`.
+- `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agent_scaffold/skills/` bundle in `.venv` into `.agents/skills/`, overwriting only folders with the same names. It does not copy bundle-root files such as `AGENTS.md`.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.

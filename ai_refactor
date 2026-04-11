@@ -6,12 +6,12 @@ This file exists so the full plan, boundaries, and execution order stay in the r
 
 ## Goal
 
-Refactor `agents_scaffold` from a mixed set of notes into an orchestrated set of agent skills.
+Refactor `agent_scaffold` from a mixed set of notes into an orchestrated set of agent skills.
 
 The target design is:
 
 - one bootstrap/orchestrator skill
-- one nested maintenance skill for all project-state files under `agents_scaffold/`
+- one nested maintenance skill for all project-state files under `agent_scaffold/`
 - domain skills that own Main Sequence behavior
 - explicit routing between bootstrap, domain work, and maintenance
 
@@ -33,7 +33,7 @@ They should not read like tutorials.
 2. Do not create a skill per tutorial chapter.
 3. Do not use beginner tutorial language inside skills.
 4. Do not make the bootstrap skill own every Main Sequence topic.
-5. All `agents_scaffold/` project-state behavior belongs to a single dedicated maintenance skill.
+5. All `agent_scaffold/` project-state behavior belongs to a single dedicated maintenance skill.
 6. After material domain work, the agent should consult maintenance.
 7. Every skill should state:
    - what it can do
@@ -43,7 +43,7 @@ They should not read like tutorials.
 ## Target Skill Tree
 
 ```text
-agents_scaffold/
+agent_scaffold/
   AGENTS.md
   project_builder/
     SKILL.md
@@ -107,7 +107,7 @@ The agent should behave as an orchestrator:
 
 ## Skill Ownership Summary
 
-### `agents_scaffold/project_builder/SKILL.md`
+### `agent_scaffold/skills/project_builder/SKILL.md`
 
 Owns:
 
@@ -120,20 +120,20 @@ Owns:
 Must not own:
 
 - domain implementation semantics
-- detailed `agents_scaffold/` file reconciliation
+- detailed `agent_scaffold/` file reconciliation
 
-### `agents_scaffold/maintenance/local_journal/SKILL.md`
+### `agent_scaffold/skills/maintenance/local_journal/SKILL.md`
 
 Owns:
 
-- `agents_scaffold/brief.md`
-- `agents_scaffold/tasks.md`
-- `agents_scaffold/record.md`
-- `agents_scaffold/status.md`
-- `agents_scaffold/journal.md`
+- `agent_scaffold/brief.md`
+- `agent_scaffold/tasks.md`
+- `agent_scaffold/record.md`
+- `agent_scaffold/status.md`
+- `agent_scaffold/journal.md`
 - reconciliation of current state and history after material work
 
-### `agents_scaffold/maintenance/bug_auditor/SKILL.md`
+### `agent_scaffold/skills/maintenance/bug_auditor/SKILL.md`
 
 Owns:
 
@@ -142,7 +142,7 @@ Owns:
 - evidence-based classification of failures
 - upstream `mainsequence-sdk` suspicion and escalation triage
 
-### `agents_scaffold/data_publishing/data_nodes/SKILL.md`
+### `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
 
 Owns:
 
@@ -154,7 +154,7 @@ Owns:
 - metadata
 - asset-indexed nodes
 
-### `agents_scaffold/data_access/exploration/SKILL.md`
+### `agent_scaffold/skills/data_access/exploration/SKILL.md`
 
 Owns:
 
@@ -163,7 +163,7 @@ Owns:
 - object-type identification across `DataNode`, `SimpleTable`, and market surfaces
 - discovery-only routing before implementation
 
-### `agents_scaffold/data_publishing/simple_tables/SKILL.md`
+### `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
 
 Owns:
 
@@ -172,7 +172,7 @@ Owns:
 - insert-only vs overwrite/upsert
 - filtering
 
-### `agents_scaffold/application_surfaces/api_surfaces/SKILL.md`
+### `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
 
 Owns:
 
@@ -181,7 +181,7 @@ Owns:
 - widget-facing API responses
 - typed and richly documented route parameters
 
-### `agents_scaffold/command_center/workspace_builder/SKILL.md`
+### `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
 
 Owns:
 
@@ -190,7 +190,7 @@ Owns:
 - layout
 - shared vs user state
 
-### `agents_scaffold/command_center/app_components/SKILL.md`
+### `agent_scaffold/skills/command_center/app_components/SKILL.md`
 
 Owns:
 
@@ -198,7 +198,7 @@ Owns:
 - custom forms
 - AppComponent contract boundaries
 
-### `agents_scaffold/platform_operations/orchestration_and_releases/SKILL.md`
+### `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 Owns:
 
@@ -209,7 +209,7 @@ Owns:
 - releases
 - Artifacts as operational inputs
 
-### `agents_scaffold/platform_operations/access_control_and_sharing/SKILL.md`
+### `agent_scaffold/skills/platform_operations/access_control_and_sharing/SKILL.md`
 
 Owns:
 
@@ -218,7 +218,7 @@ Owns:
 - `view` vs `edit`
 - Constants vs Secrets
 
-### `agents_scaffold/markets_platform/assets_and_translation/SKILL.md`
+### `agent_scaffold/skills/markets_platform/assets_and_translation/SKILL.md`
 
 Owns:
 
@@ -228,7 +228,7 @@ Owns:
 - translation tables
 - `filter()` vs `query()`
 
-### `agents_scaffold/markets_platform/virtualfundbuilder/SKILL.md`
+### `agent_scaffold/skills/markets_platform/virtualfundbuilder/SKILL.md`
 
 Owns:
 
@@ -238,7 +238,7 @@ Owns:
 - forward-fill semantics
 - portfolio data contracts
 
-### `agents_scaffold/markets_platform/instruments_and_pricing/SKILL.md`
+### `agent_scaffold/skills/markets_platform/instruments_and_pricing/SKILL.md`
 
 Owns:
 
@@ -247,7 +247,7 @@ Owns:
 - runtime valuation path
 - curves and fixings expectations
 
-### `agents_scaffold/dashboards/streamlit/SKILL.md`
+### `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
 
 Owns:
 
@@ -276,27 +276,27 @@ Every agents scaffold skill should follow the common operational structure:
 
 - keep `AGENTS.md` as the global contract and orchestrator rule set
 - keep `project_builder` thin
-- move all detailed `agents_scaffold/` file semantics into `maintenance/local_journal`
+- move all detailed `agent_scaffold/` file semantics into `maintenance/local_journal`
 - keep domain skills free of project-state maintenance details
 
 ## Checklist
 
-- [x] Rewrite `agents_scaffold/project_builder/SKILL.md` into a thin bootstrap/router skill
-- [x] Fix the broken `agents_scaffold/AGENTS.md` reference to the canonical agents scaffold bootstrap files
-- [x] Create `agents_scaffold/data_publishing/data_nodes/SKILL.md`
-- [x] Create `agents_scaffold/data_publishing/simple_tables/SKILL.md`
-- [x] Create `agents_scaffold/application_surfaces/api_surfaces/SKILL.md`
-- [x] Move/refactor `agents_scaffold/workspace_builder/SKILL.md` into `agents_scaffold/command_center/workspace_builder/SKILL.md`
-- [x] Create `agents_scaffold/command_center/app_components/SKILL.md`
-- [x] Create `agents_scaffold/platform_operations/orchestration_and_releases/SKILL.md`
-- [x] Create `agents_scaffold/platform_operations/access_control_and_sharing/SKILL.md`
-- [x] Create `agents_scaffold/markets_platform/assets_and_translation/SKILL.md`
-- [x] Create `agents_scaffold/markets_platform/virtualfundbuilder/SKILL.md`
-- [x] Create `agents_scaffold/markets_platform/instruments_and_pricing/SKILL.md`
-- [x] Create `agents_scaffold/dashboards/streamlit/SKILL.md`
+- [x] Rewrite `agent_scaffold/skills/project_builder/SKILL.md` into a thin bootstrap/router skill
+- [x] Fix the broken `agent_scaffold/AGENTS.md` reference to the canonical agents scaffold bootstrap files
+- [x] Create `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+- [x] Create `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+- [x] Create `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+- [x] Move/refactor `agent_scaffold/workspace_builder/SKILL.md` into `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+- [x] Create `agent_scaffold/skills/command_center/app_components/SKILL.md`
+- [x] Create `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+- [x] Create `agent_scaffold/skills/platform_operations/access_control_and_sharing/SKILL.md`
+- [x] Create `agent_scaffold/skills/markets_platform/assets_and_translation/SKILL.md`
+- [x] Create `agent_scaffold/skills/markets_platform/virtualfundbuilder/SKILL.md`
+- [x] Create `agent_scaffold/skills/markets_platform/instruments_and_pricing/SKILL.md`
+- [x] Create `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
 - [x] Ensure every agents scaffold skill follows the common operational section structure
-- [x] Remove duplicated domain guidance from `agents_scaffold/project_builder/SKILL.md`
-- [x] Create `agents_scaffold/maintenance/local_journal/SKILL.md`
-- [x] Create `agents_scaffold/maintenance/bug_auditor/SKILL.md`
-- [x] Move detailed `agents_scaffold/` file semantics out of `AGENTS.md` and into maintenance
+- [x] Remove duplicated domain guidance from `agent_scaffold/skills/project_builder/SKILL.md`
+- [x] Create `agent_scaffold/skills/maintenance/local_journal/SKILL.md`
+- [x] Create `agent_scaffold/skills/maintenance/bug_auditor/SKILL.md`
+- [x] Move detailed `agent_scaffold/` file semantics out of `AGENTS.md` and into maintenance
 - [x] Make the orchestrator explicitly route to maintenance after material work

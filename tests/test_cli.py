@@ -128,6 +128,58 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
     assert payload["organization"]["name"] == "Main Sequence"
 
 
+def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "agent_scaffold"
+    (bundle_dir / "skills" / "project_builder").mkdir(parents=True)
+    (bundle_dir / "skills" / "project_builder" / "SKILL.md").write_text("project builder", encoding="utf-8")
+    (bundle_dir / "skills" / "command_center" / "workspace_builder").mkdir(parents=True)
+    (bundle_dir / "skills" / "command_center" / "workspace_builder" / "SKILL.md").write_text("workspace builder", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["skills", "list"])
+    assert result.exit_code == 0
+    assert "project_builder" in result.output
+    assert "command_center/workspace_builder" in result.output
+
+
+def test_skills_path(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "agent_scaffold"
+    (bundle_dir / "skills" / "command_center" / "workspace_builder").mkdir(parents=True)
+    expected = bundle_dir / "skills" / "command_center" / "workspace_builder" / "SKILL.md"
+    expected.write_text("workspace builder", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["skills", "path", "command_center/workspace_builder"])
+    assert result.exit_code == 0
+    assert result.output.strip() == str(expected)
+
+
+def test_skills_path_bundle_root(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "agent_scaffold"
+    (bundle_dir / "skills").mkdir(parents=True)
+
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["skills", "path"])
+    assert result.exit_code == 0
+    assert result.output.strip() == str(bundle_dir / "skills")
+
+
+def test_skills_path_unique_leaf_name(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "agent_scaffold"
+    (bundle_dir / "skills" / "command_center" / "workspace_builder").mkdir(parents=True)
+    expected = bundle_dir / "skills" / "command_center" / "workspace_builder" / "SKILL.md"
+    expected.write_text("workspace builder", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["skills", "path", "workspace_builder"])
+    assert result.exit_code == 0
+    assert result.output.strip() == str(expected)
+
+
 def test_organization_project_names(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -8331,7 +8383,7 @@ def test_project_update_agents_md(cli_mod, runner, monkeypatch, tmp_path):
     target.mkdir()
     (target / "AGENTS.md").write_text("old agents", encoding="utf-8")
 
-    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+    monkeypatch.setattr(cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir)
 
     result = runner.invoke(cli_mod.app, ["project", "update", "AGENTS.md", "--path", str(target)])
     assert result.exit_code == 0
@@ -8347,7 +8399,7 @@ def test_project_update_agents_md_json(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir()
 
-    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+    monkeypatch.setattr(cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir)
 
     result = runner.invoke(
         cli_mod.app,
@@ -8364,10 +8416,10 @@ def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
     (bundle_dir / "AGENTS.md").write_text("bundle agents", encoding="utf-8")
-    (bundle_dir / "data_publishing").mkdir()
-    (bundle_dir / "data_publishing" / "SKILL.md").write_text("new data skill", encoding="utf-8")
-    (bundle_dir / "maintenance").mkdir()
-    (bundle_dir / "maintenance" / "SKILL.md").write_text("new maintenance skill", encoding="utf-8")
+    (bundle_dir / "skills" / "data_publishing").mkdir(parents=True)
+    (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text("new data skill", encoding="utf-8")
+    (bundle_dir / "skills" / "maintenance").mkdir(parents=True)
+    (bundle_dir / "skills" / "maintenance" / "SKILL.md").write_text("new maintenance skill", encoding="utf-8")
     (bundle_dir / "__pycache__").mkdir()
     (bundle_dir / "__pycache__" / "ignored.txt").write_text("ignore me", encoding="utf-8")
 
@@ -8376,7 +8428,7 @@ def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner
     existing.mkdir(parents=True)
     (existing / "old.txt").write_text("stale", encoding="utf-8")
 
-    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+    monkeypatch.setattr(cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir)
 
     result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
     assert result.exit_code == 0

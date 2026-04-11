@@ -23,6 +23,8 @@ All commands have docstrings so `--help` is useful.
 
 import dataclasses
 import datetime
+import difflib
+import importlib
 import json
 import os
 import pathlib
@@ -307,6 +309,7 @@ project_jobs_group = typer.Typer(help="Project job commands")
 project_job_runs_group = typer.Typer(help="Project job run commands")
 settings = typer.Typer(help="Settings (base folder, backend, etc.)")
 sdk = typer.Typer(help="SDK utilities (latest version, status)")
+skills = typer.Typer(help="Installed scaffold skill commands")
 
 app.add_typer(agent, name="agent")
 agent.add_typer(agent_run_group, name="run")
@@ -328,6 +331,7 @@ app.add_typer(workspace, name="workspace", hidden=True)
 app.add_typer(registered_widget_type, name="registered_widget_type", hidden=True)
 app.add_typer(registered_widget_type, name="registered-widget-type", hidden=True)
 app.add_typer(organization, name="organization")
+app.add_typer(skills, name="skills")
 app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
@@ -835,9 +839,9 @@ def _resolve_project_id_from_local_env(path: str | None = None) -> int:
     return project_id
 
 
-def _project_agents_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
+def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
     """
-    Resolve the `agents_scaffold` bundle from the target project's local `.venv`.
+    Resolve the `agent_scaffold` bundle from the target project's local `.venv`.
     """
     try:
         vp = ensure_venv(project_dir)
@@ -850,8 +854,8 @@ def _project_agents_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pa
             str(vp.python),
             "-c",
             (
-                "import sys, agents_scaffold; "
-                "paths=list(getattr(agents_scaffold, '__path__', [])); "
+                "import sys, agent_scaffold; "
+                "paths=list(getattr(agent_scaffold, '__path__', [])); "
                 "sys.stdout.write(paths[0] if paths else '')"
             ),
         ],
@@ -862,7 +866,7 @@ def _project_agents_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pa
     if lookup.returncode != 0:
         detail = (lookup.stderr or lookup.stdout or "").strip()
         message = (
-            "Could not locate agents_scaffold in the target project's .venv. "
+            "Could not locate agent_scaffold in the target project's .venv. "
             "Run `mainsequence project build_local_venv` or "
             "`mainsequence project update-sdk --path .` first."
         )
@@ -873,9 +877,86 @@ def _project_agents_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Pa
 
     bundle_dir = pathlib.Path((lookup.stdout or "").strip()).resolve()
     if not bundle_dir.exists() or not bundle_dir.is_dir():
-        error(f"Target project .venv resolved an invalid agents_scaffold path: {bundle_dir}")
+        error(f"Target project .venv resolved an invalid agent_scaffold path: {bundle_dir}")
         raise typer.Exit(1)
     return bundle_dir
+
+
+def _installed_agent_scaffold_bundle_dir() -> pathlib.Path:
+    """
+    Resolve the `agent_scaffold` bundle for the currently running CLI install.
+    """
+    try:
+        module = importlib.import_module("agent_scaffold")
+    except Exception as exc:
+        error(f"Could not import installed agent_scaffold bundle: {exc}")
+        raise typer.Exit(1) from exc
+
+    paths = [pathlib.Path(p).resolve() for p in getattr(module, "__path__", [])]
+    candidates = [p for p in paths if p.exists() and p.is_dir()]
+    if not candidates:
+        error("Installed agent_scaffold bundle path could not be resolved.")
+        raise typer.Exit(1)
+    return candidates[0]
+
+
+def _installed_agent_scaffold_skills_dir() -> pathlib.Path:
+    skills_dir = _installed_agent_scaffold_bundle_dir() / "skills"
+    if not skills_dir.exists() or not skills_dir.is_dir():
+        error(f"Installed agent_scaffold skills directory could not be resolved: {skills_dir}")
+        raise typer.Exit(1)
+    return skills_dir
+
+
+def _installed_agent_scaffold_skills() -> list[dict[str, pathlib.Path | str]]:
+    bundle_dir = _installed_agent_scaffold_bundle_dir()
+    skills_dir = _installed_agent_scaffold_skills_dir()
+    rows: list[dict[str, pathlib.Path | str]] = []
+    for skill_file in sorted(skills_dir.rglob("SKILL.md")):
+        skill_dir = skill_file.parent
+        skill_name = skill_dir.relative_to(skills_dir).as_posix()
+        rows.append(
+            {
+                "name": skill_name,
+                "bundle_dir": bundle_dir,
+                "skills_dir": skills_dir,
+                "skill_dir": skill_dir,
+                "skill_file": skill_file,
+            }
+        )
+    return rows
+
+
+def _resolve_installed_agent_scaffold_skill(skill_name: str) -> dict[str, pathlib.Path | str]:
+    skills = _installed_agent_scaffold_skills()
+    if not skills:
+        error("No installed agent_scaffold skills were found.")
+        raise typer.Exit(1)
+
+    query = skill_name.strip().replace("\\", "/")
+    exact_candidates = [row for row in skills if row["name"] == query]
+    if len(exact_candidates) == 1:
+        return exact_candidates[0]
+
+    dot_query = query.replace(".", "/")
+    exact_candidates = [row for row in skills if row["name"] == dot_query]
+    if len(exact_candidates) == 1:
+        return exact_candidates[0]
+
+    leaf_candidates = [row for row in skills if pathlib.PurePosixPath(str(row["name"])).name == query]
+    if len(leaf_candidates) == 1:
+        return leaf_candidates[0]
+    if len(leaf_candidates) > 1:
+        error(
+            "Skill name is ambiguous. Use one of: "
+            + ", ".join(sorted(str(row["name"]) for row in leaf_candidates))
+        )
+        raise typer.Exit(1)
+
+    suggestions = difflib.get_close_matches(query, [str(row["name"]) for row in skills], n=3)
+    detail = f" Did you mean: {', '.join(suggestions)}?" if suggestions else ""
+    error(f"Installed agent_scaffold skill not found: {skill_name}.{detail}")
+    raise typer.Exit(1)
 
 
 def _copy_file_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
@@ -9646,7 +9727,7 @@ def project_update_scaffold_target(
     Update a scaffold-managed file in the local project root.
 
     Currently this command supports only `AGENTS.md` and overwrites the local file
-    with the installed `agents_scaffold/AGENTS.md` bundle version.
+    with the installed `agent_scaffold/AGENTS.md` bundle version.
 
     Examples
     --------
@@ -9663,10 +9744,10 @@ def project_update_scaffold_target(
     project_dir = _resolve_project_dir(project_id, path)
     destination = project_dir / "AGENTS.md"
 
-    bundle_dir = _project_agents_scaffold_bundle_dir(project_dir)
+    bundle_dir = _project_agent_scaffold_bundle_dir(project_dir)
     source = bundle_dir / "AGENTS.md"
     if not source.is_file():
-        error(f"Project-installed agents_scaffold bundle is missing {source.name}.")
+        error(f"Project-installed agent_scaffold bundle is missing {source.name}.")
         raise typer.Exit(1)
     _copy_file_overwrite(source, destination)
 
@@ -9680,7 +9761,7 @@ def project_update_scaffold_target(
     if _emit_json(payload):
         return
 
-    success(f"Updated {target} from installed agents_scaffold bundle.")
+    success(f"Updated {target} from installed agent_scaffold bundle.")
     print_kv(
         "Scaffold Update",
         [
@@ -9699,11 +9780,11 @@ def project_update_agent_skills(
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
-    Update `.agents/skills` from the installed `agents_scaffold` bundle.
+    Update `.agents/skills` from the installed `agent_scaffold/skills` bundle subtree.
 
-    This copies every top-level scaffold skill folder from `agents_scaffold/` into
-    `.agents/skills/`, overwriting any folders with the same name. Files at the
-    bundle root such as `AGENTS.md` are not copied by this command.
+    This copies every top-level scaffold skill folder from `agent_scaffold/skills/`
+    into `.agents/skills/`, overwriting any folders with the same name. Bundle-root
+    files such as `AGENTS.md` are not copied by this command.
 
     Examples
     --------
@@ -9717,8 +9798,11 @@ def project_update_agent_skills(
     destination_root = project_dir / ".agents" / "skills"
 
     updated: list[dict[str, pathlib.Path]] = []
-    bundle_dir = _project_agents_scaffold_bundle_dir(project_dir)
-    for source_dir in sorted(bundle_dir.iterdir(), key=lambda item: item.name):
+    skills_dir = _project_agent_scaffold_bundle_dir(project_dir) / "skills"
+    if not skills_dir.exists() or not skills_dir.is_dir():
+        error(f"Project-installed agent_scaffold bundle is missing skills/: {skills_dir}")
+        raise typer.Exit(1)
+    for source_dir in sorted(skills_dir.iterdir(), key=lambda item: item.name):
         if not source_dir.is_dir():
             continue
         if source_dir.name.startswith(".") or source_dir.name.startswith("__"):
@@ -9742,10 +9826,88 @@ def project_update_agent_skills(
     if _emit_json(payload):
         return
 
-    success("Updated .agents/skills from installed agents_scaffold bundle.")
+    success("Updated .agents/skills from installed agent_scaffold bundle.")
     print_table(
         "Updated Agent Skills",
         ["Skill Folder", "Destination"],
         [[item["name"], str(item["destination"])] for item in updated],
     )
+
+
+@skills.command("list")
+def skills_list_cmd():
+    """
+    List installed scaffold skills from the current CLI installation.
+
+    Examples
+    --------
+    ```bash
+    mainsequence skills list
+    mainsequence skills list --json
+    ```
+    """
+    rows = _installed_agent_scaffold_skills()
+    payload = [
+        {
+            "name": row["name"],
+            "skill_dir": row["skill_dir"],
+            "skill_file": row["skill_file"],
+        }
+        for row in rows
+    ]
+    if _emit_json(payload):
+        return
+
+    print_table(
+        "Installed Skills",
+        ["Skill", "SKILL.md"],
+        [[str(row["name"]), str(row["skill_file"])] for row in rows],
+    )
+
+
+@skills.command("path")
+def skills_path_cmd(
+    skill_name: str | None = typer.Argument(
+        None,
+        help="Optional installed skill name, for example project_builder or command_center/workspace_builder",
+    ),
+):
+    """
+    Print the installed scaffold skills path or one installed `SKILL.md` path.
+
+    When no skill name is provided, this prints the installed `agent_scaffold/skills`
+    directory for the current CLI installation.
+
+    When a skill name is provided, it may be the full relative skill path such as
+    `command_center/workspace_builder` or, when unique, by its leaf folder name.
+
+    Examples
+    --------
+    ```bash
+    mainsequence skills path
+    mainsequence skills path project_builder
+    mainsequence skills path command_center/workspace_builder
+    mainsequence skills path workspace_builder
+    ```
+    """
+    if skill_name is None:
+        skills_dir = _installed_agent_scaffold_skills_dir()
+        payload = {"skills_dir": skills_dir}
+        if _emit_json(payload):
+            return
+        typer.echo(str(skills_dir))
+        return
+
+    row = _resolve_installed_agent_scaffold_skill(skill_name)
+    payload = {
+        "name": row["name"],
+        "bundle_dir": row["bundle_dir"],
+        "skills_dir": row["skills_dir"],
+        "skill_dir": row["skill_dir"],
+        "skill_file": row["skill_file"],
+    }
+    if _emit_json(payload):
+        return
+
+    typer.echo(str(row["skill_file"]))
 organization.add_typer(organization_teams_group, name="teams")

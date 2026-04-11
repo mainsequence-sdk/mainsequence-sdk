@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "3.17.32"
+version = "3.17.33"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.10"
@@ -79,13 +79,13 @@ dev = [
 # Package discovery equivalent to find_packages(include=['mainsequence','mainsequence.*'])
 [tool.setuptools.packages.find]
 namespaces = true
-include = ["mainsequence", "mainsequence.*", "agents_scaffold", "agents_scaffold.*"]
+include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*"]
 
 # Include your non-.py assets in wheels/sdists
 [tool.setuptools.package-data]
 "mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml"]
 "mainsequence.dashboards.streamlit" = ["assets/*.png", "assets/*.txt"]
-"agents_scaffold" = ["*.md", "**/*.md"]
+"agent_scaffold" = ["*.md", "**/*.md"]
 
 [[tool.uv.index]]
 name = "testpypi"
@@ -116,4 +116,4 @@ select = ["E", "F", "I", "B", "UP"]
 ignore = ["E203", "E501"]     # let Black handle these
 
 [tool.ruff.lint.isort]
-known-first-party = ["mainsequence", "agents_scaffold"]
+known-first-party = ["mainsequence", "agent_scaffold"]
