@@ -8,7 +8,6 @@ from pydantic import Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import raise_for_response
-from .models_user import UserSummary
 from .utils import make_request, serialize_to_json
 
 
@@ -305,13 +304,13 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
 
     id: int | None = Field(None, description="Primary key of the agent session.")
+    created_by_user: int | None = Field(
+        None,
+        description="User id of the actor who created the session record in MainSequence.",
+    )
     agent: int | Agent | None = Field(
         None,
         description="Agent definition used for this session.",
-    )
-    triggered_by_user: int | UserSummary | None = Field(
-        None,
-        description="User who triggered the session, as either a user id or expanded user payload.",
     )
     parent_session: int | AgentSession | None = Field(
         None,

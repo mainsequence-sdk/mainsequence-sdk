@@ -1,17 +1,17 @@
 # AI Refactor Plan
 
-Temporary working document for the Astro skill refactor.
+Temporary working document for the agents scaffold skill refactor.
 
 This file exists so the full plan, boundaries, and execution order stay in the repository while the refactor is in progress.
 
 ## Goal
 
-Refactor `docs/astro` from a mixed set of notes into an orchestrated set of agent skills.
+Refactor `agents_scaffold` from a mixed set of notes into an orchestrated set of agent skills.
 
 The target design is:
 
 - one bootstrap/orchestrator skill
-- one nested maintenance skill for all project-state files under `astro/`
+- one nested maintenance skill for all project-state files under `agents_scaffold/`
 - domain skills that own Main Sequence behavior
 - explicit routing between bootstrap, domain work, and maintenance
 
@@ -33,7 +33,7 @@ They should not read like tutorials.
 2. Do not create a skill per tutorial chapter.
 3. Do not use beginner tutorial language inside skills.
 4. Do not make the bootstrap skill own every Main Sequence topic.
-5. All `astro/` project-state behavior belongs to a single dedicated maintenance skill.
+5. All `agents_scaffold/` project-state behavior belongs to a single dedicated maintenance skill.
 6. After material domain work, the agent should consult maintenance.
 7. Every skill should state:
    - what it can do
@@ -43,7 +43,7 @@ They should not read like tutorials.
 ## Target Skill Tree
 
 ```text
-docs/astro/
+agents_scaffold/
   AGENTS.md
   project_builder/
     SKILL.md
@@ -107,7 +107,7 @@ The agent should behave as an orchestrator:
 
 ## Skill Ownership Summary
 
-### `docs/astro/project_builder/SKILL.md`
+### `agents_scaffold/project_builder/SKILL.md`
 
 Owns:
 
@@ -120,20 +120,20 @@ Owns:
 Must not own:
 
 - domain implementation semantics
-- detailed `astro/` file reconciliation
+- detailed `agents_scaffold/` file reconciliation
 
-### `docs/astro/maintenance/local_journal/SKILL.md`
+### `agents_scaffold/maintenance/local_journal/SKILL.md`
 
 Owns:
 
-- `astro/brief.md`
-- `astro/tasks.md`
-- `astro/record.md`
-- `astro/status.md`
-- `astro/journal.md`
+- `agents_scaffold/brief.md`
+- `agents_scaffold/tasks.md`
+- `agents_scaffold/record.md`
+- `agents_scaffold/status.md`
+- `agents_scaffold/journal.md`
 - reconciliation of current state and history after material work
 
-### `docs/astro/maintenance/bug_auditor/SKILL.md`
+### `agents_scaffold/maintenance/bug_auditor/SKILL.md`
 
 Owns:
 
@@ -142,7 +142,7 @@ Owns:
 - evidence-based classification of failures
 - upstream `mainsequence-sdk` suspicion and escalation triage
 
-### `docs/astro/data_publishing/data_nodes/SKILL.md`
+### `agents_scaffold/data_publishing/data_nodes/SKILL.md`
 
 Owns:
 
@@ -154,7 +154,7 @@ Owns:
 - metadata
 - asset-indexed nodes
 
-### `docs/astro/data_access/exploration/SKILL.md`
+### `agents_scaffold/data_access/exploration/SKILL.md`
 
 Owns:
 
@@ -163,7 +163,7 @@ Owns:
 - object-type identification across `DataNode`, `SimpleTable`, and market surfaces
 - discovery-only routing before implementation
 
-### `docs/astro/data_publishing/simple_tables/SKILL.md`
+### `agents_scaffold/data_publishing/simple_tables/SKILL.md`
 
 Owns:
 
@@ -172,7 +172,7 @@ Owns:
 - insert-only vs overwrite/upsert
 - filtering
 
-### `docs/astro/application_surfaces/api_surfaces/SKILL.md`
+### `agents_scaffold/application_surfaces/api_surfaces/SKILL.md`
 
 Owns:
 
@@ -181,7 +181,7 @@ Owns:
 - widget-facing API responses
 - typed and richly documented route parameters
 
-### `docs/astro/command_center/workspace_builder/SKILL.md`
+### `agents_scaffold/command_center/workspace_builder/SKILL.md`
 
 Owns:
 
@@ -190,7 +190,7 @@ Owns:
 - layout
 - shared vs user state
 
-### `docs/astro/command_center/app_components/SKILL.md`
+### `agents_scaffold/command_center/app_components/SKILL.md`
 
 Owns:
 
@@ -198,7 +198,7 @@ Owns:
 - custom forms
 - AppComponent contract boundaries
 
-### `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
+### `agents_scaffold/platform_operations/orchestration_and_releases/SKILL.md`
 
 Owns:
 
@@ -209,7 +209,7 @@ Owns:
 - releases
 - Artifacts as operational inputs
 
-### `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
+### `agents_scaffold/platform_operations/access_control_and_sharing/SKILL.md`
 
 Owns:
 
@@ -218,7 +218,7 @@ Owns:
 - `view` vs `edit`
 - Constants vs Secrets
 
-### `docs/astro/markets_platform/assets_and_translation/SKILL.md`
+### `agents_scaffold/markets_platform/assets_and_translation/SKILL.md`
 
 Owns:
 
@@ -228,7 +228,7 @@ Owns:
 - translation tables
 - `filter()` vs `query()`
 
-### `docs/astro/markets_platform/virtualfundbuilder/SKILL.md`
+### `agents_scaffold/markets_platform/virtualfundbuilder/SKILL.md`
 
 Owns:
 
@@ -238,7 +238,7 @@ Owns:
 - forward-fill semantics
 - portfolio data contracts
 
-### `docs/astro/markets_platform/instruments_and_pricing/SKILL.md`
+### `agents_scaffold/markets_platform/instruments_and_pricing/SKILL.md`
 
 Owns:
 
@@ -247,7 +247,7 @@ Owns:
 - runtime valuation path
 - curves and fixings expectations
 
-### `docs/astro/dashboards/streamlit/SKILL.md`
+### `agents_scaffold/dashboards/streamlit/SKILL.md`
 
 Owns:
 
@@ -258,7 +258,7 @@ Owns:
 
 ## Required Sections In Every SKILL.md
 
-Every Astro skill should follow the common operational structure:
+Every agents scaffold skill should follow the common operational structure:
 
 1. `Overview`
 2. `This Skill Can Do`
@@ -276,27 +276,27 @@ Every Astro skill should follow the common operational structure:
 
 - keep `AGENTS.md` as the global contract and orchestrator rule set
 - keep `project_builder` thin
-- move all detailed `astro/` file semantics into `maintenance/local_journal`
+- move all detailed `agents_scaffold/` file semantics into `maintenance/local_journal`
 - keep domain skills free of project-state maintenance details
 
 ## Checklist
 
-- [x] Rewrite `docs/astro/project_builder/SKILL.md` into a thin bootstrap/router skill
-- [x] Fix the broken `docs/astro/AGENTS.md` reference to the canonical Astro bootstrap files
-- [x] Create `docs/astro/data_publishing/data_nodes/SKILL.md`
-- [x] Create `docs/astro/data_publishing/simple_tables/SKILL.md`
-- [x] Create `docs/astro/application_surfaces/api_surfaces/SKILL.md`
-- [x] Move/refactor `docs/astro/workspace_builder/SKILL.md` into `docs/astro/command_center/workspace_builder/SKILL.md`
-- [x] Create `docs/astro/command_center/app_components/SKILL.md`
-- [x] Create `docs/astro/platform_operations/orchestration_and_releases/SKILL.md`
-- [x] Create `docs/astro/platform_operations/access_control_and_sharing/SKILL.md`
-- [x] Create `docs/astro/markets_platform/assets_and_translation/SKILL.md`
-- [x] Create `docs/astro/markets_platform/virtualfundbuilder/SKILL.md`
-- [x] Create `docs/astro/markets_platform/instruments_and_pricing/SKILL.md`
-- [x] Create `docs/astro/dashboards/streamlit/SKILL.md`
-- [x] Ensure every Astro skill follows the common operational section structure
-- [x] Remove duplicated domain guidance from `docs/astro/project_builder/SKILL.md`
-- [x] Create `docs/astro/maintenance/local_journal/SKILL.md`
-- [x] Create `docs/astro/maintenance/bug_auditor/SKILL.md`
-- [x] Move detailed `astro/` file semantics out of `AGENTS.md` and into maintenance
+- [x] Rewrite `agents_scaffold/project_builder/SKILL.md` into a thin bootstrap/router skill
+- [x] Fix the broken `agents_scaffold/AGENTS.md` reference to the canonical agents scaffold bootstrap files
+- [x] Create `agents_scaffold/data_publishing/data_nodes/SKILL.md`
+- [x] Create `agents_scaffold/data_publishing/simple_tables/SKILL.md`
+- [x] Create `agents_scaffold/application_surfaces/api_surfaces/SKILL.md`
+- [x] Move/refactor `agents_scaffold/workspace_builder/SKILL.md` into `agents_scaffold/command_center/workspace_builder/SKILL.md`
+- [x] Create `agents_scaffold/command_center/app_components/SKILL.md`
+- [x] Create `agents_scaffold/platform_operations/orchestration_and_releases/SKILL.md`
+- [x] Create `agents_scaffold/platform_operations/access_control_and_sharing/SKILL.md`
+- [x] Create `agents_scaffold/markets_platform/assets_and_translation/SKILL.md`
+- [x] Create `agents_scaffold/markets_platform/virtualfundbuilder/SKILL.md`
+- [x] Create `agents_scaffold/markets_platform/instruments_and_pricing/SKILL.md`
+- [x] Create `agents_scaffold/dashboards/streamlit/SKILL.md`
+- [x] Ensure every agents scaffold skill follows the common operational section structure
+- [x] Remove duplicated domain guidance from `agents_scaffold/project_builder/SKILL.md`
+- [x] Create `agents_scaffold/maintenance/local_journal/SKILL.md`
+- [x] Create `agents_scaffold/maintenance/bug_auditor/SKILL.md`
+- [x] Move detailed `agents_scaffold/` file semantics out of `AGENTS.md` and into maintenance
 - [x] Make the orchestrator explicitly route to maintenance after material work

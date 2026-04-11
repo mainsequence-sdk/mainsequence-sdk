@@ -48,6 +48,9 @@ mainsequence user --json
 mainsequence agent list --json
 mainsequence project images list --json
 mainsequence cc workspace detail 7 --json
+mainsequence sdk latest --json
+mainsequence project current --json
+mainsequence project sdk-status --path . --json
 ```
 
 When the underlying SDK result is a Pydantic model, the CLI serializes it through the model's JSON dump path before printing.
@@ -252,6 +255,10 @@ mainsequence project refresh_token
 mainsequence project build_local_venv
 mainsequence project build_local_venv --path .
 mainsequence project freeze-env --path .
+mainsequence project update AGENTS.md
+mainsequence project update AGENTS.md --path .
+mainsequence project update_agent_skills
+mainsequence project update_agent_skills --path .
 
 # 4) Day-to-day sync
 mainsequence project sync "Update environment"
@@ -343,6 +350,8 @@ mainsequence settings set-base ~/mainsequence
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
+- `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then copies `AGENTS.md` from that project's installed SDK bundle in `.venv` into the project root, overwriting the existing `AGENTS.md` when present.
+- `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agents_scaffold/` bundle in `.venv` into `.agents/skills/`, overwriting only folders with the same names. It does not copy bundle-root files such as `AGENTS.md`.
 - `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
 - `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.

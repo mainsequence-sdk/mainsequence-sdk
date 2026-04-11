@@ -835,6 +835,61 @@ def _resolve_project_id_from_local_env(path: str | None = None) -> int:
     return project_id
 
 
+def _project_agents_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
+    """
+    Resolve the `agents_scaffold` bundle from the target project's local `.venv`.
+    """
+    try:
+        vp = ensure_venv(project_dir)
+    except Exception as exc:
+        error(f"Could not access the target project's .venv: {exc}")
+        raise typer.Exit(1) from exc
+
+    lookup = subprocess.run(
+        [
+            str(vp.python),
+            "-c",
+            (
+                "import sys, agents_scaffold; "
+                "paths=list(getattr(agents_scaffold, '__path__', [])); "
+                "sys.stdout.write(paths[0] if paths else '')"
+            ),
+        ],
+        cwd=str(project_dir),
+        capture_output=True,
+        text=True,
+    )
+    if lookup.returncode != 0:
+        detail = (lookup.stderr or lookup.stdout or "").strip()
+        message = (
+            "Could not locate agents_scaffold in the target project's .venv. "
+            "Run `mainsequence project build_local_venv` or "
+            "`mainsequence project update-sdk --path .` first."
+        )
+        if detail:
+            message = f"{message} ({detail})"
+        error(message)
+        raise typer.Exit(1)
+
+    bundle_dir = pathlib.Path((lookup.stdout or "").strip()).resolve()
+    if not bundle_dir.exists() or not bundle_dir.is_dir():
+        error(f"Target project .venv resolved an invalid agents_scaffold path: {bundle_dir}")
+        raise typer.Exit(1)
+    return bundle_dir
+
+
+def _copy_file_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+
+
+def _copy_tree_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
+    if dst.exists():
+        shutil.rmtree(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(src, dst)
+
+
 def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
     """
     Parse env var entries from repeated KEY=VALUE args and/or comma-separated chunks.
@@ -2612,6 +2667,8 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
     ```
     """
     out = cfg.set_mainsequence_path(path)
+    if _emit_json(out):
+        return
     success(f"Projects base folder set to: {out['mainsequence_path']}")
 
 
@@ -2634,6 +2691,8 @@ def settings_set_backend(
     ```
     """
     out = cfg.set_backend_url(url)
+    if _emit_json(out):
+        return
     success(f"Backend URL set to: {out.get('backend_url')}")
 
 
@@ -2657,6 +2716,9 @@ def sdk_latest():
         except Exception as e:
             error(f"Failed to fetch latest SDK version: {e}")
             raise typer.Exit(1)
+
+    if _emit_json({"latest": v}):
+        return
 
     if v:
         success(f"Latest SDK (GitHub): {v}")
@@ -9407,14 +9469,13 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
             print_kv("Debug", [("checks", json.dumps([c.__dict__ for c in dbg.checks], indent=2))])
         raise typer.Exit(1)
 
-    items = [
-        ("Path", project_info.path),
-        ("Folder", project_info.folder),
-        ("Project ID", project_info.project_id or "-"),
-        ("Venv", project_info.venv_path or "not found"),
-        ("Python", project_info.python_version or "unknown"),
-    ]
-    print_kv("Current Project", items)
+    current_project_payload = {
+        "path": project_info.path,
+        "folder": project_info.folder,
+        "project_id": project_info.project_id,
+        "venv_path": project_info.venv_path,
+        "python_version": project_info.python_version,
+    }
 
     # SDK status (best-effort)
     req = pathlib.Path(project_info.path) / "requirements.txt"
@@ -9425,17 +9486,48 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
     except Exception:
         pass
 
+    sdk_status_payload = None
     if latest or local is not None:
         status_label = "checking"
         if latest and local and local != "unversioned":
             status_label = "match" if normalize_version(local) == normalize_version(latest) else "differs"
+        sdk_status_payload = {
+            "latest_github": latest or "unavailable",
+            "local_requirements_txt": local if local is not None else "not found",
+            "status": status_label,
+            "hint": "Run: mainsequence project update-sdk --path .  (if differs)",
+        }
+
+    debug_payload = None
+    if debug and dbg.checks:
+        debug_payload = [c.__dict__ for c in dbg.checks]
+
+    if _emit_json(
+        {
+            "project": current_project_payload,
+            "sdk_status": sdk_status_payload,
+            "debug": debug_payload,
+        }
+    ):
+        return
+
+    items = [
+        ("Path", project_info.path),
+        ("Folder", project_info.folder),
+        ("Project ID", project_info.project_id or "-"),
+        ("Venv", project_info.venv_path or "not found"),
+        ("Python", project_info.python_version or "unknown"),
+    ]
+    print_kv("Current Project", items)
+
+    if latest or local is not None:
         print_kv(
             "SDK Status",
             [
-                ("Latest (GitHub)", latest or "unavailable"),
-                ("Local (requirements.txt)", local if local is not None else "not found"),
-                ("Status", status_label),
-                ("Hint", "Run: mainsequence project update-sdk --path .  (if differs)"),
+                ("Latest (GitHub)", sdk_status_payload["latest_github"]),
+                ("Local (requirements.txt)", sdk_status_payload["local_requirements_txt"]),
+                ("Status", sdk_status_payload["status"]),
+                ("Hint", sdk_status_payload["hint"]),
             ],
         )
 
@@ -9475,13 +9567,23 @@ def project_sdk_status(
     if latest and local and local != "unversioned":
         status_label = "match" if normalize_version(local) == normalize_version(latest) else "differs"
 
+    payload = {
+        "project": str(project_dir),
+        "latest_github": latest or "unavailable",
+        "local_requirements_txt": local if local is not None else "not found",
+        "status": status_label,
+    }
+
+    if _emit_json(payload):
+        return
+
     print_kv(
         "SDK Status",
         [
-            ("Project", str(project_dir)),
-            ("Latest (GitHub)", latest or "unavailable"),
-            ("Local (requirements.txt)", local if local is not None else "not found"),
-            ("Status", status_label),
+            ("Project", payload["project"]),
+            ("Latest (GitHub)", payload["latest_github"]),
+            ("Local (requirements.txt)", payload["local_requirements_txt"]),
+            ("Status", payload["status"]),
         ],
     )
 
@@ -9532,4 +9634,118 @@ def project_update_sdk(
         run_uv(uv, ["sync"], cwd=project_dir)
 
     success("SDK update complete.")
+
+
+@project.command("update")
+def project_update_scaffold_target(
+    target: str = typer.Argument(..., help="Scaffold target to update. Currently supported: AGENTS.md"),
+    project_id: int | None = typer.Option(None, "--project-id", help="Project ID to resolve local folder"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Update a scaffold-managed file in the local project root.
+
+    Currently this command supports only `AGENTS.md` and overwrites the local file
+    with the installed `agents_scaffold/AGENTS.md` bundle version.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project update AGENTS.md
+    mainsequence project update AGENTS.md --path .
+    mainsequence project update AGENTS.md --project-id 123
+    ```
+    """
+    if target != "AGENTS.md":
+        error(f"Unsupported scaffold update target: {target}. Supported target: AGENTS.md")
+        raise typer.Exit(1)
+
+    project_dir = _resolve_project_dir(project_id, path)
+    destination = project_dir / "AGENTS.md"
+
+    bundle_dir = _project_agents_scaffold_bundle_dir(project_dir)
+    source = bundle_dir / "AGENTS.md"
+    if not source.is_file():
+        error(f"Project-installed agents_scaffold bundle is missing {source.name}.")
+        raise typer.Exit(1)
+    _copy_file_overwrite(source, destination)
+
+    payload = {
+        "target": target,
+        "project": project_dir,
+        "source": source,
+        "destination": destination,
+        "overwritten": True,
+    }
+    if _emit_json(payload):
+        return
+
+    success(f"Updated {target} from installed agents_scaffold bundle.")
+    print_kv(
+        "Scaffold Update",
+        [
+            ("Target", target),
+            ("Project", str(project_dir)),
+            ("Source", str(source)),
+            ("Destination", str(destination)),
+        ],
+    )
+
+
+@project.command("update_agent_skills")
+@project.command("update-agent-skills", hidden=True)
+def project_update_agent_skills(
+    project_id: int | None = typer.Option(None, "--project-id", help="Project ID to resolve local folder"),
+    path: str | None = typer.Option(None, "--path", help="Project directory"),
+):
+    """
+    Update `.agents/skills` from the installed `agents_scaffold` bundle.
+
+    This copies every top-level scaffold skill folder from `agents_scaffold/` into
+    `.agents/skills/`, overwriting any folders with the same name. Files at the
+    bundle root such as `AGENTS.md` are not copied by this command.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project update_agent_skills
+    mainsequence project update_agent_skills --path .
+    mainsequence project update_agent_skills --project-id 123
+    ```
+    """
+    project_dir = _resolve_project_dir(project_id, path)
+    destination_root = project_dir / ".agents" / "skills"
+
+    updated: list[dict[str, pathlib.Path]] = []
+    bundle_dir = _project_agents_scaffold_bundle_dir(project_dir)
+    for source_dir in sorted(bundle_dir.iterdir(), key=lambda item: item.name):
+        if not source_dir.is_dir():
+            continue
+        if source_dir.name.startswith(".") or source_dir.name.startswith("__"):
+            continue
+        destination_dir = destination_root / source_dir.name
+        _copy_tree_overwrite(source_dir, destination_dir)
+        updated.append(
+            {
+                "name": source_dir.name,
+                "source": source_dir,
+                "destination": destination_dir,
+            }
+        )
+
+    payload = {
+        "project": project_dir,
+        "destination_root": destination_root,
+        "updated_count": len(updated),
+        "updated": updated,
+    }
+    if _emit_json(payload):
+        return
+
+    success("Updated .agents/skills from installed agents_scaffold bundle.")
+    print_table(
+        "Updated Agent Skills",
+        ["Skill Folder", "Destination"],
+        [[item["name"], str(item["destination"])] for item in updated],
+    )
 organization.add_typer(organization_teams_group, name="teams")

@@ -1305,6 +1305,18 @@ def test_settings_set_base(cli_mod, runner, monkeypatch):
     assert "Projects base folder set to" in result.output
 
 
+def test_settings_set_base_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_mainsequence_path",
+        lambda path: {"mainsequence_path": path},
+    )
+    result = runner.invoke(cli_mod.app, ["settings", "set-base", "/tmp/ms-base", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mainsequence_path"] == "/tmp/ms-base"
+
+
 def test_settings_set_backend(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1314,6 +1326,18 @@ def test_settings_set_backend(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["settings", "set-backend", "https://example.test"])
     assert result.exit_code == 0
     assert "Backend URL set to" in result.output
+
+
+def test_settings_set_backend_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_backend_url",
+        lambda url: {"backend_url": url},
+    )
+    result = runner.invoke(cli_mod.app, ["settings", "set-backend", "https://example.test", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["backend_url"] == "https://example.test"
 
 
 def test_config_normalize_backend_url(cli_mod):
@@ -1983,6 +2007,14 @@ def test_sdk_latest(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["sdk", "latest"])
     assert result.exit_code == 0
     assert "Latest SDK (GitHub): v1.2.3" in result.output
+
+
+def test_sdk_latest_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
+    result = runner.invoke(cli_mod.app, ["sdk", "latest", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["latest"] == "v1.2.3"
 
 
 def test_project_list(cli_mod, runner, monkeypatch):
@@ -8211,6 +8243,35 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
     assert "Current Project" in result.output
 
 
+def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
+    project_path = tmp_path / "org" / "projects" / "demo-123"
+    project_path.mkdir(parents=True, exist_ok=True)
+
+    project_info = types.SimpleNamespace(
+        path=str(project_path),
+        folder="demo-123",
+        project_id="123",
+        venv_path=None,
+        python_version=None,
+    )
+    debug = types.SimpleNamespace(reason="detected", checks=[])
+
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": str(tmp_path)},
+    )
+    monkeypatch.setattr(cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug))
+    monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
+    monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
+
+    result = runner.invoke(cli_mod.app, ["project", "current", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["project"]["project_id"] == "123"
+    assert payload["sdk_status"]["status"] == "match"
+
+
 def test_project_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
@@ -8223,6 +8284,23 @@ def test_project_sdk_status(cli_mod, runner, monkeypatch, tmp_path):
     )
     assert result.exit_code == 0
     assert "SDK Status" in result.output
+
+
+def test_project_sdk_status_json(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "project"
+    target.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
+    monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "v1.2.3")
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "sdk-status", "--path", str(target), "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["project"] == str(target)
+    assert payload["latest_github"] == "v1.2.3"
+    assert payload["local_requirements_txt"] == "1.2.3"
 
 
 def test_project_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
@@ -8242,6 +8320,71 @@ def test_project_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert ["lock", "--upgrade-package", "mainsequence"] in calls
     assert ["sync"] in calls
+
+
+def test_project_update_agents_md(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "AGENTS.md").write_text("bundle agents", encoding="utf-8")
+
+    target = tmp_path / "project"
+    target.mkdir()
+    (target / "AGENTS.md").write_text("old agents", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["project", "update", "AGENTS.md", "--path", str(target)])
+    assert result.exit_code == 0
+    assert (target / "AGENTS.md").read_text(encoding="utf-8") == "bundle agents"
+    assert "Updated AGENTS.md" in result.output
+
+
+def test_project_update_agents_md_json(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "AGENTS.md").write_text("bundle agents", encoding="utf-8")
+
+    target = tmp_path / "project"
+    target.mkdir()
+
+    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "update", "AGENTS.md", "--path", str(target), "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["target"] == "AGENTS.md"
+    assert payload["project"] == str(target)
+    assert payload["destination"] == str(target / "AGENTS.md")
+
+
+def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner, monkeypatch, tmp_path):
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    (bundle_dir / "AGENTS.md").write_text("bundle agents", encoding="utf-8")
+    (bundle_dir / "data_publishing").mkdir()
+    (bundle_dir / "data_publishing" / "SKILL.md").write_text("new data skill", encoding="utf-8")
+    (bundle_dir / "maintenance").mkdir()
+    (bundle_dir / "maintenance" / "SKILL.md").write_text("new maintenance skill", encoding="utf-8")
+    (bundle_dir / "__pycache__").mkdir()
+    (bundle_dir / "__pycache__" / "ignored.txt").write_text("ignore me", encoding="utf-8")
+
+    target = tmp_path / "project"
+    existing = target / ".agents" / "skills" / "data_publishing"
+    existing.mkdir(parents=True)
+    (existing / "old.txt").write_text("stale", encoding="utf-8")
+
+    monkeypatch.setattr(cli_mod, "_project_agents_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+
+    result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
+    assert result.exit_code == 0
+    assert (target / ".agents" / "skills" / "data_publishing" / "SKILL.md").read_text(encoding="utf-8") == "new data skill"
+    assert not (target / ".agents" / "skills" / "data_publishing" / "old.txt").exists()
+    assert (target / ".agents" / "skills" / "maintenance" / "SKILL.md").read_text(encoding="utf-8") == "new maintenance skill"
+    assert not (target / ".agents" / "skills" / "__pycache__").exists()
+    assert "Updated Agent Skills" in result.output
 
 
 def test_login_live_with_env_credentials(cli_mod, runner, monkeypatch):
