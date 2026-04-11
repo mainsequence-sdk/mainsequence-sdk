@@ -95,6 +95,7 @@ from .api import (
     get_agent,
     get_agent_latest_session,
     get_agent_run,
+    get_agent_session,
     get_constant,
     get_current_user_profile,
     get_data_node_storage,
@@ -284,6 +285,7 @@ app = typer.Typer(help="MainSequence CLI (login + project operations)", cls=Main
 
 agent = typer.Typer(help="Agent commands")
 agent_run_group = typer.Typer(help="Agent runtime commands")
+agent_session_group = typer.Typer(help="Agent session commands")
 constants = typer.Typer(help="Constant commands")
 secrets = typer.Typer(help="Secret commands")
 simple_table = typer.Typer(help="Simple table commands")
@@ -308,6 +310,7 @@ sdk = typer.Typer(help="SDK utilities (latest version, status)")
 
 app.add_typer(agent, name="agent")
 agent.add_typer(agent_run_group, name="run")
+agent.add_typer(agent_session_group, name="session")
 app.add_typer(agent_run_group, name="agent_runtime", hidden=True)
 app.add_typer(agent_run_group, name="agent-runtime", hidden=True)
 app.add_typer(constants, name="constants")
@@ -349,6 +352,7 @@ JOB_DEFAULT_SPOT = False
 JOB_DEFAULT_MAX_RUNTIME_SECONDS = 86400
 JOB_ALLOWED_INTERVAL_PERIODS = ("seconds", "minutes", "hours", "days")
 AGENT_MODEL_REF = "mainsequence.client.agent_runtime_models.Agent"
+AGENT_SESSION_MODEL_REF = "mainsequence.client.agent_runtime_models.AgentSession"
 AGENT_RUN_MODEL_REF = "mainsequence.client.agent_runtime_models.AgentRun"
 JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
@@ -3235,6 +3239,26 @@ def _agent_get_latest_session_impl(
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
+def _agent_session_detail_impl(
+    *,
+    agent_session_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_session_payload = get_agent_session(agent_session_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent session fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if _emit_json(agent_session_payload):
+        return
+
+    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
+    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
+
+
 def _agent_run_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4639,6 +4663,28 @@ def agent_get_latest_session_cmd(
     ```
     """
     _agent_get_latest_session_impl(agent_id=agent_id, timeout=timeout)
+
+
+@agent_session_group.command("detail")
+def agent_session_detail_cmd(
+    agent_session_id: int = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "id", ..., help="Agent session ID."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one agent session in detail by agent session id.
+
+    Uses SDK client `AgentSession.get()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent session detail 801
+    mainsequence agent session detail 801 --timeout 60
+    ```
+    """
+    _agent_session_detail_impl(agent_session_id=agent_session_id, timeout=timeout)
 
 
 @agent.command("can_view")

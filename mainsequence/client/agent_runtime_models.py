@@ -144,17 +144,19 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return cls(**response.json())
 
-    def start_new_session(self, timeout=None):
+    def start_new_session(self, timeout=None, **kwargs):
         """
         Start a new session for this agent and return the created `AgentSession`.
 
-        This is the preferred client action when you want to begin a fresh agent
-        interaction without manually constructing session rows through lower-level
-        APIs. The backend resolves the runtime defaults from the agent definition
-        and records the resulting session as a first-class `AgentSession`.
+        Keyword arguments are sent as session-creation overrides on top of the
+        agent defaults, so callers can pass values such as `thread_id`,
+        `runtime_session_id`, `external_session_id`,
+        `runtime_config_snapshot`, or explicit runtime fields.
         """
         url = f"{self.get_detail_url()}start_new_session/"
         payload: dict[str, Any] = {}
+        if kwargs:
+            payload["json"] = serialize_to_json(kwargs)
         response = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
@@ -173,8 +175,8 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
         Use this when you need the most recent `AgentSession` without listing the
         full session history. The backend returns the newest session associated
-        with the agent, including resolved runtime metadata and top-level input
-        and output fields.
+        with the agent, including resolved runtime metadata and session-level
+        identifiers and metadata.
         """
         url = f"{self.get_detail_url()}get_latest_session/"
         payload: dict[str, Any] = {}
@@ -350,14 +352,6 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     runtime_config_snapshot: dict[str, Any] = Field(
         default_factory=dict,
         description="Immutable runtime configuration snapshot used by this session after defaults and overrides were resolved.",
-    )
-    input_text: str = Field(
-        "",
-        description="Top-level textual input associated with the session.",
-    )
-    output_text: str = Field(
-        "",
-        description="Top-level textual output associated with the session.",
     )
     error_detail: str = Field(
         "",

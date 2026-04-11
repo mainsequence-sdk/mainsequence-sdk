@@ -1056,6 +1056,47 @@ def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
     assert out["id"] == 802
 
 
+def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "id": 803,
+                "agent": {"id": 12, "name": "Research Copilot"},
+                "status": "completed",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+                return FakeAgentSession()
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_agent_session(803, timeout=18)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "AgentSession",
+        "pk": 803,
+        "timeout": 18,
+    }
+    assert out["id"] == 803
+
+
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -5594,6 +5635,36 @@ def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
     )
 
     result = runner.invoke(cli_mod.app, ["agent", "get_latest_session", "12"])
+    assert result.exit_code == 0
+    assert "Agent Session Details" in result.output
+    assert "Summarize rates moves" in result.output
+    assert "Bunds rallied 4bp." in result.output
+    assert "prompt_tokens" in result.output
+
+
+def test_agent_session_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_agent_session",
+        lambda agent_session_id, timeout=None: {
+            "id": agent_session_id,
+            "agent": {"id": 12, "name": "Research Copilot"},
+            "status": "completed",
+            "started_at": "2026-04-11T09:15:00Z",
+            "ended_at": "2026-04-11T09:16:00Z",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "triggered_by_user": {"id": 7, "username": "jose"},
+            "input_text": "Summarize rates moves",
+            "output_text": "Bunds rallied 4bp.",
+            "usage_summary": {"prompt_tokens": 100},
+            "session_metadata": {"origin": "cli"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "session", "detail", "803"])
     assert result.exit_code == 0
     assert "Agent Session Details" in result.output
     assert "Summarize rates moves" in result.output

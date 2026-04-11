@@ -912,6 +912,32 @@ def get_agent_latest_session(
         raise ApiError(f"Agent latest session fetch failed: {e}")
 
 
+def get_agent_session(
+    agent_session_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one agent session via SDK client model.
+    """
+    try:
+        agent_session = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.get(
+                pk=int(agent_session_id), timeout=timeout
+            ),
+        )
+        return _sdk_object_to_dict(agent_session)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session fetch failed: {e}")
+
+
 def list_agent_users_can_view(
     agent_id: int | str,
     *,
