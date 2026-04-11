@@ -856,6 +856,62 @@ def delete_agent(
         raise ApiError(f"Agent deletion failed: {e}")
 
 
+def start_agent_new_session(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Start a new session for one agent via SDK client model.
+    """
+    try:
+        def _start(ClientAgent):
+            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            return agent.start_new_session(timeout=timeout)
+
+        session = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=_start,
+        )
+        return _sdk_object_to_dict(session)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent not found: {agent_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session start failed: {e}")
+
+
+def get_agent_latest_session(
+    agent_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve the latest session for one agent via SDK client model.
+    """
+    try:
+        def _get_latest(ClientAgent):
+            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            return agent.get_latest_session(timeout=timeout)
+
+        session = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=_get_latest,
+        )
+        return _sdk_object_to_dict(session)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent not found: {agent_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent latest session fetch failed: {e}")
+
+
 def list_agent_users_can_view(
     agent_id: int | str,
     *,

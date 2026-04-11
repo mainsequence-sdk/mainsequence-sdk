@@ -93,6 +93,7 @@ from .api import (
     delete_workspace,
     fetch_project_env_text,
     get_agent,
+    get_agent_latest_session,
     get_agent_run,
     get_constant,
     get_current_user_profile,
@@ -169,6 +170,7 @@ from .api import (
     run_project_job,
     safe_slug,
     schedule_batch_project_jobs,
+    start_agent_new_session,
     sync_project_after_commit,
     update_organization_team,
     update_workspace,
@@ -389,12 +391,18 @@ INSTR_REL_PATH = pathlib.Path("examples") / "ai" / "instructions"
 def _mainsequence_ascii_banner() -> str:
     return dedent(
         r"""
-         __  __       _         ____                                 
-        |  \/  | __ _(_)_ __   / ___|  ___  __ _ _   _  ___ _ __   ___
-        | |\/| |/ _` | | '_ \  \___ \ / _ \/ _` | | | |/ _ \ '_ \ / __|
-        | |  | | (_| | | | | |  ___) |  __/ (_| | |_| |  __/ | | | (__ 
-        |_|  |_|\__,_|_|_| |_| |____/ \___|\__, |\__,_|\___|_| |_|\___|
-                                              |_|                       
+         __  __       _        
+        |  \/  | __ _(_)_ __   
+        | |\/| |/ _` | | '_ \  
+        | |  | | (_| | | | | | 
+        |_|  |_|\__,_|_|_| |_| 
+
+         ____                                 
+        / ___|  ___  __ _ _   _  ___ _ __   ___ ___
+        \___ \ / _ \/ _` | | | |/ _ \ '_ \ / __/ _ \
+         ___) |  __/ (_| | |_| |  __/ | | | (_|  __/
+        |____/ \___|\__, |\__,_|\___|_| |_|\___\___|
+                      |_|                           
         """
     ).strip("\n")
 
@@ -2899,6 +2907,46 @@ def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tupl
     ]
 
 
+def _format_agent_session_ref_label(session_ref: object) -> str:
+    if isinstance(session_ref, dict):
+        return str(session_ref.get("id") or "-")
+    return str(session_ref or "-")
+
+
+def _format_agent_session_preview(agent_session_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("ID", str(agent_session_payload.get("id") or "-")),
+        ("Agent", _format_agent_ref_label(agent_session_payload.get("agent"))),
+        ("Status", str(agent_session_payload.get("status") or "-")),
+        ("Started At", str(agent_session_payload.get("started_at") or "-")),
+        ("Ended At", str(agent_session_payload.get("ended_at") or "-")),
+        ("LLM Provider", str(agent_session_payload.get("llm_provider") or "-")),
+        ("LLM Model", str(agent_session_payload.get("llm_model") or "-")),
+        ("Engine", str(agent_session_payload.get("engine_name") or "-")),
+    ]
+
+
+def _format_agent_session_details(agent_session_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Triggered By", _format_user_summary_label(agent_session_payload.get("triggered_by_user"))),
+        ("Parent Session", _format_agent_session_ref_label(agent_session_payload.get("parent_session"))),
+        ("Root Session", _format_agent_session_ref_label(agent_session_payload.get("root_session"))),
+        ("Spawned By Step", str(agent_session_payload.get("spawned_by_step") or "-")),
+        ("External Session ID", str(agent_session_payload.get("external_session_id") or "-")),
+        ("Runtime Session ID", str(agent_session_payload.get("runtime_session_id") or "-")),
+        ("Thread ID", str(agent_session_payload.get("thread_id") or "-")),
+        ("Input Text", str(agent_session_payload.get("input_text") or "-")),
+        ("Output Text", str(agent_session_payload.get("output_text") or "-")),
+        ("Error Detail", str(agent_session_payload.get("error_detail") or "-")),
+        (
+            "Runtime Config Snapshot",
+            _format_json_value(agent_session_payload.get("runtime_config_snapshot")),
+        ),
+        ("Usage Summary", _format_json_value(agent_session_payload.get("usage_summary"))),
+        ("Session Metadata", _format_json_value(agent_session_payload.get("session_metadata"))),
+    ]
+
+
 def _agent_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -3144,6 +3192,47 @@ def _agent_delete_impl(
 
     success(f"Agent deleted: id={agent_id}")
     print_kv("Deleted Agent", _format_agent_preview(deleted))
+
+
+def _agent_start_new_session_impl(
+    *,
+    agent_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_session_payload = start_agent_new_session(agent_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent session start failed: {e}")
+        raise typer.Exit(1)
+
+    if _emit_json(agent_session_payload):
+        return
+
+    success(f"Agent session started: agent_id={agent_id}")
+    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
+    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
+
+
+def _agent_get_latest_session_impl(
+    *,
+    agent_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        agent_session_payload = get_agent_latest_session(agent_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent latest session fetch failed: {e}")
+        raise typer.Exit(1)
+
+    if _emit_json(agent_session_payload):
+        return
+
+    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
+    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
 
 
 def _agent_run_list_impl(
@@ -4510,6 +4599,46 @@ def agent_delete_cmd(
     Delete one agent.
     """
     _agent_delete_impl(agent_id=agent_id, timeout=timeout)
+
+
+@agent.command("start_new_session")
+def agent_start_new_session_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Start a new session for one agent and return the created agent session.
+
+    Uses SDK client `Agent.start_new_session()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent start_new_session 12
+    mainsequence agent start_new_session 12 --timeout 60
+    ```
+    """
+    _agent_start_new_session_impl(agent_id=agent_id, timeout=timeout)
+
+
+@agent.command("get_latest_session")
+def agent_get_latest_session_cmd(
+    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Retrieve the latest session recorded for one agent.
+
+    Uses SDK client `Agent.get_latest_session()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent get_latest_session 12
+    mainsequence agent get_latest_session 12 --timeout 60
+    ```
+    """
+    _agent_get_latest_session_impl(agent_id=agent_id, timeout=timeout)
 
 
 @agent.command("can_view")

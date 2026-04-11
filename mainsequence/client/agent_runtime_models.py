@@ -32,7 +32,7 @@ class AgentCapabilitySourceType(str, Enum):
     EXTERNAL = "external"
 
 
-class AgentRunStatus(str, Enum):
+class AgentSessionStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -40,8 +40,8 @@ class AgentRunStatus(str, Enum):
     CANCELED = "canceled"
 
 
-class AgentRunStepType(str, Enum):
-    RUN_STARTED = "run_started"
+class AgentSessionStepType(str, Enum):
+    SESSION_STARTED = "session_started"
     MESSAGE = "message"
     REASONING_STEP = "reasoning_step"
     TOOL_CALL = "tool_call"
@@ -50,11 +50,11 @@ class AgentRunStepType(str, Enum):
     PROMPT_APPLIED = "prompt_applied"
     EXTENSION_USED = "extension_used"
     ARTIFACT_CREATED = "artifact_created"
-    RUN_COMPLETED = "run_completed"
-    RUN_FAILED = "run_failed"
+    SESSION_COMPLETED = "session_completed"
+    SESSION_FAILED = "session_failed"
 
 
-class AgentRunStepActorType(str, Enum):
+class AgentSessionStepActorType(str, Enum):
     USER = "user"
     AGENT = "agent"
     SYSTEM = "system"
@@ -64,7 +64,7 @@ class AgentRunStepActorType(str, Enum):
     EXTENSION = "extension"
 
 
-class AgentRunStepStatus(str, Enum):
+class AgentSessionStepStatus(str, Enum):
     PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
@@ -100,19 +100,19 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     )
     llm_provider: str = Field(
         "",
-        description="Optional default provider for future runs, for example openai, anthropic, or google. This is only a default on the Agent and is not the authoritative runtime record.",
+        description="Optional default model provider for new sessions, for example openai, anthropic, or google. This is only a default on the Agent.",
     )
     llm_model: str = Field(
         "",
-        description="Optional default model identifier for future runs, for example gpt-5.4. This is only a default on the Agent and is not the authoritative runtime record.",
+        description="Optional default model identifier for new sessions, for example gpt-5.4. This is only a default on the Agent.",
     )
     engine_name: str = Field(
         "",
-        description="Optional default higher-level runtime or orchestrator name for future runs. Use this for the wrapper above the raw model, such as an agent runtime, workflow engine, or orchestration layer.",
+        description="Optional default logical runtime or orchestrator name for new sessions. Use this to record the higher-level engine wrapper, workflow runtime, or agent runtime implementation that sits above the raw LLM model.",
     )
     runtime_config: dict[str, Any] = Field(
         default_factory=dict,
-        description="Optional default runtime configuration for future runs. Store provider-specific or engine-specific settings here when they do not deserve their own top-level field.",
+        description="Optional default runtime configuration for new sessions. Store provider-specific or engine-specific settings here when they do not deserve their own top-level field.",
     )
     configuration: dict[str, Any] = Field(
         default_factory=dict,
@@ -122,9 +122,9 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         default_factory=dict,
         description="Arbitrary metadata for UI or integration use.",
     )
-    last_run_at: datetime.datetime | None = Field(
+    last_session_at: datetime.datetime | None = Field(
         None,
-        description="Timestamp of the most recent run recorded for this agent.",
+        description="Timestamp of the most recent session recorded for this agent.",
     )
 
     @classmethod
@@ -143,6 +143,52 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         if response.status_code not in (200, 201):
             raise_for_response(response, payload=payload)
         return cls(**response.json())
+
+    def start_new_session(self, timeout=None):
+        """
+        Start a new session for this agent and return the created `AgentSession`.
+
+        This is the preferred client action when you want to begin a fresh agent
+        interaction without manually constructing session rows through lower-level
+        APIs. The backend resolves the runtime defaults from the agent definition
+        and records the resulting session as a first-class `AgentSession`.
+        """
+        url = f"{self.get_detail_url()}start_new_session/"
+        payload: dict[str, Any] = {}
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 201:
+            raise_for_response(response, payload=payload)
+        return AgentSession(**response.json())
+
+    def get_latest_session(self, timeout=None):
+        """
+        Fetch the latest recorded session for this agent.
+
+        Use this when you need the most recent `AgentSession` without listing the
+        full session history. The backend returns the newest session associated
+        with the agent, including resolved runtime metadata and top-level input
+        and output fields.
+        """
+        url = f"{self.get_detail_url()}get_latest_session/"
+        payload: dict[str, Any] = {}
+        response = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+        return AgentSession(**response.json())
 
 
 class AgentCapability(BaseObjectOrm, BasePydanticModel):
@@ -253,99 +299,99 @@ class AgentSubagentBinding(BaseObjectOrm, BasePydanticModel):
     )
 
 
-class AgentRun(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/runs"
+class AgentSession(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/sessions"
 
-    id: int | None = Field(None, description="Primary key of the agent run.")
+    id: int | None = Field(None, description="Primary key of the agent session.")
     agent: int | Agent | None = Field(
         None,
-        description="Agent definition used for this run.",
+        description="Agent definition used for this session.",
     )
     triggered_by_user: int | UserSummary | None = Field(
         None,
-        description="User who triggered the run, as either a user id or expanded user payload.",
+        description="User who triggered the session, as either a user id or expanded user payload.",
     )
-    parent_run: int | AgentRun | None = Field(
+    parent_session: int | AgentSession | None = Field(
         None,
-        description="Optional parent run when this run was spawned as a subagent execution by another run.",
+        description="Optional parent session when this session was spawned as a subagent execution by another session.",
     )
-    root_run: int | AgentRun | None = Field(
+    root_session: int | AgentSession | None = Field(
         None,
-        description="Root run of the run tree. Child and descendant runs point back to the same root for visualization and querying.",
+        description="Root session of the session tree. Child and descendant sessions point back to the same root for visualization and querying.",
     )
-    spawned_by_step: int | AgentRunStep | None = Field(
+    spawned_by_step: int | AgentSessionStep | None = Field(
         None,
-        description="Run step that spawned this run, when applicable. This links subagent executions back to the exact parent timeline step.",
+        description="Session step that spawned this session, when applicable. This links subagent executions back to the exact parent timeline step.",
     )
-    status: AgentRunStatus = Field(
-        AgentRunStatus.PENDING,
-        description="Lifecycle status of the run.",
+    status: AgentSessionStatus = Field(
+        AgentSessionStatus.PENDING,
+        description="Lifecycle status of the session.",
     )
     started_at: datetime.datetime | None = Field(
         None,
-        description="Timestamp when the run started.",
+        description="Timestamp when the session started.",
     )
     ended_at: datetime.datetime | None = Field(
         None,
-        description="Timestamp when the run ended.",
+        description="Timestamp when the session ended.",
     )
     llm_provider: str = Field(
         ...,
-        description="Resolved LLM provider actually used for this run. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
+        description="Resolved LLM provider actually used for this session. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
     )
     llm_model: str = Field(
         ...,
-        description="Resolved LLM model actually used for this run. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
+        description="Resolved LLM model actually used for this session. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
     )
     engine_name: str = Field(
         ...,
-        description="Resolved higher-level runtime or engine actually used for this run. This records the wrapper above the raw model, such as the agent runtime, workflow engine, router, or orchestration layer.",
+        description="Resolved higher-level runtime or engine actually used for this session. This records the wrapper above the raw model, such as the agent runtime, workflow engine, router, or orchestration layer.",
     )
     runtime_config_snapshot: dict[str, Any] = Field(
         default_factory=dict,
-        description="Immutable runtime configuration snapshot used by this run after defaults and overrides were resolved.",
+        description="Immutable runtime configuration snapshot used by this session after defaults and overrides were resolved.",
     )
     input_text: str = Field(
         "",
-        description="Top-level textual input associated with the run.",
+        description="Top-level textual input associated with the session.",
     )
     output_text: str = Field(
         "",
-        description="Top-level textual output associated with the run.",
+        description="Top-level textual output associated with the session.",
     )
     error_detail: str = Field(
         "",
-        description="Error detail captured for failed runs.",
+        description="Error detail captured for failed sessions.",
     )
-    external_run_id: str = Field(
+    external_session_id: str = Field(
         "",
-        description="External provider run identifier, if any.",
+        description="External provider session identifier, if any.",
     )
-    session_id: str = Field(
+    runtime_session_id: str = Field(
         "",
-        description="Session identifier associated with the run.",
+        description="Runtime session identifier associated with the session.",
     )
     thread_id: str = Field(
         "",
-        description="Conversation or thread identifier associated with the run.",
+        description="Conversation or thread identifier associated with the session.",
     )
     usage_summary: dict[str, Any] = Field(
         default_factory=dict,
-        description="Usage, cost, or token accounting captured for the run.",
+        description="Usage, cost, or token accounting captured for the session.",
     )
-    run_metadata: dict[str, Any] = Field(
+    session_metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional run metadata.",
+        description="Additional session metadata.",
     )
 
 
-class AgentRunCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/run-capability-snapshots"
+class AgentSessionCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/session-capability-snapshots"
 
-    id: int | None = Field(None, description="Primary key of the run capability snapshot.")
-    agent_run: int | AgentRun | None = Field(
+    id: int | None = Field(None, description="Primary key of the session capability snapshot.")
+    agent_session: int | AgentSession | None = Field(
         None,
-        description="Run associated with this capability snapshot.",
+        description="Session associated with this capability snapshot.",
     )
     capability: int | AgentCapability | None = Field(
         None,
@@ -353,31 +399,31 @@ class AgentRunCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
     )
     sequence: int = Field(
         0,
-        description="Stable sequence number for rendering capabilities within a run.",
+        description="Stable sequence number for rendering capabilities within a session.",
     )
     capability_name: str = Field(
         ...,
-        description="Capability name captured at run time.",
+        description="Capability name captured at session time.",
     )
     capability_kind: AgentCapabilityKind = Field(
         ...,
-        description="Capability kind captured at run time.",
+        description="Capability kind captured at session time.",
     )
     role: AgentCapabilityKind = Field(
         ...,
-        description="Role under which the capability was attached during the run.",
+        description="Role under which the capability was attached during the session.",
     )
     source_type: AgentCapabilitySourceType = Field(
         AgentCapabilitySourceType.INLINE,
-        description="Source type captured at run time.",
+        description="Source type captured at session time.",
     )
     source_ref: str = Field(
         "",
-        description="Source reference captured at run time.",
+        description="Source reference captured at session time.",
     )
     configuration_snapshot: dict[str, Any] = Field(
         default_factory=dict,
-        description="Immutable configuration snapshot taken when the run started.",
+        description="Immutable configuration snapshot taken when the session started.",
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
@@ -385,28 +431,28 @@ class AgentRunCapabilitySnapshot(BaseObjectOrm, BasePydanticModel):
     )
 
 
-class AgentRunStep(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/run-steps"
+class AgentSessionStep(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/session-steps"
 
-    id: int | None = Field(None, description="Primary key of the run step.")
-    agent_run: int | AgentRun | None = Field(
+    id: int | None = Field(None, description="Primary key of the session step.")
+    agent_session: int | AgentSession | None = Field(
         None,
-        description="Run associated with this step.",
+        description="Session associated with this step.",
     )
-    parent_step: int | AgentRunStep | None = Field(
+    parent_step: int | AgentSessionStep | None = Field(
         None,
-        description="Optional parent step for tree-structured run timelines.",
+        description="Optional parent step for tree-structured session timelines.",
     )
     sequence: int = Field(
         0,
-        description="Stable sequence number for ordering steps within a run.",
+        description="Stable sequence number for ordering steps within a session.",
     )
-    step_type: AgentRunStepType = Field(
+    step_type: AgentSessionStepType = Field(
         ...,
-        description="Categorization of the step in the run timeline.",
+        description="Categorization of the step in the session timeline.",
     )
-    actor_type: AgentRunStepActorType = Field(
-        AgentRunStepActorType.SYSTEM,
+    actor_type: AgentSessionStepActorType = Field(
+        AgentSessionStepActorType.SYSTEM,
         description="Actor that originated the step.",
     )
     actor_name: str = Field(
@@ -415,14 +461,14 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
     )
     title: str = Field(
         "",
-        description="Short title shown in run visualizations.",
+        description="Short title shown in session visualizations.",
     )
     summary: str = Field(
         "",
         description="Longer textual summary of the step.",
     )
-    status: AgentRunStepStatus = Field(
-        AgentRunStepStatus.PENDING,
+    status: AgentSessionStepStatus = Field(
+        AgentSessionStepStatus.PENDING,
         description="Execution status of the step.",
     )
     started_at: datetime.datetime | None = Field(
@@ -435,11 +481,11 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
     )
     llm_provider: str = Field(
         "",
-        description="Optional step-level override for the LLM provider when a particular step runs on a different provider than the run default.",
+        description="Optional step-level override for the LLM provider when a particular step runs on a different provider than the session default.",
     )
     llm_model: str = Field(
         "",
-        description="Optional step-level override for the LLM model when a particular step runs on a different model than the run default.",
+        description="Optional step-level override for the LLM model when a particular step runs on a different model than the session default.",
     )
     engine_name: str = Field(
         "",
@@ -447,7 +493,7 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
     )
     runtime_config_override: dict[str, Any] = Field(
         default_factory=dict,
-        description="Optional step-level runtime override merged on top of the run-level runtime snapshot.",
+        description="Optional step-level runtime override merged on top of the session-level runtime snapshot.",
     )
     input_payload: dict[str, Any] = Field(
         default_factory=dict,
@@ -467,25 +513,25 @@ class AgentRunStep(BaseObjectOrm, BasePydanticModel):
     )
     metadata: dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional metadata associated with the run step.",
+        description="Additional metadata associated with the session step.",
     )
 
 
-class AgentRunArtifact(BaseObjectOrm, BasePydanticModel):
-    ENDPOINT: ClassVar[str] = "agents/v1/run-artifacts"
+class AgentSessionArtifact(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/session-artifacts"
 
-    id: int | None = Field(None, description="Primary key of the run artifact.")
-    agent_run: int | AgentRun | None = Field(
+    id: int | None = Field(None, description="Primary key of the session artifact.")
+    agent_session: int | AgentSession | None = Field(
         None,
-        description="Run associated with this artifact.",
+        description="Session associated with this artifact.",
     )
-    step: int | AgentRunStep | None = Field(
+    step: int | AgentSessionStep | None = Field(
         None,
-        description="Optional run step associated with this artifact.",
+        description="Optional session step associated with this artifact.",
     )
     artifact_type: AgentArtifactType = Field(
         ...,
-        description="Type of artifact produced during the run.",
+        description="Type of artifact produced during the session.",
     )
     name: str = Field(..., description="Human-readable artifact name.")
     mime_type: str = Field(
@@ -517,14 +563,14 @@ __all__ = [
     "AgentCapabilityBinding",
     "AgentCapabilityKind",
     "AgentCapabilitySourceType",
-    "AgentRun",
-    "AgentRunArtifact",
-    "AgentRunCapabilitySnapshot",
-    "AgentRunStatus",
-    "AgentRunStep",
-    "AgentRunStepActorType",
-    "AgentRunStepStatus",
-    "AgentRunStepType",
+    "AgentSession",
+    "AgentSessionArtifact",
+    "AgentSessionCapabilitySnapshot",
+    "AgentSessionStatus",
+    "AgentSessionStep",
+    "AgentSessionStepActorType",
+    "AgentSessionStepStatus",
+    "AgentSessionStepType",
     "AgentStatus",
     "AgentSubagentBinding",
 ]

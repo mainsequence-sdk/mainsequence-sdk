@@ -960,6 +960,102 @@ def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
     assert out["id"] == 12
 
 
+def test_start_agent_new_session_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "id": 801,
+                "agent": {"id": 12, "name": "Research Copilot"},
+                "status": "pending",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+
+                class _Agent:
+                    def start_new_session(self, timeout=None):
+                        captured["start_new_session_timeout"] = timeout
+                        return FakeAgentSession()
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.start_agent_new_session(12, timeout=16)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "pk": 12,
+        "timeout": 16,
+        "start_new_session_timeout": 16,
+    }
+    assert out["id"] == 801
+
+
+def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeAgentSession:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "id": 802,
+                "agent": {"id": 12, "name": "Research Copilot"},
+                "status": "completed",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+
+                class _Agent:
+                    def get_latest_session(self, timeout=None):
+                        captured["get_latest_session_timeout"] = timeout
+                        return FakeAgentSession()
+
+                return _Agent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_agent_latest_session(12, timeout=17)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "pk": 12,
+        "timeout": 17,
+        "get_latest_session_timeout": 17,
+    }
+    assert out["id"] == 802
+
+
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -5447,6 +5543,62 @@ def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
     assert captured["configuration"] == {"mode": "analysis"}
     assert captured["metadata"] == {"owner": "quant"}
     assert "Agent resolved via get_or_create: Research Copilot" in result.output
+
+
+def test_agent_start_new_session(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "start_agent_new_session",
+        lambda agent_id, timeout=None: {
+            "id": 801,
+            "agent": {"id": agent_id, "name": "Research Copilot"},
+            "status": "pending",
+            "started_at": "2026-04-11T09:15:00Z",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "thread_id": "thread-123",
+            "runtime_config_snapshot": {"temperature": 0},
+            "session_metadata": {"origin": "cli"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "start_new_session", "12"])
+    assert result.exit_code == 0
+    assert "Agent session started: agent_id=12" in result.output
+    assert "Agent Session Details" in result.output
+    assert "thread-123" in result.output
+    assert "temperature" in result.output
+
+
+def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_agent_latest_session",
+        lambda agent_id, timeout=None: {
+            "id": 802,
+            "agent": {"id": agent_id, "name": "Research Copilot"},
+            "status": "completed",
+            "started_at": "2026-04-11T09:15:00Z",
+            "ended_at": "2026-04-11T09:16:00Z",
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "engine_name": "codex",
+            "input_text": "Summarize rates moves",
+            "output_text": "Bunds rallied 4bp.",
+            "usage_summary": {"prompt_tokens": 100},
+            "session_metadata": {"origin": "cli"},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "get_latest_session", "12"])
+    assert result.exit_code == 0
+    assert "Agent Session Details" in result.output
+    assert "Summarize rates moves" in result.output
+    assert "Bunds rallied 4bp." in result.output
+    assert "prompt_tokens" in result.output
 
 
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
