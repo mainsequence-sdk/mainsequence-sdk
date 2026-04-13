@@ -161,6 +161,8 @@ Do not start domain work with a vague target.
 
 Use the CLI to confirm the active project and refresh credentials before live checks when needed.
 
+When the result will be consumed programmatically or used as machine-readable evidence, prefer the CLI `--json` flag.
+
 Typical bootstrap checks:
 
 - `mainsequence project current --debug`

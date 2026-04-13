@@ -191,7 +191,7 @@ If you need the exact SDK surface:
 ## Package metadata
 
 - Package name: `mainsequence`
-- Python: `>=3.10`
+- Python: `>=3.11`
 - CLI entry point: `mainsequence`
 
 Project metadata is defined in [pyproject.toml](pyproject.toml).

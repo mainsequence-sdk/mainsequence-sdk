@@ -249,7 +249,7 @@ print("Barrier info:", bar.get_barrier_info())
 
 ## 4) Setup & notes
 
-* **Python** ≥ 3.10, **QuantLib** ≥ 1.29 recommended.
+* **Python** ≥ 3.11, **QuantLib** ≥ 1.29 recommended.
 * Install deps (typical): `pip install QuantLib numpy pandas matplotlib plotly pydantic`.
 * For the **TIIE zero curve**, either place `data/MEXDERSWAP_IRSTIIEPR.csv` as in this repo, or set:
 

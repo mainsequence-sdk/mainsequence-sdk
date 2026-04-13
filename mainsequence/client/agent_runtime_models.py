@@ -312,6 +312,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         None,
         description="Agent definition used for this session.",
     )
+    agent_name: str = Field(
+        "",
+        description="Read-only helper with the agent display name for rendering session results.",
+    )
     parent_session: int | AgentSession | None = Field(
         None,
         description="Optional parent session when this session was spawned as a subagent execution by another session.",

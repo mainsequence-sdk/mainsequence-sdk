@@ -47,6 +47,7 @@ Working rules for this role:
 
 - prioritize the repository skills when interacting with Main Sequence concepts and workflows
 - use the `mainsequence` CLI for backend interaction unless a task explicitly requires another verified interface
+- when CLI output will be consumed by an agent, parsed, compared, or used as machine-readable evidence, prefer running the command with `--json`
 - when the available platform data is unknown, use the data-exploration skill before proposing a new dataset or pipeline
 - do not blur domain boundaries when a dedicated skill already exists
 - prefer reusable implementation over one-off logic placed directly into dashboards, jobs, or route handlers
