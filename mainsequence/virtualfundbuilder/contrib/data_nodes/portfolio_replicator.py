@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import copy
 from enum import Enum
-from typing import Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -17,6 +19,9 @@ from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfi
 from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
+
+if TYPE_CHECKING:
+    from mainsequence.tdag.data_nodes.data_nodes import APIDataNode, DataNode
 
 
 class TrackingStrategy(Enum):
@@ -202,7 +207,7 @@ class ETFReplicator(WeightsBase, DataNode):
         )
         return self.price_assets + [self.etf_asset]
 
-    def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
+    def dependencies(self) -> dict[str, DataNode | APIDataNode]:
         return {
             "bars_ts": self.bars_ts,
             "etf_bars_ts": self.etf_bars_ts,

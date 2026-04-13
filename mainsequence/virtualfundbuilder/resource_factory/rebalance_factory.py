@@ -25,7 +25,7 @@ class RebalanceStrategyBase(BaseModel):
         try:
             mcal.get_calendar(v)
         except Exception as e:
-            raise ValueError(f"Unknown calendar '{v}': {e}")
+            raise ValueError(f"Unknown calendar '{v}': {e}") from e
         return v
 
     @property

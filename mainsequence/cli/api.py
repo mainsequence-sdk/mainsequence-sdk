@@ -228,6 +228,10 @@ def _format_env_value(value: Any) -> str:
         return value
     if isinstance(value, (int, float, bool)):
         return str(value)
+    try:
+        return json.dumps(value)
+    except Exception:
+        return str(value)
 
 
 def _sdk_object_to_dict(obj: Any) -> dict[str, Any]:
@@ -306,7 +310,7 @@ def _run_sdk_model_operation(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         raise
     finally:
         if client_utils is not None:
@@ -332,10 +336,6 @@ def _run_sdk_model_operation(
                 os.environ.pop(k, None)
             else:
                 os.environ[k] = v
-    try:
-        return json.dumps(value)
-    except Exception:
-        return str(value)
 
 
 def get_current_user_profile() -> dict:
@@ -438,8 +438,8 @@ def get_logged_user_details() -> dict[str, Any]:
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
-        raise ApiError(f"Current user fetch failed: {e}")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
+        raise ApiError(f"Current user fetch failed: {e}") from e
     finally:
         if current_auth_headers is not None and headers_token is not None:
             try:
@@ -512,7 +512,7 @@ def list_org_project_names(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization project names fetch failed: {e}")
+        raise ApiError(f"Organization project names fetch failed: {e}") from e
 
 
 def validate_project_name(
@@ -539,7 +539,7 @@ def validate_project_name(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project name validation failed: {e}")
+        raise ApiError(f"Project name validation failed: {e}") from e
 
 
 def list_organization_teams(
@@ -563,7 +563,7 @@ def list_organization_teams(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization teams fetch failed: {e}")
+        raise ApiError(f"Organization teams fetch failed: {e}") from e
 
 
 def get_organization_team(
@@ -584,10 +584,10 @@ def get_organization_team(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}")
+            raise ApiError(f"Team not found: {team_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team fetch failed: {e}")
+        raise ApiError(f"Organization team fetch failed: {e}") from e
 
 
 def create_organization_team(
@@ -613,7 +613,7 @@ def create_organization_team(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team creation failed: {e}")
+        raise ApiError(f"Organization team creation failed: {e}") from e
 
 
 def update_organization_team(
@@ -649,10 +649,10 @@ def update_organization_team(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}")
+            raise ApiError(f"Team not found: {team_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team update failed: {e}")
+        raise ApiError(f"Organization team update failed: {e}") from e
 
 
 def delete_organization_team(
@@ -678,10 +678,10 @@ def delete_organization_team(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Team not found: {team_id}")
+            raise ApiError(f"Team not found: {team_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization team deletion failed: {e}")
+        raise ApiError(f"Organization team deletion failed: {e}") from e
 
 
 def list_agents(
@@ -702,7 +702,7 @@ def list_agents(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agents fetch failed: {e}")
+        raise ApiError(f"Agents fetch failed: {e}") from e
 
 
 def get_agent(
@@ -723,10 +723,10 @@ def get_agent(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}")
+            raise ApiError(f"Agent not found: {agent_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent fetch failed: {e}")
+        raise ApiError(f"Agent fetch failed: {e}") from e
 
 
 def create_agent(
@@ -775,7 +775,7 @@ def create_agent(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent creation failed: {e}")
+        raise ApiError(f"Agent creation failed: {e}") from e
 
 
 def get_or_create_agent(
@@ -824,7 +824,7 @@ def get_or_create_agent(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent get_or_create failed: {e}")
+        raise ApiError(f"Agent get_or_create failed: {e}") from e
 
 
 def delete_agent(
@@ -850,10 +850,10 @@ def delete_agent(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}")
+            raise ApiError(f"Agent not found: {agent_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent deletion failed: {e}")
+        raise ApiError(f"Agent deletion failed: {e}") from e
 
 
 def start_agent_new_session(
@@ -878,10 +878,10 @@ def start_agent_new_session(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}")
+            raise ApiError(f"Agent not found: {agent_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session start failed: {e}")
+        raise ApiError(f"Agent session start failed: {e}") from e
 
 
 def get_agent_latest_session(
@@ -906,10 +906,10 @@ def get_agent_latest_session(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}")
+            raise ApiError(f"Agent not found: {agent_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent latest session fetch failed: {e}")
+        raise ApiError(f"Agent latest session fetch failed: {e}") from e
 
 
 def get_agent_session(
@@ -932,10 +932,10 @@ def get_agent_session(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent session not found: {agent_session_id}")
+            raise ApiError(f"Agent session not found: {agent_session_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session fetch failed: {e}")
+        raise ApiError(f"Agent session fetch failed: {e}") from e
 
 
 def list_agent_users_can_view(
@@ -1118,7 +1118,7 @@ def list_agent_runs(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent runs fetch failed: {e}")
+        raise ApiError(f"Agent runs fetch failed: {e}") from e
 
 
 def get_agent_run(
@@ -1139,10 +1139,10 @@ def get_agent_run(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent run not found: {agent_run_id}")
+            raise ApiError(f"Agent run not found: {agent_run_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent run fetch failed: {e}")
+        raise ApiError(f"Agent run fetch failed: {e}") from e
 
 
 def get_project(project_id: int | str) -> dict:
@@ -1554,10 +1554,10 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         # Delay class references to after import path above.
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Data node updates fetch failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Data node updates fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -1613,10 +1613,10 @@ def sync_project_after_commit(project_id: int | str, *, timeout: int | None = No
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Project post-commit sync failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Project post-commit sync failed: {e}") from e
 
 
 def prime_sync_project_after_commit_sdk() -> None:
@@ -1635,7 +1635,7 @@ def prime_sync_project_after_commit_sdk() -> None:
         importlib.import_module("mainsequence.client.base")
         importlib.import_module("mainsequence.client.models_tdag")
     except Exception as e:
-        raise ApiError(f"Project post-commit SDK import failed: {e}")
+        raise ApiError(f"Project post-commit SDK import failed: {e}") from e
 
 
 def create_project_image(
@@ -1717,10 +1717,10 @@ def create_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {related_project_id}")
-        raise ApiError(f"Project image create failed: {e}")
+            raise ApiError(f"Project not found: {related_project_id}") from e
+        raise ApiError(f"Project image create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -1829,10 +1829,10 @@ def list_project_images(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {related_project_id}")
-        raise ApiError(f"Project images fetch failed: {e}")
+            raise ApiError(f"Project not found: {related_project_id}") from e
+        raise ApiError(f"Project images fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -1879,10 +1879,10 @@ def get_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_id}")
+            raise ApiError(f"Project image not found: {image_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project image fetch failed: {e}")
+        raise ApiError(f"Project image fetch failed: {e}") from e
 
 
 def delete_project_image(
@@ -1905,10 +1905,10 @@ def delete_project_image(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Project image not found: {image_id}")
+            raise ApiError(f"Project image not found: {image_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Project image deletion failed: {e}")
+        raise ApiError(f"Project image deletion failed: {e}") from e
 
 
 def _normalize_release_kind_value(value: Any) -> str | None:
@@ -1942,10 +1942,10 @@ def get_resource_release(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Resource release not found: {release_id}")
+            raise ApiError(f"Resource release not found: {release_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release fetch failed: {e}")
+        raise ApiError(f"Resource release fetch failed: {e}") from e
 
 
 def delete_resource_release(
@@ -1972,10 +1972,10 @@ def delete_resource_release(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Resource release not found: {release_id}")
+            raise ApiError(f"Resource release not found: {release_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Resource release deletion failed: {e}")
+        raise ApiError(f"Resource release deletion failed: {e}") from e
 
 
 def list_project_jobs(
@@ -2059,10 +2059,10 @@ def list_project_jobs(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Project jobs fetch failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Project jobs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2181,10 +2181,10 @@ def list_project_resources(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Project resources fetch failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Project resources fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2322,10 +2322,10 @@ def create_project_resource_release(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project resource not found: {resource_id}")
-        raise ApiError(f"Project resource release create failed: {e}")
+            raise ApiError(f"Project resource not found: {resource_id}") from e
+        raise ApiError(f"Project resource release create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2430,8 +2430,8 @@ def list_market_portfolios(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
-        raise ApiError(f"Markets portfolios fetch failed: {e}")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
+        raise ApiError(f"Markets portfolios fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -2487,7 +2487,7 @@ def list_data_node_storages(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storages fetch failed: {e}")
+        raise ApiError(f"Data node storages fetch failed: {e}") from e
 
 
 def list_simple_table_storages(
@@ -2514,7 +2514,7 @@ def list_simple_table_storages(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Simple table storages fetch failed: {e}")
+        raise ApiError(f"Simple table storages fetch failed: {e}") from e
 
 
 def list_workspaces(
@@ -2538,7 +2538,7 @@ def list_workspaces(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Workspaces fetch failed: {e}")
+        raise ApiError(f"Workspaces fetch failed: {e}") from e
 
 
 def get_workspace(
@@ -2562,10 +2562,10 @@ def get_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}")
+            raise ApiError(f"Workspace not found: {workspace_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Workspace fetch failed: {e}")
+        raise ApiError(f"Workspace fetch failed: {e}") from e
 
 
 def create_workspace(
@@ -2613,7 +2613,7 @@ def create_workspace(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Workspace creation failed: {e}")
+        raise ApiError(f"Workspace creation failed: {e}") from e
 
 
 def update_workspace(
@@ -2681,10 +2681,10 @@ def update_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}")
+            raise ApiError(f"Workspace not found: {workspace_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Workspace update failed: {e}")
+        raise ApiError(f"Workspace update failed: {e}") from e
 
 
 def delete_workspace(
@@ -2710,10 +2710,10 @@ def delete_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}")
+            raise ApiError(f"Workspace not found: {workspace_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Workspace deletion failed: {e}")
+        raise ApiError(f"Workspace deletion failed: {e}") from e
 
 
 def add_workspace_labels(
@@ -2773,7 +2773,7 @@ def list_registered_widget_types(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Registered widget types fetch failed: {e}")
+        raise ApiError(f"Registered widget types fetch failed: {e}") from e
 
 
 def get_simple_table_storage(
@@ -2797,10 +2797,10 @@ def get_simple_table_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Simple table storage not found: {storage_id}")
+            raise ApiError(f"Simple table storage not found: {storage_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Simple table storage fetch failed: {e}")
+        raise ApiError(f"Simple table storage fetch failed: {e}") from e
 
 
 def delete_simple_table_storage(
@@ -2826,10 +2826,10 @@ def delete_simple_table_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Simple table storage not found: {storage_id}")
+            raise ApiError(f"Simple table storage not found: {storage_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Simple table storage deletion failed: {e}")
+        raise ApiError(f"Simple table storage deletion failed: {e}") from e
 
 
 def add_simple_table_storage_labels(
@@ -2919,7 +2919,7 @@ def data_node_storage_description_search(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage description search failed: {e}")
+        raise ApiError(f"Data node storage description search failed: {e}") from e
 
 
 def data_node_storage_column_search(
@@ -2947,7 +2947,7 @@ def data_node_storage_column_search(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage column search failed: {e}")
+        raise ApiError(f"Data node storage column search failed: {e}") from e
 
 
 def list_constants(
@@ -2974,7 +2974,7 @@ def list_constants(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constants fetch failed: {e}")
+        raise ApiError(f"Constants fetch failed: {e}") from e
 
 
 def list_secrets(
@@ -3001,7 +3001,7 @@ def list_secrets(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secrets fetch failed: {e}")
+        raise ApiError(f"Secrets fetch failed: {e}") from e
 
 
 def get_secret(
@@ -3028,10 +3028,10 @@ def get_secret(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Secret not found: {secret_id}")
+            raise ApiError(f"Secret not found: {secret_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret fetch failed: {e}")
+        raise ApiError(f"Secret fetch failed: {e}") from e
 
 
 def create_secret(
@@ -3060,7 +3060,7 @@ def create_secret(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret creation failed: {e}")
+        raise ApiError(f"Secret creation failed: {e}") from e
 
 
 def delete_secret(
@@ -3089,10 +3089,10 @@ def delete_secret(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Secret not found: {secret_id}")
+            raise ApiError(f"Secret not found: {secret_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Secret deletion failed: {e}")
+        raise ApiError(f"Secret deletion failed: {e}") from e
 
 
 def list_secret_users_can_view(
@@ -3293,10 +3293,10 @@ def get_constant(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Constant not found: {constant_id}")
+            raise ApiError(f"Constant not found: {constant_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant fetch failed: {e}")
+        raise ApiError(f"Constant fetch failed: {e}") from e
 
 
 def create_constant(
@@ -3325,7 +3325,7 @@ def create_constant(
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant creation failed: {e}")
+        raise ApiError(f"Constant creation failed: {e}") from e
 
 
 def delete_constant(
@@ -3354,10 +3354,10 @@ def delete_constant(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Constant not found: {constant_id}")
+            raise ApiError(f"Constant not found: {constant_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Constant deletion failed: {e}")
+        raise ApiError(f"Constant deletion failed: {e}") from e
 
 
 def _get_shareable_object_access_state(
@@ -3381,10 +3381,10 @@ def _get_shareable_object_access_state(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}")
+            raise ApiError(f"{class_name} not found: {object_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} share access fetch failed: {e}")
+        raise ApiError(f"{class_name} share access fetch failed: {e}") from e
 
 
 def _mutate_shareable_object_access(
@@ -3409,10 +3409,10 @@ def _mutate_shareable_object_access(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}")
+            raise ApiError(f"{class_name} not found: {object_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} share access update failed: {e}")
+        raise ApiError(f"{class_name} share access update failed: {e}") from e
 
 
 def _mutate_shareable_object_team_access(
@@ -3437,10 +3437,10 @@ def _mutate_shareable_object_team_access(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}")
+            raise ApiError(f"{class_name} not found: {object_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} team share access update failed: {e}")
+        raise ApiError(f"{class_name} team share access update failed: {e}") from e
 
 
 def _mutate_labelable_object_labels(
@@ -3465,10 +3465,10 @@ def _mutate_labelable_object_labels(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"{class_name} not found: {object_id}")
+            raise ApiError(f"{class_name} not found: {object_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"{class_name} label update failed: {e}")
+        raise ApiError(f"{class_name} label update failed: {e}") from e
 
 
 def list_constant_users_can_view(
@@ -3669,10 +3669,10 @@ def get_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}")
+            raise ApiError(f"Data node storage not found: {storage_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage fetch failed: {e}")
+        raise ApiError(f"Data node storage fetch failed: {e}") from e
 
 
 def refresh_data_node_storage_search_index(
@@ -3704,10 +3704,10 @@ def refresh_data_node_storage_search_index(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}")
+            raise ApiError(f"Data node storage not found: {storage_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage search index refresh failed: {e}")
+        raise ApiError(f"Data node storage search index refresh failed: {e}") from e
 
 
 def delete_data_node_storage(
@@ -3746,10 +3746,10 @@ def delete_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}")
+            raise ApiError(f"Data node storage not found: {storage_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Data node storage deletion failed: {e}")
+        raise ApiError(f"Data node storage deletion failed: {e}") from e
 
 
 def list_data_node_storage_users_can_view(
@@ -4038,8 +4038,8 @@ def list_market_asset_translation_tables(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
-        raise ApiError(f"Markets asset translation tables fetch failed: {e}")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
+        raise ApiError(f"Markets asset translation tables fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4141,10 +4141,10 @@ def get_market_asset_translation_table(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Markets asset translation table not found: {table_id}")
-        raise ApiError(f"Markets asset translation table fetch failed: {e}")
+            raise ApiError(f"Markets asset translation table not found: {table_id}") from e
+        raise ApiError(f"Markets asset translation table fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4271,10 +4271,10 @@ def create_project_job(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Project job create failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Project job create failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4394,10 +4394,10 @@ def schedule_batch_project_jobs(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Project not found: {project_id}")
-        raise ApiError(f"Project batch job scheduling failed: {e}")
+            raise ApiError(f"Project not found: {project_id}") from e
+        raise ApiError(f"Project batch job scheduling failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4496,10 +4496,10 @@ def run_project_job(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job not found: {job_id}")
-        raise ApiError(f"Project job run failed: {e}")
+            raise ApiError(f"Job not found: {job_id}") from e
+        raise ApiError(f"Project job run failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4604,10 +4604,10 @@ def list_project_job_runs(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job not found: {job_id}")
-        raise ApiError(f"Project job runs fetch failed: {e}")
+            raise ApiError(f"Job not found: {job_id}") from e
+        raise ApiError(f"Project job runs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:
@@ -4706,10 +4706,10 @@ def get_project_job_run_logs(
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
-            raise NotLoggedIn(str(e) or "Not logged in.")
+            raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job run not found: {job_run_id}")
-        raise ApiError(f"Project job run logs fetch failed: {e}")
+            raise ApiError(f"Job run not found: {job_run_id}") from e
+        raise ApiError(f"Project job run logs fetch failed: {e}") from e
     finally:
         if client_utils is not None:
             try:

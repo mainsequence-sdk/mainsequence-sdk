@@ -746,12 +746,12 @@ def _require_login() -> dict:
         if not prof or not prof.get("username"):
             raise NotLoggedIn("Not logged in.")
         return prof
-    except NotLoggedIn:
+    except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login <email>")
-        raise typer.Exit(1)
-    except ApiError:
+        raise typer.Exit(1) from e
+    except ApiError as e:
         error("Not logged in. Run: mainsequence login <email>")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Path:
@@ -1045,7 +1045,7 @@ def _resolve_cli_list_filters(
         filters = parse_cli_model_filters(model_ref, filter_entries)
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     conflicting = sorted(key for key in filters if key in reserved_filter_descriptions)
     if conflicting:
@@ -2113,7 +2113,7 @@ def login(
             res = api_login(email, password)
     except ApiError as e:
         error(f"Login failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     finally:
         if normalized_backend:
             if previous_backend_override is None:
@@ -2228,12 +2228,12 @@ def user_show():
     """
     try:
         user = get_logged_user_details()
-    except NotLoggedIn:
+    except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login <email>")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except ApiError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(user):
         return
@@ -2282,7 +2282,7 @@ def organization_project_names_cmd(
         project_names = list_org_project_names(timeout=timeout)
     except ApiError as e:
         error(f"Organization project names fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(project_names):
         return
@@ -2326,7 +2326,7 @@ def _organization_teams_list_impl(
         teams_payload = list_organization_teams(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Organization teams fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(teams_payload):
         return
@@ -2379,7 +2379,7 @@ def _organization_teams_create_impl(
         )
     except ApiError as e:
         error(f"Organization team creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -2402,7 +2402,7 @@ def _organization_teams_edit_impl(
         current = get_organization_team(team_id, timeout=timeout)
     except ApiError as e:
         error(f"Organization team fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     next_name = name
     next_description = description
@@ -2428,7 +2428,7 @@ def _organization_teams_edit_impl(
         )
     except ApiError as e:
         error(f"Organization team update failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(updated):
         return
@@ -2448,7 +2448,7 @@ def _organization_teams_delete_impl(
         team = get_organization_team(team_id, timeout=timeout)
     except ApiError as e:
         error(f"Organization team fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(team.get("name") or team.get("id") or team_id)
     _require_delete_verification(
@@ -2462,7 +2462,7 @@ def _organization_teams_delete_impl(
         deleted = delete_organization_team(team_id, timeout=timeout)
     except ApiError as e:
         error(f"Organization team deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -2689,7 +2689,7 @@ def copy_llm_instructions(
 
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 # ---------- settings group ----------
@@ -2804,7 +2804,7 @@ def sdk_latest():
             v = fetch_latest_sdk_version()
         except Exception as e:
             error(f"Failed to fetch latest SDK version: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
     if _emit_json({"latest": v}):
         return
@@ -2835,7 +2835,7 @@ def _markets_portfolios_list_impl(
         portfolios = list_market_portfolios(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Markets portfolios fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(portfolios):
         return
@@ -3119,7 +3119,7 @@ def _agent_list_impl(
         agents = list_agents(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Agents fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agents):
         return
@@ -3158,7 +3158,7 @@ def _agent_detail_impl(
         agent_payload = get_agent(agent_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_payload):
         return
@@ -3213,7 +3213,7 @@ def _agent_create_impl(
         )
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         created = create_agent(
@@ -3232,7 +3232,7 @@ def _agent_create_impl(
         )
     except ApiError as e:
         error(f"Agent creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -3287,7 +3287,7 @@ def _agent_get_or_create_impl(
         )
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         created = get_or_create_agent(
@@ -3306,7 +3306,7 @@ def _agent_get_or_create_impl(
         )
     except ApiError as e:
         error(f"Agent get_or_create failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -3326,7 +3326,7 @@ def _agent_delete_impl(
         agent_payload = get_agent(agent_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(agent_payload.get("name") or agent_payload.get("id") or agent_id)
     _require_delete_verification(
@@ -3340,7 +3340,7 @@ def _agent_delete_impl(
         deleted = delete_agent(agent_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -3360,7 +3360,7 @@ def _agent_start_new_session_impl(
         agent_session_payload = start_agent_new_session(agent_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent session start failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_session_payload):
         return
@@ -3381,7 +3381,7 @@ def _agent_get_latest_session_impl(
         agent_session_payload = get_agent_latest_session(agent_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent latest session fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_session_payload):
         return
@@ -3401,7 +3401,7 @@ def _agent_session_detail_impl(
         agent_session_payload = get_agent_session(agent_session_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent session fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_session_payload):
         return
@@ -3427,7 +3427,7 @@ def _agent_run_list_impl(
         agent_runs = list_agent_runs(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Agent runs fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_runs):
         return
@@ -3469,7 +3469,7 @@ def _agent_run_detail_impl(
         agent_run_payload = get_agent_run(agent_run_id, timeout=timeout)
     except ApiError as e:
         error(f"Agent run fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(agent_run_payload):
         return
@@ -3495,7 +3495,7 @@ def _constants_list_impl(
         constants_payload = list_constants(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Constants fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(constants_payload):
         return
@@ -3546,7 +3546,7 @@ def _constants_create_impl(
         created = create_constant(name=constant_name, value=parsed_value, timeout=timeout)
     except ApiError as e:
         error(f"Constant creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -3566,7 +3566,7 @@ def _constants_delete_impl(
         constant = get_constant(constant_id, timeout=timeout)
     except ApiError as e:
         error(f"Constant fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(constant.get("name") or constant.get("id") or constant_id)
     _require_delete_verification(
@@ -3580,7 +3580,7 @@ def _constants_delete_impl(
         deleted = delete_constant(constant_id, timeout=timeout)
     except ApiError as e:
         error(f"Constant deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -3603,7 +3603,7 @@ def _shareable_user_list_impl(
         access_state = fetch_fn(object_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {access_label} fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(access_state):
         return
@@ -3674,7 +3674,7 @@ def _shareable_user_access_update_impl(
         payload = action_fn(object_id, user_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -3698,7 +3698,7 @@ def _shareable_team_access_update_impl(
         payload = action_fn(object_id, team_id, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -3748,7 +3748,7 @@ def _labelable_object_labels_update_impl(
         payload = action_fn(object_id, parsed_labels, timeout=timeout)
     except ApiError as e:
         error(f"{object_label} {action_label} failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -3774,7 +3774,7 @@ def _secrets_list_impl(
         secrets_payload = list_secrets(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Secrets fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(secrets_payload):
         return
@@ -3824,7 +3824,7 @@ def _secrets_create_impl(
         created = create_secret(name=secret_name, value=secret_value, timeout=timeout)
     except ApiError as e:
         error(f"Secret creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -3844,7 +3844,7 @@ def _secrets_delete_impl(
         secret = get_secret(secret_id, timeout=timeout)
     except ApiError as e:
         error(f"Secret fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(secret.get("name") or secret.get("id") or secret_id)
     _require_delete_verification(
@@ -3858,7 +3858,7 @@ def _secrets_delete_impl(
         deleted = delete_secret(secret_id, timeout=timeout)
     except ApiError as e:
         error(f"Secret deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -3902,7 +3902,7 @@ def _simple_tables_list_impl(
         storages = list_simple_table_storages(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Simple tables fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(storages):
         return
@@ -3944,7 +3944,7 @@ def _simple_tables_detail_impl(
         storage = get_simple_table_storage(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Simple table fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(storage):
         return
@@ -3977,7 +3977,7 @@ def _simple_tables_delete_impl(
         storage = get_simple_table_storage(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Simple table fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(storage.get("source_class_name") or storage.get("id") or storage_id)
     _require_delete_verification(
@@ -3991,7 +3991,7 @@ def _simple_tables_delete_impl(
         deleted = delete_simple_table_storage(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Simple table deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -4126,7 +4126,7 @@ def _workspace_list_impl(
         workspaces = list_workspaces(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Workspaces fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(workspaces):
         return
@@ -4176,7 +4176,7 @@ def _workspace_create_impl(
             workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
         except ValueError as e:
             error(str(e))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
     else:
         workspace_title = (title or "").strip() or typer.prompt("Workspace title").strip()
         if not workspace_title:
@@ -4215,7 +4215,7 @@ def _workspace_create_impl(
         created = create_workspace(timeout=timeout, **workspace_kwargs)
     except ApiError as e:
         error(f"Workspace creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -4235,7 +4235,7 @@ def _workspace_detail_impl(
         workspace_payload = get_workspace(workspace_id, timeout=timeout)
     except ApiError as e:
         error(f"Workspace fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(workspace_payload):
         return
@@ -4256,7 +4256,7 @@ def _workspace_update_impl(
         workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if not workspace_kwargs:
         error("Workspace update payload does not include any writable fields.")
@@ -4266,7 +4266,7 @@ def _workspace_update_impl(
         updated = update_workspace(workspace_id, timeout=timeout, **workspace_kwargs)
     except ApiError as e:
         error(f"Workspace update failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(updated):
         return
@@ -4287,7 +4287,7 @@ def _workspace_delete_impl(
         workspace_payload = get_workspace(workspace_id, timeout=timeout)
     except ApiError as e:
         error(f"Workspace fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(workspace_payload.get("title") or workspace_payload.get("id") or workspace_id)
     _require_delete_verification(
@@ -4301,7 +4301,7 @@ def _workspace_delete_impl(
         deleted = delete_workspace(workspace_id, timeout=timeout)
     except ApiError as e:
         error(f"Workspace deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -4327,7 +4327,7 @@ def _registered_widget_type_list_impl(
         widgets = list_registered_widget_types(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Registered widget types fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(widgets):
         return
@@ -4381,7 +4381,7 @@ def _data_node_storage_list_impl(
         storages = list_data_node_storages(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Data node storages fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(storages):
         return
@@ -4425,9 +4425,9 @@ def _parse_cli_embedding(value: str | None) -> list[float] | None:
 
     try:
         return [float(item) for item in items]
-    except ValueError:
+    except ValueError as e:
         error("Invalid --q-embedding value. Use a comma-separated list of floats.")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
 
 def _unpack_data_node_storage_search_response(
@@ -4471,7 +4471,7 @@ def _data_node_storage_search_impl(
         payload = search_fn(filters=filters)
     except ApiError as e:
         error(f"{command_label} failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -5794,7 +5794,7 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
         storage = get_data_node_storage(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Data node storage fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(storage):
         return
@@ -5843,7 +5843,7 @@ def _data_node_storage_delete_impl(
         storage = get_data_node_storage(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Data node storage fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     verification_value = str(storage.get("storage_hash") or storage.get("id") or storage_id)
     _require_delete_verification(
@@ -5870,7 +5870,7 @@ def _data_node_storage_delete_impl(
         )
     except ApiError as e:
         error(f"Data node storage deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -5965,7 +5965,7 @@ def data_node_storage_refresh_search_index_cmd(
         payload = refresh_data_node_storage_search_index(storage_id, timeout=timeout)
     except ApiError as e:
         error(f"Data node search index refresh failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -6066,7 +6066,7 @@ def data_node_storage_search_cmd(
             )
         except ApiError as e:
             error(f"Data Node Search failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         storages, _ = _unpack_data_node_storage_search_response(description_payload)
         total_matches += len(storages)
 
@@ -6075,7 +6075,7 @@ def data_node_storage_search_cmd(
             column_payload = data_node_storage_column_search(q, filters=filters)
         except ApiError as e:
             error(f"Data Node Search failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
         storages, _ = _unpack_data_node_storage_search_response(column_payload)
         total_matches += len(storages)
 
@@ -6158,7 +6158,7 @@ def data_node_storage_description_search_cmd(
         )
     except ApiError as e:
         error(f"Data Node Description Search failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     if _emit_json(payload):
         return
     _print_data_node_storage_search_section(
@@ -6204,7 +6204,7 @@ def data_node_storage_column_search_cmd(
         payload = data_node_storage_column_search(q, filters=filters)
     except ApiError as e:
         error(f"Data Node Column Search failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     if _emit_json(payload):
         return
     _print_data_node_storage_search_section(
@@ -6599,7 +6599,7 @@ def _markets_asset_translation_table_list_impl(
         tables = list_market_asset_translation_tables(timeout=timeout, filters=filters)
     except ApiError as e:
         error(f"Markets asset translation tables fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(tables):
         return
@@ -6635,7 +6635,7 @@ def _markets_asset_translation_table_detail_impl(table_id: int, timeout: int | N
         table = get_market_asset_translation_table(table_id, timeout=timeout)
     except ApiError as e:
         error(f"Markets asset translation table fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(table):
         return
@@ -6813,12 +6813,12 @@ def _print_project_data_node_updates(
     _require_login()
     try:
         updates = get_project_data_node_updates(project_id, timeout=timeout)
-    except NotLoggedIn:
+    except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login <email>")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except ApiError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(updates):
         return
@@ -6946,7 +6946,7 @@ def project_validate_name_cmd(
         payload = validate_project_name(project_name=normalized_project_name, timeout=timeout)
     except ApiError as e:
         error(f"Project name validation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -7132,7 +7132,7 @@ def project_create_cmd(
                 env_vars = _parse_env_var_entries(env_entries)
             except ValueError as e:
                 error(str(e))
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
 
         created = create_project(
             project_name=project_name,
@@ -7144,10 +7144,10 @@ def project_create_cmd(
         )
     except ApiError as e:
         error(f"Project creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     pid = created.get("id")
 
@@ -7251,12 +7251,12 @@ def project_delete_remote_cmd(
 
     try:
         resp = delete_project(project_id, delete_repositories=delete_repositories)
-    except NotLoggedIn:
+    except NotLoggedIn as e:
         error("Not logged in. Run: mainsequence login <email>")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except ApiError as e:
         error(f"Project deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(resp):
         return
@@ -7580,7 +7580,7 @@ def _project_resources_list_impl(
         upstream, repo_commit_sha = _get_remote_branch_head_commit(project_dir)
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         resources = list_project_resources(
@@ -7591,7 +7591,7 @@ def _project_resources_list_impl(
         )
     except ApiError as e:
         error(f"Project resources fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(resources):
         return
@@ -7687,7 +7687,7 @@ def _project_resource_release_create_impl(
         project_images = list_project_images(related_project_id=project_id, timeout=timeout)
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if not project_images:
         error("No project images are available. Create an image first.")
@@ -7734,7 +7734,7 @@ def _project_resource_release_create_impl(
         )
     except ApiError as e:
         error(f"Project resources fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if not resources:
         error(
@@ -7773,7 +7773,7 @@ def _project_resource_release_create_impl(
         )
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if used_defaults:
         default_parts: list[str] = []
@@ -7800,7 +7800,7 @@ def _project_resource_release_create_impl(
         )
     except ApiError as e:
         error(f"Project resource release creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -7947,7 +7947,7 @@ def _project_resource_release_delete_impl(
         )
     except ApiError as e:
         error(f"Project resource release fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     release_label = RESOURCE_RELEASE_LABEL_MAP.get(
         expected_release_kind,
@@ -7968,7 +7968,7 @@ def _project_resource_release_delete_impl(
         )
     except ApiError as e:
         error(f"Project resource release deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -8075,7 +8075,7 @@ def _project_images_list_impl(
         images = list_project_images(related_project_id=project_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(images):
         return
@@ -8148,7 +8148,7 @@ def _project_images_delete_impl(
         image = get_project_image(image_id=image_id, timeout=timeout)
     except ApiError as e:
         error(f"Project image fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     _confirm_delete_action(
         preview_title="Project Image Delete Preview",
@@ -8161,7 +8161,7 @@ def _project_images_delete_impl(
         deleted = delete_project_image(image_id=image_id, timeout=timeout)
     except ApiError as e:
         error(f"Project image deletion failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(deleted):
         return
@@ -8207,7 +8207,7 @@ def _project_images_create_impl(
         existing_images = list_project_images(related_project_id=project_id, timeout=timeout)
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     images_by_hash = _group_project_images_by_hash(existing_images)
 
     emit_json = _json_output_enabled()
@@ -8228,7 +8228,7 @@ def _project_images_create_impl(
             commits = _list_pushed_commits(project_dir)
         except RuntimeError as e:
             error(str(e))
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         rows = [
             [
@@ -8280,10 +8280,10 @@ def _project_images_create_impl(
         )
     except ApiError as e:
         error(f"Project image creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if not emit_json:
         success(f"Project image created: id={created.get('id') or '-'}")
@@ -8454,7 +8454,7 @@ def _project_jobs_list_impl(
         jobs = list_project_jobs(project_id=project_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project jobs fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(jobs):
         return
@@ -8504,7 +8504,7 @@ def _project_job_runs_list_impl(
         runs = list_project_job_runs(job_id=job_id, filters=filters, timeout=timeout)
     except ApiError as e:
         error(f"Project job runs fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(runs):
         return
@@ -8612,7 +8612,7 @@ def project_jobs_run_cmd(
         payload = run_project_job(job_id=job_id, timeout=timeout)
     except ApiError as e:
         error(f"Project job run failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(payload):
         return
@@ -8708,7 +8708,7 @@ def project_job_runs_logs_cmd(
             payload = get_project_job_run_logs(job_run_id=job_run_id, timeout=timeout)
         except ApiError as e:
             error(f"Project job run logs fetch failed: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
 
         if _emit_json(payload):
             return
@@ -8793,7 +8793,7 @@ def _project_jobs_create_impl(
         project_images = list_project_images(related_project_id=project_id, timeout=timeout)
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if related_image_id is None and project_images:
         image_rows = [
@@ -8845,7 +8845,7 @@ def _project_jobs_create_impl(
         )
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         cpu_request, memory_request, spot, max_runtime_seconds, used_defaults = _resolve_job_create_defaults(
@@ -8856,7 +8856,7 @@ def _project_jobs_create_impl(
         )
     except ValueError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if used_defaults:
         default_parts: list[str] = []
@@ -8892,10 +8892,10 @@ def _project_jobs_create_impl(
         )
     except ApiError as e:
         error(f"Project job creation failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     if _emit_json(created):
         return
@@ -9122,10 +9122,10 @@ def project_schedule_batch_jobs_cmd(
         )
     except ApiError as e:
         error(f"Batch job scheduling failed: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
     finally:
         if prepared_batch_file != batch_file:
             try:
@@ -9320,7 +9320,7 @@ def project_set_up_locally(
         access_token, refresh_token = _current_session_jwt_tokens()
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     final_env = _render_project_runtime_env_text(
         env_text,
@@ -9418,9 +9418,9 @@ def project_delete_local(
     projects_root = _projects_root(base, org_slug).resolve()
     try:
         p.resolve().relative_to(projects_root)
-    except Exception:
+    except Exception as e:
         error(f"Refusing to delete outside projects root: {p}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     warning_text = (
         "This will permanently delete the local project folder.\n"
@@ -9506,9 +9506,9 @@ def project_build_local_venv(
 
     try:
         pyproject_text = pyproject_path.read_text(encoding="utf-8")
-    except Exception:
+    except Exception as e:
         error("Could not read pyproject.toml from the project root.")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     python_version = _extract_python_version_from_pyproject_text(pyproject_text)
     if not python_version:
@@ -9602,13 +9602,13 @@ def project_refresh_token(
         access_token, refresh_token = _current_session_jwt_tokens()
     except RuntimeError as e:
         error(str(e))
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     try:
         env_text = env_path.read_text(encoding="utf-8")
     except Exception as e:
         error(f"Could not read .env: {e}")
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     inferred_project_id = str(project_id) if project_id is not None else None
     if inferred_project_id is None:
@@ -9729,7 +9729,7 @@ def project_sync(
             prime_sync_project_after_commit_sdk()
         except ApiError as e:
             error(f"Could not load SDK post-commit sync path before uv sync: {e}")
-            raise typer.Exit(1)
+            raise typer.Exit(1) from e
     ensure_venv(project_dir)
 
     origin = git_origin(project_dir)
@@ -9786,7 +9786,7 @@ def project_sync(
                 sync_project_after_commit(resolved_project_id)
             except ApiError as e:
                 error(f"Backend post-commit sync failed: {e}")
-                raise typer.Exit(1)
+                raise typer.Exit(1) from e
         info(f"Triggered backend sync for project {resolved_project_id}.")
 
     success(f"Synced: {repo_name}")

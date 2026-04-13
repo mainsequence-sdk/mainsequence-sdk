@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import collections
 import copy
 import datetime
@@ -12,7 +14,7 @@ from enum import Enum
 from functools import singledispatch
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import cloudpickle
 from pydantic import BaseModel
@@ -32,6 +34,9 @@ from ..base_persist_managers import get_data_node_source_code_git_hash
 from .namespacing import disable_hash_namespace
 from .persist_managers import PersistManager
 
+if TYPE_CHECKING:
+    from .data_nodes import APIDataNode, DataNode
+
 build_model = lambda model_data: get_model_class(model_data["orm_class"])(**model_data)
 
 
@@ -47,7 +52,7 @@ def serialize_argument(value: Any, pickle_ts: bool) -> Any:
     return value
 
 
-def _serialize_timeserie(value: "DataNode", pickle_ts: bool = False) -> dict[str, Any]:
+def _serialize_timeserie(value: DataNode, pickle_ts: bool = False) -> dict[str, Any]:
     """Serialization logic for DataNode objects."""
     print(f"Serializing DataNode: {value.update_hash}")
     if pickle_ts:
@@ -196,7 +201,7 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
 
 
 def verify_backend_git_hash_with_pickle(
-    local_persist_manager: PersistManager, time_serie_class: "DataNode"
+    local_persist_manager: PersistManager, time_serie_class: DataNode
 ) -> None:
     """Verifies if the git hash in the backend matches the one from the pickled object."""
     if local_persist_manager.data_node_storage is not None:
@@ -358,7 +363,7 @@ class PickleRebuilder(BaseRebuilder):
             "__type__": self._handle_complex_type,
         }
 
-    def _handle_pickled_timeserie(self, value: dict, **state_kwargs) -> "DataNode":
+    def _handle_pickled_timeserie(self, value: dict, **state_kwargs) -> DataNode:
         """Handles 'is_time_serie_pickled' markers."""
         import cloudpickle
 
@@ -385,7 +390,7 @@ class PickleRebuilder(BaseRebuilder):
         rebuilt_value = self.rebuild(value["serialized_model"], **state_kwargs)
         return PydanticClass(**rebuilt_value)
 
-    def _handle_api_timeserie(self, value: dict, **state_kwargs) -> "APIDataNode":
+    def _handle_api_timeserie(self, value: dict, **state_kwargs) -> APIDataNode:
         """Handles 'is_api_time_serie_pickled' markers."""
         import cloudpickle
 
@@ -557,7 +562,7 @@ def flush_pickle(pickle_path) -> None:
 
 
 @tracer.start_as_current_span("TS: load_from_pickle")
-def load_from_pickle(pickle_path: str) -> "DataNode":
+def load_from_pickle(pickle_path: str) -> DataNode:
     """
     Loads a DataNode object from a pickle file, handling both standard and API types.
 
@@ -625,7 +630,7 @@ def rebuild_and_set_from_update_hash(
     data_source_id: int,
     set_dependencies_df: bool = False,
     graph_depth_limit: int = 1,
-) -> tuple["DataNode", str]:
+) -> tuple[DataNode, str]:
     """
     Rebuilds a DataNode from its local hash ID and pickles it if it doesn't exist.
 
@@ -662,7 +667,7 @@ def rebuild_and_set_from_update_hash(
     return ts, pickle_path
 
 
-def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> "DataNode":
+def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> DataNode:
     """
     Loads a DataNode from a pickle file and sets its state.
 
@@ -681,7 +686,7 @@ def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> "D
 
 
 @tracer.start_as_current_span("TS: Rebuild From Configuration")
-def rebuild_from_configuration(update_hash: str, data_source: int | object) -> "DataNode":
+def rebuild_from_configuration(update_hash: str, data_source: int | object) -> DataNode:
     """
     Rebuilds a DataNode instance from its configuration.
 
@@ -737,7 +742,7 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> "
     return re_build_ts
 
 
-def load_and_set_from_hash_id(update_hash: int, data_source_id: int) -> "DataNode":
+def load_and_set_from_hash_id(update_hash: int, data_source_id: int) -> DataNode:
     path = get_pickle_path(update_hash=update_hash, data_source_id=data_source_id)
     ts = load_and_set_from_pickle(pickle_path=path)
     return ts

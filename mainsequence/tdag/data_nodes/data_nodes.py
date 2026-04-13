@@ -22,7 +22,9 @@ import mainsequence.tdag.data_nodes.build_operations as build_operations
 import mainsequence.tdag.data_nodes.run_operations as run_operations
 from mainsequence.client import (
     CONSTANTS,
+    Asset,
     AssetTranslationTable,
+    DataNodeStorage,
     DataNodeUpdate,
     DynamicTableDataSource,
     Scheduler,
@@ -942,7 +944,7 @@ class DataNode(DataAccessMixin, ABC):
         return self.local_persist_manager.data_node_update
 
     @property
-    def data_node_storage(self) -> "DataNodeStorage":
+    def data_node_storage(self) -> DataNodeStorage:
         return self.local_persist_manager.data_node_storage
 
     @property
@@ -1315,7 +1317,7 @@ class DataNode(DataAccessMixin, ABC):
             for record in records
         ]
 
-    def get_asset_list(self) -> list["Asset"] | None:
+    def get_asset_list(self) -> list[Asset] | None:
         """
         Return the assets this updater should consider.
 

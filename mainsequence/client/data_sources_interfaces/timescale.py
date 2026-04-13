@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import csv
 import datetime
 import itertools
@@ -6,6 +8,7 @@ import os
 import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from io import StringIO
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -16,9 +19,19 @@ from mainsequence.logconf import logger
 
 from ..utils import DATE_FORMAT, make_request, set_types_in_table
 
+if TYPE_CHECKING:
+    from ..models_tdag import DataNodeStorage, DataNodeUpdate
+
+psycopg2 = None
+
 
 def import_psycopg2():
-    pass
+    global psycopg2
+    if psycopg2 is None:
+        import psycopg2 as _psycopg2
+
+        psycopg2 = _psycopg2
+    return psycopg2
 
 
 def read_sql_tmpfile(query, time_series_orm_uri_db_connection: str):
@@ -91,7 +104,7 @@ def filter_by_assets_ranges(table_name, asset_ranges_map, index_names, data_sour
 
 
 def direct_data_from_db(
-    data_node_update: "DataNodeUpdate",
+    data_node_update: DataNodeUpdate,
     connection_uri: str,
     start_date: datetime.datetime | None = None,
     great_or_equal: bool = True,
@@ -188,7 +201,7 @@ def direct_data_from_db(
 
 
 def direct_table_update(
-    data_node_storage: "DataNodeStorage",
+    data_node_storage: DataNodeStorage,
     serialized_data_frame: pd.DataFrame,
     overwrite: bool,
     grouped_dates,
@@ -414,7 +427,7 @@ def direct_table_update(
 
 def process_and_update_table(
     serialized_data_frame,
-    data_node_update: "DataNodeUpdate",
+    data_node_update: DataNodeUpdate,
     grouped_dates: list,
     data_source: object,
     index_names: list[str],

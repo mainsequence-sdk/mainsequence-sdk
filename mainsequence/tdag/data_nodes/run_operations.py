@@ -1,9 +1,11 @@
 # Standard Library Imports
+from __future__ import annotations
+
 import datetime
 import gc
 import time
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 # Third-Party Library Imports
 import numpy as np
@@ -21,6 +23,8 @@ from mainsequence.instrumentation import TracerInstrumentator, tracer
 # TDAG Core Components and Helpers
 from mainsequence.tdag.data_nodes import build_operations
 
+if TYPE_CHECKING:
+    from .data_nodes import DataNode
 
 # Custom Exceptions
 class DependencyUpdateError(Exception):
@@ -38,7 +42,7 @@ class UpdateRunner:
 
     def __init__(
         self,
-        time_serie: "DataNode",
+        time_serie: DataNode,
         debug_mode: bool = False,
         force_update: bool = False,
         update_tree: bool = True,
@@ -386,7 +390,7 @@ class UpdateRunner:
 
     def _get_update_map(
         self,
-        declared_dependencies: dict[str, "DataNode"],
+        declared_dependencies: dict[str, DataNode],
         logger: object,
         dependecy_map: dict | None = None,
     ) -> dict[tuple[str, int], dict[str, Any]]:

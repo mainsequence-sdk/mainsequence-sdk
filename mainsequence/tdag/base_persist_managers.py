@@ -463,7 +463,7 @@ class BasePersistManager:
             data_node_update=self.data_node_update, *args, **kwargs
         )
 
-    def get_last_observation(self, asset_list: list[Asset] | None):
+    def get_last_observation(self, asset_list: list[ms_client.Asset] | None):
         unique_identifier_list = []
         if asset_list is not None:
             unique_identifier_list = [a.unique_identifier for a in asset_list]

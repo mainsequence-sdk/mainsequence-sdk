@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from types import SimpleNamespace
-from mainsequence.client import Constant as _C
+
 ENV_PREFIX = "MSI"
 
 

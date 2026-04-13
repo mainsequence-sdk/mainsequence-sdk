@@ -1,9 +1,15 @@
+from __future__ import annotations
+
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
 
 from mainsequence.virtualfundbuilder.utils import get_vfb_logger
+
+if TYPE_CHECKING:
+    from mainsequence.virtualfundbuilder.models import AssetsConfiguration
 
 logger = get_vfb_logger()
 
@@ -11,7 +17,7 @@ logger = get_vfb_logger()
 class WeightsBase:
 
 
-    def __init__(self, signal_assets_configuration: "AssetsConfiguration", *args, **kwargs):
+    def __init__(self, signal_assets_configuration: AssetsConfiguration, *args, **kwargs):
         """
         Base Class for all signal weights
 
@@ -113,7 +119,6 @@ class WeightsBase:
         weights_reindex.index.name = "time_index"
 
         return weights_reindex
-
 
 
 

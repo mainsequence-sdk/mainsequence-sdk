@@ -116,5 +116,8 @@ fix = true                    # <-- move fix here
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["E203", "E501"]     # let Black handle these
 
+[tool.ruff.lint.per-file-ignores]
+"mainsequence/cli/cli.py" = ["B008"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["mainsequence", "agent_scaffold"]

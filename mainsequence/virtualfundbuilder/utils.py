@@ -273,8 +273,8 @@ def _convert_unknown_to_string(obj):
     """Converts unsupported/unknown types to strings."""
     try:
         return str(obj)
-    except Exception:
-        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+    except Exception as e:
+        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable") from e
 
 
 def is_jupyter_environment():

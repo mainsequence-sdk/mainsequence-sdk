@@ -22,7 +22,7 @@ def create_fixed_rate_bond(
     coupon_rate: float,
     coupon_frequency: ql.Period,
     day_count: ql.DayCounter,
-    calendar: ql.Calendar = ql.TARGET(),
+    calendar: ql.Calendar | None = None,
     business_day_convention: int = ql.Following,  # enums are ints in the Python wrapper
     settlement_days: int = 2,
     discount_curve: ql.YieldTermStructureHandle | None = None,
@@ -30,6 +30,8 @@ def create_fixed_rate_bond(
 ) -> ql.FixedRateBond:
     """Construct and engine-attach."""
     ql.Settings.instance().evaluationDate = calculation_date
+    if calendar is None:
+        calendar = ql.TARGET()
 
     # --------- Schedule ----------
     if schedule is None:

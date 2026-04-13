@@ -1,4 +1,7 @@
+from __future__ import annotations
+
 from datetime import timedelta
+from typing import TYPE_CHECKING
 
 import pandas as pd
 
@@ -10,6 +13,9 @@ from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
 from mainsequence.virtualfundbuilder.utils import TIMEDELTA
+
+if TYPE_CHECKING:
+    from mainsequence.client.models_tdag import UpdateStatistics
 
 
 class ExternalWeightsConfig(DataNodeConfiguration):
@@ -47,7 +53,7 @@ class ExternalWeights(WeightsBase, DataNode):
         asset_list = Asset.filter(id__in=asset_category.assets)
         return asset_list
 
-    def update(self, update_statistics: "UpdateStatistics"):
+    def update(self, update_statistics: UpdateStatistics):
         source_artifact = Artifact.get(bucket__name=self.bucket_name, name=self.artifact_name)
         weights_source = pd.read_csv(source_artifact.content)
 

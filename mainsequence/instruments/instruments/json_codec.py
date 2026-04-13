@@ -372,7 +372,7 @@ def schedule_to_json(s: ql.Schedule | None) -> dict[str, Any] | None:
 
 
 def schedule_from_json(
-    v: None | ql.Schedule | dict[str, Any] | List[str] | List[ql.Date]
+    v: None | ql.Schedule | dict[str, Any] | list[str] | list[ql.Date]
 ) -> ql.Schedule | None:
     """
     Decode a schedule. Supported forms:
