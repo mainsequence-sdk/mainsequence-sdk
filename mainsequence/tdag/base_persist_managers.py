@@ -142,10 +142,12 @@ class BasePersistManager:
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
+        namespace: str | None = None,
         **extra_kwargs: Any,
     ) -> dict[str, Any]:
         kwargs = dict(
             storage_hash=storage_hash,
+            namespace=namespace,
             time_serie_source_code_git_hash=time_serie_source_code_git_hash,
             time_serie_source_code=time_serie_source_code,
             build_configuration=remote_configuration,
@@ -341,6 +343,7 @@ class BasePersistManager:
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
+        namespace: str | None = None,
     ) -> None:
         remote_build_configuration = self.remote_build_configuration
 
@@ -356,6 +359,7 @@ class BasePersistManager:
                     time_serie_source_code=time_serie_source_code,
                     build_configuration_json_schema=build_configuration_json_schema,
                     open_to_public=open_to_public,
+                    namespace=namespace,
                     **self._get_storage_get_or_create_extra_kwargs(),
                 )
 

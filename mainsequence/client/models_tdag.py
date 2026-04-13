@@ -894,6 +894,10 @@ class TableMetaData(BaseModel):
 
 class AbstractTable:
     storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
+    namespace: str | None = Field(
+        None,
+        description="Optional hash namespace used to isolate table identity for tests or experiments.",
+    )
     build_configuration_json_schema: dict[str, Any] | None = Field(
         None,
         description="JSON schema describing the build configuration",

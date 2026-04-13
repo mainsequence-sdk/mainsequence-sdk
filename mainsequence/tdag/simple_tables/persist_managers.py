@@ -60,6 +60,7 @@ class SimpleTablePersistManager(BasePersistManager):
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
+        namespace: str | None = None,
         schema: dict[str, Any] | None = None,
         source_class_name: str | None = None,
     ) -> dict[str, Any]:
@@ -71,6 +72,7 @@ class SimpleTablePersistManager(BasePersistManager):
             time_serie_source_code=time_serie_source_code,
             build_configuration_json_schema=build_configuration_json_schema,
             open_to_public=open_to_public,
+            namespace=namespace,
         )
         kwargs.pop("time_serie_source_code_git_hash")
         kwargs.pop("time_serie_source_code")

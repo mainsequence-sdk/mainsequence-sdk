@@ -563,6 +563,7 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
         time_serie_source_code="source",
         build_configuration_json_schema={},
         open_to_public=True,
+        namespace="pytest_orders",
     )
 
     record = OrderRow(
@@ -577,6 +578,7 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     kwargs = captured["get_or_create_kwargs"]
     storage_kwargs = captured["storage_get_or_create_kwargs"]
     assert storage_kwargs["storage_hash"] == "storage_hash"
+    assert storage_kwargs["namespace"] == "pytest_orders"
     assert storage_kwargs["source_code_git_hash"] == "git-hash"
     assert storage_kwargs["source_code"] == "source"
     assert storage_kwargs["build_configuration"] == {"configuration": {"tenant": "desk_a"}}
@@ -586,6 +588,7 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     assert kwargs["update_hash"] == "order_updater_hash"
     assert kwargs["open_for_everyone"] is True
     assert kwargs["remote_table"] == 41
+    assert "hash_namespace" not in kwargs
 
     insert_calls = captured["insert_calls"]
     assert insert_calls[0]["data_node_update_id"] == 11
@@ -800,6 +803,7 @@ def test_simple_table_persist_manager_skips_storage_create_when_remote_loaded(mo
         time_serie_source_code="source",
         build_configuration_json_schema={},
         open_to_public=True,
+        namespace="pytest_orders",
     )
 
     assert "storage_calls" not in captured
@@ -842,6 +846,7 @@ def test_simple_table_persist_manager_skips_update_create_when_local_loaded(monk
         time_serie_source_code="source",
         build_configuration_json_schema={},
         open_to_public=True,
+        namespace="pytest_orders",
     )
 
     assert "get_or_none_calls" not in captured

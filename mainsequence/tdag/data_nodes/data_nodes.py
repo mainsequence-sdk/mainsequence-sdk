@@ -1106,6 +1106,7 @@ class DataNode(DataAccessMixin, ABC):
             data_source=self.data_source,
             build_configuration_json_schema=self.build_configuration_json_schema,
             open_to_public=self.get_open_to_public(),
+            namespace=self.hash_namespace or None,
         )
 
     def set_relation_tree(self):
