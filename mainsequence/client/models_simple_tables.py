@@ -279,11 +279,15 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
         "id": ["in", "exact", "contains"],
         "data_source__id": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
+        "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "id": "id",
         "id__in": "id",
         "data_source__id": "id",
+        "labels": "str",
+        "labels__in": "str",
+        "labels__contains": "str",
     }
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")

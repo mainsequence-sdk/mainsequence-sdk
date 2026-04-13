@@ -60,6 +60,21 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
     """
 
     ENDPOINT: ClassVar[str] = "workspaces"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "id": ["exact", "in"],
+        "title": ["exact", "contains"],
+        "source": ["exact", "in"],
+        "labels": ["exact", "in", "contains"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "id": "id",
+        "id__in": "id",
+        "title": "str",
+        "source": "str",
+        "labels": "str",
+        "labels__in": "str",
+        "labels__contains": "str",
+    }
 
     model_config = ConfigDict(
         populate_by_name=True,

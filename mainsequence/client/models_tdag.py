@@ -925,11 +925,15 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         "id": ["in", "exact", "contains"],
         "data_source__id": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
+        "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "id": "id",
         "id__in": "id",
         "data_source__id": "id",
+        "labels": "str",
+        "labels__in": "str",
+        "labels__contains": "str",
     }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
@@ -2807,6 +2811,19 @@ class ProjectNameValidationResult(BasePydanticModel):
 
 
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "project_name": ["in", "exact", "contains"],
+        "id": ["in", "exact"],
+        "labels": ["exact", "in", "contains"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "id": "id",
+        "id__in": "id",
+        "project_name": "str",
+        "labels": "str",
+        "labels__in": "str",
+        "labels__contains": "str",
+    }
     id: int = Field(
         ...,
         title="Project ID",
