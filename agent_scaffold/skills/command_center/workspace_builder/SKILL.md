@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. The primary workflow is CLI registry verification first, then SDK client models, then Main Sequence-accessible repository docs/models only when registry detail and client models still leave instance payload questions unresolved. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
 ---
 
 # Command Center Workspace Builder
@@ -55,9 +55,9 @@ This skill must not claim ownership of:
 ## Read First
 
 1. Verify the widget catalog through the CLI:
-   - `mainsequence --json cc registered_widget_type list`
+   - `mainsequence cc registered_widget_type list --json`
    - identify the target `widget_id`
-   - `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
+   - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 2. The SDK client models in `mainsequence/client/command_center/`:
    - `workspace.py`
    - `data_models.py`
@@ -105,6 +105,20 @@ Before writing or mutating a workspace, collect or infer:
   - full workspace create/update
   - one-widget mutation
 
+Use this source order strictly:
+
+1. Registry detail first
+   - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
+   - this is the first contract source
+2. SDK client models second
+   - `mainsequence/client/command_center/workspace.py`
+   - `mainsequence/client/command_center/data_models.py`
+   - `mainsequence/client/command_center/app_component.py` when relevant
+   - use these before any broader repository exploration
+3. Repository docs/models third
+   - local docs, examples, payload builders, and typed models
+   - only if registry detail plus SDK client models still leave instance-level payload questions unresolved
+
 Only inspect Main Sequence docs/models/examples in this repository after registry verification and SDK model review, and only to resolve mounted widget shape that remains unclear.
 
 If a widget lacks registry verification, usable widget detail, or a concrete payload source, stop before building the workspace.
@@ -127,9 +141,9 @@ For every non-trivial workspace task, decide:
 
 Before mutating or mounting a workspace widget:
 
-1. run `mainsequence --json cc registered_widget_type list`
+1. run `mainsequence cc registered_widget_type list --json`
 2. identify the target `widget_id`
-3. run `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
+3. run `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 
 Do not start with secondary repository source inspection. The registry is the first source of truth for widget existence and catalog metadata. Widget detail is now expected to show enough contract detail to guide exploration before falling back to repository source.
 
@@ -188,7 +202,7 @@ So the concrete sequence is:
 5. inspect local payload source only for unresolved instance-level questions
 6. only then mount or update the workspace widget
 
-Use Main Sequence docs/models/examples in this repository to refine:
+Use Main Sequence docs/models/examples in this repository only after registry detail and SDK client models still leave unresolved questions. Then use them to refine:
 
 - `props`
 - layout
@@ -287,8 +301,8 @@ Do not claim success until you have checked:
 
 - the workspace id is correct
 - `widgetId` was verified via:
-  - `mainsequence --json cc registered_widget_type list`
-  - `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
+  - `mainsequence cc registered_widget_type list --json`
+  - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
 - widget detail was reviewed for `widgetVersion`, configuration, runtime, IO, capabilities, agent hints, and examples
 - the relevant SDK client model was reviewed when one exists
 - widget ids and widget instance ids are correct
