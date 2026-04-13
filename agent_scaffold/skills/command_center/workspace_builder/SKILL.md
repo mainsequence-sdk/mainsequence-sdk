@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, and widget-scoped mutation. The primary workflow is CLI registry verification first, then local payload-source inspection only when registry metadata is not enough. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, and widget-scoped mutation. The primary workflow is CLI registry verification first, then Main Sequence-accessible repository docs/models only when registry metadata is not enough. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
 ---
 
 # Command Center Workspace Builder
@@ -17,7 +17,7 @@ This skill is for workspace structure, widget payload resolution, and safe works
 - update an existing workspace document
 - add widgets to a workspace
 - verify widget types in the CLI registry before mounting or mutating them
-- resolve widget instance payloads from local models or examples after registry verification
+- resolve widget instance payloads from Main Sequence docs/models in this repository after registry verification
 - decide between full workspace update and widget-scoped mutation
 - patch one widget safely
 - move or delete a widget safely
@@ -55,7 +55,7 @@ This skill must not claim ownership of:
    - identify the target `widget_id`
    - `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
 2. `docs/knowledge/command_center/workspaces.md`
-3. the local client models, frontend definitions, normalized props models, or examples that define the widget payloads being mounted
+3. the local Main Sequence docs/models/examples in this repository that define the widget payloads being mounted
 4. the current CLI docs if the task uses CLI workflow
 
 If the workspace contains AppComponent widgets, also read:
@@ -81,7 +81,7 @@ Before writing or mutating a workspace, collect or infer:
   - full workspace create/update
   - one-widget mutation
 
-Only inspect local payload source after registry verification and only to resolve mounted widget shape.
+Only inspect Main Sequence docs/models/examples in this repository after registry verification and only to resolve mounted widget shape.
 
 If a widget lacks both registry verification and a concrete payload source, stop before building the workspace.
 
@@ -91,7 +91,7 @@ For every non-trivial workspace task, decide:
 
 1. Is this a full workspace change or a one-widget mutation?
 2. Has the widget type been verified through `registered_widget_type list/detail`?
-3. What local source defines the widget instance shape after registry verification?
+3. What Main Sequence repository source defines the widget instance shape after registry verification?
 4. Which fields are shared workspace state versus current-user state?
 5. Are bindings and external resource ids fully resolved?
 
@@ -105,7 +105,7 @@ Before mutating or mounting a workspace widget:
 2. identify the target `widget_id`
 3. run `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
 
-Do not start with local frontend source inspection. The registry is the first source of truth for widget existence and catalog metadata.
+Do not start with secondary repository source inspection. The registry is the first source of truth for widget existence and catalog metadata.
 
 ### 2. Do not invent widget payloads
 
@@ -115,7 +115,6 @@ Resolve widget instance payloads from:
 - local payload builders
 - local examples
 - local schemas
-- local frontend widget `definition.ts` or normalized props models when those exist
 
 If the payload shape is not defined locally and cannot be verified, stop.
 
@@ -132,7 +131,7 @@ So the concrete sequence is:
 3. inspect local payload source
 4. only then mount or update the workspace widget
 
-Use local source to refine:
+Use Main Sequence docs/models/examples in this repository to refine:
 
 - `props`
 - layout
@@ -176,7 +175,7 @@ When reviewing a workspace task, look for:
 - workspace-wide rewrites for one-widget changes
 - shared state mixed incorrectly with current-user runtime state
 - unresolved external resource ids
-- widget trees using nested structures not supported by the local source models
+- widget trees using structures not supported by the Main Sequence repository source models
 
 ## Validation Checklist
 
@@ -188,7 +187,7 @@ Do not claim success until you have checked:
   - `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
 - widget ids and widget instance ids are correct
 - local payload shape was reconciled against the verified widget id
-- each widget payload comes from a verified local source
+- each widget payload comes from a verified Main Sequence repository source
 - the chosen mutation mode is correct:
   - full workspace update
   - widget-scoped mutation
@@ -204,7 +203,7 @@ If the task is one-widget mutation, also check:
 
 - a widget type does not exist in the registry
 - the widget id is being inferred without registry verification
-- a widget exists but no local model or example defines the payload shape
+- a widget exists but no Main Sequence repository source defines the payload shape
 - the task needs AppComponent input or output contracts that are not yet defined
 - the target widget instance id is ambiguous
 - the workspace mutation is actually an API or dashboard task rather than a Command Center workspace task

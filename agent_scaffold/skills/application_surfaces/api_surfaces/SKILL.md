@@ -177,9 +177,19 @@ Use:
 app.add_middleware(LoggedUserContextMiddleware)
 ```
 
-when route handlers or helpers need the resolved Main Sequence user on `request.state`.
+only when route handlers or helpers actually need the resolved Main Sequence user on `request.state.user`.
 
 This is request-local context, not authentication policy.
+
+Do not add this middleware just because the API is Command Center-facing.
+
+Many Command Center APIs do not need request-local user context and should avoid the middleware entirely when they:
+
+- do not read `request.state.user`
+- do not pass request-local user context into helpers or services
+- do not need user-scoped binding or user-specific data resolution at request time
+
+Use the middleware only when the route really depends on request-local user context. Otherwise keep the API surface free of that coupling.
 
 ### 5. Response models are part of the boundary
 
@@ -238,6 +248,7 @@ When reviewing an API change, look for:
 - a non-FastAPI proposal without an explicit repository reason
 - route handlers doing too much
 - missing `response_model`
+- `LoggedUserContextMiddleware` added even though the route does not consume `request.state.user`
 - route parameters that are untyped or weakly documented
 - generic response models where a widget-facing contract should have been used
 - producer logic duplicated inside routes
@@ -259,6 +270,7 @@ Do not claim success until you have checked:
 - `APIDataNode` is used when the route reads a published DataNode
 - `SimpleTableUpdater.execute_filter(...)` is used when the route reads simple-table rows
 - middleware is present when request-local user context is required
+- middleware is absent when the route does not consume `request.state.user`
 - widget-facing endpoints use exact SDK response contracts
 - local API docs or route behavior reflect the intended contract
 
@@ -278,6 +290,7 @@ If the endpoint is part of an AppComponent or workspace flow, also check:
 - the proposed API framework is not FastAPI and the repository does not explicitly justify that choice
 - the likely consumer is Command Center but the task is being treated as a generic API without loading the relevant Command Center skill
 - a route is being left without a `response_model`
+- `LoggedUserContextMiddleware` is being added without any concrete route-level need for `request.state.user`
 - route parameters are being left effectively undocumented
 - the API route is duplicating producer logic instead of consuming published resources
 - the endpoint is supposed to feed a widget but no exact contract model is available

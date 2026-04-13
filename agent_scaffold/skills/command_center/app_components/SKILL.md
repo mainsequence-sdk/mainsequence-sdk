@@ -1,6 +1,6 @@
 ---
 name: command-center-app-components
-description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Local frontend source is a fallback for payload refinement, not the starting point. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
+description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Stay within Main Sequence-accessible sources of truth: CLI registry, SDK models, and documentation in this repository. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
 ---
 
 # Command Center AppComponents
@@ -83,7 +83,12 @@ Before changing an AppComponent backend contract, collect or infer:
   - an exact widget-facing contract
 - whether stable field tokens are needed for downstream bindings or draft state
 
-Only inspect local frontend widget source, examples, `definition.ts`, or normalized props models after registry inspection and only if the registry detail payload is not sufficient for the task.
+If registry detail is not sufficient, only use Main Sequence-accessible sources in this repository:
+
+- `docs/knowledge/command_center/forms.md`
+- `docs/knowledge/command_center/widget_data_contracts.md`
+- `mainsequence/client/command_center/app_component.py`
+- `mainsequence/client/command_center/data_models.py`
 
 If the input contract or output contract is unclear, stop before building the form.
 
@@ -121,12 +126,7 @@ Before changing an AppComponent payload, form contract, or widget-facing output:
 
 Do not infer `widget_id`, mounted widget identity, or widget-facing behavior without checking the registered widget catalog first.
 
-Use local frontend widget source only as a fallback when:
-
-- registry inspection is unavailable, or
-- registry inspection is available but does not provide enough payload detail
-
-In that fallback path, inspect the local frontend widget `definition.ts`, normalized props model, typed payload builder, or local examples if they exist.
+If registry inspection is unavailable or does not provide enough contract detail, stay within Main Sequence-accessible sources in this repository. If the contract is still unclear after checking the registry plus local SDK docs/models, stop and escalate.
 
 ### 2. Use `EditableFormDefinition` only when the form needs to be specialized
 
@@ -203,12 +203,13 @@ Do not claim success until you have checked:
 - field kinds reflect business meaning
 - input and output contracts are not mixed together
 - widget-facing outputs use exact SDK response models when applicable
-- local frontend source was used only when registry detail was insufficient
+- only Main Sequence-accessible repository sources were used after registry detail when refinement was needed
 
 ## This Skill Must Stop And Escalate When
 
 - the target widget cannot be identified in the registered widget catalog
 - the task depends on guessed widget behavior without registry verification
+- registry detail is insufficient and the required contract cannot be resolved from Main Sequence docs/models in this repository
 - the task is really about workspace structure instead of AppComponent contracts
 - the form contract is unclear but a custom form is being forced anyway
 - the widget-facing output contract is unclear and no exact SDK model is available
