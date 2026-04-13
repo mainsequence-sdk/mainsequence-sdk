@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, and widget-scoped mutation. The primary workflow is CLI registry verification first, then Main Sequence-accessible repository docs/models only when registry metadata is not enough. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, and widget-scoped mutation. The primary workflow is CLI registry verification first, then Main Sequence-accessible repository docs/models only when the richer widget-type contract still leaves instance payload questions unresolved. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
 ---
 
 # Command Center Workspace Builder
@@ -17,7 +17,8 @@ This skill is for workspace structure, widget payload resolution, and safe works
 - update an existing workspace document
 - add widgets to a workspace
 - verify widget types in the CLI registry before mounting or mutating them
-- resolve widget instance payloads from Main Sequence docs/models in this repository after registry verification
+- inspect the richer widget detail contract before opening repository source
+- resolve widget instance payloads from Main Sequence docs/models in this repository only after registry verification and widget-detail review
 - decide between full workspace update and widget-scoped mutation
 - patch one widget safely
 - move or delete a widget safely
@@ -105,7 +106,7 @@ Before mutating or mounting a workspace widget:
 2. identify the target `widget_id`
 3. run `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
 
-Do not start with secondary repository source inspection. The registry is the first source of truth for widget existence and catalog metadata.
+Do not start with secondary repository source inspection. The registry is the first source of truth for widget existence and catalog metadata. Widget detail is now expected to show enough contract detail to guide exploration before falling back to repository source.
 
 ### 2. Do not invent widget payloads
 
@@ -122,14 +123,24 @@ If the payload shape is not defined locally and cannot be verified, stop.
 
 A registered widget type proves the widget exists and gives catalog metadata.
 
-It does not always fully define the mounted widget instance payload.
+Widget detail should now also expose the machine-readable widget contract, including at least:
+
+- `widgetVersion`
+- configuration summary and fields
+- runtime ownership and execution semantics
+- IO mode, static inputs/outputs, or dynamic IO summary
+- capability summaries and supported modes
+- agent authoring hints and examples
+
+It still does not always fully define the mounted widget instance payload.
 
 So the concrete sequence is:
 
 1. verify widget type in the CLI registry
-2. inspect registry detail payload
-3. inspect local payload source
-4. only then mount or update the workspace widget
+2. inspect widget detail and extract the richer contract
+3. decide whether that contract is enough to author the widget safely
+4. inspect local payload source only for unresolved instance-level questions
+5. only then mount or update the workspace widget
 
 Use Main Sequence docs/models/examples in this repository to refine:
 
@@ -137,6 +148,24 @@ Use Main Sequence docs/models/examples in this repository to refine:
 - layout
 - bindings
 - runtime state shape when relevant
+
+### 2.2 Use widget detail to drive widget exploration
+
+During widget exploration, do not treat `registered_widget_type detail` as a shallow existence check.
+
+Use widget detail first to answer:
+
+- what the widget is for
+- whether it is a workspace `execution-owner`, `consumer`, or `local-ui` widget
+- which configuration modes and major fields exist
+- whether inputs/outputs are static, dynamic, or consumer-only
+- what capability modes the widget supports
+- what authoring steps an agent must follow before the widget is usable
+- which examples already match the requested workspace change
+
+Only open repository source when widget detail still does not answer the instance-level payload question.
+
+If widget detail and repository source disagree, stop and surface that mismatch instead of guessing.
 
 ### 3. Shared workspace state and current-user state are different
 
@@ -185,8 +214,9 @@ Do not claim success until you have checked:
 - `widgetId` was verified via:
   - `mainsequence --json cc registered_widget_type list`
   - `mainsequence --json cc registered_widget_type detail <WIDGET_ID>`
+- widget detail was reviewed for `widgetVersion`, configuration, runtime, IO, capabilities, and agent hints
 - widget ids and widget instance ids are correct
-- local payload shape was reconciled against the verified widget id
+- local payload shape was reconciled against the verified widget id and widget-detail contract
 - each widget payload comes from a verified Main Sequence repository source
 - the chosen mutation mode is correct:
   - full workspace update
