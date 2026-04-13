@@ -321,6 +321,9 @@ Optional but recommended for instruments use cases:
 Must-have rules:
 
 - `time_index` is UTC-aware datetime index
+- `time_index` is the observation point of the row, not just a generic date label
+- rows aligned on the same `time_index` should be comparable across series in the dataset
+- for bar datasets, `time_index` should usually be the right edge of the bar, so the timestamp represents the completed observation window
 - output columns are lowercase and stable
 - no datetime columns in value columns (time goes in index)
 - no duplicate rows for same index keys

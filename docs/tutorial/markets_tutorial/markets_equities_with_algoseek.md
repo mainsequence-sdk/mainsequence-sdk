@@ -230,6 +230,11 @@ by an external process.
 
 Now, to integrate the daily historical bars, we will first define the constructor with our dependency on the Security Master List node.
 
+!!! important
+    For bar datasets, `time_index` should represent the observation point of the completed bar. In practice, that usually means using the right edge of the bar, not the bar start.
+
+    For daily bars, this normally means the session-close timestamp. This keeps rows aligned across assets and makes downstream joins, comparisons, and features refer to the same observation point.
+
 ```python
 class AlgoSeekDailyBarsConfig(DataNodeConfiguration):
     daily_dir: str
