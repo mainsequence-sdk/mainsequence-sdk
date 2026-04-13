@@ -200,6 +200,22 @@ def test_data_node_update_normalizes_related_table_namespace_filters():
     }
 
 
+def test_data_node_update_accepts_internal_update_lookup_filters():
+    from mainsequence.client.models_tdag import DataNodeUpdate
+
+    normalized = DataNodeUpdate._normalize_filter_kwargs(
+        {
+            "update_hash": " weights_daily ",
+            "remote_table__data_source__id": {"id": 7},
+        }
+    )
+
+    assert normalized == {
+        "update_hash": "weights_daily",
+        "remote_table__data_source__id": 7,
+    }
+
+
 def test_simple_table_update_normalizes_related_table_namespace_filters():
     from mainsequence.client.models_simple_tables import SimpleTableUpdate
 
@@ -215,6 +231,22 @@ def test_simple_table_update_normalizes_related_table_namespace_filters():
         "related_table__namespace__contains": "pytest",
         "related_table__namespace__in": ["alpha", "beta"],
         "related_table__namespace__isnull": True,
+    }
+
+
+def test_simple_table_update_accepts_internal_update_lookup_filters():
+    from mainsequence.client.models_simple_tables import SimpleTableUpdate
+
+    normalized = SimpleTableUpdate._normalize_filter_kwargs(
+        {
+            "update_hash": " order_updater_hash ",
+            "remote_table__data_source__id": {"id": 5},
+        }
+    )
+
+    assert normalized == {
+        "update_hash": "order_updater_hash",
+        "remote_table__data_source__id": 5,
     }
 
 

@@ -247,7 +247,12 @@ class TableUpdateNode(BasePydanticModel):
 class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "update_hash": ["exact"],
+        "remote_table__data_source__id": ["exact"],
         "related_table__namespace": ["contains", "in", "isnull"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "remote_table__data_source__id": "id",
     }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
