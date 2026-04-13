@@ -100,6 +100,7 @@ For every non-trivial access task, decide:
 3. Does the user need `view` or `edit`?
 4. Is this configuration non-sensitive or sensitive?
 5. Is the task really an access problem, or is it actually an orchestration or implementation problem?
+6. Is the task creating a `Constant` or `Secret` by name, and does that name already exist?
 
 ## Build Rules
 
@@ -155,7 +156,30 @@ Use `Secret` for:
 
 Do not downgrade a secret into a constant for convenience.
 
-### 6. Access assumptions must be verified
+### 6. `Constant` and `Secret` names are unique configuration identities
+
+Treat `Constant.name` and `Secret.name` as unique organization-level configuration keys.
+
+For creation or sync tasks:
+
+- do not assume a create is idempotent by itself
+- first resolve whether the object already exists by name
+- prefer `get(name=...)` when you expect exactly one object
+- use `filter(name__in=[...])` when reconciling several keys
+- only create missing names
+
+If the task is phrased as "ensure this constant/secret exists", search first and make the workflow idempotent.
+
+Current CLI note:
+
+- there is no dedicated public `constants get/detail` command
+- there is no dedicated public `secrets get/detail` command
+- the current CLI workaround is name-filtered list
+- use:
+  - `mainsequence constants list --filter name=MODEL__DEFAULT_WINDOW`
+  - `mainsequence secrets list --filter name=POLYGON_API_KEY`
+
+### 7. Access assumptions must be verified
 
 If the task claims a resource is shareable, readable, or maintainable by another actor, verify that path explicitly with the relevant CLI or client workflow.
 
@@ -171,6 +195,7 @@ When reviewing an access-control task, look for:
 - using a team when the access is clearly one-off
 - treating team membership as team administration
 - storing sensitive data in a `Constant`
+- creating a `Constant` or `Secret` blindly without resolving whether the name already exists
 - weak or unverified claims about who can access a resource
 - confusion between access policy and deployment workflow
 
@@ -186,6 +211,7 @@ Do not claim success until you have checked:
   - `view`
   - `edit`
 - the task is using `Constant` vs `Secret` correctly
+- any `Constant` or `Secret` creation path first resolved existence by name when idempotency matters
 - the access claim was verified against the actual resource path
 - the task did not confuse sharing policy with orchestration or producer logic
 

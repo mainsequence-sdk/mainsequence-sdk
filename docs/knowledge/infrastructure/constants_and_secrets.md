@@ -54,6 +54,25 @@ A useful mental split is:
 
 That keeps the repository cleaner and reduces the amount of environment-specific data hardcoded into scripts and jobs.
 
+## Names Are Unique Identities
+
+Treat constant and secret names as organization-level unique configuration keys.
+
+In practice, this means:
+
+- `MODEL__DEFAULT_WINDOW` should identify one constant, not several variants
+- `POLYGON_API_KEY` should identify one secret, not several conflicting rows
+- name-based reads such as `Constant.get(name=...)` or `Secret.get(name=...)` assume uniqueness
+
+For idempotent automation or setup flows:
+
+- first resolve whether the constant or secret already exists by name
+- use `get(name=...)` when you expect exactly one object
+- use `filter(name__in=[...])` when reconciling a batch of keys
+- create only the missing names
+
+Do not treat `create(...)` as a substitute for existence checks when the task is "make sure this value exists".
+
 ## RBAC and Shareable Resources
 
 Constants and secrets sit inside a broader platform access model.
@@ -215,6 +234,14 @@ Current client-side supported filters are:
 - `name`
 - `name__in`
 
+For idempotent constant setup, prefer resolving by name before create:
+
+```python
+existing = {c.name for c in Constant.filter(name__in=["MODEL__DEFAULT_WINDOW"])}
+if "MODEL__DEFAULT_WINDOW" not in existing:
+    Constant.create(name="MODEL__DEFAULT_WINDOW", value=252)
+```
+
 ### When to prefer a constant over code
 
 Use a constant instead of hardcoding when:
@@ -291,6 +318,14 @@ Current client-side supported filters are:
 
 - `name`
 - `name__in`
+
+For idempotent secret setup, prefer resolving by name before create:
+
+```python
+existing = {s.name for s in Secret.filter(name__in=["POLYGON_API_KEY"])}
+if "POLYGON_API_KEY" not in existing:
+    Secret.create(name="POLYGON_API_KEY", value="***")
+```
 
 ### Operational rules for secrets
 
