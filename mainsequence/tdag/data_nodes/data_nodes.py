@@ -1437,8 +1437,9 @@ class DataNode(DataAccessMixin, ABC):
         Returns
         -------
         LocalUpdateResult
-            The payload produced for this run. Return ``None`` or an empty
-            result when there is nothing new to persist.
+            The payload produced for this run. For the default DataFrame-based
+            path, return an empty ``pd.DataFrame`` when there is nothing new to
+            persist. Returning ``None`` is invalid and will raise at runtime.
         """
         raise NotImplementedError
 

@@ -14,10 +14,12 @@ class RecordDefinition(BaseModel):
 
     column_name: str = Field(
         ...,
+        max_length=63,
         title="Column Name",
         description=(
             "Physical output column name persisted in the DataNode table. "
-            "This must match the column name produced by update() or insert_records()."
+            "This must match the column name produced by update() or insert_records(), "
+            "and it must stay within PostgreSQL's 63-character identifier limit."
         ),
         examples=["close"],
     )

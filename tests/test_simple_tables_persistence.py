@@ -45,6 +45,36 @@ class OrderUpdaterConfiguration(SimpleTableUpdaterConfiguration):
     tenant: str = Field(..., json_schema_extra={"update_only": True})
 
 
+def test_simple_table_schema_rejects_field_names_longer_than_63_characters():
+    field_name = "a" * 64
+    invalid_model = type(
+        "TooLongSimpleTable",
+        (SimpleTable,),
+        {
+            "__annotations__": {field_name: str},
+            field_name: Field(...),
+        },
+    )
+
+    with pytest.raises(ValueError, match="63-character column-name limit"):
+        invalid_model.schema()
+
+
+def test_simple_table_schema_rejects_foreign_key_physical_names_longer_than_63_characters():
+    field_name = "a" * 61
+    invalid_model = type(
+        "TooLongForeignKeySimpleTable",
+        (SimpleTable,),
+        {
+            "__annotations__": {field_name: Annotated[int, ForeignKey("orders")]},
+            field_name: Field(...),
+        },
+    )
+
+    with pytest.raises(ValueError, match="resolves to physical column"):
+        invalid_model.schema()
+
+
 class _HttpResponse:
     def __init__(self, status_code: int, text: str = ""):
         self.status_code = status_code

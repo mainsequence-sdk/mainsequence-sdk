@@ -254,6 +254,10 @@ class UpdateRunner:
             for col, dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
                     raise ValueError(f"Column name '{col}' must be a lowercase string.")
+                if len(col) > 63:
+                    raise ValueError(
+                        f"Column name '{col}' must be 63 characters or fewer."
+                    )
                 if "datetime64" in str(dtype):
                     raise TypeError(f"Column '{col}' has a forbidden datetime64 dtype. dates should be stored as timestamps to avoid  client side error conversions")
 

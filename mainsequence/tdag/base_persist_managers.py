@@ -409,14 +409,6 @@ class BasePersistManager:
 
             self.set_data_node_update(data_node_update=data_node_update)
 
-    def _verify_insertion_format(self, temp_df: pd.DataFrame) -> None:
-        if isinstance(temp_df.index, pd.MultiIndex) is True:
-            assert temp_df.index.names == ["time_index", "asset_symbol"] or temp_df.index.names == [
-                "time_index",
-                "asset_symbol",
-                "execution_venue_symbol",
-            ]
-
     def build_update_details(self, source_class_name: str) -> None:
         update_kwargs = dict(
             source_class_name=source_class_name,

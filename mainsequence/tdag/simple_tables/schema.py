@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 _ALLOWED_ON_DELETE = {"cascade", "restrict", "set_null"}
 _SYSTEM_FIELD_NAMES = {"id"}
+_MAX_COLUMN_NAME_LENGTH = 63
 
 
 @dataclass(frozen=True)
@@ -159,6 +160,12 @@ def _build_table_schema(model: type[SimpleTable]) -> TableSchema:
 
         annotation, nullable = _unwrap_optional(field_info.annotation)
         effective_ops = _effective_ops(name=name, explicit_ops=ops)
+        physical_column_name = f"{name}_id" if foreign_key is not None else name
+        _validate_column_name_length(
+            model=model,
+            logical_name=name,
+            physical_name=physical_column_name,
+        )
 
         fields.append(
             TableFieldSpec(
@@ -247,6 +254,25 @@ def _stable_default_repr(value: Any) -> Any:
         return value
     except TypeError:
         return repr(value)
+
+
+def _validate_column_name_length(
+    *,
+    model: type[SimpleTable],
+    logical_name: str,
+    physical_name: str,
+) -> None:
+    if len(logical_name) > _MAX_COLUMN_NAME_LENGTH:
+        raise ValueError(
+            f"Field '{logical_name}' on {model.__name__} exceeds the "
+            f"{_MAX_COLUMN_NAME_LENGTH}-character column-name limit."
+        )
+    if len(physical_name) > _MAX_COLUMN_NAME_LENGTH:
+        raise ValueError(
+            f"Field '{logical_name}' on {model.__name__} resolves to physical column "
+            f"'{physical_name}', which exceeds the {_MAX_COLUMN_NAME_LENGTH}-character "
+            "column-name limit."
+        )
 
 
 __all__ = [
