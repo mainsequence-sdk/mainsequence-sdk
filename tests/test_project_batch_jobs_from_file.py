@@ -127,7 +127,7 @@ def test_job_bulk_get_or_create_posts_normalized_batch(monkeypatch, tmp_path):
     assert captured["url"] == "https://backend.test/orm/api/pods/job/sync_jobs/"
     assert captured["timeout"] == 30
     assert captured["payload"]["json"] == {
-        "project": 123,
+        "project_id": 123,
         "jobs": [
             {
                 "name": "Simulated Prices",

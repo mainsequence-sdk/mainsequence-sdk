@@ -106,6 +106,10 @@ For shared recurring workflows, prefer:
 - `scheduled_jobs.yaml`
 - `mainsequence project schedule_batch_jobs ...`
 
+`scheduled_jobs.yaml` is the repository-managed input file for the bulk job sync/create flow. It is not a separate scheduling backend model.
+
+In reviewed batch files, set `spot` explicitly. `spot: true` means the job may use lower-cost interruptible capacity, similar to GCP Spot or legacy preemptible capacity. `spot: false` means standard capacity.
+
 Do not hide important recurring schedules in ad hoc shell history or one-off manual commands.
 
 ### 2. Jobs should run against pinned images
@@ -122,10 +126,17 @@ Remember:
 
 Do not stop at creation.
 
+Use the standard CLI execution loop when execution success matters:
+
+- `mainsequence project jobs list`
+- `mainsequence project jobs run <JOB_ID>`
+- `mainsequence project jobs runs list <JOB_ID>`
+- `mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900`
+
 Verify:
 
 - the job exists
-- the run can be triggered or has been triggered
+- the run was triggered manually when immediate validation matters, or has already been triggered by the scheduler
 - the logs and run status match expectations
 
 ### 4. Batch scheduling is powerful and dangerous
@@ -189,6 +200,8 @@ If the workflow uses `scheduled_jobs.yaml`, also check:
 - the file shape is valid
 - the jobs list is intentional
 - strict mode is either intentionally on or intentionally off
+- the file is being treated as the reviewed input to the bulk job sync/create flow
+- `spot` is explicit and matches the job's interruption tolerance
 
 If the workflow uses Artifacts, also check:
 

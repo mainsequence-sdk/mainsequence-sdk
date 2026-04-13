@@ -137,6 +137,8 @@ If the project has recurring scheduled jobs, keep:
 
 - `scheduled_jobs.yaml`
 
+Treat `scheduled_jobs.yaml` as the repository-managed input file for batch job sync/create, not as a separate scheduler system.
+
 Use the standard Main Sequence project structure unless the repository explicitly documents a different layout.
 
 Repository-local execution paths for jobs must:

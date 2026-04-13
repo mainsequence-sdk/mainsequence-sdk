@@ -3324,7 +3324,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
     out = api_mod.list_project_jobs(project_id=123, filters={"name__contains": "daily"})
-    assert captured["filters"][0] == {"name__contains": "daily", "project": 123}
+    assert captured["filters"][0] == {"name__contains": "daily", "project__id": 123}
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
     assert out == [

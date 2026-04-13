@@ -585,7 +585,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         Validate a batch YAML file and synchronize its jobs with the backend.
 
         Request body:
-          - project
+          - project_id
           - jobs
           - strict
 
@@ -650,7 +650,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         request_payload = {
             "json": cls.serialize_for_json(
                 {
-                    "project": resolved_project_id,
+                    "project_id": resolved_project_id,
                     "jobs": normalized_jobs,
                     "strict": bool(strict),
                 }

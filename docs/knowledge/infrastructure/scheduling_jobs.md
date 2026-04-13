@@ -47,6 +47,8 @@ That means:
 - submit the batch with `mainsequence project schedule_batch_jobs`
 - use direct CLI or client-created jobs mainly for experiments, backfills, or one-off operational tasks
 
+`scheduled_jobs.yaml` is not a separate platform scheduler model. It is the repository-managed input file for the batch job sync/create flow.
+
 !!! tip "Default rule"
     If a job is important enough to run every day, it is usually important enough to review in version control.
 
@@ -64,6 +66,8 @@ You define the jobs in `scheduled_jobs.yaml`, commit that file, and submit the b
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 ```
 
+That file is just the reviewed repository representation of the batch operation. The CLI reads it, validates each job with the same rules used for individual creation, and then submits the batch through the same bulk job sync/create path.
+
 Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. The selected image is then applied to every job in the submitted batch.
 
 After that selection, the CLI asks for confirmation and explicitly warns that the whole batch will be scheduled on the same image.
@@ -80,9 +84,12 @@ jobs:
     related_image_id: 77
     cpu_request: "0.25"
     memory_request: "0.5"
+    spot: false
 ```
 
 Each entry is validated with the same rules used by individual job creation. That means the job still needs a related image id, valid compute settings, and a valid target. If one definition is invalid, the batch submission fails before anything is sent.
+
+Set `spot` explicitly in repository-managed job files. `spot: true` means the job is allowed to prefer lower-cost interruptible capacity, conceptually similar to GCP Spot capacity or legacy preemptible VMs. `spot: false` means the job should stay on standard capacity. For long-lived reviewed schedules, make that choice explicit in the YAML instead of leaving it implicit.
 
 This approach is easier to review, easier to reproduce, and much easier to reason about later.
 
@@ -119,7 +126,7 @@ Once your repository state is ready, apply the scheduled jobs batch explicitly:
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 ```
 
-This command reads the YAML file, checks that it contains a top-level `jobs` list, validates each job with the same rules as `Job.create()`, and then submits the normalized list to the backend in one request.
+This command reads the YAML file, checks that it contains a top-level `jobs` list, validates each job with the same rules as `Job.create()`, and then submits the normalized list to the backend in one request. Internally, this is still the bulk job sync/create path, not a separate scheduler-specific configuration system.
 
 Before submission, the CLI shows the project's existing images and asks you to choose which image the batch should use. That selected image is then applied to every job in the submitted batch.
 
@@ -130,6 +137,20 @@ mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
 ```
 
 In strict mode, jobs that exist remotely but are not present in the YAML file may be removed. Jobs that are still linked to dashboards or resource releases are protected and will appear as not deleted in the batch result. The default is `--no-strict`.
+
+For reviewed batch files, also make the compute intent explicit:
+
+- `spot: false` for stable standard capacity
+- `spot: true` only for retry-safe workloads that can be interrupted
+
+If you want to validate one of the synchronized jobs immediately instead of waiting for the scheduler, use the same CLI loop:
+
+```bash
+mainsequence project jobs list
+mainsequence project jobs run <JOB_ID>
+mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+```
 
 ### Create a manual job
 
@@ -147,6 +168,8 @@ Then run it:
 ```bash
 mainsequence project jobs list
 mainsequence project jobs run <JOB_ID>
+mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
 ```
 
 ### Create an interval schedule
@@ -402,6 +425,7 @@ That gives you:
 - review in pull requests
 - a visible history of schedule changes
 - less ambiguity about why a job exists
+- a repository-managed wrapper around the same bulk job sync/create operation
 
 ### Separate creation from observation
 

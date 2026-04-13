@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `mainsequence project schedule_batch_jobs` batch submission so the SDK sends top-level `project_id` instead of `project`, matching the backend `sync_jobs` contract.
+- Fixed `mainsequence project jobs list` so the CLI always scopes job listing with `project__id=<PROJECT_ID>` instead of sending an incorrect `project=<PROJECT_ID>` filter that could return unscoped results.
+
 ### Changed
 
 - Added first-class storage `namespace` support for DataNode and SimpleTable storage models while keeping `hash_namespace` inside build configuration for identity construction.
@@ -16,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
   `related_table__namespace__isnull`.
 - Added CLI support for `namespace=...` on `mainsequence simple_table list` and `mainsequence data-node list`.
 - Updated CLI output and documentation to surface storage namespace information and examples.
+- Documented `mainsequence project schedule_batch_jobs` in the CLI reference.
+- Clarified that `scheduled_jobs.yaml` is the repository-managed input file for the bulk job sync/create flow.
+- Documented explicit `spot` usage for reviewed batch job files, including the meaning of `spot: true` versus `spot: false`.
 
 ## [3.17.6] - 2026-03-27
 

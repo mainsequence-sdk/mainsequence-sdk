@@ -9,7 +9,7 @@ In this part, you will:
 - sync local project changes to the platform from the CLI
 - create manual jobs from the CLI
 - freeze jobs to project images for reproducible execution
-- define recurring schedules as code in a batch file (`scheduled_jobs.yaml`)
+- define recurring schedules as code in a batch file (`scheduled_jobs.yaml`), which is the repository-managed input for the batch job sync/create flow
 - store and reuse platform-managed files with `Artifact` when a workflow starts from file drops instead of APIs
 
 DataNodes created in this part: **none new** (you orchestrate DataNodes built in previous parts).
@@ -167,6 +167,8 @@ One important concept in building strong systems is being able to guarantee that
 
 As projects and workflows grow, you will usually want **automation described as code**. You can define jobs and schedules in a reviewed YAML file, keep it in the repository, and apply the whole batch from the CLI.
 
+`scheduled_jobs.yaml` is not a separate scheduler object. It is just the repository-managed input file for the CLI batch job sync/create flow.
+
 Create a file named **`scheduled_jobs.yaml`** at the **repository root**.
 
 **Windows path example:** `C:\Users\<YourName>\mainsequence\<YourOrganization>\projects\tutorial-project\scheduled_jobs.yaml`
@@ -185,9 +187,12 @@ jobs:
     related_image_id: 77
     cpu_request: "0.25"
     memory_request: "0.5"
+    spot: false
 ```
 
 **Note:** In the YAML file, always use forward slashes (`/`) for `execution_path`, even on Windows. The platform will handle path conversion automatically.
+
+Set `spot` explicitly in repository-managed job files. Use `spot: false` when the job should stay on standard capacity. Use `spot: true` only when the job can tolerate interruption and restart. Conceptually, this is similar to GCP Spot capacity (previously called preemptible VMs): lower-cost capacity that may be reclaimed by the platform.
 
 Each entry under `jobs` is validated with the same rules used for individual job creation. That means:
 
@@ -196,6 +201,7 @@ Each entry under `jobs` is validated with the same rules used for individual job
 - each job must define a `related_image_id`
 - each scheduled job must use a valid `task_schedule`
 - compute settings such as `cpu_request` and `memory_request` must also be valid
+- `spot` should be set intentionally so reviewers can see whether the job is allowed to run on interruptible capacity
 
 #### Keep the file version-controlled
 
@@ -225,6 +231,8 @@ To validate the batch file and submit all jobs in it, run:
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 ```
 
+This command reads `scheduled_jobs.yaml`, validates it, and submits the whole batch through the platform's bulk job create/sync path.
+
 Before the batch is submitted, the CLI shows the project's available images and asks you to choose which one the batch should use. That selected image is applied to every job in the submitted batch.
 
 After the image is selected, the CLI asks for confirmation and explicitly warns that all jobs will be scheduled on that same image.
@@ -249,6 +257,14 @@ After the batch is submitted, verify that the scheduled job exists:
 mainsequence project jobs list
 ```
 
+If you want to validate the job immediately instead of waiting for the scheduler, you can trigger one run manually:
+
+```bash
+mainsequence project jobs run <JOB_ID>
+mainsequence project jobs runs list <JOB_ID>
+mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+```
+
 Once the scheduler has triggered the job, inspect runs and logs:
 
 ```bash
@@ -264,7 +280,7 @@ If you want to create a scheduled job directly from the terminal without relying
 mainsequence project jobs create --name "Simulated Prices" --execution-path scripts/simulated_prices_launcher.py --related-image-id <IMAGE_ID> --schedule-type crontab --schedule-expression "0 0 * * *"
 ```
 
-This direct CLI approach is useful for quick experiments. For shared projects, the repository-based `scheduled_jobs.yaml` flow is usually better because the schedule stays reviewable and version-controlled.
+This direct CLI approach is useful for quick experiments. For shared projects, the repository-based `scheduled_jobs.yaml` flow is usually better because the schedule stays reviewable and version-controlled while still feeding the same bulk job sync/create behavior.
 
 ## 3) Artifacts: Platform-Managed Files
 

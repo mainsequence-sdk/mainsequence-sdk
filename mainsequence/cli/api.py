@@ -2004,15 +2004,11 @@ def list_project_jobs(
         BaseObjectOrm.ROOT_URL = root_url
         ClientJob.ROOT_URL = root_url
 
-        jobs = []
         extra_filters = dict(filters or {})
-        for candidate_filters in ({"project": int(project_id)}, {"project__id__in": [int(project_id)]}):
-            try:
-                jobs = ClientJob.filter(timeout=timeout, **{**extra_filters, **candidate_filters})
-                if jobs or "project__id__in" in candidate_filters:
-                    break
-            except Exception:
-                continue
+        jobs = ClientJob.filter(
+            timeout=timeout,
+            **{**extra_filters, "project__id": int(project_id)},
+        )
 
         out: list[dict[str, Any]] = []
         for job in jobs:

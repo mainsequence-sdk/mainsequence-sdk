@@ -240,6 +240,8 @@ mainsequence project jobs runs logs 501
 mainsequence project jobs runs logs 501 --max-wait-seconds 900
 mainsequence project jobs run 91
 mainsequence project jobs create --name daily-run --execution-path scripts/test.py
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml
+mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
 mainsequence project data-node-updates list
 mainsequence project data-node-updates list 123
 mainsequence project project_resource list
@@ -400,3 +402,5 @@ mainsequence skills path workspace_builder --json
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
 - `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
 - `mainsequence project jobs create` creates jobs through the SDK client `Job.create()` path, requires a project image, expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
+- `mainsequence project schedule_batch_jobs` validates a repository-managed `scheduled_jobs.yaml` file and submits the batch through the SDK client `Job.bulk_get_or_create()` path.
+- `mainsequence project schedule_batch_jobs` expects a top-level `jobs` list, resolves the project id from the argument or local `.env`, lets you choose one project image for the whole batch, and supports `--strict` when the file should act as the full desired state.
