@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added `mainsequence cc registered_widget_type detail <WIDGET_ID>` to inspect one registered Command Center widget type by `widget_id`.
+- Updated registered widget type list/detail CLI output to include the backend row `id`.
+
 ### Fixed
 
 - Cleaned up Ruff `F821` undefined-name issues across the SDK, TDAG, virtual fund builder, and CLI modules.

@@ -2776,6 +2776,33 @@ def list_registered_widget_types(
         raise ApiError(f"Registered widget types fetch failed: {e}") from e
 
 
+def get_registered_widget_type(
+    widget_id: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one registered widget type via SDK client model.
+    """
+    try:
+        widget = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center",
+            class_name="RegisteredWidgetType",
+            operation=lambda ClientWidgetType: ClientWidgetType.get(
+                widget_id=str(widget_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(widget)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Registered widget type not found: {widget_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Registered widget type fetch failed: {e}") from e
+
+
 def get_simple_table_storage(
     storage_id: int | str,
     *,

@@ -97,6 +97,7 @@ mainsequence cc workspace delete 7
 mainsequence cc workspace add-label 7 --label trading --label desk
 mainsequence cc workspace remove-label 7 --label old-layout
 mainsequence cc registered_widget_type list
+mainsequence cc registered_widget_type detail main-sequence-data-node
 mainsequence cc registered_widget_type list --filter widget_id=markdown-note
 mainsequence cc registered_widget_type list --show-filters
 ```
@@ -106,7 +107,7 @@ Command Center commands are grouped under `cc`:
 - `workspace`
   create, detail, update, list, and delete shared workspaces
 - `registered_widget_type`
-  inspect the widget catalog available to workspaces
+  inspect the widget catalog available to workspaces, including widget-type detail by unique `widget_id` rather than backend row `id`
 
 For widget-specific workspace mutations, prefer the SDK workspace methods instead of rewriting the full workspace document:
 

@@ -943,6 +943,7 @@ def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
         "list_registered_widget_types",
         lambda timeout=None, filters=None: [
             {
+                "id": 17,
                 "widget_id": "main-sequence-data-node",
                 "title": "Data Node",
                 "category": "Main Sequence",
@@ -957,10 +958,46 @@ def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["cc", "registered_widget_type", "list"])
     assert result.exit_code == 0
     assert "Registered Widget Types" in result.output
+    assert "17" in result.output
     assert "main-sequ" in result.output
     assert "ence-data" in result.output
     assert "-node" in result.output
     assert "Total registered widget types: 1" in result.output
+
+
+def test_registered_widget_type_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_registered_widget_type",
+        lambda widget_id, timeout=None: {
+            "id": 17,
+            "widget_id": widget_id,
+            "title": "Data Node",
+            "description": "Renders a data node payload.",
+            "category": "Main Sequence",
+            "kind": "custom",
+            "source": "main-sequence",
+            "is_active": True,
+            "registry_version": "2026.04.04",
+            "required_permissions": ["workspace:view"],
+            "checksum": "abc123",
+            "last_synced_at": "2026-04-04T10:00:00Z",
+            "created_at": "2026-04-04T10:00:00Z",
+            "updated_at": "2026-04-04T10:30:00Z",
+        },
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["cc", "registered_widget_type", "detail", "main-sequence-data-node"],
+    )
+    assert result.exit_code == 0
+    assert "Registered Widget Type" in result.output
+    assert "17" in result.output
+    assert "main-sequence-data-node" in result.output
+    assert "Renders a data node payload." in result.output
+    assert "workspace:view" in result.output
 
 
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):

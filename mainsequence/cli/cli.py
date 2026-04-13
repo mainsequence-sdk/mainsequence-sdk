@@ -114,6 +114,7 @@ from .api import (
     get_project_image,
     get_project_job_run_logs,
     get_projects,
+    get_registered_widget_type,
     get_resource_release,
     get_secret,
     get_simple_table_storage,
@@ -4109,6 +4110,34 @@ def _format_workspace_details(workspace_payload: dict[str, object]) -> list[tupl
     ]
 
 
+def _format_registered_widget_type_preview(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Widget ID", str(widget_payload.get("widget_id") or widget_payload.get("widgetId") or "-")),
+        ("ID", str(widget_payload.get("id") or "-")),
+        ("Title", str(widget_payload.get("title") or "-")),
+        ("Category", str(widget_payload.get("category") or "-")),
+        ("Kind", str(widget_payload.get("kind") or "-")),
+        ("Source", str(widget_payload.get("source") or "-")),
+        ("Active", str(widget_payload.get("is_active") if "is_active" in widget_payload else widget_payload.get("isActive"))),
+        ("Registry Version", str(widget_payload.get("registry_version") or widget_payload.get("registryVersion") or "-")),
+    ]
+
+
+def _format_registered_widget_type_details(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Description", str(widget_payload.get("description") or "-")),
+        ("Tags", _format_json_value(widget_payload.get("tags"))),
+        (
+            "Required Permissions",
+            _format_json_value(widget_payload.get("required_permissions") or widget_payload.get("requiredPermissions")),
+        ),
+        ("Checksum", str(widget_payload.get("checksum") or "-")),
+        ("Last Synced At", str(widget_payload.get("last_synced_at") or widget_payload.get("lastSyncedAt") or "-")),
+        ("Created At", str(widget_payload.get("created_at") or widget_payload.get("createdAt") or "-")),
+        ("Updated At", str(widget_payload.get("updated_at") or widget_payload.get("updatedAt") or "-")),
+    ]
+
+
 def _workspace_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4336,6 +4365,7 @@ def _registered_widget_type_list_impl(
     for widget in widgets:
         rows.append(
             [
+                str(widget.get("id") or "-"),
                 str(widget.get("widget_id") or "-"),
                 str(widget.get("title") or "-"),
                 str(widget.get("category") or "-"),
@@ -4349,12 +4379,32 @@ def _registered_widget_type_list_impl(
     if rows:
         print_table(
             "Registered Widget Types",
-            ["Widget ID", "Title", "Category", "Kind", "Source", "Active", "Registry Version"],
+            ["ID", "Widget ID", "Title", "Category", "Kind", "Source", "Active", "Registry Version"],
             rows,
         )
     else:
         info("No registered widget types.")
     info(f"Total registered widget types: {len(widgets)}")
+
+
+def _registered_widget_type_detail_impl(
+    *,
+    widget_id: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        widget_payload = get_registered_widget_type(widget_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Registered widget type fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(widget_payload):
+        return
+
+    print_kv("Registered Widget Type", _format_registered_widget_type_preview(widget_payload))
+    print_kv("Registered Widget Type Details", _format_registered_widget_type_details(widget_payload))
 
 
 def _data_node_storage_list_impl(
@@ -4832,6 +4882,17 @@ def registered_widget_type_list_cmd(
         filter_entries=filter_entries,
         show_filters=show_filters,
     )
+
+
+@registered_widget_type.command("detail")
+def registered_widget_type_detail_cmd(
+    widget_id: str = typer.Argument(..., help="Registered widget type unique identifier (`widget_id`)."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one registered widget type in detail.
+    """
+    _registered_widget_type_detail_impl(widget_id=widget_id, timeout=timeout)
 
 
 @agent.command("list")
