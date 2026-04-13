@@ -40,17 +40,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - DataNodes:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - Command Center workspaces:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `agent_scaffold/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/command_center/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
-  `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
-  `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/dashboards/streamlit/SKILL.md`
 
 ## Read First
 

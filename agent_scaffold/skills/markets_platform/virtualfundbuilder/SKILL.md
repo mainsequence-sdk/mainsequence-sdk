@@ -58,13 +58,13 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - assets, asset categories, and translation tables:
-  `agent_scaffold/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
 - DataNodes and producer-side logic:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - instruments and pricing runtime:
-  `agent_scaffold/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
 - APIs and FastAPI:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 
 ## Read First
 

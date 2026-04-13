@@ -38,17 +38,17 @@ If the user is still in the discovery process and does not yet know what data ex
 ## Route Adjacent Work
 
 - discovery-only data inventory before SimpleTable implementation:
-  `agent_scaffold/skills/data_access/exploration/SKILL.md`
+  `.agents/skills/data_access/exploration/SKILL.md`
 - DataNodes:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - APIs and FastAPI:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `agent_scaffold/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/command_center/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
-  `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Read First
 

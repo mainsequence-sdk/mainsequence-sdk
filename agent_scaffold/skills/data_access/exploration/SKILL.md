@@ -44,27 +44,27 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 ## Route Adjacent Work
 
 - project bootstrap, scaffolding, and routing:
-  `agent_scaffold/skills/project_builder/SKILL.md`
+  `.agents/skills/project_builder/SKILL.md`
 - `DataNode` creation or modification:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - `SimpleTable` schema or updater work:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - FastAPI or application-facing implementation:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboards:
-  `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/dashboards/streamlit/SKILL.md`
 - Command Center surfaces:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - market-specific object discovery:
-  `agent_scaffold/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
 - project-state reconciliation after exploration:
-  `agent_scaffold/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/maintenance/local_journal/SKILL.md`
 - blocker and failure analysis:
-  `agent_scaffold/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/maintenance/bug_auditor/SKILL.md`
 
 ## Read First
 
-1. `agent_scaffold/AGENTS.md`
+1. `.agents/AGENTS.md`
 2. `docs/cli/index.md`
 3. `docs/knowledge/data_nodes.md`
 4. `docs/knowledge/simple_tables/simple_table.md` when the exploration touches row-oriented storage
@@ -142,8 +142,8 @@ Once the discovery is complete, hand off to the correct implementation skill.
 
 Examples:
 
-- if the task is about publishing or modifying time-series data, hand off to `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
-- if the task is about row-oriented operational data, hand off to `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+- if the task is about publishing or modifying time-series data, hand off to `.agents/skills/data_publishing/data_nodes/SKILL.md`
+- if the task is about row-oriented operational data, hand off to `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - if the task is about APIs or dashboards, hand off to the relevant surface skill after discovery is complete
 
 ## Review Rules

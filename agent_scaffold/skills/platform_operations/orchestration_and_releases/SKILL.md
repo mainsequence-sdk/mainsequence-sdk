@@ -45,15 +45,15 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - DataNodes:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - APIs and FastAPI:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - RBAC and sharing:
-  `agent_scaffold/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
 - Streamlit dashboards:
-  `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/dashboards/streamlit/SKILL.md`
 
 ## Read First
 

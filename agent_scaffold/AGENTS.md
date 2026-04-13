@@ -1,7 +1,7 @@
 # AGENTS.md
 
 This file gives an agent a stable operating contract for how to work in a Main Sequence project,
-how to verify platform behavior, and how to use the project-state files kept under `agent_scaffold/`.
+how to verify platform behavior, and how to use the project-state files kept under `.agents/`.
 
 Before any non-trivial Main Sequence work, verify that this `AGENTS.md` matches the latest
 version at
@@ -54,8 +54,8 @@ Working rules for this role:
 
 Delegation rules:
 
-- when work is delegated or queued for later, write the task in `agent_scaffold/tasks.md` according to the skill that should execute it
-- each delegated or queued task in `agent_scaffold/tasks.md` must state:
+- when work is delegated or queued for later, write the task in `.agents/tasks.md` according to the skill that should execute it
+- each delegated or queued task in `.agents/tasks.md` must state:
   - the exact task scope
   - the owning skill
   - the expected output, decision, or artifact
@@ -116,37 +116,37 @@ Use the latest relevant documentation or specialized skill for the task at hand.
 Typical routing:
 
 - project setup, local checkout, and CLI environment:
-  `agent_scaffold/skills/project_builder/SKILL.md`
+  `.agents/skills/project_builder/SKILL.md`
 - project scaffolding, folder structure, and standard repository layout:
-  `agent_scaffold/skills/project_builder/SKILL.md`
-- project-state reconciliation, milestone logging, blocker recording, and next-step updates under `agent_scaffold/`:
-  `agent_scaffold/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/project_builder/SKILL.md`
+- project-state reconciliation, milestone logging, blocker recording, and next-step updates under `.agents/`:
+  `.agents/skills/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, failure classification, and upstream SDK assessment:
-  `agent_scaffold/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/maintenance/bug_auditor/SKILL.md`
 - DataNodes, updates, identifiers, schema, metadata:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables, row ids, filtering, insert-only versus overwrite behavior:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
-  `agent_scaffold/skills/data_access/exploration/SKILL.md`
+  `.agents/skills/data_access/exploration/SKILL.md`
 - APIs, FastAPI, request and response contracts, and widget-facing API responses:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces and mounted widget mutation:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
-  `agent_scaffold/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/command_center/app_components/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
-  `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
-  `agent_scaffold/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
 - assets, public asset registration, custom assets, asset categories, and translation tables:
-  `agent_scaffold/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
 - dashboards:
-  `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/dashboards/streamlit/SKILL.md`
 - portfolios and Virtual Fund Builder:
-  `agent_scaffold/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
 - instruments and pricing:
-  `agent_scaffold/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
 
 ## Mandatory Startup Sequence
 
@@ -154,10 +154,10 @@ For any non-trivial Main Sequence task:
 
 1. Read the latest relevant Main Sequence documentation.
 2. Compare the implementation against the latest documented behavior.
-3. Check `agent_scaffold/status.md` for the latest verified state.
-4. Check `agent_scaffold/tasks.md` for current priorities.
-5. Check `agent_scaffold/record.md` for project identifiers, checkout path, and orchestration notes.
-6. If an error appears, check `agent_scaffold/journal.md` for the same or related error and any prior fix.
+3. Check `.agents/status.md` for the latest verified state.
+4. Check `.agents/tasks.md` for current priorities.
+5. Check `.agents/record.md` for project identifiers, checkout path, and orchestration notes.
+6. If an error appears, check `.agents/journal.md` for the same or related error and any prior fix.
 7. Confirm you are in the correct project checkout, or use `--path` explicitly.
 8. Confirm platform context with:
    `mainsequence project current --debug`
@@ -175,15 +175,15 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 
 Default pattern:
 
-1. `agent_scaffold/skills/project_builder/SKILL.md`
+1. `.agents/skills/project_builder/SKILL.md`
 2. the relevant domain skill
-3. `agent_scaffold/skills/maintenance/local_journal/SKILL.md` after material work if verified state, blockers, scope, next actions, stable references, or historical notes changed
+3. `.agents/skills/maintenance/local_journal/SKILL.md` after material work if verified state, blockers, scope, next actions, stable references, or historical notes changed
 
 Before the final response:
 
 - consult the maintenance skill whenever project understanding, verified state, or historical record changed during the turn
 
-Always use `agent_scaffold/skills/project_builder/SKILL.md` as the source of truth for project scaffolding, folder structure, and standard repository layout.
+Always use `.agents/skills/project_builder/SKILL.md` as the source of truth for project scaffolding, folder structure, and standard repository layout.
 
 ## Core Working Rules
 
@@ -256,9 +256,9 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 - record what failed
 - explain why it may be a Main Sequence issue
 - suggest a concrete improvement
-- append the issue to `agent_scaffold/journal.md`
-- add actionable follow-up to `agent_scaffold/tasks.md` if still open
-- reflect the latest blocker in `agent_scaffold/status.md`
+- append the issue to `.agents/journal.md`
+- add actionable follow-up to `.agents/tasks.md` if still open
+- reflect the latest blocker in `.agents/status.md`
 
 ## Output Style
 
@@ -267,23 +267,23 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 - surface failures early
 - distinguish verified facts from assumptions
 
-## Project-State Files Under `agent_scaffold/`
+## Project-State Files Under `.agents/`
 
-The repository keeps project-state files under `agent_scaffold/`:
+The repository keeps project-state files under `.agents/`:
 
-- `agent_scaffold/brief.md`
-- `agent_scaffold/tasks.md`
-- `agent_scaffold/record.md`
-- `agent_scaffold/status.md`
-- `agent_scaffold/journal.md`
+- `.agents/brief.md`
+- `.agents/tasks.md`
+- `.agents/record.md`
+- `.agents/status.md`
+- `.agents/journal.md`
 
 These files are owned by:
 
-- `agent_scaffold/skills/maintenance/local_journal/SKILL.md` for:
-  - `agent_scaffold/brief.md`
-  - `agent_scaffold/tasks.md`
-  - `agent_scaffold/record.md`
-  - `agent_scaffold/status.md`
-  - `agent_scaffold/journal.md`
+- `.agents/skills/maintenance/local_journal/SKILL.md` for:
+  - `.agents/brief.md`
+  - `.agents/tasks.md`
+  - `.agents/record.md`
+  - `.agents/status.md`
+  - `.agents/journal.md`
 
 Do not improvise their meaning in domain skills. Use the maintenance skill to reconcile them after material work.

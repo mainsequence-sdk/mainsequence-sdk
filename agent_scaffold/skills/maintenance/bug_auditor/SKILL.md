@@ -20,7 +20,7 @@ This skill is for diagnosis and assessment. Default behavior is read-only unless
 ## This Skill Can Do
 
 - inspect project state and summarize completion status
-- read `agent_scaffold/tasks.md` and `agent_scaffold/status.md` first when they exist
+- read `.agents/tasks.md` and `.agents/status.md` first when they exist
 - use repo state, logs, test output, stderr, and task files as evidence
 - classify failures into:
   - target-project issue
@@ -49,30 +49,30 @@ This skill audits. It does not implement by default.
 ## Route Adjacent Work
 
 - bootstrap, routing, and repo structure:
-  `agent_scaffold/skills/project_builder/SKILL.md`
-- `agent_scaffold/` state reconciliation after the audit:
-  `agent_scaffold/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/project_builder/SKILL.md`
+- `.agents/` state reconciliation after the audit:
+  `.agents/skills/maintenance/local_journal/SKILL.md`
 - DataNode implementation issues:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTable implementation issues:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - API implementation issues:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:
-  `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
-  `agent_scaffold/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
 - assets, VFB, pricing, or dashboard domain issues:
-  use the relevant domain skill under `agent_scaffold/skills/markets_platform/` or `agent_scaffold/skills/dashboards/`
+  use the relevant domain skill under `.agents/skills/markets_platform/` or `.agents/skills/dashboards/`
 
 ## Read First
 
-1. `agent_scaffold/AGENTS.md`
-2. `agent_scaffold/skills/project_builder/SKILL.md`
-3. `agent_scaffold/tasks.md` when it exists
-4. `agent_scaffold/status.md` when it exists
-5. `agent_scaffold/record.md` when stable references or project ids matter
-6. `agent_scaffold/journal.md` when repeated failures or prior investigations may be relevant
+1. `.agents/AGENTS.md`
+2. `.agents/skills/project_builder/SKILL.md`
+3. `.agents/tasks.md` when it exists
+4. `.agents/status.md` when it exists
+5. `.agents/record.md` when stable references or project ids matter
+6. `.agents/journal.md` when repeated failures or prior investigations may be relevant
 7. the latest relevant Main Sequence docs for the failing workflow
 
 ## Inputs This Skill Needs
@@ -105,7 +105,7 @@ Do not modify code, docs, or project-state files unless the task explicitly asks
 
 ### 2. Start with project-state files
 
-Read `agent_scaffold/tasks.md` and `agent_scaffold/status.md` first when they exist.
+Read `.agents/tasks.md` and `.agents/status.md` first when they exist.
 
 Use them as hypotheses, not as proof.
 
@@ -127,7 +127,7 @@ Before each major investigation step, emit a short progress update that says wha
 
 Especially announce when you are:
 
-- reading `agent_scaffold/tasks.md` or `agent_scaffold/status.md`
+- reading `.agents/tasks.md` or `.agents/status.md`
 - inspecting a failing command, traceback, or stderr excerpt
 - checking the local `mainsequence` package or version
 - inspecting or cloning the public `mainsequence-sdk` repository
@@ -184,7 +184,7 @@ When reviewing an audit, look for:
 
 Do not claim audit completion until you have checked:
 
-- `agent_scaffold/tasks.md` and `agent_scaffold/status.md` first when they exist
+- `.agents/tasks.md` and `.agents/status.md` first when they exist
 - the overall state is one of:
   - `finished`
   - `in_progress`

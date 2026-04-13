@@ -43,15 +43,15 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Command Center workspaces:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - APIs and FastAPI:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - DataNodes:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - Streamlit dashboards:
-  `agent_scaffold/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
@@ -61,7 +61,7 @@ This skill must not claim ownership of:
 
 If the AppComponent is backed by project APIs, also read:
 
-4. `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+4. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 
 ## Inputs This Skill Needs
 

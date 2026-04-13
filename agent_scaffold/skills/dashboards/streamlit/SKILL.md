@@ -50,17 +50,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - FastAPI and application APIs:
-  `agent_scaffold/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:
-  `agent_scaffold/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms for widgets:
-  `agent_scaffold/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/command_center/app_components/SKILL.md`
 - jobs, images, project resources, and releases:
-  `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - DataNodes:
-  `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `agent_scaffold/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/data_publishing/simple_tables/SKILL.md`
 
 ## Read First
 
@@ -73,7 +73,7 @@ This skill must not claim ownership of:
 
 If the dashboard is being deployed or released, also read:
 
-7. `agent_scaffold/skills/platform_operations/orchestration_and_releases/SKILL.md`
+7. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Inputs This Skill Needs
 
