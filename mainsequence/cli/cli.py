@@ -56,11 +56,13 @@ from .api import (
     add_constant_team_to_view,
     add_constant_user_to_edit,
     add_constant_user_to_view,
+    add_data_node_storage_labels,
     add_data_node_storage_team_to_edit,
     add_data_node_storage_team_to_view,
     add_data_node_storage_user_to_edit,
     add_data_node_storage_user_to_view,
     add_deploy_key,
+    add_project_labels,
     add_project_team_to_edit,
     add_project_team_to_view,
     add_project_user_to_edit,
@@ -69,8 +71,10 @@ from .api import (
     add_secret_team_to_view,
     add_secret_user_to_edit,
     add_secret_user_to_view,
+    add_simple_table_storage_labels,
     add_team_user_to_edit,
     add_team_user_to_view,
+    add_workspace_labels,
     create_agent,
     create_constant,
     create_organization_team,
@@ -155,10 +159,12 @@ from .api import (
     remove_constant_team_from_view,
     remove_constant_user_from_edit,
     remove_constant_user_from_view,
+    remove_data_node_storage_labels,
     remove_data_node_storage_team_from_edit,
     remove_data_node_storage_team_from_view,
     remove_data_node_storage_user_from_edit,
     remove_data_node_storage_user_from_view,
+    remove_project_labels,
     remove_project_team_from_edit,
     remove_project_team_from_view,
     remove_project_user_from_edit,
@@ -167,8 +173,10 @@ from .api import (
     remove_secret_team_from_view,
     remove_secret_user_from_edit,
     remove_secret_user_from_view,
+    remove_simple_table_storage_labels,
     remove_team_user_from_edit,
     remove_team_user_from_view,
+    remove_workspace_labels,
     repo_name_from_git_url,
     run_project_job,
     safe_slug,
@@ -3699,6 +3707,56 @@ def _shareable_team_access_update_impl(
     print_kv(f"{object_label} Sharing Update", _format_shareable_permission_change(payload))
 
 
+def _format_labelable_label_change(payload: dict[str, object]) -> list[tuple[str, str]]:
+    labels_payload = payload.get("labels") if isinstance(payload, dict) else []
+    if not isinstance(labels_payload, list):
+        labels_payload = []
+
+    label_names: list[str] = []
+    for label in labels_payload:
+        if isinstance(label, dict):
+            value = label.get("name") or label.get("slug") or label.get("id")
+        else:
+            value = label
+        if value is None:
+            continue
+        label_names.append(str(value))
+
+    return [
+        ("Total Labels", str(len(labels_payload))),
+        ("Labels", ", ".join(label_names) if label_names else "-"),
+    ]
+
+
+def _labelable_object_labels_update_impl(
+    *,
+    action_fn,
+    object_label: str,
+    action_label: str,
+    object_id: int,
+    labels: list[str] | None,
+    timeout: int | None,
+) -> None:
+    parsed_labels = _parse_cli_csv_list(labels)
+    if not parsed_labels:
+        error("Provide at least one --label value.")
+        raise typer.Exit(2)
+
+    _require_login()
+
+    try:
+        payload = action_fn(object_id, parsed_labels, timeout=timeout)
+    except ApiError as e:
+        error(f"{object_label} {action_label} failed: {e}")
+        raise typer.Exit(1)
+
+    if _emit_json(payload):
+        return
+
+    success(f"{object_label} {action_label} completed.")
+    print_kv(f"{object_label} Labels", _format_labelable_label_change(payload))
+
+
 def _secrets_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4522,6 +4580,76 @@ def simple_tables_delete_cmd(
     _simple_tables_delete_impl(storage_id=storage_id, timeout=timeout)
 
 
+@simple_table.command("add-label")
+def simple_tables_add_label_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to add. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Add one or more organizational labels to a simple table storage.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=add_simple_table_storage_labels,
+        object_label="Simple Table",
+        action_label="add-label",
+        object_id=storage_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@simple_table.command("add_label", hidden=True)
+def simple_tables_add_label_alias_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence simple_table add-label`."""
+    simple_tables_add_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+
+
+@simple_table.command("remove-label")
+def simple_tables_remove_label_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to remove. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove one or more organizational labels from a simple table storage.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=remove_simple_table_storage_labels,
+        object_label="Simple Table",
+        action_label="remove-label",
+        object_id=storage_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@simple_table.command("remove_label", hidden=True)
+def simple_tables_remove_label_alias_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence simple_table remove-label`."""
+    simple_tables_remove_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+
+
 @workspace.command("list")
 def workspace_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
@@ -4618,6 +4746,76 @@ def workspace_delete_cmd(
     Delete one command-center workspace.
     """
     _workspace_delete_impl(workspace_id=workspace_id, timeout=timeout)
+
+
+@workspace.command("add-label")
+def workspace_add_label_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to add. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Add one or more organizational labels to a workspace.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=add_workspace_labels,
+        object_label="Workspace",
+        action_label="add-label",
+        object_id=workspace_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@workspace.command("add_label", hidden=True)
+def workspace_add_label_alias_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence cc workspace add-label`."""
+    workspace_add_label_cmd(workspace_id=workspace_id, labels=labels, timeout=timeout)
+
+
+@workspace.command("remove-label")
+def workspace_remove_label_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to remove. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove one or more organizational labels from a workspace.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=remove_workspace_labels,
+        object_label="Workspace",
+        action_label="remove-label",
+        object_id=workspace_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@workspace.command("remove_label", hidden=True)
+def workspace_remove_label_alias_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence cc workspace remove-label`."""
+    workspace_remove_label_cmd(workspace_id=workspace_id, labels=labels, timeout=timeout)
 
 
 @registered_widget_type.command("list")
@@ -6116,6 +6314,76 @@ def data_node_storage_can_edit_cmd(
     )
 
 
+@data_node_storage_group.command("add-label")
+def data_node_storage_add_label_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to add. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Add one or more organizational labels to a data node storage.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=add_data_node_storage_labels,
+        object_label="Data Node",
+        action_label="add-label",
+        object_id=storage_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("add_label", hidden=True)
+def data_node_storage_add_label_alias_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence data-node add-label`."""
+    data_node_storage_add_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+
+
+@data_node_storage_group.command("remove-label")
+def data_node_storage_remove_label_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to remove. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove one or more organizational labels from a data node storage.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=remove_data_node_storage_labels,
+        object_label="Data Node",
+        action_label="remove-label",
+        object_id=storage_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@data_node_storage_group.command("remove_label", hidden=True)
+def data_node_storage_remove_label_alias_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence data-node remove-label`."""
+    data_node_storage_remove_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+
+
 @data_node_storage_group.command("add_to_view")
 def data_node_storage_add_to_view_cmd(
     storage_id: int = typer.Argument(..., help="Data node storage ID."),
@@ -7048,6 +7316,76 @@ def project_can_edit_cmd(
         object_id=project_id,
         timeout=timeout,
     )
+
+
+@project.command("add-label")
+def project_add_label_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to add. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Add one or more organizational labels to a project.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=add_project_labels,
+        object_label="Project",
+        action_label="add-label",
+        object_id=project_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@project.command("add_label", hidden=True)
+def project_add_label_alias_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence project add-label`."""
+    project_add_label_cmd(project_id=project_id, labels=labels, timeout=timeout)
+
+
+@project.command("remove-label")
+def project_remove_label_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to remove. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Remove one or more organizational labels from a project.
+
+    Labels are helpers for grouping and discovery only. They do not affect runtime behavior or functionality.
+    """
+    _labelable_object_labels_update_impl(
+        action_fn=remove_project_labels,
+        object_label="Project",
+        action_label="remove-label",
+        object_id=project_id,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@project.command("remove_label", hidden=True)
+def project_remove_label_alias_cmd(
+    project_id: int = typer.Argument(..., help="Project ID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence project remove-label`."""
+    project_remove_label_cmd(project_id=project_id, labels=labels, timeout=timeout)
 
 
 @project.command("add_to_view")

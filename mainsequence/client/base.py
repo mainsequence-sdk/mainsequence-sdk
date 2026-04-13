@@ -978,3 +978,110 @@ class ShareableObjectMixin(PermissionManagedObjectMixin):
     """
 
     pass
+
+
+class LabelRecord(BasePydanticModel):
+    """Backend label payload attached to labelable objects."""
+
+    id: int | None = None
+    name: str
+    slug: str | None = None
+    description: str | None = None
+    color: str | None = None
+    is_active: bool | None = None
+    usage_count: int | None = None
+
+
+class LabelSetResponse(BasePydanticModel):
+    """Normalized label state returned after label mutations."""
+
+    labels: list[LabelRecord]
+
+
+class LabelableObjectMixin(DetailActionObjectMixin):
+    """
+    Mixin for models that expose label add/remove detail actions.
+
+    Labels are organizational metadata only. They do not change runtime
+    behavior, execution semantics, storage identity, hashes, permissions, or
+    any other functional behavior of the object. Use them only to group,
+    browse, and annotate objects for humans.
+    """
+
+    LABEL_ACTION_PATHS: ClassVar[dict[str, str]] = {
+        "add_label": "add-label",
+        "remove_label": "remove-label",
+    }
+
+    @staticmethod
+    def _normalize_label_names(labels: str | Iterable[str]) -> list[str]:
+        if isinstance(labels, str):
+            candidates = [labels]
+        else:
+            candidates = list(labels)
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for label in candidates:
+            value = str(label).strip()
+            if not value:
+                continue
+            lowered = value.casefold()
+            if lowered in seen:
+                continue
+            normalized.append(value)
+            seen.add(lowered)
+        if not normalized:
+            raise ValueError("Provide at least one non-empty label.")
+        return normalized
+
+    def _post_label_action(
+        self,
+        action_name: str,
+        *,
+        labels: str | Iterable[str],
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> LabelSetResponse:
+        payload = {"json": {"labels": self._normalize_label_names(labels)}}
+        data = self._request_detail_action(
+            r_type="POST",
+            action_name=action_name,
+            payload=payload,
+            timeout=timeout,
+            expected_statuses=(200,),
+            empty_response={"labels": []},
+        )
+        if not isinstance(data, dict):
+            raise ApiError(
+                f"Unexpected {type(self).__name__} label response for action "
+                f"{action_name!r}: {type(data)!r}"
+            )
+        return LabelSetResponse.model_validate(data)
+
+    def add_label(
+        self,
+        labels: str | Iterable[str],
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> LabelSetResponse:
+        """Attach one or more organizational labels to this object."""
+
+        return self._post_label_action(
+            self.LABEL_ACTION_PATHS["add_label"],
+            labels=labels,
+            timeout=timeout,
+        )
+
+    def remove_label(
+        self,
+        labels: str | Iterable[str],
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> LabelSetResponse:
+        """Remove one or more organizational labels from this object."""
+
+        return self._post_label_action(
+            self.LABEL_ACTION_PATHS["remove_label"],
+            labels=labels,
+            timeout=timeout,
+        )

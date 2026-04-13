@@ -7,6 +7,8 @@ Command Center workspaces store shared application structure:
 - layout data
 - mounted widget instances
 
+Workspace `labels` are organizational helpers only. They do not change widget runtime behavior or functionality.
+
 The important operational detail is that you do not always need to fetch and rewrite the full workspace document when the user wants to change one widget.
 
 For widget-specific mutations, prefer the widget-scoped workspace endpoints exposed by `mainsequence.client.command_center.Workspace`:

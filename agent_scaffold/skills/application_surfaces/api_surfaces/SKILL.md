@@ -1,6 +1,6 @@
 ---
 name: mainsequence-api-surfaces
-description: Use this skill when the task is about building or changing APIs in a Main Sequence repository. In a Main Sequence project, project APIs should be implemented as FastAPI project resources. This skill owns FastAPI structure, request and response contracts, request user binding, APIDataNode and SimpleTable consumption inside APIs, and exact widget-facing API response contracts. It does not own producer-side DataNode or SimpleTable design, workspace payloads, or scheduling and release workflows.
+description: Use this skill when the task is about building or changing APIs in a Main Sequence repository. In a Main Sequence project, project APIs should be implemented as FastAPI project resources. Unless the user explicitly says the API is standalone or for a non-Command Center client, assume the API is meant to be Command Center integrated, load the related Command Center skills, and use Command Center SDK response models whenever the endpoint can reasonably match them. This skill owns FastAPI structure, request and response contracts, request user binding, APIDataNode and SimpleTable consumption inside APIs, and exact widget-facing API response contracts. It does not own producer-side DataNode or SimpleTable design, workspace payloads, or scheduling and release workflows.
 ---
 
 # Main Sequence API Surfaces
@@ -10,6 +10,8 @@ description: Use this skill when the task is about building or changing APIs in 
 Use this skill when the task is about an application-facing HTTP surface in a Main Sequence project.
 
 In this environment, project APIs should be built as FastAPI.
+
+Unless the user explicitly says otherwise, assume the API is intended to be Command Center integrated and to serve Command Center widgets, AppComponents, or other Command Center flows.
 
 This skill is for FastAPI structure, request/response contracts, request user context, and API-side consumption of project data.
 
@@ -22,7 +24,9 @@ This skill is for FastAPI structure, request/response contracts, request user co
 - use `APIDataNode` to read published DataNode tables
 - use `SimpleTableUpdater.execute_filter(...)` to read simple-table rows
 - add `LoggedUserContextMiddleware` when request-local user context is needed
-- define exact widget-facing API contracts using SDK response models
+- assume Command Center is the default API consumer unless the user clearly says otherwise
+- load the related Command Center skills when the API feeds widgets, AppComponents, or workspaces
+- define exact widget-facing API contracts using SDK response models whenever the endpoint can reasonably match those contracts
 - review whether an API route is rebuilding producer logic incorrectly
 
 ## This Skill Must Not Claim
@@ -58,8 +62,15 @@ This skill must not claim ownership of:
 2. `docs/tutorial/fastapi_tutorial/index.md`
 3. `docs/tutorial/fastapi_tutorial/implementation_details.md`
 4. `docs/knowledge/fastapi/index.md`
-5. `docs/knowledge/command_center/widget_data_contracts.md` when the API feeds a widget directly
-6. `docs/knowledge/command_center/forms.md` when the API is part of an AppComponent flow
+5. `docs/knowledge/command_center/widget_data_contracts.md`
+6. `docs/knowledge/command_center/forms.md`
+7. `.agents/skills/command_center/app_components/SKILL.md`
+
+Also load:
+
+8. `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
+
+Do not wait for the user to say "Command Center" explicitly if the API is being built as a platform UI surface. That is the default assumption in Main Sequence projects.
 
 ## Inputs This Skill Needs
 
@@ -73,6 +84,11 @@ Before changing code, collect or infer:
 - whether the endpoint is generic or widget-facing
 - whether route handlers need the logged Main Sequence user
 
+Default assumption:
+
+- the intended client is Command Center unless the user clearly specifies another consumer
+- if that assumption is wrong for this task, make that explicit before building the contract
+
 If the upstream producer contract is unclear, stop and resolve that first.
 
 ## Required Decisions
@@ -82,8 +98,10 @@ For every non-trivial API task, decide:
 1. Is this route exposing application logic or should the data stay as a producer table?
 2. Should the route read from `APIDataNode`, `SimpleTable`, or something else?
 3. Does the route need request-local user context?
-4. Is the response a generic business contract or an exact widget contract?
-5. Should the route own composition only, or is it incorrectly rebuilding producer logic?
+4. Is this API serving Command Center by default, or did the user explicitly ask for a different consumer?
+5. Does this task require the AppComponents skill, the workspace-builder skill, or both?
+6. Which Command Center SDK response model fits this endpoint, and if none fits, why is a generic business contract justified?
+7. Should the route own composition only, or is it incorrectly rebuilding producer logic?
 
 ## Build Rules
 
@@ -97,7 +115,24 @@ The API should expose:
 
 It should consume producer resources rather than silently re-implementing them.
 
-### 1.1 In Main Sequence projects, APIs are FastAPI
+### 1.1 Default to Command Center as the consumer
+
+In a Main Sequence project, assume API work is for Command Center unless the user explicitly says the API is:
+
+- purely external
+- purely backend-to-backend
+- a standalone non-Command-Center integration
+
+That means:
+
+- prefer widget-facing contracts by default
+- load `.agents/skills/command_center/app_components/SKILL.md`
+- also load `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is coupled to mounted workspace widgets or workspace payloads
+- try to use the existing Command Center SDK response model before inventing a new response shape
+
+Do not default to a generic standalone API mindset in this repository.
+
+### 1.2 In Main Sequence projects, APIs are FastAPI
 
 When a user asks to build an API in a Main Sequence project, the default and expected implementation is FastAPI.
 
@@ -106,7 +141,7 @@ Do not propose or scaffold another framework unless:
 - the repository already documents a different framework, and
 - the task explicitly requires preserving that framework
 
-### 1.2 The API is a project resource
+### 1.3 The API is a project resource
 
 Treat the API as a deployable Main Sequence project resource, not just a local dev server.
 
@@ -166,7 +201,7 @@ For Main Sequence project APIs:
 
 In Main Sequence projects, prefer widget-facing response contracts by default.
 
-If an endpoint can reasonably serve a Main Sequence widget, use the SDK response model for that widget contract first.
+If an endpoint can reasonably serve a Main Sequence widget, AppComponent, or workspace surface, use the SDK response model for that contract first.
 
 Do not handcraft loose JSON and hope the widget accepts it.
 
@@ -174,6 +209,9 @@ Only fall back to a generic business response model when:
 
 - the user explicitly asks for a non-widget API contract, or
 - the client is clearly not a Main Sequence widget and the route should remain UI-agnostic
+- no existing Command Center SDK response model fits the endpoint, and that mismatch is explicit in the task reasoning
+
+If the endpoint participates in an AppComponent flow, also use the AppComponents skill to validate the input-form side of the contract.
 
 ### 7. Keep FastAPI documentation rich
 
@@ -193,6 +231,10 @@ For FastAPI routes in a Main Sequence project:
 
 When reviewing an API change, look for:
 
+- a Command Center-facing API being treated like a generic standalone API
+- missing use of an existing Command Center SDK response model when the endpoint could have matched it
+- missing load/use of the AppComponents skill when the endpoint is part of an AppComponent flow
+- missing load/use of the workspace-builder skill when the endpoint is tied to a mounted workspace widget
 - a non-FastAPI proposal without an explicit repository reason
 - route handlers doing too much
 - missing `response_model`
@@ -208,6 +250,8 @@ When reviewing an API change, look for:
 Do not claim success until you have checked:
 
 - the API is being implemented as FastAPI
+- the intended consumer is explicit, and Command Center was used as the default assumption unless the user overrode it
+- an existing Command Center SDK response model was used whenever the endpoint could reasonably match it
 - route inputs are intentionally typed
 - route parameters are described richly
 - every structured route has an explicit `response_model`
@@ -224,9 +268,15 @@ If the endpoint feeds a widget directly, also check:
 - the row shape matches the widget contract
 - the payload is validated through the FastAPI boundary
 
+If the endpoint is part of an AppComponent or workspace flow, also check:
+
+- the related Command Center skill was loaded
+- the API contract does not drift from the AppComponent or workspace expectations
+
 ## This Skill Must Stop And Escalate When
 
 - the proposed API framework is not FastAPI and the repository does not explicitly justify that choice
+- the likely consumer is Command Center but the task is being treated as a generic API without loading the relevant Command Center skill
 - a route is being left without a `response_model`
 - route parameters are being left effectively undocumented
 - the API route is duplicating producer logic instead of consuming published resources

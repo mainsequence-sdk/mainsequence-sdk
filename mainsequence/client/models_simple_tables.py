@@ -17,7 +17,7 @@ from pydantic import AliasChoices, ConfigDict, Field
 
 from mainsequence import logger
 
-from .base import BaseObjectOrm, BasePydanticModel
+from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin
 from .exceptions import raise_for_response
 from .models_tdag import (
     POD_PROJECT,
@@ -270,7 +270,7 @@ class STColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     )
 
 
-class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
+class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table"
     model_config = ConfigDict(populate_by_name=True)
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
@@ -320,6 +320,14 @@ class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
     time_serie_source_code: str | None = Field(
         None, description="Source code for the simple-table updater"
     )
+    labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Organizational labels attached to the simple table. "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+    )
+
     open_for_everyone: bool = Field(
         default=False, description="Whether the table is open for everyone"
     )

@@ -70,6 +70,19 @@ mainsequence data-node list
 
 The `Identifier` column lists DataNode table identifiers exposed by `DataNodeStorage`. It does not list asset `unique_identifier` values.
 
+### 3.2 Labels are organization metadata only
+
+`DataNodeStorage` objects can also carry `labels`.
+
+Those labels do not change:
+
+- runtime behavior
+- table identity
+- hashing
+- functionality
+
+Use them only for grouping and discovery.
+
 ## 4) Config design: meaning vs scope vs operational knobs
 
 A simple and scalable pattern is:

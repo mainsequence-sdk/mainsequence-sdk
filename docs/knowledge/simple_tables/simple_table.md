@@ -12,6 +12,19 @@ Use it for tables such as:
 
 If your data is fundamentally built around `time_index` and `unique_identifier`, you usually want a `DataNode` table instead.
 
+## Labels
+
+`SimpleTableStorage` objects can carry `labels`.
+
+Those labels are organizational helpers only. They do not affect:
+
+- table runtime behavior
+- schema meaning
+- storage identity
+- functionality
+
+Use them to group and annotate tables for humans, not to drive application logic.
+
 ## The Core Idea
 
 A `SimpleTable` defines one logical row.

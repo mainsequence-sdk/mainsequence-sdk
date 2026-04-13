@@ -1442,6 +1442,42 @@ def remove_project_team_from_edit(
     )
 
 
+def add_project_labels(
+    project_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Attach one or more organizational labels to a project."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="add_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def remove_project_labels(
+    project_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Remove one or more organizational labels from a project."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_tdag",
+        class_name="Project",
+        object_id=project_id,
+        action_name="remove_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
 def get_project_data_node_updates(project_id: int | str, *, timeout: int | None = None) -> list[dict[str, Any]]:
     """
     Fetch project data node updates via SDK client model.
@@ -2680,6 +2716,42 @@ def delete_workspace(
         raise ApiError(f"Workspace deletion failed: {e}")
 
 
+def add_workspace_labels(
+    workspace_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Attach one or more organizational labels to a workspace."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.command_center",
+        class_name="Workspace",
+        object_id=workspace_id,
+        action_name="add_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def remove_workspace_labels(
+    workspace_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Remove one or more organizational labels from a workspace."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.command_center",
+        class_name="Workspace",
+        object_id=workspace_id,
+        action_name="remove_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
 def list_registered_widget_types(
     *,
     filters: dict[str, Any] | None = None,
@@ -2758,6 +2830,42 @@ def delete_simple_table_storage(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table storage deletion failed: {e}")
+
+
+def add_simple_table_storage_labels(
+    storage_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Attach one or more organizational labels to a simple table storage."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_simple_tables",
+        class_name="SimpleTableStorage",
+        object_id=storage_id,
+        action_name="add_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def remove_simple_table_storage_labels(
+    storage_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Remove one or more organizational labels from a simple table storage."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_simple_tables",
+        class_name="SimpleTableStorage",
+        object_id=storage_id,
+        action_name="remove_label",
+        labels=labels,
+        timeout=timeout,
+    )
 
 
 def _serialize_sdk_search_response(payload: Any) -> dict[str, Any] | list[dict[str, Any]]:
@@ -3335,6 +3443,34 @@ def _mutate_shareable_object_team_access(
         raise ApiError(f"{class_name} team share access update failed: {e}")
 
 
+def _mutate_labelable_object_labels(
+    *,
+    module_name: str,
+    class_name: str,
+    object_id: int | str,
+    action_name: str,
+    labels: list[str],
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    try:
+        payload = _run_sdk_model_operation(
+            module_name=module_name,
+            class_name=class_name,
+            operation=lambda ClientObject: getattr(
+                ClientObject.get(pk=int(object_id), timeout=timeout),
+                action_name,
+            )(labels, timeout=timeout),
+        )
+        return _sdk_object_to_dict(payload)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"{class_name} not found: {object_id}")
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"{class_name} label update failed: {e}")
+
+
 def list_constant_users_can_view(
     constant_id: int | str,
     *,
@@ -3786,6 +3922,42 @@ def remove_data_node_storage_team_from_edit(
         object_id=storage_id,
         action_name="remove_team_from_edit",
         team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_data_node_storage_labels(
+    storage_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Attach one or more organizational labels to a data node storage."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="add_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def remove_data_node_storage_labels(
+    storage_id: int | str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Remove one or more organizational labels from a data node storage."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_tdag",
+        class_name="DataNodeStorage",
+        object_id=storage_id,
+        action_name="remove_label",
+        labels=labels,
         timeout=timeout,
     )
 

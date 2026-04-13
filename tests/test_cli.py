@@ -514,6 +514,28 @@ def test_simple_tables_delete(cli_mod, runner, monkeypatch):
     assert "Simple table deleted: id=41" in result.output
 
 
+def test_simple_tables_add_label(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(storage_id, labels, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["labels"] = labels
+        captured["timeout"] = timeout
+        return {"labels": [{"name": "reference-data"}, {"name": "curated"}]}
+
+    monkeypatch.setattr(cli_mod, "add_simple_table_storage_labels", _add)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["simple_table", "add-label", "41", "--label", "reference-data", "--label", "curated"],
+    )
+    assert result.exit_code == 0
+    assert captured == {"storage_id": 41, "labels": ["reference-data", "curated"], "timeout": None}
+    assert "Simple Table add-label completed." in result.output
+    assert "reference-data, curated" in result.output
+
+
 def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -609,6 +631,49 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
         },
     }
     assert out == {"id": 7, "title": "Updated Rates Desk", "layoutKind": "auto-grid"}
+
+
+def test_add_workspace_labels_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeWorkspace:
+        def add_label(self, labels, timeout=None):
+            captured["labels"] = labels
+            captured["add_timeout"] = timeout
+
+            class _Payload:
+                @staticmethod
+                def model_dump(mode="json"):
+                    return {"labels": [{"name": "rates"}, {"name": "desk"}]}
+
+            return _Payload()
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientWorkspace:
+            @classmethod
+            def get(cls, pk=None, timeout=None):
+                captured["pk"] = pk
+                captured["get_timeout"] = timeout
+                return FakeWorkspace()
+
+        return operation(_ClientWorkspace)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.add_workspace_labels(7, ["rates", "desk"], timeout=12)
+    assert captured == {
+        "module_name": "mainsequence.client.command_center",
+        "class_name": "Workspace",
+        "pk": 7,
+        "get_timeout": 12,
+        "labels": ["rates", "desk"],
+        "add_timeout": 12,
+    }
+    assert out == {"labels": [{"name": "rates"}, {"name": "desk"}]}
 
 
 def test_workspace_list(cli_mod, runner, monkeypatch):
@@ -847,6 +912,28 @@ def test_workspace_delete(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured == {"workspace_id": 7, "timeout": None}
     assert "Workspace deleted: id=7" in result.output
+
+
+def test_workspace_add_label(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(workspace_id, labels, timeout=None):
+        captured["workspace_id"] = workspace_id
+        captured["labels"] = labels
+        captured["timeout"] = timeout
+        return {"labels": [{"name": "trading"}, {"name": "desk"}]}
+
+    monkeypatch.setattr(cli_mod, "add_workspace_labels", _add)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["cc", "workspace", "add-label", "7", "--label", "trading,desk"],
+    )
+    assert result.exit_code == 0
+    assert captured == {"workspace_id": 7, "labels": ["trading", "desk"], "timeout": None}
+    assert "Workspace add-label completed." in result.output
+    assert "trading, desk" in result.output
 
 
 def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
@@ -2161,6 +2248,28 @@ def test_project_can_view(cli_mod, runner, monkeypatch):
     assert "Project Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
     assert "Total users who can view: 1" in result.output
+
+
+def test_project_add_label(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(project_id, labels, timeout=None):
+        captured["project_id"] = project_id
+        captured["labels"] = labels
+        captured["timeout"] = timeout
+        return {"labels": [{"name": "rates"}, {"name": "research"}]}
+
+    monkeypatch.setattr(cli_mod, "add_project_labels", _add)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "add-label", "4", "--label", "rates,research"],
+    )
+    assert result.exit_code == 0
+    assert captured == {"project_id": 4, "labels": ["rates", "research"], "timeout": None}
+    assert "Project add-label completed." in result.output
+    assert "rates, research" in result.output
 
 
 def test_project_add_to_edit(cli_mod, runner, monkeypatch):
@@ -6764,6 +6873,28 @@ def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
     assert "Data Node Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
     assert "Total users who can view: 1" in result.output
+
+
+def test_data_node_storage_add_label(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _add(storage_id, labels, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["labels"] = labels
+        captured["timeout"] = timeout
+        return {"labels": [{"name": "curated"}]}
+
+    monkeypatch.setattr(cli_mod, "add_data_node_storage_labels", _add)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "add-label", "42", "--label", "curated"],
+    )
+    assert result.exit_code == 0
+    assert captured == {"storage_id": 42, "labels": ["curated"], "timeout": None}
+    assert "Data Node add-label completed." in result.output
+    assert "curated" in result.output
 
 
 def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):

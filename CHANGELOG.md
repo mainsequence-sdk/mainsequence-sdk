@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [3.17.41] - 2026-04-13
+
+### Added
+
+- Added first-class label mutation support for labelable SDK objects through `LabelableObjectMixin.add_label()` and `remove_label()` documentation, plus shared CLI commands on `project`, `data-node`, `simple_table`, and `cc workspace`.
+- Added label documentation clarifying that object labels are organizational metadata only and do not affect runtime behavior or functionality.
+
 ### Fixed
 
 - Fixed `mainsequence project schedule_batch_jobs` batch submission so the SDK sends top-level `project_id` instead of `project`, matching the backend `sync_jobs` contract.

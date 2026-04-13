@@ -40,6 +40,7 @@
         - [Translation Tables](knowledge/markets/translation_tables.md)
     - Infrastructure
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
+        - [Labels](knowledge/infrastructure/labels.md)
         - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
         - [Artifacts](knowledge/infrastructure/artifacts.md)
         - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)

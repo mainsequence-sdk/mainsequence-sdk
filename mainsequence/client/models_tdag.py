@@ -25,7 +25,7 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 from mainsequence.logconf import logger
 
 from . import exceptions
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from .data_sources_interfaces import get_duckdb_interface_class
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .exceptions import raise_for_response
@@ -918,7 +918,7 @@ class AbstractTable:
     description: str | None = None
 
 
-class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
@@ -961,6 +961,13 @@ class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, Ba
 
     id: int = Field(None, description="Primary key, auto-incremented ID")
 
+    labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Organizational labels attached to the data node. "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+    )
     creation_date: datetime.datetime = Field(..., description="Creation timestamp")
     created_by_user: int | None = Field(None, description="Foreign key reference to User")
     organization_owner: int = Field(None, description="Foreign key reference to Organization")
@@ -2799,7 +2806,7 @@ class ProjectNameValidationResult(BasePydanticModel):
     )
 
 
-class Project(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     id: int = Field(
         ...,
         title="Project ID",
@@ -2826,6 +2833,16 @@ class Project(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         description="SSH repository URL used to access the project's source code repository.",
         examples=["git@github.com:mainsequence/markets-research-pipeline.git"],
         json_schema_extra={"label": "Git SSH URL"},
+    )
+
+    labels: list[str] = Field(
+        default_factory=list,
+        title="Labels",
+        description=(
+            "Organizational labels attached to the project. "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+        json_schema_extra={"label": "Labels"},
     )
 
     is_initialized: bool = Field(

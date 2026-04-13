@@ -7,7 +7,7 @@ from urllib.parse import quote
 
 from pydantic import ConfigDict, Field
 
-from ..base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from ..exceptions import ApiError
 
 RegisteredWidgetKind = Literal["kpi", "chart", "table", "feed", "custom"]
@@ -42,7 +42,7 @@ class CommandCenterBaseObjectOrm(BaseObjectOrm):
         )
 
 
-class Workspace(ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticModel):
+class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticModel):
     """Command Center shared workspace payload.
 
     A workspace stores shared dashboard structure such as mounted widgets, layout,
@@ -78,7 +78,10 @@ class Workspace(ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticMo
     )
     labels: list[str] = Field(
         default_factory=list,
-        description="User-defined workspace labels or tags.",
+        description=(
+            "User-defined workspace labels used only for organization and discovery. "
+            "They do not change workspace runtime behavior or functionality."
+        ),
     )
     category: str = Field(
         default="Custom",

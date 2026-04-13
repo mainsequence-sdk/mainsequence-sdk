@@ -94,6 +94,8 @@ mainsequence cc workspace create "Rates Desk" --description "Shared workspace"
 mainsequence cc workspace create --file workspace.json
 mainsequence cc workspace update 7 --file workspace.json
 mainsequence cc workspace delete 7
+mainsequence cc workspace add-label 7 --label trading --label desk
+mainsequence cc workspace remove-label 7 --label old-layout
 mainsequence cc registered_widget_type list
 mainsequence cc registered_widget_type list --filter widget_id=markdown-note
 mainsequence cc registered_widget_type list --show-filters
@@ -182,6 +184,8 @@ mainsequence organization teams delete 9
 mainsequence simple_table list
 mainsequence simple_table list --filter namespace=pytest_alice
 mainsequence simple_table detail 41
+mainsequence simple_table add-label 41 --label reference-data
+mainsequence simple_table remove-label 41 --label deprecated
 mainsequence simple_table delete 41
 mainsequence data-node list
 mainsequence data-node list --show-filters
@@ -194,6 +198,8 @@ mainsequence data-node search "portfolio weights" --mode description
 mainsequence data-node search close --mode column
 mainsequence data-node detail 123
 mainsequence data-node refresh-search-index 123
+mainsequence data-node add-label 123 --label curated
+mainsequence data-node remove-label 123 --label legacy
 mainsequence data-node can_view 123
 mainsequence data-node can_edit 123
 mainsequence data-node add_to_view 123 7
@@ -215,6 +221,8 @@ mainsequence markets asset-translation-table detail 12
 
 # 1) List and create
 mainsequence project list
+mainsequence project add-label 123 --label rates --label research
+mainsequence project remove-label 123 --label legacy
 mainsequence project can_view 123
 mainsequence project can_edit 123
 mainsequence project add_to_view 123 7
@@ -253,6 +261,8 @@ mainsequence project project_resource create_fastapi 123
 mainsequence project project_resource delete_fastapi 701
 mainsequence project project_resource delete_fastapi 701 --yes
 mainsequence project validate-name "Rates Platform"
+mainsequence cc workspace add-label 7 --label trading --label desk
+mainsequence cc workspace remove-label 7 --label old-layout
 
 # 2) Set up locally
 mainsequence project set-up-locally 123
@@ -345,6 +355,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
 - `mainsequence simple_table list --filter namespace=...` is the first-class CLI form for narrowing simple table storages by storage namespace.
 - `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
+- `mainsequence simple_table add-label` and `remove-label` mutate `SimpleTableStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
 - `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
@@ -373,6 +384,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
+- `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then copies `AGENTS.md` from that project's installed SDK bundle in `.venv` into the project root, overwriting the existing `AGENTS.md` when present.
 - `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agent_scaffold/skills/` bundle in `.venv` into `.agents/skills/`, overwriting only folders with the same names. It does not copy bundle-root files such as `AGENTS.md`.
@@ -392,11 +404,13 @@ mainsequence skills path workspace_builder --json
 - `mainsequence project jobs list` lists project jobs through the SDK client `Job.filter()` path.
 - `mainsequence project jobs list` shows a human-readable schedule summary from `task_schedule`.
 - `mainsequence project data-node-updates list` lists data node updates through the SDK client `Project.get_data_nodes_updates()` path.
+- `mainsequence project add-label` and `remove-label` mutate `Project` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Project`.
 - `mainsequence project can_edit` lists users returned by the SDK `ShareableObjectMixin.users_can_edit()` path for `Project`.
 - `mainsequence project add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate project user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence project add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate project team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence project project_resource list` lists project resources through the SDK client `ProjectResource.filter()` path and always applies `repo_commit_sha` from the current upstream branch head.
+- `mainsequence cc workspace add-label` and `remove-label` mutate `Workspace` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project sync` performs the local uv/git sync flow and, after a successful push, calls the SDK client `Project.sync_project_after_commit()` path for the resolved project id.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
