@@ -246,6 +246,9 @@ class TableUpdateNode(BasePydanticModel):
 
 class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "related_table__namespace": ["contains", "in", "isnull"],
+    }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
     }
@@ -916,6 +919,7 @@ class DataNodeStorage(AbstractTable, ShareableObjectMixin, BasePydanticModel, Ba
         "identifier": ["in", "exact", "contains"],
         "id": ["in", "exact", "contains"],
         "data_source__id": ["in", "exact"],
+        "namespace": ["exact", "contains", "in", "isnull"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "id": "id",

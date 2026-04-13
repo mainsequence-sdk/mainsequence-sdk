@@ -180,10 +180,12 @@ mainsequence organization teams remove_from_view 9 7
 mainsequence organization teams remove_from_edit 9 7
 mainsequence organization teams delete 9
 mainsequence simple_table list
+mainsequence simple_table list --filter namespace=pytest_alice
 mainsequence simple_table detail 41
 mainsequence simple_table delete 41
 mainsequence data-node list
 mainsequence data-node list --show-filters
+mainsequence data-node list --filter namespace=pytest_alice
 mainsequence data-node list --filter id__in=42,43
 mainsequence data-node list --data-source-id 2
 mainsequence data_node search "close price"
@@ -339,6 +341,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence agent run list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentRun` paths for runtime inspection.
 - `mainsequence agent_runtime` is kept as a compatibility alias for the `agent run` command group.
 - `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
+- `mainsequence simple_table list --filter namespace=...` is the first-class CLI form for narrowing simple table storages by storage namespace.
 - `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
 - `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
@@ -359,6 +362,7 @@ mainsequence skills path workspace_builder --json
 - Secret list and delete previews intentionally show metadata only, not secret values.
 - `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
 - `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
 - `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `DataNodeStorage.description_search()` and `DataNodeStorage.column_search()` paths.
 - `mainsequence data-node search --mode description` only uses `DataNodeStorage.description_search()`.

@@ -146,6 +146,78 @@ def test_project_image_accepts_creation_date():
     )
 
 
+def test_data_node_storage_normalizes_namespace_filters():
+    from mainsequence.client.models_tdag import DataNodeStorage
+
+    normalized = DataNodeStorage._normalize_filter_kwargs(
+        {
+            "namespace__contains": "  pytest  ",
+            "namespace__in": [" alpha ", "beta"],
+            "namespace__isnull": "false",
+        }
+    )
+
+    assert normalized == {
+        "namespace__contains": "pytest",
+        "namespace__in": ["alpha", "beta"],
+        "namespace__isnull": False,
+    }
+
+
+def test_simple_table_storage_normalizes_namespace_filters():
+    from mainsequence.client.models_simple_tables import SimpleTableStorage
+
+    normalized = SimpleTableStorage._normalize_filter_kwargs(
+        {
+            "namespace": "  qa  ",
+            "namespace__in": [" alpha ", "beta"],
+            "namespace__isnull": "true",
+        }
+    )
+
+    assert normalized == {
+        "namespace": "qa",
+        "namespace__in": ["alpha", "beta"],
+        "namespace__isnull": True,
+    }
+
+
+def test_data_node_update_normalizes_related_table_namespace_filters():
+    from mainsequence.client.models_tdag import DataNodeUpdate
+
+    normalized = DataNodeUpdate._normalize_filter_kwargs(
+        {
+            "related_table__namespace__contains": "  pytest  ",
+            "related_table__namespace__in": [" alpha ", "beta"],
+            "related_table__namespace__isnull": "false",
+        }
+    )
+
+    assert normalized == {
+        "related_table__namespace__contains": "pytest",
+        "related_table__namespace__in": ["alpha", "beta"],
+        "related_table__namespace__isnull": False,
+    }
+
+
+def test_simple_table_update_normalizes_related_table_namespace_filters():
+    from mainsequence.client.models_simple_tables import SimpleTableUpdate
+
+    normalized = SimpleTableUpdate._normalize_filter_kwargs(
+        {
+            "related_table__namespace__contains": "  pytest  ",
+            "related_table__namespace__in": [" alpha ", "beta"],
+            "related_table__namespace__isnull": "true",
+        }
+    )
+
+    assert normalized == {
+        "related_table__namespace__contains": "pytest",
+        "related_table__namespace__in": ["alpha", "beta"],
+        "related_table__namespace__isnull": True,
+    }
+
+
 def test_normalize_filter_kwargs_rejects_unsupported_filters():
     with pytest.raises(ValueError, match="Unsupported DemoFilterModel filter"):
         DemoFilterModel._normalize_filter_kwargs({"unsupported": 1})

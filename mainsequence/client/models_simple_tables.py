@@ -273,6 +273,18 @@ class STColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
 class SimpleTableStorage(AbstractTable, BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table"
     model_config = ConfigDict(populate_by_name=True)
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "storage_hash": ["in", "exact", "contains"],
+        "identifier": ["in", "exact", "contains"],
+        "id": ["in", "exact", "contains"],
+        "data_source__id": ["in", "exact"],
+        "namespace": ["exact", "contains", "in", "isnull"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "id": "id",
+        "id__in": "id",
+        "data_source__id": "id",
+    }
 
     id: int | None = Field(None, description="Primary key, auto-incremented ID")
     source_class_name: str | None = None
@@ -600,6 +612,9 @@ SimpleTableUpdateHistorical = SimpleTableUpdateRecord
 class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table/update"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "related_table__namespace": ["contains", "in", "isnull"],
+    }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
     }

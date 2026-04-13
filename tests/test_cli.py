@@ -405,6 +405,7 @@ def test_simple_tables_list(cli_mod, runner, monkeypatch):
             {
                 "id": 41,
                 "source_class_name": "OrdersTable",
+                "namespace": "pytest_orders",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                 "columns": [{"column_name": "id"}, {"column_name": "symbol"}],
                 "open_for_everyone": False,
@@ -417,9 +418,32 @@ def test_simple_tables_list(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Simple Tables" in result.output
     assert "OrdersTable" in result.output
+    assert "Namespace" in result.output
+    assert "pytest_orde" in result.output
     assert "Default DB" in result.output
-    assert "timescale_db" in result.output
+    assert "timescale_" in result.output
     assert "Total simple tables: 1" in result.output
+
+
+def test_simple_tables_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _fake_list_simple_table_storages(timeout=None, filters=None):
+        captured["timeout"] = timeout
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "list_simple_table_storages", _fake_list_simple_table_storages)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["simple_table", "list", "--filter", "namespace=pytest_orders"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {"timeout": None, "filters": {"namespace": "pytest_orders"}}
 
 
 def test_simple_tables_detail(cli_mod, runner, monkeypatch):
@@ -6277,6 +6301,7 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
                 "storage_hash": "weights_daily",
                 "source_class_name": "PortfolioWeights",
                 "identifier": "weights_daily",
+                "namespace": "pytest_weights",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                 "data_frequency_id": "1d",
             }
@@ -6286,10 +6311,34 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["data-node", "list"])
     assert result.exit_code == 0
     assert "Data Node Storages" in result.output
-    assert "weights_daily" in result.output
-    assert "PortfolioWei" in result.output
+    assert "weights_d" in result.output
+    assert "Portfolio" in result.output
+    assert "Weights" in result.output
+    assert "Namespace" in result.output
+    assert "pytest_we" in result.output
     assert "Default DB" in result.output
     assert "Total data node storages: 1" in result.output
+
+
+def test_data_node_storage_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _fake_list_data_node_storages(filters=None, timeout=None):
+        captured["timeout"] = timeout
+        captured["filters"] = filters
+        return []
+
+    monkeypatch.setattr(cli_mod, "list_data_node_storages", _fake_list_data_node_storages)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "list", "--filter", "namespace=pytest_weights"],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {"timeout": None, "filters": {"namespace": "pytest_weights"}}
 
 
 def test_project_validate_name_cmd(cli_mod, runner, monkeypatch):

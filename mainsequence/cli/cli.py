@@ -3856,6 +3856,7 @@ def _simple_tables_list_impl(
             [
                 str(storage.get("id") or "-"),
                 str(storage.get("source_class_name") or "-"),
+                str(storage.get("namespace") or "-"),
                 _format_data_node_storage_data_source(storage.get("data_source")),
                 str(len(columns)) if isinstance(columns, list) else "-",
                 str(storage.get("open_for_everyone")),
@@ -3866,7 +3867,7 @@ def _simple_tables_list_impl(
     if rows:
         print_table(
             "Simple Tables",
-            ["ID", "Source Class", "Data Source", "Columns", "Open", "Creation Date"],
+            ["ID", "Source Class", "Namespace", "Data Source", "Columns", "Open", "Creation Date"],
             rows,
         )
     else:
@@ -4330,7 +4331,7 @@ def _data_node_storage_list_impl(
     if storages:
         print_table(
             "Data Node Storages",
-            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            ["ID", "Storage Hash", "Source Class", "Identifier", "Namespace", "Data Source", "Frequency"],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -4347,6 +4348,7 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
                 str(storage.get("storage_hash") or "-"),
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("identifier") or "-"),
+                str(storage.get("namespace") or "-"),
                 _format_data_node_storage_data_source(storage.get("data_source")),
                 str(storage.get("data_frequency_id") or "-"),
             ]
@@ -4482,6 +4484,14 @@ def simple_tables_list_cmd(
 ):
     """
     List simple table storages visible to the authenticated user.
+
+    Examples
+    --------
+    ```bash
+    mainsequence simple_table list
+    mainsequence simple_table list --filter namespace=pytest_alice
+    mainsequence simple_table list --timeout 60
+    ```
     """
     _simple_tables_list_impl(
         timeout=timeout,
@@ -5693,6 +5703,7 @@ def data_node_storage_list_cmd(
     ```bash
     mainsequence data-node list
     mainsequence data_node list
+    mainsequence data-node list --filter namespace=pytest_alice
     mainsequence data-node list --data-source-id 2
     mainsequence data-node list --timeout 60
     ```
