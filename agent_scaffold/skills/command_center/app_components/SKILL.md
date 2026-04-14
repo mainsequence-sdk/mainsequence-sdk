@@ -213,6 +213,24 @@ If the AppComponent backend is supposed to feed a Main Sequence widget directly,
 
 Do not return loose dictionaries for a widget boundary when an exact contract model exists.
 
+### 6.1 `x-ui-role` is what makes the contract render as richer UI
+
+For AppComponent contracts, prefer SDK models whose OpenAPI schema carries the explicit UI role markers.
+
+The AppComponent should always try to implement:
+
+- `"x-ui-role": "editable-form"` for input-side contracts
+- `"x-ui-role": "notification"` for response-side contracts
+
+These markers are not cosmetic. They are what tell Command Center to treat the payload as a richer UI contract instead of generic JSON.
+
+That means:
+
+- use `EditableFormDefinition` and related input models when the AppComponent needs a specialized input form
+- use `NotificationDefinition` for response-side user feedback when the backend should return a banner-style notification
+- do not handcraft loose dictionaries for these cases when the SDK model already exists
+- keep input and response contracts separate instead of overloading one model to do both jobs
+
 ## Review Rules
 
 When reviewing an AppComponent task, look for:
@@ -224,6 +242,7 @@ When reviewing an AppComponent task, look for:
 - unstable or poorly named field tokens
 - wrong `FormFieldKind` choices
 - generic API output being used where an exact widget-facing contract should have been returned
+- AppComponent contracts that should be richer UI surfaces but do not use the SDK model carrying the correct `x-ui-role`
 - confusion between workspace concerns and AppComponent contract concerns
 - AppComponent work assuming a project API is usable before a FastAPI resource and FastAPI `ResourceRelease` exist
 
@@ -241,6 +260,8 @@ Do not claim success until you have checked:
 - field tokens are stable and meaningful
 - field kinds reflect business meaning
 - input and output contracts are not mixed together
+- input-side AppComponent contracts use `"x-ui-role": "editable-form"` when a specialized form is intended
+- response-side AppComponent contracts use `"x-ui-role": "notification"` when the API is returning user-facing banner feedback
 - widget-facing outputs use exact SDK response models when applicable
 - registry detail was used first
 - SDK client models were used second

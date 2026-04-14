@@ -242,6 +242,29 @@ Only fall back to a generic business response model when:
 
 If the endpoint participates in an AppComponent flow, also use the AppComponents skill to validate the input-form side of the contract.
 
+### 6.1 Use notification response contracts for immediate client feedback
+
+When an API action needs immediate user-facing acknowledgment, prefer a response contract carrying:
+
+- `"x-ui-role": "notification"`
+
+Use the SDK `NotificationDefinition` model for this immediate feedback path instead of returning a loose acknowledgment dictionary.
+
+This is the default response-side feedback contract for:
+
+- AppComponent-triggered actions
+- Command Center actions that should acknowledge success, warning, validation failure, or initiation of work
+
+Do not force this onto read-only data endpoints or widget data endpoints whose job is to return structured business data rather than action feedback.
+
+### 6.2 Use platform notifications for long-running asynchronous updates
+
+If the work continues after the request returns, spans subprocesses, or becomes a long-running background workflow, do not rely on the immediate HTTP response as the ongoing user-feedback channel.
+
+Use `mainsequence.client.Notification` for asynchronous user updates in those cases.
+
+The immediate API response may still acknowledge that work started, but ongoing or delayed user feedback belongs in platform notifications rather than a one-shot HTTP response model.
+
 ### 7. Keep FastAPI documentation rich
 
 For FastAPI routes in a Main Sequence project:
@@ -270,6 +293,8 @@ When reviewing an API change, look for:
 - `LoggedUserContextMiddleware` added even though the route does not consume `request.state.user`
 - route parameters that are untyped or weakly documented
 - generic response models where a widget-facing contract should have been used
+- action endpoints returning loose dict acknowledgments where `NotificationDefinition` should have been used
+- long-running or spanning subprocess workflows trying to use a one-shot HTTP response instead of `mainsequence.client.Notification` for asynchronous user updates
 - producer logic duplicated inside routes
 - missing request-user middleware when request-local user access is required
 - widget-facing payloads built without the SDK contract model
@@ -291,6 +316,8 @@ Do not claim success until you have checked:
 - `SimpleTableUpdater.execute_filter(...)` is used when the route reads simple-table rows
 - middleware is present when request-local user context is required
 - middleware is absent when the route does not consume `request.state.user`
+- immediate client feedback endpoints use `NotificationDefinition` with `"x-ui-role": "notification"` when the route is acknowledging an action rather than returning business data
+- long-running or subprocess-spanning workflows use `mainsequence.client.Notification` for asynchronous user updates instead of relying on a one-shot HTTP response
 - widget-facing endpoints use exact SDK response contracts
 - local API docs or route behavior reflect the intended contract
 - any Command Center-facing API that is meant to be usable now already exists as a FastAPI project resource

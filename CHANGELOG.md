@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [3.17.48] - 2026-04-14
+
+### Added
+
+- Added `NotificationTone` and `NotificationDefinition` to `mainsequence.client.command_center.app_component` so FastAPI and AppComponent APIs can return notification-banner response contracts with `x-ui-role: notification` and `x-ui-widget: banner-v1`.
+- Added focused SDK tests covering notification payload validation and emitted schema metadata for the new AppComponent notification response contract.
+
+### Changed
+
+- Clarified the AppComponent skill so richer UI contracts are explicitly driven by `x-ui-role`, with `editable-form` for input-side contracts and `notification` for response-side contracts.
+- Clarified the FastAPI/API skill so immediate client feedback should use `NotificationDefinition`, while long-running or subprocess-spanning work should use `mainsequence.client.Notification` for asynchronous user updates.
+
 ## [3.17.47] - 2026-04-14
 
 ### Added

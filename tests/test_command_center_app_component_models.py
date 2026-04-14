@@ -2,6 +2,8 @@ from mainsequence.client.command_center import (
     EditableFormDefinition,
     FormFieldDefinition,
     FormFieldKind,
+    NotificationDefinition,
+    NotificationTone,
 )
 
 
@@ -64,3 +66,27 @@ def test_editable_form_definition_builds_sections():
     assert form.meta is not None
     assert form.meta.record_status_options == ["draft", "published"]
     assert form.meta.grid_axes == [{"axis": "tenor"}]
+
+
+def test_notification_definition_validates_payload():
+    notification = NotificationDefinition.model_validate(
+        {
+            "title": "Action completed",
+            "message": "The operation finished successfully.",
+            "tone": "success",
+            "details": "Optional follow-up detail for the user.",
+        }
+    )
+
+    assert notification.title == "Action completed"
+    assert notification.message == "The operation finished successfully."
+    assert notification.tone == NotificationTone.SUCCESS
+    assert notification.details == "Optional follow-up detail for the user."
+
+
+def test_notification_definition_schema_emits_ui_metadata():
+    schema = NotificationDefinition.model_json_schema()
+
+    assert schema["x-ui-role"] == "notification"
+    assert schema["x-ui-widget"] == "banner-v1"
+    assert schema["properties"]["tone"]["$ref"] == "#/$defs/NotificationTone"

@@ -96,6 +96,52 @@ class EditableFormDefinition(BaseModel):
     meta: EditableFormMeta | None = None
 
 
+class NotificationTone(str, Enum):
+    SUCCESS = "success"
+    PRIMARY = "primary"
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+
+
+class NotificationDefinition(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={
+            "x-ui-role": "notification",
+            "x-ui-widget": "banner-v1",
+            "examples": [
+                {
+                    "title": "Action completed",
+                    "message": "The operation finished successfully.",
+                    "tone": "success",
+                    "details": "Optional follow-up detail for the user.",
+                }
+            ],
+        }
+    )
+
+    title: str | None = Field(
+        default=None,
+        description="Optional short banner heading.",
+        examples=["Action completed"],
+    )
+    message: str = Field(
+        ...,
+        description="Primary user-facing notification message.",
+        examples=["The operation finished successfully."],
+    )
+    tone: NotificationTone = Field(
+        ...,
+        description="Visual tone for the banner.",
+        examples=["success"],
+    )
+    details: str | None = Field(
+        default=None,
+        description="Optional secondary explanatory text.",
+        examples=["Optional follow-up detail for the user."],
+    )
+
+
 __all__ = [
     "EditableFormDefinition",
     "EditableFormMeta",
@@ -103,4 +149,6 @@ __all__ = [
     "FormFieldDefinition",
     "FormFieldKind",
     "FormSectionDefinition",
+    "NotificationDefinition",
+    "NotificationTone",
 ]
