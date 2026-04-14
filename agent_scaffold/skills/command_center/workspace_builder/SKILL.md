@@ -27,6 +27,7 @@ This skill is for workspace structure, widget payload resolution, safe workspace
 - verify shared workspace data versus current-user state
 - verify runtime ownership semantics such as `execution-owner` versus `consumer`
 - review a workspace payload for guessed or invalid widget configuration
+- keep versioned workspace and widget JSON snapshots under `workspaces/` until the user accepts the change
 
 ## This Skill Must Not Claim
 
@@ -297,7 +298,27 @@ If the user wants to change one mounted widget:
 
 Only use a full workspace update when the change is truly workspace-wide or coordinated across multiple widgets.
 
-### 8. File-based workspace workflow is the safe default
+### 8. Export and version the current workspace before mutation
+
+Before modifying an existing workspace:
+
+1. export the current workspace through the CLI:
+   - `mainsequence cc workspace detail <WORKSPACE_ID> --json`
+2. save that exported JSON under a repository folder:
+   - `workspaces/`
+3. keep versioned JSON files there until the user explicitly accepts the workspace change
+
+When you create or revise widget payloads during the task:
+
+1. save those widget JSON drafts under:
+   - `workspaces/widgets/`
+2. keep versioned widget JSON files there until the user explicitly accepts the change
+
+This rule exists to guarantee recoverability and make workspace mutation reviewable.
+
+Do not treat an in-memory payload or a one-off CLI mutation as sufficient change control for workspace editing.
+
+### 9. File-based workspace workflow is the safe default
 
 Prefer:
 
@@ -314,6 +335,8 @@ When reviewing a workspace task, look for:
 - widget work that skipped SDK client model review when one exists
 - unknown or unverified `widgetId` values
 - missing widget instance ids
+- workspace mutation attempted without first exporting the current workspace JSON
+- widget payloads changed without saving versioned JSON drafts under `workspaces/widgets/`
 - workspace-wide rewrites for one-widget changes
 - shared state mixed incorrectly with current-user runtime state
 - runtime ownership violations such as consumer widgets inventing canonical fetch paths
@@ -328,6 +351,11 @@ Do not claim success until you have checked:
 - `widgetId` was verified via:
   - `mainsequence cc registered_widget_type list --json`
   - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
+- for existing workspaces, the pre-change workspace export was captured through:
+  - `mainsequence cc workspace detail <WORKSPACE_ID> --json`
+- the current workspace JSON was saved under `workspaces/`
+- widget JSON drafts created during the task were saved under `workspaces/widgets/`
+- versioned workspace/widget JSON files were preserved pending user acceptance
 - widget detail was reviewed for `widgetVersion`, configuration, runtime, IO, capabilities, agent hints, and examples
 - the relevant SDK client model was reviewed when one exists
 - widget ids and widget instance ids are correct

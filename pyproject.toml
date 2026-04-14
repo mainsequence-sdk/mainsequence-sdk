@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "3.17.48"
+version = "3.17.49"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.11"
@@ -59,6 +59,11 @@ instruments = [
 dashboards = [
   "streamlit",
   "streamlit-aggrid",
+]
+# Optional headless browser support for future Command Center workspace/web snapshots.
+# Keep this out of the default SDK install because most users do not need Playwright.
+"workspace-snapshots" = [
+  "playwright",
 ]
 
 [project.urls]
