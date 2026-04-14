@@ -1410,6 +1410,23 @@ def _is_pushed_commit(project_dir: pathlib.Path, commit_hash: str) -> bool:
     return bool(refs)
 
 
+def _resolve_full_commit_hash(project_dir: pathlib.Path, commit_hash: str) -> str:
+    normalized = str(commit_hash or "").strip()
+    if not normalized:
+        raise RuntimeError("project_repo_hash is required.")
+
+    result = _git_run(project_dir, ["rev-parse", "--verify", f"{normalized}^{{commit}}"])
+    if result.returncode != 0:
+        reason = (result.stderr or result.stdout or "").strip() or "git rev-parse failed"
+        raise RuntimeError(f"Could not resolve project_repo_hash to a full commit SHA: {reason}")
+
+    full_hash = (result.stdout or "").strip()
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", full_hash):
+        raise RuntimeError("Resolved project_repo_hash is not a full 40-character commit SHA.")
+
+    return full_hash.lower()
+
+
 def _group_project_images_by_hash(images: list[dict]) -> dict[str, list[dict]]:
     grouped: dict[str, list[dict]] = {}
     for image in images:
@@ -8307,6 +8324,12 @@ def _project_images_create_impl(
         error("project_repo_hash is required.")
         raise typer.Exit(1)
 
+    try:
+        project_repo_hash = _resolve_full_commit_hash(project_dir, project_repo_hash)
+    except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+
     if not _is_pushed_commit(project_dir, project_repo_hash):
         error("project_repo_hash must reference a commit that has already been pushed to the remote.")
         raise typer.Exit(1)
@@ -9827,6 +9850,9 @@ def project_sync(
         run_uv(uv, ["version", "--bump", bump], cwd=project_dir, env=env)
         run_uv(uv, ["lock"], cwd=project_dir, env=env)
         run_uv(uv, ["sync"], cwd=project_dir, env=env)
+        # `uv sync` can prune ad hoc packages from `.venv`, including a `uv`
+        # executable that was installed there just for this workflow.
+        uv = ensure_uv_installed(project_dir)
         uv_export_requirements(
             uv,
             cwd=project_dir,

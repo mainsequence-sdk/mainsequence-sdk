@@ -7436,6 +7436,12 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
         args = cmd[3:]
         if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]:
             return types.SimpleNamespace(returncode=0, stdout="origin/main\n", stderr="")
+        if args[:3] == ["rev-parse", "--verify", "1111111111111111111111111111111111111111^{commit}"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="1111111111111111111111111111111111111111\n",
+                stderr="",
+            )
         if args[:1] == ["log"] and "--not" in args and "--remotes" in args:
             return types.SimpleNamespace(
                 returncode=0,
@@ -7484,6 +7490,12 @@ def test_project_create_image_rejects_unpushed_hash(cli_mod, runner, monkeypatch
 
     def _git_run(cmd, capture_output=None, text=None):
         args = cmd[3:]
+        if args[:3] == ["rev-parse", "--verify", "deadbeef^{commit}"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout="deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+                stderr="",
+            )
         if args[:1] == ["log"] and "--not" in args and "--remotes" in args:
             return types.SimpleNamespace(returncode=0, stdout="", stderr="")
         if args[:3] == ["branch", "-r", "--contains"]:
@@ -7506,6 +7518,11 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
+    monkeypatch.setattr(
+        cli_mod,
+        "_resolve_full_commit_hash",
+        lambda *_: "abc123abc123abc123abc123abc123abc123abcd",
+    )
     monkeypatch.setattr(cli_mod, "_is_pushed_commit", lambda *_: True)
 
     list_calls = {"count": 0}
@@ -7515,8 +7532,8 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
         if list_calls["count"] == 1:
             return []
         if list_calls["count"] == 2:
-            return [{"id": 77, "project_repo_hash": "abc123", "base_image": 22, "is_ready": False}]
-        return [{"id": 77, "project_repo_hash": "abc123", "base_image": 22, "is_ready": True}]
+            return [{"id": 77, "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd", "base_image": 22, "is_ready": False}]
+        return [{"id": 77, "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd", "base_image": 22, "is_ready": True}]
 
     monkeypatch.setattr(cli_mod, "list_project_images", _list_project_images)
     monkeypatch.setattr(
@@ -7538,6 +7555,82 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
     assert "Project image is ready." in result.output
     assert "Is Ready" in result.output
     assert "True" in result.output
+
+
+def test_project_create_image_normalizes_short_hash_to_full_sha(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    full_hash = "adb3fbb" + ("0" * 33)
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
+    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_id, timeout=None: [])
+
+    def _git_run(cmd, capture_output=None, text=None):
+        args = cmd[3:]
+        if args[:3] == ["rev-parse", "--verify", "adb3fbb^{commit}"]:
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout=f"{full_hash}\n",
+                stderr="",
+            )
+        if args[:3] == ["branch", "-r", "--contains"]:
+            assert args[-1] == full_hash
+            return types.SimpleNamespace(returncode=0, stdout="  origin/main\n", stderr="")
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _git_run)
+
+    captured = {}
+
+    def _create_project_image(**kwargs):
+        captured.update(kwargs)
+        return {
+            "id": 77,
+            "project_repo_hash": kwargs["project_repo_hash"],
+            "base_image": kwargs["base_image_id"],
+            "is_ready": True,
+        }
+
+    monkeypatch.setattr(cli_mod, "create_project_image", _create_project_image)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "images", "create", "123", "adb3fbb", "--path", str(target), "--base-image-id", "22"],
+    )
+
+    assert result.exit_code == 0
+    assert captured["project_repo_hash"] == full_hash
+    assert full_hash in result.output
+
+
+def test_project_create_image_rejects_unresolvable_short_hash(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(cli_mod, "_list_unpushed_commits", lambda *_: [])
+    monkeypatch.setattr(cli_mod, "list_project_images", lambda related_project_id, timeout=None: [])
+
+    def _git_run(cmd, capture_output=None, text=None):
+        args = cmd[3:]
+        if args[:3] == ["rev-parse", "--verify", "adb3fbb^{commit}"]:
+            return types.SimpleNamespace(
+                returncode=128,
+                stdout="",
+                stderr="fatal: ambiguous argument 'adb3fbb^{commit}': unknown revision or path not in the working tree.",
+            )
+        raise AssertionError(f"Unexpected git command: {cmd}")
+
+    monkeypatch.setattr(cli_mod.subprocess, "run", _git_run)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "images", "create", "123", "adb3fbb", "--path", str(target), "--base-image-id", "22"],
+    )
+
+    assert result.exit_code == 1
+    assert "Could not resolve project_repo_hash to a full commit SHA" in result.output
 
 
 def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):

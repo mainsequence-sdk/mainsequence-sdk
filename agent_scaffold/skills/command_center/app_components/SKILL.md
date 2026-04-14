@@ -1,6 +1,6 @@
 ---
 name: command-center-app-components
-description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
+description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
 ---
 
 # Command Center AppComponents
@@ -16,6 +16,7 @@ This skill is for:
 - field and section definitions
 - deciding when default argument resolution is enough
 - deciding when a widget-facing API response must use an exact SDK contract
+- requiring API-backed AppComponents to depend on deployed FastAPI resources/releases, not local-only API code
 
 ## This Skill Can Do
 
@@ -51,6 +52,8 @@ This skill must not claim ownership of:
   `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
   `.agents/skills/data_publishing/simple_tables/SKILL.md`
+- Jobs, images, resources, and releases:
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
   `.agents/skills/dashboards/streamlit/SKILL.md`
 
@@ -67,6 +70,7 @@ This skill must not claim ownership of:
 If the AppComponent is backed by project APIs, also read:
 
 5. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+6. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Inputs This Skill Needs
 
@@ -82,6 +86,7 @@ Before changing an AppComponent backend contract, collect or infer:
   - a generic API contract
   - an exact widget-facing contract
 - whether stable field tokens are needed for downstream bindings or draft state
+- whether the backing API already exists as a FastAPI project resource with a FastAPI `ResourceRelease`
 
 Use this source order strictly:
 
@@ -114,6 +119,7 @@ For every non-trivial AppComponent task, decide:
 3. What are the stable field tokens?
 4. What field kinds should the frontend render?
 5. Is the output generic, or does it need an exact widget-facing response contract?
+6. If the AppComponent depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
 
 ## Build Rules
 
@@ -140,6 +146,25 @@ Before changing an AppComponent payload, form contract, or widget-facing output:
 Do not infer `widget_id`, mounted widget identity, or widget-facing behavior without checking the registered widget catalog first.
 
 If registry inspection is unavailable or does not provide enough contract detail, do not jump directly into general repository exploration. Check the SDK client models next. Only then use local docs/models/examples if the contract is still unresolved. If the contract is still unclear after registry detail plus SDK client models, stop and escalate.
+
+### 1.2 API-backed AppComponents require a FastAPI resource release
+
+Main Sequence is platform-first.
+
+If an AppComponent depends on a project API, that API must already exist as:
+
+- a FastAPI project resource
+- a corresponding FastAPI `ResourceRelease`
+
+before the AppComponent is considered usable from Command Center.
+
+Do not treat a local dev server, an unregistered API file, or a discovered-but-unreleased FastAPI resource as "good enough" for AppComponent readiness.
+
+This skill does not create resources or releases. If the FastAPI project resource or FastAPI release does not exist yet, route that work to:
+
+- `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+
+Only return to AppComponent contract work once the backing API deployment surface is real on the platform.
 
 ### 2. Use `EditableFormDefinition` only when the form needs to be specialized
 
@@ -200,6 +225,7 @@ When reviewing an AppComponent task, look for:
 - wrong `FormFieldKind` choices
 - generic API output being used where an exact widget-facing contract should have been returned
 - confusion between workspace concerns and AppComponent contract concerns
+- AppComponent work assuming a project API is usable before a FastAPI resource and FastAPI `ResourceRelease` exist
 
 ## Validation Checklist
 
@@ -219,6 +245,8 @@ Do not claim success until you have checked:
 - registry detail was used first
 - SDK client models were used second
 - local repository docs/models/examples were used only after the first two sources still left unresolved contract questions
+- any API-backed AppComponent depends on a FastAPI project resource that already exists
+- any API-backed AppComponent depends on a FastAPI `ResourceRelease` that already exists
 
 ## This Skill Must Stop And Escalate When
 
@@ -229,5 +257,6 @@ Do not claim success until you have checked:
 - the form contract is unclear but a custom form is being forced anyway
 - the widget-facing output contract is unclear and no exact SDK model is available
 - the task is really a generic API design problem rather than an AppComponent problem
+- the AppComponent depends on a project API that does not yet exist as a FastAPI resource and FastAPI `ResourceRelease`
 
 Do not guess through AppComponent boundaries.

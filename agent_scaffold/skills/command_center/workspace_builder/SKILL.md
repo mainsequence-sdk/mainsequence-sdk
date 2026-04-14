@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. Main Sequence is platform-first: if a mounted widget or AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the workspace flow is considered usable. Resource and release creation belong to the orchestration-and-releases skill. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
 ---
 
 # Command Center Workspace Builder
@@ -45,6 +45,8 @@ This skill must not claim ownership of:
   `.agents/skills/command_center/app_components/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+- Jobs, images, resources, and releases:
+  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
   `.agents/skills/dashboards/streamlit/SKILL.md`
 - DataNodes:
@@ -70,6 +72,7 @@ If the workspace contains AppComponent widgets, also read:
 
 6. `docs/knowledge/command_center/forms.md`
 7. `docs/knowledge/command_center/widget_data_contracts.md`
+8. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
 
 ## Command Center Mental Model
 
@@ -101,6 +104,7 @@ Before writing or mutating a workspace, collect or infer:
 - relevant SDK model sources in `mainsequence/client/command_center/`
 - widget instance ids
 - external resource ids required by those widgets
+- whether any mounted widget depends on a project API that already exists as a FastAPI project resource with a FastAPI `ResourceRelease`
 - whether the task is:
   - full workspace create/update
   - one-widget mutation
@@ -134,6 +138,7 @@ For every non-trivial workspace task, decide:
 5. Which fields are shared workspace state versus current-user state?
 6. Is the widget a runtime `execution-owner`, `consumer`, or `local-ui` widget?
 7. Are bindings and external resource ids fully resolved?
+8. If a mounted widget depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
 
 ## Build Rules
 
@@ -163,6 +168,23 @@ Use widget detail first to answer:
 - which examples already match the requested workspace change
 
 If widget detail already answers the authoring question safely, do not open implementation files just to “look around”.
+
+### 1.2 API-backed widget flows require a FastAPI resource release
+
+Main Sequence is platform-first.
+
+If a mounted widget or AppComponent depends on a project API, that API must already exist as:
+
+- a FastAPI project resource
+- a corresponding FastAPI `ResourceRelease`
+
+before the workspace flow is considered usable from Command Center.
+
+Do not treat a local dev server, a local-only API route, or a discovered-but-unreleased FastAPI resource as enough for workspace readiness.
+
+This skill does not create resources or releases. Route that work to:
+
+- `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 ### 2. Read the SDK client models before frontend implementation files
 
@@ -306,6 +328,8 @@ Do not claim success until you have checked:
 - widget detail was reviewed for `widgetVersion`, configuration, runtime, IO, capabilities, agent hints, and examples
 - the relevant SDK client model was reviewed when one exists
 - widget ids and widget instance ids are correct
+- any mounted widget that depends on a project API points to a FastAPI project resource that already exists
+- any mounted widget that depends on a project API points to a FastAPI `ResourceRelease` that already exists
 - local payload shape was reconciled against the verified widget id, widget-detail contract, and SDK model
 - the chosen mutation mode is correct:
   - full workspace update
