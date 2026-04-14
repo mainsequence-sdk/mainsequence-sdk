@@ -10,10 +10,14 @@ from pydantic import Field
 
 from mainsequence.logconf import logger
 
-from .base import BaseObjectOrm, BasePydanticModel, PermissionManagedObjectMixin
+from .base import (
+    BaseObjectOrm,
+    BasePydanticModel,
+    DetailActionObjectMixin,
+    PermissionManagedObjectMixin,
+)
 from .exceptions import ApiError, raise_for_response
 from .utils import (
-    API_ENDPOINT,
     make_request,
 )
 
@@ -26,6 +30,30 @@ _CURRENT_USER: ContextVar[Any | None] = ContextVar(
     "_CURRENT_USER",
     default=None,
 )
+
+
+class UserApiBaseObjectOrm(BaseObjectOrm):
+    USER_API_PREFIX: ClassVar[str] = "user/api"
+    ENDPOINT: ClassVar[str]
+
+    @classmethod
+    def _user_api_root(cls) -> str:
+        root = str(getattr(cls, "ROOT_URL", BaseObjectOrm.ROOT_URL)).rstrip("/")
+        if root.endswith("/orm/api"):
+            root = root[: -len("/orm/api")]
+        return root
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        endpoint = custom_endpoint_name or getattr(cls, "ENDPOINT", None)
+        if not endpoint:
+            raise ValueError(f"{cls.__name__} must define ENDPOINT.")
+
+        return (
+            f"{cls._user_api_root().rstrip('/')}/"
+            f"{cls.USER_API_PREFIX.strip('/')}/"
+            f"{endpoint.strip('/')}"
+        )
 
 
 def _logged_user_header_context(
@@ -234,8 +262,7 @@ class TeamMembershipUpdateResult(BasePydanticModel):
     )
 
 
-class Team(PermissionManagedObjectMixin, BasePydanticModel, BaseObjectOrm):
-    ROOT_URL: ClassVar[str] = API_ENDPOINT.replace("/orm/api", "/user/api")
+class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
     ENDPOINT: ClassVar[str] = "team"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "search": ["exact"],
@@ -409,6 +436,367 @@ class OrganizationTeam(Team):
     pass
 
 
+class NotificationBulkActionResult(BasePydanticModel):
+    updated_count: int = Field(
+        ...,
+        title="Updated Count",
+        description="Number of notifications updated by the bulk action.",
+        examples=[4],
+    )
+
+
+class Notification(DetailActionObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
+    ENDPOINT: ClassVar[str] = "notifications"
+
+    id: int | None = Field(
+        None,
+        title="Notification ID",
+        description="Unique identifier of the notification.",
+        examples=[101],
+    )
+    source: Literal["system", "organization"] | None = Field(
+        None,
+        title="Notification Source",
+        description="Source scope of the notification.",
+        examples=["organization"],
+    )
+    created_by_user: int | dict[str, Any] | UserSummary | None = Field(
+        None,
+        title="Created By User",
+        description="User that created the notification when available.",
+    )
+    source_organization: int | dict[str, Any] | Organization | None = Field(
+        None,
+        title="Source Organization",
+        description="Organization that owns the notification when the source is organization-scoped.",
+    )
+    type: Literal["UR", "IM", "IN"] = Field(
+        "IN",
+        title="Notification Type",
+        description="Stored notification priority code.",
+        examples=["IN"],
+    )
+    created_at: datetime.datetime | None = Field(
+        None,
+        title="Created At",
+        description="Timestamp when the notification was created.",
+        examples=["2026-04-14T09:00:00Z"],
+    )
+    title: str = Field(
+        ...,
+        title="Title",
+        description="Short notification title.",
+        examples=["Deployment complete"],
+    )
+    description: str = Field(
+        ...,
+        title="Description",
+        description="Rich-text notification body.",
+        examples=["The deployment finished successfully."],
+    )
+    meta_data: dict[str, Any] | None = Field(
+        None,
+        title="Metadata",
+        description="Optional structured metadata attached to the notification.",
+    )
+    is_global: bool = Field(
+        False,
+        title="Is Global",
+        description="Whether the notification is broadcast within its source scope.",
+        examples=[False],
+    )
+    target_user: int | dict[str, Any] | UserSummary | None = Field(
+        None,
+        title="Target User",
+        description="Direct target user when the notification is user-targeted.",
+    )
+    target_team: int | dict[str, Any] | ShareableTeamSummary | Team | None = Field(
+        None,
+        title="Target Team",
+        description="Target organization team when the notification is team-targeted.",
+    )
+    include_email: bool = Field(
+        False,
+        title="Include Email",
+        description="Whether the backend also sends email for the notification.",
+        examples=[False],
+    )
+    is_read: bool | None = Field(
+        None,
+        title="Is Read",
+        description="Read flag exposed by visible-notification responses.",
+        examples=[False],
+    )
+
+    @classmethod
+    def _normalize_notification_payload(
+        cls,
+        *,
+        type: str,
+        title: str,
+        description: str,
+        meta_data: dict[str, Any] | None = None,
+        include_email: bool = False,
+        target_user: Any = None,
+        target_team: Any = None,
+        user_ids: list[Any] | None = None,
+        team_ids: list[Any] | None = None,
+        is_global: bool | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": type,
+            "title": title,
+            "description": description,
+            "meta_data": meta_data,
+            "include_email": include_email,
+        }
+
+        if target_user is not None:
+            payload["target_user"] = cls._coerce_filter_id(target_user, field_name="target_user")
+        if target_team is not None:
+            payload["target_team"] = cls._coerce_filter_id(target_team, field_name="target_team")
+        if user_ids is not None:
+            payload["user_ids"] = [
+                cls._coerce_filter_id(user_id, field_name="user_ids")
+                for user_id in list(user_ids)
+            ]
+        if team_ids is not None:
+            payload["team_ids"] = [
+                cls._coerce_filter_id(team_id, field_name="team_ids")
+                for team_id in list(team_ids)
+            ]
+        if is_global is not None:
+            payload["is_global"] = bool(is_global)
+        return payload
+
+    @classmethod
+    def _validate_notification_response(
+        cls,
+        payload: Any,
+        *,
+        allow_many: bool = False,
+    ) -> Notification | list[Notification]:
+        if isinstance(payload, list):
+            if not allow_many:
+                raise ApiError(
+                    f"Unexpected Notification list response: {type(payload)!r}"
+                )
+            return [cls.model_validate(item) for item in payload]
+        if not isinstance(payload, dict):
+            raise ApiError(
+                f"Unexpected Notification response payload: {type(payload)!r}"
+            )
+        return cls.model_validate(payload)
+
+    @classmethod
+    def send(
+        cls,
+        *,
+        type: str,
+        title: str,
+        description: str,
+        meta_data: dict[str, Any] | None = None,
+        include_email: bool = False,
+        target_user: Any = None,
+        target_team: Any = None,
+        user_ids: list[Any] | None = None,
+        team_ids: list[Any] | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Notification | list[Notification]:
+        """
+        Create one or more organization-scoped notifications via `POST /user/api/notifications/`.
+        """
+        base_url = cls.get_object_url().rstrip("/")
+        payload = {
+            "json": cls._normalize_notification_payload(
+                type=type,
+                title=title,
+                description=description,
+                meta_data=meta_data,
+                include_email=include_email,
+                target_user=target_user,
+                target_team=target_team,
+                user_ids=user_ids,
+                team_ids=team_ids,
+            )
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{base_url}/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+        return cls._validate_notification_response(response.json(), allow_many=True)
+
+    @classmethod
+    def send_to_self(
+        cls,
+        *,
+        type: str,
+        title: str,
+        description: str,
+        meta_data: dict[str, Any] | None = None,
+        include_email: bool = False,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Notification:
+        """
+        Create an organization-scoped self notification via `POST /user/api/notifications/send-self/`.
+        """
+        base_url = cls.get_object_url().rstrip("/")
+        payload = {
+            "json": cls._normalize_notification_payload(
+                type=type,
+                title=title,
+                description=description,
+                meta_data=meta_data,
+                include_email=include_email,
+            )
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{base_url}/send-self/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+        return cls._validate_notification_response(response.json())
+
+    @classmethod
+    def send_system(
+        cls,
+        *,
+        type: str,
+        title: str,
+        description: str,
+        meta_data: dict[str, Any] | None = None,
+        include_email: bool = False,
+        is_global: bool = False,
+        target_user: Any = None,
+        target_team: Any = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Notification:
+        """
+        Create a system-scoped notification via `POST /user/api/notifications/send-system/`.
+        """
+        base_url = cls.get_object_url().rstrip("/")
+        payload = {
+            "json": cls._normalize_notification_payload(
+                type=type,
+                title=title,
+                description=description,
+                meta_data=meta_data,
+                include_email=include_email,
+                is_global=is_global,
+                target_user=target_user,
+                target_team=target_team,
+            )
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{base_url}/send-system/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=payload)
+        return cls._validate_notification_response(response.json())
+
+    def mark_read(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> Notification:
+        """
+        Mark this notification as read via `POST /user/api/notifications/<id>/mark-read/`.
+        """
+        payload = self._request_detail_action(
+            r_type="POST",
+            action_name="mark-read",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        return type(self)._validate_notification_response(payload)
+
+    def dismiss(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> None:
+        """
+        Dismiss this notification via `POST /user/api/notifications/<id>/dismiss/`.
+        """
+        self._request_detail_action(
+            r_type="POST",
+            action_name="dismiss",
+            payload={},
+            timeout=timeout,
+            expected_statuses=(204,),
+            empty_response=None,
+        )
+
+    @classmethod
+    def mark_all_read(
+        cls,
+        *,
+        notification_type: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> NotificationBulkActionResult:
+        """
+        Mark all visible notifications as read via `POST /user/api/notifications/mark-all-read/`.
+        """
+        base_url = cls.get_object_url().rstrip("/")
+        payload: dict[str, Any] = {}
+        if notification_type:
+            payload["params"] = {"type": str(notification_type)}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{base_url}/mark-all-read/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload or None)
+        return NotificationBulkActionResult.model_validate(response.json())
+
+    @classmethod
+    def dismiss_all(
+        cls,
+        *,
+        notification_type: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> NotificationBulkActionResult:
+        """
+        Dismiss all visible notifications via `POST /user/api/notifications/dismiss-all/`.
+        """
+        base_url = cls.get_object_url().rstrip("/")
+        payload: dict[str, Any] = {}
+        if notification_type:
+            payload["params"] = {"type": str(notification_type)}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{base_url}/dismiss-all/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload or None)
+        return NotificationBulkActionResult.model_validate(response.json())
+
+
 class ShareableAccessState(BasePydanticModel):
     object_id: int = Field(
         ...,
@@ -441,7 +829,8 @@ class ShareableAccessState(BasePydanticModel):
     )
 
 
-class User(BaseObjectOrm, BasePydanticModel):
+class User(UserApiBaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "user"
     # present on UserSerializer
     id: int | None = Field(
         None,
@@ -562,10 +951,6 @@ class User(BaseObjectOrm, BasePydanticModel):
     @property
     def effective_plan(self) -> Any | None:
         return self.plan if self.plan is not None else self.active_plan_type
-
-    @classmethod
-    def get_object_url(cls):
-        return f"{cls.ROOT_URL.replace('orm/api', 'user/api')}/{cls.END_POINTS[cls.class_name()]}"
 
     @classmethod
     def get_authenticated_user_details(cls):

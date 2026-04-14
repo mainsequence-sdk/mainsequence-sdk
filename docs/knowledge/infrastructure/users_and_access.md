@@ -6,6 +6,8 @@ That means access control is not an optional admin topic. It is part of how team
 
 This guide explains the access model in plain language, without implementation details.
 
+For notification delivery rules and client usage, see [Notifications](notifications.md).
+
 ## Start with the right mental model
 
 There are five concepts to keep separate:
