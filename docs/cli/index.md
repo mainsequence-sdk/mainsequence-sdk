@@ -341,6 +341,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspace_builder` and unique leaf names such as `workspace_builder`.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
+- in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
 - `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.

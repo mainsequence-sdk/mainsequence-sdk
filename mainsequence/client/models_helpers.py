@@ -18,7 +18,12 @@ from ..compute_validation import (
 )
 from .base import ShareableObjectMixin
 from .exceptions import raise_for_response
-from .models_tdag import POD_PROJECT, Project, ProjectImage
+from .models_tdag import (
+    Project,
+    ProjectImage,
+    _require_local_pod_project,
+    _resolve_local_pod_project,
+)
 from .models_vam import *
 from .utils import make_request
 
@@ -238,12 +243,16 @@ class Job(BaseObjectOrm, BasePydanticModel):
         project_id: int | Project | None = None,
     ) -> int:
         ref = project_id if project_id is not None else project
-        if ref is None and POD_PROJECT is not None:
-            ref = POD_PROJECT
+        if ref is None:
+            resolution = _resolve_local_pod_project()
+            if resolution.project is not None:
+                ref = resolution.project
 
         resolved = cls._coerce_id(ref, field_name="project")
         if resolved is None:
-            raise ValueError("project is required. Pass project/project_id or set POD_PROJECT.")
+            raise ValueError(
+                "project is required. Pass project/project_id or configure a local pod project."
+            )
         return resolved
 
     @classmethod
@@ -687,7 +696,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
         url = cls.get_object_url() + "/create_from_configuration/"
         s = cls.build_session()
         payload = dict(job_configuration)
-        payload["project_id"] = POD_PROJECT.id
+        payload["project_id"] = _require_local_pod_project(
+            f"{cls.__name__}.create_from_configuration"
+        ).id
 
         r = make_request(
             s=s,

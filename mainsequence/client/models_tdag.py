@@ -8,6 +8,7 @@ import gzip
 import json
 import math
 import os
+import re
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ from .utils import (
     TDAG_ENDPOINT,
     DataFrequency,
     DateInfo,
+    DoesNotExist,
     UniqueIdentifierRangeMap,
     bios_uuid,
     get_network_ip,
@@ -55,6 +57,11 @@ JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 DUCK_DB = "duck_db"
+
+_POD_PROJECT_RESOLUTION_LOCK = RLock()
+_POD_PROJECT_RESOLUTION_CACHE = None
+_POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
+POD_PROJECT = None
 
 if TYPE_CHECKING:
     from mainsequence.tdag.data_nodes.filters import SearchRequest
@@ -286,8 +293,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     def get_or_create(cls, **kwargs):
         url = cls.get_object_url() + "/get_or_create/"
         kwargs = serialize_to_json(kwargs)
-        pod_project=POD_PROJECT
-        kwargs["current_project_id"]=pod_project.id
+        pod_project = _require_local_pod_project("DataNodeUpdate.get_or_create")
+        kwargs["current_project_id"] = pod_project.id
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3523,32 +3530,136 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
 
             return cls(**r.json())
 
-POD_PROJECT = None
-if os.getenv("MAINSEQUENCE_TOKEN") is not None:
 
-    POD_PROJECT = Project.get_user_default_project()
-else:
+@dataclass(frozen=True)
+class _PodProjectResolution:
+    project: Project | None
+    status: str
+    detail: str = ""
 
 
-    RUNNING_PROJECT_ID=os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
-    if RUNNING_PROJECT_ID is not None:
+def _reset_local_pod_project_resolution_cache() -> None:
+    global _POD_PROJECT_RESOLUTION_CACHE
+    with _POD_PROJECT_RESOLUTION_LOCK:
+        _POD_PROJECT_RESOLUTION_CACHE = None
+        _POD_PROJECT_LOGGED_STATES.clear()
+
+
+def _build_local_pod_project_resolution() -> _PodProjectResolution:
+    if os.getenv("MAINSEQUENCE_TOKEN") is not None:
         try:
-            POD_PROJECT = Project.get(id=os.environ["MAIN_SEQUENCE_PROJECT_ID"])
-        except Exception:
-            POD_PROJECT = None
-            logger.exception("Could not retrieve pod project running in local mode")
+            project = Project.get_user_default_project()
+        except DoesNotExist:
+            return _PodProjectResolution(
+                project=None,
+                status="not_found",
+                detail="No default project found for the current MAINSEQUENCE_TOKEN.",
+            )
+        except Exception as exc:
+            return _PodProjectResolution(
+                project=None,
+                status="lookup_failed",
+                detail=(
+                    "Could not resolve the default project from MAINSEQUENCE_TOKEN: "
+                    f"{exc}"
+                ),
+            )
+        return _PodProjectResolution(project=project, status="resolved")
+
+    running_project_id = (os.environ.get("MAIN_SEQUENCE_PROJECT_ID") or "").strip()
+    if not running_project_id:
+        return _PodProjectResolution(
+            project=None,
+            status="missing",
+            detail="MAIN_SEQUENCE_PROJECT_ID is not configured.",
+        )
+
+    if not re.fullmatch(r"\d+", running_project_id):
+        return _PodProjectResolution(
+            project=None,
+            status="invalid",
+            detail=(
+                f"Ignoring MAIN_SEQUENCE_PROJECT_ID={running_project_id!r}: "
+                "expected an integer project id."
+            ),
+        )
+
+    project_id = int(running_project_id)
+    try:
+        project = Project.get(pk=project_id)
+    except DoesNotExist:
+        return _PodProjectResolution(
+            project=None,
+            status="not_found",
+            detail=f"Project id {project_id} from MAIN_SEQUENCE_PROJECT_ID was not found.",
+        )
+    except Exception as exc:
+        return _PodProjectResolution(
+            project=None,
+            status="lookup_failed",
+            detail=(
+                "Could not resolve project id "
+                f"{project_id} from MAIN_SEQUENCE_PROJECT_ID: {exc}"
+            ),
+        )
+
+    return _PodProjectResolution(project=project, status="resolved")
+
+
+def _resolve_local_pod_project(*, refresh: bool = False) -> _PodProjectResolution:
+    global _POD_PROJECT_RESOLUTION_CACHE, POD_PROJECT
+
+    with _POD_PROJECT_RESOLUTION_LOCK:
+        if _POD_PROJECT_RESOLUTION_CACHE is None or refresh:
+            _POD_PROJECT_RESOLUTION_CACHE = _build_local_pod_project_resolution()
+            POD_PROJECT = _POD_PROJECT_RESOLUTION_CACHE.project
+        return _POD_PROJECT_RESOLUTION_CACHE
+
+
+def _log_local_pod_project_resolution(resolution: _PodProjectResolution) -> None:
+    if resolution.status == "resolved":
+        return
+
+    cache_key = (resolution.status, resolution.detail)
+    with _POD_PROJECT_RESOLUTION_LOCK:
+        if cache_key in _POD_PROJECT_LOGGED_STATES:
+            return
+        _POD_PROJECT_LOGGED_STATES.add(cache_key)
+
+    continuation = " Continuing without local pod project attachment."
+    message = (resolution.detail or "No local pod project attached.").strip()
+    if not message.endswith("."):
+        message += "."
+    message += continuation
+
+    if resolution.status == "missing":
+        logger.debug(message)
     else:
-        logger.debug("MAIN_SEQUENCE_PROJECT_ID not set; no local pod project attached")
+        logger.warning(message)
+
+
+def _require_local_pod_project(operation: str) -> Project:
+    resolution = _resolve_local_pod_project()
+    if resolution.project is not None:
+        return resolution.project
+
+    _log_local_pod_project_resolution(resolution)
+
+    detail = (resolution.detail or "No local pod project attached.").strip()
+    raise RuntimeError(f"{operation} requires a local pod project. {detail}")
+
 
 @dataclass
 class PodDataSource:
     data_source: Any | None = None
+
     def set_remote_db(self):
-        if POD_PROJECT is None:
-            logger.warning("Main Sequence Running in local mode no pod attached")
+        resolution = _resolve_local_pod_project()
+        if resolution.project is None:
+            _log_local_pod_project_resolution(resolution)
             return None
 
-        self.data_source = POD_PROJECT.data_source
+        self.data_source = resolution.project.data_source
         logger.debug(f"Set remote data source to {self.data_source.related_resource}")
 
         if self.data_source.related_resource.status != "AVAILABLE":

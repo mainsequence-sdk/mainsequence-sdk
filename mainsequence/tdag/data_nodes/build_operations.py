@@ -20,8 +20,9 @@ import cloudpickle
 from pydantic import BaseModel
 
 import mainsequence.client as ms_client
-from mainsequence.client import POD_PROJECT, BaseObjectOrm
+from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
+from mainsequence.client.models_tdag import _resolve_local_pod_project
 from mainsequence.instrumentation import tracer, tracer_instrumentator
 from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, bcolors, ogm
 from mainsequence.tdag.pydantic_metadata import (
@@ -243,8 +244,9 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
 
     # Add project_id for local hash
-    if POD_PROJECT is not None:
-        local_ts_dict_to_hash["project_id"] = POD_PROJECT.id
+    resolution = _resolve_local_pod_project()
+    if resolution.project is not None:
+        local_ts_dict_to_hash["project_id"] = resolution.project.id
     # Encode and hash both versions
     encoded_local = json.dumps(local_ts_dict_to_hash, sort_keys=True).encode()
     encoded_remote = json.dumps(remote_ts_in_db_hash, sort_keys=True).encode()

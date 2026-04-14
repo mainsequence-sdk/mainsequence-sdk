@@ -52,6 +52,15 @@ Working rules for this role:
 - do not blur domain boundaries when a dedicated skill already exists
 - prefer reusable implementation over one-off logic placed directly into dashboards, jobs, or route handlers
 
+User-resolution rule for agents:
+
+- use `User.get_logged_user()` only when code is running with request-bound identity context:
+  - FastAPI middleware
+  - Streamlit
+  - code that explicitly binds `_CURRENT_AUTH_HEADERS`
+- use `User.get_authenticated_user_details()` in standalone authenticated CLI or script code that is not request-bound
+- do not describe this as a CLI versus non-CLI distinction; the boundary is request-bound identity context versus a plain authenticated SDK session
+
 Delegation rules:
 
 - when work is delegated or queued for later, write the task in `.agents/tasks.md` according to the skill that should execute it

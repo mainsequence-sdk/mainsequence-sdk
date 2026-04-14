@@ -954,6 +954,15 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def get_authenticated_user_details(cls):
+        """
+        Resolve the authenticated user from the active SDK auth session.
+
+        Use this in standalone authenticated CLI or script code that is not
+        running inside a request-bound identity context. This method reads the
+        authenticated user through the backend `/user/api/user/get_user_details/`
+        endpoint and does not depend on request headers, Streamlit context, or
+        `_CURRENT_AUTH_HEADERS`.
+        """
         url = f"{cls.get_object_url()}/get_user_details/"
         r = make_request(
             s=cls.build_session(),
@@ -973,6 +982,18 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
 
     @classmethod
     def get_logged_user(cls) -> User:
+        """
+        Resolve the current user from request-bound identity context.
+
+        Use this when code is running with request-scoped identity context, such
+        as FastAPI middleware, Streamlit, or code that explicitly binds
+        `_CURRENT_AUTH_HEADERS`. This method first uses the bound request/user
+        context and only falls back to `get_authenticated_user_details()` when
+        request headers are present with Bearer auth but no `X-User-ID`.
+
+        For standalone authenticated CLI or script code that is not request-bound,
+        prefer `get_authenticated_user_details()`.
+        """
         cached_user = _CURRENT_USER.get()
         if cached_user is not None:
             return cached_user

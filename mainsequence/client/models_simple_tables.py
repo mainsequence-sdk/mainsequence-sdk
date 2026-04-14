@@ -20,7 +20,6 @@ from mainsequence import logger
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin
 from .exceptions import raise_for_response
 from .models_tdag import (
-    POD_PROJECT,
     AbstractTable,
     BaseColumnMetaData,
     BaseUpdateDetails,
@@ -32,6 +31,7 @@ from .models_tdag import (
     UpdateBatchResponse,
     UpdateNodeRef,
     _executor,
+    _require_local_pod_project,
     get_chunk_stats,
     request_to_datetime,
 )
@@ -677,8 +677,8 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     def get_or_create(cls, **kwargs):
         url = cls.get_object_url() + "/get_or_create/"
         kwargs = serialize_to_json(kwargs)
-        pod_project=POD_PROJECT
-        kwargs["current_project_id"]=pod_project.id
+        pod_project = _require_local_pod_project("SimpleTableUpdate.get_or_create")
+        kwargs["current_project_id"] = pod_project.id
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
