@@ -46,6 +46,8 @@ This skill must not claim ownership of:
 
 - Command Center workspaces:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
+- predeployment mock API contract validation:
+  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - DataNodes:
@@ -71,6 +73,10 @@ If the AppComponent is backed by project APIs, also read:
 
 5. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 6. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+
+If the task is about validating the API contract before deployment, also read:
+
+7. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 
 ## Inputs This Skill Needs
 

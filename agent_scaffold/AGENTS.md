@@ -144,6 +144,8 @@ Typical routing:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
   `.agents/skills/command_center/app_components/SKILL.md`
+- predeployment AppComponent/API contract testing through `apiTargetMode: "mock-json"`:
+  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
   `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:

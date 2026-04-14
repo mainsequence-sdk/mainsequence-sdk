@@ -50,6 +50,8 @@ This skill must not claim ownership of:
   `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+- predeployment mock API contract validation:
+  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
 - Streamlit dashboards:
@@ -62,6 +64,12 @@ This skill must not claim ownership of:
 3. `docs/knowledge/infrastructure/artifacts.md`
 
 If the task touches deployed dashboards or APIs, also read the relevant domain skill/docs before changing the operational workflow.
+
+If the task is about publishing a Command Center-facing API mainly to test AppComponent UX, bindings, or request/response contracts, read:
+
+4. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+
+Do that before building an image or creating a FastAPI `ResourceRelease`.
 
 ## Inputs This Skill Needs
 
@@ -167,6 +175,22 @@ For deployed dashboards, APIs, or agents:
 - the release must exist
 - the release must point at the intended image or resource version
 
+### 6.1 Do not publish an API just to test AppComponent contracts
+
+If the goal is to validate Command Center AppComponent UX, request rendering, response rendering, published outputs, or downstream bindings, do not jump straight to:
+
+- image build
+- project resource creation
+- `ResourceRelease` creation
+
+Use the predeployment mock workflow first:
+
+- `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+
+That workflow exists to validate the contract in `apiTargetMode: "mock-json"` before spending time on deployment.
+
+Only publish the real FastAPI API after the AppComponent contract is stable.
+
 ## Review Rules
 
 When reviewing an orchestration task, look for:
@@ -178,6 +202,7 @@ When reviewing an orchestration task, look for:
 - no run/log verification after creation
 - unsafe use of `--strict`
 - workflows depending on laptop-specific file paths instead of Artifacts
+- image or release work being used as a substitute for predeployment AppComponent/API contract validation
 - tasks that are really resource/release problems rather than simple job problems
 
 ## Validation Checklist
@@ -194,6 +219,7 @@ Do not claim success until you have checked:
 - the job exists after creation or sync
 - runs and logs were inspected when execution success matters
 - resources and releases were verified when deployment success matters
+- Command Center-facing API publishing is not being used just to test AppComponent UX that should have been validated first in `mock-json` mode
 
 If the workflow uses `scheduled_jobs.yaml`, also check:
 
@@ -214,6 +240,7 @@ If the workflow uses Artifacts, also check:
 - the image strategy is unclear but reproducibility matters
 - strict batch sync could delete jobs and the desired state is not explicit
 - the workflow depends on local file paths that should be platform Artifacts
+- the real need is AppComponent/API contract validation before deployment rather than release execution itself
 - the task is actually about RBAC policy rather than orchestration
 - the task is actually about producer semantics rather than platform execution
 

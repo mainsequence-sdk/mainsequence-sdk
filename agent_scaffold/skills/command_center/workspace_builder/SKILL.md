@@ -43,6 +43,8 @@ This skill must not claim ownership of:
 
 - AppComponents and custom forms:
   `.agents/skills/command_center/app_components/SKILL.md`
+- predeployment mock API contract validation:
+  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -73,6 +75,7 @@ If the workspace contains AppComponent widgets, also read:
 6. `docs/knowledge/command_center/forms.md`
 7. `docs/knowledge/command_center/widget_data_contracts.md`
 8. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
+9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
 
 ## Command Center Mental Model
 

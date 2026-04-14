@@ -52,6 +52,8 @@ This skill must not claim ownership of:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
   `.agents/skills/command_center/app_components/SKILL.md`
+- predeployment mock API contract validation:
+  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
@@ -70,7 +72,8 @@ This skill must not claim ownership of:
 Also load:
 
 8. `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
-9. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
+9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
+10. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
 
 Do not wait for the user to say "Command Center" explicitly if the API is being built as a platform UI surface. That is the default assumption in Main Sequence projects.
 
