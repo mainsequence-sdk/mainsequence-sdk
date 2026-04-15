@@ -144,7 +144,7 @@ For every non-trivial workspace task, decide:
 7. Are bindings and external resource ids fully resolved?
 8. If a mounted widget depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
 9. Does the workspace require a non-standard or more complex visualization that should be authored through `echarts-spec` instead of improvised chart props?
-
+10. If the workspace uses echarts-spec, prefer theme-aware colors and chart palettes over hardcoded hex values: use semantic tokens like primary, secondary, warning, success, positive, negative, and when a chart needs multiple series or scales, use the theme chart palettes for categorical, sequential, and diverging color assignment instead of improvising custom color arrays.
 ## Build Rules
 
 ### 1. Verify the widget type in the CLI registry first
