@@ -143,6 +143,7 @@ For every non-trivial workspace task, decide:
 6. Is the widget a runtime `execution-owner`, `consumer`, or `local-ui` widget?
 7. Are bindings and external resource ids fully resolved?
 8. If a mounted widget depends on a project API, does that API already exist as a FastAPI project resource with a FastAPI `ResourceRelease`?
+9. Does the workspace require a non-standard or more complex visualization that should be authored through `echarts-spec` instead of improvised chart props?
 
 ## Build Rules
 
@@ -202,7 +203,23 @@ Use:
 
 Treat these SDK models as the first concrete client interaction surface.
 
-### 2.1 Use local source only to refine unresolved instance payload shape
+### 2.1 Use `echarts-spec` for non-standard or complex visualizations
+
+If a workspace requires a visualization that is not standard and needs more complex charting guidance, use `echarts-spec`.
+
+Do not improvise a complex chart configuration directly from guesswork.
+
+First extract the chart requirements from `registered_widget_type detail <WIDGET_ID> --json`, including:
+
+- widget capabilities
+- supported modes
+- configuration fields
+- IO shape
+- examples and authoring hints when present
+
+Then use `echarts-spec` to author the visualization in a way that stays grounded in the actual widget contract.
+
+### 2.2 Use local source only to refine unresolved instance payload shape
 
 A registered widget type proves the widget exists and gives catalog metadata.
 
