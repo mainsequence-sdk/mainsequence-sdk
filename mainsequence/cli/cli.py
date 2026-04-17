@@ -150,6 +150,7 @@ from .api import (
     list_team_users_can_edit,
     list_team_users_can_view,
     list_workspaces,
+    logout_jwt_session,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
     remove_agent_team_from_edit,
@@ -188,7 +189,7 @@ from .api import (
     update_workspace,
     validate_project_name,
 )
-from .api import login as api_login
+from .browser_auth import BrowserAuthError, login_via_browser
 from .docker_utils import (
     build_docker_environment,
     compute_docker_image_ref,
@@ -748,10 +749,10 @@ def _require_login() -> dict:
             raise NotLoggedIn("Not logged in.")
         return prof
     except NotLoggedIn as e:
-        error("Not logged in. Run: mainsequence login <email>")
+        error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
     except ApiError as e:
-        error("Not logged in. Run: mainsequence login <email>")
+        error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
 
 
@@ -1939,7 +1940,7 @@ def _current_session_jwt_tokens() -> tuple[str, str]:
     access_token = (tokens.get("access") or "").strip()
     refresh_token = (tokens.get("refresh") or "").strip()
     if not access_token or not refresh_token:
-        raise RuntimeError("JWT session tokens are missing. Run: mainsequence login <email>")
+        raise RuntimeError("JWT session tokens are missing. Run: mainsequence login")
     return access_token, refresh_token
 
 
@@ -1989,7 +1990,6 @@ def _render_project_runtime_env_text(
 
 @app.command()
 def login(
-    email: str | None = typer.Argument(None, help="Email/username (server expects 'email' field)."),
     backend: str | None = typer.Argument(
         None,
         help="Optional backend URL or host[:port], for example 127.0.0.1:8000.",
@@ -1998,9 +1998,13 @@ def login(
         None,
         help="Optional local projects base folder, for example mainsequence-dev.",
     ),
-    password: str | None = typer.Option(None, "--password", hide_input=True, help="Password."),
     access_token: str | None = typer.Option(None, "--access-token", help="JWT access token."),
     refresh_token: str | None = typer.Option(None, "--refresh-token", help="JWT refresh token."),
+    no_open: bool = typer.Option(
+        False,
+        "--no-open",
+        help="Do not auto-open a browser. Print the authorization URL and wait for callback.",
+    ),
     backend_option: str | None = typer.Option(
         None,
         "--backend",
@@ -2032,20 +2036,21 @@ def login(
     CLI invocations can run without re-authentication. Backend/base-folder
     overrides passed to `login` are scoped to the current terminal session.
 
+    Interactive login uses browser-based authentication and finishes with
+    standard JWT access/refresh tokens persisted by the CLI.
+
     Parameters
     ----------
-    email:
-        Login email for password-based authentication. Omit when using JWT tokens.
     backend:
         Optional positional backend override for backward compatibility.
     projects_base:
         Optional positional projects base folder for backward compatibility.
-    password:
-        Password for email-based authentication.
     access_token:
-        JWT access token for token-based authentication.
+        JWT access token for manual token import.
     refresh_token:
-        JWT refresh token for token-based authentication.
+        JWT refresh token for manual token import.
+    no_open:
+        If True, do not auto-open a browser. The CLI prints the auth URL.
     backend_option:
         Backend override for this terminal session.
     projects_base_option:
@@ -2056,14 +2061,22 @@ def login(
     Examples
     --------
     ```bash
-    mainsequence login you@company.com
-    mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
+    mainsequence login
+    mainsequence login 127.0.0.1:8000 mainsequence-dev
+    mainsequence login --no-open
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
-    mainsequence login you@company.com --export
+    mainsequence login --export
     ```
     """
     using_jwt = bool((access_token or "").strip() or (refresh_token or "").strip())
+
+    if not using_jwt and backend and "@" in backend:
+        error(
+            "Email/password CLI login was removed. Use `mainsequence login` for browser login "
+            "or use --access-token/--refresh-token for manual JWT import."
+        )
+        raise typer.Exit(1)
 
     if backend and backend_option:
         if cfg.normalize_backend_url(backend) != cfg.normalize_backend_url(backend_option):
@@ -2083,32 +2096,16 @@ def login(
         if not (access_token or "").strip() or not (refresh_token or "").strip():
             error("JWT login requires both --access-token and --refresh-token.")
             raise typer.Exit(1)
-        if email is not None:
-            error("Do not pass email when using --access-token/--refresh-token.")
-            raise typer.Exit(1)
-        if password is not None:
-            error("Do not pass --password when using --access-token/--refresh-token.")
-            raise typer.Exit(1)
-    else:
-        if email is None:
-            error("Email is required unless you use --access-token and --refresh-token.")
-            raise typer.Exit(1)
-        if password is None:
-            password = typer.prompt("Password", hide_input=True)
+    elif access_token is not None or refresh_token is not None:
+        error("JWT login requires both --access-token and --refresh-token.")
+        raise typer.Exit(1)
 
     current_backend = cfg.backend_url()
-    current_projects_base = cfg.normalize_mainsequence_path(cfg.get_config().get("mainsequence_path"))
     normalized_backend = cfg.normalize_backend_url(effective_backend_input) if effective_backend_input else None
-    normalized_projects_base = (
-        cfg.normalize_mainsequence_path(effective_projects_base_input) if effective_projects_base_input else None
-    )
 
     if normalized_backend and normalized_backend != current_backend:
         if not effective_projects_base_input:
-            error("When using a different backend, you must also specify a different projects base folder.")
-            raise typer.Exit(1)
-        if normalized_projects_base == current_projects_base:
-            error("When using a different backend, the projects base folder must differ from the current one.")
+            error("When using a different backend, you must also specify a projects base folder.")
             raise typer.Exit(1)
 
     previous_backend_override = os.environ.get("MAIN_SEQUENCE_BACKEND_URL")
@@ -2128,7 +2125,36 @@ def login(
                 "persisted": bool(persisted),
             }
         else:
-            res = api_login(email, password)
+            def _emit_auth_url(url: str) -> None:
+                info(f"Open this URL to authenticate: {url}")
+
+            flow = login_via_browser(
+                no_open=no_open,
+                on_authorize_url=_emit_auth_url if no_open else None,
+            )
+            access = (flow.get("access") or "").strip()
+            refresh = (flow.get("refresh") or "").strip()
+            if not access or not refresh:
+                raise ApiError("Browser login did not return access and refresh tokens.")
+
+            persisted = cfg.save_tokens("", access, refresh)
+            username = ""
+            profile = get_current_user_profile()
+            if isinstance(profile, dict):
+                username = (profile.get("username") or "").strip()
+            if username:
+                persisted = bool(cfg.save_tokens(username, access, refresh) and persisted)
+
+            res = {
+                "username": username,
+                "backend": normalized_backend or current_backend,
+                "access": access,
+                "refresh": refresh,
+                "persisted": bool(persisted),
+            }
+    except BrowserAuthError as e:
+        error(f"Browser login failed: {e}")
+        raise typer.Exit(1) from e
     except ApiError as e:
         error(f"Login failed: {e}")
         raise typer.Exit(1) from e
@@ -2198,6 +2224,12 @@ def logout(
     ```
     """
     cfg.clear_session_overrides()
+    backend_logout_ok = False
+    try:
+        backend_logout_ok = logout_jwt_session()
+    except Exception:
+        backend_logout_ok = False
+
     ok = cfg.clear_tokens()
     if export:
         typer.echo("unset MAINSEQUENCE_ACCESS_TOKEN")
@@ -2209,7 +2241,10 @@ def logout(
         return
 
     if ok:
-        success("Signed out (session tokens cleared).")
+        if backend_logout_ok:
+            success("Signed out (backend session revoked, local tokens cleared).")
+        else:
+            success("Signed out (session tokens cleared).")
     else:
         warn("Signed out, but some session auth variables could not be cleared.")
 
@@ -2247,7 +2282,7 @@ def user_show():
     try:
         user = get_logged_user_details()
     except NotLoggedIn as e:
-        error("Not logged in. Run: mainsequence login <email>")
+        error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
     except ApiError as e:
         error(str(e))
@@ -6892,7 +6927,7 @@ def _print_project_data_node_updates(
     try:
         updates = get_project_data_node_updates(project_id, timeout=timeout)
     except NotLoggedIn as e:
-        error("Not logged in. Run: mainsequence login <email>")
+        error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
     except ApiError as e:
         error(str(e))
@@ -7330,7 +7365,7 @@ def project_delete_remote_cmd(
     try:
         resp = delete_project(project_id, delete_repositories=delete_repositories)
     except NotLoggedIn as e:
-        error("Not logged in. Run: mainsequence login <email>")
+        error("Not logged in. Run: mainsequence login")
         raise typer.Exit(1) from e
     except ApiError as e:
         error(f"Project deletion failed: {e}")

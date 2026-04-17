@@ -33,7 +33,7 @@ The CLI stores config and tokens in a platform-specific directory:
 ```bash
 
 
-mainsequence login you@company.com
+mainsequence login
 
 mainsequence project list
 mainsequence project set-up-locally 123

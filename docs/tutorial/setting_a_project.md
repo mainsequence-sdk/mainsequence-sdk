@@ -50,7 +50,7 @@ python -m mainsequence --help
 ## 2. Log In
 
 ```bash
-mainsequence login [USER_EMAIL]
+mainsequence login
 ```
 
 You can validate access with:

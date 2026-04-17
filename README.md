@@ -88,7 +88,7 @@ pip install mainsequence
 Authenticate:
 
 ```bash
-mainsequence login you@company.com
+mainsequence login
 ```
 
 Check that you can see your projects:

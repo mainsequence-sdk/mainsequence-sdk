@@ -7,7 +7,7 @@ mainsequence.cli.api
 HTTP API wrapper for MainSequence CLI.
 
 This module is intentionally aligned with the VS Code extension implementation:
-- Token login + refresh
+- Browser-based code exchange + refresh
 - authed() retries after refresh on 401
 - Project helpers: list projects, get env text, deploy key
 
@@ -26,10 +26,13 @@ import requests
 from .config import backend_url, get_tokens, save_tokens
 
 AUTH_PATHS = {
-    "obtain": "/auth/jwt-token/token/",
+    "authorize": "/auth/cli/authorize/",
+    "cli_token": "/auth/cli/token/",
     "refresh": "/auth/jwt-token/token/refresh/",
+    "logout": "/auth/jwt-token/logout/",
     "ping": "/auth/rest-auth/user/",
 }
+CLI_BROWSER_CLIENT_ID = "mainsequence-cli"
 
 S = requests.Session()
 S.headers.update({"Content-Type": "application/json"})
@@ -75,23 +78,44 @@ def _refresh_token() -> str | None:
     return tok.get("refresh")
 
 
-def login(email: str, password: str) -> dict:
+def build_cli_authorize_url(
+    *,
+    redirect_uri: str,
+    state: str,
+    code_challenge: str,
+    client_id: str = CLI_BROWSER_CLIENT_ID,
+) -> str:
     """
-    Authenticate and store session tokens in process environment.
-
-    Args:
-        email: login email (server expects 'email' field)
-        password: password
-
-    Returns:
-        dict: {"username": email, "backend": backend_url(), "access": "...", "refresh": "...", "persisted": bool}
+    Build the browser authorization URL for CLI OAuth-style login.
     """
-    email = (email or "").strip()
-    password = (password or "").rstrip("\r\n")
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "state": state,
+        "redirect_uri": redirect_uri,
+        "code_challenge": code_challenge,
+        "code_challenge_method": "S256",
+    }
+    return f"{_full(AUTH_PATHS['authorize'])}?{urlencode(params)}"
 
-    url = _full(AUTH_PATHS["obtain"])
-    payload = {"email": email, "password": password}
-    r = S.post(url, data=json.dumps(payload))
+
+def exchange_cli_authorization_code(
+    *,
+    code: str,
+    code_verifier: str,
+    redirect_uri: str,
+    client_id: str = CLI_BROWSER_CLIENT_ID,
+) -> dict:
+    """
+    Exchange a browser login authorization code for access/refresh JWT tokens.
+    """
+    payload = {
+        "client_id": client_id,
+        "code": code,
+        "code_verifier": code_verifier,
+        "redirect_uri": redirect_uri,
+    }
+    r = S.post(_full(AUTH_PATHS["cli_token"]), data=json.dumps(payload))
     try:
         data = r.json()
     except Exception:
@@ -106,8 +130,44 @@ def login(email: str, password: str) -> dict:
     if not access or not refresh:
         raise ApiError("Server did not return expected tokens.")
 
-    persisted = save_tokens(email, access, refresh)
-    return {"username": email, "backend": backend_url(), "access": access, "refresh": refresh, "persisted": bool(persisted)}
+    return {
+        "backend": backend_url(),
+        "access": str(access),
+        "refresh": str(refresh),
+    }
+
+
+def logout_jwt_session() -> bool:
+    """
+    Attempt backend-side JWT logout for the current authenticated CLI session.
+
+    Returns:
+        bool: True when backend logout returns success, False otherwise.
+    """
+    access = _access_token()
+    refresh = _refresh_token()
+    if not access:
+        return False
+
+    payload = {"refresh": refresh} if refresh else {}
+    headers = {"Authorization": f"Bearer {access}"}
+
+    for _ in range(2):
+        try:
+            r = S.post(_full(AUTH_PATHS["logout"]), headers=headers, data=json.dumps(payload))
+        except Exception:
+            return False
+
+        if r.status_code != 401:
+            return bool(r.ok)
+
+        try:
+            access = refresh_access()
+        except NotLoggedIn:
+            return False
+        headers = {"Authorization": f"Bearer {access}"}
+
+    return False
 
 
 def refresh_access() -> str:
@@ -119,7 +179,7 @@ def refresh_access() -> str:
     """
     refresh = _refresh_token()
     if not refresh:
-        raise NotLoggedIn("Not logged in. Run `mainsequence login <email>`.")
+        raise NotLoggedIn("Not logged in. Run `mainsequence login`.")
 
     r = S.post(_full(AUTH_PATHS["refresh"]), data=json.dumps({"refresh": refresh}))
     data = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}

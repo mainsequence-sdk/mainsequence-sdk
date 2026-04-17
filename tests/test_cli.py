@@ -1585,9 +1585,15 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
     monkeypatch.setattr(
         cli_mod,
-        "api_login",
-        lambda email, password: {"username": email, "backend": "https://example.test"},
+        "login_via_browser",
+        lambda no_open=False, on_authorize_url=None: {
+            "backend": "https://example.test",
+            "access": "acc-123",
+            "refresh": "ref-456",
+        },
     )
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
@@ -1603,7 +1609,7 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "--password", "secret", "--no-status"],
+        ["login", "--no-status"],
     )
     assert result.exit_code == 0
     assert "MAIN SEQUENCE" in result.output
@@ -1618,11 +1624,17 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     session_override = {}
     cleared = {"called": False}
 
-    def _api_login(email, password):
+    def _browser_login(no_open=False, on_authorize_url=None):
         seen["backend"] = cli_mod.cfg.backend_url()
-        return {"username": email, "backend": seen["backend"]}
+        return {
+            "backend": seen["backend"],
+            "access": "acc-123",
+            "refresh": "ref-456",
+        }
 
-    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
@@ -1644,7 +1656,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "127.0.0.1:800", "mainsequence-dev", "--password", "secret", "--no-status"],
+        ["login", "127.0.0.1:800", "mainsequence-dev", "--no-status"],
     )
     assert result.exit_code == 0
     assert seen["backend"] == "http://127.0.0.1:800"
@@ -1656,13 +1668,13 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
 
 
 def test_login_with_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
-    called = {"api_login": False}
+    called = {"browser": False}
 
-    def _api_login(email, password):
-        called["api_login"] = True
-        return {"username": email, "backend": "http://127.0.0.1:8000"}
+    def _browser_login(no_open=False, on_authorize_url=None):
+        called["browser"] = True
+        return {"backend": "http://127.0.0.1:8000", "access": "acc-123", "refresh": "ref-456"}
 
-    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
@@ -1672,48 +1684,53 @@ def test_login_with_different_backend_requires_projects_base(cli_mod, runner, mo
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "127.0.0.1:8000", "--password", "secret", "--no-status"],
+        ["login", "127.0.0.1:8000", "--no-status"],
     )
     assert result.exit_code == 1
-    assert "must also specify a different projects base folder" in result.output
-    assert called["api_login"] is False
+    assert "must also specify a projects base folder" in result.output
+    assert called["browser"] is False
 
 
-def test_login_with_different_backend_requires_different_projects_base(cli_mod, runner, monkeypatch):
-    called = {"api_login": False}
+def test_login_with_different_backend_allows_current_projects_base(cli_mod, runner, monkeypatch):
+    called = {"browser": False}
 
-    def _api_login(email, password):
-        called["api_login"] = True
-        return {"username": email, "backend": "http://127.0.0.1:8000"}
+    def _browser_login(no_open=False, on_authorize_url=None):
+        called["browser"] = True
+        return {"backend": "http://127.0.0.1:8000", "access": "acc-123", "refresh": "ref-456"}
 
-    monkeypatch.setattr(cli_mod, "api_login", _api_login)
+    monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
     )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "127.0.0.1:8000", "/tmp/mainsequence", "--password", "secret", "--no-status"],
+        ["login", "127.0.0.1:8000", "/tmp/mainsequence", "--no-status"],
     )
-    assert result.exit_code == 1
-    assert "projects base folder must differ from the current one" in result.output
-    assert called["api_login"] is False
+    assert result.exit_code == 0
+    assert called["browser"] is True
 
 
 def test_login_export_env(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
-        "api_login",
-        lambda email, password: {
-            "username": email,
+        "login_via_browser",
+        lambda no_open=False, on_authorize_url=None: {
             "backend": "https://example.test",
             "access": "acc-123",
             "refresh": "ref-456",
         },
     )
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
@@ -1728,7 +1745,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "--password", "secret", "--no-status", "--export"],
+        ["login", "--no-status", "--export"],
     )
     assert result.exit_code == 0
     assert 'export MAINSEQUENCE_ACCESS_TOKEN="acc-123"' in result.output
@@ -1852,7 +1869,7 @@ def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_
         ],
     )
     assert result.exit_code == 1
-    assert "must also specify a different projects base folder" in result.output
+    assert "must also specify a projects base folder" in result.output
     assert called["save_tokens"] is False
 
 
@@ -1886,20 +1903,20 @@ def test_login_export_env_with_jwt_tokens_omits_username(cli_mod, runner, monkey
 def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
-        "api_login",
-        lambda email, password: {
-            "username": email,
+        "login_via_browser",
+        lambda no_open=False, on_authorize_url=None: {
             "backend": "https://example.test",
             "access": "acc-123",
             "refresh": "ref-456",
-            "persisted": False,
         },
     )
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {})
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: False)
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
     monkeypatch.setattr(
@@ -1910,7 +1927,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "--password", "secret", "--no-status"],
+        ["login", "--no-status"],
     )
     assert result.exit_code == 0
     assert "Could not persist auth tokens in secure OS storage" in result.output
@@ -1919,15 +1936,15 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
 def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
-        "api_login",
-        lambda email, password: {
-            "username": email,
+        "login_via_browser",
+        lambda no_open=False, on_authorize_url=None: {
             "backend": "https://example.test",
             "access": "acc-123",
             "refresh": "ref-456",
-            "persisted": True,
         },
     )
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
@@ -1943,7 +1960,7 @@ def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatc
 
     result = runner.invoke(
         cli_mod.app,
-        ["login", "user@example.com", "--password", "secret"],
+        ["login"],
     )
     assert result.exit_code == 0
     assert "Signed in as user@example.com" in result.output
@@ -1976,16 +1993,18 @@ def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkey
 
 def test_logout(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
+    monkeypatch.setattr(cli_mod, "logout_jwt_session", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout"])
     assert result.exit_code == 0
-    assert "Signed out" in result.output
+    assert "backend session revoked" in result.output
     assert cleared["called"] is True
 
 
 def test_logout_export_env(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
+    monkeypatch.setattr(cli_mod, "logout_jwt_session", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout", "--export"])
@@ -1994,6 +2013,41 @@ def test_logout_export_env(cli_mod, runner, monkeypatch):
     assert "unset MAINSEQUENCE_REFRESH_TOKEN" in result.output
     assert "unset MAINSEQUENCE_USERNAME" in result.output
     assert cleared["called"] is True
+
+
+def test_login_rejects_legacy_email_argument(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    result = runner.invoke(cli_mod.app, ["login", "user@example.com"])
+    assert result.exit_code == 1
+    assert "Email/password CLI login was removed" in result.output
+
+
+def test_login_no_open_prints_authorize_url(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
+    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+
+    def _browser_login(no_open=False, on_authorize_url=None):
+        assert no_open is True
+        assert on_authorize_url is not None
+        on_authorize_url("https://example.test/auth")
+        return {"backend": "https://example.test", "access": "acc-123", "refresh": "ref-456"}
+
+    monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
+
+    result = runner.invoke(cli_mod.app, ["login", "--no-open", "--no-status"])
+    assert result.exit_code == 0
+    assert "Open this URL to authenticate: https://example.test/auth" in result.output
 
 
 def test_config_get_tokens_fallback_secure_store(cli_mod, monkeypatch):
@@ -7637,7 +7691,7 @@ def test_project_list_requires_shell_auth_hint(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {})
     result = runner.invoke(cli_mod.app, ["project", "list"])
     assert result.exit_code == 1
-    assert "Not logged in. Run: mainsequence login <email>" in result.output
+    assert "Not logged in. Run: mainsequence login" in result.output
 
 
 def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
@@ -8795,18 +8849,18 @@ def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner
     assert "Updated Agent Skills" in result.output
 
 
-def test_login_live_with_env_credentials(cli_mod, runner, monkeypatch):
+def test_login_live_with_env_tokens(cli_mod, runner, monkeypatch):
     """
-    Optional live login check.
+    Optional live JWT import check.
 
     Set:
-      - MAINSEQUENCE_TEST_USERNAME
-      - MAINSEQUENCE_TEST_PASSWORD
+      - MAINSEQUENCE_TEST_ACCESS_TOKEN
+      - MAINSEQUENCE_TEST_REFRESH_TOKEN
     """
-    username = os.getenv("MAINSEQUENCE_TEST_USERNAME")
-    password = os.getenv("MAINSEQUENCE_TEST_PASSWORD")
-    if not username or not password:
-        pytest.skip("Missing MAINSEQUENCE_TEST_USERNAME / MAINSEQUENCE_TEST_PASSWORD")
+    access_token = os.getenv("MAINSEQUENCE_TEST_ACCESS_TOKEN")
+    refresh_token = os.getenv("MAINSEQUENCE_TEST_REFRESH_TOKEN")
+    if not access_token or not refresh_token:
+        pytest.skip("Missing MAINSEQUENCE_TEST_ACCESS_TOKEN / MAINSEQUENCE_TEST_REFRESH_TOKEN")
 
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -8815,6 +8869,13 @@ def test_login_live_with_env_credentials(cli_mod, runner, monkeypatch):
     )
     result = runner.invoke(
         cli_mod.app,
-        ["login", username, "--password", password, "--no-status"],
+        [
+            "login",
+            "--access-token",
+            access_token,
+            "--refresh-token",
+            refresh_token,
+            "--no-status",
+        ],
     )
     assert result.exit_code == 0

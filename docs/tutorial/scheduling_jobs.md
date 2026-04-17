@@ -24,7 +24,7 @@ Before creating or running jobs, make sure your CLI session is active and you ar
 
 ```bash
 cd /path/to/your/project
-mainsequence login you@company.com
+mainsequence login
 mainsequence project refresh_token
 mainsequence project current
 mainsequence project jobs --help
@@ -33,7 +33,7 @@ mainsequence project jobs --help
 - `mainsequence project current` should show the expected project id and local path.
 - All CLI examples below assume your current working directory is the repository root for the tutorial project.
 - If you are running commands from another directory, add `--path /path/to/project` where needed.
-- If a command says you are not logged in, run `mainsequence login <email>` again.
+- If a command says you are not logged in, run `mainsequence login` again.
 - If `mainsequence project jobs` is missing, update or reinstall the CLI/SDK so your installed command set matches the current documentation.
 - The commands shown below work in `bash`, `zsh`, and PowerShell. The command text is the same even if your shell prompt looks different.
 

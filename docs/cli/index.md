@@ -13,8 +13,9 @@ pip install mainsequence
 ## Authentication
 
 ```bash
-mainsequence login you@company.com
-mainsequence login you@company.com 127.0.0.1:8000 mainsequence-dev
+mainsequence login
+mainsequence login 127.0.0.1:8000 mainsequence-dev
+mainsequence login --no-open
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:80 --projects-base mainsequence-dev
 mainsequence logout
@@ -32,7 +33,7 @@ You only need `--export` if you explicitly want shell-managed environment variab
 If you prefer shell-managed environment variables:
 
 ```bash
-mainsequence login you@company.com --export
+mainsequence login --export
 mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --export
 mainsequence logout --export
 ```
@@ -335,7 +336,7 @@ mainsequence skills path workspace_builder --json
 ## Troubleshooting
 
 - Run `mainsequence doctor` to check config, auth visibility, and tool availability.
-- If a command says not logged in, run `mainsequence login <email>` again.
+- If a command says not logged in, run `mainsequence login` again.
 - `mainsequence login` persists tokens for later CLI runs. Use `--export` only when you explicitly want shell-managed auth variables instead.
 - `mainsequence skills list` lists installed scaffold skills from the current CLI installation by recursively discovering `SKILL.md` files under the installed `agent_scaffold` bundle.
 - `mainsequence skills path` with no argument prints the installed `agent_scaffold/skills` directory for the current CLI installation.
