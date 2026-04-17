@@ -204,8 +204,10 @@ Always use `.agents/skills/project_builder/SKILL.md` as the source of truth for 
 - avoid defensive guards on hot paths unless justified by a verified requirement
 - do not hide failures
 - record the exact failing step, command, or workflow
+- when hitting a roadblock, blocker, or error, report it back to the user clearly and promptly
 - if local code or local docs conflict with the latest Main Sequence docs, record the discrepancy and create follow-up work
 - when unsure, verify
+- if the active virtual environment is missing libraries that are already declared in `requirements.txt`, install those missing libraries into the virtual environment before continuing
 
 ## Main Sequence Verification Rules
 

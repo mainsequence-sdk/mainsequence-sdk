@@ -7851,7 +7851,14 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
-        lambda: [{"id": 123, "project_name": "Demo", "git_ssh_url": "git@github.com:org/repo.git"}],
+        lambda: [
+            {
+                "id": 123,
+                "project_name": "Demo",
+                "git_ssh_url": "git@github.com:org/repo.git",
+                "is_initialized": True,
+            }
+        ],
     )
     monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
@@ -7892,6 +7899,45 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_TOKEN=" not in env_text
+
+
+def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, monkeypatch, tmp_path):
+    base = tmp_path / "base"
+    base.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": str(base)},
+    )
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: [
+            {
+                "id": 123,
+                "project_name": "Demo",
+                "git_ssh_url": "git@github.com:org/repo.git",
+                "is_initialized": False,
+            }
+        ],
+    )
+
+    clone_calls = {"count": 0}
+
+    def _clone(*args, **kwargs):
+        clone_calls["count"] += 1
+        return 0
+
+    monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
+
+    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
+
+    assert result.exit_code == 1
+    assert "Project has not finished initializing yet." in result.output
+    assert clone_calls["count"] == 0
 
 
 def test_project_open(cli_mod, runner, monkeypatch, tmp_path):

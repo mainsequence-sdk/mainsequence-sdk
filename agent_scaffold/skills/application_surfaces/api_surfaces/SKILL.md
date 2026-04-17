@@ -109,6 +109,7 @@ For every non-trivial API task, decide:
 6. Which Command Center SDK response model fits this endpoint, and if none fits, why is a generic business contract justified?
 7. Should the route own composition only, or is it incorrectly rebuilding producer logic?
 8. Must this API already be usable from Command Center or an AppComponent, and if so, does the FastAPI resource plus FastAPI `ResourceRelease` already exist?
+9. Is this endpoint specifically designed to serve workspace visualizations, and if so, should it live under `/workspace` to keep concerns properly separated?
 
 ## Build Rules
 
@@ -173,6 +174,24 @@ Do not present a local dev server, a local-only route, or an undiscovered API fi
 This skill owns the API contract and implementation. It does not own resource or release creation. Route that work to:
 
 - `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+
+### 1.5 Keep workspace-visualization routes under `/workspace`
+
+When building endpoints that are specifically designed to serve workspace visualizations, place them under a dedicated `/workspace` route prefix.
+
+Examples:
+
+- `/workspace/...`
+- `/workspace/charts/...`
+- `/workspace/widgets/...`
+
+This keeps workspace-facing visualization concerns separated from:
+
+- generic business API routes
+- external integration routes
+- producer-side publishing logic
+
+Do not scatter workspace-visualization endpoints across unrelated route groups when they are clearly meant to support Command Center workspace rendering.
 
 ### 2. Keep route handlers thin
 
@@ -291,6 +310,7 @@ When reviewing an API change, look for:
 - missing load/use of the AppComponents skill when the endpoint is part of an AppComponent flow
 - missing load/use of the workspace-builder skill when the endpoint is tied to a mounted workspace widget
 - a non-FastAPI proposal without an explicit repository reason
+- workspace-visualization endpoints placed outside a dedicated `/workspace` route group without a clear repository reason
 - route handlers doing too much
 - missing `response_model`
 - `LoggedUserContextMiddleware` added even though the route does not consume `request.state.user`
@@ -319,6 +339,7 @@ Do not claim success until you have checked:
 - `SimpleTableUpdater.execute_filter(...)` is used when the route reads simple-table rows
 - middleware is present when request-local user context is required
 - middleware is absent when the route does not consume `request.state.user`
+- endpoints built specifically for workspace visualizations live under `/workspace`
 - immediate client feedback endpoints use `NotificationDefinition` with `"x-ui-role": "notification"` when the route is acknowledging an action rather than returning business data
 - long-running or subprocess-spanning workflows use `mainsequence.client.Notification` for asynchronous user updates instead of relying on a one-shot HTTP response
 - widget-facing endpoints use exact SDK response contracts
@@ -343,6 +364,7 @@ If the endpoint is part of an AppComponent or workspace flow, also check:
 - the likely consumer is Command Center but the task is being treated as a generic API without loading the relevant Command Center skill
 - a route is being left without a `response_model`
 - `LoggedUserContextMiddleware` is being added without any concrete route-level need for `request.state.user`
+- workspace-visualization endpoints are being mixed into unrelated route groups without a clear reason
 - route parameters are being left effectively undocumented
 - the API route is duplicating producer logic instead of consuming published resources
 - the endpoint is supposed to feed a widget but no exact contract model is available

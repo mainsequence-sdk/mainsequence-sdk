@@ -9350,6 +9350,22 @@ def project_set_up_locally(
         error("Project not found/visible.")
         raise typer.Exit(1)
 
+    is_initialized = p.get("is_initialized")
+    if is_initialized is None:
+        try:
+            p = get_project(project_id)
+        except ApiError as e:
+            error(f"Could not verify project initialization status: {e}")
+            raise typer.Exit(1) from e
+        is_initialized = p.get("is_initialized")
+
+    if is_initialized is not True:
+        error(
+            "Project has not finished initializing yet. "
+            "Wait until is_initialized=true and try again."
+        )
+        raise typer.Exit(1)
+
     repo = _determine_repo_url(p)
     if not repo:
         error("No repository URL found for this project.")
