@@ -39,6 +39,12 @@ def _decode_jwt_exp_ms(access_token: str) -> int | None:
 
 
 def _refresh_and_collect_tokens() -> dict[str, Any]:
+    auth_mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
+    if auth_mode == "session_jwt":
+        raise _WorkspaceSnapshotError(
+            "MAINSEQUENCE_AUTH_MODE=session_jwt is not supported for Command Center workspace snapshots."
+        )
+
     loaders = AuthLoaders()
     loaders.refresh_headers(force=False)
 

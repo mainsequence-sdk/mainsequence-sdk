@@ -2690,21 +2690,6 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
         # Convert the dict to a JSON string
         return json.dumps(dump, **json_dumps_kwargs)
 
-    @classmethod
-    def get_default_data_source_for_token(cls):
-        global _default_data_source
-        if _default_data_source is not None:
-            return _default_data_source  # Return cached result if already set
-        url = cls.ROOT_URL + "/get_default_data_source_for_token/"
-
-        s = cls.build_session()
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, payload={})
-
-        if r.status_code != 200:
-            raise Exception(f"Error in request {r.text}")
-
-        return cls(**r.json())
-
     def persist_to_pickle(self, path):
         import cloudpickle
 
@@ -3546,26 +3531,6 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 
 def _build_local_pod_project_resolution() -> _PodProjectResolution:
-    if os.getenv("MAINSEQUENCE_TOKEN") is not None:
-        try:
-            project = Project.get_user_default_project()
-        except DoesNotExist:
-            return _PodProjectResolution(
-                project=None,
-                status="not_found",
-                detail="No default project found for the current MAINSEQUENCE_TOKEN.",
-            )
-        except Exception as exc:
-            return _PodProjectResolution(
-                project=None,
-                status="lookup_failed",
-                detail=(
-                    "Could not resolve the default project from MAINSEQUENCE_TOKEN: "
-                    f"{exc}"
-                ),
-            )
-        return _PodProjectResolution(project=project, status="resolved")
-
     running_project_id = (os.environ.get("MAIN_SEQUENCE_PROJECT_ID") or "").strip()
     if not running_project_id:
         return _PodProjectResolution(

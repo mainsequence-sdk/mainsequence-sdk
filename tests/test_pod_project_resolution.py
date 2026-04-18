@@ -13,7 +13,6 @@ def _reset_pod_project_resolution_cache():
 
 
 def test_resolve_local_pod_project_ignores_invalid_env_without_lookup(monkeypatch):
-    monkeypatch.delenv("MAINSEQUENCE_TOKEN", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "local")
 
     calls = {"project_get": 0}
@@ -33,7 +32,6 @@ def test_resolve_local_pod_project_ignores_invalid_env_without_lookup(monkeypatc
 
 
 def test_set_remote_db_warns_once_for_invalid_env(monkeypatch):
-    monkeypatch.delenv("MAINSEQUENCE_TOKEN", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "local")
 
     warnings = []
@@ -54,7 +52,6 @@ def test_set_remote_db_warns_once_for_invalid_env(monkeypatch):
 
 
 def test_resolve_local_pod_project_uses_pk_lookup_and_caches(monkeypatch):
-    monkeypatch.delenv("MAINSEQUENCE_TOKEN", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "123")
 
     calls = []
@@ -76,7 +73,6 @@ def test_resolve_local_pod_project_uses_pk_lookup_and_caches(monkeypatch):
 
 
 def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
-    monkeypatch.delenv("MAINSEQUENCE_TOKEN", raising=False)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
     monkeypatch.setattr(
         models_tdag.logger,

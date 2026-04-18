@@ -82,23 +82,21 @@ def _env_has_value(name: str) -> bool:
 
 
 def _default_auth_provider_kind() -> str | None:
-    mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "").strip().lower()
-    has_drf = _env_has_value("MAINSEQUENCE_TOKEN")
-    has_jwt = _env_has_value("MAINSEQUENCE_ACCESS_TOKEN") or _env_has_value(
-        "MAINSEQUENCE_REFRESH_TOKEN"
-    )
+    mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
+    has_access = _env_has_value("MAINSEQUENCE_ACCESS_TOKEN")
+    has_refresh = _env_has_value("MAINSEQUENCE_REFRESH_TOKEN")
 
-    # The pod/runtime token must dominate any JWT state in the process.
-    if has_drf:
-        return "drf"
-
-    if mode == "drf":
-        return "drf"
+    if mode == "session_jwt":
+        if has_access or has_refresh:
+            return "session_jwt"
+        return None
 
     if mode == "jwt":
-        return "jwt"
+        if has_access or has_refresh:
+            return "jwt"
+        return None
 
-    if has_jwt:
+    if has_access or has_refresh:
         return "jwt"
 
     return None
@@ -138,34 +136,44 @@ class BaseAuthProvider:
 
 
 @dataclass
-class DRFTokenAuthProvider(BaseAuthProvider):
-    token: str | None = None
-    token_env_var: str = "MAINSEQUENCE_TOKEN"
-    header_keyword: str = "Token"
+class SessionJWTAuthProvider(BaseAuthProvider):
+    access_token: str | None = None
+    refresh_token: str | None = None
+    header_keyword: str = "Bearer"
 
-    def _current_token(self) -> str:
-        token = self.token or os.getenv(self.token_env_var)
-        if not token:
-            raise AuthError(f"{self.token_env_var} is not set")
-        return token
+    def __post_init__(self):
+        if self.access_token is None:
+            self.access_token = os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
+        if self.refresh_token is None:
+            self.refresh_token = os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+        if self.refresh_token:
+            raise AuthError(
+                "MAINSEQUENCE_REFRESH_TOKEN is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt."
+            )
 
     def get_headers(self) -> CaseInsensitiveDict:
+        if not self.access_token:
+            raise AuthError(
+                "MAINSEQUENCE_ACCESS_TOKEN is required when MAINSEQUENCE_AUTH_MODE=session_jwt."
+            )
+
         return CaseInsensitiveDict(
             {
-                "Authorization": f"{self.header_keyword} {self._current_token()}",
+                "Authorization": f"{self.header_keyword} {self.access_token}",
             }
         )
 
     def refresh(
-            self,
-            *,
-            force: bool = False,
-            session: requests.Session | None = None,
+        self,
+        *,
+        force: bool = False,
+        session: requests.Session | None = None,
     ) -> None:
-        # DRF token has no refresh endpoint in this client.
-        # Re-read from runtime/env in case caller rotated it externally.
-        if self.token is None and not os.getenv(self.token_env_var):
-            raise AuthError(f"{self.token_env_var} is not set")
+        if force:
+            raise AuthError(
+                "Refresh is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt."
+            )
+        return None
 
 
 @dataclass
@@ -299,15 +307,15 @@ def request_to_datetime(string_date: str):
 def build_default_auth_provider() -> BaseAuthProvider:
     provider_kind = _default_auth_provider_kind()
 
-    if provider_kind == "drf":
-        return DRFTokenAuthProvider()
+    if provider_kind == "session_jwt":
+        return SessionJWTAuthProvider()
 
     if provider_kind == "jwt":
         return JWTAuthProvider()
 
     raise AuthError(
         "No auth configured. Set MAINSEQUENCE_ACCESS_TOKEN / "
-        "MAINSEQUENCE_REFRESH_TOKEN (preferred) or MAINSEQUENCE_TOKEN."
+        "MAINSEQUENCE_REFRESH_TOKEN."
     )
 
 
@@ -322,8 +330,8 @@ class AuthLoaders:
     def _provider(self) -> BaseAuthProvider:
         provider_kind = _default_auth_provider_kind()
 
-        if provider_kind == "drf" and not isinstance(self.provider, DRFTokenAuthProvider):
-            self.provider = DRFTokenAuthProvider()
+        if provider_kind == "session_jwt" and not isinstance(self.provider, SessionJWTAuthProvider):
+            self.provider = SessionJWTAuthProvider()
         elif provider_kind == "jwt" and not isinstance(self.provider, JWTAuthProvider):
             self.provider = JWTAuthProvider()
         elif self.provider is None:
@@ -343,11 +351,11 @@ class AuthLoaders:
         provider.refresh(force=force, session=session)
         return provider.get_headers()
 
-    def use_drf_token(self, token: str):
-        self.provider = DRFTokenAuthProvider(token=token)
-
     def use_jwt(self, *, access: str | None = None, refresh: str | None = None):
         self.provider = JWTAuthProvider(access_token=access, refresh_token=refresh)
+
+    def use_session_jwt(self, *, access: str | None = None):
+        self.provider = SessionJWTAuthProvider(access_token=access, refresh_token=None)
 
     def clear_auth(self):
         self.provider = None

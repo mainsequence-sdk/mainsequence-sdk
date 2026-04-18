@@ -7952,7 +7952,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
-    assert "MAINSEQUENCE_TOKEN=" not in env_text
+    assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
 
 
 def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, monkeypatch, tmp_path):
@@ -8035,7 +8035,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
-    assert "MAINSEQUENCE_TOKEN=" not in env_text
+    assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 

@@ -59,11 +59,13 @@ class CustomConsoleRenderer(ConsoleRenderer):
 
 def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     """
-    Fetch startup state from backend using current env vars (legacy pod token preferred, endpoint, command_id).
+    Fetch startup state from backend using current env vars (JWT auth, endpoint, job_run_id, command_id).
     Safe to call later after auth when access/refresh tokens become available.
     """
     if not is_running_in_pod():
         return {}
+
+    auth_mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
 
     def _backend_base_url() -> str:
         return (
@@ -76,11 +78,6 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         headers = CaseInsensitiveDict()
         headers["Content-Type"] = "application/json"
 
-        legacy_token = (os.getenv("MAINSEQUENCE_TOKEN") or "").strip()
-        if legacy_token:
-            headers["Authorization"] = "Token " + legacy_token
-            return headers, False
-
         access_token = (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
         if access_token:
             headers["Authorization"] = "Bearer " + access_token
@@ -89,6 +86,9 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         return headers, False
 
     def _refresh_access_token() -> bool:
+        if auth_mode == "session_jwt":
+            return False
+
         refresh_token = (os.getenv("MAINSEQUENCE_REFRESH_TOKEN") or "").strip()
         if not refresh_token:
             return False
@@ -121,15 +121,25 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = new_refresh_token
         return True
 
+    if auth_mode == "session_jwt" and os.getenv("MAINSEQUENCE_REFRESH_TOKEN"):
+        raise RuntimeError(
+            "MAINSEQUENCE_REFRESH_TOKEN is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt."
+        )
+
     if (
-        not os.getenv("MAINSEQUENCE_TOKEN")
+        auth_mode != "session_jwt"
         and not os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
         and os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
     ):
         _refresh_access_token()
 
     headers, using_jwt = _auth_headers()
-    endpoint = f"{_backend_base_url()}/orm/api/pods/job/get_job_startup_state/"
+
+    job_run_id = (os.getenv("JOB_RUN_ID") or "").strip()
+    if not job_run_id:
+        return {}
+
+    endpoint = f"{_backend_base_url()}/orm/api/pods/job-run/{job_run_id}/startup-state/"
 
     command_id = os.getenv("COMMAND_ID")
     params: dict[str, Any] = {}

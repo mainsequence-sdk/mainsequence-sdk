@@ -1958,7 +1958,6 @@ def _render_project_runtime_env_text(
     Managed keys are rewritten from scratch to avoid duplicate stale entries.
     """
     managed_prefixes = (
-        "MAINSEQUENCE_TOKEN=",
         "MAINSEQUENCE_ACCESS_TOKEN=",
         "MAINSEQUENCE_REFRESH_TOKEN=",
         "TDAG_ENDPOINT=",

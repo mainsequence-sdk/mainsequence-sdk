@@ -7,7 +7,8 @@ def is_running_in_pod() -> bool:
     """
     Return whether the current process is running inside a MainSequence pod.
 
-    For now, pod runtime is identified by the presence of the legacy
-    `MAINSEQUENCE_TOKEN` environment variable.
+    Pod runtime is identified by execution markers injected by the platform.
+    Local workspaces may also set `MAIN_SEQUENCE_PROJECT_ID`, so that variable
+    must not be used as the pod-runtime discriminator.
     """
-    return bool((os.getenv("MAINSEQUENCE_TOKEN") or "").strip())
+    return bool((os.getenv("COMMAND_ID") or "").strip() or (os.getenv("JOB_RUN_ID") or "").strip())

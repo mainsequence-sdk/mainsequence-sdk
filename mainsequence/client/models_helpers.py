@@ -859,6 +859,44 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
 
         return r.json()
 
+    def job_run_status(
+        self,
+        *,
+        status: str | None = None,
+        git_hash: str | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Update the backend job-run status detail action for this run.
+
+        This hits:
+            POST /pods/job-run/{id}/status/
+        """
+        if self.id is None:
+            raise ValueError("JobRun must have an id before job run status can be updated.")
+
+        url = f"{self.get_object_url()}/{self.id}/status/"
+        s = self.build_session()
+        payload: dict[str, Any] = {}
+        if status is not None:
+            payload["status"] = status
+        if git_hash is not None:
+            payload["git_hash"] = git_hash
+
+        r = make_request(
+            s=s,
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+
+        if r.status_code != 200:
+            raise_for_response(r)
+
+        return r.json()
+
 
 
 class ProjectResource(BaseObjectOrm, BasePydanticModel):

@@ -72,10 +72,9 @@ class Configuration:
         assert (
             os.environ.get("MAINSEQUENCE_ACCESS_TOKEN")
             or os.environ.get("MAINSEQUENCE_REFRESH_TOKEN")
-            or os.environ.get("MAINSEQUENCE_TOKEN")
         ), (
             "Authentication env is missing. Set MAINSEQUENCE_ACCESS_TOKEN / "
-            "MAINSEQUENCE_REFRESH_TOKEN (preferred) or MAINSEQUENCE_TOKEN."
+            "MAINSEQUENCE_REFRESH_TOKEN."
         )
 
     def _build_template_yaml(self):

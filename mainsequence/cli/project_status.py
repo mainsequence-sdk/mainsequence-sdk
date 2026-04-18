@@ -182,7 +182,6 @@ def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bo
     markers = [
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
-        "MAINSEQUENCE_TOKEN",
         "TDAG_ENDPOINT",
     ]
     try:
@@ -192,7 +191,7 @@ def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bo
         content = p.read_text(encoding="utf-8", errors="replace")
         found = [m for m in markers if re.search(rf"^{re.escape(m)}=", content, flags=re.M)]
         has_auth_marker = bool(
-            {"MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN", "MAINSEQUENCE_TOKEN"}.intersection(found)
+            {"MAINSEQUENCE_ACCESS_TOKEN", "MAINSEQUENCE_REFRESH_TOKEN"}.intersection(found)
         )
         return env_path, True, found, has_auth_marker
     except Exception:

@@ -6,6 +6,7 @@ import pytest
 from pydantic import ConfigDict, Field
 
 import mainsequence.client.base as base_mod
+import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 
@@ -104,6 +105,37 @@ class DemoAliasedPatchModel(BasePydanticModel, BaseObjectOrm):
     @classmethod
     def build_session(cls):
         return object()
+
+
+def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
+    job_run = models_helpers_mod.JobRun(
+        id=501,
+        name="demo-run",
+        unique_identifier="jobrun_501",
+    )
+
+    captured: dict[str, object] = {}
+
+    class _FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {"message": "Job status updated to RUNNING."}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out):
+        captured["url"] = url
+        captured["r_type"] = r_type
+        captured["payload"] = payload
+        return _FakeResponse()
+
+    monkeypatch.setattr(models_helpers_mod, "make_request", _fake_make_request)
+
+    payload = job_run.job_run_status(status="RUNNING", git_hash="abc123", timeout=30)
+
+    assert payload == {"message": "Job status updated to RUNNING."}
+    assert captured["r_type"] == "POST"
+    assert captured["payload"] == {"status": "RUNNING", "git_hash": "abc123"}
+    assert str(captured["url"]).endswith("/orm/api/pods/job-run/501/status/")
 
 
 def test_normalize_filter_kwargs_coerces_supported_values():
