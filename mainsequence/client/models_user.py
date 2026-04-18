@@ -977,6 +977,53 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         return self.plan if self.plan is not None else self.active_plan_type
 
     @classmethod
+    def _build_request_bound_identity_user(
+        cls,
+        *,
+        normalized_headers: Mapping[str, Any],
+        user_id: int,
+    ):
+        username = str(
+            normalized_headers.get("X-Username")
+            or normalized_headers.get("x-username")
+            or normalized_headers.get("X-User-Email")
+            or normalized_headers.get("x-user-email")
+            or f"user-{user_id}"
+        ).strip() or f"user-{user_id}"
+        email = str(
+            normalized_headers.get("X-User-Email")
+            or normalized_headers.get("x-user-email")
+            or username
+        ).strip() or username
+
+        payload = {
+            "id": user_id,
+            "username": username,
+            "email": email,
+            "date_joined": None,
+            "is_active": True,
+            "last_login": None,
+            "api_request_limit": None,
+            "mfa_enabled": False,
+            "organization": None,
+            "phone_number": None,
+            "plan": None,
+            "active_plan_type": None,
+            "groups": [],
+            "user_permissions": [],
+            "organization_teams": [],
+            "is_verified": None,
+            "blocked_access": None,
+            "requires_password_change": None,
+            "identity_platform_uid": None,
+        }
+
+        model_construct = getattr(cls, "model_construct", None)
+        if callable(model_construct):
+            return model_construct(**payload)
+        return cls.construct(**payload)
+
+    @classmethod
     def get_authenticated_user_details(cls):
         """
         Resolve the authenticated user from the active SDK auth session.
@@ -1082,6 +1129,15 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
             normalized_headers[key_str] = value
             normalized_headers[key_str.lower()] = value
 
+        authorization_value = (
+            normalized_headers.get("Authorization")
+            or normalized_headers.get("authorization")
+        )
+        has_bearer_authorization = bool(
+            authorization_value
+            and str(authorization_value).split(" ", 1)[0].lower() == "bearer"
+        )
+
         user_id_raw = (
             normalized_headers.get("X-User-ID")
             or normalized_headers.get("x-user-id")
@@ -1090,7 +1146,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         )
 
         if user_id_raw in (None, ""):
-            if normalized_headers.get("authorization") and "Bearer" in normalized_headers.get("authorization"):
+            if has_bearer_authorization:
                 outgoing_authorization = None
                 outgoing_authorization_scheme = None
                 try:
@@ -1162,6 +1218,18 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                 context["authorization_scheme"],
             )
             raise RuntimeError(f"Invalid X-User-ID value: {user_id_raw!r}") from exc
+
+        if not has_bearer_authorization:
+            user = cls._build_request_bound_identity_user(
+                normalized_headers=normalized_headers,
+                user_id=user_id,
+            )
+            _CURRENT_USER.set(user)
+            logger.info(
+                "User.get_logged_user resolved user_id=%s via request identity headers without backend auth",
+                user.id,
+            )
+            return user
 
         user = cls._get_request_bound_user(headers=headers, user_id=user_id)
         _CURRENT_USER.set(user)
