@@ -18,6 +18,7 @@ from .base import (
 )
 from .exceptions import ApiError, raise_for_response
 from .utils import (
+    DEFAULT_TIMEOUT,
     make_request,
 )
 
@@ -93,6 +94,29 @@ def _logged_user_header_context(
         "authorization_present": bool(authorization),
         "authorization_scheme": authorization_scheme,
     }
+
+
+def _build_request_bound_outbound_headers(headers: Mapping[str, Any]) -> dict[str, str]:
+    excluded = {
+        "connection",
+        "content-length",
+        "host",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "trailers",
+        "transfer-encoding",
+        "upgrade",
+    }
+    outbound: dict[str, str] = {}
+    for key, value in headers.items():
+        key_str = str(key)
+        if key_str.lower() in excluded:
+            continue
+        outbound[key_str] = str(value)
+    return outbound
 
 class Organization(BasePydanticModel):
     id: int = Field(
@@ -981,6 +1005,35 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         return cls.parse_obj(data)
 
     @classmethod
+    def _get_request_bound_user(
+        cls,
+        *,
+        headers: Mapping[str, Any],
+        user_id: int | None = None,
+    ) -> User:
+        outbound_headers = _build_request_bound_outbound_headers(headers)
+        if user_id is None:
+            url = f"{cls.get_object_url()}/get_user_details/"
+            params = None
+        else:
+            url = f"{cls.get_object_url()}/{user_id}/"
+            params = {"serializer": "full"}
+
+        response = cls.build_session().get(
+            url,
+            headers=outbound_headers,
+            params=params,
+            timeout=DEFAULT_TIMEOUT,
+        )
+        raise_for_response(response)
+
+        data = response.json()
+        if hasattr(cls, "model_validate"):
+            return cls.model_validate(data)
+
+        return cls.parse_obj(data)
+
+    @classmethod
     def get_logged_user(cls) -> User:
         """
         Resolve the current user from request-bound identity context.
@@ -1041,16 +1094,15 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                 outgoing_authorization = None
                 outgoing_authorization_scheme = None
                 try:
-                    outgoing_headers = cls.LOADERS.auth_headers
-                    outgoing_authorization = (
-                        outgoing_headers.get("Authorization")
-                        or outgoing_headers.get("authorization")
+                    outgoing_headers = _build_request_bound_outbound_headers(headers)
+                    outgoing_authorization = outgoing_headers.get("Authorization") or outgoing_headers.get(
+                        "authorization"
                     )
                     if outgoing_authorization:
                         outgoing_authorization_scheme = str(outgoing_authorization).split(" ", 1)[0]
                 except Exception as auth_exc:
                     logger.exception(
-                        "User.get_logged_user could not inspect outgoing auth headers "
+                        "User.get_logged_user could not inspect request-bound outgoing auth headers "
                         "for /user/api/user/get_user_details/: %s",
                         auth_exc,
                     )
@@ -1061,7 +1113,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                     outgoing_authorization_scheme,
                 )
                 try:
-                    user = cls.get_authenticated_user_details()
+                    user = cls._get_request_bound_user(headers=headers)
                 except Exception:
                     context = _logged_user_header_context(headers, header_source=header_source)
                     logger.exception(
@@ -1075,6 +1127,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
                         context["authorization_scheme"],
                     )
                     raise
+                _CURRENT_USER.set(user)
                 logger.info(
                     "User.get_logged_user resolved user_id=%s via bearer fallback",
                     user.id,
@@ -1110,7 +1163,8 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
             )
             raise RuntimeError(f"Invalid X-User-ID value: {user_id_raw!r}") from exc
 
-        user = cls.get(pk=user_id, serializer="full")
+        user = cls._get_request_bound_user(headers=headers, user_id=user_id)
+        _CURRENT_USER.set(user)
         logger.info(
             "User.get_logged_user resolved user_id=%s via X-User-ID header",
             user.id,
