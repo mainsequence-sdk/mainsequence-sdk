@@ -649,6 +649,13 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         description="Simple table storage referenced by this update.",
     )
     tags: list[str] | None = Field(default=[], description="List of tags")
+    labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Organizational labels attached to the simple table update. "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+    )
     description: str | None = Field(None, description="Optional HTML description")
     update_details: SimpleTableUpdateDetails | int | None = None
     run_configuration: SimpleTableRunConfiguration | None = None

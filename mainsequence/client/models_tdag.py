@@ -275,6 +275,13 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     data_node_storage: int | DataNodeStorage
     tags: list[str] | None = Field(default=[], description="List of tags")
+    labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Organizational labels attached to the local time series update. "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+    )
     description: str | None = Field(None, description="Optional HTML description")
     update_details: DataNodeUpdateDetails | int | None = None
     run_configuration: RunConfiguration | None = None
