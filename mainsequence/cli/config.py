@@ -350,12 +350,13 @@ def get_tokens() -> dict:
     """
     Return auth tokens from environment variables, with persistent-store fallback.
     """
+    runtime_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "runtime_credential"
     tokens = {
         "username": os.environ.get(ENV_USERNAME) or os.environ.get(LEGACY_ENV_USERNAME, ""),
         "access": os.environ.get(ENV_ACCESS) or os.environ.get(LEGACY_ENV_ACCESS, ""),
         "refresh": os.environ.get(ENV_REFRESH) or os.environ.get(LEGACY_ENV_REFRESH, ""),
     }
-    if tokens["access"] and tokens["refresh"]:
+    if tokens["access"] and (tokens["refresh"] or runtime_mode):
         return tokens
 
     for secret in (_read_secure_tokens(), _read_local_tokens()):
@@ -366,7 +367,7 @@ def get_tokens() -> dict:
             "access": tokens["access"] or secret.get("access", ""),
             "refresh": tokens["refresh"] or secret.get("refresh", ""),
         }
-        if tokens["access"] and tokens["refresh"]:
+        if tokens["access"] and (tokens["refresh"] or runtime_mode):
             break
     return tokens
 

@@ -1795,6 +1795,166 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     assert cleared["called"] is True
 
 
+def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
+    cleared = {"called": False}
+    exchange = {"called": False}
+    saved = {}
+
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+
+    def _exchange_runtime_credential_for_cli_login(backend_url):
+        exchange["called"] = True
+        exchange["backend_url"] = backend_url
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = "runtime-access"
+        return "runtime-access"
+
+    monkeypatch.setattr(
+        cli_mod,
+        "_exchange_runtime_credential_for_cli_login",
+        _exchange_runtime_credential_for_cli_login,
+    )
+    monkeypatch.setattr(cli_mod, "login_via_browser", lambda **kwargs: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "save_tokens",
+        lambda username, access, refresh: saved.update(username=username, access=access, refresh=refresh) or True,
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+
+    result = runner.invoke(cli_mod.app, ["login"])
+
+    assert result.exit_code == 0
+    assert exchange["called"] is True
+    assert exchange["backend_url"]
+    assert saved == {"username": "", "access": "runtime-access", "refresh": ""}
+    assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "runtime-access"
+    assert "Signed in with runtime credential" in result.output
+    assert "no CLI JWT refresh token exists" in result.output
+    assert "re-exchange the runtime credential automatically" in result.output
+    assert cleared["called"] is True
+
+
+def test_login_runtime_credential_export(monkeypatch, cli_mod, runner):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setattr(
+        cli_mod,
+        "_exchange_runtime_credential_for_cli_login",
+        lambda backend_url: "runtime-access",
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+
+    result = runner.invoke(cli_mod.app, ["login", "--export"])
+
+    assert result.exit_code == 0
+    assert 'export MAINSEQUENCE_AUTH_MODE="runtime_credential"' in result.output
+    assert 'export MAINSEQUENCE_ACCESS_TOKEN="runtime-access"' in result.output
+    assert "MAINSEQUENCE_REFRESH_TOKEN" not in result.output
+
+
+def test_login_runtime_credential_uses_backend_override(cli_mod, runner, monkeypatch):
+    seen = {}
+    session_override = {}
+
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setattr(
+        cli_mod,
+        "_exchange_runtime_credential_for_cli_login",
+        lambda backend_url: seen.update(backend_url=backend_url) or "runtime-access",
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
+    monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
+    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "login",
+            "--backend",
+            "http://127.0.0.1:8000",
+            "--projects-base",
+            "mainsequence-dev",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert seen["backend_url"] == "http://127.0.0.1:8000"
+    assert session_override == {
+        "backend_url": "http://127.0.0.1:8000",
+        "mainsequence_path": "mainsequence-dev",
+    }
+    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+
+
+def test_login_runtime_credential_rejects_manual_jwt(cli_mod, runner, monkeypatch):
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["login", "--access-token", "acc-123", "--refresh-token", "ref-456"],
+    )
+
+    assert result.exit_code == 1
+    assert "Runtime credential login cannot be combined" in result.output
+
+
+def test_api_refresh_access_runtime_credential_reexchange(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "", "refresh": ""})
+    monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
+
+    saved = {}
+
+    def _save_tokens(username, access, refresh):
+        saved["username"] = username
+        saved["access"] = access
+        saved["refresh"] = refresh
+        return True
+
+    monkeypatch.setattr(api_mod, "save_tokens", _save_tokens)
+
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+
+    class _Provider:
+        def __init__(self, token_url):
+            saved["token_url"] = token_url
+
+        def refresh(self, force=False):
+            saved["force"] = force
+            os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = "runtime-new-access"
+
+    fake_utils.RuntimeCredentialAuthProvider = _Provider
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+
+    out = api_mod.refresh_access()
+    assert out == "runtime-new-access"
+    assert saved["token_url"] == "http://127.0.0.1:8000/orm/api/pods/runtime-credentials/token/"
+    assert saved["force"] is True
+    assert saved["access"] == "runtime-new-access"
+    assert saved["refresh"] == ""
+
+
 def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch):
     session_override = {}
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
@@ -2095,6 +2255,25 @@ def test_config_get_tokens_fallback_local_store(cli_mod, monkeypatch, tmp_path):
     assert out["username"] == "u@example.com"
     assert out["access"] == "acc"
     assert out["refresh"] == "ref"
+
+
+def test_config_get_tokens_runtime_mode_allows_access_without_refresh(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    cli_mod.cfg.write_json(
+        auth_json,
+        {"username": "u@example.com", "access": "acc", "refresh": ""},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
+
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "u@example.com"
+    assert out["access"] == "acc"
+    assert out["refresh"] == ""
 
 
 def test_config_get_tokens_prefers_env_over_local_store(cli_mod, monkeypatch, tmp_path):
@@ -4678,8 +4857,8 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
 
     out = api_mod.get_logged_user_details()
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["headers_set"] == {"X-User-ID": "7"}
-    assert captured["headers_seen"] == {"X-User-ID": "7"}
+    assert captured["headers_set"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}
+    assert captured["headers_seen"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}
     assert captured["headers_reset"] == "token"
     assert out["username"] == "jose"
 

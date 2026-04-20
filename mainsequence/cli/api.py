@@ -178,6 +178,28 @@ def refresh_access() -> str:
         NotLoggedIn: if refresh is missing or refresh fails
     """
     refresh = _refresh_token()
+    runtime_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "runtime_credential"
+
+    if not refresh and runtime_mode:
+        try:
+            from mainsequence.client.utils import RuntimeCredentialAuthProvider
+        except Exception as exc:
+            raise NotLoggedIn(f"Runtime credential auth is unavailable: {exc}") from exc
+
+        token_url = f"{backend_url().rstrip('/')}/orm/api/pods/runtime-credentials/token/"
+        try:
+            RuntimeCredentialAuthProvider(token_url=token_url).refresh(force=True)
+        except Exception as exc:
+            raise NotLoggedIn(f"Runtime credential exchange failed: {exc}") from exc
+
+        access = (os.environ.get("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
+        if not access:
+            raise NotLoggedIn("Runtime credential exchange did not produce MAINSEQUENCE_ACCESS_TOKEN.")
+
+        tokens = get_tokens()
+        save_tokens(tokens.get("username") or "", access, "")
+        return access
+
     if not refresh:
         raise NotLoggedIn("Not logged in. Run `mainsequence login`.")
 
@@ -422,7 +444,8 @@ def get_logged_user_details() -> dict[str, Any]:
 
     The CLI does not naturally run inside a request context, so this bridge resolves
     the current user id from the authenticated API session and temporarily binds
-    `X-User-ID` into `mainsequence.client.models_user._CURRENT_AUTH_HEADERS`
+    `X-User-ID` plus `Authorization` into
+    `mainsequence.client.models_user._CURRENT_AUTH_HEADERS`
     before calling the SDK method.
     """
     tokens = get_tokens()
@@ -486,7 +509,12 @@ def get_logged_user_details() -> dict[str, Any]:
 
         BaseObjectOrm.ROOT_URL = root_url
         ClientUser.ROOT_URL = root_url
-        headers_token = current_auth_headers.set({"X-User-ID": str(user_id)})
+        headers_token = current_auth_headers.set(
+            {
+                "X-User-ID": str(user_id),
+                "Authorization": f"Bearer {access}",
+            }
+        )
 
         user = ClientUser.get_logged_user()
         if isinstance(user, dict):

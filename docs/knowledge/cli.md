@@ -28,6 +28,10 @@ The CLI stores config and tokens in a platform-specific directory:
 - `MAIN_SEQUENCE_BACKEND_URL` overrides the configured backend URL.
 - `MAINSEQUENCE_ACCESS_TOKEN` and `MAINSEQUENCE_REFRESH_TOKEN` can be used to provide JWT auth for the current process.
 
+For the full authentication model, including runtime credential auth and request-bound auth, see [Authentication](infrastructure/auth.md).
+
+When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, `mainsequence login` exchanges the configured runtime credential instead of opening browser login. Use `mainsequence login --export` if the current shell needs the exchanged `MAINSEQUENCE_ACCESS_TOKEN`.
+
 ## Quickstart
 
 ```bash

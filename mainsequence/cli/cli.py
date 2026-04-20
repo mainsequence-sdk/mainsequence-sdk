@@ -756,6 +756,28 @@ def _require_login() -> dict:
         raise typer.Exit(1) from e
 
 
+def _runtime_credential_mode_enabled() -> bool:
+    return (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "runtime_credential"
+
+
+def _exchange_runtime_credential_for_cli_login(backend_url: str) -> str:
+    try:
+        from mainsequence.client.utils import RuntimeCredentialAuthProvider
+    except Exception as exc:
+        raise ApiError(f"Runtime credential auth is unavailable: {exc}") from exc
+
+    token_url = f"{backend_url.rstrip('/')}/orm/api/pods/runtime-credentials/token/"
+    try:
+        RuntimeCredentialAuthProvider(token_url=token_url).refresh(force=True)
+    except Exception as exc:
+        raise ApiError(f"Runtime credential exchange failed: {exc}") from exc
+
+    access = (os.environ.get("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
+    if not access:
+        raise ApiError("Runtime credential exchange did not produce MAINSEQUENCE_ACCESS_TOKEN.")
+    return access
+
+
 def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Path:
     """
     Resolve project directory by:
@@ -2038,6 +2060,10 @@ def login(
     Interactive login uses browser-based authentication and finishes with
     standard JWT access/refresh tokens persisted by the CLI.
 
+    If `MAINSEQUENCE_AUTH_MODE=runtime_credential`, login exchanges the
+    configured runtime credential for a short-lived access token instead of
+    opening the browser or persisting CLI JWT tokens.
+
     Parameters
     ----------
     backend:
@@ -2066,9 +2092,21 @@ def login(
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH"
     mainsequence login --access-token "$TOKEN" --refresh-token "$REFRESH" --backend http://127.0.0.1:8000 --projects-base mainsequence-dev
     mainsequence login --export
+    MAINSEQUENCE_AUTH_MODE=runtime_credential mainsequence login
     ```
     """
     using_jwt = bool((access_token or "").strip() or (refresh_token or "").strip())
+    using_runtime_credential = _runtime_credential_mode_enabled()
+
+    if using_runtime_credential and using_jwt:
+        error(
+            "Runtime credential login cannot be combined with "
+            "--access-token/--refresh-token."
+        )
+        raise typer.Exit(1)
+
+    if using_runtime_credential and no_open:
+        warn("--no-open is ignored when MAINSEQUENCE_AUTH_MODE=runtime_credential.")
 
     if not using_jwt and backend and "@" in backend:
         error(
@@ -2112,7 +2150,18 @@ def login(
         os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
 
     try:
-        if using_jwt:
+        if using_runtime_credential:
+            access = _exchange_runtime_credential_for_cli_login(normalized_backend or current_backend)
+            persisted = cfg.save_tokens("", access, "")
+            res = {
+                "username": "",
+                "backend": normalized_backend or current_backend,
+                "access": access,
+                "refresh": "",
+                "persisted": bool(persisted),
+                "auth_mode": "runtime_credential",
+            }
+        elif using_jwt:
             os.environ.pop(cfg.ENV_USERNAME, None)
             os.environ.pop(cfg.LEGACY_ENV_USERNAME, None)
             persisted = cfg.save_tokens("", (access_token or "").strip(), (refresh_token or "").strip())
@@ -2122,6 +2171,7 @@ def login(
                 "access": (access_token or "").strip(),
                 "refresh": (refresh_token or "").strip(),
                 "persisted": bool(persisted),
+                "auth_mode": "jwt",
             }
         else:
             def _emit_auth_url(url: str) -> None:
@@ -2150,6 +2200,7 @@ def login(
                 "access": access,
                 "refresh": refresh,
                 "persisted": bool(persisted),
+                "auth_mode": "jwt",
             }
     except BrowserAuthError as e:
         error(f"Browser login failed: {e}")
@@ -2176,8 +2227,12 @@ def login(
         access = (res.get("access") or "").replace('"', '\\"')
         refresh = (res.get("refresh") or "").replace('"', '\\"')
         username = (res.get("username") or "").replace('"', '\\"')
+        auth_mode = (res.get("auth_mode") or "").replace('"', '\\"')
+        if auth_mode:
+            typer.echo(f'export MAINSEQUENCE_AUTH_MODE="{auth_mode}"')
         typer.echo(f'export MAINSEQUENCE_ACCESS_TOKEN="{access}"')
-        typer.echo(f'export MAINSEQUENCE_REFRESH_TOKEN="{refresh}"')
+        if refresh:
+            typer.echo(f'export MAINSEQUENCE_REFRESH_TOKEN="{refresh}"')
         if username:
             typer.echo(f'export MAINSEQUENCE_USERNAME="{username}"')
         return
@@ -2188,11 +2243,16 @@ def login(
     typer.echo("MAIN SEQUENCE")
     if res.get("username"):
         success(f"Signed in as {res['username']} (Backend: {res['backend']})")
+    elif res.get("auth_mode") == "runtime_credential":
+        success(f"Signed in with runtime credential (Backend: {res['backend']})")
     else:
         success(f"Signed in with JWT tokens (Backend: {res['backend']})")
     info(f"Projects base folder: {base}")
     auth_store_label = cfg.auth_persistence_label()
-    if res.get("persisted", True):
+    if res.get("auth_mode") == "runtime_credential":
+        info(f"Runtime credential access token is persisted in {auth_store_label}; no CLI JWT refresh token exists.")
+        info("When the access token expires, CLI will re-exchange the runtime credential automatically.")
+    elif res.get("persisted", True):
         info(f"Auth tokens are persisted in {auth_store_label} for subsequent CLI commands.")
     else:
         warn(f"Could not persist auth tokens in {auth_store_label}. Use --export for shell-based auth.")

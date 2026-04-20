@@ -134,6 +134,20 @@ MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
 ```
 
+To explicitly perform the exchange from the CLI, run:
+
+```bash
+mainsequence login
+```
+
+In runtime credential mode, `mainsequence login` does not open browser login and does not persist CLI JWT refresh tokens. It exchanges the configured runtime credential and stores the returned access token in `MAINSEQUENCE_ACCESS_TOKEN` for that process.
+
+If the parent shell needs the exchanged token, use:
+
+```bash
+eval "$(mainsequence login --export)"
+```
+
 Functionally:
 
 - the credential id and secret identify the runtime

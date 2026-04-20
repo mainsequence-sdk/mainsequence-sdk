@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Removed unsupported `MAINSEQUENCE_TOKEN` authentication from the SDK runtime and auth loader paths. JWT access/refresh tokens are now the only supported authentication mechanism.
 - Added `MAINSEQUENCE_AUTH_MODE=runtime_credential` for runtime credential authentication. This mode behaves like JWT access-only request auth, but refreshes by exchanging `MAINSEQUENCE_RUNTIME_CREDENTIAL_ID` and `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` for a new access token.
 - Runtime credential auth writes exchanged access tokens to `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment and does not use `MAINSEQUENCE_REFRESH_TOKEN`.
+- Made `mainsequence login` runtime-credential-aware: when `MAINSEQUENCE_AUTH_MODE=runtime_credential`, it exchanges the configured runtime credential instead of opening browser login or persisting CLI JWT refresh tokens.
 - Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth instead of the removed legacy token path.
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
 
