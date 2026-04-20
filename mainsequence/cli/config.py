@@ -21,6 +21,8 @@ import subprocess
 import sys
 import time
 
+from mainsequence.defaults import STANDARD_BACKEND_URL
+
 APP_NAME = "MainSequenceCLI"
 
 
@@ -62,7 +64,7 @@ KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
 
 DEFAULTS = {
-    "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", "https://api.main-sequence.io/"),
+    "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", f"{STANDARD_BACKEND_URL}/"),
     "mainsequence_path": str(pathlib.Path.home() / "mainsequence"),
     "version": 1,
 }
@@ -212,7 +214,7 @@ def set_backend_url(url: str) -> dict:
     Convenience helper to set backend_url in config.json.
 
     Args:
-        url: Backend base URL (e.g. https://api.main-sequence.io)
+        url: Backend base URL.
 
     Returns:
         dict: updated config

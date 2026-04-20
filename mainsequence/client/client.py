@@ -7,6 +7,8 @@ from typing import Any
 
 import requests
 
+from mainsequence.defaults import STANDARD_BACKEND_URL
+
 from .exceptions import raise_for_response
 from .utils import AuthLoaders, build_session
 from .utils import loaders as _global_loaders
@@ -19,7 +21,7 @@ class MainSequenceClientConfig:
     endpoint: str = (
         os.getenv("MAINSEQUENCE_ENDPOINT")
         or os.getenv("TDAG_ENDPOINT")
-        or "https://api.main-sequence.app"
+        or STANDARD_BACKEND_URL
     )
     api_prefix: str = "/orm/api"
     # (connect, read) — align with your utils DEFAULT_TIMEOUT behavior

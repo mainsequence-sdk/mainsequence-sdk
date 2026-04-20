@@ -21,13 +21,14 @@ from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
 from urllib3.util.retry import Retry
 
+from mainsequence.defaults import STANDARD_BACKEND_URL
 from mainsequence.logconf import logger
 
 # ---- Backend defaults (single source of truth) ----
 TDAG_ENDPOINT = (
     os.environ.get("TDAG_ENDPOINT")
     or os.environ.get("MAINSEQUENCE_ENDPOINT")
-    or "https://api.main-sequence.app"
+    or STANDARD_BACKEND_URL
 )
 API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
 AUTH_ENDPOINT = TDAG_ENDPOINT.rstrip("/")
@@ -72,8 +73,8 @@ class AuthError(Exception):
 def _jwt_reauth_hint() -> str:
     return (
         " Refresh your credentials with `mainsequence logout` and "
-        "`mainsequence login <email>`. If this code runs in a separate shell or IDE, "
-        "use `mainsequence login <email> --export` and load the exported env vars there."
+        "`mainsequence login`. If this code runs in a separate shell or IDE, "
+        "use `mainsequence login --export` and load the exported env vars there."
     )
 
 

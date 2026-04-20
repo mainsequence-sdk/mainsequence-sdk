@@ -1540,6 +1540,46 @@ def test_settings_set_backend_json(cli_mod, runner, monkeypatch):
     assert payload["backend_url"] == "https://example.test"
 
 
+def test_settings_reset(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "DEFAULTS",
+        {"backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/", "mainsequence_path": "/tmp/mainsequence", "version": 1},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_config",
+        lambda updates: captured.update(updates) or updates | {"updated_at": "2026-04-20T00:00:00Z"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: captured.update(cleared=True))
+
+    result = runner.invoke(cli_mod.app, ["settings", "reset"])
+    assert result.exit_code == 0
+    assert captured["backend_url"] == cli_mod.cfg.STANDARD_BACKEND_URL
+    assert captured["mainsequence_path"].endswith("/tmp/mainsequence")
+    assert captured["cleared"] is True
+    assert "Settings reset to standard defaults" in result.output
+
+
+def test_settings_refresh_alias(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "DEFAULTS",
+        {"backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/", "mainsequence_path": "/tmp/mainsequence", "version": 1},
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_config",
+        lambda updates: updates | {"updated_at": "2026-04-20T00:00:00Z"},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+
+    result = runner.invoke(cli_mod.app, ["settings", "refresh"])
+    assert result.exit_code == 0
+    assert "Settings reset to standard defaults" in result.output
+
+
 def test_config_normalize_backend_url(cli_mod):
     assert cli_mod.cfg.normalize_backend_url("127.0.0.1:800") == "http://127.0.0.1:800"
     assert cli_mod.cfg.normalize_backend_url("localhost:8000") == "http://localhost:8000"
@@ -1582,7 +1622,7 @@ def test_config_session_overrides_do_not_persist(cli_mod, monkeypatch, tmp_path)
 
 
 def test_login_mocked(cli_mod, runner, monkeypatch):
-    cleared = {"called": False}
+    session_override = {}
     monkeypatch.setattr(
         cli_mod,
         "login_via_browser",
@@ -1600,7 +1640,11 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -1616,7 +1660,11 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
     assert "__  __" in result.output
     assert "Signed in as user@example.com" in result.output
     assert "Auth tokens are persisted in secure OS storage" in result.output
-    assert cleared["called"] is True
+    assert cli_mod.cfg.STANDARD_BACKEND_URL in result.output
+    assert session_override == {
+        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "mainsequence_path": None,
+    }
 
 
 def test_login_with_backend_override(cli_mod, runner, monkeypatch):
@@ -1736,7 +1784,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -1755,7 +1803,7 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
 
 def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     saved = {}
-    cleared = {"called": False}
+    session_override = {}
 
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1770,7 +1818,11 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -1792,11 +1844,14 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
     assert saved == {"username": "", "access": "acc-123", "refresh": "ref-456"}
     assert "Signed in with JWT tokens" in result.output
     assert "Auth tokens are persisted in local CLI auth storage" in result.output
-    assert cleared["called"] is True
+    assert session_override == {
+        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "mainsequence_path": None,
+    }
 
 
 def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
-    cleared = {"called": False}
+    session_override = {}
     exchange = {"called": False}
     saved = {}
 
@@ -1825,7 +1880,11 @@ def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "set_session_overrides",
+        lambda **kwargs: session_override.update(kwargs) or kwargs,
+    )
 
     result = runner.invoke(cli_mod.app, ["login"])
 
@@ -1837,7 +1896,10 @@ def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
     assert "Signed in with runtime credential" in result.output
     assert "no CLI JWT refresh token exists" in result.output
     assert "re-exchange the runtime credential automatically" in result.output
-    assert cleared["called"] is True
+    assert session_override == {
+        "backend_url": cli_mod.cfg.STANDARD_BACKEND_URL,
+        "mainsequence_path": None,
+    }
 
 
 def test_login_runtime_credential_export(monkeypatch, cli_mod, runner):
@@ -1852,7 +1914,7 @@ def test_login_runtime_credential_export(monkeypatch, cli_mod, runner):
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
 
     result = runner.invoke(cli_mod.app, ["login", "--export"])
 
@@ -2040,7 +2102,7 @@ def test_login_export_env_with_jwt_tokens_omits_username(cli_mod, runner, monkey
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
 
     result = runner.invoke(
         cli_mod.app,
@@ -2078,7 +2140,7 @@ def test_login_warns_when_secure_persist_fails(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: False)
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "secure OS storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -2111,7 +2173,7 @@ def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatc
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -2135,7 +2197,7 @@ def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkey
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(
         cli_mod,
         "get_projects",
@@ -2193,7 +2255,7 @@ def test_login_no_open_prints_authorize_url(cli_mod, runner, monkeypatch):
         lambda: {"mainsequence_path": "/tmp/mainsequence"},
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
+    monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
 

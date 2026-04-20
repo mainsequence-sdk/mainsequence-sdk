@@ -22,6 +22,7 @@ mainsequence logout
 ```
 
 Backend/base-folder overrides passed to `login` are terminal-session only. They do not rewrite the persisted CLI settings for other terminals.
+When no backend is provided, `mainsequence login` targets the standard production backend.
 
 By default, `mainsequence login` persists auth tokens for later CLI commands:
 
@@ -319,6 +320,9 @@ Rules:
 ```bash
 mainsequence settings show
 mainsequence settings set-base ~/mainsequence
+mainsequence settings set-backend <backend-url>
+mainsequence settings reset
+mainsequence settings refresh
 ```
 
 ## Skills

@@ -226,7 +226,6 @@ from .ssh_utils import (
 from .ui import error, info, print_kv, print_table, status, success, warn
 
 JSON_OUTPUT_CONTEXT_KEY = "json_output"
-LOGIN_DEFAULT_BACKEND_URL = "https://api.main-sequence.io"
 
 
 class MainSequenceGroup(typer.core.TyperGroup):
@@ -2057,7 +2056,7 @@ def login(
     Persists auth tokens in the active CLI auth store so subsequent
     CLI invocations can run without re-authentication. Backend/base-folder
     overrides passed to `login` are scoped to the current terminal session.
-    When no backend is provided, login defaults to `https://api.main-sequence.io`.
+    When no backend is provided, login defaults to the standard production backend.
 
     Interactive login uses browser-based authentication and finishes with
     standard JWT access/refresh tokens persisted by the CLI.
@@ -2122,7 +2121,7 @@ def login(
             error("Pass backend either positionally or with --backend, not both.")
             raise typer.Exit(1)
     explicit_backend_input = backend_option if backend_option is not None else backend
-    effective_backend_input = explicit_backend_input if explicit_backend_input is not None else LOGIN_DEFAULT_BACKEND_URL
+    effective_backend_input = explicit_backend_input if explicit_backend_input is not None else cfg.STANDARD_BACKEND_URL
 
     if projects_base and projects_base_option:
         if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(projects_base_option):
@@ -2873,7 +2872,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
 
 @settings.command("set-backend")
 def settings_set_backend(
-    url: str = typer.Argument(..., help="Backend base URL, e.g. https://api.main-sequence.io")
+    url: str = typer.Argument(..., help=f"Backend base URL, e.g. {cfg.STANDARD_BACKEND_URL}")
 ):
     """
     Set backend base URL used by CLI API calls.
@@ -2881,12 +2880,12 @@ def settings_set_backend(
     Parameters
     ----------
     url:
-        Backend base URL (for example `https://api.main-sequence.io`).
+        Backend base URL.
 
     Examples
     --------
     ```bash
-    mainsequence settings set-backend https://api.main-sequence.io
+    mainsequence settings set-backend <backend-url>
     ```
     """
     out = cfg.set_backend_url(url)
@@ -2899,7 +2898,7 @@ def _settings_reset_impl() -> dict:
     """
     Reset persistent CLI settings to standard defaults and clear session overrides.
     """
-    standard_backend = cfg.normalize_backend_url(LOGIN_DEFAULT_BACKEND_URL)
+    standard_backend = cfg.normalize_backend_url(cfg.STANDARD_BACKEND_URL)
     standard_base = cfg.normalize_mainsequence_path(cfg.DEFAULTS.get("mainsequence_path"))
     pathlib.Path(standard_base).mkdir(parents=True, exist_ok=True)
     out = cfg.set_config(
@@ -2917,7 +2916,7 @@ def settings_reset():
     """
     Reset CLI settings to standard defaults.
 
-    Resets backend URL to `https://api.main-sequence.io`, base folder to the
+    Resets backend URL to the standard production backend, base folder to the
     default `~/mainsequence`, and clears current terminal session overrides.
 
     Examples
