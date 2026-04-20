@@ -1167,6 +1167,59 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         return r.json() if r.content else None
 
+    def delete_after_date(
+        self,
+        after_date: str | datetime.datetime,
+        *,
+        unique_identifier: str | None = None,
+        unique_identifier_list: list[str] | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Delete rows at or after a cutoff timestamp from this dynamic table.
+
+        This is a backend tail-delete operation:
+
+        - it hits `POST /orm/api/ts_manager/dynamic_table/{id}/delete_after_date/`
+        - `after_date` is the inclusive cutoff
+        - there is no `end_date`; this is not arbitrary range deletion
+        - for multi-index tables, pass either `unique_identifier` for one
+          identifier or `unique_identifier_list` for multiple identifiers to
+          scope the tail delete
+
+        The authenticated user must have edit access to this DynamicTableMetaData.
+
+        The returned payload contains the authoritative post-delete table stats,
+        including `deleted_count`, `table_empty`, and index metadata. Consumers
+        can use those stats to update visible table metadata or refetch the table
+        detail after the delete.
+        """
+        if self.id is None:
+            raise ValueError("DataNodeStorage must have an id before deleting rows after a date.")
+        if unique_identifier is not None and unique_identifier_list is not None:
+            raise ValueError("Pass either unique_identifier or unique_identifier_list, not both.")
+
+        payload_body: dict[str, Any] = {
+            "after_date": after_date.isoformat() if isinstance(after_date, datetime.datetime) else after_date
+        }
+        if unique_identifier is not None:
+            payload_body["unique_identifier"] = unique_identifier
+        if unique_identifier_list is not None:
+            payload_body["unique_identifier_list"] = unique_identifier_list
+
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/delete_after_date/"
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": payload_body},
+            time_out=timeout,
+        )
+        raise_for_response(r, payload=payload_body)
+        return r.json()
+
     def delete_table(self):
         data_source = PodDataSource._get_duck_db()
         duckdb_dynamic_data_source = DynamicTableDataSource.get_or_create_duck_db(

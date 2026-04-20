@@ -214,6 +214,130 @@ def test_simple_table_storage_normalizes_namespace_filters():
     }
 
 
+def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
+    from mainsequence.client import models_tdag
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "dynamic_table_id": 714,
+                "deleted_count": 123,
+                "table_empty": False,
+                "unique_identifier_list": ["AAPL", "MSFT"],
+                "stats": {
+                    "last_time_index_value": "2026-03-31T23:59:00Z",
+                    "earliest_index_value": "2024-01-01T00:00:00Z",
+                    "multi_index_stats": None,
+                    "multi_index_column_stats": None,
+                },
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
+
+    storage = models_tdag.DataNodeStorage(
+        id=714,
+        storage_hash="prices_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-01T00:00:00Z",
+    )
+
+    result = storage.delete_after_date(
+        "2026-04-01T00:00:00Z",
+        unique_identifier_list=["AAPL", "MSFT"],
+        timeout=30,
+    )
+
+    assert result["ok"] is True
+    assert result["deleted_count"] == 123
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/714/delete_after_date/",
+        "payload": {
+            "json": {
+                "after_date": "2026-04-01T00:00:00Z",
+                "unique_identifier_list": ["AAPL", "MSFT"],
+            }
+        },
+        "timeout": 30,
+    }
+
+
+def test_data_node_storage_delete_after_date_accepts_one_identifier(monkeypatch):
+    from mainsequence.client import models_tdag
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {"ok": True, "dynamic_table_id": 714, "deleted_count": 1}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["payload"] = payload
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
+
+    storage = models_tdag.DataNodeStorage(
+        id=714,
+        storage_hash="prices_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-01T00:00:00Z",
+    )
+
+    storage.delete_after_date(
+        datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
+        unique_identifier="AAPL",
+    )
+
+    assert captured["payload"] == {
+        "json": {
+            "after_date": "2026-04-01T00:00:00+00:00",
+            "unique_identifier": "AAPL",
+        }
+    }
+
+
+def test_data_node_storage_delete_after_date_rejects_both_identifier_shapes():
+    from mainsequence.client.models_tdag import DataNodeStorage
+
+    storage = DataNodeStorage(
+        id=714,
+        storage_hash="prices_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-01T00:00:00Z",
+    )
+
+    with pytest.raises(ValueError, match="either unique_identifier or unique_identifier_list"):
+        storage.delete_after_date(
+            "2026-04-01T00:00:00Z",
+            unique_identifier="AAPL",
+            unique_identifier_list=["AAPL"],
+        )
+
+
 def test_data_node_update_normalizes_related_table_namespace_filters():
     from mainsequence.client.models_tdag import DataNodeUpdate
 

@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth instead of the removed legacy token path.
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
 - Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time series and simple table update payloads.
+- Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
 
 ## [3.17.48] - 2026-04-14
 

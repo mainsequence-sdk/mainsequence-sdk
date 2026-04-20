@@ -513,6 +513,70 @@ CLI equivalent:
 mainsequence data-node refresh-search-index 123
 ```
 
+#### Tail deleting rows after a cutoff
+
+`DataNodeStorage.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.
+
+This is not arbitrary range deletion:
+
+- there is no `end_date`
+- the cutoff is inclusive
+- rows at or after `after_date` are deleted
+- the caller must be authenticated and have edit access to the `DynamicTableMetaData`
+
+The SDK uses:
+
+- `POST /orm/api/ts_manager/dynamic_table/{dynamic_table_id}/delete_after_date/`
+
+Use this for rollback-style cleanup when a bad tail load or backfill needs to be removed.
+
+For a normal table:
+
+```python
+import mainsequence.client as msc
+
+storage = msc.DataNodeStorage.get(pk=714)
+result = storage.delete_after_date("2026-04-01T00:00:00Z")
+```
+
+For a multi-index table, scope the delete to one identifier:
+
+```python
+result = storage.delete_after_date(
+    "2026-04-01T00:00:00Z",
+    unique_identifier="AAPL",
+)
+```
+
+Or scope it to multiple identifiers:
+
+```python
+result = storage.delete_after_date(
+    "2026-04-01T00:00:00Z",
+    unique_identifier_list=["AAPL", "MSFT"],
+)
+```
+
+The response contains the authoritative post-delete table state:
+
+```python
+{
+    "ok": True,
+    "dynamic_table_id": 714,
+    "deleted_count": 123,
+    "table_empty": False,
+    "unique_identifier_list": ["AAPL", "MSFT"],
+    "stats": {
+        "last_time_index_value": "2026-03-31T23:59:00Z",
+        "earliest_index_value": "2024-01-01T00:00:00Z",
+        "multi_index_stats": None,
+        "multi_index_column_stats": None,
+    },
+}
+```
+
+Use `stats` to update visible table metadata, or refetch the table detail after the delete.
+
 !!! tip "Search quality depends on metadata quality"
     If you want `description_search(...)` to work well, write table and column metadata for humans, not just for machines. Clear descriptions, stable naming, and meaningful column docs directly improve discovery.
 
