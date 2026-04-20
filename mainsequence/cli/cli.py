@@ -226,6 +226,7 @@ from .ssh_utils import (
 from .ui import error, info, print_kv, print_table, status, success, warn
 
 JSON_OUTPUT_CONTEXT_KEY = "json_output"
+LOGIN_DEFAULT_BACKEND_URL = "https://api.main-sequence.io"
 
 
 class MainSequenceGroup(typer.core.TyperGroup):
@@ -2056,6 +2057,7 @@ def login(
     Persists auth tokens in the active CLI auth store so subsequent
     CLI invocations can run without re-authentication. Backend/base-folder
     overrides passed to `login` are scoped to the current terminal session.
+    When no backend is provided, login defaults to `https://api.main-sequence.io`.
 
     Interactive login uses browser-based authentication and finishes with
     standard JWT access/refresh tokens persisted by the CLI.
@@ -2119,7 +2121,8 @@ def login(
         if cfg.normalize_backend_url(backend) != cfg.normalize_backend_url(backend_option):
             error("Pass backend either positionally or with --backend, not both.")
             raise typer.Exit(1)
-    effective_backend_input = backend_option if backend_option is not None else backend
+    explicit_backend_input = backend_option if backend_option is not None else backend
+    effective_backend_input = explicit_backend_input if explicit_backend_input is not None else LOGIN_DEFAULT_BACKEND_URL
 
     if projects_base and projects_base_option:
         if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(projects_base_option):
@@ -2138,24 +2141,23 @@ def login(
         raise typer.Exit(1)
 
     current_backend = cfg.backend_url()
-    normalized_backend = cfg.normalize_backend_url(effective_backend_input) if effective_backend_input else None
+    normalized_backend = cfg.normalize_backend_url(effective_backend_input)
 
-    if normalized_backend and normalized_backend != current_backend:
+    if explicit_backend_input is not None and normalized_backend != current_backend:
         if not effective_projects_base_input:
             error("When using a different backend, you must also specify a projects base folder.")
             raise typer.Exit(1)
 
     previous_backend_override = os.environ.get("MAIN_SEQUENCE_BACKEND_URL")
-    if normalized_backend:
-        os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
+    os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
 
     try:
         if using_runtime_credential:
-            access = _exchange_runtime_credential_for_cli_login(normalized_backend or current_backend)
+            access = _exchange_runtime_credential_for_cli_login(normalized_backend)
             persisted = cfg.save_tokens("", access, "")
             res = {
                 "username": "",
-                "backend": normalized_backend or current_backend,
+                "backend": normalized_backend,
                 "access": access,
                 "refresh": "",
                 "persisted": bool(persisted),
@@ -2167,7 +2169,7 @@ def login(
             persisted = cfg.save_tokens("", (access_token or "").strip(), (refresh_token or "").strip())
             res = {
                 "username": "",
-                "backend": normalized_backend or current_backend,
+                "backend": normalized_backend,
                 "access": (access_token or "").strip(),
                 "refresh": (refresh_token or "").strip(),
                 "persisted": bool(persisted),
@@ -2196,7 +2198,7 @@ def login(
 
             res = {
                 "username": username,
-                "backend": normalized_backend or current_backend,
+                "backend": normalized_backend,
                 "access": access,
                 "refresh": refresh,
                 "persisted": bool(persisted),
@@ -2209,19 +2211,15 @@ def login(
         error(f"Login failed: {e}")
         raise typer.Exit(1) from e
     finally:
-        if normalized_backend:
-            if previous_backend_override is None:
-                os.environ.pop("MAIN_SEQUENCE_BACKEND_URL", None)
-            else:
-                os.environ["MAIN_SEQUENCE_BACKEND_URL"] = previous_backend_override
+        if previous_backend_override is None:
+            os.environ.pop("MAIN_SEQUENCE_BACKEND_URL", None)
+        else:
+            os.environ["MAIN_SEQUENCE_BACKEND_URL"] = previous_backend_override
 
-    if normalized_backend or effective_projects_base_input:
-        cfg.set_session_overrides(
-            backend_url=normalized_backend,
-            mainsequence_path=effective_projects_base_input,
-        )
-    else:
-        cfg.clear_session_overrides()
+    cfg.set_session_overrides(
+        backend_url=normalized_backend,
+        mainsequence_path=effective_projects_base_input,
+    )
 
     if export:
         access = (res.get("access") or "").replace('"', '\\"')
@@ -2875,7 +2873,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
 
 @settings.command("set-backend")
 def settings_set_backend(
-    url: str = typer.Argument(..., help="Backend base URL, e.g. https://api.main-sequence.app")
+    url: str = typer.Argument(..., help="Backend base URL, e.g. https://api.main-sequence.io")
 ):
     """
     Set backend base URL used by CLI API calls.
@@ -2883,18 +2881,71 @@ def settings_set_backend(
     Parameters
     ----------
     url:
-        Backend base URL (for example `https://api.main-sequence.app`).
+        Backend base URL (for example `https://api.main-sequence.io`).
 
     Examples
     --------
     ```bash
-    mainsequence settings set-backend https://api.main-sequence.app
+    mainsequence settings set-backend https://api.main-sequence.io
     ```
     """
     out = cfg.set_backend_url(url)
     if _emit_json(out):
         return
     success(f"Backend URL set to: {out.get('backend_url')}")
+
+
+def _settings_reset_impl() -> dict:
+    """
+    Reset persistent CLI settings to standard defaults and clear session overrides.
+    """
+    standard_backend = cfg.normalize_backend_url(LOGIN_DEFAULT_BACKEND_URL)
+    standard_base = cfg.normalize_mainsequence_path(cfg.DEFAULTS.get("mainsequence_path"))
+    pathlib.Path(standard_base).mkdir(parents=True, exist_ok=True)
+    out = cfg.set_config(
+        {
+            "backend_url": standard_backend,
+            "mainsequence_path": standard_base,
+        }
+    )
+    cfg.clear_session_overrides()
+    return out
+
+
+@settings.command("reset")
+def settings_reset():
+    """
+    Reset CLI settings to standard defaults.
+
+    Resets backend URL to `https://api.main-sequence.io`, base folder to the
+    default `~/mainsequence`, and clears current terminal session overrides.
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings reset
+    ```
+    """
+    out = _settings_reset_impl()
+    if _emit_json(out):
+        return
+    success("Settings reset to standard defaults.")
+    info(f"Backend URL: {out.get('backend_url')}")
+    info(f"Projects base folder: {out.get('mainsequence_path')}")
+
+
+@settings.command("refresh")
+def settings_refresh():
+    """
+    Alias for `settings reset`.
+
+    Examples
+    --------
+    ```bash
+    mainsequence settings refresh
+    ```
+    """
+    settings_reset()
 
 
 # ---------- sdk group ----------

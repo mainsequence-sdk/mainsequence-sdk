@@ -62,7 +62,7 @@ KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
 
 DEFAULTS = {
-    "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", "https://api.main-sequence.app/"),
+    "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", "https://api.main-sequence.io/"),
     "mainsequence_path": str(pathlib.Path.home() / "mainsequence"),
     "version": 1,
 }
@@ -212,7 +212,7 @@ def set_backend_url(url: str) -> dict:
     Convenience helper to set backend_url in config.json.
 
     Args:
-        url: Backend base URL (e.g. https://api.main-sequence.app)
+        url: Backend base URL (e.g. https://api.main-sequence.io)
 
     Returns:
         dict: updated config
