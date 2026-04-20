@@ -1,27 +1,26 @@
 from __future__ import annotations
 
+import inspect
 import logging
 import logging.config
 import os
+import sys
+import traceback
+from collections.abc import Mapping
 from pathlib import Path
+from typing import Any
 
 import requests
 import structlog
 from requests.structures import CaseInsensitiveDict
+from structlog.contextvars import bind_contextvars, unbind_contextvars
 from structlog.dev import ConsoleRenderer
+from structlog.stdlib import BoundLogger
 
 from .instrumentation import OTelJSONRenderer
 from .runtime_flags import is_running_in_pod
 
 logger = None
-import inspect
-import sys
-import traceback
-from collections.abc import Mapping
-from typing import Any
-
-from structlog.contextvars import bind_contextvars, unbind_contextvars
-from structlog.stdlib import BoundLogger
 
 
 def ensure_dir(file_path):
@@ -85,7 +84,44 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
         return headers, False
 
+    def _exchange_runtime_credential() -> bool:
+        credential_id = (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
+        credential_secret = (os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
+        if not credential_id or not credential_secret:
+            return False
+
+        try:
+            token_resp = requests.post(
+                f"{_backend_base_url()}/orm/api/pods/runtime-credentials/token/",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "credential_id": credential_id,
+                    "credential_secret": credential_secret,
+                },
+                timeout=timeout_s,
+            )
+        except Exception:
+            return False
+
+        if token_resp.status_code < 200 or token_resp.status_code >= 300:
+            return False
+
+        try:
+            data = token_resp.json()
+        except Exception:
+            return False
+
+        access_token = str(data.get("access") or "").strip()
+        if not access_token:
+            return False
+
+        os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access_token
+        return True
+
     def _refresh_access_token() -> bool:
+        if auth_mode == "runtime_credential":
+            return _exchange_runtime_credential()
+
         if auth_mode == "session_jwt":
             return False
 
@@ -127,10 +163,13 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         )
 
     if (
-        auth_mode != "session_jwt"
+        auth_mode == "jwt"
         and not os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
         and os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
     ):
+        _refresh_access_token()
+
+    if auth_mode == "runtime_credential" and not os.getenv("MAINSEQUENCE_ACCESS_TOKEN"):
         _refresh_access_token()
 
     headers, using_jwt = _auth_headers()

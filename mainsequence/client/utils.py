@@ -86,6 +86,9 @@ def _default_auth_provider_kind() -> str | None:
     has_access = _env_has_value("MAINSEQUENCE_ACCESS_TOKEN")
     has_refresh = _env_has_value("MAINSEQUENCE_REFRESH_TOKEN")
 
+    if mode == "runtime_credential":
+        return "runtime_credential"
+
     if mode == "session_jwt":
         if has_access or has_refresh:
             return "session_jwt"
@@ -174,6 +177,114 @@ class SessionJWTAuthProvider(BaseAuthProvider):
                 "Refresh is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt."
             )
         return None
+
+
+@dataclass
+class RuntimeCredentialAuthProvider(BaseAuthProvider):
+    credential_id: str | None = None
+    credential_secret: str | None = None
+    token_url: str = f"{API_ENDPOINT}/pods/runtime-credentials/token/"
+    token_type: str = "Bearer"
+    refresh_skew_seconds: int = 30
+    timeout: tuple[float, float] = DEFAULT_TIMEOUT
+    expires_at: float | None = None
+    _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
+
+    def __post_init__(self):
+        if self.credential_id is None:
+            self.credential_id = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID")
+        if self.credential_secret is None:
+            self.credential_secret = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET")
+
+    def _current_access_token(self) -> str | None:
+        return (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip() or None
+
+    def _needs_exchange(self) -> bool:
+        access_token = self._current_access_token()
+        if not access_token:
+            return True
+
+        if self.expires_at is not None:
+            return self.expires_at <= time.time() + self.refresh_skew_seconds
+
+        exp = _decode_jwt_exp(access_token)
+        if exp is None:
+            # Access-only JWT behavior: use opaque/uninspectable access until a 401 forces exchange.
+            return False
+
+        return exp <= int(time.time()) + self.refresh_skew_seconds
+
+    def _require_credentials(self) -> tuple[str, str]:
+        credential_id = (self.credential_id or "").strip()
+        credential_secret = (self.credential_secret or "").strip()
+        if not credential_id:
+            raise AuthError(
+                "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID is required when "
+                "MAINSEQUENCE_AUTH_MODE=runtime_credential."
+            )
+        if not credential_secret:
+            raise AuthError(
+                "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET is required when "
+                "MAINSEQUENCE_AUTH_MODE=runtime_credential."
+            )
+        return credential_id, credential_secret
+
+    def refresh(
+        self,
+        *,
+        force: bool = False,
+        session: requests.Session | None = None,
+    ) -> None:
+        _ = session
+        with self._lock:
+            if not force and not self._needs_exchange():
+                return
+
+            credential_id, credential_secret = self._require_credentials()
+            response = requests.post(
+                self.token_url,
+                json={
+                    "credential_id": credential_id,
+                    "credential_secret": credential_secret,
+                },
+                headers={"Content-Type": "application/json"},
+                timeout=self.timeout,
+            )
+            if response.status_code < 200 or response.status_code >= 300:
+                raise AuthError(
+                    "Runtime credential exchange failed with status "
+                    f"{response.status_code}."
+                )
+
+            data = response.json()
+            access = str(data.get("access") or "").strip()
+            if not access:
+                raise AuthError("Runtime credential exchange response did not include access token.")
+
+            token_type = str(data.get("token_type") or self.token_type or "Bearer").strip()
+            self.token_type = token_type or "Bearer"
+
+            expires_in_raw = data.get("expires_in")
+            try:
+                expires_in = int(expires_in_raw)
+            except (TypeError, ValueError):
+                expires_in = None
+            self.expires_at = time.time() + expires_in if expires_in and expires_in > 0 else None
+            os.environ["MAINSEQUENCE_ACCESS_TOKEN"] = access
+
+    def get_headers(self) -> CaseInsensitiveDict:
+        if self._needs_exchange():
+            self.refresh(force=False)
+
+        access_token = self._current_access_token()
+        if not access_token:
+            raise AuthError("MAINSEQUENCE_ACCESS_TOKEN is missing after runtime credential exchange.")
+
+        return CaseInsensitiveDict(
+            {
+                "Authorization": f"{self.token_type} {access_token}",
+            }
+        )
 
 
 @dataclass
@@ -310,6 +421,9 @@ def build_default_auth_provider() -> BaseAuthProvider:
     if provider_kind == "session_jwt":
         return SessionJWTAuthProvider()
 
+    if provider_kind == "runtime_credential":
+        return RuntimeCredentialAuthProvider()
+
     if provider_kind == "jwt":
         return JWTAuthProvider()
 
@@ -330,7 +444,9 @@ class AuthLoaders:
     def _provider(self) -> BaseAuthProvider:
         provider_kind = _default_auth_provider_kind()
 
-        if provider_kind == "session_jwt" and not isinstance(self.provider, SessionJWTAuthProvider):
+        if provider_kind == "runtime_credential" and not isinstance(self.provider, RuntimeCredentialAuthProvider):
+            self.provider = RuntimeCredentialAuthProvider()
+        elif provider_kind == "session_jwt" and not isinstance(self.provider, SessionJWTAuthProvider):
             self.provider = SessionJWTAuthProvider()
         elif provider_kind == "jwt" and not isinstance(self.provider, JWTAuthProvider):
             self.provider = JWTAuthProvider()
