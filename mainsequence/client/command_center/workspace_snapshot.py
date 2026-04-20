@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from mainsequence.defaults import STANDARD_BACKEND_URL
+
 from ..client import MainSequenceClientConfig
 from ..utils import AuthLoaders
 
@@ -78,7 +80,7 @@ def _infer_command_center_url_from_endpoint(endpoint: str) -> str:
     if host in {"localhost", "127.0.0.1"}:
         return f"{scheme}://localhost:5173"
 
-    if host == "api.main-sequence.app":
+    if host == (urlparse(STANDARD_BACKEND_URL).hostname or ""):
         return f"{scheme}://main-sequence.app"
 
     if host.startswith("api."):

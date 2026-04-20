@@ -8,6 +8,7 @@ from typing import Any, ClassVar, Literal
 
 from pydantic import Field
 
+from mainsequence.defaults import STANDARD_BACKEND_URL
 from mainsequence.logconf import logger
 
 from .base import (
@@ -141,7 +142,7 @@ class Organization(BasePydanticModel):
         None,
         title="Organization URL",
         description="Optional public or internal URL for the organization.",
-        examples=["https://api.main-sequence.app"],
+        examples=[STANDARD_BACKEND_URL],
     )
     organization_domain: str = Field(
         ...,

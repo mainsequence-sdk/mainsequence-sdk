@@ -17,6 +17,7 @@ from structlog.contextvars import bind_contextvars, unbind_contextvars
 from structlog.dev import ConsoleRenderer
 from structlog.stdlib import BoundLogger
 
+from .defaults import STANDARD_BACKEND_URL
 from .instrumentation import OTelJSONRenderer
 from .runtime_flags import is_running_in_pod
 
@@ -70,7 +71,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
         return (
             os.getenv("TDAG_ENDPOINT")
             or os.getenv("MAINSEQUENCE_ENDPOINT")
-            or "https://api.main-sequence.app"
+            or STANDARD_BACKEND_URL
         ).rstrip("/")
 
     def _auth_headers() -> tuple[CaseInsensitiveDict, bool]:
