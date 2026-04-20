@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
 - Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time series and simple table update payloads.
 - Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
+- Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 
 ## [3.17.48] - 2026-04-14
 

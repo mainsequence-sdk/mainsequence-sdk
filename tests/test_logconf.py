@@ -59,6 +59,20 @@ def test_logconf_import_skips_job_startup_state_request_outside_pod(monkeypatch)
     assert logconf._request_job_startup_state() == {}
 
 
+def test_logconf_binds_sdk_version(monkeypatch):
+    monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
+    monkeypatch.delenv("COMMAND_ID", raising=False)
+    monkeypatch.delenv("JOB_RUN_ID", raising=False)
+
+    logconf = _load_mainsequence_submodule("mainsequence.logconf")
+
+    bound_context = logconf.dump_structlog_bound_logger(logconf.logger)["bound_context"]
+
+    assert bound_context["application_name"] == "ms-sdk"
+    assert bound_context["sdk_version"] == logconf._get_sdk_version()
+
+
 def test_logconf_import_skips_job_startup_state_request_without_job_run_id(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)

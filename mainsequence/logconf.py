@@ -7,6 +7,8 @@ import os
 import sys
 import traceback
 from collections.abc import Mapping
+from importlib.metadata import PackageNotFoundError
+from importlib.metadata import version as package_version
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +24,16 @@ from .instrumentation import OTelJSONRenderer
 from .runtime_flags import is_running_in_pod
 
 logger = None
+
+
+def _get_sdk_version() -> str:
+    """Return the installed SDK package version for automatic log binding."""
+    try:
+        return package_version("mainsequence")
+    except PackageNotFoundError:
+        return "unknown"
+    except Exception:
+        return "unknown"
 
 
 def ensure_dir(file_path):
@@ -406,7 +418,11 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
 
     # Create the structlog logger and bind metadata
     logger = structlog.get_logger(logger_name)
-    logger = logger.bind(application_name=application_name, **metadata)
+    logger = logger.bind(
+        application_name=application_name,
+        sdk_version=_get_sdk_version(),
+        **metadata,
+    )
 
     try:
 
