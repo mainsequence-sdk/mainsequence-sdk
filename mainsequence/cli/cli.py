@@ -25,6 +25,7 @@ import dataclasses
 import datetime
 import difflib
 import importlib
+import importlib.metadata
 import json
 import os
 import pathlib
@@ -228,6 +229,16 @@ from .ui import error, info, print_kv, print_table, status, success, warn
 JSON_OUTPUT_CONTEXT_KEY = "json_output"
 
 
+def _package_version() -> str:
+    """
+    Return the installed SDK version for CLI display.
+    """
+    try:
+        return importlib.metadata.version("mainsequence")
+    except importlib.metadata.PackageNotFoundError:
+        return "unknown"
+
+
 class MainSequenceGroup(typer.core.TyperGroup):
     """
     Typer group that accepts `--json` anywhere in the command line.
@@ -293,7 +304,11 @@ def _emit_json(payload) -> bool:
     return True
 
 
-app = typer.Typer(help="MainSequence CLI (login + project operations)", cls=MainSequenceGroup)
+app = typer.Typer(
+    help="MainSequence CLI (login + project operations)",
+    cls=MainSequenceGroup,
+    invoke_without_command=True,
+)
 
 agent = typer.Typer(help="Agent commands")
 agent_run_group = typer.Typer(help="Agent runtime commands")
@@ -358,6 +373,22 @@ project.add_typer(project_jobs_group, name="jobs")
 project_jobs_group.add_typer(project_job_runs_group, name="runs")
 app.add_typer(settings, name="settings")
 app.add_typer(sdk, name="sdk")
+
+
+@app.callback()
+def root_callback(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        help="Show installed mainsequence SDK version and exit.",
+    ),
+):
+    """
+    MainSequence CLI.
+    """
+    if version:
+        typer.echo(f"mainsequence {_package_version()}")
+        raise typer.Exit()
 
 JOB_DEFAULT_CPU_REQUEST = Decimal("0.25")
 JOB_DEFAULT_MEMORY_REQUEST = Decimal("0.5")

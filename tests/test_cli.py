@@ -49,6 +49,14 @@ def runner():
     return CliRunner()
 
 
+def test_root_version(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_package_version", lambda: "3.18.9")
+
+    result = runner.invoke(cli_mod.app, ["--version"])
+    assert result.exit_code == 0
+    assert result.output.strip() == "mainsequence 3.18.9"
+
+
 @pytest.fixture(autouse=True)
 def _print_cli_terminal(monkeypatch):
     """
