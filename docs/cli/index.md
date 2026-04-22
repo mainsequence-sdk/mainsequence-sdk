@@ -173,6 +173,7 @@ mainsequence secrets remove_team_from_view 42 9
 mainsequence secrets remove_team_from_edit 42 9
 mainsequence secrets delete 42
 mainsequence organization project-names
+mainsequence organization github-organizations
 mainsequence organization teams list
 mainsequence organization teams list --show-filters
 mainsequence organization teams create Research --description "Model validation"

@@ -196,6 +196,39 @@ def test_organization_project_names(cli_mod, runner, monkeypatch):
     assert "Total organization-visible project names: 2" in result.output
 
 
+def test_organization_github_organizations(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_github_organizations",
+        lambda: [
+            {"id": 33, "name": "Main Sequence Projects", "login": "mainsequence-projects"},
+            {"id": 34, "slug": "research-labs"},
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["organization", "github-organizations"])
+    assert result.exit_code == 0
+    assert "GitHub Organizations" in result.output
+    assert "mainsequence-projects" in result.output
+    assert "research-labs" in result.output
+    assert "Total GitHub organizations: 2" in result.output
+
+
+def test_organization_github_organizations_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_github_organizations",
+        lambda: [{"id": 33, "name": "Main Sequence Projects", "login": "mainsequence-projects"}],
+    )
+
+    result = runner.invoke(cli_mod.app, ["organization", "github-organizations", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == [{"id": 33, "name": "Main Sequence Projects", "login": "mainsequence-projects"}]
+
+
 def test_organization_teams_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(

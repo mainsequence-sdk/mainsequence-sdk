@@ -2417,6 +2417,47 @@ def organization_project_names_alias_cmd(
     organization_project_names_cmd(timeout=timeout)
 
 
+@organization.command("github-organizations")
+def organization_github_organizations_cmd():
+    """
+    List GitHub organizations available to the authenticated user.
+
+    Examples
+    --------
+    ```bash
+    mainsequence organization github-organizations
+    mainsequence organization github-organizations --json
+    ```
+    """
+    _require_login()
+
+    try:
+        organizations = list_github_organizations()
+    except ApiError as e:
+        error(f"GitHub organizations fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(organizations):
+        return
+
+    if organizations:
+        print_table(
+            "GitHub Organizations",
+            ["ID", "Name", "Login"],
+            [
+                [
+                    str(org.get("id") or "-"),
+                    str(org.get("name") or "-"),
+                    str(org.get("login") or org.get("slug") or "-"),
+                ]
+                for org in organizations
+            ],
+        )
+    else:
+        info("No GitHub organizations available.")
+    info(f"Total GitHub organizations: {len(organizations)}")
+
+
 def _organization_teams_list_impl(
     *,
     timeout: int | None,
