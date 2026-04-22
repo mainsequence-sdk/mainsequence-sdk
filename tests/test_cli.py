@@ -8237,6 +8237,89 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
 
 
+def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
+    base = tmp_path / "base"
+    base.mkdir(parents=True, exist_ok=True)
+    key = tmp_path / "id_ed25519"
+    pub = tmp_path / "id_ed25519.pub"
+
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_config",
+        lambda: {"mainsequence_path": str(base)},
+    )
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+    monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
+    monkeypatch.setattr(
+        cli_mod,
+        "get_projects",
+        lambda: [
+            {
+                "id": 123,
+                "project_name": "Demo",
+                "git_ssh_url": "git@github.com:org/repo.git",
+                "is_initialized": True,
+            }
+        ],
+    )
+    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
+    monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
+    monkeypatch.setattr(cli_mod, "add_deploy_key", lambda *a, **k: None)
+    monkeypatch.setattr(cli_mod, "start_agent_and_add_key", lambda *_: {})
+
+    def _clone(cmd, env=None, cwd=None):
+        assert cmd[0:2] == ["git", "clone"]
+        pathlib.Path(cmd[-1]).mkdir(parents=True, exist_ok=True)
+        return 0
+
+    monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
+    monkeypatch.setattr(
+        cli_mod,
+        "fetch_project_env_text",
+        lambda project_id: (
+            "DEFAULT_BASE_IMAGE=none\n"
+            "FOO=bar\n"
+            "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
+            "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
+        ),
+    )
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: (_ for _ in ()).throw(AssertionError("JWT tokens should not be used")),
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "_exchange_runtime_credential_for_cli_login",
+        lambda backend_url: "runtime-access",
+    )
+    monkeypatch.setattr(cli_mod, "resolve_base_image", lambda _: ("ghcr.io/test/image:latest", []))
+    monkeypatch.setattr(
+        cli_mod,
+        "ensure_docker_scaffold",
+        lambda *_: (True, ["Created Dockerfile (base image: ghcr.io/test/image:latest)"]),
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
+    assert result.exit_code == 0
+
+    env_file = base / "org" / "projects" / "demo-123" / ".env"
+    env_text = env_file.read_text(encoding="utf-8")
+    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
+    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
+    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
+    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
+    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
+    assert "old-access" not in env_text
+    assert "old-refresh" not in env_text
+
+
 def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, monkeypatch, tmp_path):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
@@ -8318,6 +8401,50 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
+    assert "old-access" not in env_text
+    assert "old-refresh" not in env_text
+
+
+def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
+    target = tmp_path / "demo-123"
+    target.mkdir(parents=True, exist_ok=True)
+    env_path = target / ".env"
+    env_path.write_text(
+        "FOO=bar\n"
+        "MAINSEQUENCE_AUTH_MODE=jwt\n"
+        "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
+        "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
+    monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod.cfg,
+        "get_tokens",
+        lambda: (_ for _ in ()).throw(AssertionError("JWT tokens should not be used")),
+    )
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://backend.test")
+    monkeypatch.setattr(
+        cli_mod,
+        "_exchange_runtime_credential_for_cli_login",
+        lambda backend_url: "runtime-new-access",
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "refresh_token", "--path", str(target)])
+    assert result.exit_code == 0
+
+    env_text = env_path.read_text(encoding="utf-8")
+    assert "FOO=bar" in env_text
+    assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
+    assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-new-access" in env_text
+    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
+    assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
+    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 

@@ -148,6 +148,26 @@ If the parent shell needs the exchanged token, use:
 eval "$(mainsequence login --export)"
 ```
 
+Local project provisioning is also runtime-credential aware:
+
+```bash
+mainsequence project set-up-locally <PROJECT_ID>
+mainsequence project refresh_token --path .
+```
+
+When `MAINSEQUENCE_AUTH_MODE=runtime_credential`, these commands write the runtime credential auth shape into the project `.env`:
+
+```bash
+MAINSEQUENCE_AUTH_MODE=runtime_credential
+MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
+MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
+MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
+TDAG_ENDPOINT=<platform API origin>
+MAIN_SEQUENCE_PROJECT_ID=<project id>
+```
+
+They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.
+
 Functionally:
 
 - the credential id and secret identify the runtime
@@ -164,7 +184,7 @@ Important constraints:
 - `MAINSEQUENCE_REFRESH_TOKEN` is not used in this mode
 - runtime credential mode wins when `MAINSEQUENCE_AUTH_MODE=runtime_credential`
 - the exchanged access token should be treated as short-lived runtime material
-- do not write exchanged access tokens into project files or commit them
+- project `.env` files may contain runtime credential material; keep `.env` out of version control
 
 Use this for:
 

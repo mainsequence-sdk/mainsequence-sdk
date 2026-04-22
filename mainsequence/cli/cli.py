@@ -1997,11 +1997,42 @@ def _current_session_jwt_tokens() -> tuple[str, str]:
     return access_token, refresh_token
 
 
+def _current_project_runtime_auth_env(backend_url: str) -> dict[str, str]:
+    """
+    Return auth environment entries for local project `.env` provisioning.
+
+    The output follows the active auth mode:
+    - runtime credential mode writes runtime credential keys and an exchanged access token
+    - default JWT mode writes the current CLI session access/refresh token pair
+    """
+    if _runtime_credential_mode_enabled():
+        credential_id = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID") or "").strip()
+        credential_secret = (os.environ.get("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET") or "").strip()
+        if not credential_id or not credential_secret:
+            raise RuntimeError(
+                "Runtime credential mode requires MAINSEQUENCE_RUNTIME_CREDENTIAL_ID "
+                "and MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET."
+            )
+
+        access_token = _exchange_runtime_credential_for_cli_login(backend_url)
+        return {
+            "MAINSEQUENCE_AUTH_MODE": "runtime_credential",
+            "MAINSEQUENCE_ACCESS_TOKEN": access_token,
+            "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID": credential_id,
+            "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET": credential_secret,
+        }
+
+    access_token, refresh_token = _current_session_jwt_tokens()
+    return {
+        "MAINSEQUENCE_ACCESS_TOKEN": access_token,
+        "MAINSEQUENCE_REFRESH_TOKEN": refresh_token,
+    }
+
+
 def _render_project_runtime_env_text(
     env_text: str,
     *,
-    access_token: str,
-    refresh_token: str,
+    auth_env: dict[str, str],
     backend_url: str,
     project_runtime_id: str | None = None,
 ) -> str:
@@ -2011,8 +2042,11 @@ def _render_project_runtime_env_text(
     Managed keys are rewritten from scratch to avoid duplicate stale entries.
     """
     managed_prefixes = (
+        "MAINSEQUENCE_AUTH_MODE=",
         "MAINSEQUENCE_ACCESS_TOKEN=",
         "MAINSEQUENCE_REFRESH_TOKEN=",
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
+        "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "TDAG_ENDPOINT=",
     ) + (("MAIN_SEQUENCE_PROJECT_ID=",) if project_runtime_id is not None else ())
     lines = [
@@ -2025,9 +2059,8 @@ def _render_project_runtime_env_text(
         lines.append("")
 
     lines.extend(
-        [
-            f"MAINSEQUENCE_ACCESS_TOKEN={access_token}",
-            f"MAINSEQUENCE_REFRESH_TOKEN={refresh_token}",
+        [f"{key}={value}" for key, value in auth_env.items() if value]
+        + [
             f"TDAG_ENDPOINT={backend_url}",
         ]
         + ([f"MAIN_SEQUENCE_PROJECT_ID={project_runtime_id}"] if project_runtime_id is not None else [])
@@ -9533,7 +9566,7 @@ def project_set_up_locally(
     Workflow:
     - ensure SSH key and optionally register deploy key,
     - clone repository into local projects root,
-    - fetch remote environment and inject current session JWTs,
+    - fetch remote environment and inject auth for the active auth mode,
     - write/update `.env` with local runtime values,
     - optionally scaffold Docker files from default base image.
 
@@ -9632,17 +9665,20 @@ def project_set_up_locally(
         orig_env_text = ""
     env_text = (orig_env_text or "").replace("\r", "")
 
+    backend_url = cfg.backend_url()
     try:
-        access_token, refresh_token = _current_session_jwt_tokens()
+        auth_env = _current_project_runtime_auth_env(backend_url)
     except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+    except ApiError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
     final_env = _render_project_runtime_env_text(
         env_text,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        backend_url=cfg.backend_url(),
+        auth_env=auth_env,
+        backend_url=backend_url,
         project_runtime_id=str(project_id),
     )
     (target_dir / ".env").write_text(final_env, encoding="utf-8")
@@ -9885,11 +9921,11 @@ def project_refresh_token(
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
-    Refresh local project JWTs in `.env` from the current CLI session.
+    Refresh local project auth entries in `.env` from the active auth mode.
 
     Use this when a project has been idle long enough for the previously injected
-    JWTs to expire. The command preserves the rest of the `.env` file and only
-    rewrites the runtime auth keys managed by the CLI.
+    auth token to expire. The command preserves the rest of the `.env` file and
+    only rewrites the runtime auth keys managed by the CLI.
 
     Parameters
     ----------
@@ -9914,9 +9950,13 @@ def project_refresh_token(
         info("Run: mainsequence project set-up-locally <id> to provision the local runtime first.")
         raise typer.Exit(1)
 
+    backend_url = cfg.backend_url()
     try:
-        access_token, refresh_token = _current_session_jwt_tokens()
+        auth_env = _current_project_runtime_auth_env(backend_url)
     except RuntimeError as e:
+        error(str(e))
+        raise typer.Exit(1) from e
+    except ApiError as e:
         error(str(e))
         raise typer.Exit(1) from e
 
@@ -9934,13 +9974,12 @@ def project_refresh_token(
 
     final_env = _render_project_runtime_env_text(
         env_text,
-        access_token=access_token,
-        refresh_token=refresh_token,
-        backend_url=cfg.backend_url(),
+        auth_env=auth_env,
+        backend_url=backend_url,
         project_runtime_id=inferred_project_id,
     )
     env_path.write_text(final_env, encoding="utf-8")
-    success(f"Refreshed JWT tokens in: {env_path}")
+    success(f"Refreshed auth entries in: {env_path}")
 
 
 @project.command("freeze-env")
