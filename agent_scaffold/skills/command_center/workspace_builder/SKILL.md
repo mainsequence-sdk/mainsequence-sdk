@@ -353,6 +353,110 @@ Prefer:
 2. create or update through the CLI using that file
 3. verify through CLI after creation or mutation
 
+## Bindings
+
+Bindings are canonical instance-level graph edges. They live on the target widget instance in
+`bindings`, not in `props`, and not in widget-type metadata.
+
+One binding is always defined as:
+
+- target widget instance + target input id
+- source widget instance + source output id
+- optional ordered transform steps
+
+Persisted shape:
+
+- `bindings[inputId] = WidgetPortBinding`
+- `bindings[inputId] = WidgetPortBinding[]` when the target input declares `cardinality: "many"`
+
+A `WidgetPortBinding` minimally contains:
+
+- `sourceWidgetId`
+- `sourceOutputId`
+- optional `transformSteps`
+
+Treat `transformSteps` as canonical. Legacy `transformId`, `transformPath`, and
+`transformContractId` may still appear only as backward-compatible mirrors for older persisted
+workspaces.
+
+Do not describe bindings loosely as “widget A uses widget B”. In this platform, bindings are always
+port-to-port:
+
+- source widget output port -> target widget input port
+
+Resolve bindings from the target widget outward:
+
+1. Resolve the target widget IO surface first.
+   - use static `io` when present
+   - use instance-level `resolveIo(...)` when the widget exposes dynamic ports
+   - if the widget has no resolved inputs yet, stop; the widget is not ready for binding authoring
+2. For each target input, record:
+   - `inputId`
+   - accepted contracts
+   - `required`
+   - `cardinality`
+   - `effects`
+3. Choose a source widget instance that actually publishes the required output id.
+4. If the source output is structured JSON or an array, resolve binding transforms before contract
+   validation.
+   - supported transform steps:
+     - `select-array-item`
+     - `extract-path`
+5. Validate the transformed contract against the target input `accepts`.
+6. Treat the binding as usable only when the resolved status is `valid`.
+
+A binding can exist in workspace JSON and still be unusable at runtime. The runtime may resolve a
+binding as:
+
+- `unbound`
+- `missing-source`
+- `missing-output`
+- `contract-mismatch`
+- `self-reference-blocked`
+- `transform-invalid`
+- `valid`
+
+Input `effects` explain what the binding actually changes:
+
+- `drives-value`: upstream value becomes an effective widget or generated-field value
+- `drives-default`: upstream value changes a default
+- `drives-options`: upstream value changes available options
+- `drives-validation`: upstream value changes validation rules
+- `drives-render`: upstream value changes rendered output
+
+Runtime and persistence rules:
+
+- store graph edges in `widget.bindings`, never in ad hoc raw props
+- binding changes clear that target widget's `runtimeState`
+- the widget settings `Bindings` tab and the workspace graph editor edit the same canonical binding model
+- for `cardinality: "many"` inputs, preserve order and store an array of bindings for that input id
+
+Dynamic-IO rule:
+
+- some widgets cannot be bound safely until instance configuration has materialized their ports
+- `AppComponent` is the clearest example: request inputs and response outputs are generated from the
+  saved operation or binding spec, so do not guess ports before `resolveIo(...)` exposes them
+
+Concrete examples:
+
+- `main-sequence-data-node` publishes `Dataset` and can consume `Source data`
+- `main-sequence-ai-agent-terminal` accepts one input with `cardinality: "many"`, so several
+  upstream widget contexts can feed one terminal
+- widgets that implement `buildAgentSnapshot(...)` may also publish a synthetic `agent-context`
+  output; that output is platform-generated and still counts as a normal bindable source
+
+Review rule:
+
+- for every binding in a proposed workspace, verify the full tuple:
+  - target widget instance id
+  - target input id
+  - source widget instance id
+  - source output id
+  - transform steps, if any
+  - final resolved contract
+  - final resolved status
+
+
 ## Review Rules
 
 When reviewing a workspace task, look for:

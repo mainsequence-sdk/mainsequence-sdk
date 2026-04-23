@@ -237,6 +237,85 @@ That means:
 - do not handcraft loose dictionaries for these cases when the SDK model already exists
 - keep input and response contracts separate instead of overloading one model to do both jobs
 
+### 6.2 AppComponent bindings are dynamic, port-to-port, and response-shape aware
+
+Treat AppComponent bindings as normal canonical widget bindings, not as a separate AppComponent-only
+wiring model.
+
+Once settings selects one operation, AppComponent compiles and persists a `bindingSpec`. That
+compiled spec is the instance contract for bindings. It is what defines the dynamic request input
+ports and dynamic response output ports. Do not guess ports from raw OpenAPI after that point.
+
+Request-side binding rules:
+
+- each generated request field becomes one bindable input port
+- request port ids must stay stable and aligned with the generated field key
+- at execution time, AppComponent starts from local draft values, prefills, and defaults, then
+  overlays valid resolved bindings by input id
+- bindings provide effective request values; they do not replace the need for a valid compiled
+  request contract
+- do not invent multi-source merge behavior for one request field unless the platform explicitly
+  supports it; one field should resolve to one effective value
+
+Response-side binding rules:
+
+- AppComponent should publish both convenient flat outputs and one structured root response output
+- the structured root output should be the fallback path, typically `response:$`
+- flat scalar outputs are for the common chaining cases
+- the structured root output exists so nested response fields can still feed downstream widgets
+  without inventing widget-specific graph logic
+
+Nested response rule:
+
+1. prefer flat leaf outputs for the obvious scalar fields that downstream widgets will commonly bind
+   to directly
+2. keep the full structured root output so uncommon nested values remain bindable
+3. when a downstream widget needs a nested value that is not already exposed as a flat output, bind
+   from the structured output and use binding transforms
+4. if the selected source value is an array, resolve one item first with `select-array-item`
+5. then project the nested field with `extract-path`
+6. validate compatibility after the transform, not only against the raw root JSON contract
+
+This is the intended pattern for one API response feeding several widgets:
+
+- one AppComponent instance executes one operation
+- that one response may fan out to several downstream widgets
+- each downstream widget may bind to a different output from the same AppComponent instance
+- some consumers may bind to flat leaf outputs
+- others may bind to the structured root output plus transform steps to extract one nested field
+
+Do not duplicate one AppComponent into several copies just to expose different fields from the same
+response unless those copies really represent different operations, different execution timing, or
+different lifecycle ownership.
+
+Response-shaping guidance:
+
+- keep response field names stable and semantically clear so generated output ids remain durable
+- do not flatten every nested field preemptively
+- flatten the common reusable leaves
+- keep the rest available through the structured root output plus transforms
+- if downstream consumers need heavy normalization, tabular reshaping, pagination handling, or
+  domain-specific transformation across many fields, stop treating the raw AppComponent response as
+  the final widget contract and move that shaping into a DataNode or dedicated adapter
+
+Special response modes:
+
+- if the success response uses `x-ui-role: editable-form`, the response-side binding surface becomes
+  `editable-form:$` plus one `editable-form:field:<token>` output per stable field token
+- if the success response uses `x-ui-role: notification`, that changes the richer rendered response
+  UI, but it should not be treated as a separate binding system
+
+Validation rule:
+
+- do not claim an AppComponent binding is safe until the selected operation has produced a compiled
+  `bindingSpec`
+- do not claim it is safe if the source or target port is only inferred
+- do not claim it is safe if nested extraction depends on an implied path instead of explicit
+  transform steps
+- do not claim it is safe until the final transformed contract matches the downstream widget input
+  contract
+
+
 ## Review Rules
 
 When reviewing an AppComponent task, look for:

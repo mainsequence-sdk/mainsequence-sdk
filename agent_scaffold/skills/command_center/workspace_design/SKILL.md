@@ -143,7 +143,7 @@ Do not invent widget ids.
 
 Think in concepts first, then map the concept to a registered widget.
 
-Always verify through the CLI that the widget exists and inspect its widget-detail internals before treating the mapping as valid: look carefully to the response usage guidance. 
+Always verify through the CLI that the widget exists, and inspect the widget-detail response before treating the mapping as valid. Read the response usage guidance carefully and treat it as canonical.
 
 ```bash
 mainsequence cc registered_widget_type list --json
@@ -170,15 +170,15 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - do not assume one `main-sequence-data-node` widget can chain multiple transform modes; chain multiple Data Node widgets when the registry detail says that is the supported pattern
 
 
-- use `data-node-table-visualizer` when the user needs row, column, filter, or tabular inspection of data already configured by a `main-sequence-data-node` widget. With this widget
-- try to use the rich visualization hper columsn like gradients and gauge when it make sense. 
+- use `data-node-table-visualizer` when the user needs row, column, filter, or tabular inspection of data already configured by a `main-sequence-data-node` widget
+- when it improves readability, use richer per-column visual options such as gradients or gauges
 
 
 #### Visualization and summaries:
 
 - use `main-sequence-data-node-visualizer` for chart or graph-oriented DataNode exploration when the visualized information comes from a `main-sequence-data-node`
 - use `main-sequence-data-node-statistic` as a visualization widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a configured DataNode
-- use `main-sequence-data-node-statistic` when the user needs an at-a-glance visual answer rather than a full chart or table. this widget also can provide a general chart in the background but use this mainly for a quick glance of states, for example
+- use `main-sequence-data-node-statistic` when the user needs an at-a-glance answer rather than a full chart or table; this widget can also render a small background chart, but it should mainly be used for quick state summaries
 - use `echarts-spec` when the visualization is non-standard, needs richer chart semantics, and a general ECharts chart is the right fit; this chart normally needs an AppComponent or API-backed upstream binding
 - use `lightweight-chart-ts-spec` when the visualization is non-standard, time-series heavy, or financial-market oriented; this chart normally needs an AppComponent or API-backed upstream binding
 
@@ -194,12 +194,13 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 
 #### Interaction and workflows:
 
-- use `app-component` when the workspace needs a form-driven action, custom workflow, or domain-specific interactive operation. App-component is a full interace betweent he workspace and an API
+- use `app-component` when the workspace needs a form-driven action, custom workflow, or domain-specific interactive operation; an AppComponent is a full interaction surface between the workspace and an API
 - route AppComponent form and input-contract design to the AppComponents skill
 
 #### Agent and debugging surfaces:
 
-- use `main-sequence-ai-agent-terminal` when the workspace needs an agent interaction surface. For example to interpret the results of an specific graph table or group of tables always include a prompt if you add an agent terminal Always verify with the user if this is required.m
+- use `main-sequence-ai-agent-terminal` when the workspace needs an agent interaction surface
+- if you add an agent terminal to interpret a graph, table, or related group of tables, include a clear prompt and verify with the user that the agent surface is actually required
 - use `main-sequence-ai-upstream-inspector` when the workspace is explicitly testing or debugging upstream widget wiring and payload behavior
 
 These examples are guidance only. Always confirm actual availability and contract details from the registry.
