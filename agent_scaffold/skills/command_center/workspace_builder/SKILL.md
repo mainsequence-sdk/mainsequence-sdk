@@ -1,21 +1,24 @@
 ---
 name: command-center-workspace-builder
-description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces. This skill owns workspace documents, widget instance payload resolution, layout decisions, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. Main Sequence is platform-first: if a mounted widget or AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the workspace flow is considered usable. Resource and release creation belong to the orchestration-and-releases skill. It does not own AppComponent form contracts, API implementation, or Streamlit dashboards.
+description: Use this skill when the task is about creating, updating, validating, or reviewing Main Sequence Command Center workspaces after the workspace design is known. This skill owns workspace documents, widget instance payload resolution, safe mutation, shared versus user state, widget-scoped mutation, and grounding those decisions against the richer widget-type registry contract plus the SDK command_center client models. Use workspace_design first when the task is still about deciding which widgets, layout, narrative, or visualization strategy should express the user intent. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only when the first two still leave instance payload questions unresolved. Main Sequence is platform-first: if a mounted widget or AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the workspace flow is considered usable. Resource and release creation belong to the orchestration-and-releases skill. It does not own AppComponent form contracts, API implementation, workspace design, or Streamlit dashboards.
 ---
 
 # Command Center Workspace Builder
 
 ## Overview
 
-Use this skill when the task is about a Command Center workspace document or a mounted widget inside that workspace.
+Use this skill when the task is about a Command Center workspace document or a mounted widget inside that workspace, and the high-level workspace design is already known.
 
-This skill is for workspace structure, widget payload resolution, safe workspace mutation, and grounding those decisions against the actual `mainsequence.client.command_center` client models.
+This skill is for workspace structure execution, widget payload resolution, safe workspace mutation, and grounding those decisions against the actual `mainsequence.client.command_center` client models.
+
+If the task is still deciding what the workspace should communicate, which widgets should be used, or how the workspace should be organized, use `.agents/skills/command_center/workspace_design/SKILL.md` first.
 
 ## This Skill Can Do
 
 - create a new Command Center workspace
 - update an existing workspace document
 - add widgets to a workspace
+- execute a known workspace design
 - verify widget types in the CLI registry before mounting or mutating them
 - inspect the richer widget detail contract before opening repository source
 - inspect SDK client models in `mainsequence/client/command_center/` before opening frontend implementation files
@@ -33,6 +36,9 @@ This skill is for workspace structure, widget payload resolution, safe workspace
 
 This skill must not claim ownership of:
 
+- deciding the workspace narrative or information architecture
+- choosing widgets from user intent when the design is not settled
+- deciding whether a table, chart, KPI, note, AppComponent, or diagnostic widget best expresses the business idea
 - AppComponent custom input forms
 - widget-facing API response contracts
 - generic FastAPI or backend API implementation
@@ -42,6 +48,8 @@ This skill must not claim ownership of:
 
 ## Route Adjacent Work
 
+- Workspace design, widget selection, and visualization strategy:
+  `.agents/skills/command_center/workspace_design/SKILL.md`
 - AppComponents and custom forms:
   `.agents/skills/command_center/app_components/SKILL.md`
 - predeployment mock API contract validation:
@@ -59,6 +67,8 @@ This skill must not claim ownership of:
 
 ## Read First
 
+0. If widget selection, layout narrative, or visualization strategy is not already decided, use:
+   - `.agents/skills/command_center/workspace_design/SKILL.md`
 1. Verify the widget catalog through the CLI:
    - `mainsequence cc registered_widget_type list --json`
    - identify the target `widget_id`

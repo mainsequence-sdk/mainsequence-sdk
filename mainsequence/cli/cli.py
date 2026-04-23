@@ -4539,6 +4539,52 @@ def _workspace_detail_impl(
     print_kv("Workspace Details", _format_workspace_details(workspace_payload))
 
 
+def _workspace_snapshot_impl(
+    *,
+    workspace_id: int,
+    output_path: pathlib.Path | None,
+) -> None:
+    _require_login()
+
+    try:
+        from mainsequence.client.command_center.workspace_snapshot import (
+            _build_snapshot_url,
+            _resolve_command_center_url,
+            _WorkspaceSnapshotError,
+            get_workspace_snapshot,
+        )
+
+        snapshot_url = _build_snapshot_url(_resolve_command_center_url(), workspace_id)
+        typer.echo(f"Snapshot URL: {snapshot_url}")
+        archive_bytes = get_workspace_snapshot(workspace_id, output_path=output_path)
+    except _WorkspaceSnapshotError as e:
+        error(f"Workspace snapshot failed: {e}")
+        raise typer.Exit(1) from e
+
+    output_text = (
+        str(output_path.expanduser())
+        if output_path is not None
+        else f"~/mainsequence/workspaces/workspace-{workspace_id}-<timestamp>/snapshot.zip"
+    )
+    result = {
+        "workspace_id": workspace_id,
+        "archive_size_bytes": len(archive_bytes),
+        "output_path": output_text,
+    }
+    if _emit_json(result):
+        return
+
+    success(f"Workspace snapshot captured: id={workspace_id}")
+    print_kv(
+        "Workspace Snapshot",
+        [
+            ("Workspace ID", str(workspace_id)),
+            ("Archive Size Bytes", str(len(archive_bytes))),
+            ("Output", output_text),
+        ],
+    )
+
+
 def _workspace_update_impl(
     *,
     workspace_id: int,
@@ -5026,6 +5072,22 @@ def workspace_detail_cmd(
     Show one command-center workspace in detail.
     """
     _workspace_detail_impl(workspace_id=workspace_id, timeout=timeout)
+
+
+@workspace.command("snapshot")
+def workspace_snapshot_cmd(
+    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    output_path: pathlib.Path | None = typer.Option(
+        None,
+        "--output-path",
+        "-o",
+        help="Optional output file or directory path. Defaults to ~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/snapshot.zip.",
+    ),
+):
+    """
+    Capture one command-center workspace snapshot archive.
+    """
+    _workspace_snapshot_impl(workspace_id=workspace_id, output_path=output_path)
 
 
 @workspace.command("update")

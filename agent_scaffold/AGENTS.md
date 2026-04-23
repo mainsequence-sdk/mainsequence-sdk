@@ -140,7 +140,9 @@ Typical routing:
   `.agents/skills/data_access/exploration/SKILL.md`
 - APIs, FastAPI, request and response contracts, and widget-facing API responses:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
-- Command Center workspaces and mounted widget mutation:
+- Command Center workspace design, widget selection, layout narrative, and visualization strategy:
+  `.agents/skills/command_center/workspace_design/SKILL.md`
+- Command Center workspace JSON creation/update and mounted widget mutation:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
   `.agents/skills/command_center/app_components/SKILL.md`

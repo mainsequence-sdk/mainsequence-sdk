@@ -41,14 +41,14 @@ It contains three different kinds of truth:
 - This answers what was actually mounted, visible, hidden, connected, refreshed, and resolved when the snapshot was taken.
 
 3. Per-widget evidence
-- Structured widget snapshots and optional widget-specific exports.
+- Structured widget state embedded in `workspace-live-state.json` plus optional widget-specific exports.
 - This answers what each widget was actually showing or producing at capture time.
 
 The key distinction is:
 
 - `workspace-definition.json` tells you the intended shared workspace structure.
 - `workspace-live-state.json` tells you the actual captured runtime state.
-- `widgets/.../snapshot.json` and sibling files tell you the widget-level evidence.
+- `workspace-live-state.json` widget records and widget artifact files tell you the widget-level evidence.
 
 Do not answer runtime questions from `workspace-definition.json` alone if the live snapshot includes richer runtime evidence.
 
@@ -89,8 +89,8 @@ The archive usually contains:
 - `screenshots/viewport.png`
 - `screenshots/full-canvas.png`
 - `screenshots/hidden-widgets-sheet.png`
-- `widgets/<widget-id>-<uuid>/snapshot.json`
-- optional widget files such as:
+- optional widget folders such as `widgets/<widget-id>-<uuid>/`
+- optional widget files inside those folders, such as:
   - `screenshot.png`
   - `data.json`
   - `data.csv`
@@ -238,9 +238,6 @@ The folder name is human-friendlier than the raw instance id, but the canonical 
 
 Inside a widget folder you may see:
 
-- `snapshot.json`
-  - the structured `WidgetAgentSnapshot`
-  - this is the canonical widget-level evidence file
 - `screenshot.png`
   - widget-local visual evidence, if a visible DOM capture was possible
 - `data.json`
@@ -252,7 +249,9 @@ Inside a widget folder you may see:
 - `response.json`
   - structured response payload for response-style widgets
 
-The exact files depend on what the widget snapshot exposed and on the selected snapshot profile.
+Do not expect `snapshot.json` in widget folders. Structured widget evidence is embedded in the matching widget record in `workspace-live-state.json`, under `snapshot` when available. Use that widget record's `artifactPaths` plus `manifest.json` to locate any exported files.
+
+The exact files depend on what the widget exposed and on the selected snapshot profile.
 
 ## Capture Profiles
 
@@ -302,7 +301,6 @@ This should be your default runtime truth source.
 
 Use the widget record from `workspace-live-state.json` to locate:
 
-- `snapshot.json`
 - any widget-local screenshot
 - any data/response/chart artifact
 
@@ -372,7 +370,7 @@ Example:
 - "What output did the chart actually have?"
 
 Use:
-- widget `snapshot.json`
+- the widget record's `snapshot` field in `workspace-live-state.json`, if present
 - `chart-data.json` or `data.json`
 
 Then compare with:
@@ -416,4 +414,4 @@ Use `workspace-definition.json` for what the workspace is.
 
 Use `workspace-live-state.json` for what the workspace was doing.
 
-Use `widgets/.../snapshot.json` and sibling artifacts for what a specific widget actually showed or produced.
+Use `workspace-live-state.json` widget records plus any files listed in `artifactPaths` for what a specific widget actually showed or produced.
