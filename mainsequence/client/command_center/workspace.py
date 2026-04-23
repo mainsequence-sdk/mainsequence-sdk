@@ -361,7 +361,7 @@ class RegisteredWidgetType(CommandCenterBaseObjectOrm, BasePydanticModel):
 
     model_config = ConfigDict(
         populate_by_name=True,
-        extra="ignore",
+        extra="allow",
     )
 
     widget_id: str = Field(
@@ -376,6 +376,11 @@ class RegisteredWidgetType(CommandCenterBaseObjectOrm, BasePydanticModel):
     )
     category: str = Field(
         description="Widget catalog category.",
+    )
+    widget_version: str | None = Field(
+        default=None,
+        alias="widgetVersion",
+        description="Registered widget definition version.",
     )
     kind: RegisteredWidgetKind = Field(
         description="Widget kind classification.",
@@ -405,6 +410,28 @@ class RegisteredWidgetType(CommandCenterBaseObjectOrm, BasePydanticModel):
         default=None,
         alias="defaultPresentation",
         description="Optional default presentation configuration.",
+    )
+    default_size: dict[str, Any] | None = Field(
+        default=None,
+        alias="defaultSize",
+        description="Optional default widget size configuration.",
+    )
+    responsive: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        description="Optional responsive behavior configuration.",
+    )
+    usage_guidance: dict[str, Any] | list[Any] | str | None = Field(
+        default=None,
+        alias="usageGuidance",
+        description="Optional guidance for using the widget type.",
+    )
+    capabilities: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        description="Optional widget capability metadata.",
+    )
+    examples: dict[str, Any] | list[Any] | None = Field(
+        default=None,
+        description="Optional example widget configurations or payloads.",
     )
     is_active: bool = Field(
         alias="isActive",

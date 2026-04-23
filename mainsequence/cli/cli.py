@@ -4390,6 +4390,49 @@ def _format_registered_widget_type_preview(widget_payload: dict[str, object]) ->
 
 
 def _format_registered_widget_type_details(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
+    known_keys = {
+        "id",
+        "widget_id",
+        "widgetId",
+        "title",
+        "description",
+        "category",
+        "widget_version",
+        "widgetVersion",
+        "kind",
+        "source",
+        "is_active",
+        "isActive",
+        "registry_version",
+        "registryVersion",
+        "tags",
+        "required_permissions",
+        "requiredPermissions",
+        "schema",
+        "schema_payload",
+        "io",
+        "default_presentation",
+        "defaultPresentation",
+        "default_size",
+        "defaultSize",
+        "responsive",
+        "usage_guidance",
+        "usageGuidance",
+        "capabilities",
+        "examples",
+        "checksum",
+        "last_synced_at",
+        "lastSyncedAt",
+        "created_at",
+        "createdAt",
+        "updated_at",
+        "updatedAt",
+    }
+    extra_fields = {
+        key: value
+        for key, value in widget_payload.items()
+        if key not in known_keys
+    }
     return [
         ("Description", str(widget_payload.get("description") or "-")),
         ("Tags", _format_json_value(widget_payload.get("tags"))),
@@ -4397,6 +4440,18 @@ def _format_registered_widget_type_details(widget_payload: dict[str, object]) ->
             "Required Permissions",
             _format_json_value(widget_payload.get("required_permissions") or widget_payload.get("requiredPermissions")),
         ),
+        ("Schema", _format_json_value(widget_payload.get("schema_payload") or widget_payload.get("schema"))),
+        ("IO", _format_json_value(widget_payload.get("io"))),
+        (
+            "Default Presentation",
+            _format_json_value(widget_payload.get("default_presentation") or widget_payload.get("defaultPresentation")),
+        ),
+        ("Default Size", _format_json_value(widget_payload.get("default_size") or widget_payload.get("defaultSize"))),
+        ("Responsive", _format_json_value(widget_payload.get("responsive"))),
+        ("Usage Guidance", _format_json_value(widget_payload.get("usage_guidance") or widget_payload.get("usageGuidance"))),
+        ("Capabilities", _format_json_value(widget_payload.get("capabilities"))),
+        ("Examples", _format_json_value(widget_payload.get("examples"))),
+        ("Extra Fields", _format_json_value(extra_fields) if extra_fields else "-"),
         ("Checksum", str(widget_payload.get("checksum") or "-")),
         ("Last Synced At", str(widget_payload.get("last_synced_at") or widget_payload.get("lastSyncedAt") or "-")),
         ("Created At", str(widget_payload.get("created_at") or widget_payload.get("createdAt") or "-")),

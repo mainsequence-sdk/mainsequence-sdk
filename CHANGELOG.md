@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time series and simple table update payloads.
 - Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
+- Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 
 ## [3.17.48] - 2026-04-14
 

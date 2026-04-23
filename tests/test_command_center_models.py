@@ -57,6 +57,7 @@ def test_registered_widget_type_parses_backend_fields():
             "title": "Data Node",
             "description": "Renders a data node payload.",
             "category": "Main Sequence",
+            "widgetVersion": "1.2.3",
             "kind": "custom",
             "source": "main-sequence",
             "tags": ["data", "node"],
@@ -64,12 +65,19 @@ def test_registered_widget_type_parses_backend_fields():
             "schema": {"type": "object"},
             "io": {"inputs": [], "outputs": []},
             "defaultPresentation": {"chrome": "card"},
+            "defaultSize": {"w": 6, "h": 4},
+            "responsive": {"sm": {"w": 12}},
+            "usageGuidance": {"summary": "Use this to select a data node."},
+            "capabilities": {"publishes": ["dataNodeId"]},
+            "examples": [{"props": {"nodeId": 1}}],
             "isActive": True,
             "registryVersion": "2026.04.04",
             "checksum": "abc123",
             "lastSyncedAt": "2026-04-04T10:00:00Z",
             "createdAt": "2026-04-04T10:00:00Z",
             "updatedAt": "2026-04-04T10:30:00Z",
+            "descriptor": {"ui": "card"},
+            "x_registry_detail": {"sourceFile": "widgets/data-node.json"},
         }
     )
 
@@ -77,12 +85,25 @@ def test_registered_widget_type_parses_backend_fields():
     assert widget_type.is_active is True
     assert widget_type.required_permissions == ["dashboard:view"]
     assert widget_type.schema_payload == {"type": "object"}
+    assert widget_type.widget_version == "1.2.3"
+    assert widget_type.default_size == {"w": 6, "h": 4}
+    assert widget_type.responsive == {"sm": {"w": 12}}
+    assert widget_type.usage_guidance == {"summary": "Use this to select a data node."}
+    assert widget_type.capabilities == {"publishes": ["dataNodeId"]}
+    assert widget_type.examples == [{"props": {"nodeId": 1}}]
     assert widget_type.model_dump()["widget_id"] == "main-sequence-data-node"
     assert widget_type.model_dump()["is_active"] is True
     assert widget_type.model_dump()["schema_payload"] == {"type": "object"}
     assert widget_type.model_dump(by_alias=True)["widgetId"] == "main-sequence-data-node"
+    assert widget_type.model_dump(by_alias=True)["widgetVersion"] == "1.2.3"
     assert widget_type.model_dump(by_alias=True)["isActive"] is True
     assert widget_type.model_dump(by_alias=True)["schema"] == {"type": "object"}
+    assert widget_type.model_dump(by_alias=True)["defaultSize"] == {"w": 6, "h": 4}
+    assert widget_type.model_dump(by_alias=True)["usageGuidance"] == {
+        "summary": "Use this to select a data node."
+    }
+    assert widget_type.model_dump()["descriptor"] == {"ui": "card"}
+    assert widget_type.model_dump()["x_registry_detail"] == {"sourceFile": "widgets/data-node.json"}
 
 
 def test_registered_widget_type_filter_uses_snake_case(monkeypatch):
@@ -158,14 +179,21 @@ def test_registered_widget_type_get_uses_widget_id_detail_lookup(monkeypatch):
                 "title": "Data Node",
                 "description": "Renders a data node payload.",
                 "category": "Main Sequence",
+                "widgetVersion": "1.2.3",
                 "kind": "custom",
                 "source": "main-sequence",
+                "defaultSize": {"w": 6, "h": 4},
+                "responsive": {"sm": {"w": 12}},
+                "usageGuidance": {"summary": "Use this to select a data node."},
+                "capabilities": {"publishes": ["dataNodeId"]},
+                "examples": [{"props": {"nodeId": 1}}],
                 "isActive": True,
                 "registryVersion": "2026.04.04",
                 "checksum": "abc123",
                 "lastSyncedAt": "2026-04-04T10:00:00Z",
                 "createdAt": "2026-04-04T10:00:00Z",
                 "updatedAt": "2026-04-04T10:30:00Z",
+                "descriptor": {"ui": "card"},
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -180,6 +208,10 @@ def test_registered_widget_type_get_uses_widget_id_detail_lookup(monkeypatch):
     result = RegisteredWidgetType.get(widget_id="main-sequence-data-node", timeout=9)
 
     assert result.widget_id == "main-sequence-data-node"
+    assert result.widget_version == "1.2.3"
+    assert result.default_size == {"w": 6, "h": 4}
+    assert result.usage_guidance == {"summary": "Use this to select a data node."}
+    assert result.model_dump()["descriptor"] == {"ui": "card"}
     assert captured == {
         "r_type": "GET",
         "url": f"{RegisteredWidgetType.get_object_url()}/main-sequence-data-node/",

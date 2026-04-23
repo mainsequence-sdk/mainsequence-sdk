@@ -143,58 +143,63 @@ Do not invent widget ids.
 
 Think in concepts first, then map the concept to a registered widget.
 
-Always verify through the CLI that the widget exists and inspect its widget-detail internals before treating the mapping as valid:
+Always verify through the CLI that the widget exists and inspect its widget-detail internals before treating the mapping as valid: look carefully to the response usage guidance. 
 
 ```bash
 mainsequence cc registered_widget_type list --json
 mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 ```
 
-Structure and explanation:
+#### Structure and explanation:
 
 - use `markdown-note` for explanatory text, instructions, assumptions, annotations, and section headers
 - use `workspace-row` for grouping, layout, and visual separation
 
-Data inspection:
+#### Data inspection:
 
-- use `main-sequence-data-node` Stores a reusable Main Sequence DataNode. This widget should be use as the standard and canonical widget to request
-data within the Main Sequence Data Platform that is a DataNode, This widget exposers the  long format of the DataNode this widget should be prefered when a visualization of the DataNode. 
-requires simple transformations defined in the widget internals  which are:
-- none: publishes the input dataset as-is, except optional final projection.
-aggregate: groups by selected key fields and reduces each group with first, last, sum, mean, min, or max.
-pivot: uses key fields as row dimensions, turns values from one categorical field into output columns, and fills them from a selected value field using the aggregate mode.
-unpivot: melts selected wide value columns into long-form rows, preserving selected key fields and writing output field names like series and value.
-project columns: optional final step that keeps only selected published columns after the main transform.
-The documented transform order is: input dataset -> one transform mode -> projection -> published dataset. It does not support chaining multiple transform modes inside one widget; for that, chain multiple Data Node widgets
+- use `main-sequence-data-node` as the canonical widget for selecting and preparing a reusable Main Sequence DataNode inside a workspace
+- prefer `main-sequence-data-node` when downstream widgets need a stable DataNode-backed dataset, including visualizations and statistics
+- use the transform modes documented in widget detail:
+  - `none`: publish the input dataset as-is, except optional final projection
+  - `aggregate`: group by selected key fields and reduce each group with `first`, `last`, `sum`, `mean`, `min`, or `max`
+  - `pivot`: use key fields as row dimensions, turn values from one categorical field into output columns, and fill them from a selected value field using the aggregate mode
+  - `unpivot`: melt selected wide value columns into long-form rows, preserving selected key fields and writing output field names such as `series` and `value`
+  - `project columns`: optionally keep only selected published columns after the main transform
+- remember the transform order:
+  - input dataset -> one transform mode -> projection -> published dataset
+- do not assume one `main-sequence-data-node` widget can chain multiple transform modes; chain multiple Data Node widgets when the registry detail says that is the supported pattern
 
 
-- use `data-node-table-visualizer` when the user needs to inspect rows, columns, filters, or tabular output
+- use `data-node-table-visualizer` when the user needs row, column, filter, or tabular inspection of data already configured by a `main-sequence-data-node` widget. With this widget
+- try to use the rich visualization hper columsn like gradients and gauge when it make sense. 
 
 
-Visualization and summaries:
+#### Visualization and summaries:
 
-- use `main-sequence-data-node-visualizer` for chart or graph-oriented DataNode exploration
-- use `main-sequence-data-node-statistic` for KPIs, single-value summaries, or compact status metrics
-- use `echarts-spec` when the visualization is non-standard or too complex for a standard chart widget
+- use `main-sequence-data-node-visualizer` for chart or graph-oriented DataNode exploration when the visualized information comes from a `main-sequence-data-node`
+- use `main-sequence-data-node-statistic` as a visualization widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a configured DataNode
+- use `main-sequence-data-node-statistic` when the user needs an at-a-glance visual answer rather than a full chart or table. this widget also can provide a general chart in the background but use this mainly for a quick glance of states, for example
+- use `echarts-spec` when the visualization is non-standard, needs richer chart semantics, and a general ECharts chart is the right fit; this chart normally needs an AppComponent or API-backed upstream binding
+- use `lightweight-chart-ts-spec` when the visualization is non-standard, time-series heavy, or financial-market oriented; this chart normally needs an AppComponent or API-backed upstream binding
 
-Markets and portfolio views:
+#### Markets and portfolio views:
 
 - use market widgets such as price, positions, curve, and zero-curve widgets when the workspace is about market data, portfolio inspection, or instrument analytics
 - verify the exact market widget ids and contracts from the registry before proposing them
 
-Infrastructure and lineage:
+#### Infrastructure and lineage:
 
 - use `main-sequence-dependency-graph` to explain DataNode dependencies or lineage
 - use `main-sequence-project-infra-graph` to explain project infrastructure and platform object relationships
 
-Interaction and workflows:
+#### Interaction and workflows:
 
-- use `app-component` when the workspace needs a form-driven action, custom workflow, or domain-specific interactive operation
+- use `app-component` when the workspace needs a form-driven action, custom workflow, or domain-specific interactive operation. App-component is a full interace betweent he workspace and an API
 - route AppComponent form and input-contract design to the AppComponents skill
 
-Agent and debugging surfaces:
+#### Agent and debugging surfaces:
 
-- use `main-sequence-ai-agent-terminal` when the workspace needs an agent interaction surface
+- use `main-sequence-ai-agent-terminal` when the workspace needs an agent interaction surface. For example to interpret the results of an specific graph table or group of tables always include a prompt if you add an agent terminal Always verify with the user if this is required.m
 - use `main-sequence-ai-upstream-inspector` when the workspace is explicitly testing or debugging upstream widget wiring and payload behavior
 
 These examples are guidance only. Always confirm actual availability and contract details from the registry.

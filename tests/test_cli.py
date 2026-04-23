@@ -1001,7 +1001,7 @@ def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
     assert "Registered Widget Types" in result.output
     assert "17" in result.output
     assert "main-sequ" in result.output
-    assert "ence-data" in result.output
+    assert "uence-da" in result.output
     assert "-node" in result.output
     assert "Total registered widget types: 1" in result.output
 
@@ -1017,11 +1017,21 @@ def test_registered_widget_type_detail(cli_mod, runner, monkeypatch):
             "title": "Data Node",
             "description": "Renders a data node payload.",
             "category": "Main Sequence",
+            "widget_version": "1.2.3",
             "kind": "custom",
             "source": "main-sequence",
             "is_active": True,
             "registry_version": "2026.04.04",
             "required_permissions": ["workspace:view"],
+            "schema_payload": {"type": "object"},
+            "io": {"outputs": ["selectedDataNode"]},
+            "default_presentation": {"chrome": "card"},
+            "default_size": {"w": 6, "h": 4},
+            "responsive": {"sm": {"w": 12}},
+            "usage_guidance": {"summary": "Use this to select a data node."},
+            "capabilities": {"publishes": ["dataNodeId"]},
+            "examples": [{"props": {"nodeId": 1}}],
+            "descriptor": {"ui": "card"},
             "checksum": "abc123",
             "last_synced_at": "2026-04-04T10:00:00Z",
             "created_at": "2026-04-04T10:00:00Z",
@@ -1038,6 +1048,14 @@ def test_registered_widget_type_detail(cli_mod, runner, monkeypatch):
     assert "17" in result.output
     assert "main-sequence-data-node" in result.output
     assert "Renders a data node payload." in result.output
+    assert "Schema" in result.output
+    assert "Default Presentation" in result.output
+    assert "Default Size" in result.output
+    assert "Usage Guidance" in result.output
+    assert "Capabilities" in result.output
+    assert "Examples" in result.output
+    assert "Extra Fields" in result.output
+    assert "descriptor" in result.output
     assert "workspace:view" in result.output
 
 
