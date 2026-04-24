@@ -13,7 +13,7 @@ Parity with VS Code extension:
 - project build_local_venv (create local .venv from pyproject + uv sync)
 - project sync (uv bump + lock/sync/export + git commit/push)
 - project build-docker-env (docker build + devcontainer config)
-- docker scaffold creation during set-up-locally when DEFAULT_BASE_IMAGE exists
+- local `.env` provisioning during set-up-locally uses only CLI-managed runtime values
 - project current (detect current project + venv/python info)
 - sdk latest + project sdk-status + project update-sdk
 - doctor diagnostics
@@ -98,7 +98,6 @@ from .api import (
     delete_secret,
     delete_simple_table_storage,
     delete_workspace,
-    fetch_project_env_text,
     get_agent,
     get_agent_latest_session,
     get_agent_run,
@@ -194,9 +193,6 @@ from .browser_auth import BrowserAuthError, login_via_browser
 from .docker_utils import (
     build_docker_environment,
     compute_docker_image_ref,
-    ensure_docker_scaffold,
-    extract_env_value,
-    resolve_base_image,
     write_devcontainer_config,
 )
 from .doctor import run_doctor
@@ -9674,7 +9670,7 @@ def project_set_up_locally(
     scaffold_docker: bool = typer.Option(
         True,
         "--scaffold-docker/--no-scaffold-docker",
-        help="Create Dockerfile/.dockerignore when DEFAULT_BASE_IMAGE is present",
+        help="Deprecated compatibility flag. Docker scaffolding is no longer derived during set-up-locally.",
     ),
 ):
     """
@@ -9683,9 +9679,8 @@ def project_set_up_locally(
     Workflow:
     - ensure SSH key and optionally register deploy key,
     - clone repository into local projects root,
-    - fetch remote environment and inject auth for the active auth mode,
-    - write/update `.env` with local runtime values,
-    - optionally scaffold Docker files from default base image.
+    - build local runtime auth/backend entries for the active auth mode,
+    - write/update `.env` with local runtime values.
 
     Parameters
     ----------
@@ -9694,7 +9689,7 @@ def project_set_up_locally(
     base_dir:
         Override local projects base directory.
     scaffold_docker:
-        Enable Dockerfile/.dockerignore scaffold when base image is available.
+        Deprecated compatibility flag. No effect.
 
     Examples
     --------
@@ -9774,14 +9769,6 @@ def project_set_up_locally(
         error("git clone failed")
         raise typer.Exit(3)
 
-    # Fetch env text (keep original for DEFAULT_BASE_IMAGE extraction)
-    orig_env_text = ""
-    try:
-        orig_env_text = fetch_project_env_text(project_id)
-    except Exception:
-        orig_env_text = ""
-    env_text = (orig_env_text or "").replace("\r", "")
-
     backend_url = cfg.backend_url()
     try:
         auth_env = _current_project_runtime_auth_env(backend_url)
@@ -9793,23 +9780,12 @@ def project_set_up_locally(
         raise typer.Exit(1) from e
 
     final_env = _render_project_runtime_env_text(
-        env_text,
+        "",
         auth_env=auth_env,
         backend_url=backend_url,
         project_runtime_id=str(project_id),
     )
     (target_dir / ".env").write_text(final_env, encoding="utf-8")
-
-    # Docker scaffold parity
-    if scaffold_docker:
-        default_base_image = extract_env_value(orig_env_text or "", "DEFAULT_BASE_IMAGE")
-        if default_base_image is not None:
-            img, warnings_ = resolve_base_image(default_base_image)
-            for w in warnings_:
-                warn(w)
-            _changed, msgs = ensure_docker_scaffold(target_dir, img)
-            for m in msgs:
-                info(m)
 
     success(f"Local folder: {target_dir}")
     info(f"Repo URL: {repo}")

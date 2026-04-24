@@ -8226,20 +8226,9 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
     monkeypatch.setattr(
-        cli_mod,
-        "fetch_project_env_text",
-        lambda project_id: "DEFAULT_BASE_IMAGE=none\nFOO=bar\nMAINSEQUENCE_TOKEN=legacy-token\n",
-    )
-    monkeypatch.setattr(
         cli_mod.cfg,
         "get_tokens",
         lambda: {"username": "u", "access": "access-123", "refresh": "refresh-456"},
-    )
-    monkeypatch.setattr(cli_mod, "resolve_base_image", lambda _: ("ghcr.io/test/image:latest", []))
-    monkeypatch.setattr(
-        cli_mod,
-        "ensure_docker_scaffold",
-        lambda *_: (True, ["Created Dockerfile (base image: ghcr.io/test/image:latest)"]),
     )
 
     result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
@@ -8252,7 +8241,9 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
-    assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
+    assert "DEFAULT_BASE_IMAGE" not in env_text
+    assert "FOO=bar" not in env_text
+    assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
 
 
 def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
@@ -8296,16 +8287,6 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
 
     monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
     monkeypatch.setattr(
-        cli_mod,
-        "fetch_project_env_text",
-        lambda project_id: (
-            "DEFAULT_BASE_IMAGE=none\n"
-            "FOO=bar\n"
-            "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
-            "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
-        ),
-    )
-    monkeypatch.setattr(
         cli_mod.cfg,
         "get_tokens",
         lambda: (_ for _ in ()).throw(AssertionError("JWT tokens should not be used")),
@@ -8314,12 +8295,6 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         cli_mod,
         "_exchange_runtime_credential_for_cli_login",
         lambda backend_url: "runtime-access",
-    )
-    monkeypatch.setattr(cli_mod, "resolve_base_image", lambda _: ("ghcr.io/test/image:latest", []))
-    monkeypatch.setattr(
-        cli_mod,
-        "ensure_docker_scaffold",
-        lambda *_: (True, ["Created Dockerfile (base image: ghcr.io/test/image:latest)"]),
     )
 
     result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
@@ -8334,6 +8309,8 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     assert "TDAG_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
+    assert "DEFAULT_BASE_IMAGE" not in env_text
+    assert "FOO=bar" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 
