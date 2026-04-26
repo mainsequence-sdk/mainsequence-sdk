@@ -2891,6 +2891,108 @@ def get_registered_widget_type(
         raise ApiError(f"Registered widget type fetch failed: {e}") from e
 
 
+def list_connection_types(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List Command Center connection types via SDK client model.
+    """
+    try:
+        connection_types = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionType",
+            operation=lambda ClientConnectionType: ClientConnectionType.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(connection_type) for connection_type in connection_types]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Connection types fetch failed: {e}") from e
+
+
+def get_connection_type(
+    type_id: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one Command Center connection type via SDK client model.
+    """
+    try:
+        connection_type = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionType",
+            operation=lambda ClientConnectionType: ClientConnectionType.get(
+                type_id=str(type_id),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(connection_type)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Connection type not found: {type_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Connection type fetch failed: {e}") from e
+
+
+def list_connection_instances(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List Command Center connection instances via SDK client model.
+    """
+    try:
+        connections = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionInstance",
+            operation=lambda ClientConnectionInstance: ClientConnectionInstance.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(connection) for connection in connections]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Connections fetch failed: {e}") from e
+
+
+def get_connection_instance(
+    connection_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one Command Center connection instance via SDK client model.
+    """
+    try:
+        connection = _run_sdk_model_operation(
+            module_name="mainsequence.client.command_center.connections",
+            class_name="ConnectionInstance",
+            operation=lambda ClientConnectionInstance: ClientConnectionInstance.get(
+                uid=str(connection_uid),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(connection)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Connection not found: {connection_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Connection fetch failed: {e}") from e
+
+
 def get_simple_table_storage(
     storage_id: int | str,
     *,
@@ -4544,6 +4646,7 @@ def schedule_batch_project_jobs(
 def run_project_job(
     job_id: int | str,
     *,
+    command_args: list[str] | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -4601,7 +4704,7 @@ def run_project_job(
         ClientJob.ROOT_URL = root_url
 
         job = ClientJob.get(pk=int(job_id), timeout=timeout)
-        payload = job.run_job(timeout=timeout)
+        payload = job.run_job(timeout=timeout, command_args=command_args)
         if isinstance(payload, dict):
             return payload
         if hasattr(payload, "model_dump"):

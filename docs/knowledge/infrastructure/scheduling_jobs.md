@@ -148,6 +148,7 @@ If you want to validate one of the synchronized jobs immediately instead of wait
 ```bash
 mainsequence project jobs list
 mainsequence project jobs run <JOB_ID>
+mainsequence project jobs run <JOB_ID> --command python --command -m --command jobs.daily
 mainsequence project jobs runs list <JOB_ID>
 mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
 ```
@@ -168,6 +169,7 @@ Then run it:
 ```bash
 mainsequence project jobs list
 mainsequence project jobs run <JOB_ID>
+mainsequence project jobs run <JOB_ID> --command python --command -m --command jobs.daily
 mainsequence project jobs runs list <JOB_ID>
 mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
 ```

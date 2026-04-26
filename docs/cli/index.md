@@ -102,6 +102,10 @@ mainsequence cc registered_widget_type list
 mainsequence cc registered_widget_type detail main-sequence-data-node
 mainsequence cc registered_widget_type list --filter widget_id=markdown-note
 mainsequence cc registered_widget_type list --show-filters
+mainsequence cc connection_type list
+mainsequence cc connection_type detail postgres
+mainsequence cc connection list
+mainsequence cc connection detail warehouse-primary
 ```
 
 Command Center commands are grouped under `cc`:
@@ -110,6 +114,10 @@ Command Center commands are grouped under `cc`:
   create, detail, update, list, and delete shared workspaces
 - `registered_widget_type`
   inspect the widget catalog available to workspaces, including widget-type detail by unique `widget_id` rather than backend row `id`
+- `connection_type`
+  inspect the Command Center connection catalog by stable connection `type_id`
+- `connection`
+  inspect configured Command Center connection instances by stable connection `uid`
 
 For widget-specific workspace mutations, prefer the SDK workspace methods instead of rewriting the full workspace document:
 
@@ -251,6 +259,7 @@ mainsequence project jobs runs list 91
 mainsequence project jobs runs logs 501
 mainsequence project jobs runs logs 501 --max-wait-seconds 900
 mainsequence project jobs run 91
+mainsequence project jobs run 91 --command python --command -m --command jobs.daily
 mainsequence project jobs create --name daily-run --execution-path scripts/test.py
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml
 mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
@@ -422,7 +431,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence project sync` performs the local uv/git sync flow and, after a successful push, calls the SDK client `Project.sync_project_after_commit()` path for the resolved project id.
 - `mainsequence project jobs runs list` lists job-run history through the SDK client `JobRun.filter(job__id=[job_id])` path.
 - `mainsequence project jobs runs logs` fetches logs through the SDK client `JobRun.get_logs()` path, polls every 30 seconds by default while the job run is `PENDING` or `RUNNING`, and stops after 10 minutes unless you override `--max-wait-seconds` or disable it with `--max-wait-seconds 0`.
-- `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path.
+- `mainsequence project jobs run` triggers a manual run through the SDK client `Job.run_job()` path and accepts repeatable `--command` options that are forwarded as `command_args`.
 - `mainsequence project jobs create` creates jobs through the SDK client `Job.create()` path, requires a project image, expects `execution_path` relative to the content root, for example `scripts/test.py`, builds interval or crontab schedules interactively when requested, and defaults compute settings to `cpu_request=0.25`, `memory_request=0.5`, `spot=false`, `max_runtime_seconds=86400` when omitted.
 - `mainsequence project schedule_batch_jobs` validates a repository-managed `scheduled_jobs.yaml` file and submits the batch through the SDK client `Job.bulk_get_or_create()` path.
 - `mainsequence project schedule_batch_jobs` expects a top-level `jobs` list, resolves the project id from the argument or local `.env`, lets you choose one project image for the whole batch, and supports `--strict` when the file should act as the full desired state.

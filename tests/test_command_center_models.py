@@ -1,6 +1,10 @@
 import mainsequence.client.base as base_mod
 import mainsequence.client.utils as client_utils
 from mainsequence.client.command_center import (
+    ConnectionAccessMode,
+    ConnectionInstance,
+    ConnectionInstanceStatus,
+    ConnectionType,
     RegisteredWidgetType,
     Workspace,
     WorkspaceLayoutKind,
@@ -217,6 +221,315 @@ def test_registered_widget_type_get_uses_widget_id_detail_lookup(monkeypatch):
         "url": f"{RegisteredWidgetType.get_object_url()}/main-sequence-data-node/",
         "payload": {"params": {}},
         "timeout": 9,
+    }
+
+
+def test_connection_type_uses_command_center_endpoint():
+    assert ConnectionType.get_object_url().endswith("/api/v1/command_center/connection-types")
+
+
+def test_connection_type_parses_backend_fields():
+    connection_type = ConnectionType.model_validate(
+        {
+            "id": "postgresql.database",
+            "version": 2,
+            "title": "PostgreSQL",
+            "description": "Connect to PostgreSQL.",
+            "source": "main-sequence",
+            "category": "Database",
+            "tags": ["sql"],
+            "capabilities": ["test", "query", "resource"],
+            "accessMode": "server-only",
+            "publicConfigSchema": {"type": "object"},
+            "secureConfigSchema": {"type": "object"},
+            "queryModels": [{"id": "sql-table"}],
+            "requiredPermissions": ["connections:view"],
+            "usageGuidance": "Use for analytical databases.",
+            "examples": [{"title": "List tables"}],
+        }
+    )
+
+    assert connection_type.type_id == "postgresql.database"
+    assert connection_type.type_version == 2
+    assert connection_type.access_mode == ConnectionAccessMode.SERVER_ONLY
+    assert connection_type.public_config_schema == {"type": "object"}
+    assert connection_type.secure_config_schema == {"type": "object"}
+    assert connection_type.query_models == [{"id": "sql-table"}]
+    assert connection_type.required_permissions == ["connections:view"]
+    assert connection_type.model_dump(by_alias=True)["id"] == "postgresql.database"
+    assert connection_type.model_dump(by_alias=True)["version"] == 2
+    assert connection_type.model_dump(by_alias=True)["accessMode"] == "server-only"
+
+
+def test_connection_type_filter_uses_backend_query_names(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "results": [
+                    {
+                        "id": "postgresql.database",
+                        "version": 2,
+                        "title": "PostgreSQL",
+                        "description": "Connect to PostgreSQL.",
+                        "source": "main-sequence",
+                        "category": "Database",
+                        "tags": ["sql"],
+                        "capabilities": ["query"],
+                        "accessMode": "server-only",
+                        "publicConfigSchema": {"type": "object"},
+                        "secureConfigSchema": {"type": "object"},
+                        "queryModels": [],
+                        "requiredPermissions": [],
+                        "usageGuidance": "",
+                        "examples": [],
+                    }
+                ],
+                "next": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    results = ConnectionType.filter(
+        type_id="postgresql.database",
+        access_mode="server-only",
+        is_active=True,
+        include_inactive=False,
+        timeout=12,
+    )
+
+    assert len(results) == 1
+    assert results[0].type_id == "postgresql.database"
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{ConnectionType.get_object_url()}/",
+        "payload": {
+            "params": {
+                "type_id": "postgresql.database",
+                "access_mode": "server-only",
+                "isActive": True,
+                "includeInactive": False,
+            }
+        },
+        "timeout": 12,
+    }
+
+
+def test_connection_type_get_uses_type_id_detail_lookup(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "id": "postgresql.database",
+                "version": 2,
+                "title": "PostgreSQL",
+                "description": "Connect to PostgreSQL.",
+                "source": "main-sequence",
+                "category": "Database",
+                "tags": ["sql"],
+                "capabilities": ["query"],
+                "accessMode": "server-only",
+                "publicConfigSchema": {"type": "object"},
+                "secureConfigSchema": {"type": "object"},
+                "queryModels": [],
+                "requiredPermissions": [],
+                "usageGuidance": "",
+                "examples": [],
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    result = ConnectionType.get(type_id="postgresql.database", timeout=8)
+
+    assert result.type_id == "postgresql.database"
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{ConnectionType.get_object_url()}/postgresql.database/",
+        "payload": {"params": {}},
+        "timeout": 8,
+    }
+
+
+def test_connection_instance_uses_command_center_endpoint():
+    assert ConnectionInstance.get_object_url().endswith("/api/v1/command_center/connections")
+
+
+def test_connection_instance_parses_backend_fields():
+    connection = ConnectionInstance.model_validate(
+        {
+            "id": "42",
+            "uid": "postgresql-database-primary",
+            "typeId": "postgresql.database",
+            "typeVersion": 2,
+            "name": "Primary warehouse",
+            "description": "Main analytics database.",
+            "organizationId": "7",
+            "workspaceId": "workspace-1",
+            "publicConfig": {"host": "db.example.com"},
+            "secureFields": {"password": True},
+            "status": "ok",
+            "statusMessage": "Connected.",
+            "lastHealthCheckAt": "2026-04-04T10:05:00Z",
+            "isDefault": True,
+            "isSystem": False,
+            "tags": ["warehouse"],
+            "createdBy": "9",
+            "createdAt": "2026-04-04T10:00:00Z",
+            "updatedAt": "2026-04-04T10:30:00Z",
+        }
+    )
+
+    assert connection.uid == "postgresql-database-primary"
+    assert connection.type_id == "postgresql.database"
+    assert connection.type_version == 2
+    assert connection.status == ConnectionInstanceStatus.OK
+    assert connection.public_config == {"host": "db.example.com"}
+    assert connection.secure_fields == {"password": True}
+    assert connection.is_default is True
+    assert connection.model_dump(by_alias=True)["typeId"] == "postgresql.database"
+    assert connection.model_dump(by_alias=True)["publicConfig"] == {"host": "db.example.com"}
+
+
+def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "results": [
+                    {
+                        "id": "42",
+                        "uid": "postgresql-database-primary",
+                        "typeId": "postgresql.database",
+                        "typeVersion": 2,
+                        "name": "Primary warehouse",
+                        "description": "",
+                        "organizationId": "7",
+                        "workspaceId": None,
+                        "publicConfig": {},
+                        "secureFields": {},
+                        "status": "ok",
+                        "statusMessage": "",
+                        "lastHealthCheckAt": None,
+                        "isDefault": True,
+                        "isSystem": False,
+                        "tags": [],
+                        "createdBy": "9",
+                        "createdAt": "2026-04-04T10:00:00Z",
+                        "updatedAt": "2026-04-04T10:30:00Z",
+                    }
+                ],
+                "next": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    results = ConnectionInstance.filter(
+        type_id="postgresql.database",
+        status="ok",
+        workspace_id="workspace-1",
+        is_default=True,
+        is_active=True,
+        timeout=16,
+    )
+
+    assert len(results) == 1
+    assert results[0].uid == "postgresql-database-primary"
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{ConnectionInstance.get_object_url()}/",
+        "payload": {
+            "params": {
+                "type_id": "postgresql.database",
+                "status": "ok",
+                "workspace_id": "workspace-1",
+                "isDefault": True,
+                "isActive": True,
+            }
+        },
+        "timeout": 16,
+    }
+
+
+def test_connection_instance_get_uses_uid_detail_lookup(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "id": "42",
+                "uid": "postgresql-database-primary",
+                "typeId": "postgresql.database",
+                "typeVersion": 2,
+                "name": "Primary warehouse",
+                "description": "",
+                "organizationId": "7",
+                "workspaceId": None,
+                "publicConfig": {},
+                "secureFields": {},
+                "status": "ok",
+                "statusMessage": "",
+                "lastHealthCheckAt": None,
+                "isDefault": True,
+                "isSystem": False,
+                "tags": [],
+                "createdBy": "9",
+                "createdAt": "2026-04-04T10:00:00Z",
+                "updatedAt": "2026-04-04T10:30:00Z",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    result = ConnectionInstance.get(uid="postgresql-database-primary", timeout=18)
+
+    assert result.uid == "postgresql-database-primary"
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{ConnectionInstance.get_object_url()}/postgresql-database-primary/",
+        "payload": {"params": {}},
+        "timeout": 18,
     }
 
 

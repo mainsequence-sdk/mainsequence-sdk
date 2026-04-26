@@ -102,6 +102,8 @@ from .api import (
     get_agent_latest_session,
     get_agent_run,
     get_agent_session,
+    get_connection_instance,
+    get_connection_type,
     get_constant,
     get_current_user_profile,
     get_data_node_storage,
@@ -123,6 +125,8 @@ from .api import (
     list_agent_users_can_edit,
     list_agent_users_can_view,
     list_agents,
+    list_connection_instances,
+    list_connection_types,
     list_constant_users_can_edit,
     list_constant_users_can_view,
     list_constants,
@@ -315,6 +319,8 @@ simple_table = typer.Typer(help="Simple table commands")
 cc = typer.Typer(help="Command Center commands")
 workspace = typer.Typer(help="Workspace commands")
 registered_widget_type = typer.Typer(help="Registered widget type commands")
+connection_type = typer.Typer(help="Connection type commands")
+connection = typer.Typer(help="Connection commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 markets = typer.Typer(help="Markets commands")
@@ -348,9 +354,17 @@ app.add_typer(cc, name="command_center", hidden=True)
 cc.add_typer(workspace, name="workspace")
 cc.add_typer(registered_widget_type, name="registered_widget_type")
 cc.add_typer(registered_widget_type, name="registered-widget-type", hidden=True)
+cc.add_typer(connection_type, name="connection_type")
+cc.add_typer(connection_type, name="connection-type", hidden=True)
+cc.add_typer(connection, name="connection")
+cc.add_typer(connection, name="connections", hidden=True)
 app.add_typer(workspace, name="workspace", hidden=True)
 app.add_typer(registered_widget_type, name="registered_widget_type", hidden=True)
 app.add_typer(registered_widget_type, name="registered-widget-type", hidden=True)
+app.add_typer(connection_type, name="connection_type", hidden=True)
+app.add_typer(connection_type, name="connection-type", hidden=True)
+app.add_typer(connection, name="connection", hidden=True)
+app.add_typer(connection, name="connections", hidden=True)
 app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
 app.add_typer(markets, name="markets")
@@ -407,6 +421,8 @@ SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
 SIMPLE_TABLE_STORAGE_MODEL_REF = "mainsequence.client.models_simple_tables.SimpleTableStorage"
 WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
 REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.RegisteredWidgetType"
+CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionType"
+CONNECTION_INSTANCE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionInstance"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 PORTFOLIO_MODEL_REF = "mainsequence.client.models_vam.Portfolio"
 ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.models_vam.AssetTranslationTable"
@@ -4455,6 +4471,78 @@ def _format_registered_widget_type_details(widget_payload: dict[str, object]) ->
     ]
 
 
+def _format_connection_type_preview(connection_type_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Type ID", str(connection_type_payload.get("type_id") or connection_type_payload.get("id") or "-")),
+        ("Version", str(connection_type_payload.get("type_version") or connection_type_payload.get("version") or "-")),
+        ("Title", str(connection_type_payload.get("title") or "-")),
+        ("Category", str(connection_type_payload.get("category") or "-")),
+        ("Source", str(connection_type_payload.get("source") or "-")),
+        ("Access Mode", str(connection_type_payload.get("access_mode") or connection_type_payload.get("accessMode") or "-")),
+    ]
+
+
+def _format_connection_type_details(connection_type_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Description", str(connection_type_payload.get("description") or "-")),
+        ("Tags", _format_json_value(connection_type_payload.get("tags"))),
+        ("Capabilities", _format_json_value(connection_type_payload.get("capabilities"))),
+        (
+            "Public Config Schema",
+            _format_json_value(
+                connection_type_payload.get("public_config_schema")
+                or connection_type_payload.get("publicConfigSchema")
+            ),
+        ),
+        (
+            "Secure Config Schema",
+            _format_json_value(
+                connection_type_payload.get("secure_config_schema")
+                or connection_type_payload.get("secureConfigSchema")
+            ),
+        ),
+        ("Query Models", _format_json_value(connection_type_payload.get("query_models") or connection_type_payload.get("queryModels"))),
+        (
+            "Required Permissions",
+            _format_json_value(
+                connection_type_payload.get("required_permissions")
+                or connection_type_payload.get("requiredPermissions")
+            ),
+        ),
+        ("Usage Guidance", str(connection_type_payload.get("usage_guidance") or connection_type_payload.get("usageGuidance") or "-")),
+        ("Examples", _format_json_value(connection_type_payload.get("examples"))),
+    ]
+
+
+def _format_connection_preview(connection_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("UID", str(connection_payload.get("uid") or connection_payload.get("id") or "-")),
+        ("ID", str(connection_payload.get("id") or "-")),
+        ("Name", str(connection_payload.get("name") or "-")),
+        ("Type ID", str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-")),
+        ("Type Version", str(connection_payload.get("type_version") or connection_payload.get("typeVersion") or "-")),
+        ("Status", str(connection_payload.get("status") or "-")),
+        ("Workspace ID", str(connection_payload.get("workspace_id") or connection_payload.get("workspaceId") or "-")),
+        ("Default", str(connection_payload.get("is_default") if "is_default" in connection_payload else connection_payload.get("isDefault"))),
+        ("System", str(connection_payload.get("is_system") if "is_system" in connection_payload else connection_payload.get("isSystem"))),
+    ]
+
+
+def _format_connection_details(connection_payload: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("Description", str(connection_payload.get("description") or "-")),
+        ("Organization ID", str(connection_payload.get("organization_id") or connection_payload.get("organizationId") or "-")),
+        ("Public Config", _format_json_value(connection_payload.get("public_config") or connection_payload.get("publicConfig"))),
+        ("Secure Fields", _format_json_value(connection_payload.get("secure_fields") or connection_payload.get("secureFields"))),
+        ("Status Message", str(connection_payload.get("status_message") or connection_payload.get("statusMessage") or "-")),
+        ("Last Health Check At", str(connection_payload.get("last_health_check_at") or connection_payload.get("lastHealthCheckAt") or "-")),
+        ("Tags", _format_json_value(connection_payload.get("tags"))),
+        ("Created By", str(connection_payload.get("created_by") or connection_payload.get("createdBy") or "-")),
+        ("Created At", str(connection_payload.get("created_at") or connection_payload.get("createdAt") or "-")),
+        ("Updated At", str(connection_payload.get("updated_at") or connection_payload.get("updatedAt") or "-")),
+    ]
+
+
 def _workspace_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4768,6 +4856,139 @@ def _registered_widget_type_detail_impl(
 
     print_kv("Registered Widget Type", _format_registered_widget_type_preview(widget_payload))
     print_kv("Registered Widget Type Details", _format_registered_widget_type_details(widget_payload))
+
+
+def _connection_type_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=CONNECTION_TYPE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Connection Types",
+    )
+    _require_login()
+
+    try:
+        connection_types = list_connection_types(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Connection types fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(connection_types):
+        return
+
+    rows: list[list[str]] = []
+    for connection_type_payload in connection_types:
+        rows.append(
+            [
+                str(connection_type_payload.get("type_id") or connection_type_payload.get("id") or "-"),
+                str(connection_type_payload.get("type_version") or connection_type_payload.get("version") or "-"),
+                str(connection_type_payload.get("title") or "-"),
+                str(connection_type_payload.get("category") or "-"),
+                str(connection_type_payload.get("source") or "-"),
+                str(connection_type_payload.get("access_mode") or connection_type_payload.get("accessMode") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Connection Types",
+            ["Type ID", "Version", "Title", "Category", "Source", "Access Mode"],
+            rows,
+        )
+    else:
+        info("No connection types.")
+    info(f"Total connection types: {len(connection_types)}")
+
+
+def _connection_type_detail_impl(
+    *,
+    type_id: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        connection_type_payload = get_connection_type(type_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Connection type fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(connection_type_payload):
+        return
+
+    print_kv("Connection Type", _format_connection_type_preview(connection_type_payload))
+    print_kv("Connection Type Details", _format_connection_type_details(connection_type_payload))
+
+
+def _connection_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=CONNECTION_INSTANCE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="Connections",
+    )
+    _require_login()
+
+    try:
+        connections_payload = list_connection_instances(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"Connections fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(connections_payload):
+        return
+
+    rows: list[list[str]] = []
+    for connection_payload in connections_payload:
+        rows.append(
+            [
+                str(connection_payload.get("uid") or connection_payload.get("id") or "-"),
+                str(connection_payload.get("name") or "-"),
+                str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-"),
+                str(connection_payload.get("status") or "-"),
+                str(connection_payload.get("workspace_id") or connection_payload.get("workspaceId") or "-"),
+                str(connection_payload.get("is_default") if "is_default" in connection_payload else connection_payload.get("isDefault")),
+                str(connection_payload.get("is_system") if "is_system" in connection_payload else connection_payload.get("isSystem")),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Connections",
+            ["UID", "Name", "Type ID", "Status", "Workspace ID", "Default", "System"],
+            rows,
+        )
+    else:
+        info("No connections.")
+    info(f"Total connections: {len(connections_payload)}")
+
+
+def _connection_detail_impl(
+    *,
+    connection_uid: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        connection_payload = get_connection_instance(connection_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"Connection fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(connection_payload):
+        return
+
+    print_kv("Connection", _format_connection_preview(connection_payload))
+    print_kv("Connection Details", _format_connection_details(connection_payload))
 
 
 def _data_node_storage_list_impl(
@@ -5272,6 +5493,60 @@ def registered_widget_type_detail_cmd(
     Show one registered widget type in detail.
     """
     _registered_widget_type_detail_impl(widget_id=widget_id, timeout=timeout)
+
+
+@connection_type.command("list")
+def connection_type_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List Command Center connection types visible to the authenticated user.
+    """
+    _connection_type_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@connection_type.command("detail")
+def connection_type_detail_cmd(
+    type_id: str = typer.Argument(..., help="Connection type unique identifier (`type_id`)."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one Command Center connection type in detail.
+    """
+    _connection_type_detail_impl(type_id=type_id, timeout=timeout)
+
+
+@connection.command("list")
+def connection_list_cmd(
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List Command Center connection instances visible to the authenticated user.
+    """
+    _connection_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+    )
+
+
+@connection.command("detail")
+def connection_detail_cmd(
+    connection_uid: str = typer.Argument(..., help="Connection instance stable unique identifier (`uid`)."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one Command Center connection instance in detail.
+    """
+    _connection_detail_impl(connection_uid=connection_uid, timeout=timeout)
 
 
 @agent.command("list")
@@ -9038,6 +9313,11 @@ def project_jobs_list_cmd(
 @project_jobs_group.command("run")
 def project_jobs_run_cmd(
     job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID to run."),
+    command_args: list[str] | None = typer.Option(
+        None,
+        "--command",
+        help="Per-run command argument. Repeat to send a list of strings to Job.run_job().",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -9049,13 +9329,18 @@ def project_jobs_run_cmd(
     --------
     ```bash
     mainsequence project jobs run 91
+    mainsequence project jobs run 91 --command python --command -m --command jobs.daily
     mainsequence project jobs run 91 --timeout 60
     ```
     """
     _require_login()
 
     try:
-        payload = run_project_job(job_id=job_id, timeout=timeout)
+        payload = run_project_job(
+            job_id=job_id,
+            command_args=list(command_args) if command_args else None,
+            timeout=timeout,
+        )
     except ApiError as e:
         error(f"Project job run failed: {e}")
         raise typer.Exit(1) from e

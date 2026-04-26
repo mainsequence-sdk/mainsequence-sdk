@@ -1059,6 +1059,132 @@ def test_registered_widget_type_detail(cli_mod, runner, monkeypatch):
     assert "workspace:view" in result.output
 
 
+def test_connection_type_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_connection_types",
+        lambda timeout=None, filters=None: [
+            {
+                "type_id": "postgres",
+                "type_version": 3,
+                "title": "Postgres",
+                "category": "database",
+                "source": "main-sequence",
+                "access_mode": "proxy",
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "connection_type", "list"])
+    assert result.exit_code == 0
+    assert "Connection Types" in result.output
+    assert "postgres" in result.output
+    assert "database" in result.output
+    assert "Total connection types: 1" in result.output
+
+
+def test_connection_type_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_connection_type",
+        lambda type_id, timeout=None: {
+            "type_id": type_id,
+            "type_version": 3,
+            "title": "Postgres",
+            "description": "Managed Postgres connection type.",
+            "source": "main-sequence",
+            "category": "database",
+            "tags": ["sql", "warehouse"],
+            "capabilities": ["query", "healthcheck"],
+            "access_mode": "proxy",
+            "public_config_schema": {"type": "object", "properties": {"host": {"type": "string"}}},
+            "secure_config_schema": {"type": "object", "properties": {"password": {"type": "string"}}},
+            "query_models": [{"id": "sql"}],
+            "required_permissions": ["connections:view"],
+            "usage_guidance": "Use for warehouse-backed SQL access.",
+            "examples": [{"publicConfig": {"host": "db.internal"}}],
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "connection_type", "detail", "postgres"])
+    assert result.exit_code == 0
+    assert "Connection Type" in result.output
+    assert "Managed Postgres connection type." in result.output
+    assert "Public Config Schema" in result.output
+    assert "Secure Config Schema" in result.output
+    assert "Use for warehouse-backed SQL access." in result.output
+    assert "connections:view" in result.output
+
+
+def test_connection_list(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "list_connection_instances",
+        lambda timeout=None, filters=None: [
+            {
+                "id": "conn-17",
+                "uid": "warehouse-primary",
+                "name": "Warehouse Primary",
+                "type_id": "postgres",
+                "status": "ok",
+                "workspace_id": "7",
+                "is_default": True,
+                "is_system": False,
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "connection", "list"])
+    assert result.exit_code == 0
+    assert "Connections" in result.output
+    assert "warehouse-" in result.output
+    assert "primary" in result.output
+    assert "Warehouse" in result.output
+    assert "Primary" in result.output
+    assert "Total connections: 1" in result.output
+
+
+def test_connection_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_connection_instance",
+        lambda connection_uid, timeout=None: {
+            "id": "conn-17",
+            "uid": connection_uid,
+            "type_id": "postgres",
+            "type_version": 3,
+            "name": "Warehouse Primary",
+            "description": "Primary warehouse connection.",
+            "organization_id": "2",
+            "workspace_id": "7",
+            "public_config": {"host": "db.internal", "database": "analytics"},
+            "secure_fields": {"password": True},
+            "status": "ok",
+            "status_message": "Healthy.",
+            "last_health_check_at": "2026-04-26T10:00:00Z",
+            "is_default": True,
+            "is_system": False,
+            "tags": ["warehouse"],
+            "created_by": "7",
+            "created_at": "2026-04-26T09:00:00Z",
+            "updated_at": "2026-04-26T10:05:00Z",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["cc", "connection", "detail", "warehouse-primary"])
+    assert result.exit_code == 0
+    assert "Connection" in result.output
+    assert "Primary warehouse connection." in result.output
+    assert "Public Config" in result.output
+    assert "Secure Fields" in result.output
+    assert "Healthy." in result.output
+    assert "warehouse-primary" in result.output
+
+
 def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -5326,12 +5452,15 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
         def get(cls, pk, timeout=None):
             captured["job_id_arg"] = pk
             return types.SimpleNamespace(
-                run_job=lambda timeout=None: {
+                run_job=lambda timeout=None, command_args=None: (
+                    captured.update(command_args=command_args)
+                    or {
                     "id": 501,
                     "job": pk,
                     "status": "QUEUED",
                     "unique_identifier": "jobrun_abc123",
-                }
+                    }
+                )
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
@@ -5343,8 +5472,9 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.run_project_job(91)
+    out = api_mod.run_project_job(91, command_args=["python", "-m", "jobs.daily"])
     assert captured["job_id_arg"] == 91
+    assert captured["command_args"] == ["python", "-m", "jobs.daily"]
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
         "id": 501,
@@ -7470,10 +7600,15 @@ def test_markets_asset_translation_table_detail(cli_mod, runner, monkeypatch):
 
 def test_project_jobs_run(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
     monkeypatch.setattr(
         cli_mod,
         "run_project_job",
-        lambda job_id, timeout=None: {
+        lambda job_id, command_args=None, timeout=None: captured.update(
+            job_id=job_id,
+            command_args=command_args,
+            timeout=timeout,
+        ) or {
             "id": 501,
             "job": job_id,
             "status": "QUEUED",
@@ -7481,8 +7616,16 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "run", "91"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "run", "91", "--command", "python", "--command", "-m", "--command", "jobs.daily"],
+    )
     assert result.exit_code == 0
+    assert captured == {
+        "job_id": 91,
+        "command_args": ["python", "-m", "jobs.daily"],
+        "timeout": None,
+    }
     assert "Project job run requested: job_id=91" in result.output
     assert "jobrun_abc123" in result.output
     assert "QUEUED" in result.output

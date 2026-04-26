@@ -712,19 +712,30 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         return r.json()
 
-    def run_job(self, *, timeout: int | None = None) -> dict[str, Any]:
+    def run_job(
+            self,
+            *,
+            timeout: int | None = None,
+            command_args: list[str] | None = None,
+    ) -> dict[str, Any]:
         if self.id is None:
             raise ValueError("Job must have an id before it can be run.")
+        if command_args is not None and not all(isinstance(arg, str) for arg in command_args):
+            raise TypeError("command_args must be a list of strings.")
 
         url = f"{self.get_object_url()}/{self.id}/run_job/"
         s = self.build_session()
+
+        payload: dict[str, Any] = {}
+        if command_args is not None:
+            payload["command_args"] = command_args
 
         r = make_request(
             s=s,
             loaders=self.LOADERS,
             r_type="POST",
             url=url,
-            payload={},
+            payload=payload,
             time_out=timeout,
         )
 
@@ -732,6 +743,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r)
 
         return r.json()
+
 
 class JobRun(BaseObjectOrm, BasePydanticModel):
     id: int | None = Field(
@@ -822,6 +834,12 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         default=None,
         description="The commit hash associated with the code version used for this run.",
         examples=["a1b2c3d4e5f6g7h8i9j0"],
+    )
+
+    command_args: list[str] = Field(
+        default_factory=list,
+        description="Per-run command arguments requested for this job run.",
+        examples=[["sync", "--from", "2026-04-01"]],
     )
 
     @staticmethod
