@@ -1,6 +1,6 @@
 ---
 name: command-center-app-components
-description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
+description: Use this skill when the task is about AppComponent widgets in a Main Sequence project. This skill owns AppComponent input contracts, custom forms, form sections and field definitions, and the boundary between AppComponent input contracts and widget-facing output contracts, including requiring generic tabular consumers to receive core.tabular_frame@v1 instead of ad hoc AppComponent JSON. Before changing AppComponent payloads or contracts, verify the target widget in the Command Center registry through the CLI. Source order is strict: registry detail first, SDK client models second, local Main Sequence repository docs/models third only if the first two still leave something unresolved. Main Sequence is platform-first: if an AppComponent depends on a project API, that API must already exist as a FastAPI project resource and have a corresponding FastAPI ResourceRelease before the AppComponent is considered usable from Command Center. Resource and release creation belong to the orchestration-and-releases skill. It does not own workspace layout, generic FastAPI design, or Streamlit dashboards.
 ---
 
 # Command Center AppComponents
@@ -37,7 +37,7 @@ This skill must not claim ownership of:
 
 - workspace document creation or widget layout
 - generic FastAPI route architecture
-- DataNode producer design
+- tabular or operational data producer design
 - SimpleTable schema design
 - Streamlit dashboard implementation
 - scheduling, image pinning, resources, or releases
@@ -50,8 +50,10 @@ This skill must not claim ownership of:
   `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
-- DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+- Adapter from API connection workflow:
+  `.agents/skills/command_center/adapter_from_api/SKILL.md`
+- Connection-backed data access and query contract selection:
+  `.agents/skills/command_center/connections/SKILL.md`
 - SimpleTables:
   `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -68,15 +70,17 @@ This skill must not claim ownership of:
 2. `docs/knowledge/command_center/forms.md`
 3. `docs/knowledge/command_center/widget_data_contracts.md`
 4. `mainsequence/client/command_center/app_component.py`
+5. `.agents/skills/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
+6. `.agents/skills/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
 
 If the AppComponent is backed by project APIs, also read:
 
-5. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
-6. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+7. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+8. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
 
 If the task is about validating the API contract before deployment, also read:
 
-7. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 
 ## Inputs This Skill Needs
 
@@ -219,7 +223,36 @@ If the AppComponent backend is supposed to feed a Main Sequence widget directly,
 
 Do not return loose dictionaries for a widget boundary when an exact contract model exists.
 
-### 6.1 `x-ui-role` is what makes the contract render as richer UI
+### 6.1 AppComponent output is not a shortcut around connection-first dataflow
+
+Use AppComponent for form-driven actions, custom workflows, and domain-specific interactive
+operations. Do not use it as the default source node for generic tabular workspace data.
+
+If an AppComponent response feeds table, chart, statistic, curve, transform, or agent-facing data
+widgets, validate that the final output matches the downstream input contract. Generic tabular
+consumers require `core.tabular_frame@v1` with:
+
+- `status`
+- `columns`
+- `rows`
+- optional `fields`
+- optional `meta`
+- optional `source`
+
+If the API returns raw records, paginated JSON, nested provider payloads, or domain-specific arrays,
+the agent must first create, or select an existing, connection instance of type Adapter from API.
+That adapter owns the API call and response normalization into `core.tabular_frame@v1`; the
+workspace then consumes it through a Connection Query widget, optionally followed by a Tabular
+Transform widget.
+
+Route Adapter from API work to:
+
+- `.agents/skills/command_center/adapter_from_api/SKILL.md`
+
+Only use an exact SDK response model directly when the downstream widget contract is specialized and
+not a generic tabular consumer.
+
+### 6.2 `x-ui-role` is what makes the contract render as richer UI
 
 For AppComponent contracts, prefer SDK models whose OpenAPI schema carries the explicit UI role markers.
 
@@ -237,7 +270,7 @@ That means:
 - do not handcraft loose dictionaries for these cases when the SDK model already exists
 - keep input and response contracts separate instead of overloading one model to do both jobs
 
-### 6.2 AppComponent bindings are dynamic, port-to-port, and response-shape aware
+### 6.3 AppComponent bindings are dynamic, port-to-port, and response-shape aware
 
 Treat AppComponent bindings as normal canonical widget bindings, not as a separate AppComponent-only
 wiring model.
@@ -296,7 +329,8 @@ Response-shaping guidance:
 - keep the rest available through the structured root output plus transforms
 - if downstream consumers need heavy normalization, tabular reshaping, pagination handling, or
   domain-specific transformation across many fields, stop treating the raw AppComponent response as
-  the final widget contract and move that shaping into a DataNode or dedicated adapter
+  the final widget contract and move that shaping into a connection-backed source, Tabular Transform,
+  or dedicated adapter
 
 Special response modes:
 
@@ -327,6 +361,7 @@ When reviewing an AppComponent task, look for:
 - unstable or poorly named field tokens
 - wrong `FormFieldKind` choices
 - generic API output being used where an exact widget-facing contract should have been returned
+- AppComponent responses feeding generic tabular consumers without `core.tabular_frame@v1`
 - AppComponent contracts that should be richer UI surfaces but do not use the SDK model carrying the correct `x-ui-role`
 - confusion between workspace concerns and AppComponent contract concerns
 - AppComponent work assuming a project API is usable before a FastAPI resource and FastAPI `ResourceRelease` exist
@@ -348,6 +383,7 @@ Do not claim success until you have checked:
 - input-side AppComponent contracts use `"x-ui-role": "editable-form"` when a specialized form is intended
 - response-side AppComponent contracts use `"x-ui-role": "notification"` when the API is returning user-facing banner feedback
 - widget-facing outputs use exact SDK response models when applicable
+- generic tabular consumers receive `core.tabular_frame@v1`
 - registry detail was used first
 - SDK client models were used second
 - local repository docs/models/examples were used only after the first two sources still left unresolved contract questions

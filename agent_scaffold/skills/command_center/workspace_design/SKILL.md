@@ -1,6 +1,6 @@
 ---
 name: command-center-workspace-design
-description: Use this skill when the task is about translating user intent into a Main Sequence Command Center workspace concept. This skill owns workspace design, widget selection, visualization strategy, information architecture, and deciding which widgets best express a business idea. It does not mutate workspace JSON, patch mounted widgets, create FastAPI endpoints, or create project resources/releases.
+description: Use this skill when the task is about translating user intent into a Main Sequence Command Center workspace concept. This skill owns workspace design, widget selection, visualization strategy, information architecture, connection-first dataflow planning, and deciding which widgets best express a business idea. It does not mutate workspace JSON, patch mounted widgets, create connections, create FastAPI endpoints, or create project resources/releases.
 ---
 
 # Command Center Workspace Design
@@ -26,7 +26,7 @@ This skill must not claim ownership of:
 - writing widget instance payloads
 - FastAPI implementation
 - AppComponent form contracts
-- DataNode or SimpleTable producer design
+- tabular or operational data producer design
 - project resource or release creation
 
 ## Route Adjacent Work
@@ -35,10 +35,10 @@ This skill must not claim ownership of:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponent custom forms and widget input contracts:
   `.agents/skills/command_center/app_components/SKILL.md`
+- Connection-backed data access and query contract selection:
+  `.agents/skills/command_center/connections/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
-- DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
   `.agents/skills/data_publishing/simple_tables/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -51,10 +51,11 @@ This skill must not claim ownership of:
 1. Discover available widgets from the registry:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
-2. `docs/knowledge/command_center/workspaces.md`
-3. `docs/knowledge/command_center/widget_data_contracts.md`
-4. `docs/knowledge/command_center/forms.md` when the design may need an AppComponent
-5. `.agents/skills/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
+2. `.agents/skills/command_center/connections/SKILL.md` when the workspace needs backend-owned data
+3. `docs/knowledge/command_center/workspaces.md`
+4. `docs/knowledge/command_center/widget_data_contracts.md`
+5. `docs/knowledge/command_center/forms.md` when the design may need an AppComponent
+6. `.agents/skills/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
 
 The widget registry is the source of truth for which widget types are actually available.
 
@@ -65,7 +66,6 @@ Before producing a workspace design, collect or infer:
 - the business question or workflow the workspace should support
 - the intended users and their decisions
 - the primary data objects:
-  - DataNodes
   - SimpleTables
   - assets
   - portfolios
@@ -81,6 +81,7 @@ Before producing a workspace design, collect or infer:
   - debugging
 - whether the user needs a quick visual answer or a durable product surface
 - the available registered widget types and their capabilities
+- the required connection instances and query models for backend-owned data
 - whether any widget requires a backend API or AppComponent flow
 
 If the intent is unclear, ask for clarification before designing the workspace.
@@ -96,9 +97,10 @@ For every workspace design task, decide:
 5. Which views should be tables versus charts versus KPIs?
 6. Which parts need markdown context or annotations?
 7. Which interactions require an AppComponent or API-backed widget?
-8. Which data already exists, and which data must be built first?
-9. Does any non-standard visualization require `echarts-spec`?
-10. What should be handed to `workspace_builder` for execution?
+8. Which backend-owned data must come through a connection instance and query model?
+9. Which data already exists, and which data must be built first?
+10. Does any non-standard visualization require `echarts-spec`?
+11. What should be handed to `workspace_builder` for execution?
 
 ## Build Rules
 
@@ -155,30 +157,27 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - use `markdown-note` for explanatory text, instructions, assumptions, annotations, and section headers
 - use `workspace-row` for grouping, layout, and visual separation
 
+#### Connection-backed data:
+
+- use a Connection Query source widget when the workspace needs a reusable backend-owned dataset
+- select the connection instance, query model, typed query payload, and output contract before choosing consumers
+- use a Tabular Transform widget when the workspace needs aggregate, pivot, unpivot, projection, or other inspectable tabular reshaping
+- bind table, chart, statistic, curve, and similar consumers to an upstream `dataset` output
+- require generic tabular consumers to receive `core.tabular_frame@v1`
+- keep source widgets in the sidebar rail when they are execution/data owners; visible canvas widgets should own presentation
+- do not let consumer widgets query connection instances directly
+
 #### Data inspection:
 
-- use `main-sequence-data-node` as the canonical widget for selecting and preparing a reusable Main Sequence DataNode inside a workspace
-- prefer `main-sequence-data-node` when downstream widgets need a stable DataNode-backed dataset, including visualizations and statistics
-- use the transform modes documented in widget detail:
-  - `none`: publish the input dataset as-is, except optional final projection
-  - `aggregate`: group by selected key fields and reduce each group with `first`, `last`, `sum`, `mean`, `min`, or `max`
-  - `pivot`: use key fields as row dimensions, turn values from one categorical field into output columns, and fill them from a selected value field using the aggregate mode
-  - `unpivot`: melt selected wide value columns into long-form rows, preserving selected key fields and writing output field names such as `series` and `value`
-  - `project columns`: optionally keep only selected published columns after the main transform
-- remember the transform order:
-  - input dataset -> one transform mode -> projection -> published dataset
-- do not assume one `main-sequence-data-node` widget can chain multiple transform modes; chain multiple Data Node widgets when the registry detail says that is the supported pattern
-
-
-- use `data-node-table-visualizer` when the user needs row, column, filter, or tabular inspection of data already configured by a `main-sequence-data-node` widget
+- use the registered table widget when the user needs row, column, filter, or tabular inspection of a bound tabular dataset
 - when it improves readability, use richer per-column visual options such as gradients or gauges
 
 
 #### Visualization and summaries:
 
-- use `main-sequence-data-node-visualizer` for chart or graph-oriented DataNode exploration when the visualized information comes from a `main-sequence-data-node`
-- use `main-sequence-data-node-statistic` as a visualization widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a configured DataNode
-- use `main-sequence-data-node-statistic` when the user needs an at-a-glance answer rather than a full chart or table; this widget can also render a small background chart, but it should mainly be used for quick state summaries
+- use the registered graph/chart widget for chart-oriented exploration of a bound tabular dataset
+- use the registered statistic widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a bound tabular dataset
+- use statistic widgets when the user needs an at-a-glance answer rather than a full chart or table
 - use `echarts-spec` when the visualization is non-standard, needs richer chart semantics, and a general ECharts chart is the right fit; this chart normally needs an AppComponent or API-backed upstream binding
 - use `lightweight-chart-ts-spec` when the visualization is non-standard, time-series heavy, or financial-market oriented; this chart normally needs an AppComponent or API-backed upstream binding
 
@@ -189,7 +188,7 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 
 #### Infrastructure and lineage:
 
-- use `main-sequence-dependency-graph` to explain DataNode dependencies or lineage
+- use `main-sequence-dependency-graph` to explain data dependency or lineage relationships
 - use `main-sequence-project-infra-graph` to explain project infrastructure and platform object relationships
 
 #### Interaction and workflows:
@@ -256,7 +255,7 @@ Then design the `echarts-spec` visualization around the verified widget contract
 If the design needs data or behavior that does not exist yet, route it explicitly:
 
 - new or refreshed time-series/data pipeline:
-  DataNode skill
+  data publishing skill
 - operational/application records:
   SimpleTable skill
 - widget-facing backend endpoint:
@@ -292,6 +291,7 @@ Do not claim the design is ready until you have checked:
 - each proposed widget has a reason
 - each proposed widget id was verified through the registry
 - the design identifies required data/API/AppComponent dependencies
+- connection-backed data dependencies identify connection instances, query models, and output contracts
 - complex visualizations justify `echarts-spec`
 - debugging widgets are marked as diagnostic, not product surfaces, unless that is the user's intent
 - the handoff to `workspace_builder` includes:
@@ -299,6 +299,7 @@ Do not claim the design is ready until you have checked:
   - target widgets
   - widget ids
   - layout intent
+  - required connection instances and query models
   - required data/resources
   - open questions
 

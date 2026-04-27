@@ -1,6 +1,6 @@
 ---
 name: command-center-api-mock-prototyping
-description: Use this skill when the task is about validating a planned Command Center AppComponent API contract before backend deployment. This skill owns `apiTargetMode: "mock-json"`, synthetic request and response contract authoring, request-side versus response-side UI metadata separation, and testing downstream bindings in a workspace before any FastAPI image build or ResourceRelease. It does not own FastAPI implementation, workspace layout design beyond the test harness, or release creation.
+description: Use this skill when the task is about validating a planned Command Center AppComponent API contract before backend deployment. This skill owns `apiTargetMode: "mock-json"`, synthetic request and response contract authoring, request-side versus response-side UI metadata separation, and testing downstream bindings in a workspace before any FastAPI image build or ResourceRelease, including checking that generic tabular consumers receive `core.tabular_frame@v1`. It does not own FastAPI implementation, workspace layout design beyond the test harness, or release creation.
 ---
 
 # Command Center API Mock Prototyping
@@ -16,6 +16,7 @@ This skill is for:
 - request-side and response-side UI metadata
 - mock response rendering
 - published output and downstream binding validation
+- canonical `core.tabular_frame@v1` widget-consumption contract when generic tabular consumers are involved
 - deciding when the contract is stable enough to hand off to real FastAPI implementation and release work
 
 ## This Skill Can Do
@@ -88,6 +89,7 @@ Before prototyping a mock API contract, collect or infer:
   - response body shape
   - response-side UI intent
 - whether downstream bindings must be validated
+- whether any downstream generic tabular consumer requires `core.tabular_frame@v1`
 - the intended real target mode after mock validation:
   - `manual`
   - `main-sequence-resource-release`
@@ -243,6 +245,7 @@ Use the mock widget to validate:
 - response rendering
 - published outputs
 - downstream bindings to other widgets
+- `core.tabular_frame@v1` shape when downstream table, chart, statistic, curve, or agent-facing data consumers are involved
 
 Do not treat card-only rendering as enough when the workspace depends on downstream output behavior.
 
@@ -258,6 +261,7 @@ When reviewing a mock prototyping task, look for:
 - banner-style user feedback returned as loose JSON without `response.ui.role = "notification"`
 - async select request UI declared without the matching helper parameters
 - downstream bindings not tested even though the widget publishes outputs
+- generic tabular consumers bound to a response that does not match `core.tabular_frame@v1`
 
 ## Validation Checklist
 
@@ -275,6 +279,7 @@ Do not claim success until you have checked:
 - editable-form responses use `role: "editable-form"` only when the response is actually a form contract
 - the mock response body closely matches the intended final API contract
 - published outputs and downstream bindings were validated before leaving mock mode
+- generic tabular consumers receive `core.tabular_frame@v1`
 - the task only hands off to real FastAPI implementation and release work after the contract is stable
 
 ## This Skill Must Stop And Escalate When
