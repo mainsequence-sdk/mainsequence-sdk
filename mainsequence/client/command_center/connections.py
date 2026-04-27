@@ -167,11 +167,8 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
         extra="ignore",
     )
 
-    id: str = Field(
+    id: int = Field(
         description="Connection instance primary key.",
-    )
-    uid: str = Field(
-        description="Stable connection instance uid used in detail URLs.",
     )
     type_id: str = Field(
         alias="typeId",
