@@ -213,7 +213,8 @@ Example:
 Keep the boundary clear:
 
 - `EditableFormDefinition` and related form objects describe what the widget should collect
-- widget data models in `mainsequence.client.command_center.data_models` describe what some widgets expect back from the API
+- `mainsequence.client.command_center.data_models.TabularFrameResponse` is the SDK canonical model for `core.tabular_frame@v1`
+- other SDK widget data models describe specialized widget-facing API responses when those exist
 
 If the AppComponent both collects input and returns widget-facing data, validate both sides explicitly.
 
@@ -223,6 +224,15 @@ If the AppComponent backend is supposed to feed a Main Sequence widget directly,
 
 Do not return loose dictionaries for a widget boundary when an exact contract model exists.
 
+For generic tabular consumers, the exact SDK model is:
+
+```python
+from mainsequence.client.command_center.data_models import TabularFrameResponse
+```
+
+Use `TabularFrameResponse` when an AppComponent operation is explicitly producing a full canonical
+tabular frame.
+
 ### 6.1 AppComponent output is not a shortcut around connection-first dataflow
 
 Use AppComponent for form-driven actions, custom workflows, and domain-specific interactive
@@ -230,7 +240,8 @@ operations. Do not use it as the default source node for generic tabular workspa
 
 If an AppComponent response feeds table, chart, statistic, curve, transform, or agent-facing data
 widgets, validate that the final output matches the downstream input contract. Generic tabular
-consumers require `core.tabular_frame@v1` with:
+consumers require `core.tabular_frame@v1`. In the SDK, that full-frame contract is
+`TabularFrameResponse` with:
 
 - `status`
 - `columns`
@@ -241,16 +252,18 @@ consumers require `core.tabular_frame@v1` with:
 
 If the API returns raw records, paginated JSON, nested provider payloads, or domain-specific arrays,
 the agent must first create, or select an existing, connection instance of type Adapter from API.
-That adapter owns the API call and response normalization into `core.tabular_frame@v1`; the
-workspace then consumes it through a Connection Query widget, optionally followed by a Tabular
-Transform widget.
+That adapter owns the API call and the declared mapping into `core.tabular_frame@v1`; the workspace
+then consumes it through a Connection Query widget, optionally followed by a Tabular Transform
+widget.
 
 Route Adapter from API work to:
 
 - `.agents/skills/command_center/adapter_from_api/SKILL.md`
 
-Only use an exact SDK response model directly when the downstream widget contract is specialized and
-not a generic tabular consumer.
+Do not use AppComponent as a shortcut source node for generic workspace data just because
+`TabularFrameResponse` exists. Use `TabularFrameResponse` directly only when the AppComponent
+operation itself is the intended form-driven action or workflow producing the canonical tabular
+result.
 
 ### 6.2 `x-ui-role` is what makes the contract render as richer UI
 
@@ -361,7 +374,8 @@ When reviewing an AppComponent task, look for:
 - unstable or poorly named field tokens
 - wrong `FormFieldKind` choices
 - generic API output being used where an exact widget-facing contract should have been returned
-- AppComponent responses feeding generic tabular consumers without `core.tabular_frame@v1`
+- AppComponent responses feeding generic tabular consumers without `TabularFrameResponse` or an
+  equivalent `core.tabular_frame@v1` final payload
 - AppComponent contracts that should be richer UI surfaces but do not use the SDK model carrying the correct `x-ui-role`
 - confusion between workspace concerns and AppComponent contract concerns
 - AppComponent work assuming a project API is usable before a FastAPI resource and FastAPI `ResourceRelease` exist
@@ -384,6 +398,7 @@ Do not claim success until you have checked:
 - response-side AppComponent contracts use `"x-ui-role": "notification"` when the API is returning user-facing banner feedback
 - widget-facing outputs use exact SDK response models when applicable
 - generic tabular consumers receive `core.tabular_frame@v1`
+- AppComponent operations producing full canonical tabular frames use `TabularFrameResponse`
 - registry detail was used first
 - SDK client models were used second
 - local repository docs/models/examples were used only after the first two sources still left unresolved contract questions

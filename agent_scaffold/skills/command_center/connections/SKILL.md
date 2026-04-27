@@ -61,6 +61,8 @@ This skill must not claim ownership of:
 
 1. SDK connection models:
    - `mainsequence/client/command_center/connections.py`
+   - `mainsequence/client/command_center/data_models.py` when validating `core.tabular_frame@v1`
+     output shape
 2. Widget registry detail for the source and consumer widgets:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
@@ -149,6 +151,11 @@ If an API returns raw arrays, paginated JSON, nested provider payloads, or other
 first create, or select an existing, connection instance of type Adapter from API. That adapter owns
 normalization into `core.tabular_frame@v1` before any generic tabular consumer is bound.
 
+When an API operation already returns the full canonical frame, validate it against
+`mainsequence.client.command_center.data_models.TabularFrameResponse`. If it returns
+provider-native JSON, the Adapter from API contract must declare the exact response mapping into
+`core.tabular_frame@v1`.
+
 ### 5. Treat `usageGuidance` as agent-facing contract
 
 When choosing a connection, read the connection type `usageGuidance`. It should explain:
@@ -173,6 +180,7 @@ When reviewing connection-backed workspace work, look for:
 - missing `ConnectionType.queryModels` validation
 - missing `usageGuidance` review
 - raw JSON bound into generic tabular consumers
+- API operations claiming canonical tabular output without matching `TabularFrameResponse`
 - analytical reshaping hidden in binding transforms
 - missing backend adapter or response normalization work
 
@@ -187,6 +195,7 @@ Do not claim the connection flow is ready until you have checked:
 - typed query payload matches the selected query model
 - output contract is compatible with downstream widgets
 - generic tabular consumers receive `core.tabular_frame@v1`
+- full canonical tabular frames match `TabularFrameResponse`
 - missing backend adapter work is explicitly documented
 - workspace handoff identifies the Connection Query widget, optional Tabular Transform widget, and downstream consumers
 

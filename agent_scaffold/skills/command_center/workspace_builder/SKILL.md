@@ -214,7 +214,8 @@ Use:
 
 - `workspace.py` for shared workspace shape and widget-scoped mutation methods
 - `connections.py` for connection type and connection instance discovery
-- `data_models.py` for shared tabular contracts, field provenance, and date/range payload rules
+- `data_models.py` for `TabularFrameResponse`, the SDK canonical `core.tabular_frame@v1` model,
+  plus field schema, frame metadata, and source context rules
 - `app_component.py` for editable form structures relevant to workspace-mounted AppComponent workflows
 
 Treat these SDK models as the first concrete client interaction surface.
@@ -302,6 +303,10 @@ Generic tabular consumers must receive `core.tabular_frame@v1`. If the upstream 
 returns raw arrays, paginated JSON, nested provider payloads, or other ad hoc records, normalize
 through an Adapter from API connection first, then use an explicit transform when analytical
 reshaping is still required.
+
+When a project API or AppComponent legitimately returns a full canonical frame, ground the contract
+against `mainsequence.client.command_center.data_models.TabularFrameResponse`. Source-specific
+runtime details belong in `source.context`, not top-level widget payload fields.
 
 ### 4. Shared workspace state and current-user state are different
 
@@ -500,6 +505,7 @@ When reviewing a workspace task, look for:
 - unresolved external resource ids
 - connection-backed consumers missing a source or transform `dataset` binding
 - generic tabular consumers bound to raw JSON instead of `core.tabular_frame@v1`
+- full canonical tabular payloads that drift from `TabularFrameResponse`
 - widget trees using structures not supported by the Main Sequence repository source models
 
 ## Validation Checklist
@@ -519,6 +525,7 @@ Do not claim success until you have checked:
 - the relevant SDK client model was reviewed when one exists
 - connection-backed source widgets have verified connection instance, connection type, query model, typed query payload, and output contract
 - generic tabular consumers receive `core.tabular_frame@v1`
+- full canonical tabular frames match `TabularFrameResponse`
 - widget ids and widget instance ids are correct
 - any mounted widget that depends on a project API points to a FastAPI project resource that already exists
 - any mounted widget that depends on a project API points to a FastAPI `ResourceRelease` that already exists

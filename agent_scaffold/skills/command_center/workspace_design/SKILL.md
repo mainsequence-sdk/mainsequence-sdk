@@ -164,6 +164,8 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - use a Tabular Transform widget when the workspace needs aggregate, pivot, unpivot, projection, or other inspectable tabular reshaping
 - bind table, chart, statistic, curve, and similar consumers to an upstream `dataset` output
 - require generic tabular consumers to receive `core.tabular_frame@v1`
+- when a project API or AppComponent is meant to produce a full canonical tabular frame, require
+  the SDK `TabularFrameResponse` model from `mainsequence.client.command_center.data_models`
 - keep source widgets in the sidebar rail when they are execution/data owners; visible canvas widgets should own presentation
 - do not let consumer widgets query connection instances directly
 

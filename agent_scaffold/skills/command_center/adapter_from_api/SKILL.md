@@ -1,6 +1,6 @@
 ---
 name: command-center-adapter-from-api
-description: Use when building or changing an API so Command Center can consume it through an Adapter from API connection. This skill defines the provider-side API contract standards required for Command Center connection discovery, health checks, operation selection, config fields, secret injection metadata, and tabular response mappings. It does not define general API architecture and does not imply the API may only serve these endpoints.
+description: Use when building or changing an API so Command Center can consume it through an Adapter from API connection. This skill defines the provider-side API contract standards required for Command Center connection discovery, health checks, operation selection, config fields, secret injection metadata, canonical `TabularFrameResponse` outputs, and tabular response mappings. It does not define general API architecture and does not imply the API may only serve these endpoints.
 ---
 
 # Command Center Adapter From API
@@ -255,6 +255,15 @@ If an operation returns a full canonical frame, the returned JSON must contain:
 - optional `meta`
 - optional `source`
 
+For FastAPI providers in Main Sequence repos, full canonical frame endpoints must use:
+
+```python
+from mainsequence.client.command_center.data_models import TabularFrameResponse
+```
+
+Declare `response_model=TabularFrameResponse` instead of recreating the canonical frame shape
+locally.
+
 If an operation returns provider-native JSON, declare a `responseMappings` entry that exposes the
 operation as `core.tabular_frame@v1`:
 
@@ -288,24 +297,24 @@ Rules:
 - If the response shape changes, update the response mapping in the same change.
 - Do not bind provider-native JSON directly to generic tabular consumers.
 
-## SDK Contract Gap
+## Canonical SDK Model
 
-Before importing SDK response models for Adapter from API provider endpoints, check whether the SDK
-contains a generic model that exactly matches `core.tabular_frame@v1`.
+The SDK canonical model for a full `core.tabular_frame@v1` response is:
 
-Current risk to watch for:
+```python
+mainsequence.client.command_center.data_models.TabularFrameResponse
+```
 
-- older SDK models may be source-specific instead of generic
-- older models may include source-instance fields that do not belong at the canonical tabular frame
-  boundary
-- older models may omit top-level `meta`
+Related SDK models:
 
-Until the SDK exposes an exact generic tabular-frame response model, define explicit Pydantic
-models in the API and validate the well-known `responseMappings` against the frontend
-`core.tabular_frame@v1` contract.
+- `TabularFrameFieldResponse`
+- `TabularFrameMetaResponse`
+- `TabularFrameSourceResponse`
+- `TabularTimeSeriesMetaResponse`
 
-Do not treat a source-specific SDK response model as the canonical Adapter from API provider
-contract.
+Use these models when the API operation returns the full canonical frame. If the provider operation
+returns provider-native JSON instead, keep the provider response model explicit and declare an exact
+`responseMappings` entry that maps it into `core.tabular_frame@v1`.
 
 ## Required Decisions
 
@@ -321,8 +330,8 @@ Before implementing or revising an API for Adapter from API consumption, decide:
 8. Which operations produce generic tabular consumption?
 9. For each tabular operation, does the API return a full `core.tabular_frame@v1` document or a
    provider-native response with an exact `responseMappings` entry?
-10. Does the SDK contain an exact model for the required response, or does the API need local
-    Pydantic models?
+10. If the operation returns a full canonical frame, does it use `TabularFrameResponse` as the
+    FastAPI `response_model`?
 
 ## Example Implementation Pattern
 
@@ -335,6 +344,7 @@ For a FastAPI provider:
 - expose query operation routes with documented request parameters
 - declare every Command Center-callable operation in `availableOperations`
 - declare `core.tabular_frame@v1` response mappings for tabular consumption
+- use `TabularFrameResponse` when an operation returns the full canonical frame
 - keep the API root, well-known contract, and OpenAPI document internally consistent
 
 ## Review Rules
@@ -352,7 +362,7 @@ When reviewing an Adapter from API provider change, look for:
 - response mappings whose `rowsPath` no longer matches the API response
 - missing `fieldTypes` for fields consumed by widgets
 - API endpoints returning provider-native JSON directly to generic tabular consumers
-- SDK response models being used even though they do not exactly match the canonical tabular frame
+- full canonical frame endpoints that do not use `TabularFrameResponse`
 - docs or README examples that disagree with the actual contract endpoint
 
 ## Validation Checklist
@@ -371,6 +381,7 @@ Do not claim the API is consumable by Adapter from API until:
 - public config and secret fields are separated
 - secret injection rules are backend-owned and explicit
 - each generic tabular operation declares `core.tabular_frame@v1`
+- each full canonical frame operation uses `TabularFrameResponse`
 - each provider-native tabular response has an exact `rowsPath`
 - field types and time-series hints are present where consumers need them
 - the local README documents the Command Center contract endpoints
@@ -387,7 +398,7 @@ Stop and surface the missing backend task when:
 - secret injection cannot be described without exposing secret values
 - no exact response mapping exists for generic tabular consumption
 - the API response shape cannot be mapped to `core.tabular_frame@v1`
-- the SDK model being considered does not exactly match the canonical tabular frame
+- a full canonical frame endpoint cannot import or use `TabularFrameResponse`
 - backend Adapter from API runtime support is required but not implemented
 
 Do not create workspace widgets that consume this API until a connection instance can call the API

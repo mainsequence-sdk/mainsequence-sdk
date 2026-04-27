@@ -157,66 +157,65 @@ Inside an API handler, `APIDataNode` is usually the right reader when:
 
 That is the same reason it was introduced earlier for dashboard readers. The API layer is not rebuilding the `DataNode`; it is consuming the published table contract.
 
-## 5. If The API Should Feed A Main Sequence Widget Directly
+## 5. If The API Should Feed Command Center Tabular Consumers
 
-Sometimes the API is not meant for a generic frontend client. It is meant to feed a Main Sequence widget directly.
+Sometimes the API is not meant for a generic frontend client. It is meant to feed Command Center
+table, chart, statistic, curve, transform, or agent-facing data consumers.
 
 That is a different situation.
 
-In that case, do not hand-build arbitrary JSON and hope the widget accepts it. Use the Command Center contracts in:
+In that case, do not hand-build arbitrary JSON and hope the consumers accept it. Use the Command
+Center canonical tabular contract in:
 
 ```python
 mainsequence.client.command_center.data_models
 ```
 
-For the Data Node Table widget, the two important models are:
+The primary model is:
 
-- `DataNodeTableSourceInputResponse`
-- `DataNodeTableWidgetPropsResponse`
+- `TabularFrameResponse`
 
-The practical split is:
-
-- `DataNodeTableSourceInputResponse`: the dataset the widget should display
-- `DataNodeTableWidgetPropsResponse`: how the widget should display it
-
-Declare these as the FastAPI `response_model` for widget-facing endpoints. That way the contract is validated in Python before the widget sees it.
+Declare it as the FastAPI `response_model` for Command Center-facing tabular endpoints. That way
+the contract is validated in Python before Command Center consumes it.
 
 Example:
 
 ```python
 from mainsequence.client.command_center.data_models import (
-    DataNodeTableSourceInputResponse,
-    SourceMetadataResponse,
-    TableFieldResponse,
+    TabularFrameFieldResponse,
+    TabularFrameResponse,
+    TabularFrameSourceResponse,
 )
 
 
 @app.get(
     "/widgets/customers/source",
-    response_model=DataNodeTableSourceInputResponse,
+    response_model=TabularFrameResponse,
 )
-def get_customers_widget_source() -> DataNodeTableSourceInputResponse:
+def get_customers_widget_source() -> TabularFrameResponse:
     rows = list_customers(region=None, limit=50)
-    return DataNodeTableSourceInputResponse(
+    return TabularFrameResponse(
         status="ready",
         columns=["id", "customer_code", "name", "region"],
         rows=rows,
         fields=[
-            TableFieldResponse(key="id", label="Id", type="integer", provenance="manual"),
-            TableFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
-            TableFieldResponse(key="name", label="Name", type="string", provenance="manual"),
-            TableFieldResponse(key="region", label="Region", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="id", label="Id", type="integer", provenance="manual"),
+            TabularFrameFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="name", label="Name", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="region", label="Region", type="string", provenance="manual"),
         ],
-        source=SourceMetadataResponse(
-            kind="custom-api",
+        source=TabularFrameSourceResponse(
+            kind="api",
             label="Tutorial Customers API",
+            context={"limit": 50},
         ),
     )
 ```
 
-This matters because these models give you the exact structure expected by the widget.
+This matters because the SDK model gives you the exact `core.tabular_frame@v1` structure expected
+by generic Command Center data consumers.
 
-For the full contract breakdown, including the distinction between source rows and widget-props rows, see:
+For the full contract breakdown, see:
 
 - [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
 

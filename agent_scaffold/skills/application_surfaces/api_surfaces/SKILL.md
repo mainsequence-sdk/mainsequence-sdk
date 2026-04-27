@@ -52,6 +52,8 @@ This skill must not claim ownership of:
   `.agents/skills/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
   `.agents/skills/command_center/app_components/SKILL.md`
+- Adapter from API provider-side Command Center connection endpoints:
+  `.agents/skills/command_center/adapter_from_api/SKILL.md`
 - predeployment mock API contract validation:
   `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
 - Jobs, images, resources, and releases:
@@ -72,8 +74,9 @@ This skill must not claim ownership of:
 Also load:
 
 8. `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
-9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
-10. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
+9. `.agents/skills/command_center/adapter_from_api/SKILL.md` when the API must be consumed through a Command Center Adapter from API connection
+10. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
+11. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
 
 Do not wait for the user to say "Command Center" explicitly if the API is being built as a platform UI surface. That is the default assumption in Main Sequence projects.
 
@@ -110,6 +113,7 @@ For every non-trivial API task, decide:
 7. Should the route own composition only, or is it incorrectly rebuilding producer logic?
 8. Must this API already be usable from Command Center or an AppComponent, and if so, does the FastAPI resource plus FastAPI `ResourceRelease` already exist?
 9. Is this endpoint specifically designed to serve workspace visualizations, and if so, should it live under `/workspace` to keep concerns properly separated?
+10. Should this API be consumed through Adapter from API, and if so, does it expose the well-known Command Center connection contract?
 
 ## Build Rules
 
@@ -136,6 +140,7 @@ That means:
 - prefer widget-facing contracts by default
 - load `.agents/skills/command_center/app_components/SKILL.md`
 - also load `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is coupled to mounted workspace widgets or workspace payloads
+- load `.agents/skills/command_center/adapter_from_api/SKILL.md` when the API will be consumed by connection-first workspace dataflow
 - try to use the existing Command Center SDK response model before inventing a new response shape
 
 Do not default to a generic standalone API mindset in this repository.
@@ -256,6 +261,15 @@ If an endpoint can reasonably serve a Main Sequence widget, AppComponent, or wor
 
 Do not handcraft loose JSON and hope the widget accepts it.
 
+For generic Command Center tabular consumers, use:
+
+```python
+from mainsequence.client.command_center.data_models import TabularFrameResponse
+```
+
+Declare `response_model=TabularFrameResponse` when the route returns the full
+`core.tabular_frame@v1` payload.
+
 Only fall back to a generic business response model when:
 
 - the user explicitly asks for a non-widget API contract, or
@@ -309,6 +323,7 @@ When reviewing an API change, look for:
 - missing use of an existing Command Center SDK response model when the endpoint could have matched it
 - missing load/use of the AppComponents skill when the endpoint is part of an AppComponent flow
 - missing load/use of the workspace-builder skill when the endpoint is tied to a mounted workspace widget
+- missing load/use of the Adapter from API skill when the endpoint is meant for connection-first Command Center data consumption
 - a non-FastAPI proposal without an explicit repository reason
 - workspace-visualization endpoints placed outside a dedicated `/workspace` route group without a clear repository reason
 - route handlers doing too much
@@ -316,6 +331,7 @@ When reviewing an API change, look for:
 - `LoggedUserContextMiddleware` added even though the route does not consume `request.state.user`
 - route parameters that are untyped or weakly documented
 - generic response models where a widget-facing contract should have been used
+- tabular Command Center data routes returning a full frame without `TabularFrameResponse`
 - action endpoints returning loose dict acknowledgments where `NotificationDefinition` should have been used
 - long-running or spanning subprocess workflows trying to use a one-shot HTTP response instead of `mainsequence.client.Notification` for asynchronous user updates
 - producer logic duplicated inside routes
@@ -331,6 +347,7 @@ Do not claim success until you have checked:
 - the API is being implemented as FastAPI
 - the intended consumer is explicit, and Command Center was used as the default assumption unless the user overrode it
 - an existing Command Center SDK response model was used whenever the endpoint could reasonably match it
+- full `core.tabular_frame@v1` routes use `TabularFrameResponse`
 - route inputs are intentionally typed
 - route parameters are described richly
 - every structured route has an explicit `response_model`
@@ -343,6 +360,7 @@ Do not claim success until you have checked:
 - immediate client feedback endpoints use `NotificationDefinition` with `"x-ui-role": "notification"` when the route is acknowledging an action rather than returning business data
 - long-running or subprocess-spanning workflows use `mainsequence.client.Notification` for asynchronous user updates instead of relying on a one-shot HTTP response
 - widget-facing endpoints use exact SDK response contracts
+- APIs consumed through Adapter from API expose the well-known Command Center connection contract
 - local API docs or route behavior reflect the intended contract
 - any Command Center-facing API that is meant to be usable now already exists as a FastAPI project resource
 - any Command Center-facing API that is meant to be usable now already has a FastAPI `ResourceRelease`

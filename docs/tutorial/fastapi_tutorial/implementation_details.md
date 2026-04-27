@@ -173,57 +173,50 @@ For the focused knowledge page, see:
 
 - [FastAPI Request User Context](../../knowledge/fastapi/index.md)
 
-## 6. Returning Exact Widget Contracts
+## 6. Returning Exact Command Center Tabular Contracts
 
-If the API should feed a Main Sequence widget directly, use the contract models from:
+If the API should feed generic Command Center tabular consumers directly, use the contract models
+from:
 
 ```python
 mainsequence.client.command_center.data_models
 ```
 
-For the Data Node Table widget, the key models are:
+The primary model is:
 
-- `DataNodeTableSourceInputResponse`
-- `DataNodeTableWidgetPropsResponse`
+- `TabularFrameResponse`
 
-The important distinction is:
+If the endpoint exists specifically to feed Command Center tabular consumers, declare the Command
+Center model as the FastAPI `response_model`. That gives you validation, documentation, and a
+contract that matches `core.tabular_frame@v1`.
 
-- source input uses row objects keyed by column name
-- widget props use positional row arrays aligned with `columns`
-
-That distinction is easy to get wrong if you build JSON by hand.
-
-If the endpoint exists specifically to feed a Main Sequence widget, declare the Command Center model as the FastAPI `response_model`. That gives you validation, documentation, and a contract that matches the frontend runtime.
-
-Minimal source-contract example:
+Minimal tabular-frame example:
 
 ```python
 from mainsequence.client.command_center.data_models import (
-    DataNodeTableSourceInputResponse,
-    SourceMetadataResponse,
-    TableFieldResponse,
+    TabularFrameFieldResponse,
+    TabularFrameResponse,
+    TabularFrameSourceResponse,
 )
 
 
-def get_customer_widget_source() -> DataNodeTableSourceInputResponse:
+def get_customer_widget_source() -> TabularFrameResponse:
     rows = [
         {"customer_code": "ACME", "name": "Acme Capital", "region": "US"},
         {"customer_code": "BETA", "name": "Beta Treasury", "region": "EU"},
     ]
-    return DataNodeTableSourceInputResponse(
+    return TabularFrameResponse(
         status="ready",
         columns=["customer_code", "name", "region"],
         rows=rows,
         fields=[
-            TableFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
-            TableFieldResponse(key="name", label="Name", type="string", provenance="manual"),
-            TableFieldResponse(key="region", label="Region", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="customer_code", label="Customer Code", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="name", label="Name", type="string", provenance="manual"),
+            TabularFrameFieldResponse(key="region", label="Region", type="string", provenance="manual"),
         ],
-        source=SourceMetadataResponse(kind="custom-api", label="Tutorial Customers API"),
+        source=TabularFrameSourceResponse(kind="api", label="Tutorial Customers API"),
     )
 ```
-
-If you also want to drive widget-owned presentation behavior such as column formatting, chip labels, and conditional rules, use `DataNodeTableWidgetPropsResponse`.
 
 For the full contract breakdown, use:
 
