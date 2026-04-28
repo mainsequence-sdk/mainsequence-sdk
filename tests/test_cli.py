@@ -9331,17 +9331,30 @@ def test_project_update_sdk(cli_mod, runner, monkeypatch, tmp_path):
     assert ["sync"] in calls
 
 
-def _write_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> None:
-    (bundle_dir / "skills" / "project_builder").mkdir(parents=True)
-    (bundle_dir / "skills" / "project_builder" / "SKILL.md").write_text(
-        "project skill",
+def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.Path:
+    bundle_dir.mkdir(parents=True, exist_ok=True)
+    agents_md = bundle_dir / "AGENTS.md"
+    agents_md.write_text(
+        "\n".join(
+            [
+                "# AGENTS.md",
+                "",
+                "Installed scaffold preface.",
+                "",
+                "<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->",
+                "## Main Sequence Agent Scaffold",
+                "",
+                "Installed managed block.",
+                "",
+                "<!-- mainsequence-agent-scaffold:end -->",
+                "",
+                "Installed scaffold footer.",
+                "",
+            ]
+        ),
         encoding="utf-8",
     )
-    (bundle_dir / "skills" / "maintenance" / "local_journal").mkdir(parents=True)
-    (bundle_dir / "skills" / "maintenance" / "local_journal" / "SKILL.md").write_text(
-        "maintenance skill",
-        encoding="utf-8",
-    )
+    return agents_md
 
 
 def test_project_update_agents_md_replaces_unmarked_existing_file(
@@ -9350,19 +9363,12 @@ def test_project_update_agents_md_replaces_unmarked_existing_file(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
     original = "# Project Agents\n\nKeep this project-specific instruction.\n"
     (target / "AGENTS.md").write_text(original, encoding="utf-8")
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9370,10 +9376,9 @@ def test_project_update_agents_md_replaces_unmarked_existing_file(
     )
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert content.startswith("# AGENTS.md\n\n")
+    assert content == agents_md.read_text(encoding="utf-8")
     assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX) == 1
     assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_END) == 1
-    assert ".agents/skills/project_builder/SKILL.md" in content
     assert "Keep this project-specific instruction." not in content
     assert "Action" in result.output
     assert "replaced" in result.output
@@ -9385,17 +9390,10 @@ def test_project_update_agents_md_creates_file_when_missing(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9403,7 +9401,7 @@ def test_project_update_agents_md_creates_file_when_missing(
     )
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
-    assert content.startswith("# AGENTS.md\n\n")
+    assert content == agents_md.read_text(encoding="utf-8")
     assert cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX in content
     assert "Action" in result.output
     assert "created" in result.output
@@ -9415,9 +9413,7 @@ def test_project_update_agents_md_replaces_existing_managed_block(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
     old_block = "\n".join(
@@ -9432,12 +9428,7 @@ def test_project_update_agents_md_replaces_existing_managed_block(
         f"# Project Agents\n\n{old_block}\n\nCustom tail.\n",
         encoding="utf-8",
     )
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9446,6 +9437,7 @@ def test_project_update_agents_md_replaces_existing_managed_block(
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
     assert "old managed content" not in content
+    assert "Installed managed block." in content
     assert "Custom tail.\n" in content
     assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX) == 1
     assert "updated" in result.output
@@ -9457,17 +9449,10 @@ def test_project_update_agents_md_json_reports_action(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9477,6 +9462,7 @@ def test_project_update_agents_md_json_reports_action(
     payload = json.loads(result.output)
     assert payload["target"] == "AGENTS.md"
     assert payload["project"] == str(target)
+    assert payload["source"] == str(agents_md)
     assert payload["destination"] == str(target / "AGENTS.md")
     assert payload["action"] == "created"
     assert payload["changed"] is True
@@ -9489,9 +9475,7 @@ def test_project_update_agents_md_rejects_malformed_managed_block(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
     start_marker = (
@@ -9502,12 +9486,7 @@ def test_project_update_agents_md_rejects_malformed_managed_block(
         f"# Project Agents\n\n{start_marker}\n",
         encoding="utf-8",
     )
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9523,9 +9502,7 @@ def test_project_update_agents_md_rejects_duplicate_managed_blocks(
     monkeypatch,
     tmp_path,
 ):
-    bundle_dir = tmp_path / "bundle"
-    _write_agent_scaffold_bundle(bundle_dir)
-
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
     target = tmp_path / "project"
     target.mkdir()
     block = "\n".join(
@@ -9537,12 +9514,7 @@ def test_project_update_agents_md_rejects_duplicate_managed_blocks(
         ]
     )
     (target / "AGENTS.md").write_text(f"{block}\n\n{block}\n", encoding="utf-8")
-
-    monkeypatch.setattr(
-        cli_mod,
-        "_project_agent_scaffold_bundle_dir",
-        lambda project_dir: bundle_dir,
-    )
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
 
     result = runner.invoke(
         cli_mod.app,
@@ -9550,6 +9522,41 @@ def test_project_update_agents_md_rejects_duplicate_managed_blocks(
     )
     assert result.exit_code == 1
     assert "multiple" in result.output
+
+
+def test_project_update_agents_md_fails_when_installed_bundle_missing_agents_md(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+):
+    bundle_dir = tmp_path / "bundle"
+    bundle_dir.mkdir()
+    target = tmp_path / "project"
+    target.mkdir()
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "update", "AGENTS.md", "--path", str(target)],
+    )
+    assert result.exit_code == 1
+    assert "Installed agent_scaffold bundle is missing AGENTS.md" in result.output
+
+
+def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_mod, monkeypatch):
+    original_import_module = cli_mod.importlib.import_module
+
+    def _import_module(name, package=None):
+        if name == "agent_scaffold":
+            raise ModuleNotFoundError("No module named 'agent_scaffold'")
+        return original_import_module(name, package)
+
+    monkeypatch.setattr(cli_mod.importlib, "import_module", _import_module)
+
+    resolved = cli_mod._installed_agent_scaffold_bundle_dir()
+    expected = pathlib.Path(cli_mod.__file__).resolve().parents[2] / "agent_scaffold"
+    assert resolved == expected.resolve()
 
 
 def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner, monkeypatch, tmp_path):

@@ -333,7 +333,7 @@ Non-goal:
 
 - [x] Change `mainsequence project update AGENTS.md` to use the managed-block helper.
   - Preserve the existing project resolution behavior.
-  - Preserve the installed bundle resolution behavior.
+  - Read `AGENTS.md` from the running CLI install, not from the target project `.venv`.
   - Report whether the file was created, replaced, updated, or unchanged.
 
 - [x] Keep `mainsequence project update_agent_skills` as the full refresh mechanism for

@@ -961,15 +961,33 @@ def _installed_agent_scaffold_bundle_dir() -> pathlib.Path:
     """
     Resolve the `agent_scaffold` bundle for the currently running CLI install.
     """
+    candidates: list[pathlib.Path] = []
+    import_error: Exception | None = None
     try:
         module = importlib.import_module("agent_scaffold")
     except Exception as exc:
-        error(f"Could not import installed agent_scaffold bundle: {exc}")
-        raise typer.Exit(1) from exc
+        import_error = exc
+    else:
+        paths = [pathlib.Path(p).resolve() for p in getattr(module, "__path__", [])]
+        candidates.extend(p for p in paths if p.exists() and p.is_dir())
 
-    paths = [pathlib.Path(p).resolve() for p in getattr(module, "__path__", [])]
-    candidates = [p for p in paths if p.exists() and p.is_dir()]
+    sibling_candidate = pathlib.Path(__file__).resolve().parents[2] / "agent_scaffold"
+    if sibling_candidate.exists() and sibling_candidate.is_dir():
+        candidates.append(sibling_candidate.resolve())
+
+    deduped_candidates: list[pathlib.Path] = []
+    seen: set[pathlib.Path] = set()
+    for candidate in candidates:
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        deduped_candidates.append(candidate)
+
+    candidates = deduped_candidates
     if not candidates:
+        if import_error is not None:
+            error(f"Could not import installed agent_scaffold bundle: {import_error}")
+            raise typer.Exit(1) from import_error
         error("Installed agent_scaffold bundle path could not be resolved.")
         raise typer.Exit(1)
     return candidates[0]
@@ -1052,49 +1070,56 @@ class AgentsMdManagedBlockUpdate:
     changed: bool
 
 
-def _render_agents_md_managed_block(bundle_dir: pathlib.Path) -> str:
-    required_skill_files = [
-        bundle_dir / "skills" / "project_builder" / "SKILL.md",
-        bundle_dir / "skills" / "maintenance" / "local_journal" / "SKILL.md",
-    ]
-    missing = [path for path in required_skill_files if not path.is_file()]
-    if missing:
-        missing_list = ", ".join(str(path) for path in missing)
+def _installed_agent_scaffold_agents_md_file() -> pathlib.Path:
+    source = _installed_agent_scaffold_bundle_dir() / "AGENTS.md"
+    if not source.is_file():
+        error(f"Installed agent_scaffold bundle is missing {source.name}: {source}")
+        raise typer.Exit(1)
+    return source
+
+
+def _extract_agents_md_managed_block(source_content: str) -> str:
+    start_count = source_content.count(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
+    end_count = source_content.count(AGENTS_MD_MANAGED_BLOCK_END)
+    if start_count != 1 or end_count != 1:
         raise ValueError(
-            "Project-installed agent_scaffold bundle is missing required skill files: "
-            f"{missing_list}"
+            "Installed agent_scaffold AGENTS.md must contain exactly one Main Sequence "
+            "managed block."
         )
 
-    start_marker = (
-        f"{AGENTS_MD_MANAGED_BLOCK_START_PREFIX} "
-        f"schema={AGENTS_MD_MANAGED_BLOCK_SCHEMA} source=agent_scaffold -->"
-    )
-    return dedent(
-        f"""\
-        {start_marker}
-        ## Main Sequence Agent Scaffold
+    start_index = source_content.find(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
+    end_marker_index = source_content.find(AGENTS_MD_MANAGED_BLOCK_END, start_index)
+    if end_marker_index < start_index:
+        raise ValueError(
+            "Installed agent_scaffold AGENTS.md contains malformed Main Sequence managed "
+            "block markers."
+        )
 
-        This block is managed by `mainsequence project update AGENTS.md`.
+    start_line_end = source_content.find("\n", start_index)
+    if start_line_end == -1:
+        start_line_end = len(source_content)
+    if not source_content[start_index:start_line_end].rstrip().endswith("-->"):
+        raise ValueError(
+            "Installed agent_scaffold AGENTS.md contains malformed Main Sequence managed "
+            "block markers."
+        )
 
-        For Main Sequence work in this repository:
-
-        1. Start with `.agents/skills/project_builder/SKILL.md`.
-        2. Route domain work to the relevant skill under `.agents/skills/`.
-        3. Use `.agents/skills/maintenance/local_journal/SKILL.md` after material changes.
-
-        Refresh reusable scaffold instructions with:
-
-        `mainsequence project update_agent_skills --path .`
-        {AGENTS_MD_MANAGED_BLOCK_END}
-        """
-    )
+    end_index = end_marker_index + len(AGENTS_MD_MANAGED_BLOCK_END)
+    return source_content[start_index:end_index]
 
 
-def _agents_md_bootstrap_file_content(managed_block: str) -> str:
-    return f"# AGENTS.md\n\n{managed_block}"
+def _load_installed_agents_md_template() -> tuple[pathlib.Path, str, str]:
+    source = _installed_agent_scaffold_agents_md_file()
+    content = source.read_text(encoding="utf-8")
+    managed_block = _extract_agents_md_managed_block(content)
+    return source, content, managed_block
 
 
-def _apply_agents_md_managed_block(content: str, managed_block: str) -> tuple[str, str]:
+def _apply_agents_md_managed_block(
+    content: str,
+    bootstrap_content: str,
+    managed_block: str,
+) -> tuple[str, str]:
     start_count = content.count(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
     end_count = content.count(AGENTS_MD_MANAGED_BLOCK_END)
 
@@ -1110,7 +1135,7 @@ def _apply_agents_md_managed_block(content: str, managed_block: str) -> tuple[st
         )
 
     if start_count == 0:
-        return _agents_md_bootstrap_file_content(managed_block), "replaced"
+        return bootstrap_content, "replaced"
 
     start_index = content.find(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
     end_marker_index = content.find(AGENTS_MD_MANAGED_BLOCK_END)
@@ -1136,16 +1161,17 @@ def _apply_agents_md_managed_block(content: str, managed_block: str) -> tuple[st
 
 def _update_agents_md_managed_block_file(
     destination: pathlib.Path,
+    bootstrap_content: str,
     managed_block: str,
 ) -> AgentsMdManagedBlockUpdate:
     destination.parent.mkdir(parents=True, exist_ok=True)
 
     if not destination.exists():
-        destination.write_text(_agents_md_bootstrap_file_content(managed_block), encoding="utf-8")
+        destination.write_text(bootstrap_content, encoding="utf-8")
         return AgentsMdManagedBlockUpdate(action="created", changed=True)
 
     original = destination.read_text(encoding="utf-8")
-    updated, action = _apply_agents_md_managed_block(original, managed_block)
+    updated, action = _apply_agents_md_managed_block(original, bootstrap_content, managed_block)
     changed = updated != original
     if changed:
         destination.write_text(updated, encoding="utf-8")
@@ -10935,10 +10961,13 @@ def project_update_scaffold_target(
     project_dir = _resolve_project_dir(project_id, path)
     destination = project_dir / "AGENTS.md"
 
-    bundle_dir = _project_agent_scaffold_bundle_dir(project_dir)
     try:
-        managed_block = _render_agents_md_managed_block(bundle_dir)
-        update_result = _update_agents_md_managed_block_file(destination, managed_block)
+        source, bootstrap_content, managed_block = _load_installed_agents_md_template()
+        update_result = _update_agents_md_managed_block_file(
+            destination,
+            bootstrap_content,
+            managed_block,
+        )
     except ValueError as exc:
         error(str(exc))
         raise typer.Exit(1) from exc
@@ -10946,7 +10975,7 @@ def project_update_scaffold_target(
     payload = {
         "target": target,
         "project": project_dir,
-        "source": bundle_dir,
+        "source": source,
         "destination": destination,
         "action": update_result.action,
         "changed": update_result.changed,
@@ -10969,7 +10998,7 @@ def project_update_scaffold_target(
             ("Target", target),
             ("Action", update_result.action),
             ("Project", str(project_dir)),
-            ("Source", str(bundle_dir)),
+            ("Source", str(source)),
             ("Destination", str(destination)),
         ],
     )
