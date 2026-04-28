@@ -9342,7 +9342,7 @@ def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.
                 "Installed scaffold preface.",
                 "",
                 "<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->",
-                "## Main Sequence Agent Scaffold",
+                "## Main Sequence Instructions",
                 "",
                 "Installed managed block.",
                 "",
@@ -9357,7 +9357,7 @@ def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.
     return agents_md
 
 
-def test_project_update_agents_md_replaces_unmarked_existing_file(
+def test_project_update_agents_md_replaces_custom_unmarked_file(
     cli_mod,
     runner,
     monkeypatch,
@@ -9379,6 +9379,7 @@ def test_project_update_agents_md_replaces_unmarked_existing_file(
     assert content == agents_md.read_text(encoding="utf-8")
     assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX) == 1
     assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_END) == 1
+    assert "Installed managed block." in content
     assert "Keep this project-specific instruction." not in content
     assert "Action" in result.output
     assert "replaced" in result.output

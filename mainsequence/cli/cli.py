@@ -10943,8 +10943,10 @@ def project_update_scaffold_target(
     """
     Update a scaffold-managed file in the local project root.
 
-    Currently this command supports only `AGENTS.md` and updates only the
-    Main Sequence managed block inside the local file.
+    Currently this command supports only `AGENTS.md`.
+    If the Main Sequence managed marker is present, only that block is updated.
+    If the marker is absent, the whole file is replaced from the installed
+    scaffold template.
 
     Examples
     --------
@@ -10991,7 +10993,7 @@ def project_update_scaffold_target(
     if update_result.action == "unchanged":
         success(f"{target} Main Sequence managed block already current.")
     else:
-        success(f"Updated {target} Main Sequence managed block.")
+        success(f"Updated scaffold-managed {target}.")
     print_kv(
         "Scaffold Update",
         [
