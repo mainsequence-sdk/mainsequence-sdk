@@ -1034,16 +1034,122 @@ def _resolve_installed_agent_scaffold_skill(skill_name: str) -> dict[str, pathli
     raise typer.Exit(1)
 
 
-def _copy_file_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dst)
-
-
 def _copy_tree_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
     if dst.exists():
         shutil.rmtree(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, dst)
+
+
+AGENTS_MD_MANAGED_BLOCK_START_PREFIX = "<!-- mainsequence-agent-scaffold:start"
+AGENTS_MD_MANAGED_BLOCK_END = "<!-- mainsequence-agent-scaffold:end -->"
+AGENTS_MD_MANAGED_BLOCK_SCHEMA = "1"
+
+
+@dataclasses.dataclass(frozen=True)
+class AgentsMdManagedBlockUpdate:
+    action: str
+    changed: bool
+
+
+def _render_agents_md_managed_block(bundle_dir: pathlib.Path) -> str:
+    required_skill_files = [
+        bundle_dir / "skills" / "project_builder" / "SKILL.md",
+        bundle_dir / "skills" / "maintenance" / "local_journal" / "SKILL.md",
+    ]
+    missing = [path for path in required_skill_files if not path.is_file()]
+    if missing:
+        missing_list = ", ".join(str(path) for path in missing)
+        raise ValueError(
+            "Project-installed agent_scaffold bundle is missing required skill files: "
+            f"{missing_list}"
+        )
+
+    start_marker = (
+        f"{AGENTS_MD_MANAGED_BLOCK_START_PREFIX} "
+        f"schema={AGENTS_MD_MANAGED_BLOCK_SCHEMA} source=agent_scaffold -->"
+    )
+    return dedent(
+        f"""\
+        {start_marker}
+        ## Main Sequence Agent Scaffold
+
+        This block is managed by `mainsequence project update AGENTS.md`.
+
+        For Main Sequence work in this repository:
+
+        1. Start with `.agents/skills/project_builder/SKILL.md`.
+        2. Route domain work to the relevant skill under `.agents/skills/`.
+        3. Use `.agents/skills/maintenance/local_journal/SKILL.md` after material changes.
+
+        Refresh reusable scaffold instructions with:
+
+        `mainsequence project update_agent_skills --path .`
+        {AGENTS_MD_MANAGED_BLOCK_END}
+        """
+    )
+
+
+def _agents_md_bootstrap_file_content(managed_block: str) -> str:
+    return f"# AGENTS.md\n\n{managed_block}"
+
+
+def _apply_agents_md_managed_block(content: str, managed_block: str) -> tuple[str, str]:
+    start_count = content.count(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
+    end_count = content.count(AGENTS_MD_MANAGED_BLOCK_END)
+
+    if start_count > 1 or end_count > 1:
+        raise ValueError(
+            "AGENTS.md contains multiple Main Sequence managed block markers; "
+            "resolve it manually."
+        )
+    if start_count != end_count:
+        raise ValueError(
+            "AGENTS.md contains malformed Main Sequence managed block markers; "
+            "resolve it manually."
+        )
+
+    if start_count == 0:
+        return _agents_md_bootstrap_file_content(managed_block), "replaced"
+
+    start_index = content.find(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
+    end_marker_index = content.find(AGENTS_MD_MANAGED_BLOCK_END)
+    start_line_end = content.find("\n", start_index)
+    if start_line_end == -1:
+        start_line_end = len(content)
+    if not content[start_index:start_line_end].rstrip().endswith("-->"):
+        raise ValueError(
+            "AGENTS.md contains malformed Main Sequence managed block markers; "
+            "resolve it manually."
+        )
+    if end_marker_index < start_index:
+        raise ValueError(
+            "AGENTS.md contains malformed Main Sequence managed block markers; "
+            "resolve it manually."
+        )
+
+    end_index = end_marker_index + len(AGENTS_MD_MANAGED_BLOCK_END)
+    updated = f"{content[:start_index]}{managed_block.rstrip()}{content[end_index:]}"
+    action = "unchanged" if updated == content else "updated"
+    return updated, action
+
+
+def _update_agents_md_managed_block_file(
+    destination: pathlib.Path,
+    managed_block: str,
+) -> AgentsMdManagedBlockUpdate:
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    if not destination.exists():
+        destination.write_text(_agents_md_bootstrap_file_content(managed_block), encoding="utf-8")
+        return AgentsMdManagedBlockUpdate(action="created", changed=True)
+
+    original = destination.read_text(encoding="utf-8")
+    updated, action = _apply_agents_md_managed_block(original, managed_block)
+    changed = updated != original
+    if changed:
+        destination.write_text(updated, encoding="utf-8")
+    return AgentsMdManagedBlockUpdate(action=action, changed=changed)
 
 
 def _parse_env_var_entries(entries: list[str]) -> dict[str, str]:
@@ -10811,8 +10917,8 @@ def project_update_scaffold_target(
     """
     Update a scaffold-managed file in the local project root.
 
-    Currently this command supports only `AGENTS.md` and overwrites the local file
-    with the installed `agent_scaffold/AGENTS.md` bundle version.
+    Currently this command supports only `AGENTS.md` and updates only the
+    Main Sequence managed block inside the local file.
 
     Examples
     --------
@@ -10830,29 +10936,40 @@ def project_update_scaffold_target(
     destination = project_dir / "AGENTS.md"
 
     bundle_dir = _project_agent_scaffold_bundle_dir(project_dir)
-    source = bundle_dir / "AGENTS.md"
-    if not source.is_file():
-        error(f"Project-installed agent_scaffold bundle is missing {source.name}.")
-        raise typer.Exit(1)
-    _copy_file_overwrite(source, destination)
+    try:
+        managed_block = _render_agents_md_managed_block(bundle_dir)
+        update_result = _update_agents_md_managed_block_file(destination, managed_block)
+    except ValueError as exc:
+        error(str(exc))
+        raise typer.Exit(1) from exc
 
     payload = {
         "target": target,
         "project": project_dir,
-        "source": source,
+        "source": bundle_dir,
         "destination": destination,
-        "overwritten": True,
+        "action": update_result.action,
+        "changed": update_result.changed,
+        "overwritten": False,
+        "managed_block": {
+            "start": AGENTS_MD_MANAGED_BLOCK_START_PREFIX,
+            "end": AGENTS_MD_MANAGED_BLOCK_END,
+        },
     }
     if _emit_json(payload):
         return
 
-    success(f"Updated {target} from installed agent_scaffold bundle.")
+    if update_result.action == "unchanged":
+        success(f"{target} Main Sequence managed block already current.")
+    else:
+        success(f"Updated {target} Main Sequence managed block.")
     print_kv(
         "Scaffold Update",
         [
             ("Target", target),
+            ("Action", update_result.action),
             ("Project", str(project_dir)),
-            ("Source", str(source)),
+            ("Source", str(bundle_dir)),
             ("Destination", str(destination)),
         ],
     )

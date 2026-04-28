@@ -64,7 +64,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 
 ## Read First
 
-1. `.agents/AGENTS.md`
+1. `AGENTS.md`
 2. `docs/cli/index.md`
 3. `docs/knowledge/data_nodes.md`
 4. `docs/knowledge/simple_tables/simple_table.md` when the exploration touches row-oriented storage

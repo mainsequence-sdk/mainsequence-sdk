@@ -67,7 +67,7 @@ This skill audits. It does not implement by default.
 
 ## Read First
 
-1. `.agents/AGENTS.md`
+1. `AGENTS.md`
 2. `.agents/skills/project_builder/SKILL.md`
 3. `.agents/tasks.md` when it exists
 4. `.agents/status.md` when it exists

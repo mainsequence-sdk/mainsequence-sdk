@@ -71,7 +71,7 @@ This skill maintains project-state files. It does not own domain implementation 
 
 ## Read First
 
-1. `.agents/AGENTS.md`
+1. `AGENTS.md`
 2. `.agents/skills/project_builder/SKILL.md`
 3. the domain skill that produced the material change
 4. `.agents/brief.md`

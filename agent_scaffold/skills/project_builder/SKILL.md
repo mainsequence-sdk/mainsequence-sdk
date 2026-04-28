@@ -80,7 +80,7 @@ Do not let this skill become a domain manual.
 
 ## Read First
 
-1. `.agents/AGENTS.md`
+1. `AGENTS.md`
 2. `.agents/skills/maintenance/local_journal/SKILL.md`
 3. the latest relevant Main Sequence docs for the task
 4. `.agents/brief.md`
