@@ -19,9 +19,9 @@ from ..utils import AuthError, AuthLoaders, _default_auth_provider_kind
 _AUTH_STORAGE_KEY = "command-center.jwt-auth"
 _DEFAULT_PROFILE = "full-data"
 _DEFAULT_TIMEOUT_MS = 300_000
+_DEFAULT_BOOTSTRAP_WAIT_MS = 30_000
 _DEFAULT_CHUNK_SIZE = 4 * 1024 * 1024
 _DEFAULT_OUTPUT_DIR_PARTS = ("mainsequence", "workspaces")
-_DEFAULT_ARCHIVE_FILENAME = "snapshot.zip"
 _SCROLL_CONTAINER_SELECTOR = '[data-workspace-canvas-scroll-container="true"]'
 _SCROLL_CONTENT_SELECTOR = '[data-workspace-canvas-content="true"]'
 _SCROLL_SCREENSHOT_DIR = "screenshots/playwright-scroll"
@@ -118,11 +118,15 @@ def _build_storage_payload(auth_mode: str | None, tokens: dict[str, Any]) -> dic
     return {"authMode": browser_auth_mode, "tokens": tokens}
 
 
+def _build_workspace_url(base_url: str, workspace_id: int | str, *, snapshot: bool = False) -> str:
+    url = f"{base_url.rstrip('/')}/app/workspace-studio/workspaces?workspace={workspace_id}"
+    if snapshot:
+        url = f"{url}&snapshot=true&snapshotProfile={_DEFAULT_PROFILE}"
+    return url
+
+
 def _build_snapshot_url(base_url: str, workspace_id: int | str) -> str:
-    return (
-        f"{base_url.rstrip('/')}/app/workspace-studio/workspaces"
-        f"?workspace={workspace_id}&snapshot=true&snapshotProfile={_DEFAULT_PROFILE}"
-    )
+    return _build_workspace_url(base_url, workspace_id, snapshot=True)
 
 
 def _default_snapshot_output_dir() -> Path:
@@ -144,46 +148,13 @@ def _snapshot_timestamp() -> str:
 def _default_snapshot_output_path(workspace_id: int | str) -> Path:
     workspace_fragment = _safe_path_fragment(workspace_id)
     snapshot_dir = f"workspace-{workspace_fragment}-{_snapshot_timestamp()}"
-    return _default_snapshot_output_dir() / snapshot_dir / _DEFAULT_ARCHIVE_FILENAME
+    return _default_snapshot_output_dir() / snapshot_dir
 
 
-def _safe_archive_filename(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    filename = value.strip()
-    if not filename:
-        return None
-
-    filename = filename.replace("\\", "/").split("/")[-1]
-    filename = re.sub(r"[^A-Za-z0-9._ -]+", "-", filename)
-    filename = re.sub(r"\s+", " ", filename).strip(" .")
-    if not filename:
-        return None
-
-    if not filename.lower().endswith(".zip"):
-        filename = f"{filename}.zip"
-
-    return filename
-
-
-def _default_snapshot_filename(workspace_id: int | str, archive_name: Any) -> str:
-    archive_filename = _safe_archive_filename(archive_name)
-    if archive_filename:
-        return archive_filename
-
-    workspace_fragment = _safe_archive_filename(f"workspace-{workspace_id}-snapshot")
-    return workspace_fragment or "workspace-snapshot.zip"
-
-
-def _resolve_snapshot_output_path(
+def _resolve_snapshot_output_dir(
     output_path: str | os.PathLike[str] | None,
     workspace_id: int | str,
-    snapshot_state: dict[str, Any],
 ) -> Path:
-    archive_name = snapshot_state.get("archiveName")
-    archive_filename = _default_snapshot_filename(workspace_id, archive_name)
-
     if output_path is None:
         return _default_snapshot_output_path(workspace_id)
 
@@ -195,10 +166,13 @@ def _resolve_snapshot_output_path(
         separators.append(os.altsep)
 
     if destination.exists() and destination.is_dir():
-        return destination / archive_filename
+        return destination
 
     if any(raw_output_path.endswith(separator) for separator in separators):
-        return destination / archive_filename
+        return destination
+
+    if destination.suffix:
+        return destination.with_suffix("")
 
     return destination
 
@@ -461,33 +435,42 @@ def _append_scroll_screenshots_to_archive(
     return archive_buffer.getvalue()
 
 
-def _write_output_path(output_path: str | os.PathLike[str], payload: bytes) -> None:
-    destination = Path(output_path).expanduser()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(payload)
+def _extract_archive_to_directory(
+    archive_bytes: bytes,
+    extract_dir: str | os.PathLike[str],
+) -> Path:
+    destination = Path(extract_dir).expanduser()
+    destination.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        archive.extractall(destination)
+
+    return destination
 
 
-def get_workspace_snapshot(
+def _capture_workspace_snapshot(
     workspace_id: int | str,
     output_path: str | os.PathLike[str] | None = None,
     *,
     auth_mode: str | None = None,
-) -> bytes:
+) -> tuple[bytes, Path]:
     """
     Capture a live Command Center workspace snapshot archive through the real browser client.
 
     The Command Center frontend already knows how to assemble the ZIP archive. This helper
     authenticates a headless browser using the SDK's configured auth provider and refreshed
     environment tokens, navigates to the existing `snapshot=true` route, waits for the client
-    to finish capture, and returns the resulting ZIP bytes. The ZIP is written to `output_path`
-    when provided; otherwise it is written to
-    `~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/snapshot.zip`.
+    to finish capture, and returns the resulting ZIP bytes plus the resolved extracted directory
+    path. The ZIP is only used as an internal transport artifact; the filesystem output is the
+    expanded snapshot directory. When `output_path` is not provided, the snapshot is extracted to
+    `~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/`.
     """
 
     tokens = _refresh_and_collect_tokens()
     command_center_url = _resolve_command_center_url()
     storage_payload = _build_storage_payload(auth_mode=auth_mode, tokens=tokens)
     snapshot_url = _build_snapshot_url(command_center_url, workspace_id)
+    workspace_url = _build_workspace_url(command_center_url, workspace_id)
 
     try:
         from playwright.sync_api import sync_playwright
@@ -517,6 +500,8 @@ def get_workspace_snapshot(
                 """,
             )
             page = context.new_page()
+            page.goto(workspace_url, wait_until="domcontentloaded")
+            page.wait_for_timeout(_DEFAULT_BOOTSTRAP_WAIT_MS)
             page.goto(snapshot_url, wait_until="domcontentloaded")
             snapshot_state = _wait_for_snapshot_ready(page, timeout_ms=_DEFAULT_TIMEOUT_MS)
             archive_bytes = _read_blob_bytes_in_chunks(page, chunk_size=_DEFAULT_CHUNK_SIZE)
@@ -533,9 +518,34 @@ def get_workspace_snapshot(
             f"Snapshot URL: {snapshot_url}. Underlying error: {type(exc).__name__}: {exc}"
         ) from exc
 
-    resolved_output_path = _resolve_snapshot_output_path(output_path, workspace_id, snapshot_state)
-    _write_output_path(resolved_output_path, archive_bytes)
+    extracted_dir = _resolve_snapshot_output_dir(output_path, workspace_id)
+    _extract_archive_to_directory(archive_bytes, extracted_dir)
 
+    return archive_bytes, extracted_dir
+
+
+def get_workspace_snapshot(
+    workspace_id: int | str,
+    output_path: str | os.PathLike[str] | None = None,
+    *,
+    auth_mode: str | None = None,
+) -> bytes:
+    """
+    Capture a live Command Center workspace snapshot archive through the real browser client.
+
+    The Command Center frontend already knows how to assemble the ZIP archive. This helper
+    authenticates a headless browser using the SDK's configured auth provider and refreshed
+    environment tokens, navigates to the existing `snapshot=true` route, waits for the client
+    to finish capture, and returns the resulting ZIP bytes. The ZIP is not persisted to disk.
+    Instead, the archive is extracted into `output_path` when provided, or into
+    `~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/` by default.
+    """
+
+    archive_bytes, _ = _capture_workspace_snapshot(
+        workspace_id,
+        output_path=output_path,
+        auth_mode=auth_mode,
+    )
     return archive_bytes
 
 

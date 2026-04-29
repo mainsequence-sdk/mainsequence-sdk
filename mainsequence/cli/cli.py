@@ -4820,27 +4820,27 @@ def _workspace_snapshot_impl(
     try:
         from mainsequence.client.command_center.workspace_snapshot import (
             _build_snapshot_url,
+            _capture_workspace_snapshot,
             _resolve_command_center_url,
             _WorkspaceSnapshotError,
-            get_workspace_snapshot,
         )
 
         snapshot_url = _build_snapshot_url(_resolve_command_center_url(), workspace_id)
         typer.echo(f"Snapshot URL: {snapshot_url}")
-        archive_bytes = get_workspace_snapshot(workspace_id, output_path=output_path)
+        archive_bytes, extracted_dir = _capture_workspace_snapshot(
+            workspace_id,
+            output_path=output_path,
+        )
     except _WorkspaceSnapshotError as e:
         error(f"Workspace snapshot failed: {e}")
         raise typer.Exit(1) from e
 
-    output_text = (
-        str(output_path.expanduser())
-        if output_path is not None
-        else f"~/mainsequence/workspaces/workspace-{workspace_id}-<timestamp>/snapshot.zip"
-    )
+    extracted_dir_text = str(extracted_dir.expanduser())
     result = {
         "workspace_id": workspace_id,
         "archive_size_bytes": len(archive_bytes),
-        "output_path": output_text,
+        "output_path": extracted_dir_text,
+        "extracted_dir": extracted_dir_text,
     }
     if _emit_json(result):
         return
@@ -4851,7 +4851,7 @@ def _workspace_snapshot_impl(
         [
             ("Workspace ID", str(workspace_id)),
             ("Archive Size Bytes", str(len(archive_bytes))),
-            ("Output", output_text),
+            ("Output Directory", extracted_dir_text),
         ],
     )
 
@@ -5485,11 +5485,11 @@ def workspace_snapshot_cmd(
         None,
         "--output-path",
         "-o",
-        help="Optional output file or directory path. Defaults to ~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/snapshot.zip.",
+        help="Optional output directory path. If you pass a file-like path such as snapshot.zip, its stem is used as the output directory. Defaults to ~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/.",
     ),
 ):
     """
-    Capture one command-center workspace snapshot archive.
+    Capture one command-center workspace snapshot and expand it into a directory.
     """
     _workspace_snapshot_impl(workspace_id=workspace_id, output_path=output_path)
 

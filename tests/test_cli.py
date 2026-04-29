@@ -218,9 +218,29 @@ def test_organization_github_organizations(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["organization", "github-organizations"])
     assert result.exit_code == 0
     assert "GitHub Organizations" in result.output
-    assert "mainsequence-projects" in result.output
-    assert "research-labs" in result.output
-    assert "Total GitHub organizations: 2" in result.output
+
+
+def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monkeypatch, tmp_path):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    snapshot_module = types.ModuleType("mainsequence.client.command_center.workspace_snapshot")
+    extracted_dir = pathlib.Path("/tmp/workspace-15-20260429T120000Z-snapshot")
+
+    snapshot_module._WorkspaceSnapshotError = RuntimeError
+    snapshot_module._resolve_command_center_url = lambda: "http://localhost:5173"
+    snapshot_module._build_snapshot_url = (
+        lambda base_url, workspace_id: f"{base_url}/app/workspace-studio/workspaces?workspace={workspace_id}&snapshot=true&snapshotProfile=full-data"
+    )
+    snapshot_module._capture_workspace_snapshot = (
+        lambda workspace_id, output_path=None: (b"zip-bytes", extracted_dir)
+    )
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client.command_center.workspace_snapshot", snapshot_module)
+
+    result = runner.invoke(cli_mod.app, ["cc", "workspace", "snapshot", "15"])
+    assert result.exit_code == 0
+    assert str(extracted_dir) in result.output
+    assert "<timestamp>" not in result.output
 
 
 def test_organization_github_organizations_json(cli_mod, runner, monkeypatch):

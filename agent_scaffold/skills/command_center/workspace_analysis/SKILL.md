@@ -1,417 +1,203 @@
 ---
 name: command-center-workspace-analysis
-description: Use this skill when the task is about interpreting a Main Sequence Command Center live workspace snapshot archive after capture. This skill explains the difference between the persisted workspace definition, the live runtime state, and per-widget evidence; teaches how to inspect manifest warnings, workspace-live-state, widget artifact folders, controls, dependency graphs, and screenshots; and guides agents to answer questions about what the workspace was actually doing at capture time rather than only what the shared workspace JSON intended.
+description: Use this skill when the task is about analyzing a Main Sequence Command Center workspace snapshot and answering questions about the current state of the workspace. This skill is for interpreting what the workspace was actually showing at capture time. Each widget snapshot contains that widget's current state, and agents should answer questions from those widget dumps instead of from persisted workspace metadata.
 ---
 
-# Workspace Snapshot Skill
+# Workspace Analysis Skill
 
-Use this skill when you need to understand the actual captured state of a Command Center workspace after a live snapshot has already been produced.
+Use this skill when you need to analyze a captured Command Center workspace snapshot and answer questions about the state of the workspace.
 
-This skill is not for building a workspace definition from scratch. Use the workspace builder skill for authoring or mutating the shared workspace JSON. Use this skill when the question is about what the mounted workspace was actually doing at capture time.
+This skill is for interpretation, not workspace authoring. Use the widget snapshots together with the user's question and any business context provided in the prompt.
 
-## Capturing A Full Runtime Snapshot
+Use it when the user asks things like:
 
-If the task needs a full snapshot of the current live Command Center runtime, use:
+- "What is this workspace showing?"
+- "What conclusions can I draw from the data in the workspace?"
+- "The user asked a question. Can this workspace answer it, and how should I answer using only this data?"
+- "When answering, focus only on the data in the workspace and the user context. Do not invent or assume anything that is not supported by the captured workspace state."
 
-- `mainsequence/client/command_center/workspace_snapshot.py`
-- specifically:
-  - `get_workspace_snapshot(...)`
+Do not use this skill to mutate workspace definitions or explain the persisted workspace JSON model. Use the relevant workspace authoring skill for that.
 
-This helper drives the real browser client and captures the browser-built workspace ZIP archive. It is the correct path when you need the full runtime snapshot instead of only the persisted workspace JSON.
+## Core Principle
 
-Before using it, make the environment prerequisites explicit:
+This snapshot exists to answer questions about what the workspace was showing at capture time.
 
-- Playwright must be installed
-- Chromium browser binaries must be installed
+It is not a metadata archive.
 
-The helper itself expects the SDK snapshot extra and browser binaries to be present. If they are missing, stop and surface that prerequisite instead of pretending the snapshot can be captured.
+It is not a workspace-definition export.
 
-## What This Snapshot Represents
+It is not a dependency-graph report.
 
-A live workspace snapshot is a browser-built ZIP archive produced from the mounted Command Center runtime.
+It is a per-widget state dump intended to be interpreted by an agent.
 
-It contains three different kinds of truth:
+The most important rule is:
 
-1. Persisted workspace definition
-- The sanitized shared workspace JSON.
-- This answers what the workspace is structurally configured to contain.
+- answer from widget snapshots
+- do not answer from old workspace metadata when the widget dump already contains the real state
 
-2. Live workspace runtime state
-- The mounted dashboard state at capture time.
-- This answers what was actually mounted, visible, hidden, connected, refreshed, and resolved when the snapshot was taken.
+## What The Snapshot Contains
 
-3. Per-widget evidence
-- Structured widget state embedded in `workspace-live-state.json` plus optional widget-specific exports.
-- This answers what each widget was actually showing or producing at capture time.
+The current snapshot contract is intentionally small.
 
-The key distinction is:
+The archive structure is:
 
-- `workspace-definition.json` tells you the intended shared workspace structure.
-- `workspace-live-state.json` tells you the actual captured runtime state.
-- `workspace-live-state.json` widget records and widget artifact files tell you the widget-level evidence.
+```text
+workspace-live-snapshot-<timestamp>.zip
+  widgets/
+    <widget-directory>/
+      snapshot.json
+```
 
-Do not answer runtime questions from `workspace-definition.json` alone if the live snapshot includes richer runtime evidence.
+That is the important contract.
 
-## Where This Fits Relative to Other Command Center Skills
+## What Each Widget Snapshot Means
 
-Use this skill alongside the other Command Center skills in `agent_scaffold/skills/command_center`:
+Each widget directory contains one `snapshot.json`.
+
+That file is the source of truth for the widget.
+
+It contains:
+
+- widget identity
+- widget source
+- connection type name when applicable
+- placement and hidden state
+- the structured `snapshot` payload returned by `buildAgentSnapshot(...)`
+
+That `snapshot` payload represents the widget's current state.
+
+Agents should read it as:
+
+- what kind of widget this is
+- whether it is ready, loading, empty, error, or idle
+- what the widget says it is showing
+- the actual bounded state or data payload that the widget exposed for agent interpretation
+
+## How To Reason About Different Widget Roles
+
+Not every widget should be interpreted the same way. Some widgets express business meaning directly. Others only provide setup or transport context.
+
+### Presentation widgets
+
+Examples:
+
+- tables
+- graphs
+- chart widgets
+- notes
+- statistics
+- visual workspace widgets
+
+These are interpretable.
+
+Their `snapshot.json` should be read as actual visible or semantic workspace state.
+
+This is where agents should answer questions like:
+
+- what business data is being presented
+- what the visual implies about the user's question
+- what conclusion the user can support from the displayed data
+- what limitation or ambiguity remains in the displayed data
+
+### Passthrough infrastructure widgets
+
+Examples:
+
+- connection query widgets
+- connection stream query widgets
+- transform widgets
+
+These are not the final business meaning the user is trying to inspect.
+
+They are plumbing.
+
+Their snapshots should be treated as metadata-only state:
+
+- configured source
+- configured path
+- connection type
+- transform mode
+- status
+
+Do not treat them as the final user-facing answer unless there is no downstream presentation widget and the source widget itself is the only place where the relevant data appears.
+
+Do not infer that a dataset dump from a source widget is what the user is "seeing" if the real interpreted state lives in downstream presentation widgets.
+
+## How To Answer Questions
+
+When analyzing a workspace snapshot:
+
+1. Inspect the widget folders.
+2. Read each `snapshot.json`.
+3. Identify which widgets are presentation widgets versus passthrough widgets.
+4. Identify which widgets actually answer the user's question.
+5. Prefer the downstream presentation widget state when answering "what does this workspace show?"
+6. Use passthrough widgets only for setup, lineage, or failure-context explanations.
+7. Answer in terms of what the data means, not just what the widget contains.
+
+Good answers should:
+
+- answer the user's actual question using the business meaning of the displayed data
+- explain what conclusion is supported by the workspace state
+- call out uncertainty or missing evidence when the workspace does not fully answer the question
+- use widget mechanics only when they are necessary to explain why the data can or cannot support an interpretation
+
+Better answer styles are:
+
+- "This workspace is showing current positions by instrument, so it can answer exposure questions but not execution-history questions."
+- "The chart indicates that the curve moves downward after the short end, so the interpretable takeaway is the shape of the discount curve, not the raw number of plotted points."
+- "The source widget is configured, but the user-facing table is empty, so the workspace does not currently support a business conclusion from the displayed data."
+- "This transform widget only prepares the dataset. The answer to the user's question comes from the downstream chart, which shows the filtered result."
+
+Bad answers are:
+
+- repeating structural metadata without interpreting the widget state
+- focusing on old top-level archive files instead of widget dumps
+- treating source widgets as the final answer when presentation widgets already interpret the data
+- describing row counts, point counts, or widget inventory when that does not answer the user's question
+
+## Answering Standard
+
+The default goal is not to describe the dashboard mechanically. The goal is to explain what the dashboard means in the context of the user's question.
+
+Prefer answers like:
+
+- "The workspace is showing the current composition of the portfolio, so the relevant interpretation is concentration by holding, not just the fact that a table exists."
+- "The dashboard is answering a pricing question through the downstream chart, which shows the resulting curve behavior. The transform and source widgets are only intermediate steps."
+- "This workspace can answer whether the strategy is long or short a given exposure, but it cannot answer why the position was created because no execution or rationale data is shown."
+
+Avoid answers like:
+
+- "There are 25 rows in the table."
+- "The graph has 3 lines."
+- "There are 6 widgets on the dashboard."
+
+Those details are only useful if they materially change the interpretation.
+
+## Relationship To Other Command Center Skills
+
+Use this skill alongside other Command Center skills when needed:
 
 - `workspace_builder`
-  - for creating or patching workspace/widget definitions
-  - not for interpreting live capture evidence
+  - for creating or mutating workspace/widget definitions
+  - not for analyzing current workspace state
 - `app_components`
-  - for AppComponent-specific configuration and execution reasoning
-  - use it when the snapshot points to an AppComponent behavior question
+  - when a widget snapshot shows an AppComponent-specific request/response issue
 - `api_mock_prototyping`
-  - only if snapshot evidence points to API payload design or mock-response work
-
-This skill should be the first stop when the user asks questions like:
-
-- "What state was the workspace in?"
-- "Which widgets were actually mounted?"
-- "Why does the snapshot show this result?"
-- "Was this widget hidden, missing, or permission-denied?"
-- "What data did the widget actually have at capture time?"
-- "What did the dashboard look like when the snapshot was taken?"
-
-## Archive Overview
-
-The live snapshot is a ZIP archive. It is not the normal workspace export/import JSON.
-
-The archive usually contains:
-
-- `manifest.json`
-- `workspace-definition.json`
-- `workspace-live-state.json`
-- `controls.json`
-- `relationships/widget-graph.json`
-- `relationships/widget-graph.png`
-- `screenshots/viewport.png`
-- `screenshots/full-canvas.png`
-- `screenshots/hidden-widgets-sheet.png`
-- optional widget folders such as `widgets/<widget-id>-<uuid>/`
-- optional widget files inside those folders, such as:
-  - `screenshot.png`
-  - `data.json`
-  - `data.csv`
-  - `chart-data.json`
-  - `response.json`
-
-Not every optional artifact will exist in every snapshot.
-
-## What Each Top-Level File Means
-
-### `manifest.json`
-
-This is the first file to inspect.
-
-It tells you:
-
-- archive schema and version
-- capture profile
-- workspace id and title
-- generated time
-- file inventory
-- warnings
-- errors
-
-Use it to decide whether the snapshot is trustworthy enough for a strong conclusion.
-
-If `manifest.json` contains warnings or errors, treat missing screenshots or artifacts as a capture limitation, not automatically as a widget failure.
-
-### `workspace-definition.json`
-
-This is the normal sanitized workspace export embedded into the archive.
-
-Use it to answer:
-
-- what widgets are part of the shared workspace definition
-- layout and structure questions
-- bindings and configuration questions
-- what the workspace was intended to contain
-
-Do not use it by itself to answer:
-
-- what was visible
-- what had loaded
-- what data was present
-- what was hidden
-- what the user actually saw at capture time
-
-### `workspace-live-state.json`
-
-This is the most important file for runtime reasoning.
-
-It currently records:
-
-- capture schema and version
-- profile
-- workspace id and title
-- view mode
-- live controls state
-- refresh progress and refresh timestamps
-- resolved widget dependency graph
-- one record per mounted widget instance
-- widget summary counts
-
-This is the best file for answering:
-
-- what was actually mounted
-- which widgets were visible vs hidden
-- which widgets were sidebar vs canvas
-- why a widget was hidden
-- which artifacts belong to each widget
-- what the runtime dependency graph looked like
-
-Each widget record in `workspace-live-state.json` contains:
-
-- `instanceId`
-- `widgetId`
-- `title`
-- `category`
-- `kind`
-- `source`
-- `placementMode`
-- `hidden`
-- `hiddenReason`
-- optional `layout`
-- optional `parentRowId`
-- optional `domTextContent`
-- optional `screenshotPath`
-- `artifactPaths`
-- structured `snapshot`
-
-This means `workspace-live-state.json` is the bridge between the shared workspace document and the widget-specific evidence files.
-
-### `controls.json`
-
-Use this when the question is about dashboard control state, date range, refresh behavior, or current control selections at capture time.
-
-### `relationships/widget-graph.json`
-
-This is the structural dependency graph between widgets.
-
-Use it to answer:
-
-- which widgets depend on which upstream widgets
-- how a widget is fed
-- what the dependency chain looked like at capture time
-
-### `relationships/widget-graph.png`
-
-This is a convenience visualization of the same dependency information. It is useful for quick orientation, but the JSON graph is the better source for precise reasoning.
-
-### `screenshots/viewport.png`
-
-This is the visible viewport capture at the moment of snapshot.
-
-Use it to answer:
-
-- what was on screen
-- what the user would have seen without scrolling
-
-### `screenshots/full-canvas.png`
-
-This is the best-effort capture of the actual workspace canvas.
-
-Use it to answer:
-
-- what the full dashboard canvas looked like
-- where widgets were placed visually
-- what the visual composition of the workspace was
-
-This is more important than the graph screenshots for real workspace-state questions.
-
-### `screenshots/hidden-widgets-sheet.png`
-
-This is a report-style screenshot for hidden/sidebar/collapsed content that may not appear on the visible canvas.
-
-Use it as supporting evidence, not as the primary runtime picture of the workspace.
-
-## Widget Artifact Folders
-
-Each widget gets a folder like:
-
-- `widgets/<widget-id>-<uuid>/`
-
-The folder name is human-friendlier than the raw instance id, but the canonical widget identity is still the `instanceId` inside `workspace-live-state.json`.
-
-Inside a widget folder you may see:
-
-- `screenshot.png`
-  - widget-local visual evidence, if a visible DOM capture was possible
-- `data.json`
-  - tabular or record-shaped data export
-- `data.csv`
-  - CSV export for row-based widget data
-- `chart-data.json`
-  - series-oriented chart export
-- `response.json`
-  - structured response payload for response-style widgets
-
-Do not expect `snapshot.json` in widget folders. Structured widget evidence is embedded in the matching widget record in `workspace-live-state.json`, under `snapshot` when available. Use that widget record's `artifactPaths` plus `manifest.json` to locate any exported files.
-
-The exact files depend on what the widget exposed and on the selected snapshot profile.
-
-## Capture Profiles
-
-The snapshot currently supports:
-
-- `full-data`
-  - richer data payloads when widgets support them
-- `evidence`
-  - same structure, but widgets may truncate data-heavy payloads
-
-Always check the profile before making a strong statement like:
-
-- "the widget had no data"
-- "the full response was captured"
-
-Under `evidence`, missing deep data may be intentional.
-
-## How To Use The Snapshot To Answer Questions
-
-Follow this order.
-
-### 1. Start with `manifest.json`
-
-Check:
-
-- warnings
-- errors
-- profile
-- which files actually exist
-
-If a screenshot or widget export is missing, verify whether the manifest shows a capture warning before claiming the widget failed.
-
-### 2. Read `workspace-live-state.json`
-
-Use it to establish:
-
-- which widgets existed at runtime
-- which widget instance you care about
-- visibility and placement
-- hidden reasons
-- artifact paths
-- structured snapshot summaries
-
-This should be your default runtime truth source.
-
-### 3. Open the relevant widget folder
-
-Use the widget record from `workspace-live-state.json` to locate:
-
-- any widget-local screenshot
-- any data/response/chart artifact
-
-Do not search the archive blindly by title first. Resolve the widget through the live-state record.
-
-### 4. Compare against `workspace-definition.json` only when needed
-
-Use this comparison when the question is:
-
-- "Was the widget configured this way?"
-- "Is this runtime behavior inconsistent with the saved workspace definition?"
-- "Did the snapshot reflect the persisted workspace structure?"
-
-### 5. Use `relationships/widget-graph.json` for dependency questions
-
-If the problem is about missing inputs, stale consumers, upstream chains, or graph reasoning, use the relationship graph instead of guessing from layout.
-
-## What This Snapshot Is Good For
-
-This snapshot is strong evidence for:
-
-- mounted workspace state
-- widget visibility and placement
-- dependency structure
-- captured control state
-- widget summaries and structured widget evidence
-- widget-local exported data when present
-
-This snapshot is weaker for:
-
-- exact browser-perfect visuals when screenshot warnings exist
-- hidden widgets that only expose partial evidence
-- widgets whose heavy data was trimmed under `evidence`
-
-## Trust Boundaries And Limitations
-
-Keep these rules explicit:
-
-- screenshot capture is best-effort and browser-dependent
-- hidden/sidebar widgets may still have valid structured evidence even without a visible screenshot
-- `workspace-definition.json` is structural truth, not live runtime truth
-- a widget title is human-readable but not the canonical key
-- the canonical widget identity is `instanceId`
-- missing optional artifacts do not automatically mean missing runtime state
-
-If the archive contains warnings, reflect that uncertainty in the answer.
-
-## Recommended Reasoning Patterns
-
-Use these patterns when answering snapshot questions.
-
-### Runtime state question
-
-Example:
-- "Was the widget visible?"
-
-Use:
-- `workspace-live-state.json`
-
-Then support with:
-- `screenshots/viewport.png`
-- widget `screenshot.png` if present
-
-### Data/result question
-
-Example:
-- "What output did the chart actually have?"
-
-Use:
-- the widget record's `snapshot` field in `workspace-live-state.json`, if present
-- `chart-data.json` or `data.json`
-
-Then compare with:
-- `workspace-definition.json` only if configuration context matters
-
-### Dependency question
-
-Example:
-- "Why did widget B depend on widget A?"
-
-Use:
-- `relationships/widget-graph.json`
-- `workspace-live-state.json` widget records
-
-### Workspace composition question
-
-Example:
-- "What did the dashboard look like overall?"
-
-Use:
-- `screenshots/full-canvas.png`
-- `screenshots/viewport.png`
-- `workspace-live-state.json` layouts
-
-## Validation Checklist
-
-Before answering from a snapshot, verify:
-
-- the snapshot profile
-- whether `manifest.json` contains warnings or errors
-- whether the answer is grounded in:
-  - persisted definition
-  - live runtime state
-  - widget-specific evidence
-- the correct widget `instanceId`
-- whether missing artifacts are true absence or capture limitations
-
-## Short Rule
-
-Use `workspace-definition.json` for what the workspace is.
-
-Use `workspace-live-state.json` for what the workspace was doing.
-
-Use `workspace-live-state.json` widget records plus any files listed in `artifactPaths` for what a specific widget actually showed or produced.
+  - when the snapshot points to a mock payload or API contract question
+
+This skill should usually be the first stop whenever the task is:
+
+- analyze a workspace snapshot
+- explain what the workspace was showing
+- answer questions about widget state
+- compare several widget states in one workspace
+
+## Interpretation Rules
+
+- Trust `snapshot.json` over older archive metadata.
+- Prefer widget state over workspace structure.
+- Prefer presentation widgets over passthrough widgets for user-facing answers.
+- Treat missing or empty widget state as meaningful.
+- Keep answers grounded in the actual widget dump, not assumptions about what the widget usually does.
+- If the workspace only partially answers the user's question, say exactly which part is supported by the data and which part is not.
