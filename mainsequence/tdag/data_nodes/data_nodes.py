@@ -230,7 +230,7 @@ class DataAccessMixin:
         #                      update_hash=self.data_source_id,
         #                      api_time_series=True,)
         global logger
-        if hasattr(self, "_logger") == False:
+        if not hasattr(self, "_logger"):
             cvars.bind_contextvars(**self.get_logger_context_variables())
             self._logger = logger
 
@@ -472,7 +472,7 @@ class APIDataNode(DataAccessMixin):
     def _verify_local_data_source(self) -> None:
         """Verifies and sets the local data source from environment variables if available."""
         pod_source = os.environ.get("POD_DEFAULT_DATA_SOURCE", None)
-        if pod_source != None:
+        if pod_source is not None:
             from mainsequence.client import models as models
 
             pod_source = json.loads(pod_source)
@@ -1125,7 +1125,7 @@ class DataNode(DataAccessMixin, ABC):
 
             # Ensure the dependency itself is properly initialized
             is_api = dependency_ts.is_api
-            if is_api == False:
+            if not is_api:
                 dependency_ts.verify_and_build_remote_objects()
 
             self.local_persist_manager.depends_on_connect(dependency_ts, is_api=is_api)
@@ -1379,7 +1379,7 @@ class DataNode(DataAccessMixin, ABC):
 
         if (
             latest_persisted_time_index is None
-            and ms_client.SessionDataSource.is_local_duck_db == False
+            and not ms_client.SessionDataSource.is_local_duck_db
         ):
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 

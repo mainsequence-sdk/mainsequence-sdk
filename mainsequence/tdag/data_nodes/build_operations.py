@@ -649,13 +649,13 @@ def rebuild_and_set_from_update_hash(
         update_hash=update_hash,
         data_source_id=data_source_id,
     )
-    if os.path.isfile(pickle_path) == False or os.stat(pickle_path).st_size == 0:
+    if not os.path.isfile(pickle_path) or os.stat(pickle_path).st_size == 0:
         # rebuild time serie and pickle
         ts = rebuild_from_configuration(
             update_hash=update_hash,
             data_source=data_source_id,
         )
-        if set_dependencies_df == True:
+        if set_dependencies_df:
             ts.set_relation_tree()
 
         ts.persist_to_pickle()
@@ -705,7 +705,7 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> D
 
     if isinstance(data_source, int):
         pickle_path = get_pickle_path(data_source_id=data_source, update_hash=update_hash)
-        if os.path.isfile(pickle_path) == False:
+        if not os.path.isfile(pickle_path):
             data_source = ms_client.DynamicTableDataSource.get(pk=data_source)
             data_source.persist_to_pickle(data_source_pickle_path(data_source.id))
 

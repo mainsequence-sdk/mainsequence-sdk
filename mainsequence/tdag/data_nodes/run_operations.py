@@ -336,7 +336,7 @@ class UpdateRunner:
         deps_ids = [
             (
                 d.data_node_update.id
-                if (d.is_api == False and d.data_node_update is not None)
+                if (not d.is_api and d.data_node_update is not None)
                 else None
             )
             for d in declared_dependencies.values()
@@ -351,7 +351,7 @@ class UpdateRunner:
             # Datanode not update set
             self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)
 
-        if self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked == False:
+        if not self.ts.local_persist_manager.data_node_update.ogm_dependencies_linked:
             self.logger.info("Dependency tree not set. Building now...")
             start_time = time.time()
             self.ts.set_relation_tree()
@@ -420,7 +420,7 @@ class UpdateRunner:
             # If we have already processed this node, skip it to prevent infinite loops
             if key in dependecy_map:
                 continue
-            if dependency_ts.is_api == True:
+            if dependency_ts.is_api:
                 continue
 
             # Ensure the dependency is initialized in the persistence layer
