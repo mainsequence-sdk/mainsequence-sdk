@@ -43,36 +43,36 @@ This skill maintains project-state files. It does not own domain implementation 
 ## Route Adjacent Work
 
 - bootstrap and routing:
-  `.agents/skills/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_builder/SKILL.md`
 - project audits and blocker classification:
-  `.agents/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - FastAPI and application-facing APIs:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - jobs, schedules, resources, releases, and artifacts:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - assets and translation tables:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - Virtual Fund Builder:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 - instruments and pricing:
-  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/project_builder/SKILL.md`
+2. `.agents/skills/mainsequence/project_builder/SKILL.md`
 3. the domain skill that produced the material change
 4. `.agents/brief.md`
 5. `.agents/tasks.md`

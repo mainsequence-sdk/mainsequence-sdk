@@ -31,8 +31,8 @@ from .data_sources_interfaces import get_duckdb_interface_class
 from .data_sources_interfaces import timescale as TimeScaleInterface
 from .exceptions import raise_for_response
 from .utils import (
+    MAINSEQUENCE_ENDPOINT,
     TDAG_CONSTANTS,
-    TDAG_ENDPOINT,
     DataFrequency,
     DateInfo,
     DoesNotExist,
@@ -3440,7 +3440,7 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
 
 
 def query_agent(json_payload: dict, timeout=None):
-    url = TDAG_ENDPOINT + "/orm/api/tdag-gpt/query_agent/"
+    url = MAINSEQUENCE_ENDPOINT + "/orm/api/tdag-gpt/query_agent/"
     r = make_request(
         s=session,
         r_type="POST",
@@ -3469,7 +3469,7 @@ def add_created_object_to_jobrun(
     Returns:
         A dictionary representing the created record.
     """
-    url = TDAG_ENDPOINT + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
+    url = MAINSEQUENCE_ENDPOINT + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
     payload = {"json": {"app_label": app_label, "model_name": model_name, "object_id": object_id}}
 
     r = make_request(

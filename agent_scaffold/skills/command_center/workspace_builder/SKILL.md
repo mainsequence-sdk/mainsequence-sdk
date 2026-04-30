@@ -11,7 +11,7 @@ Use this skill when the task is about a Command Center workspace document or a m
 
 This skill is for workspace structure execution, widget payload resolution, safe workspace mutation, and grounding those decisions against the actual `mainsequence.client.command_center` client models.
 
-If the task is still deciding what the workspace should communicate, which widgets should be used, or how the workspace should be organized, use `.agents/skills/command_center/workspace_design/SKILL.md` first.
+If the task is still deciding what the workspace should communicate, which widgets should be used, or how the workspace should be organized, use `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md` first.
 
 ## This Skill Can Do
 
@@ -49,26 +49,26 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design, widget selection, and visualization strategy:
-  `.agents/skills/command_center/workspace_design/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - Connection-backed data access and query contract selection:
-  `.agents/skills/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 
 ## Read First
 
 0. If widget selection, layout narrative, or visualization strategy is not already decided, use:
-   - `.agents/skills/command_center/workspace_design/SKILL.md`
+   - `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 1. Verify the widget catalog through the CLI:
    - `mainsequence cc registered_widget_type list --json`
    - identify the target `widget_id`
@@ -86,8 +86,8 @@ If the workspace contains AppComponent widgets, also read:
 
 6. `docs/knowledge/command_center/forms.md`
 7. `docs/knowledge/command_center/widget_data_contracts.md`
-8. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
-9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
+8. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
+9. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
 
 ## Command Center Mental Model
 
@@ -204,7 +204,7 @@ Do not treat a local dev server, a local-only API route, or a discovered-but-unr
 
 This skill does not create resources or releases. Route that work to:
 
-- `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+- `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 ### 2. Read the SDK client models before frontend implementation files
 

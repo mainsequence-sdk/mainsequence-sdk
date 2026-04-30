@@ -1905,7 +1905,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
         "get_projects",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -1917,7 +1917,7 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
     assert session_override["mainsequence_path"] == "mainsequence-dev"
     assert cleared["called"] is False
     assert "http://127.0.0.1:800" in result.output
-    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+    assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
 def test_login_with_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
@@ -1933,7 +1933,7 @@ def test_login_with_different_backend_requires_projects_base(cli_mod, runner, mo
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
     )
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -1962,7 +1962,7 @@ def test_login_with_different_backend_allows_current_projects_base(cli_mod, runn
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: None)
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -2150,7 +2150,7 @@ def test_login_runtime_credential_uses_backend_override(cli_mod, runner, monkeyp
         lambda **kwargs: session_override.update(kwargs) or kwargs,
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -2169,7 +2169,7 @@ def test_login_runtime_credential_uses_backend_override(cli_mod, runner, monkeyp
         "backend_url": "http://127.0.0.1:8000",
         "mainsequence_path": "mainsequence-dev",
     }
-    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+    assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
 def test_login_runtime_credential_rejects_manual_jwt(cli_mod, runner, monkeypatch):
@@ -2241,7 +2241,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
         "get_projects",
         lambda: (_ for _ in ()).throw(AssertionError("login should not fetch projects")),
     )
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -2264,7 +2264,7 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
         "mainsequence_path": "mainsequence-dev",
     }
     assert "http://127.0.0.1:80" in result.output
-    assert "MAIN_SEQUENCE_BACKEND_URL" not in os.environ
+    assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
 def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
@@ -2280,7 +2280,7 @@ def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_
         "get_config",
         lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
     )
-    monkeypatch.delenv("MAIN_SEQUENCE_BACKEND_URL", raising=False)
+    monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
     result = runner.invoke(
         cli_mod.app,
@@ -2566,7 +2566,7 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
     project_dir = tmp_path / "project"
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / ".env").write_text(
-        "TDAG_ENDPOINT=https://project-backend.test\n"
+        "MAINSEQUENCE_ENDPOINT=https://project-backend.test\n"
         "MAIN_SEQUENCE_PROJECT_ID=123\n",
         encoding="utf-8",
     )
@@ -2579,7 +2579,6 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
         lambda: {"username": "user@example.com", "access": "acc-123", "refresh": "ref-456"},
     )
     for key in (
-        "TDAG_ENDPOINT",
         "MAINSEQUENCE_ENDPOINT",
         "MAIN_SEQUENCE_PROJECT_ID",
         "MAINSEQUENCE_ACCESS_TOKEN",
@@ -2589,7 +2588,6 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
 
     bootstrap.prime_runtime_env()
 
-    assert os.environ["TDAG_ENDPOINT"] == "https://project-backend.test"
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://project-backend.test"
     assert os.environ["MAIN_SEQUENCE_PROJECT_ID"] == "123"
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
@@ -2609,7 +2607,6 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
         lambda: {"username": "user@example.com", "access": "acc-123", "refresh": "ref-456"},
     )
     for key in (
-        "TDAG_ENDPOINT",
         "MAINSEQUENCE_ENDPOINT",
         "MAIN_SEQUENCE_PROJECT_ID",
         "MAINSEQUENCE_ACCESS_TOKEN",
@@ -2619,7 +2616,6 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
 
     bootstrap.prime_runtime_env()
 
-    assert os.environ["TDAG_ENDPOINT"] == "http://127.0.0.1:8000"
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "http://127.0.0.1:8000"
     assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
@@ -2901,7 +2897,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -2956,7 +2952,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3027,7 +3023,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3093,7 +3089,7 @@ def test_list_constants_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3149,7 +3145,7 @@ def test_create_constant_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3207,7 +3203,7 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3270,7 +3266,7 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3341,7 +3337,7 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3407,7 +3403,7 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3462,7 +3458,7 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3535,7 +3531,7 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3601,7 +3597,7 @@ def test_create_secret_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3658,7 +3654,7 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3721,7 +3717,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3785,7 +3781,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3862,7 +3858,7 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -3926,7 +3922,7 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4011,7 +4007,7 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4084,7 +4080,7 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4159,7 +4155,7 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4226,7 +4222,7 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4295,7 +4291,7 @@ def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4361,7 +4357,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4448,7 +4444,7 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4511,7 +4507,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4622,7 +4618,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4685,7 +4681,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4741,7 +4737,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4831,7 +4827,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4902,7 +4898,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -4968,7 +4964,7 @@ def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeyp
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5089,7 +5085,7 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
             self.current = None
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5149,7 +5145,7 @@ def test_list_org_project_names_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5199,7 +5195,7 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5253,7 +5249,7 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5350,7 +5346,7 @@ def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5459,7 +5455,7 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5523,7 +5519,7 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -5587,7 +5583,7 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
             captured["jwt"] = (access, refresh)
 
     fake_utils.loaders = FakeLoaders()
-    fake_utils.TDAG_ENDPOINT = "https://old.test"
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
 
     class FakeBaseObjectOrm:
@@ -8402,7 +8398,7 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
-    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
@@ -8469,7 +8465,7 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
@@ -8536,7 +8532,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
         "FOO=bar\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
-        "TDAG_ENDPOINT=https://old-backend.test\n"
+        "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
         "MAINSEQUENCE_TOKEN=legacy-token\n",
         encoding="utf-8",
     )
@@ -8556,7 +8552,7 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "FOO=bar" in env_text
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
     assert "old-access" not in env_text
@@ -8600,7 +8596,7 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-new-access" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
-    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "old-access" not in env_text
@@ -8633,7 +8629,7 @@ def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp
     env_text = env_path.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
-    assert "TDAG_ENDPOINT=https://backend.test" in env_text
+    assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
     assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
 
 
@@ -9588,22 +9584,30 @@ def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner
     (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text("new data skill", encoding="utf-8")
     (bundle_dir / "skills" / "maintenance").mkdir(parents=True)
     (bundle_dir / "skills" / "maintenance" / "SKILL.md").write_text("new maintenance skill", encoding="utf-8")
-    (bundle_dir / "__pycache__").mkdir()
-    (bundle_dir / "__pycache__" / "ignored.txt").write_text("ignore me", encoding="utf-8")
+    (bundle_dir / "skills" / "__pycache__").mkdir()
+    (bundle_dir / "skills" / "__pycache__" / "ignored.txt").write_text("ignore me", encoding="utf-8")
 
     target = tmp_path / "project"
-    existing = target / ".agents" / "skills" / "data_publishing"
-    existing.mkdir(parents=True)
-    (existing / "old.txt").write_text("stale", encoding="utf-8")
+    stale_top_level = target / ".agents" / "skills" / "data_publishing"
+    stale_top_level.mkdir(parents=True)
+    (stale_top_level / "old.txt").write_text("stale but preserved", encoding="utf-8")
+    existing_mainsequence = target / ".agents" / "skills" / "mainsequence" / "data_publishing"
+    existing_mainsequence.mkdir(parents=True)
+    (existing_mainsequence / "old.txt").write_text("stale mainsequence skill", encoding="utf-8")
 
     monkeypatch.setattr(cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir)
 
     result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
     assert result.exit_code == 0
-    assert (target / ".agents" / "skills" / "data_publishing" / "SKILL.md").read_text(encoding="utf-8") == "new data skill"
-    assert not (target / ".agents" / "skills" / "data_publishing" / "old.txt").exists()
-    assert (target / ".agents" / "skills" / "maintenance" / "SKILL.md").read_text(encoding="utf-8") == "new maintenance skill"
-    assert not (target / ".agents" / "skills" / "__pycache__").exists()
+    assert (
+        target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
+    ).read_text(encoding="utf-8") == "new data skill"
+    assert not (target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "old.txt").exists()
+    assert (target / ".agents" / "skills" / "data_publishing" / "old.txt").exists()
+    assert (
+        target / ".agents" / "skills" / "mainsequence" / "maintenance" / "SKILL.md"
+    ).read_text(encoding="utf-8") == "new maintenance skill"
+    assert not (target / ".agents" / "skills" / "mainsequence" / "__pycache__").exists()
     assert "Updated Agent Skills" in result.output
 
 

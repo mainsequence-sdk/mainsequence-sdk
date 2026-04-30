@@ -45,17 +45,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace design and widget selection:
-  `.agents/skills/command_center/workspace_design/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 - Workspace JSON creation and widget mutation:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - Adapter from API connection workflow:
-  `.agents/skills/command_center/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - AppComponent forms and action API contracts:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - API implementation:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Read First
 

@@ -98,7 +98,7 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("JOB_RUN_ID", "34")
     monkeypatch.setenv("COMMAND_ID", "12")
-    monkeypatch.setenv("TDAG_ENDPOINT", "https://backend.example")
+    monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
     captured: list[dict[str, object]] = []
 

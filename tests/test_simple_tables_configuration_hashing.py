@@ -5,7 +5,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-os.environ.setdefault("TDAG_ENDPOINT", "http://testserver")
+os.environ.setdefault("MAINSEQUENCE_ENDPOINT", "http://testserver")
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 

@@ -9,7 +9,7 @@ Current project detection aligned with VS Code extension logic:
 - Detect a project by path structure containing ".../projects/<folder>"
 - Extract project id from "<slug>-<digits>" folder suffix
 - If outside configured base, allow detection via .env markers:
-    MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, TDAG_ENDPOINT
+    MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_ENDPOINT
 - Detect .venv and infer Python version
 """
 
@@ -182,7 +182,7 @@ def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bo
     markers = [
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
-        "TDAG_ENDPOINT",
+        "MAINSEQUENCE_ENDPOINT",
     ]
     try:
         p = workspace / ".env"

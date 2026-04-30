@@ -51,17 +51,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - jobs, schedules, images, project resources, releases, and Artifacts as operational workflows:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - Command Center workspaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 
 ## Read First
 

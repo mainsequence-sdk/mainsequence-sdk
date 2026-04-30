@@ -46,23 +46,23 @@ If the user is still in the discovery process and does not yet know what data ex
 ## Route Adjacent Work
 
 - discovery-only data inventory before DataNode implementation:
-  `.agents/skills/data_access/exploration/SKILL.md`
+  `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Asset categories and translation tables as standalone market concepts:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - VFB semantics:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 
 ## Read First
 

@@ -45,17 +45,17 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - RBAC and sharing:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
@@ -67,7 +67,7 @@ If the task touches deployed dashboards or APIs, also read the relevant domain s
 
 If the task is about publishing a Command Center-facing API mainly to test AppComponent UX, bindings, or request/response contracts, read:
 
-4. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+4. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 
 Do that before building an image or creating a FastAPI `ResourceRelease`.
 
@@ -185,7 +185,7 @@ If the goal is to validate Command Center AppComponent UX, request rendering, re
 
 Use the predeployment mock workflow first:
 
-- `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+- `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 
 That workflow exists to validate the contract in `apiTargetMode: "mock-json"` before spending time on deployment.
 

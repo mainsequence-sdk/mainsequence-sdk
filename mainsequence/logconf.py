@@ -19,7 +19,7 @@ from structlog.contextvars import bind_contextvars, unbind_contextvars
 from structlog.dev import ConsoleRenderer
 from structlog.stdlib import BoundLogger
 
-from .defaults import STANDARD_BACKEND_URL
+from .defaults import resolve_backend_endpoint
 from .instrumentation import OTelJSONRenderer
 from .runtime_flags import is_running_in_pod
 
@@ -80,11 +80,7 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     auth_mode = (os.getenv("MAINSEQUENCE_AUTH_MODE") or "jwt").strip().lower()
 
     def _backend_base_url() -> str:
-        return (
-            os.getenv("TDAG_ENDPOINT")
-            or os.getenv("MAINSEQUENCE_ENDPOINT")
-            or STANDARD_BACKEND_URL
-        ).rstrip("/")
+        return resolve_backend_endpoint().rstrip("/")
 
     def _auth_headers() -> tuple[CaseInsensitiveDict, bool]:
         headers = CaseInsensitiveDict()

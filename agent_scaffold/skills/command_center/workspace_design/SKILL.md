@@ -32,30 +32,30 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Workspace JSON creation, export/versioning, and widget mutation:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponent custom forms and widget input contracts:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - Connection-backed data access and query contract selection:
-  `.agents/skills/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
 1. Discover available widgets from the registry:
    - `mainsequence cc registered_widget_type list --json`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
-2. `.agents/skills/command_center/connections/SKILL.md` when the workspace needs backend-owned data
+2. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when the workspace needs backend-owned data
 3. `docs/knowledge/command_center/workspaces.md`
 4. `docs/knowledge/command_center/widget_data_contracts.md`
 5. `docs/knowledge/command_center/forms.md` when the design may need an AppComponent
-6. `.agents/skills/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
+6. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` only after the design is ready for execution
 
 The widget registry is the source of truth for which widget types are actually available.
 

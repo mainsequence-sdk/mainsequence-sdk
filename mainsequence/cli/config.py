@@ -21,7 +21,7 @@ import subprocess
 import sys
 import time
 
-from mainsequence.defaults import STANDARD_BACKEND_URL
+from mainsequence.defaults import CANONICAL_BACKEND_ENV, STANDARD_BACKEND_URL
 
 APP_NAME = "MainSequenceCLI"
 
@@ -64,7 +64,7 @@ KEYCHAIN_SERVICE = "MainSequenceCLI.auth"
 KEYCHAIN_ACCOUNT = "default"
 
 DEFAULTS = {
-    "backend_url": os.environ.get("MAIN_SEQUENCE_BACKEND_URL", f"{STANDARD_BACKEND_URL}/"),
+    "backend_url": os.environ.get(CANONICAL_BACKEND_ENV, f"{STANDARD_BACKEND_URL}/"),
     "mainsequence_path": str(pathlib.Path.home() / "mainsequence"),
     "version": 1,
 }
@@ -531,14 +531,14 @@ def backend_url() -> str:
 
     Semantics match VS Code extension:
       - Default comes from config.json or DEFAULTS
-      - If MAIN_SEQUENCE_BACKEND_URL env var is set (even to empty string),
+      - If MAINSEQUENCE_ENDPOINT env var is set (even to empty string),
         it overrides config.json.
     """
     cfg = get_config()
     url = (cfg.get("backend_url") or DEFAULTS["backend_url"]).rstrip("/")
 
     # If env var exists (even empty string), override (matching extension semantics)
-    if os.environ.get("MAIN_SEQUENCE_BACKEND_URL") is not None:
-        url = (os.environ.get("MAIN_SEQUENCE_BACKEND_URL") or "").rstrip("/")
+    if os.environ.get(CANONICAL_BACKEND_ENV) is not None:
+        url = (os.environ.get(CANONICAL_BACKEND_ENV) or "").rstrip("/")
 
     return normalize_backend_url(url)

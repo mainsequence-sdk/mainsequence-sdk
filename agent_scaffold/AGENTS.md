@@ -19,7 +19,7 @@ uses them to update only the Main Sequence section below.
 
 Before any non-trivial Main Sequence work, verify that this Main Sequence section matches the
 latest installed `agent_scaffold/AGENTS.md` template and that
-`.agents/skills/project_builder/SKILL.md` matches the latest installed
+`.agents/skills/mainsequence/project_builder/SKILL.md` matches the latest installed
 `agent_scaffold/skills/project_builder/SKILL.md`; if either local file does not match, update it
 before proceeding.
 
@@ -159,42 +159,42 @@ Use the latest relevant documentation or specialized skill for the task at hand.
 Typical routing:
 
 - project setup, local checkout, and CLI environment:
-  `.agents/skills/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_builder/SKILL.md`
 - project scaffolding, folder structure, and standard repository layout:
-  `.agents/skills/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_builder/SKILL.md`
 - project-state reconciliation, milestone logging, blocker recording, and next-step updates under
   `.agents/`:
-  `.agents/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, failure classification, and upstream SDK assessment:
-  `.agents/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes, updates, identifiers, schema, metadata:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables, row ids, filtering, insert-only versus overwrite behavior:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
-  `.agents/skills/data_access/exploration/SKILL.md`
+  `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - APIs, FastAPI, request and response contracts, and widget-facing API responses:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspace design, widget selection, layout narrative, and visualization strategy:
-  `.agents/skills/command_center/workspace_design/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
 - Command Center workspace JSON creation/update and mounted widget mutation:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget input or output contracts:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - predeployment AppComponent/API contract testing through `apiTargetMode: "mock-json"`:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - jobs, schedules, images, project resources, releases, and Artifacts:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - assets, public asset registration, custom assets, asset categories, and translation tables:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - portfolios and Virtual Fund Builder:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 - instruments and pricing:
-  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 
 ## Mandatory Startup Sequence
 
@@ -224,9 +224,9 @@ Use the skills as an orchestrated sequence, not as isolated documents.
 
 Default pattern:
 
-1. `.agents/skills/project_builder/SKILL.md`
+1. `.agents/skills/mainsequence/project_builder/SKILL.md`
 2. the relevant domain skill
-3. `.agents/skills/maintenance/local_journal/SKILL.md` after material work if verified state,
+3. `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md` after material work if verified state,
    blockers, scope, next actions, stable references, or historical notes changed
 
 Before the final response:
@@ -234,7 +234,7 @@ Before the final response:
 - consult the maintenance skill whenever project understanding, verified state, or historical
   record changed during the turn
 
-Always use `.agents/skills/project_builder/SKILL.md` as the source of truth for project
+Always use `.agents/skills/mainsequence/project_builder/SKILL.md` as the source of truth for project
 scaffolding, folder structure, and standard repository layout.
 
 ## Core Working Rules
@@ -337,7 +337,7 @@ The repository keeps project-state files under `.agents/`:
 
 These files are owned by:
 
-- `.agents/skills/maintenance/local_journal/SKILL.md` for:
+- `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md` for:
   - `.agents/brief.md`
   - `.agents/tasks.md`
   - `.agents/record.md`

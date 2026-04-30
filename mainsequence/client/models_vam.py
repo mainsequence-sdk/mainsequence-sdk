@@ -30,7 +30,7 @@ from .base import (
 )
 from .exceptions import raise_for_response
 from .models_tdag import DataNodeUpdate
-from .utils import DATE_FORMAT, TDAG_ENDPOINT, DoesNotExist, make_request
+from .utils import DATE_FORMAT, MAINSEQUENCE_ENDPOINT, DoesNotExist, make_request
 from .utils import MARKETS_CONSTANTS as CONSTANTS
 
 CRYPTO_EXCHANGE_CODE = [
@@ -1194,7 +1194,7 @@ class PortfolioIndexAsset(Asset):
 
     @property
     def reference_portfolio_details_url(self):
-        return f"{TDAG_ENDPOINT}/dashboards/portfolio-detail/?target_portfolio_id={self.reference_portfolios.id}"
+        return f"{MAINSEQUENCE_ENDPOINT}/dashboards/portfolio-detail/?target_portfolio_id={self.reference_portfolios.id}"
 
 
 

@@ -126,7 +126,7 @@ class DataAccessMixin:
             local_id = 0
         repr = (
             self.__class__.__name__
-            + f" {os.environ['TDAG_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
+            + f" {os.environ['MAINSEQUENCE_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
         )
         return repr
 
@@ -430,7 +430,7 @@ class APIDataNode(DataAccessMixin):
 
             repr = (
                 self.__class__.__name__
-                + f" {os.environ['TDAG_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self._local_persist_manager.data_node_storage.id}"
+                + f" {os.environ['MAINSEQUENCE_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self._local_persist_manager.data_node_storage.id}"
             )
         except  Exception:
             logger.exception("DataNode has not resolved yet an storage node")

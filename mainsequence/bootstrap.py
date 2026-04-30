@@ -20,7 +20,7 @@ def _read_local_env_values(env_path: pathlib.Path) -> dict[str, str]:
         return {}
 
     values: dict[str, str] = {}
-    for key in ("TDAG_ENDPOINT", "MAINSEQUENCE_ENDPOINT", "MAIN_SEQUENCE_PROJECT_ID"):
+    for key in ("MAINSEQUENCE_ENDPOINT", "MAIN_SEQUENCE_PROJECT_ID"):
         match = re.search(rf"(?m)^{re.escape(key)}=(.+?)\s*$", content)
         if match:
             values[key] = match.group(1).strip()
@@ -34,11 +34,7 @@ def prime_runtime_env() -> None:
     """
     local_values = _read_local_env_values(pathlib.Path.cwd() / ".env")
 
-    _set_if_missing("TDAG_ENDPOINT", local_values.get("TDAG_ENDPOINT"))
-    _set_if_missing(
-        "MAINSEQUENCE_ENDPOINT",
-        local_values.get("MAINSEQUENCE_ENDPOINT") or local_values.get("TDAG_ENDPOINT"),
-    )
+    _set_if_missing("MAINSEQUENCE_ENDPOINT", local_values.get("MAINSEQUENCE_ENDPOINT"))
     _set_if_missing("MAIN_SEQUENCE_PROJECT_ID", local_values.get("MAIN_SEQUENCE_PROJECT_ID"))
 
     try:
@@ -51,7 +47,6 @@ def prime_runtime_env() -> None:
     except Exception:
         backend = ""
 
-    _set_if_missing("TDAG_ENDPOINT", backend)
     _set_if_missing("MAINSEQUENCE_ENDPOINT", backend)
 
     try:

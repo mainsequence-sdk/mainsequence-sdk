@@ -47,13 +47,13 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - DataNodes and asset-indexed producer logic:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - Virtual Fund Builder and portfolio construction:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 - instruments and pricing runtime:
-  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 
 ## Read First
 
@@ -64,7 +64,7 @@ This skill must not claim ownership of:
 
 If the task also changes producer code, read:
 
-5. `.agents/skills/data_publishing/data_nodes/SKILL.md`
+5. `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 
 ## Inputs This Skill Needs
 

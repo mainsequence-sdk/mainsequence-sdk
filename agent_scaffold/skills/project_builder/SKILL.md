@@ -24,7 +24,7 @@ This skill is for:
 - define a concrete success condition before implementation starts
 - verify current project and platform context
 - decide which specialized skill owns the actual domain work
-- decide when to hand off to `.agents/skills/maintenance/local_journal/SKILL.md`
+- decide when to hand off to `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - enforce standard Main Sequence repository structure expectations
 - separate verified facts from assumptions
 - record documentation mismatches and route follow-up work
@@ -50,38 +50,38 @@ Do not let this skill become a domain manual.
 ## Route Adjacent Work
 
 - DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - platform data discovery before implementation:
-  `.agents/skills/data_access/exploration/SKILL.md`
+  `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI and application-facing APIs:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspace creation and widget mounting:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents, custom forms, and widget-facing API contracts:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - project-state reconciliation and local history under `.agents/`:
-  `.agents/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, and upstream SDK assessment:
-  `.agents/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - jobs, schedules, artifacts, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - assets, categories, and translation tables:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - Virtual Fund Builder:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 - instruments and pricing:
-  `.agents/skills/markets_platform/instruments_and_pricing/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/maintenance/local_journal/SKILL.md`
+2. `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 3. the latest relevant Main Sequence docs for the task
 4. `.agents/brief.md`
 5. `.agents/status.md`
@@ -180,7 +180,7 @@ Do not teach domain semantics here.
 
 After material domain work, route to:
 
-- `.agents/skills/maintenance/local_journal/SKILL.md`
+- `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 
 Use that handoff when the turn changed:
 

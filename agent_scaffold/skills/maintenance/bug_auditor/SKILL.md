@@ -49,26 +49,26 @@ This skill audits. It does not implement by default.
 ## Route Adjacent Work
 
 - bootstrap, routing, and repo structure:
-  `.agents/skills/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_builder/SKILL.md`
 - `.agents/` state reconciliation after the audit:
-  `.agents/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - DataNode implementation issues:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTable implementation issues:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - API implementation issues:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - jobs, images, releases, and runtime environment issues:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
-  `.agents/skills/platform_operations/access_control_and_sharing/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
 - assets, VFB, pricing, or dashboard domain issues:
-  use the relevant domain skill under `.agents/skills/markets_platform/` or `.agents/skills/dashboards/`
+  use the relevant domain skill under `.agents/skills/mainsequence/markets_platform/` or `.agents/skills/mainsequence/dashboards/`
 
 ## Read First
 
 1. `AGENTS.md`
-2. `.agents/skills/project_builder/SKILL.md`
+2. `.agents/skills/mainsequence/project_builder/SKILL.md`
 3. `.agents/tasks.md` when it exists
 4. `.agents/status.md` when it exists
 5. `.agents/record.md` when stable references or project ids matter

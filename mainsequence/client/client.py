@@ -1,13 +1,12 @@
 # mainsequence/client/client.py
 from __future__ import annotations
 
-import os
 from dataclasses import dataclass
 from typing import Any
 
 import requests
 
-from mainsequence.defaults import STANDARD_BACKEND_URL
+from mainsequence.defaults import resolve_backend_endpoint
 
 from .exceptions import raise_for_response
 from .utils import AuthLoaders, build_session
@@ -17,12 +16,7 @@ from .utils import session as _global_session
 
 @dataclass(frozen=True)
 class MainSequenceClientConfig:
-    # Prefer MAINSEQUENCE_ENDPOINT, keep TDAG_ENDPOINT for backward compat
-    endpoint: str = (
-        os.getenv("MAINSEQUENCE_ENDPOINT")
-        or os.getenv("TDAG_ENDPOINT")
-        or STANDARD_BACKEND_URL
-    )
+    endpoint: str = resolve_backend_endpoint()
     api_prefix: str = "/orm/api"
     # (connect, read) — align with your utils DEFAULT_TIMEOUT behavior
     timeout: tuple[float, float] = (5.0, 120.0)

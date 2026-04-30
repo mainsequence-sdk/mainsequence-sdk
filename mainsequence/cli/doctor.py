@@ -69,8 +69,8 @@ def run_doctor() -> None:
 
     # Environment hints
     hints = []
-    if os.environ.get("MAIN_SEQUENCE_BACKEND_URL") is not None:
-        hints.append(("MAIN_SEQUENCE_BACKEND_URL", os.environ.get("MAIN_SEQUENCE_BACKEND_URL") or ""))
+    if os.environ.get("MAINSEQUENCE_ENDPOINT") is not None:
+        hints.append(("MAINSEQUENCE_ENDPOINT", os.environ.get("MAINSEQUENCE_ENDPOINT") or ""))
     if os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"):
         hints.append(("MAINSEQUENCE_ACCESS_TOKEN", "(set)"))
     if os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"):

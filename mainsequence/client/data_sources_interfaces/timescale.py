@@ -459,8 +459,8 @@ def process_and_update_table(
             "unique_identifier"
         ].astype(str)
 
-    TDAG_ENDPOINT = f"{os.environ.get('TDAG_ENDPOINT')}"
-    base_url = TDAG_ENDPOINT + "/orm/api/dynamic_table"  # metadata.get("root_url")
+    mainsequence_endpoint = f"{os.environ.get('MAINSEQUENCE_ENDPOINT')}"
+    base_url = mainsequence_endpoint + "/orm/api/dynamic_table"  # metadata.get("root_url")
     serialized_data_frame = serialized_data_frame.replace({np.nan: None})
 
     # Validate JSON-compressed columns

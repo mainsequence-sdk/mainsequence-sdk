@@ -45,21 +45,21 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - Command Center workspaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Adapter from API connection workflow:
-  `.agents/skills/command_center/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - Connection-backed data access and query contract selection:
-  `.agents/skills/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
@@ -70,17 +70,17 @@ This skill must not claim ownership of:
 2. `docs/knowledge/command_center/forms.md`
 3. `docs/knowledge/command_center/widget_data_contracts.md`
 4. `mainsequence/client/command_center/app_component.py`
-5. `.agents/skills/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
-6. `.agents/skills/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
+5. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when API-shaped data must become a connection-backed tabular dataset
+6. `.agents/skills/mainsequence/command_center/connections/SKILL.md` when AppComponent output will be consumed by generic tabular widgets or must align with connection-first dataflow
 
 If the AppComponent is backed by project APIs, also read:
 
-7. `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
-8. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+7. `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
+8. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 If the task is about validating the API contract before deployment, also read:
 
-9. `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+9. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 
 ## Inputs This Skill Needs
 
@@ -172,7 +172,7 @@ Do not treat a local dev server, an unregistered API file, or a discovered-but-u
 
 This skill does not create resources or releases. If the FastAPI project resource or FastAPI release does not exist yet, route that work to:
 
-- `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+- `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 Only return to AppComponent contract work once the backing API deployment surface is real on the platform.
 
@@ -258,7 +258,7 @@ widget.
 
 Route Adapter from API work to:
 
-- `.agents/skills/command_center/adapter_from_api/SKILL.md`
+- `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 
 Do not use AppComponent as a shortcut source node for generic workspace data just because
 `TabularFrameResponse` exists. Use `TabularFrameResponse` directly only when the AppComponent

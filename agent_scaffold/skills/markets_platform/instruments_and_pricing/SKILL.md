@@ -56,13 +56,13 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - assets, categories, and translation tables:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - Virtual Fund Builder and portfolio construction:
-  `.agents/skills/markets_platform/virtualfundbuilder/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
 - DataNodes and producer-side implementation:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - APIs and FastAPI:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 
 ## Read First
 

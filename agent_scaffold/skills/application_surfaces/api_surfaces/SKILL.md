@@ -45,21 +45,21 @@ This skill must not claim ownership of:
 ## Route Adjacent Work
 
 - DataNodes:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - SimpleTables:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - Command Center workspaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - Adapter from API provider-side Command Center connection endpoints:
-  `.agents/skills/command_center/adapter_from_api/SKILL.md`
+  `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - predeployment mock API contract validation:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - Jobs, images, resources, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 
@@ -69,14 +69,14 @@ This skill must not claim ownership of:
 4. `docs/knowledge/fastapi/index.md`
 5. `docs/knowledge/command_center/widget_data_contracts.md`
 6. `docs/knowledge/command_center/forms.md`
-7. `.agents/skills/command_center/app_components/SKILL.md`
+7. `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 
 Also load:
 
-8. `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
-9. `.agents/skills/command_center/adapter_from_api/SKILL.md` when the API must be consumed through a Command Center Adapter from API connection
-10. `.agents/skills/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
-11. `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
+8. `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` when the API is tied to mounted widgets, workspace payloads, or workspace mutation
+9. `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when the API must be consumed through a Command Center Adapter from API connection
+10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the contract should be validated in AppComponent mock mode before backend deployment
+11. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when the API must become usable from Command Center or an AppComponent
 
 Do not wait for the user to say "Command Center" explicitly if the API is being built as a platform UI surface. That is the default assumption in Main Sequence projects.
 
@@ -138,9 +138,9 @@ In a Main Sequence project, assume API work is for Command Center unless the use
 That means:
 
 - prefer widget-facing contracts by default
-- load `.agents/skills/command_center/app_components/SKILL.md`
-- also load `.agents/skills/command_center/workspace_builder/SKILL.md` when the API is coupled to mounted workspace widgets or workspace payloads
-- load `.agents/skills/command_center/adapter_from_api/SKILL.md` when the API will be consumed by connection-first workspace dataflow
+- load `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
+- also load `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md` when the API is coupled to mounted workspace widgets or workspace payloads
+- load `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md` when the API will be consumed by connection-first workspace dataflow
 - try to use the existing Command Center SDK response model before inventing a new response shape
 
 Do not default to a generic standalone API mindset in this repository.
@@ -178,7 +178,7 @@ Do not present a local dev server, a local-only route, or an undiscovered API fi
 
 This skill owns the API contract and implementation. It does not own resource or release creation. Route that work to:
 
-- `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+- `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 ### 1.5 Keep workspace-visualization routes under `/workspace`
 

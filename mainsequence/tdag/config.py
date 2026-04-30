@@ -46,7 +46,7 @@ class RunningMode(Enum):
 
 class Configuration:
     OBLIGATORY_ENV_VARIABLES = [
-        "TDAG_ENDPOINT",
+        "MAINSEQUENCE_ENDPOINT",
     ]
 
     def __init__(self):

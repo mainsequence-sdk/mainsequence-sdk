@@ -78,6 +78,23 @@ def _refresh_token() -> str | None:
     return tok.get("refresh")
 
 
+def _set_client_utils_endpoint(client_utils, endpoint: str) -> None:
+    """
+    Update client utils endpoint globals for in-process SDK operations.
+
+    Keep a defensive fallback for lightweight test doubles that do not implement
+    the full helper surface.
+    """
+    if hasattr(client_utils, "set_mainsequence_endpoint"):
+        _set_client_utils_endpoint(client_utils, endpoint)
+        return
+
+    normalized = endpoint.rstrip("/")
+    client_utils.MAINSEQUENCE_ENDPOINT = normalized
+    client_utils.API_ENDPOINT = f"{normalized}/orm/api"
+    client_utils.AUTH_ENDPOINT = normalized
+
+
 def build_cli_authorize_url(
     *,
     redirect_uri: str,
@@ -344,7 +361,6 @@ def _run_sdk_model_operation(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -362,7 +378,6 @@ def _run_sdk_model_operation(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         if project_id_env is not None:
             os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id_env)
@@ -380,8 +395,7 @@ def _run_sdk_model_operation(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_model_root_url = getattr(client_model, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -461,7 +475,6 @@ def get_logged_user_details() -> dict[str, Any]:
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -485,7 +498,6 @@ def get_logged_user_details() -> dict[str, Any]:
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -503,8 +515,7 @@ def get_logged_user_details() -> dict[str, Any]:
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_user_root_url = getattr(ClientUser, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -1587,7 +1598,6 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -1605,7 +1615,6 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
 
@@ -1618,8 +1627,7 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_project_root_url = getattr(ClientProject, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -1753,7 +1761,6 @@ def create_project_image(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -1770,7 +1777,6 @@ def create_project_image(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
 
@@ -1783,8 +1789,7 @@ def create_project_image(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -1863,7 +1868,6 @@ def list_project_images(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -1880,7 +1884,6 @@ def list_project_images(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
 
@@ -1893,8 +1896,7 @@ def list_project_images(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_image_root_url = getattr(ClientProjectImage, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -2091,7 +2093,6 @@ def list_project_jobs(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -2108,7 +2109,6 @@ def list_project_jobs(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
 
@@ -2121,8 +2121,7 @@ def list_project_jobs(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -2206,7 +2205,6 @@ def list_project_resources(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -2223,7 +2221,6 @@ def list_project_resources(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
 
@@ -2236,8 +2233,7 @@ def list_project_resources(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_resource_root_url = getattr(ClientProjectResource, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -2337,7 +2333,6 @@ def create_project_resource_release(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -2353,7 +2348,6 @@ def create_project_resource_release(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -2365,8 +2359,7 @@ def create_project_resource_release(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_resource_root_url = getattr(ClientProjectResource, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -2468,7 +2461,6 @@ def list_market_portfolios(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -2484,7 +2476,6 @@ def list_market_portfolios(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -2496,8 +2487,7 @@ def list_market_portfolios(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_portfolio_root_url = getattr(ClientPortfolio, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4203,7 +4193,6 @@ def list_market_asset_translation_tables(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -4219,7 +4208,6 @@ def list_market_asset_translation_tables(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -4233,8 +4221,7 @@ def list_market_asset_translation_tables(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_table_root_url = getattr(ClientAssetTranslationTable, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4311,7 +4298,6 @@ def get_market_asset_translation_table(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -4327,7 +4313,6 @@ def get_market_asset_translation_table(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -4341,8 +4326,7 @@ def get_market_asset_translation_table(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_table_root_url = getattr(ClientAssetTranslationTable, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4427,7 +4411,6 @@ def create_project_job(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -4444,7 +4427,6 @@ def create_project_job(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
 
@@ -4457,8 +4439,7 @@ def create_project_job(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4551,7 +4532,6 @@ def schedule_batch_project_jobs(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
@@ -4568,7 +4548,6 @@ def schedule_batch_project_jobs(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
         os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
 
@@ -4581,8 +4560,7 @@ def schedule_batch_project_jobs(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4668,7 +4646,6 @@ def run_project_job(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -4684,7 +4661,6 @@ def run_project_job(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -4696,8 +4672,7 @@ def run_project_job(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_root_url = getattr(ClientJob, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4771,7 +4746,6 @@ def list_project_job_runs(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -4787,7 +4761,6 @@ def list_project_job_runs(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -4799,8 +4772,7 @@ def list_project_job_runs(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_run_root_url = getattr(ClientJobRun, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url
@@ -4878,7 +4850,6 @@ def get_project_job_run_logs(
         "MAINSEQUENCE_AUTH_MODE": os.environ.get("MAINSEQUENCE_AUTH_MODE"),
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
-        "TDAG_ENDPOINT": os.environ.get("TDAG_ENDPOINT"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
     }
 
@@ -4894,7 +4865,6 @@ def get_project_job_run_logs(
             os.environ["MAINSEQUENCE_REFRESH_TOKEN"] = refresh
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
-        os.environ["TDAG_ENDPOINT"] = endpoint
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
 
         from mainsequence.client import utils as _client_utils
@@ -4906,8 +4876,7 @@ def get_project_job_run_logs(
         old_base_root_url = BaseObjectOrm.ROOT_URL
         old_job_run_root_url = getattr(ClientJobRun, "ROOT_URL", None)
 
-        client_utils.TDAG_ENDPOINT = endpoint
-        client_utils.API_ENDPOINT = root_url
+        _set_client_utils_endpoint(client_utils, endpoint)
         client_utils.loaders.use_jwt(access=access, refresh=refresh or None)
 
         BaseObjectOrm.ROOT_URL = root_url

@@ -21,17 +21,13 @@ from requests.adapters import HTTPAdapter
 from requests.structures import CaseInsensitiveDict
 from urllib3.util.retry import Retry
 
-from mainsequence.defaults import STANDARD_BACKEND_URL
+from mainsequence.defaults import resolve_backend_endpoint
 from mainsequence.logconf import logger
 
 # ---- Backend defaults (single source of truth) ----
-TDAG_ENDPOINT = (
-    os.environ.get("TDAG_ENDPOINT")
-    or os.environ.get("MAINSEQUENCE_ENDPOINT")
-    or STANDARD_BACKEND_URL
-)
-API_ENDPOINT = f"{TDAG_ENDPOINT}/orm/api"
-AUTH_ENDPOINT = TDAG_ENDPOINT.rstrip("/")
+MAINSEQUENCE_ENDPOINT = resolve_backend_endpoint()
+API_ENDPOINT = f"{MAINSEQUENCE_ENDPOINT}/orm/api"
+AUTH_ENDPOINT = MAINSEQUENCE_ENDPOINT.rstrip("/")
 
 DEFAULT_STATUS_FORCELIST = (429, 500, 502, 503, 504)
 DEFAULT_ALLOWED_METHODS = frozenset(["HEAD", "GET", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"])
@@ -68,6 +64,14 @@ UniqueIdentifierRangeMap = dict[str, DateInfo]
 
 class AuthError(Exception):
     pass
+
+
+def set_mainsequence_endpoint(endpoint: str) -> None:
+    global MAINSEQUENCE_ENDPOINT, API_ENDPOINT, AUTH_ENDPOINT
+    normalized = endpoint.rstrip("/")
+    MAINSEQUENCE_ENDPOINT = normalized
+    API_ENDPOINT = f"{normalized}/orm/api"
+    AUTH_ENDPOINT = normalized
 
 
 def _jwt_reauth_hint() -> str:
@@ -184,7 +188,7 @@ class SessionJWTAuthProvider(BaseAuthProvider):
 class RuntimeCredentialAuthProvider(BaseAuthProvider):
     credential_id: str | None = None
     credential_secret: str | None = None
-    token_url: str = f"{API_ENDPOINT}/pods/runtime-credentials/token/"
+    token_url: str | None = None
     token_type: str = "Bearer"
     refresh_skew_seconds: int = 30
     timeout: tuple[float, float] = DEFAULT_TIMEOUT
@@ -196,6 +200,8 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
             self.credential_id = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID")
         if self.credential_secret is None:
             self.credential_secret = os.getenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET")
+        if not self.token_url:
+            self.token_url = f"{API_ENDPOINT}/pods/runtime-credentials/token/"
 
     def _current_access_token(self) -> str | None:
         return (os.getenv("MAINSEQUENCE_ACCESS_TOKEN") or "").strip() or None
@@ -292,8 +298,8 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
 class JWTAuthProvider(BaseAuthProvider):
     access_token: str | None = None
     refresh_token: str | None = None
-    refresh_url: str = f"{AUTH_ENDPOINT}/auth/jwt-token/token/refresh/"
-    obtain_url: str = f"{AUTH_ENDPOINT}/auth/jwt-token/token/"
+    refresh_url: str | None = None
+    obtain_url: str | None = None
     header_keyword: str = "Bearer"
     refresh_skew_seconds: int = 60
     timeout: tuple[float, float] = DEFAULT_TIMEOUT
@@ -304,6 +310,10 @@ class JWTAuthProvider(BaseAuthProvider):
             self.access_token = os.getenv("MAINSEQUENCE_ACCESS_TOKEN")
         if self.refresh_token is None:
             self.refresh_token = os.getenv("MAINSEQUENCE_REFRESH_TOKEN")
+        if not self.refresh_url:
+            self.refresh_url = f"{AUTH_ENDPOINT}/auth/jwt-token/token/refresh/"
+        if not self.obtain_url:
+            self.obtain_url = f"{AUTH_ENDPOINT}/auth/jwt-token/token/"
 
     def set_tokens(self, *, access: str | None = None, refresh: str | None = None) -> None:
         with self._lock:
@@ -633,13 +643,13 @@ loaders = AuthLoaders()
 session = build_session(loaders=loaders)
 
 def get_constants_tdag():
-    url = f"{TDAG_ENDPOINT}/orm/api/ts_manager/api/constants"
+    url = f"{MAINSEQUENCE_ENDPOINT}/orm/api/ts_manager/api/constants"
     r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 
 
 def get_constants_vam():
-    url = f"{TDAG_ENDPOINT}/orm/api/assets/api/constants"
+    url = f"{MAINSEQUENCE_ENDPOINT}/orm/api/assets/api/constants"
     r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
     return r.json()
 

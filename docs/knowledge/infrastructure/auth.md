@@ -162,7 +162,7 @@ MAINSEQUENCE_AUTH_MODE=runtime_credential
 MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
-TDAG_ENDPOINT=<platform API origin>
+MAINSEQUENCE_ENDPOINT=<platform API origin>
 MAIN_SEQUENCE_PROJECT_ID=<project id>
 ```
 

@@ -2191,7 +2191,7 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_REFRESH_TOKEN=",
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
-        "TDAG_ENDPOINT=",
+        "MAINSEQUENCE_ENDPOINT=",
     ) + (("MAIN_SEQUENCE_PROJECT_ID=",) if project_runtime_id is not None else ())
     lines = [
         ln
@@ -2205,7 +2205,7 @@ def _render_project_runtime_env_text(
     lines.extend(
         [f"{key}={value}" for key, value in auth_env.items() if value]
         + [
-            f"TDAG_ENDPOINT={backend_url}",
+            f"MAINSEQUENCE_ENDPOINT={backend_url}",
         ]
         + ([f"MAIN_SEQUENCE_PROJECT_ID={project_runtime_id}"] if project_runtime_id is not None else [])
     )
@@ -2355,8 +2355,8 @@ def login(
             error("When using a different backend, you must also specify a projects base folder.")
             raise typer.Exit(1)
 
-    previous_backend_override = os.environ.get("MAIN_SEQUENCE_BACKEND_URL")
-    os.environ["MAIN_SEQUENCE_BACKEND_URL"] = normalized_backend
+    previous_backend_override = os.environ.get("MAINSEQUENCE_ENDPOINT")
+    os.environ["MAINSEQUENCE_ENDPOINT"] = normalized_backend
 
     try:
         if using_runtime_credential:
@@ -2419,9 +2419,9 @@ def login(
         raise typer.Exit(1) from e
     finally:
         if previous_backend_override is None:
-            os.environ.pop("MAIN_SEQUENCE_BACKEND_URL", None)
+            os.environ.pop("MAINSEQUENCE_ENDPOINT", None)
         else:
-            os.environ["MAIN_SEQUENCE_BACKEND_URL"] = previous_backend_override
+            os.environ["MAINSEQUENCE_ENDPOINT"] = previous_backend_override
 
     cfg.set_session_overrides(
         backend_url=normalized_backend,
@@ -11013,11 +11013,12 @@ def project_update_agent_skills(
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
-    Update `.agents/skills` from the installed `agent_scaffold/skills` bundle subtree.
+    Update `.agents/skills/mainsequence` from the installed `agent_scaffold/skills` bundle subtree.
 
     This copies every top-level scaffold skill folder from `agent_scaffold/skills/`
-    into `.agents/skills/`, overwriting any folders with the same name. Bundle-root
-    files such as `AGENTS.md` are not copied by this command.
+    into `.agents/skills/mainsequence/`, overwriting any folders with the same name
+    under that namespace. Bundle-root files such as `AGENTS.md` are not copied by
+    this command.
 
     Examples
     --------
@@ -11028,7 +11029,7 @@ def project_update_agent_skills(
     ```
     """
     project_dir = _resolve_project_dir(project_id, path)
-    destination_root = project_dir / ".agents" / "skills"
+    destination_root = project_dir / ".agents" / "skills" / "mainsequence"
 
     updated: list[dict[str, pathlib.Path]] = []
     skills_dir = _project_agent_scaffold_bundle_dir(project_dir) / "skills"
@@ -11059,7 +11060,7 @@ def project_update_agent_skills(
     if _emit_json(payload):
         return
 
-    success("Updated .agents/skills from installed agent_scaffold bundle.")
+    success("Updated .agents/skills/mainsequence from installed agent_scaffold bundle.")
     print_table(
         "Updated Agent Skills",
         ["Skill Folder", "Destination"],

@@ -11,7 +11,7 @@ from typing import Annotated
 import pytest
 from pydantic import Field
 
-os.environ.setdefault("TDAG_ENDPOINT", "http://testserver")
+os.environ.setdefault("MAINSEQUENCE_ENDPOINT", "http://testserver")
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 

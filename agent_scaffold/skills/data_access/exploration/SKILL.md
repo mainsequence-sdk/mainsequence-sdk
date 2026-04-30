@@ -44,23 +44,23 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 ## Route Adjacent Work
 
 - project bootstrap, scaffolding, and routing:
-  `.agents/skills/project_builder/SKILL.md`
+  `.agents/skills/mainsequence/project_builder/SKILL.md`
 - `DataNode` creation or modification:
-  `.agents/skills/data_publishing/data_nodes/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
 - `SimpleTable` schema or updater work:
-  `.agents/skills/data_publishing/simple_tables/SKILL.md`
+  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - FastAPI or application-facing implementation:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboards:
-  `.agents/skills/dashboards/streamlit/SKILL.md`
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - Command Center surfaces:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - market-specific object discovery:
-  `.agents/skills/markets_platform/assets_and_translation/SKILL.md`
+  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - project-state reconciliation after exploration:
-  `.agents/skills/maintenance/local_journal/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - blocker and failure analysis:
-  `.agents/skills/maintenance/bug_auditor/SKILL.md`
+  `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 
 ## Read First
 
@@ -142,8 +142,8 @@ Once the discovery is complete, hand off to the correct implementation skill.
 
 Examples:
 
-- if the task is about publishing or modifying time-series data, hand off to `.agents/skills/data_publishing/data_nodes/SKILL.md`
-- if the task is about row-oriented operational data, hand off to `.agents/skills/data_publishing/simple_tables/SKILL.md`
+- if the task is about publishing or modifying time-series data, hand off to `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
+- if the task is about row-oriented operational data, hand off to `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
 - if the task is about APIs or dashboards, hand off to the relevant surface skill after discovery is complete
 
 ## Review Rules

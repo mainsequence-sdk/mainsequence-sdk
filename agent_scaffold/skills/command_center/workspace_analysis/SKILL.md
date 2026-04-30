@@ -35,24 +35,62 @@ The most important rule is:
 - answer from widget snapshots
 - do not answer from old workspace metadata when the widget dump already contains the real state
 
-## What The Snapshot Contains
+## How To Capture A Snapshot
 
-The current snapshot contract is intentionally small.
+Use the CLI command:
 
-The archive structure is:
-
-```text
-workspace-live-snapshot-<timestamp>.zip
-  widgets/
-    <widget-directory>/
-      snapshot.json
+```bash
+mainsequence cc workspace snapshot <workspace_id>
 ```
 
-That is the important contract.
+Optional output directory:
+
+```bash
+mainsequence cc workspace snapshot <workspace_id> --output-path /tmp/my-workspace-snapshot
+```
+
+Important behavior:
+
+- the CLI opens the live Command Center workspace in a browser automation session
+- it first loads the normal workspace view
+- it waits 30 seconds so the workspace has time to load data and settle
+- it then requests the snapshot route
+- it expands the snapshot into a directory on disk
+
+Default output location:
+
+```text
+~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/
+```
+
+If `--output-path` looks like a file path such as `snapshot.zip`, its stem is used as the output directory.
+
+## What The Snapshot Contains
+
+The snapshot is produced from the live frontend state, not from persisted workspace JSON alone.
+
+The important point is that it captures what the workspace was actually showing after load time, including widget state at capture time.
+
+You should expect the extracted snapshot directory to contain:
+
+- per-widget snapshot files used for agent interpretation
+- widget `snapshot.json` payloads that reflect the current widget state
+- additional files the frontend includes in the generated snapshot
+- Playwright scroll screenshots added by the SDK under:
+
+```text
+screenshots/playwright-scroll/
+  index.json
+  workspace-scroll-001.png
+  workspace-scroll-002.png
+  ...
+```
+
+Do not assume that the top-level directory contains only one exact fixed file layout beyond the widget snapshots and the Playwright screenshot folder. Inspect the extracted snapshot directory you were given.
 
 ## What Each Widget Snapshot Means
 
-Each widget directory contains one `snapshot.json`.
+Each widget directory should contain one `snapshot.json`.
 
 That file is the source of truth for the widget.
 
@@ -127,13 +165,15 @@ Do not infer that a dataset dump from a source widget is what the user is "seein
 
 When analyzing a workspace snapshot:
 
-1. Inspect the widget folders.
-2. Read each `snapshot.json`.
-3. Identify which widgets are presentation widgets versus passthrough widgets.
-4. Identify which widgets actually answer the user's question.
-5. Prefer the downstream presentation widget state when answering "what does this workspace show?"
-6. Use passthrough widgets only for setup, lineage, or failure-context explanations.
-7. Answer in terms of what the data means, not just what the widget contains.
+1. Inspect the extracted snapshot directory.
+2. Find the widget snapshot folders.
+3. Read each `snapshot.json`.
+4. Identify which widgets are presentation widgets versus passthrough widgets.
+5. Identify which widgets actually answer the user's question.
+6. Prefer the downstream presentation widget state when answering "what does this workspace show?"
+7. Use passthrough widgets only for setup, lineage, or failure-context explanations.
+8. Use the screenshot files only as supporting context when needed.
+9. Answer in terms of what the data means, not just what the widget contains.
 
 Good answers should:
 
@@ -152,7 +192,7 @@ Better answer styles are:
 Bad answers are:
 
 - repeating structural metadata without interpreting the widget state
-- focusing on old top-level archive files instead of widget dumps
+- focusing on filesystem structure instead of widget dumps
 - treating source widgets as the final answer when presentation widgets already interpret the data
 - describing row counts, point counts, or widget inventory when that does not answer the user's question
 
@@ -201,3 +241,4 @@ This skill should usually be the first stop whenever the task is:
 - Treat missing or empty widget state as meaningful.
 - Keep answers grounded in the actual widget dump, not assumptions about what the widget usually does.
 - If the workspace only partially answers the user's question, say exactly which part is supported by the data and which part is not.
+- Remember that the snapshot is taken from the loaded live workspace state after a 30-second bootstrap wait, so the intent is to capture the rendered state, not only saved configuration.

@@ -56,17 +56,17 @@ Route those concerns to the adjacent skills below.
 ## Route Adjacent Work
 
 - General Main Sequence API creation:
-  `.agents/skills/application_surfaces/api_surfaces/SKILL.md`
+  `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center connection instance creation and selection:
-  `.agents/skills/command_center/connections/SKILL.md`
+  `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - Workspace widgets and binding:
-  `.agents/skills/command_center/workspace_builder/SKILL.md`
+  `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponent form-driven actions:
-  `.agents/skills/command_center/app_components/SKILL.md`
+  `.agents/skills/mainsequence/command_center/app_components/SKILL.md`
 - API mock/prototype validation before deployment:
-  `.agents/skills/command_center/api_mock_prototyping/SKILL.md`
+  `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md`
 - FastAPI resources, images, jobs, and releases:
-  `.agents/skills/platform_operations/orchestration_and_releases/SKILL.md`
+  `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 
 ## Required Endpoints
 
