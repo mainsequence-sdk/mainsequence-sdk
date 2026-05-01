@@ -1062,6 +1062,12 @@ def _copy_tree_overwrite(src: pathlib.Path, dst: pathlib.Path) -> None:
 AGENTS_MD_MANAGED_BLOCK_START_PREFIX = "<!-- mainsequence-agent-scaffold:start"
 AGENTS_MD_MANAGED_BLOCK_END = "<!-- mainsequence-agent-scaffold:end -->"
 AGENTS_MD_MANAGED_BLOCK_SCHEMA = "1"
+AGENTS_MD_MANAGED_BLOCK_START_LINE_RE = re.compile(
+    rf"(?m)^[ \t]*{re.escape(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)}\b[^\n]*-->[ \t]*$"
+)
+AGENTS_MD_MANAGED_BLOCK_END_LINE_RE = re.compile(
+    rf"(?m)^[ \t]*{re.escape(AGENTS_MD_MANAGED_BLOCK_END)}[ \t]*$"
+)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1078,34 +1084,29 @@ def _installed_agent_scaffold_agents_md_file() -> pathlib.Path:
     return source
 
 
+def _agents_md_managed_block_line_matches(source_content: str) -> tuple[list[re.Match[str]], list[re.Match[str]]]:
+    start_matches = list(AGENTS_MD_MANAGED_BLOCK_START_LINE_RE.finditer(source_content))
+    end_matches = list(AGENTS_MD_MANAGED_BLOCK_END_LINE_RE.finditer(source_content))
+    return start_matches, end_matches
+
+
 def _extract_agents_md_managed_block(source_content: str) -> str:
-    start_count = source_content.count(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
-    end_count = source_content.count(AGENTS_MD_MANAGED_BLOCK_END)
-    if start_count != 1 or end_count != 1:
+    start_matches, end_matches = _agents_md_managed_block_line_matches(source_content)
+    if len(start_matches) != 1 or len(end_matches) != 1:
         raise ValueError(
             "Installed agent_scaffold AGENTS.md must contain exactly one Main Sequence "
             "managed block."
         )
 
-    start_index = source_content.find(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
-    end_marker_index = source_content.find(AGENTS_MD_MANAGED_BLOCK_END, start_index)
-    if end_marker_index < start_index:
+    start_match = start_matches[0]
+    end_match = end_matches[0]
+    if end_match.start() < start_match.start():
         raise ValueError(
             "Installed agent_scaffold AGENTS.md contains malformed Main Sequence managed "
             "block markers."
         )
 
-    start_line_end = source_content.find("\n", start_index)
-    if start_line_end == -1:
-        start_line_end = len(source_content)
-    if not source_content[start_index:start_line_end].rstrip().endswith("-->"):
-        raise ValueError(
-            "Installed agent_scaffold AGENTS.md contains malformed Main Sequence managed "
-            "block markers."
-        )
-
-    end_index = end_marker_index + len(AGENTS_MD_MANAGED_BLOCK_END)
-    return source_content[start_index:end_index]
+    return source_content[start_match.start() : end_match.end()]
 
 
 def _load_installed_agents_md_template() -> tuple[pathlib.Path, str, str]:
@@ -1120,41 +1121,31 @@ def _apply_agents_md_managed_block(
     bootstrap_content: str,
     managed_block: str,
 ) -> tuple[str, str]:
-    start_count = content.count(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
-    end_count = content.count(AGENTS_MD_MANAGED_BLOCK_END)
+    start_matches, end_matches = _agents_md_managed_block_line_matches(content)
 
-    if start_count > 1 or end_count > 1:
+    if len(start_matches) > 1 or len(end_matches) > 1:
         raise ValueError(
             "AGENTS.md contains multiple Main Sequence managed block markers; "
             "resolve it manually."
         )
-    if start_count != end_count:
+    if len(start_matches) != len(end_matches):
         raise ValueError(
             "AGENTS.md contains malformed Main Sequence managed block markers; "
             "resolve it manually."
         )
 
-    if start_count == 0:
+    if not start_matches:
         return bootstrap_content, "replaced"
 
-    start_index = content.find(AGENTS_MD_MANAGED_BLOCK_START_PREFIX)
-    end_marker_index = content.find(AGENTS_MD_MANAGED_BLOCK_END)
-    start_line_end = content.find("\n", start_index)
-    if start_line_end == -1:
-        start_line_end = len(content)
-    if not content[start_index:start_line_end].rstrip().endswith("-->"):
-        raise ValueError(
-            "AGENTS.md contains malformed Main Sequence managed block markers; "
-            "resolve it manually."
-        )
-    if end_marker_index < start_index:
+    start_match = start_matches[0]
+    end_match = end_matches[0]
+    if end_match.start() < start_match.start():
         raise ValueError(
             "AGENTS.md contains malformed Main Sequence managed block markers; "
             "resolve it manually."
         )
 
-    end_index = end_marker_index + len(AGENTS_MD_MANAGED_BLOCK_END)
-    updated = f"{content[:start_index]}{managed_block.rstrip()}{content[end_index:]}"
+    updated = f"{content[:start_match.start()]}{managed_block.rstrip()}{content[end_match.end():]}"
     action = "unchanged" if updated == content else "updated"
     return updated, action
 

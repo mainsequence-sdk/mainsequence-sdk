@@ -9357,6 +9357,10 @@ def _write_installed_agent_scaffold_bundle(bundle_dir: pathlib.Path) -> pathlib.
                 "",
                 "Installed scaffold preface.",
                 "",
+                "Do not remove the `<!-- mainsequence-agent-scaffold:start schema=1 "
+                "source=agent_scaffold -->`",
+                "or `<!-- mainsequence-agent-scaffold:end -->` markers.",
+                "",
                 "<!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->",
                 "## Main Sequence Instructions",
                 "",
@@ -9393,8 +9397,7 @@ def test_project_update_agents_md_replaces_custom_unmarked_file(
     assert result.exit_code == 0
     content = (target / "AGENTS.md").read_text(encoding="utf-8")
     assert content == agents_md.read_text(encoding="utf-8")
-    assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX) == 1
-    assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_END) == 1
+    assert "Installed managed block." in cli_mod._extract_agents_md_managed_block(content)
     assert "Installed managed block." in content
     assert "Keep this project-specific instruction." not in content
     assert "Action" in result.output
@@ -9456,7 +9459,7 @@ def test_project_update_agents_md_replaces_existing_managed_block(
     assert "old managed content" not in content
     assert "Installed managed block." in content
     assert "Custom tail.\n" in content
-    assert content.count(cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX) == 1
+    assert "Installed managed block." in cli_mod._extract_agents_md_managed_block(content)
     assert "updated" in result.output
 
 
@@ -9484,6 +9487,27 @@ def test_project_update_agents_md_json_reports_action(
     assert payload["action"] == "created"
     assert payload["changed"] is True
     assert payload["overwritten"] is False
+
+
+def test_project_update_agents_md_keeps_existing_scaffold_shaped_file_current(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+):
+    agents_md = _write_installed_agent_scaffold_bundle(tmp_path / "bundle")
+    target = tmp_path / "project"
+    target.mkdir()
+    (target / "AGENTS.md").write_text(agents_md.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: agents_md.parent)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "update", "AGENTS.md", "--path", str(target)],
+    )
+    assert result.exit_code == 0
+    assert (target / "AGENTS.md").read_text(encoding="utf-8") == agents_md.read_text(encoding="utf-8")
+    assert "already current" in result.output
 
 
 def test_project_update_agents_md_rejects_malformed_managed_block(
