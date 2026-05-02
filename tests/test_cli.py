@@ -2899,6 +2899,35 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        normalized = endpoint.rstrip("/")
+        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
+        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.AUTH_ENDPOINT = normalized
+        captured["endpoint"] = normalized
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        normalized = endpoint.rstrip("/")
+        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
+        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.AUTH_ENDPOINT = normalized
+        captured["endpoint"] = normalized
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        fake_utils.MAINSEQUENCE_ENDPOINT = endpoint
+        fake_utils.API_ENDPOINT = f"{endpoint.rstrip('/')}/orm/api"
+        fake_utils.AUTH_ENDPOINT = endpoint.rstrip("/")
+        captured["endpoint"] = endpoint
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/orm/api"
@@ -2954,6 +2983,16 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        normalized = endpoint.rstrip("/")
+        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
+        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.AUTH_ENDPOINT = normalized
+        captured["endpoint"] = normalized
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/orm/api"
@@ -3025,6 +3064,16 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        normalized = endpoint.rstrip("/")
+        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
+        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.AUTH_ENDPOINT = normalized
+        captured["endpoint"] = normalized
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/orm/api"
@@ -5087,6 +5136,16 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     fake_utils.loaders = FakeLoaders()
     fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
     fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+    fake_utils.AUTH_ENDPOINT = "https://old.test"
+
+    def _set_mainsequence_endpoint(endpoint):
+        normalized = endpoint.rstrip("/")
+        fake_utils.MAINSEQUENCE_ENDPOINT = normalized
+        fake_utils.API_ENDPOINT = f"{normalized}/orm/api"
+        fake_utils.AUTH_ENDPOINT = normalized
+        captured["endpoint"] = normalized
+
+    fake_utils.set_mainsequence_endpoint = _set_mainsequence_endpoint
 
     class FakeBaseObjectOrm:
         ROOT_URL = "https://old.test/orm/api"
@@ -5119,6 +5178,10 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_user", fake_models_user)
 
     out = api_mod.get_logged_user_details()
+    assert captured["endpoint"] == "https://backend.test"
+    assert fake_utils.MAINSEQUENCE_ENDPOINT == "https://backend.test"
+    assert fake_utils.API_ENDPOINT == "https://backend.test/orm/api"
+    assert fake_utils.AUTH_ENDPOINT == "https://backend.test"
     assert captured["jwt"] == ("acc", "ref")
     assert captured["headers_set"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}
     assert captured["headers_seen"] == {"X-User-ID": "7", "Authorization": "Bearer acc"}

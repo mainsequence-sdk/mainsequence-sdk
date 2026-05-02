@@ -86,7 +86,7 @@ def _set_client_utils_endpoint(client_utils, endpoint: str) -> None:
     the full helper surface.
     """
     if hasattr(client_utils, "set_mainsequence_endpoint"):
-        _set_client_utils_endpoint(client_utils, endpoint)
+        client_utils.set_mainsequence_endpoint(endpoint)
         return
 
     normalized = endpoint.rstrip("/")
