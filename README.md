@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://main-sequence.app/static/media/logos/MS_logo_long_black.png" alt="Main Sequence Logo" width="500"/>
+  <img src="https://www.main-sequence.io/images/logos/MS_logo_long_black.png" alt="Main Sequence Logo" width="500"/>
 </p>
 
 # Main Sequence Python SDK
