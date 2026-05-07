@@ -69,25 +69,32 @@ This skill must not claim ownership of:
 
 0. If widget selection, layout narrative, or visualization strategy is not already decided, use:
    - `.agents/skills/mainsequence/command_center/workspace_design/SKILL.md`
-1. Verify the widget catalog through the CLI:
+1. If the workspace may use connection-backed source widgets, inspect the available connections through the CLI first:
+   - `mainsequence cc connection list --json`
+   - identify the target connection instance `uid`
+   - `mainsequence cc connection detail <CONNECTION_UID> --json`
+   - `mainsequence cc connection_type list --json`
+   - identify the target connection `type_id`
+   - `mainsequence cc connection_type detail <TYPE_ID> --json`
+2. Verify the widget catalog through the CLI:
    - `mainsequence cc registered_widget_type list --json`
    - identify the target `widget_id`
    - `mainsequence cc registered_widget_type detail <WIDGET_ID> --json`
-2. The SDK client models in `mainsequence/client/command_center/`:
+3. The SDK client models in `mainsequence/client/command_center/`:
    - `workspace.py`
    - `connections.py` when source widgets depend on backend-owned connections
    - `data_models.py`
    - `app_component.py` when the workspace contains AppComponent widgets or editable form payloads
-3. `docs/knowledge/command_center/workspaces.md`
-4. the local Main Sequence docs/models/examples in this repository that define the widget payloads being mounted
-5. the current CLI docs if the task uses CLI workflow
+4. `docs/knowledge/command_center/workspaces.md`
+5. the local Main Sequence docs/models/examples in this repository that define the widget payloads being mounted
+6. the current CLI docs if the task uses CLI workflow
 
 If the workspace contains AppComponent widgets, also read:
 
-6. `docs/knowledge/command_center/forms.md`
-7. `docs/knowledge/command_center/widget_data_contracts.md`
-8. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
-9. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
+7. `docs/knowledge/command_center/forms.md`
+8. `docs/knowledge/command_center/widget_data_contracts.md`
+9. `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md` when mounted widgets depend on project APIs that must be usable from Command Center
+10. `.agents/skills/mainsequence/command_center/api_mock_prototyping/SKILL.md` when the workspace should validate an AppComponent/API contract in `mock-json` mode before deployment
 
 ## Command Center Mental Model
 

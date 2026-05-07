@@ -13,6 +13,7 @@ Local operations shared by several commands:
 
 import os
 import pathlib
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -62,7 +63,7 @@ def ensure_venv(project_dir: pathlib.Path) -> VenvPaths:
 
 def ensure_uv_installed(project_dir: pathlib.Path, upgrade: bool = True) -> pathlib.Path:
     """
-    Ensure uv is installed inside the project's .venv.
+    Resolve a usable uv executable for the project workflow.
 
     Returns:
         Path to uv executable
@@ -71,18 +72,11 @@ def ensure_uv_installed(project_dir: pathlib.Path, upgrade: bool = True) -> path
     if vp.uv and vp.uv.exists():
         return vp.uv
 
-    args = [str(vp.python), "-m", "pip", "install"]
-    if upgrade:
-        args.append("--upgrade")
-    args.append("uv")
-    r = subprocess.run(args, cwd=str(project_dir))
-    if r.returncode != 0:
-        raise RuntimeError("Failed to install uv into the virtual environment.")
+    uv_bin = shutil.which("uv")
+    if uv_bin:
+        return pathlib.Path(uv_bin)
 
-    vp = venv_paths(project_dir)
-    if not vp.uv or not vp.uv.exists():
-        raise RuntimeError("uv installed but executable not found in .venv.")
-    return vp.uv
+    raise RuntimeError("uv executable not found. Install uv and ensure it is available in PATH.")
 
 
 def run_cmd(cmd: list[str], cwd: pathlib.Path, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:

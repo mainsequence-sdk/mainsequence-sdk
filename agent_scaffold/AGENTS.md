@@ -18,9 +18,9 @@ uses them to update only the Main Sequence section below.
 ## Main Sequence Instructions
 
 Before any non-trivial Main Sequence work, verify that this Main Sequence section matches the
-latest installed `agent_scaffold/AGENTS.md` template and that
+latest installed `AGENTS.md` template and that
 `.agents/skills/mainsequence/project_builder/SKILL.md` matches the latest installed
-`agent_scaffold/skills/project_builder/SKILL.md`; if either local file does not match, update it
+`.agents/skills/project_builder/SKILL.md`; if either local file does not match, update it
 before proceeding.
 
 Canonical Main Sequence documentation root:

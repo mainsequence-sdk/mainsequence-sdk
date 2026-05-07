@@ -10625,7 +10625,7 @@ def project_refresh_token(
 def project_freeze_env(
     project_id: int | None = typer.Argument(None, help="Project ID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
-    ensure_uv: bool = typer.Option(True, "--ensure-uv/--no-ensure-uv", help="Install uv into .venv if missing"),
+    ensure_uv: bool = typer.Option(True, "--ensure-uv/--no-ensure-uv", help="Allow resolving uv from PATH when it is not present inside .venv."),
 ):
     """
     Export pinned dependencies into `requirements.txt` using `uv`.
@@ -10637,7 +10637,7 @@ def project_freeze_env(
     path:
         Explicit local path.
     ensure_uv:
-        Install `uv` in `.venv` if missing.
+        Allow resolving `uv` from PATH when it is not present inside `.venv`.
 
     Examples
     --------
@@ -10736,7 +10736,7 @@ def project_sync(
         raise typer.Exit(1)
 
     steps = [
-        "pip install uv (in .venv)",
+        "resolve uv executable",
         f"uv version --bump {bump}",
         "uv lock",
         "uv sync",
@@ -11045,7 +11045,7 @@ def project_update_sdk(
     ensure_venv(project_dir)
 
     steps = [
-        "pip install uv (in .venv)",
+        "resolve uv executable",
         "uv lock --upgrade-package mainsequence",
         "uv sync",
     ]
