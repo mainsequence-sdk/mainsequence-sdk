@@ -42,6 +42,12 @@ class CommandCenterBaseObjectOrm(BaseObjectOrm):
         )
 
 
+class WorkspaceType(str, Enum):
+    WORKSPACE = "workspace"
+    AGENT_MONITOR = "agent-monitor"
+    SLIDE_STUDIO = "slide-studio"
+
+
 class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticModel):
     """Command Center shared workspace payload.
 
@@ -87,10 +93,16 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
     title: str = Field(
         description="Human-readable workspace title.",
     )
+    type:str=Field(
+        description="Type of workspace ",
+    )
     description: str = Field(
         default="",
         description="Free-form workspace description.",
     )
+    type: WorkspaceType = Field(default=WorkspaceType.WORKSPACE)
+    public_url:str=Field(description="Public URL for workspace endpoint if exists.", default="")
+    created_at:datetime=Field()
     labels: list[str] = Field(
         default_factory=list,
         description=(

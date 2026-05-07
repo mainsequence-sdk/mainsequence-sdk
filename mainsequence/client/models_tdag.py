@@ -3259,12 +3259,15 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         "related_project__id": "id",
     }
 
-    id: int
-    project_repo_hash: str
-    related_project: int | Project  = None
-    base_image:int | ProjectBaseImage | None  = None #backward compatiblity old Images iwth None
-    is_ready:bool
-    creation_date: datetime.datetime | None = None
+    id: int = Field(..., description="Primary key of the project image row")
+    title: str | None = Field(None, description="Human-readable image title")
+    key: str | None = Field(None, description="Stable image key")
+    description: str | None = Field(None, description="Image description")
+    project_repo_hash: str = Field(..., description="Canonical full commit SHA for the built image")
+    related_project: int | Project = Field(None, description="Owning project id or object")
+    base_image: int | ProjectBaseImage | None = Field(None, description="Persisted parent base image identity") #backward compatiblity old Images iwth None
+    is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
+    creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
 
     @staticmethod
     def _coerce_id(obj: Any, *, field_name: str) -> int | None:

@@ -11,12 +11,6 @@ from .exceptions import raise_for_response
 from .utils import make_request, serialize_to_json
 
 
-class AgentStatus(str, Enum):
-    DRAFT = "draft"
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-
-
 class AgentCapabilityKind(str, Enum):
     SKILL = "skill"
     PROMPT = "prompt"
@@ -89,14 +83,12 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Client-supplied organization-scoped stable identifier for the agent. Use this for deterministic existence checks and idempotent create flows.",
     )
     description: str = Field("", description="Optional long-form description explaining what the agent is for.")
-    status: AgentStatus = Field(
-        AgentStatus.DRAFT,
-        description="Lifecycle status of the agent definition.",
+    agent_card: dict[str, Any] | None = Field(
+        None,
+        description="Optional structured agent card payload.",
     )
-    labels: list[str] = Field(
-        default_factory=list,
-        description="Free-form labels used to group or classify agents in the UI.",
-    )
+
+    llm_thinking:str
     llm_provider: str = Field(
         "",
         description="Optional default model provider for new sessions, for example openai, anthropic, or google. This is only a default on the Agent.",
@@ -105,10 +97,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         "",
         description="Optional default model identifier for new sessions, for example gpt-5.4. This is only a default on the Agent.",
     )
-    engine_name: str = Field(
-        "",
-        description="Optional default logical runtime or orchestrator name for new sessions. Use this to record the higher-level engine wrapper, workflow runtime, or agent runtime implementation that sits above the raw LLM model.",
-    )
+
     runtime_config: dict[str, Any] = Field(
         default_factory=dict,
         description="Optional default runtime configuration for new sessions. Store provider-specific or engine-specific settings here when they do not deserve their own top-level field.",
@@ -190,6 +179,26 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         if response.status_code not in (200, 201):
             raise_for_response(response, payload=payload)
         return AgentSession(**response.json())
+
+
+class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/user-orchestrator-agent-services"
+
+    id: int | None = Field(None, description="Primary key of the orchestrator agent service.")
+    user: int | None = Field(None, description="Owning user id.")
+    related_job: int | None = Field(None, description="Backing job id.")
+    subdomain: str = Field("", description="Public subdomain for the service.")
+
+
+class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "agents/v1/project-executor-agent-services"
+
+    id: int | None = Field(None, description="Primary key of the project executor agent service.")
+    agent_id: int | None = Field(None, description="Resolved Agent id for the executor service.")
+    is_ready: bool = Field(False, description="Whether the executor runtime is currently ready.")
+    project: int | None = Field(None, description="Owning project id.")
+    related_job: int | None = Field(None, description="Backing job id.")
+    subdomain: str = Field("", description="Public subdomain for the service.")
 
 
 class AgentCapability(BaseObjectOrm, BasePydanticModel):
@@ -560,6 +569,8 @@ __all__ = [
     "AgentCapabilityBinding",
     "AgentCapabilityKind",
     "AgentCapabilitySourceType",
+    "UserOrchestratorAgentService",
+    "UserProjectExecutorAgentService",
     "AgentSession",
     "AgentSessionArtifact",
     "AgentSessionCapabilitySnapshot",
