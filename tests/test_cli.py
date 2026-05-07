@@ -5699,13 +5699,15 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
         def get(cls, pk, timeout=None):
             captured["job_id_arg"] = pk
             return types.SimpleNamespace(
+                execution_path="scripts/test.py",
+                app_name=None,
                 run_job=lambda timeout=None, command_args=None: (
                     captured.update(command_args=command_args)
                     or {
-                    "id": 501,
-                    "job": pk,
-                    "status": "QUEUED",
-                    "unique_identifier": "jobrun_abc123",
+                        "id": 501,
+                        "job": pk,
+                        "status": "QUEUED",
+                        "unique_identifier": "jobrun_abc123",
                     }
                 )
             )
@@ -5728,6 +5730,8 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
         "job": 91,
         "status": "QUEUED",
         "unique_identifier": "jobrun_abc123",
+        "effective_run": "scripts/test.py python -m jobs.daily",
+        "command_args": ["python", "-m", "jobs.daily"],
     }
 
 
@@ -7953,6 +7957,16 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(
         cli_mod,
+        "get_project_job",
+        lambda job_id, timeout=None: {
+            "id": job_id,
+            "name": "daily-run",
+            "execution_path": "scripts/test.py",
+            "app_name": None,
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
         "run_project_job",
         lambda job_id, command_args=None, timeout=None: captured.update(
             job_id=job_id,
@@ -7963,22 +7977,66 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
             "job": job_id,
             "status": "QUEUED",
             "unique_identifier": "jobrun_abc123",
+            "effective_run": "scripts/test.py --name demo-from-cli",
         },
     )
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "run", "91", "--command", "python", "--command", "-m", "--command", "jobs.daily"],
+        ["project", "jobs", "run", "91", "--", "--name", "demo-from-cli"],
     )
     assert result.exit_code == 0
     assert captured == {
         "job_id": 91,
-        "command_args": ["python", "-m", "jobs.daily"],
+        "command_args": ["--name", "demo-from-cli"],
         "timeout": None,
     }
+    assert "Effective run: scripts/test.py --name demo-from-cli" in result.output
     assert "Project job run requested: job_id=91" in result.output
     assert "jobrun_abc123" in result.output
     assert "QUEUED" in result.output
+
+
+def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    captured = {}
+    monkeypatch.setattr(
+        cli_mod,
+        "get_project_job",
+        lambda job_id, timeout=None: {
+            "id": job_id,
+            "name": "daily-run",
+            "execution_path": "scripts/test.py",
+            "app_name": None,
+        },
+    )
+    monkeypatch.setattr(
+        cli_mod,
+        "run_project_job",
+        lambda job_id, command_args=None, timeout=None: captured.update(
+            job_id=job_id,
+            command_args=command_args,
+            timeout=timeout,
+        ) or {
+            "id": 501,
+            "job": job_id,
+            "status": "QUEUED",
+            "unique_identifier": "jobrun_abc123",
+            "effective_run": "scripts/test.py demo-from-cli",
+        },
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "run", "91", "--arg", "demo-from-cli"],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "job_id": 91,
+        "command_args": ["demo-from-cli"],
+        "timeout": None,
+    }
+    assert "Effective run: scripts/test.py demo-from-cli" in result.output
 
 
 def test_project_job_runs_list(cli_mod, runner, monkeypatch):

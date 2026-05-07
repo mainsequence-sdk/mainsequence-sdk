@@ -31,6 +31,7 @@ import os
 import pathlib
 import platform
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -114,6 +115,7 @@ from .api import (
     get_project,
     get_project_data_node_updates,
     get_project_image,
+    get_project_job,
     get_project_job_run_logs,
     get_projects,
     get_registered_widget_type,
@@ -9574,10 +9576,14 @@ def project_jobs_list_cmd(
 @project_jobs_group.command("run")
 def project_jobs_run_cmd(
     job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID to run."),
+    passthrough_args: list[str] | None = typer.Argument(
+        None,
+        help="Additional per-run args after `--`, for example `mainsequence project jobs run 91 -- --name demo`.",
+    ),
     command_args: list[str] | None = typer.Option(
         None,
-        "--command",
-        help="Per-run command argument. Repeat to send a list of strings to Job.run_job().",
+        "--arg",
+        help="Append one per-run arg to the saved job entrypoint. Repeatable. Does not replace the saved execution_path or app_name.",
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -9585,21 +9591,43 @@ def project_jobs_run_cmd(
     Run a project job immediately.
 
     Uses SDK client `Job.run_job()` as the single source of truth.
+    Per-run args are appended to the saved job entrypoint; they do not replace it.
 
     Examples
     --------
     ```bash
     mainsequence project jobs run 91
-    mainsequence project jobs run 91 --command python --command -m --command jobs.daily
+    mainsequence project jobs run 91 --arg demo-from-cli
+    mainsequence project jobs run 91 -- --name demo-from-cli
     mainsequence project jobs run 91 --timeout 60
     ```
     """
     _require_login()
 
+    merged_command_args = list(command_args or [])
+    if passthrough_args:
+        merged_command_args.extend(str(arg) for arg in passthrough_args)
+
+    try:
+        job_payload = get_project_job(job_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Project job fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    entrypoint = str(job_payload.get("execution_path") or "").strip()
+    if not entrypoint:
+        app_name = str(job_payload.get("app_name") or "").strip()
+        if app_name:
+            entrypoint = f"app:{app_name}"
+
+    if entrypoint:
+        effective_tokens = [entrypoint, *merged_command_args]
+        info(f"Effective run: {shlex.join(effective_tokens)}")
+
     try:
         payload = run_project_job(
             job_id=job_id,
-            command_args=list(command_args) if command_args else None,
+            command_args=merged_command_args or None,
             timeout=timeout,
         )
     except ApiError as e:

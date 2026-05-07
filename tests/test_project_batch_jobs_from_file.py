@@ -177,3 +177,46 @@ def test_job_bulk_get_or_create_rejects_invalid_job_definition(tmp_path):
 
     with pytest.raises(ValueError, match=r"jobs\[0\] is invalid"):
         Job.bulk_get_or_create(yaml_file=jobs_file, project_id=123)
+
+
+def test_job_run_job_posts_command_args_as_json(monkeypatch):
+    models_helpers = _load_models_helpers_module()
+    Job = models_helpers.Job
+
+    captured = {}
+
+    class FakeResponse:
+        status_code = 202
+
+        def json(self):
+            return {"id": 501, "status": "QUEUED"}
+
+    monkeypatch.setattr(Job, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(
+        Job,
+        "get_object_url",
+        classmethod(lambda cls: "https://backend.test/orm/api/pods/job"),
+    )
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_helpers, "make_request", _fake_make_request)
+
+    job = Job(
+        id=91,
+        name="Simulated Prices",
+        project=123,
+        execution_path="scripts/simulated_prices_launcher.py",
+    )
+    out = job.run_job(timeout=30, command_args=["--name", "demo-from-cli"])
+
+    assert captured["r_type"] == "POST"
+    assert captured["url"] == "https://backend.test/orm/api/pods/job/91/run_job/"
+    assert captured["timeout"] == 30
+    assert captured["payload"] == {"json": {"command_args": ["--name", "demo-from-cli"]}}
+    assert out == {"id": 501, "status": "QUEUED"}

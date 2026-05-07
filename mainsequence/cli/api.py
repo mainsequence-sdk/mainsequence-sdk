@@ -18,6 +18,7 @@ import importlib
 import json
 import os
 import re
+import shlex
 from typing import Any
 from urllib.parse import urlencode
 
@@ -4679,6 +4680,30 @@ def schedule_batch_project_jobs(
                 os.environ[k] = v
 
 
+def get_project_job(
+    job_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one project job via SDK client model.
+    """
+    try:
+        job = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_helpers",
+            class_name="Job",
+            operation=lambda ClientJob: ClientJob.get(pk=int(job_id), timeout=timeout),
+        )
+        return _sdk_object_to_dict(job)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Job not found: {job_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Project job fetch failed: {e}") from e
+
+
 def run_project_job(
     job_id: int | str,
     *,
@@ -4738,11 +4763,35 @@ def run_project_job(
 
         job = ClientJob.get(pk=int(job_id), timeout=timeout)
         payload = job.run_job(timeout=timeout, command_args=command_args)
+        effective_tokens: list[str] = []
+        execution_path = str(getattr(job, "execution_path", "") or "").strip()
+        app_name = str(getattr(job, "app_name", "") or "").strip()
+        if execution_path:
+            effective_tokens.append(execution_path)
+        elif app_name:
+            effective_tokens.append(f"app:{app_name}")
+        if command_args:
+            effective_tokens.extend(str(arg) for arg in command_args)
+        effective_run = shlex.join(effective_tokens) if effective_tokens else None
         if isinstance(payload, dict):
+            if effective_run:
+                payload.setdefault("effective_run", effective_run)
+            if command_args is not None:
+                payload.setdefault("command_args", list(command_args))
             return payload
         if hasattr(payload, "model_dump"):
-            return payload.model_dump()
-        return {"job_id": int(job_id)}
+            payload = payload.model_dump()
+            if effective_run:
+                payload.setdefault("effective_run", effective_run)
+            if command_args is not None:
+                payload.setdefault("command_args", list(command_args))
+            return payload
+        out = {"job_id": int(job_id)}
+        if effective_run:
+            out["effective_run"] = effective_run
+        if command_args is not None:
+            out["command_args"] = list(command_args)
+        return out
 
     except Exception as e:
         err_name = type(e).__name__

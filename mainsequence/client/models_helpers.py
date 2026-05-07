@@ -728,7 +728,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         payload: dict[str, Any] = {}
         if command_args is not None:
-            payload["command_args"] = command_args
+            payload["json"] = {"command_args": list(command_args)}
 
         r = make_request(
             s=s,

@@ -110,7 +110,8 @@ You can create the same manual job from the terminal.
 
    ```bash
    mainsequence project jobs run <JOB_ID>
-   mainsequence project jobs run <JOB_ID> --command python --command -m --command jobs.daily
+   mainsequence project jobs run <JOB_ID> --arg demo-from-cli
+   mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
    ```
 
 4. Inspect run history:
@@ -262,7 +263,8 @@ If you want to validate the job immediately instead of waiting for the scheduler
 
 ```bash
 mainsequence project jobs run <JOB_ID>
-mainsequence project jobs run <JOB_ID> --command python --command -m --command jobs.daily
+mainsequence project jobs run <JOB_ID> --arg demo-from-cli
+mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
 mainsequence project jobs runs list <JOB_ID>
 mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
 ```
