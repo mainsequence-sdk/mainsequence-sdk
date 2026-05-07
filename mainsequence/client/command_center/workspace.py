@@ -101,7 +101,7 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
         description="Free-form workspace description.",
     )
     type: WorkspaceType = Field(default=WorkspaceType.WORKSPACE)
-    public_url:str=Field(description="Public URL for workspace endpoint if exists.", default="")
+    public_url:str| None =Field(description="Public URL for workspace endpoint if exists.", default=None)
     created_at:datetime=Field()
     labels: list[str] = Field(
         default_factory=list,
