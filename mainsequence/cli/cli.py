@@ -137,7 +137,6 @@ from .api import (
     list_github_organizations,
     list_market_asset_translation_tables,
     list_market_portfolios,
-    list_org_project_names,
     list_organization_teams,
     list_project_base_images,
     list_project_images,
@@ -188,6 +187,7 @@ from .api import (
     run_project_job,
     safe_slug,
     schedule_batch_project_jobs,
+    search_projects,
     semantic_search_agents,
     start_agent_new_session,
     sync_project_after_commit,
@@ -2568,54 +2568,6 @@ def user_show():
             ("Last Login", str(user.get("last_login") or "-")),
         ],
     )
-
-
-@organization.command("project-names")
-def organization_project_names_cmd(
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List project names visible to the authenticated user's organization.
-
-    Uses SDK client `Project.get_org_project_names()` as the single source of truth.
-
-    Examples
-    --------
-    ```bash
-    mainsequence organization project-names
-    mainsequence organization project-names --timeout 60
-    ```
-    """
-    _require_login()
-
-    try:
-        project_names = list_org_project_names(timeout=timeout)
-    except ApiError as e:
-        error(f"Organization project names fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(project_names):
-        return
-
-    if project_names:
-        print_table(
-            "Organization Project Names",
-            ["Project Name"],
-            [[project_name] for project_name in project_names],
-        )
-    else:
-        info("No organization-visible project names.")
-    info(f"Total organization-visible project names: {len(project_names)}")
-
-
-@organization.command("project_names", hidden=True)
-def organization_project_names_alias_cmd(
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    Backward-compatible alias for `mainsequence organization project-names`.
-    """
-    organization_project_names_cmd(timeout=timeout)
 
 
 @organization.command("github-organizations")
@@ -7943,6 +7895,60 @@ def project_validate_name_cmd(
 
     warn(f"Project name is not available: {normalized_project_name}")
     raise typer.Exit(1)
+
+
+@project.command("search")
+def project_search_cmd(
+    q: str = typer.Argument(..., help="Project search query. Minimum 3 characters."),
+    limit: int = typer.Option(20, "--limit", min=1, max=100, help="Maximum number of matches to return."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Search projects visible to the authenticated user.
+
+    Uses SDK client `Project.quick_search()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence project search "tutorial"
+    mainsequence project search "rates" --limit 10
+    mainsequence project search "161"
+    ```
+    """
+    _require_login()
+
+    normalized_query = (q or "").strip()
+    if len(normalized_query) < 3:
+        error("Project search failed: Query must contain at least 3 characters.")
+        raise typer.Exit(1)
+
+    try:
+        projects = search_projects(normalized_query, limit=limit, timeout=timeout)
+    except ApiError as e:
+        error(f"Project search failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(projects):
+        return
+
+    if projects:
+        print_table(
+            "Project Search Results",
+            ["ID", "Project Name", "Repository Branch", "Cluster ID"],
+            [
+                [
+                    str(project.get("id") or "-"),
+                    str(project.get("project_name") or "-"),
+                    str(project.get("repository_branch") or "-"),
+                    str(project.get("cluster_id") or "-"),
+                ]
+                for project in projects
+            ],
+        )
+    else:
+        info("No projects matched the search.")
+    info(f'Project search matches for "{normalized_query}": {len(projects)}')
 
 
 @project.command("validate_name", hidden=True)

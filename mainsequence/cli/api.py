@@ -591,27 +591,33 @@ def get_projects() -> list[dict]:
     return data.get("results") or []
 
 
-def list_org_project_names(
+def search_projects(
+    q: str,
     *,
+    limit: int = 20,
     timeout: int | None = None,
-) -> list[str]:
+) -> list[dict[str, Any]]:
     """
-    List organization-visible project names via SDK client model.
+    Search projects visible to the authenticated user via SDK client model.
 
     Single source of truth:
-      - delegates payload parsing to `Project.get_org_project_names()`
+      - delegates payload parsing to `Project.quick_search()`
     """
     try:
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
             class_name="Project",
-            operation=lambda ClientProject: ClientProject.get_org_project_names(timeout=timeout),
+            operation=lambda ClientProject: ClientProject.quick_search(
+                q=q,
+                limit=limit,
+                timeout=timeout,
+            ),
         )
-        return [str(item) for item in list(payload or [])]
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
     except Exception as e:
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Organization project names fetch failed: {e}") from e
+        raise ApiError(f"Project search failed: {e}") from e
 
 
 def validate_project_name(

@@ -59,17 +59,17 @@ You can validate access with:
 mainsequence project list
 ```
 
-## 3. Check Existing Project Names
+## 3. Search Existing Projects
 
-Before you create a new project, inspect the project names already visible in your organization:
+Before you create a new project, search for likely existing projects that may already use a similar name:
 
 ```bash
-mainsequence organization project-names
+mainsequence project search "tutorial"
 ```
 
-If your intended name already appears in that list, choose another one before you create the project.
+This command performs fuzzy search over the projects visible to your current user. It requires at least 3 query characters, returns up to 20 matches by default, and shows the project id, project name, repository branch, and cluster id for each result.
 
-This command helps you avoid name collisions. It does not replace your organization's naming rules, but it is the fastest way to check whether a tutorial name such as `tutorial-project-cli` is already in use.
+Use it to quickly check whether a tutorial name such as `tutorial-project-cli` or a similar variation is already in use. If you need more than the default result count, add `--limit`.
 
 You can also validate the exact candidate name directly:
 
@@ -77,7 +77,7 @@ You can also validate the exact candidate name directly:
 mainsequence project validate-name "tutorial-project-cli"
 ```
 
-This command checks whether the name is available, shows the normalized slug/library names the platform will derive from it, and prints suggested alternatives when the name is already taken.
+This command is the exact create-time availability check. It confirms whether the name is available, shows the normalized slug/library names the platform will derive from it, and prints suggested alternatives when the name is already taken.
 
 ## 4. Create a New Project
 

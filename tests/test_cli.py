@@ -188,20 +188,57 @@ def test_skills_path_unique_leaf_name(cli_mod, runner, monkeypatch, tmp_path):
     assert result.output.strip() == str(expected)
 
 
-def test_organization_project_names(cli_mod, runner, monkeypatch):
+def test_project_search(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "list_org_project_names",
-        lambda timeout=None: ["alpha-research", "portfolio-live"],
+        "search_projects",
+        lambda q, limit=20, timeout=None: [
+            {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+            {"id": 12, "project_name": "portfolio-live", "repository_branch": "release", "cluster_id": 9},
+        ],
     )
 
-    result = runner.invoke(cli_mod.app, ["organization", "project-names"])
+    result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--limit", "10"])
     assert result.exit_code == 0
+    assert "Project Search Results" in result.output
+    assert "main" in result.output
+    assert "release" in result.output
+    assert "7" in result.output
+    assert "9" in result.output
     assert "Project Name" in result.output
     assert "alpha-research" in result.output
     assert "portfolio-live" in result.output
-    assert "Total organization-visible project names: 2" in result.output
+    assert 'Project search matches for "alpha": 2' in result.output
+
+
+def test_project_search_rejects_short_query(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "search_projects",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("search_projects should not be called")),
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "search", ".."])
+    assert result.exit_code == 1
+    assert "Project search failed: Query must contain at least 3 characters." in result.output
+
+
+def test_project_search_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "search_projects",
+        lambda q, limit=20, timeout=None: [
+            {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == [{"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7}]
 
 
 def test_organization_github_organizations(cli_mod, runner, monkeypatch):
@@ -5296,7 +5333,7 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     assert out["username"] == "jose"
 
 
-def test_list_org_project_names_uses_client_model(cli_mod, monkeypatch):
+def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -5325,9 +5362,28 @@ def test_list_org_project_names_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/projects"
 
         @classmethod
-        def get_org_project_names(cls, *, timeout=None):
+        def quick_search(cls, q, *, limit=20, timeout=None):
+            captured["q"] = q
+            captured["limit"] = limit
             captured["timeout"] = timeout
-            return ["alpha-research", "portfolio-live"]
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda mode="json": {
+                        "id": 11,
+                        "project_name": "alpha-research",
+                        "repository_branch": "main",
+                        "cluster_id": 7,
+                    }
+                ),
+                types.SimpleNamespace(
+                    model_dump=lambda mode="json": {
+                        "id": 12,
+                        "project_name": "portfolio-live",
+                        "repository_branch": "release",
+                        "cluster_id": 9,
+                    }
+                ),
+            ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_models.Project = FakeProject
@@ -5338,11 +5394,16 @@ def test_list_org_project_names_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.list_org_project_names(timeout=12)
+    out = api_mod.search_projects("alpha", limit=10, timeout=12)
 
     assert captured["jwt"] == ("acc", "ref")
+    assert captured["q"] == "alpha"
+    assert captured["limit"] == 10
     assert captured["timeout"] == 12
-    assert out == ["alpha-research", "portfolio-live"]
+    assert out == [
+        {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+        {"id": 12, "project_name": "portfolio-live", "repository_branch": "release", "cluster_id": 9},
+    ]
 
 
 def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):

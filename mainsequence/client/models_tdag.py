@@ -2862,6 +2862,33 @@ class ProjectNameValidationResult(BasePydanticModel):
     )
 
 
+class ProjectQuickSearchResult(BasePydanticModel):
+    id: int = Field(
+        ...,
+        title="ID",
+        description="Primary key of the matching project.",
+        json_schema_extra={"label": "ID"},
+    )
+    project_name: str = Field(
+        ...,
+        title="Project Name",
+        description="Display name of the matching project.",
+        json_schema_extra={"label": "Project Name"},
+    )
+    repository_branch: str | None = Field(
+        None,
+        title="Repository Branch",
+        description="Configured repository branch for the matching project.",
+        json_schema_extra={"label": "Repository Branch"},
+    )
+    cluster_id: int | None = Field(
+        None,
+        title="Cluster ID",
+        description="Cluster identifier associated with the matching project, when present.",
+        json_schema_extra={"label": "Cluster ID"},
+    )
+
+
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
@@ -3043,29 +3070,43 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         return cls(**r.json())
 
     @classmethod
-    def get_org_project_names(
+    def quick_search(
         cls,
+        q: str,
         *,
+        limit: int = 20,
         timeout: int | None = None,
-    ) -> list[str]:
+    ) -> list[ProjectQuickSearchResult]:
         """
-        Return the list of project names visible to the authenticated user's organization.
+        Return project quick-search matches visible to the authenticated user.
 
         This hits:
-            GET /get_org_project_names/
+            GET /orm/api/pods/projects/quick-search/?q=...
 
         Parameters
         ----------
+        q:
+            Search query. Must contain at least 3 non-whitespace characters.
+        limit:
+            Maximum number of matches to return. Defaults to 20 and is capped at 100.
         timeout:
             Optional request timeout in seconds.
         """
-        url = cls.get_object_url() + "/get_org_project_names/"
+        normalized_query = (q or "").strip()
+        if len(normalized_query) < 3:
+            raise ValueError("Query must contain at least 3 characters.")
+
+        limit = int(limit)
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+
+        url = cls.get_object_url() + "/quick-search/"
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="GET",
             url=url,
-            payload={},
+            payload={"params": {"q": normalized_query, "limit": limit}},
             time_out=timeout,
         )
         raise_for_response(r)
@@ -3074,21 +3115,12 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             return []
 
         payload = r.json()
-        if isinstance(payload, list):
-            raw_names = payload
-        elif isinstance(payload, dict):
-            if isinstance(payload.get("results"), list):
-                raw_names = payload["results"]
-            elif isinstance(payload.get("project_names"), list):
-                raw_names = payload["project_names"]
-            else:
-                raise ValueError("Unexpected response payload for Project.get_org_project_names().")
-        else:
+        if not isinstance(payload, list):
             raise ValueError(
-                f"Unexpected response type for Project.get_org_project_names(): {type(payload)!r}"
+                f"Unexpected response type for Project.quick_search(): {type(payload)!r}"
             )
 
-        return [str(item) for item in raw_names if item is not None]
+        return [ProjectQuickSearchResult.model_validate(item) for item in payload]
 
     @classmethod
     def validate_name(

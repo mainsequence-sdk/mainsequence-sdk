@@ -180,7 +180,7 @@ mainsequence secrets remove_from_edit 42 7
 mainsequence secrets remove_team_from_view 42 9
 mainsequence secrets remove_team_from_edit 42 9
 mainsequence secrets delete 42
-mainsequence organization project-names
+mainsequence project search tutorial
 mainsequence organization github-organizations
 mainsequence organization teams list
 mainsequence organization teams list --show-filters
@@ -357,7 +357,8 @@ mainsequence skills path workspace_builder --json
 - `mainsequence skills path <skill_name>` prints the installed `SKILL.md` path for one scaffold skill from the current CLI installation. It accepts full relative skill names such as `command_center/workspace_builder` and unique leaf names such as `workspace_builder`.
 - `mainsequence user` shows the authenticated MainSequence user through the SDK client `User.get_logged_user()` path.
 - in standalone authenticated CLI or script code that is not request-bound, prefer `User.get_authenticated_user_details()` over `User.get_logged_user()`. `User.get_logged_user()` is for request-bound identity contexts such as FastAPI middleware, Streamlit, or code that explicitly binds `_CURRENT_AUTH_HEADERS`.
-- `mainsequence organization project-names` lists the project names visible to the authenticated user's organization through the SDK client `Project.get_org_project_names()` path.
+- `mainsequence project search "<QUERY>"` searches visible projects through the SDK client `Project.quick_search()` path and returns `id`, `project_name`, `repository_branch`, and `cluster_id` for matching rows.
+- `mainsequence project search` requires at least 3 query characters. The backend does substring matching on `project_name`, and if the query is numeric it also matches an exact project id.
 - `mainsequence organization teams list` lists teams through the SDK client `Team.filter()` path.
 - `mainsequence organization teams create`, `edit`, and `delete` use the SDK client `Team.create()`, `Team.patch()`, and `Team.delete()` paths.
 - `mainsequence organization teams can_view` and `can_edit` inspect team access through the SDK `Team.can_view()` and `Team.can_edit()` paths.
@@ -402,6 +403,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
+- `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target project's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
 - `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agent_scaffold/skills/` bundle in `.venv` into `.agents/skills/mainsequence/`, overwriting only folders with the same names under that namespace. It does not copy bundle-root files such as `AGENTS.md`, and it does not remove existing top-level project skills under `.agents/skills/`.
