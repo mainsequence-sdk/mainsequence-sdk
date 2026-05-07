@@ -828,6 +828,32 @@ def get_agent(
         raise ApiError(f"Agent fetch failed: {e}") from e
 
 
+def semantic_search_agents(
+    q: str,
+    *,
+    limit: int = 20,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Search agents via SDK client `Agent.semantic_search()`.
+    """
+    try:
+        payload = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="Agent",
+            operation=lambda ClientAgent: ClientAgent.semantic_search(
+                q,
+                limit=limit,
+                timeout=timeout,
+            ),
+        )
+        return [_sdk_object_to_dict(item) for item in list(payload or [])]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent search failed: {e}") from e
+
+
 def create_agent(
     *,
     name: str,
@@ -1035,6 +1061,32 @@ def get_agent_session(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session fetch failed: {e}") from e
+
+
+def resolve_agent_session_runtime_access(
+    agent_session_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Resolve runtime access for one agent session via SDK client model.
+    """
+    try:
+        runtime_access = _run_sdk_model_operation(
+            module_name="mainsequence.client.agent_runtime_models",
+            class_name="AgentSession",
+            operation=lambda ClientAgentSession: ClientAgentSession.resolve_runtime_access(
+                int(agent_session_id), timeout=timeout
+            ),
+        )
+        return _sdk_object_to_dict(runtime_access)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Agent session not found: {agent_session_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Agent session runtime access resolve failed: {e}") from e
 
 
 def list_agent_users_can_view(

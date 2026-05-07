@@ -184,9 +184,11 @@ from .api import (
     remove_team_user_from_view,
     remove_workspace_labels,
     repo_name_from_git_url,
+    resolve_agent_session_runtime_access,
     run_project_job,
     safe_slug,
     schedule_batch_project_jobs,
+    semantic_search_agents,
     start_agent_new_session,
     sync_project_after_commit,
     update_organization_team,
@@ -3569,6 +3571,52 @@ def _agent_detail_impl(
     print_kv("Agent Details", _format_agent_details(agent_payload))
 
 
+def _agent_search_impl(
+    *,
+    q: str,
+    limit: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        results = semantic_search_agents(
+            q,
+            limit=limit,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Agent search failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(results):
+        return
+
+    rows: list[list[str]] = []
+    for result in results:
+        rows.append(
+            [
+                str(result.get("id") or "-"),
+                str(result.get("agent_unique_id") or "-"),
+                str(result.get("name") or "-"),
+                str(result.get("combined_score") if result.get("combined_score") is not None else "-"),
+                str(result.get("semantic_score") if result.get("semantic_score") is not None else "-"),
+                str(result.get("text_score") if result.get("text_score") is not None else "-"),
+                str(result.get("description") or "-"),
+            ]
+        )
+
+    if rows:
+        print_table(
+            "Agent Search Results",
+            ["ID", "Unique ID", "Name", "Combined", "Semantic", "Text", "Description"],
+            rows,
+        )
+    else:
+        info("No agents matched the search.")
+    info(f'Agent search matches for "{q}": {len(results)}')
+
+
 def _agent_create_impl(
     *,
     name: str | None,
@@ -3810,6 +3858,35 @@ def _agent_session_detail_impl(
 
     print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
     print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
+
+
+def _agent_session_resolve_runtime_access_impl(
+    *,
+    agent_session_id: int,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        runtime_access_payload = resolve_agent_session_runtime_access(agent_session_id, timeout=timeout)
+    except ApiError as e:
+        error(f"Agent session runtime access resolve failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(runtime_access_payload):
+        return
+
+    success(f"Agent session runtime access resolved: session_id={agent_session_id}")
+    print_kv(
+        "Agent Session Runtime Access",
+        [
+            ("Coding Agent Service ID", str(runtime_access_payload.get("coding_agent_service_id") or "-")),
+            ("Coding Agent ID", str(runtime_access_payload.get("coding_agent_id") or "-")),
+            ("Mode", str(runtime_access_payload.get("mode") or "-")),
+            ("RPC URL", str(runtime_access_payload.get("rpc_url") or "-")),
+            ("Token", str(runtime_access_payload.get("token") or "-")),
+        ],
+    )
 
 
 def _agent_run_list_impl(
@@ -5699,6 +5776,31 @@ def agent_detail_cmd(
     _agent_detail_impl(agent_id=agent_id, timeout=timeout)
 
 
+@agent.command("search")
+def agent_search_cmd(
+    q: str = typer.Argument(..., help="Natural-language query to match against agents."),
+    limit: int = typer.Option(20, "--limit", min=1, max=100, help="Maximum number of ranked agent matches to return."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Search agents.
+
+    Uses SDK client `Agent.semantic_search()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent search "portfolio research copilot"
+    mainsequence agent search "pricing assistant" --limit 10
+    ```
+    """
+    _agent_search_impl(
+        q=q,
+        limit=limit,
+        timeout=timeout,
+    )
+
+
 @agent.command("create")
 def agent_create_cmd(
     name: str | None = pydantic_argument(AGENT_MODEL_REF, "name", None),
@@ -5714,7 +5816,11 @@ def agent_create_cmd(
     labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
     llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
     llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
-    engine_name: str | None = pydantic_option(AGENT_MODEL_REF, "engine_name", None, "--engine-name"),
+    engine_name: str | None = typer.Option(
+        None,
+        "--engine-name",
+        help="Optional execution engine name to store on the agent.",
+    ),
     runtime_config: str | None = typer.Option(
         None,
         "--runtime-config",
@@ -5766,7 +5872,11 @@ def agent_get_or_create_cmd(
     labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
     llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
     llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
-    engine_name: str | None = pydantic_option(AGENT_MODEL_REF, "engine_name", None, "--engine-name"),
+    engine_name: str | None = typer.Option(
+        None,
+        "--engine-name",
+        help="Optional execution engine name to store on the agent.",
+    ),
     runtime_config: str | None = typer.Option(
         None,
         "--runtime-config",
@@ -5874,6 +5984,28 @@ def agent_session_detail_cmd(
     ```
     """
     _agent_session_detail_impl(agent_session_id=agent_session_id, timeout=timeout)
+
+
+@agent_session_group.command("resolve_runtime_access")
+def agent_session_resolve_runtime_access_cmd(
+    agent_session_id: int = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "id", ..., help="Agent session ID."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Resolve runtime access for one agent session.
+
+    Uses SDK client `AgentSession.resolve_runtime_access()` as the single source of truth.
+
+    Examples
+    --------
+    ```bash
+    mainsequence agent session resolve_runtime_access 801
+    mainsequence agent session resolve_runtime_access 801 --timeout 60
+    ```
+    """
+    _agent_session_resolve_runtime_access_impl(agent_session_id=agent_session_id, timeout=timeout)
 
 
 @agent.command("can_view")

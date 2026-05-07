@@ -863,6 +863,7 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         description="Unique identifier of the user.",
         examples=[42],
     )
+    profile_picture:Any | None = Field()
     is_verified: bool | None = Field(
         None,
         title="Is Verified",

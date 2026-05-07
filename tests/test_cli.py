@@ -1242,6 +1242,72 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     assert out == [{"id": 12, "name": "Research Copilot", "status": "draft"}]
 
 
+def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeSearchResult:
+        def __init__(self):
+            self.id = 12
+            self.name = "Research Copilot"
+            self.agent_unique_id = "research-copilot"
+            self.description = "Searchable portfolio research agent."
+            self.semantic_score = 0.91
+            self.text_score = 0.74
+            self.combined_score = 0.85
+
+        def model_dump(self, mode="json"):
+            return {
+                "id": self.id,
+                "name": self.name,
+                "agent_unique_id": self.agent_unique_id,
+                "description": self.description,
+                "semantic_score": self.semantic_score,
+                "text_score": self.text_score,
+                "combined_score": self.combined_score,
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def semantic_search(cls, q, *, limit=20, timeout=None):
+                captured["q"] = q
+                captured["limit"] = limit
+                captured["timeout"] = timeout
+                return [FakeSearchResult()]
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.semantic_search_agents(
+        "portfolio research",
+        limit=10,
+        timeout=17,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "q": "portfolio research",
+        "limit": 10,
+        "timeout": 17,
+    }
+    assert out == [
+        {
+            "id": 12,
+            "name": "Research Copilot",
+            "agent_unique_id": "research-copilot",
+            "description": "Searchable portfolio research agent.",
+            "semantic_score": 0.91,
+            "text_score": 0.74,
+            "combined_score": 0.85,
+        }
+    ]
+
+
 def test_create_agent_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
@@ -1500,6 +1566,47 @@ def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
         "timeout": 18,
     }
     assert out["id"] == 803
+
+
+def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeRuntimeAccess:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "coding_agent_service_id": "svc-12",
+                "coding_agent_id": "agent-rt-77",
+                "mode": "token",
+                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "token": "tok-secret",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgentSession:
+            @classmethod
+            def resolve_runtime_access(cls, agent_session, timeout=None):
+                captured["agent_session"] = agent_session
+                captured["timeout"] = timeout
+                return FakeRuntimeAccess()
+
+        return operation(_ClientAgentSession)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.resolve_agent_session_runtime_access(803, timeout=19)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "AgentSession",
+        "agent_session": 803,
+        "timeout": 19,
+    }
+    assert out["coding_agent_service_id"] == "svc-12"
+    assert out["coding_agent_id"] == "agent-rt-77"
 
 
 def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
@@ -6288,6 +6395,85 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
     assert payload[0]["llm_model"] == "gpt-5.4"
 
 
+def test_agent_search(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _search(q, *, limit=20, timeout=None):
+        captured.update(
+            {
+                "q": q,
+                "limit": limit,
+                "timeout": timeout,
+            }
+        )
+        return [
+            {
+                "id": 12,
+                "name": "Research Copilot",
+                "agent_unique_id": "research-copilot",
+                "description": "Searchable portfolio research agent.",
+                "semantic_score": 0.91,
+                "text_score": 0.74,
+                "combined_score": 0.85,
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "semantic_search_agents", _search)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "agent",
+            "search",
+            "portfolio research",
+            "--limit",
+            "10",
+            "--timeout",
+            "17",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "q": "portfolio research",
+        "limit": 10,
+        "timeout": 17,
+    }
+    assert "Agent Search Results" in result.output
+    assert "Research" in result.output
+    assert "Copilot" in result.output
+    assert "research-cop" in result.output
+    assert "ilot" in result.output
+    assert "0.85" in result.output
+    assert 'Agent search matches for "portfolio research": 1' in result.output
+
+
+def test_agent_search_json(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "semantic_search_agents",
+        lambda q, **kwargs: [
+            {
+                "id": 12,
+                "name": "Research Copilot",
+                "agent_unique_id": "research-copilot",
+                "description": "Searchable portfolio research agent.",
+                "semantic_score": 0.91,
+                "text_score": 0.74,
+                "combined_score": 0.85,
+            }
+        ],
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "search", "portfolio research", "--json"])
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["id"] == 12
+    assert payload[0]["agent_unique_id"] == "research-copilot"
+    assert payload[0]["combined_score"] == 0.85
+
+
 def test_agent_create_parses_json_fields(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -6487,6 +6673,30 @@ def test_agent_session_detail(cli_mod, runner, monkeypatch):
     assert "Summarize rates moves" in result.output
     assert "Bunds rallied 4bp." in result.output
     assert "prompt_tokens" in result.output
+
+
+def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "resolve_agent_session_runtime_access",
+        lambda agent_session_id, timeout=None: {
+            "coding_agent_service_id": "svc-12",
+            "coding_agent_id": "agent-rt-77",
+            "mode": "token",
+            "rpc_url": "https://runtime.main-sequence.app/rpc",
+            "token": "tok-secret",
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["agent", "session", "resolve_runtime_access", "803"])
+    assert result.exit_code == 0
+    assert "Agent session runtime access resolved: session_id=803" in result.output
+    assert "Agent Session Runtime Access" in result.output
+    assert "svc-12" in result.output
+    assert "agent-rt-77" in result.output
+    assert "https://runtime.main-sequence.app/rpc" in result.output
+    assert "tok-secret" in result.output
 
 
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):

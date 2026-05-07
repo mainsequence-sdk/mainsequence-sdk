@@ -25,14 +25,6 @@ def test_create_project():
     )
     print(project)
 
-def test_agent():
-
-    agent=msc.Agent.filter()
-    agent=agent[0]
-
-
-    agent.query(prompt="Test")
-
 
 def test_project_data_nodes_updates():
     project = msc.Project.filter()[0]
