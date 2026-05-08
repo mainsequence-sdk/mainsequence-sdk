@@ -17,11 +17,13 @@ uses them to update only the Main Sequence section below.
 <!-- mainsequence-agent-scaffold:start schema=1 source=agent_scaffold -->
 ## Main Sequence Instructions
 
-Before any non-trivial Main Sequence work, verify that this Main Sequence section matches the
-latest installed `AGENTS.md` template and that
-`.agents/skills/mainsequence/project_builder/SKILL.md` matches the latest installed
-`.agents/skills/project_builder/SKILL.md`; if either local file does not match, update it
-before proceeding.
+Before any non-trivial Main Sequence work, update the project SDK first and then refresh the
+installed Main Sequence scaffold files so the local CLI surface, `AGENTS.md`, and
+`.agents/skills/mainsequence/` match the installed SDK version:
+
+- `mainsequence project update-sdk --path .`
+- `mainsequence project update AGENTS.md --path .`
+- `mainsequence project update_agent_skills --path .`
 
 Canonical Main Sequence documentation root:
 `https://mainsequence-sdk.github.io/mainsequence-sdk/`
@@ -214,9 +216,12 @@ For any non-trivial Main Sequence task:
    `mainsequence project refresh_token --path .`
 10. If git push or pull is required, use:
     `mainsequence project open-signed-terminal <PROJECT_ID>`
-11. If installed CLI commands or SDK behavior appear older than the docs, upgrade the SDK:
+11. Before proceeding with non-trivial Main Sequence work, update the project SDK:
     `mainsequence project update-sdk --path .`
-12. Verify platform state with the CLI or platform tooling instead of guessing.
+12. After updating the SDK, refresh the installed Main Sequence scaffold files:
+    `mainsequence project update AGENTS.md --path .`
+    `mainsequence project update_agent_skills --path .`
+13. Verify platform state with the CLI or platform tooling instead of guessing.
 
 ## Orchestrator Rule
 
