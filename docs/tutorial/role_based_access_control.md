@@ -53,7 +53,7 @@ You can think of these as different layers of collaboration:
 - `DataNodeStorage`: who can read or maintain a published table
 - `Constant` and `Secret`: who can access runtime configuration
 - `Bucket`: who can access files and artifacts
-- `ResourceRelease`: who can access deployed resources such as dashboards and agents
+- `ResourceRelease`: who can access deployed resources such as dashboards and APIs
 
 ## The important detail for DataNodes
 

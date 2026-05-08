@@ -275,7 +275,7 @@ That is the important continuity point:
 
 - `DataNode`s publish data contracts
 - `SimpleTable`s publish application-facing rows
-- APIs, dashboards, and agents are deployment-facing project resources built on top of that data layer
+- APIs and dashboards are deployment-facing project resources built on top of that data layer
 
 You can deploy the discovered FastAPI project resource through the same CLI surface used for other releases:
 
@@ -286,7 +286,7 @@ mainsequence project project_resource list --filter resource_type=fastapi
 mainsequence project project_resource create_fastapi
 ```
 
-The CLI uses the same deployment model as dashboards and agents:
+The CLI uses the same deployment model as dashboards and other project resources:
 
 - pushed code
 - matching project image

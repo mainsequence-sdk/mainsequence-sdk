@@ -24,6 +24,7 @@ Recommended starting points:
 - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
 - [Part 3.1 — Working With Simple Tables](tutorial/working_with_simple_tables.md)
 - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)
+- [Part 6 — Turn Your Project Into an Agent](tutorial/project_to_agent.md)
 
 ### Knowledge
 
@@ -74,6 +75,6 @@ The fastest onboarding path is usually:
 4. add an API or another consumer surface
 5. understand RBAC and shared resources
 6. schedule jobs
-7. expose the result through dashboards or downstream readers
+7. expose the result through dashboards, downstream readers, or agent-facing project surfaces
 
 That sequence is exactly how the tutorial is structured.

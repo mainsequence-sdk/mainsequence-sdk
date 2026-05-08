@@ -15,6 +15,7 @@
     - [Part 4.3 — Markets — Portfolios and Virtual Funds](tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
     - [Part 5.1 — Streamlit Integration I](tutorial/dashboards/streamlit/streamlit_integration_1.md)
     - [Part 5.2 — Streamlit Integration II](tutorial/dashboards/streamlit/streamlit_integration_2.md)
+    - [Part 6 — Turn Your Project Into an Agent](tutorial/project_to_agent.md)
 - Knowledge
     - [Data Nodes](knowledge/data_nodes.md)
     - Command Center

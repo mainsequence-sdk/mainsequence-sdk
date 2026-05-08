@@ -102,7 +102,7 @@ Why these matter:
 - `Secret` stores protected credentials
 - `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
 - `Artifact` is the individual stored object that may need controlled visibility
-- `ResourceRelease` is the deployment-facing wrapper for resources such as dashboards and agents
+- `ResourceRelease` is the deployment-facing wrapper for resources such as dashboards and APIs
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.

@@ -329,7 +329,7 @@ Important continuity point:
 - the resource identifies the FastAPI source file discovered from the pushed commit
 - the release is the deployed unit
 
-This is the same deployment pattern you already see with Streamlit dashboards and agents.
+This is the same deployment pattern you already see with Streamlit dashboards and other project resources.
 
 ## 11. Common Mistakes
 

@@ -64,6 +64,7 @@ Recommended entry points:
   - [Working With Simple Tables](docs/tutorial/working_with_simple_tables.md)
   - [Create Your First API](docs/tutorial/create_your_first_api.md)
   - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
+  - [Turn Your Project Into an Agent](docs/tutorial/project_to_agent.md)
 - Knowledge:
   - [Data Nodes](docs/knowledge/data_nodes.md)
   - [Command Center](docs/knowledge/command_center/index.md)
@@ -119,6 +120,7 @@ From there, the normal learning path is:
 4. understand sharing and RBAC
 5. schedule jobs
 6. build dashboards or downstream consumers
+7. package the project as an agent-facing surface when the repository is ready
 
 ## Installation for development
 

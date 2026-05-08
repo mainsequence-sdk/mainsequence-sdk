@@ -259,7 +259,7 @@ In the tutorial, you already saw this pattern in practice:
 - `DataNodeStorage` controls access to published data
 - `Constant` and `Secret` control access to runtime configuration
 - `Bucket` and `Artifact` control access to stored files
-- `ResourceRelease` controls access to deployed experiences such as dashboards and agents
+- `ResourceRelease` controls access to deployed experiences such as dashboards and APIs
 
 That is why RBAC appears early in the Main Sequence workflow. The moment a resource becomes useful to other people, access design becomes part of the engineering work.
 
