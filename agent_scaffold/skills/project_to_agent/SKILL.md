@@ -104,18 +104,11 @@ Use this template as the base for .agents/agent_card.json:
 
   "supportedInterfaces": [
     {
-      "url": "http://localhost:8010",
       "protocolBinding": "HTTP+JSON",
       "protocolVersion": "1.0"
     }
   ],
-
-  "provider": {
-    "organization": "YOUR_ORG_OR_WORKSPACE_NAME",
-    "url": "https://example.com"
-  },
-
-  "documentationUrl": "https://example.com/docs/YOUR_AGENT_NAME",
+  
 
   "capabilities": {
     "streaming": false,
