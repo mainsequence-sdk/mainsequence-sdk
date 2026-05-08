@@ -6284,46 +6284,6 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(cli_mod
     assert "Project resource release deleted: id=501" in result.output
 
 
-def test_project_project_resource_delete_agent_yes_skips_confirmation(cli_mod, runner, monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "get_resource_release",
-        lambda release_id, expected_release_kind=None, timeout=None: {
-            "id": release_id,
-            "release_kind": expected_release_kind,
-            "subdomain": "agent-123",
-            "resource": 390,
-            "related_image": 95,
-        },
-    )
-
-    def _delete_resource_release(release_id, expected_release_kind=None, timeout=None):
-        captured["release_id"] = release_id
-        captured["expected_release_kind"] = expected_release_kind
-        return {
-            "id": release_id,
-            "release_kind": expected_release_kind,
-            "subdomain": "agent-123",
-            "resource": 390,
-            "related_image": 95,
-        }
-
-    monkeypatch.setattr(cli_mod, "delete_resource_release", _delete_resource_release)
-
-    result = runner.invoke(
-        cli_mod.app,
-        ["project", "project_resource", "delete_agent", "601", "--yes"],
-    )
-    assert result.exit_code == 0
-    assert captured["release_id"] == 601
-    assert captured["expected_release_kind"] == "agent"
-    assert "Delete agent release 601?" not in result.output
-    assert "Project resource release deleted: id=601" in result.output
-
-
 def test_project_project_resource_delete_fastapi_requires_confirmation(cli_mod, runner, monkeypatch):
     captured = {}
 

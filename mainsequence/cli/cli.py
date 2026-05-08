@@ -434,12 +434,10 @@ JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
     "streamlit_dashboard": "dashboard",
-    "agent": "agent",
     "fastapi": "fastapi",
 }
 RESOURCE_RELEASE_LABEL_MAP = {
     "streamlit_dashboard": "dashboard release",
-    "agent": "agent release",
     "fastapi": "FastAPI release",
 }
 LIST_FILTER_OPTION_HELP = (

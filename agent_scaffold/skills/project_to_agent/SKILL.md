@@ -14,7 +14,7 @@ This skill must only be used for adding agentic capabilities to an existing proj
 - Create the required files and folders for agentic capabilities.
 - Verify that the project has the required local agent configuration files.
 - Verify that the project has skills that are aligned with its CLI capabilities.
-
+- Important: This skill does not require creation of any agent defintion. Do not create an agents folder nor an agent.py  build around the project capabilities and .agents skills this is a coding agent setup!
 ## This Skill Must Not Claim
 
 - That it knows how to build the entire project unless the work is directly related to adding agentic capabilities.
