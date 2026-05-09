@@ -98,8 +98,16 @@ curl -N -sS \
   -H "Accept: text/event-stream" \
   "$RPC_URL/api/a2a/chat" \
   -d '{
-    "sessionId": "<session_id>",
-    "messages": [{"role": "user", "content": "<bounded request>"}],
+    "runtime_session_id": "<session_id>",
+    "userId": "<user_id>",
+    "agentName": "<target agent name>",
+    "session": <full backend AgentSession JSON serializer>,
+    "messages": [
+      {
+        "role": "user",
+        "content": "<bounded request>"
+      }
+    ],
     "response_format": <response format or null>,
     "caller": {
       "agent_name": "<current agent name>",

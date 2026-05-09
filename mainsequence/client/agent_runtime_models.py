@@ -202,8 +202,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
           handle and therefore the same target session for retries, reconnects, and
           repeated calls for the same delegated conversation.
 
-        Why this is preferred over `start_new_session()` for A2A communication:
-        - `start_new_session()` always creates a brand-new `AgentSession`.
+        Why this is required for A2A communication:
         - A2A communication needs an idempotent control-plane allocation step so that
           transport retries or stream reconnects do not silently create sibling target
           sessions.
