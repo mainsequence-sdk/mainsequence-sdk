@@ -59,7 +59,7 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
 5. Start a backend session for the selected agent:
 
 ```bash
-mainsequence agent start_new_session <agent_id>
+mainsequence agent allocate_agent_a2a_target_session <agent_id>
 ```
 
 6. Resolve runtime access for that agent session:

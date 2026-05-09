@@ -176,30 +176,71 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
         return [AgentSemanticSearchResult(**item) for item in data]
 
-    def start_new_session(self, timeout=None, **kwargs):
-        """
-        Start a new session for this agent and return the created `AgentSession`.
 
-        Keyword arguments are sent as session-creation overrides on top of the
-        agent defaults, so callers can pass values such as `thread_id`,
-        `runtime_session_id`, `external_session_id`,
-        `runtime_config_snapshot`, or explicit runtime fields.
+
+    def allocate_a2a_target_session(
+        self,
+        *,
+        caller_agent_session_id: int | AgentSession,
+        a2a_correlation_id: str,
+        timeout=None,
+    ) -> dict[str, Any]:
         """
-        url = f"{self.get_detail_url()}start_new_session/"
-        payload: dict[str, Any] = {}
-        if kwargs:
-            payload["json"] = serialize_to_json(kwargs)
+        Allocate or reuse the delegated target session for one logical A2A task.
+
+        Hits:
+            POST <detail_url>allocate-a2a-target-session/
+
+        Why prefer this over `start_new_session()` for A2A communication:
+        - `start_new_session()` always creates a brand-new `AgentSession`.
+        - `allocate_a2a_target_session()` is idempotent for delegated work and is keyed
+          by `(caller_agent_session_id, self.id, a2a_correlation_id)`.
+        - Retrying the same delegated task reuses the same target session instead of
+          silently creating a sibling conversation.
+        - This keeps reconnects, transport retries, and stream timeouts attached to the
+          same delegated session.
+        - If the caller wants a fresh delegated conversation, it should mint a new
+          `a2a_correlation_id` and call this method again.
+
+        Returns the canonical backend allocation payload:
+        - `agent_session_id`
+        - `allocation_state`
+        - `session`
+        """
+        if isinstance(caller_agent_session_id, AgentSession):
+            resolved_caller_session_id = getattr(caller_agent_session_id, 'id', None)
+        else:
+            resolved_caller_session_id = caller_agent_session_id
+
+        if resolved_caller_session_id is None:
+            raise ValueError(
+                'caller_agent_session_id must be an AgentSession or a session id'
+            )
+
+        a2a_correlation_id = str(a2a_correlation_id or '').strip()
+        if not a2a_correlation_id:
+            raise ValueError('a2a_correlation_id is required')
+
+        url = f"{self.get_detail_url()}allocate-a2a-target-session/"
+        payload = {
+            'json': serialize_to_json(
+                {
+                    'caller_agent_session_id': int(resolved_caller_session_id),
+                    'a2a_correlation_id': a2a_correlation_id,
+                }
+            )
+        }
         response = make_request(
             s=self.build_session(),
             loaders=self.LOADERS,
-            r_type="POST",
+            r_type='POST',
             url=url,
             payload=payload,
             time_out=timeout,
         )
-        if response.status_code != 201:
+        if response.status_code not in (200, 201):
             raise_for_response(response, payload=payload)
-        return AgentSession(**response.json())
+        return response.json()
 
     def get_latest_session(self, timeout=None):
         """

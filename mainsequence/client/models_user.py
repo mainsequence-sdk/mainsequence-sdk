@@ -863,7 +863,12 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         description="Unique identifier of the user.",
         examples=[42],
     )
-    profile_picture:Any | None = Field()
+    profile_picture: str | None = Field(
+        None,
+        title="Profile Picture URL",
+        description="Absolute or relative URL of the user's profile picture when one is set.",
+        examples=["https://api.example.com/media/user_profile_pictures/avatar.png"],
+    )
     is_verified: bool | None = Field(
         None,
         title="Is Verified",

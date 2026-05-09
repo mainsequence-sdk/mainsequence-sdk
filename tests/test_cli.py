@@ -1468,7 +1468,7 @@ def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
     assert out["id"] == 12
 
 
-def test_start_agent_new_session_uses_client_model(cli_mod, monkeypatch):
+def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
@@ -1495,9 +1495,21 @@ def test_start_agent_new_session_uses_client_model(cli_mod, monkeypatch):
                 captured["timeout"] = timeout
 
                 class _Agent:
-                    def start_new_session(self, timeout=None):
-                        captured["start_new_session_timeout"] = timeout
-                        return FakeAgentSession()
+                    def allocate_a2a_target_session(
+                        self,
+                        *,
+                        caller_agent_session_id,
+                        a2a_correlation_id,
+                        timeout=None,
+                    ):
+                        captured["caller_agent_session_id"] = caller_agent_session_id
+                        captured["a2a_correlation_id"] = a2a_correlation_id
+                        captured["allocate_timeout"] = timeout
+                        return {
+                            "agent_session_id": 801,
+                            "allocation_state": "created",
+                            "session": FakeAgentSession().model_dump(),
+                        }
 
                 return _Agent()
 
@@ -1505,15 +1517,23 @@ def test_start_agent_new_session_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.start_agent_new_session(12, timeout=16)
+    out = api_mod.allocate_agent_a2a_target_session(
+        12,
+        caller_agent_session_id=700,
+        a2a_correlation_id="delegation-step-1",
+        timeout=16,
+    )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "pk": 12,
         "timeout": 16,
-        "start_new_session_timeout": 16,
+        "caller_agent_session_id": 700,
+        "a2a_correlation_id": "delegation-step-1",
+        "allocate_timeout": 16,
     }
-    assert out["id"] == 801
+    assert out["agent_session_id"] == 801
+    assert out["allocation_state"] == "created"
 
 
 def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
@@ -6614,28 +6634,41 @@ def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
     assert "Agent resolved via get_or_create: Research Copilot" in result.output
 
 
-def test_agent_start_new_session(cli_mod, runner, monkeypatch):
+def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "start_agent_new_session",
-        lambda agent_id, timeout=None: {
-            "id": 801,
-            "agent": {"id": agent_id, "name": "Research Copilot"},
-            "status": "pending",
-            "started_at": "2026-04-11T09:15:00Z",
-            "llm_provider": "openai",
-            "llm_model": "gpt-5.4",
-            "engine_name": "codex",
-            "thread_id": "thread-123",
-            "runtime_config_snapshot": {"temperature": 0},
-            "session_metadata": {"origin": "cli"},
+        "allocate_agent_a2a_target_session",
+        lambda agent_id, caller_agent_session_id, a2a_correlation_id, timeout=None: {
+            "agent_session_id": 801,
+            "allocation_state": "created",
+            "session": {
+                "id": 801,
+                "agent": {"id": agent_id, "name": "Research Copilot"},
+                "status": "pending",
+                "started_at": "2026-04-11T09:15:00Z",
+                "llm_provider": "openai",
+                "llm_model": "gpt-5.4",
+                "engine_name": "codex",
+                "thread_id": "thread-123",
+                "runtime_config_snapshot": {"temperature": 0},
+                "session_metadata": {
+                    "origin": "cli",
+                    "caller_agent_session_id": caller_agent_session_id,
+                    "a2a_correlation_id": a2a_correlation_id,
+                },
+            },
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "start_new_session", "12"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "allocate_a2a_target_session", "12", "700", "delegation-step-1"],
+    )
     assert result.exit_code == 0
-    assert "Agent session started: agent_id=12" in result.output
+    assert "Agent A2A target session allocated: agent_id=12" in result.output
+    assert "A2A Target Session Allocation" in result.output
+    assert "created" in result.output
     assert "Agent Session Details" in result.output
     assert "thread-123" in result.output
     assert "temperature" in result.output

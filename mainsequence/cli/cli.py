@@ -77,6 +77,7 @@ from .api import (
     add_team_user_to_edit,
     add_team_user_to_view,
     add_workspace_labels,
+    allocate_agent_a2a_target_session,
     create_agent,
     create_constant,
     create_organization_team,
@@ -191,7 +192,6 @@ from .api import (
     schedule_batch_project_jobs,
     search_projects,
     semantic_search_agents,
-    start_agent_new_session,
     sync_project_after_commit,
     update_organization_team,
     update_workspace,
@@ -3458,6 +3458,15 @@ def _format_agent_session_details(agent_session_payload: dict[str, object]) -> l
     ]
 
 
+def _format_agent_a2a_allocation_preview(allocation_payload: dict[str, object]) -> list[tuple[str, str]]:
+    session_payload = allocation_payload.get("session")
+    return [
+        ("Agent Session ID", str(allocation_payload.get("agent_session_id") or "-")),
+        ("Allocation State", str(allocation_payload.get("allocation_state") or "-")),
+        ("Session", _format_agent_session_ref_label(session_payload)),
+    ]
+
+
 def _agent_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -3751,25 +3760,35 @@ def _agent_delete_impl(
     print_kv("Deleted Agent", _format_agent_preview(deleted))
 
 
-def _agent_start_new_session_impl(
+def _agent_allocate_a2a_target_session_impl(
     *,
     agent_id: int,
+    caller_agent_session_id: int,
+    a2a_correlation_id: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        agent_session_payload = start_agent_new_session(agent_id, timeout=timeout)
+        allocation_payload = allocate_agent_a2a_target_session(
+            agent_id,
+            caller_agent_session_id=caller_agent_session_id,
+            a2a_correlation_id=a2a_correlation_id,
+            timeout=timeout,
+        )
     except ApiError as e:
-        error(f"Agent session start failed: {e}")
+        error(f"Agent A2A target session allocation failed: {e}")
         raise typer.Exit(1) from e
 
-    if _emit_json(agent_session_payload):
+    if _emit_json(allocation_payload):
         return
 
-    success(f"Agent session started: agent_id={agent_id}")
-    print_kv("Agent Session", _format_agent_session_preview(agent_session_payload))
-    print_kv("Agent Session Details", _format_agent_session_details(agent_session_payload))
+    success(f"Agent A2A target session allocated: agent_id={agent_id}")
+    print_kv("A2A Target Session Allocation", _format_agent_a2a_allocation_preview(allocation_payload))
+    session_payload = allocation_payload.get("session")
+    if isinstance(session_payload, dict):
+        print_kv("Agent Session", _format_agent_session_preview(session_payload))
+        print_kv("Agent Session Details", _format_agent_session_details(session_payload))
 
 
 def _agent_get_latest_session_impl(
@@ -5876,24 +5895,36 @@ def agent_delete_cmd(
     _agent_delete_impl(agent_id=agent_id, timeout=timeout)
 
 
-@agent.command("start_new_session")
-def agent_start_new_session_cmd(
+@agent.command("allocate_a2a_target_session")
+def agent_allocate_a2a_target_session_cmd(
     agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    caller_agent_session_id: int = pydantic_argument(
+        AGENT_SESSION_MODEL_REF,
+        "id",
+        ...,
+        help="Caller agent session ID.",
+    ),
+    a2a_correlation_id: str = typer.Argument(..., help="Stable correlation id for the delegated A2A task."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Start a new session for one agent and return the created agent session.
+    Allocate or reuse the delegated A2A target session for one agent.
 
-    Uses SDK client `Agent.start_new_session()` as the single source of truth.
+    Uses SDK client `Agent.allocate_a2a_target_session()` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence agent start_new_session 12
-    mainsequence agent start_new_session 12 --timeout 60
+    mainsequence agent allocate_a2a_target_session 12 801 delegation-step-1
+    mainsequence agent allocate_a2a_target_session 12 801 delegation-step-1 --timeout 60
     ```
     """
-    _agent_start_new_session_impl(agent_id=agent_id, timeout=timeout)
+    _agent_allocate_a2a_target_session_impl(
+        agent_id=agent_id,
+        caller_agent_session_id=caller_agent_session_id,
+        a2a_correlation_id=a2a_correlation_id,
+        timeout=timeout,
+    )
 
 
 @agent.command("get_latest_session")

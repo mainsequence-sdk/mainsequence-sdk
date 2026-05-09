@@ -988,32 +988,38 @@ def delete_agent(
         raise ApiError(f"Agent deletion failed: {e}") from e
 
 
-def start_agent_new_session(
+def allocate_agent_a2a_target_session(
     agent_id: int | str,
     *,
+    caller_agent_session_id: int | str,
+    a2a_correlation_id: str,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Start a new session for one agent via SDK client model.
+    Allocate or reuse the delegated A2A target session for one agent via SDK client model.
     """
     try:
-        def _start(ClientAgent):
+        def _allocate(ClientAgent):
             agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
-            return agent.start_new_session(timeout=timeout)
+            return agent.allocate_a2a_target_session(
+                caller_agent_session_id=int(caller_agent_session_id),
+                a2a_correlation_id=a2a_correlation_id,
+                timeout=timeout,
+            )
 
-        session = _run_sdk_model_operation(
+        payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
-            operation=_start,
+            operation=_allocate,
         )
-        return _sdk_object_to_dict(session)
+        return _sdk_object_to_dict(payload)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
             raise ApiError(f"Agent not found: {agent_id}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
-        raise ApiError(f"Agent session start failed: {e}") from e
+        raise ApiError(f"Agent A2A target session allocation failed: {e}") from e
 
 
 def get_agent_latest_session(
