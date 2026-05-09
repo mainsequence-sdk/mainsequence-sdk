@@ -56,11 +56,23 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
    - optional agent hint
    - required response format or output schema if needed
 4. Discover and select the target agent through the discovery flow above.
-5. Start a backend session for the selected agent:
+5. Start or reuse the delegated backend session for the selected agent:
 
 ```bash
-mainsequence agent allocate_agent_a2a_target_session <agent_id>
+mainsequence agent allocate_a2a_target_session <agent_id>
 ```
+
+5.1 Treat the allocation response as canonical. Persist both:
+- `handle_unique_id`
+- `agent_session_id`
+
+5.2 `handle_unique_id` is the stable delegated-conversation reuse key and must be kept.
+- If the delegated conversation is new, call `allocate_a2a_target_session` without a handle.
+- The backend will generate and return a new `handle_unique_id`; persist it immediately.
+- If you retry because of timeout, disconnect, health-check delay, stream restart, or runtime error recovery, call `allocate_a2a_target_session` again with that same `handle_unique_id`.
+- Reusing the same handle tells the backend to return the same delegated `AgentSession` instead of allocating a sibling session for the same work.
+- Do not drop, replace, or regenerate the handle while the delegated conversation is still the same.
+- Allocate a fresh handle only when you intentionally want a new delegated conversation.
 
 6. Resolve runtime access for that agent session:
 
@@ -110,10 +122,11 @@ the exact CLI and runtime requests below.
 3. Parse the JSON output.
 4. Normalize candidates.
 5. Select the preferred candidate.
-6. Create the backend session for the target agent.
-7. Resolve runtime access.
-8. Poll runtime health.
-9. Send `POST <rpc_url>/api/a2a/chat`.
+6. Allocate or reuse the delegated backend session for the target agent.
+7. Persist and reuse the returned `handle_unique_id` for the same delegated conversation.
+8. Resolve runtime access.
+9. Poll runtime health.
+10. Send `POST <rpc_url>/api/a2a/chat`.
 
 ## Role-specific behavior
 

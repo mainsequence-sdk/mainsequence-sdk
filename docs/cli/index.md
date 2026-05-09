@@ -135,7 +135,8 @@ mainsequence agent list
 mainsequence agent detail 12
 mainsequence agent create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
 mainsequence agent get_or_create "Research Copilot" --agent-unique-id research-copilot --description "Desk agent"
-mainsequence agent allocate_a2a_target_session 12 801 delegation-step-1
+mainsequence agent allocate_a2a_target_session 12 801
+mainsequence agent allocate_a2a_target_session 12 801 --handle-unique-id delegated-handle-1
 mainsequence agent get_latest_session 12
 mainsequence agent session detail 801
 mainsequence agent can_view 12

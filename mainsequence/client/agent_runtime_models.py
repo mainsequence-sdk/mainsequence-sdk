@@ -182,30 +182,46 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         self,
         *,
         caller_agent_session_id: int | AgentSession,
-        a2a_correlation_id: str,
+        handle_unique_id: str | None = None,
         timeout=None,
     ) -> dict[str, Any]:
         """
-        Allocate or reuse the delegated target session for one logical A2A task.
+        Allocate or reuse the delegated target session for this target `Agent`.
 
         Hits:
             POST <detail_url>allocate-a2a-target-session/
 
-        Why prefer this over `start_new_session()` for A2A communication:
-        - `start_new_session()` always creates a brand-new `AgentSession`.
-        - `allocate_a2a_target_session()` is idempotent for delegated work and is keyed
-          by `(caller_agent_session_id, self.id, a2a_correlation_id)`.
-        - Retrying the same delegated task reuses the same target session instead of
-          silently creating a sibling conversation.
-        - This keeps reconnects, transport retries, and stream timeouts attached to the
-          same delegated session.
-        - If the caller wants a fresh delegated conversation, it should mint a new
-          `a2a_correlation_id` and call this method again.
+        Request contract:
+        - `caller_agent_session_id` is required and identifies the session that is
+          delegating work to this target agent.
+        - `handle_unique_id` is optional on the first call.
+        - when `handle_unique_id` is omitted, the backend creates a delegated
+          `AgentSessionHandle`, generates a new `handle_unique_id`, allocates the target
+          session, and returns that `handle_unique_id` in the response.
+        - when `handle_unique_id` is provided, the backend reuses the same delegated
+          handle and therefore the same target session for retries, reconnects, and
+          repeated calls for the same delegated conversation.
 
-        Returns the canonical backend allocation payload:
-        - `agent_session_id`
-        - `allocation_state`
-        - `session`
+        Why this is preferred over `start_new_session()` for A2A communication:
+        - `start_new_session()` always creates a brand-new `AgentSession`.
+        - A2A communication needs an idempotent control-plane allocation step so that
+          transport retries or stream reconnects do not silently create sibling target
+          sessions.
+        - `allocate_a2a_target_session()` makes the delegated conversation reusable by
+          returning a stable `handle_unique_id` that the caller can keep and send again.
+
+        Response contract:
+        - `handle_unique_id`: stable delegated-session reuse key.
+        - `agent_session_id`: allocated target session primary key.
+        - `allocation_state`: `created_new` or `reused_existing`.
+        - `session`: full canonical backend `AgentSession` payload for the target side.
+
+        Typical usage:
+        1. first call: send only `caller_agent_session_id`
+        2. persist the returned `handle_unique_id`
+        3. later retries for the same delegated task: resend that `handle_unique_id`
+        4. intentionally fresh delegated conversation: omit the old handle and let the
+           backend allocate a new one
         """
         if isinstance(caller_agent_session_id, AgentSession):
             resolved_caller_session_id = getattr(caller_agent_session_id, 'id', None)
@@ -217,18 +233,17 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
                 'caller_agent_session_id must be an AgentSession or a session id'
             )
 
-        a2a_correlation_id = str(a2a_correlation_id or '').strip()
-        if not a2a_correlation_id:
-            raise ValueError('a2a_correlation_id is required')
+        resolved_handle_unique_id = str(handle_unique_id or '').strip()
+
+        body = {
+            'caller_agent_session_id': int(resolved_caller_session_id),
+        }
+        if resolved_handle_unique_id:
+            body['handle_unique_id'] = resolved_handle_unique_id
 
         url = f"{self.get_detail_url()}allocate-a2a-target-session/"
         payload = {
-            'json': serialize_to_json(
-                {
-                    'caller_agent_session_id': int(resolved_caller_session_id),
-                    'a2a_correlation_id': a2a_correlation_id,
-                }
-            )
+            'json': serialize_to_json(body)
         }
         response = make_request(
             s=self.build_session(),

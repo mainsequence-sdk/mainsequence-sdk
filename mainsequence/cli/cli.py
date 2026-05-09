@@ -3461,6 +3461,7 @@ def _format_agent_session_details(agent_session_payload: dict[str, object]) -> l
 def _format_agent_a2a_allocation_preview(allocation_payload: dict[str, object]) -> list[tuple[str, str]]:
     session_payload = allocation_payload.get("session")
     return [
+        ("Handle Unique ID", str(allocation_payload.get("handle_unique_id") or "-")),
         ("Agent Session ID", str(allocation_payload.get("agent_session_id") or "-")),
         ("Allocation State", str(allocation_payload.get("allocation_state") or "-")),
         ("Session", _format_agent_session_ref_label(session_payload)),
@@ -3764,7 +3765,7 @@ def _agent_allocate_a2a_target_session_impl(
     *,
     agent_id: int,
     caller_agent_session_id: int,
-    a2a_correlation_id: str,
+    handle_unique_id: str | None,
     timeout: int | None,
 ) -> None:
     _require_login()
@@ -3773,7 +3774,7 @@ def _agent_allocate_a2a_target_session_impl(
         allocation_payload = allocate_agent_a2a_target_session(
             agent_id,
             caller_agent_session_id=caller_agent_session_id,
-            a2a_correlation_id=a2a_correlation_id,
+            handle_unique_id=handle_unique_id,
             timeout=timeout,
         )
     except ApiError as e:
@@ -5904,7 +5905,11 @@ def agent_allocate_a2a_target_session_cmd(
         ...,
         help="Caller agent session ID.",
     ),
-    a2a_correlation_id: str = typer.Argument(..., help="Stable correlation id for the delegated A2A task."),
+    handle_unique_id: str | None = typer.Option(
+        None,
+        "--handle-unique-id",
+        help="Optional delegated-session handle to reuse an existing target session on retries.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5915,14 +5920,14 @@ def agent_allocate_a2a_target_session_cmd(
     Examples
     --------
     ```bash
-    mainsequence agent allocate_a2a_target_session 12 801 delegation-step-1
-    mainsequence agent allocate_a2a_target_session 12 801 delegation-step-1 --timeout 60
+    mainsequence agent allocate_a2a_target_session 12 801
+    mainsequence agent allocate_a2a_target_session 12 801 --handle-unique-id delegated-handle-1 --timeout 60
     ```
     """
     _agent_allocate_a2a_target_session_impl(
         agent_id=agent_id,
         caller_agent_session_id=caller_agent_session_id,
-        a2a_correlation_id=a2a_correlation_id,
+        handle_unique_id=handle_unique_id,
         timeout=timeout,
     )
 

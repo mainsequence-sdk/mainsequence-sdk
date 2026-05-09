@@ -992,7 +992,7 @@ def allocate_agent_a2a_target_session(
     agent_id: int | str,
     *,
     caller_agent_session_id: int | str,
-    a2a_correlation_id: str,
+    handle_unique_id: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
@@ -1003,7 +1003,7 @@ def allocate_agent_a2a_target_session(
             agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
             return agent.allocate_a2a_target_session(
                 caller_agent_session_id=int(caller_agent_session_id),
-                a2a_correlation_id=a2a_correlation_id,
+                handle_unique_id=handle_unique_id,
                 timeout=timeout,
             )
 
