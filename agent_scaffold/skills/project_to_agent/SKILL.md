@@ -95,7 +95,7 @@ The agent card must satisfy the following criteria:
 Agent Card Template
 
 Use this template as the base for .agents/agent_card.json:
-
+Give  a meaningful and brief name to the agent do not user project name use a name that defines the overall capabilities of the Agent 
 ```json
 {
   "name": "YOUR_AGENT_NAME",

@@ -22,6 +22,10 @@ class AgentSessionStatus(str, Enum):
 class AgentSemanticSearchResult(BasePydanticModel):
     id: int = Field(..., description="Primary key of the matched agent.")
     name: str = Field(..., description="Human-readable display name of the matched agent.")
+    agent_type: str = Field(
+        "",
+        description="Stable machine-readable runtime or workflow type of the matched agent.",
+    )
     agent_unique_id: str = Field(
         ...,
         description="Organization-scoped stable identifier of the matched agent.",
@@ -72,6 +76,10 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
     id: int | None = Field(None, description="Primary key of the agent.")
     name: str = Field(..., description="Human-readable display name for the agent inside the organization.")
+    agent_type: str = Field(
+        "custom",
+        description="Stable machine-readable runtime or workflow classifier for the agent. This is not the display name.",
+    )
     agent_unique_id: str = Field(
         ...,
         description="Client-supplied organization-scoped stable identifier for the agent. Use this for deterministic existence checks and idempotent create flows.",

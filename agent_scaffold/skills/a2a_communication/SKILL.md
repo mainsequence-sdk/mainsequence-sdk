@@ -45,12 +45,12 @@ mainsequence agent search "<discoveryPrompt>" --limit 10 --json
 
 5. Treat the CLI output as authoritative.
 6. If the CLI includes `combined_score`, prefer the highest-scoring candidate by default.
-7. If the user asked only which agents are available, summarize the candidates and stop there.
+7. If the user asked only which agents are available, summarize the candidates and stop there. for the summary include agent name and a summary also of the skills and capabilities
 
 ## Communication flow
 
 1. Decide whether actual A2A communication is needed.
-2. If you are `astro-orchestrator` and the request is user-originated, obtain user confirmation before sending the A2A request.
+2. If your agent type is  `astro-orchestrator` and the request is user-originated, obtain user confirmation before sending the A2A request.
 3. Build a bounded request:
    - clearly scoped task
    - optional agent hint
@@ -101,13 +101,7 @@ curl -N -sS \
     "runtime_session_id": "<session_id>",
     "userId": "<user_id>",
     "agentName": "<target agent name>",
-    "session": <full backend AgentSession JSON serializer>,
-    "messages": [
-      {
-        "role": "user",
-        "content": "<bounded request>"
-      }
-    ],
+    "session": <full backend AgentSessio
     "response_format": <response format or null>,
     "caller": {
       "agent_name": "<current agent name>",
@@ -138,7 +132,7 @@ the exact CLI and runtime requests below.
 
 ## Role-specific behavior
 
-### `astro-orchestrator`
+### `astro-orchestrator` agent_typeN
 
 - may discover candidates without confirmation
 - must get user confirmation before sending a real A2A request for user-originated requests

@@ -3298,6 +3298,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     project_repo_hash: str = Field(..., description="Canonical full commit SHA for the built image")
     related_project: int | Project = Field(None, description="Owning project id or object")
     base_image: int | ProjectBaseImage | None = Field(None, description="Persisted parent base image identity") #backward compatiblity old Images iwth None
+    tags: list[str] | None = Field(default=[], description="Observed registry tags for the project image")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
 
