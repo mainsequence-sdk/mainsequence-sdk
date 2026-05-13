@@ -361,6 +361,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         "",
         description="Read-only helper with the agent display name for rendering session results.",
     )
+    agent_type: str = Field(
+        "",
+        description="Read-only helper with the canonical machine-readable agent runtime or workflow type.",
+    )
     parent_session: int | AgentSession | None = Field(
         None,
         description="Optional parent session when this session was spawned as a subagent execution by another session.",
