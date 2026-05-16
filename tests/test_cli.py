@@ -2388,6 +2388,83 @@ def test_api_refresh_access_runtime_credential_reexchange(cli_mod, monkeypatch):
     assert saved["refresh"] == ""
 
 
+def test_api_logout_cli_session_revokes_tracked_cli_refresh(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+
+    class _Response:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"detail": "CLI refresh token revoked."}
+
+    class _Session:
+        @staticmethod
+        def post(url, data=None, headers=None):
+            assert url == "http://127.0.0.1:8000/auth/cli/revoke/"
+            assert json.loads(data) == {"refresh": "ref-123"}
+            assert headers is None
+            return _Response()
+
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"})
+    monkeypatch.setattr(api_mod, "S", _Session())
+
+    out = api_mod.logout_cli_session()
+    assert out == {
+        "attempted": True,
+        "revoked": True,
+        "method": "cli_revoke",
+        "detail": "CLI refresh token revoked.",
+    }
+
+
+def test_api_logout_cli_session_falls_back_to_jwt_logout_on_404(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+
+    class _Response:
+        status_code = 404
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"detail": "Not found."}
+
+    class _Session:
+        @staticmethod
+        def post(url, data=None, headers=None):
+            assert url == "http://127.0.0.1:8000/auth/cli/revoke/"
+            assert json.loads(data) == {"refresh": "ref-123"}
+            return _Response()
+
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"})
+    monkeypatch.setattr(api_mod, "logout_jwt_session", lambda: True)
+    monkeypatch.setattr(api_mod, "S", _Session())
+
+    out = api_mod.logout_cli_session()
+    assert out == {
+        "attempted": True,
+        "revoked": True,
+        "method": "jwt_logout_fallback",
+        "detail": "CLI revoke endpoint unavailable; used JWT logout fallback.",
+    }
+
+
+def test_api_logout_cli_session_skips_backend_revoke_without_refresh(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": ""})
+
+    out = api_mod.logout_cli_session()
+    assert out == {
+        "attempted": False,
+        "revoked": False,
+        "method": "local_only",
+        "detail": "No CLI browser-login refresh token available.",
+    }
+
+
 def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch):
     session_override = {}
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
@@ -2586,7 +2663,16 @@ def test_jwt_login_does_not_fetch_projects_after_success(cli_mod, runner, monkey
 
 def test_logout(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
-    monkeypatch.setattr(cli_mod, "logout_jwt_session", lambda: True)
+    monkeypatch.setattr(
+        cli_mod,
+        "logout_cli_session",
+        lambda: {
+            "attempted": True,
+            "revoked": True,
+            "method": "cli_revoke",
+            "detail": "CLI refresh token revoked.",
+        },
+    )
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout"])
@@ -2597,7 +2683,16 @@ def test_logout(cli_mod, runner, monkeypatch):
 
 def test_logout_export_env(cli_mod, runner, monkeypatch):
     cleared = {"called": False}
-    monkeypatch.setattr(cli_mod, "logout_jwt_session", lambda: True)
+    monkeypatch.setattr(
+        cli_mod,
+        "logout_cli_session",
+        lambda: {
+            "attempted": True,
+            "revoked": True,
+            "method": "cli_revoke",
+            "detail": "CLI refresh token revoked.",
+        },
+    )
     monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
     monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
     result = runner.invoke(cli_mod.app, ["logout", "--export"])
@@ -2605,6 +2700,27 @@ def test_logout_export_env(cli_mod, runner, monkeypatch):
     assert "unset MAINSEQUENCE_ACCESS_TOKEN" in result.output
     assert "unset MAINSEQUENCE_REFRESH_TOKEN" in result.output
     assert "unset MAINSEQUENCE_USERNAME" in result.output
+    assert cleared["called"] is True
+
+
+def test_logout_warns_when_backend_revoke_cannot_be_confirmed(cli_mod, runner, monkeypatch):
+    cleared = {"called": False}
+    monkeypatch.setattr(
+        cli_mod,
+        "logout_cli_session",
+        lambda: {
+            "attempted": True,
+            "revoked": False,
+            "method": "error",
+            "detail": "CLI revoke failed with status 400.",
+        },
+    )
+    monkeypatch.setattr(cli_mod.cfg, "clear_tokens", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: cleared.update(called=True))
+    result = runner.invoke(cli_mod.app, ["logout"])
+    assert result.exit_code == 0
+    assert "Signed out locally, but backend session revoke could not be confirmed." in result.output
+    assert "CLI revoke failed with status 400." in result.output
     assert cleared["called"] is True
 
 

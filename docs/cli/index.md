@@ -31,6 +31,12 @@ By default, `mainsequence login` persists auth tokens for later CLI commands:
 
 You only need `--export` if you explicitly want shell-managed environment variables.
 
+`mainsequence logout` now performs a hard CLI logout when a browser-login refresh token exists:
+
+- it calls `POST /auth/cli/revoke/` to revoke the tracked CLI login session server-side
+- on older backends without that endpoint, it falls back to JWT logout when possible
+- in runtime credential mode, or whenever no CLI refresh token exists, it only clears local CLI auth state
+
 If you prefer shell-managed environment variables:
 
 ```bash

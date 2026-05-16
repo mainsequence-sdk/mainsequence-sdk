@@ -20,6 +20,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 
+## [3.19.14] - 2026-05-16
+
+### Fixed
+
+- Made `mainsequence logout` perform a hard CLI logout for browser-login JWT sessions by calling `/auth/cli/revoke/`, with a legacy fallback to `/auth/jwt-token/logout/` on older backends and local-only clearing for runtime credential mode or other no-refresh-token sessions.
+
 ## [3.17.48] - 2026-04-14
 
 ### Added

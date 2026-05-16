@@ -29,6 +29,7 @@ from .config import backend_url, get_tokens, save_tokens
 AUTH_PATHS = {
     "authorize": "/auth/cli/authorize/",
     "cli_token": "/auth/cli/token/",
+    "cli_revoke": "/auth/cli/revoke/",
     "refresh": "/auth/jwt-token/token/refresh/",
     "logout": "/auth/jwt-token/logout/",
     "ping": "/auth/rest-auth/user/",
@@ -186,6 +187,87 @@ def logout_jwt_session() -> bool:
         headers = {"Authorization": f"Bearer {access}"}
 
     return False
+
+
+def logout_cli_session() -> dict[str, Any]:
+    """
+    Revoke the current tracked CLI login session when possible.
+
+    Behavior:
+    - If a CLI browser-login refresh token exists, call `/auth/cli/revoke/`.
+    - If the backend does not support that endpoint (`404`), fall back to
+      `/auth/jwt-token/logout/` when an access token is still available.
+    - If no refresh token exists, do not attempt backend revoke. This covers
+      runtime credential mode and any local-only access-token state.
+
+    Returns a status dict with:
+    - `attempted`: whether backend revoke/logout was attempted
+    - `revoked`: whether backend-side logout completed
+    - `method`: `cli_revoke`, `jwt_logout_fallback`, `local_only`, or `error`
+    - `detail`: best-effort human-readable detail
+    """
+    access = (_access_token() or "").strip()
+    refresh = (_refresh_token() or "").strip()
+
+    if not refresh:
+        return {
+            "attempted": False,
+            "revoked": False,
+            "method": "local_only",
+            "detail": "No CLI browser-login refresh token available.",
+        }
+
+    payload = {"refresh": refresh}
+    try:
+        response = S.post(_full(AUTH_PATHS["cli_revoke"]), data=json.dumps(payload))
+    except Exception as exc:
+        return {
+            "attempted": True,
+            "revoked": False,
+            "method": "error",
+            "detail": str(exc),
+        }
+
+    try:
+        data = response.json()
+    except Exception:
+        data = {}
+
+    detail = ""
+    if isinstance(data, dict):
+        detail = str(data.get("detail") or data.get("message") or "").strip()
+    if not detail:
+        detail = response.text.strip()
+
+    if response.status_code == 200:
+        return {
+            "attempted": True,
+            "revoked": True,
+            "method": "cli_revoke",
+            "detail": detail or "CLI refresh token revoked.",
+        }
+
+    if response.status_code == 404:
+        if access and logout_jwt_session():
+            return {
+                "attempted": True,
+                "revoked": True,
+                "method": "jwt_logout_fallback",
+                "detail": "CLI revoke endpoint unavailable; used JWT logout fallback.",
+            }
+        return {
+            "attempted": True,
+            "revoked": False,
+            "method": "error",
+            "detail": detail or "CLI revoke endpoint unavailable.",
+        }
+
+    return {
+        "attempted": True,
+        "revoked": False,
+        "method": "error",
+        "detail": detail or f"CLI revoke failed with status {response.status_code}.",
+    }
 
 
 def refresh_access() -> str:

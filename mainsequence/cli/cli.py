@@ -156,7 +156,7 @@ from .api import (
     list_team_users_can_edit,
     list_team_users_can_view,
     list_workspaces,
-    logout_jwt_session,
+    logout_cli_session,
     prime_sync_project_after_commit_sdk,
     refresh_data_node_storage_search_index,
     remove_agent_team_from_edit,
@@ -2481,11 +2481,21 @@ def logout(
     ```
     """
     cfg.clear_session_overrides()
-    backend_logout_ok = False
+    backend_logout_result = {
+        "attempted": False,
+        "revoked": False,
+        "method": "local_only",
+        "detail": "",
+    }
     try:
-        backend_logout_ok = logout_jwt_session()
-    except Exception:
-        backend_logout_ok = False
+        backend_logout_result = logout_cli_session()
+    except Exception as exc:
+        backend_logout_result = {
+            "attempted": True,
+            "revoked": False,
+            "method": "error",
+            "detail": str(exc),
+        }
 
     ok = cfg.clear_tokens()
     if export:
@@ -2498,8 +2508,17 @@ def logout(
         return
 
     if ok:
-        if backend_logout_ok:
+        if backend_logout_result.get("revoked"):
             success("Signed out (backend session revoked, local tokens cleared).")
+        elif backend_logout_result.get("attempted"):
+            warn(
+                "Signed out locally, but backend session revoke could not be confirmed."
+                + (
+                    f" Detail: {backend_logout_result.get('detail')}"
+                    if backend_logout_result.get("detail")
+                    else ""
+                )
+            )
         else:
             success("Signed out (session tokens cleared).")
     else:
