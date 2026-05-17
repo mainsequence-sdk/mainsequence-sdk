@@ -731,6 +731,13 @@ class AssetCategory(BaseObjectOrm, BasePydanticModel):
     display_name: str
     assets: list[Union[int, "Asset"]]
     description: str | None = None
+    labels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Organizational labels  "
+            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
+        ),
+    )
 
     def __repr__(self):
         return f"{self.display_name} source: {self.source}, {len(self.assets)} assets"

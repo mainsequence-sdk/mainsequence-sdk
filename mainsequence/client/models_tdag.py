@@ -278,7 +278,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     labels: list[str] = Field(
         default_factory=list,
         description=(
-            "Organizational labels attached to the local time series update. "
+            "Organizational labels  "
             "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
         ),
     )
