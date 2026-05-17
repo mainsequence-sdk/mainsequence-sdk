@@ -362,6 +362,79 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
     def get_records_upsert_url(cls) -> str:
         return f"{cls.ROOT_URL.rstrip('/')}/ts_manager/simple_tables/update"
 
+    def run_query(
+        self,
+        sql: str,
+        *,
+        max_rows: int | None = None,
+        statement_timeout_ms: int | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Execute a raw SQL query against this simple table.
+
+        This hits:
+            POST /orm/api/ts_manager/simple_table/{id}/run_query/
+
+        Request contract:
+        - body is the raw SQL string as `text/plain`
+        - optional query params:
+          - `max_rows`
+          - `statement_timeout_ms`
+        - do not send JSON like `{"sql": "..."}`
+
+        Response contract:
+        - returns the backend query envelope with `ok`, `results`, `row_count`,
+          `truncated`, and error fields
+        - when the backend returns a structured query envelope with `ok=false`,
+          that envelope is returned directly so callers can inspect the backend
+          error payload
+        """
+        if self.id is None:
+            raise ValueError("SimpleTableStorage must have an id before running a query.")
+
+        sql = str(sql or "").strip()
+        if not sql:
+            raise ValueError("sql is required.")
+
+        params: dict[str, int] = {}
+        if max_rows is not None:
+            params["max_rows"] = int(max_rows)
+        if statement_timeout_ms is not None:
+            params["statement_timeout_ms"] = int(statement_timeout_ms)
+
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/run_query/"
+        session = cls.build_session()
+        old_content_type = session.headers.get("Content-Type")
+        session.headers["Content-Type"] = "text/plain"
+        request_payload = {"data": sql, "params": params} if params else {"data": sql}
+        try:
+            response = make_request(
+                s=session,
+                loaders=cls.LOADERS,
+                r_type="POST",
+                url=url,
+                payload=request_payload,
+                time_out=timeout,
+            )
+        finally:
+            if old_content_type is None:
+                session.headers.pop("Content-Type", None)
+            else:
+                session.headers["Content-Type"] = old_content_type
+
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+
+        if isinstance(data, dict) and "ok" in data:
+            return data
+
+        raise_for_response(response, payload=request_payload)
+        return response.json()
+
     @classmethod
     def insert_records(
         cls,

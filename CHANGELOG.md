@@ -20,6 +20,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 
+## [3.19.16] - 2026-05-17
+
+### Added
+
+- Added `DataNodeStorage.run_query(...)` and `SimpleTableStorage.run_query(...)` so the client can execute read-only SQL against dynamic tables and simple tables using the backend `run_query/` endpoints with plain-text SQL request bodies.
+
+### Changed
+
+- Documented the raw SQL query flow for dynamic tables and simple tables, including the plain-text request contract, optional simple-table query params, and structured backend response envelope.
+
 ## [3.19.14] - 2026-05-16
 
 ### Fixed

@@ -1,6 +1,7 @@
 import ast
 import datetime
 import pathlib
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ConfigDict, Field
@@ -336,6 +337,105 @@ def test_data_node_storage_delete_after_date_rejects_both_identifier_shapes():
             unique_identifier="AAPL",
             unique_identifier_list=["AAPL"],
         )
+
+
+def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
+    from mainsequence.client import models_tdag
+
+    captured = {}
+    session = SimpleNamespace(headers={"Content-Type": "application/json"})
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "query_id": "abc123",
+                "dynamic_table_id": 714,
+                "results": [{"column_a": "value", "column_b": 10}],
+                "truncated": False,
+                "max_rows": 1000,
+                "row_count": 1,
+                "error": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["headers"] = dict(s.headers)
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
+
+    storage = models_tdag.DataNodeStorage(
+        id=714,
+        storage_hash="prices_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-01T00:00:00Z",
+    )
+
+    result = storage.run_query("SELECT * FROM my_table LIMIT 100", timeout=30)
+
+    assert result["ok"] is True
+    assert result["dynamic_table_id"] == 714
+    assert captured == {
+        "headers": {"Content-Type": "text/plain"},
+        "r_type": "POST",
+        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/714/run_query/",
+        "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
+        "timeout": 30,
+    }
+    assert session.headers == {"Content-Type": "application/json"}
+
+
+def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
+    from mainsequence.client import models_tdag
+
+    session = SimpleNamespace(headers={})
+
+    class FakeResponse:
+        status_code = 400
+        content = b'{"ok": false}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": False,
+                "query_id": "abc123",
+                "dynamic_table_id": 714,
+                "results": [],
+                "truncated": False,
+                "max_rows": 0,
+                "row_count": 0,
+                "error": {
+                    "kind": "validation_error",
+                    "message": "Only SELECT/WITH/EXPLAIN queries are allowed.",
+                    "retryable": False,
+                    "sqlstate": None,
+                },
+            }
+
+    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
+    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
+
+    storage = models_tdag.DataNodeStorage(
+        id=714,
+        storage_hash="prices_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-01T00:00:00Z",
+    )
+
+    result = storage.run_query("DELETE FROM my_table")
+    assert result["ok"] is False
+    assert result["error"]["kind"] == "validation_error"
 
 
 def test_data_node_update_normalizes_related_table_namespace_filters():

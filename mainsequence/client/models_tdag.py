@@ -1167,6 +1167,67 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         return r.json() if r.content else None
 
+    def run_query(
+        self,
+        sql: str,
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Execute a raw SQL query against this dynamic table.
+
+        This hits:
+            POST /orm/api/ts_manager/dynamic_table/{id}/run_query/
+
+        Request contract:
+        - body is the raw SQL string as `text/plain`
+        - do not send JSON like `{"sql": "..."}`
+
+        Response contract:
+        - returns the backend query envelope with `ok`, `results`, `row_count`,
+          `truncated`, and error fields
+        - when the backend returns a structured query envelope with `ok=false`,
+          that envelope is returned directly so callers can inspect the backend
+          error payload
+        """
+        if self.id is None:
+            raise ValueError("DataNodeStorage must have an id before running a query.")
+
+        sql = str(sql or "").strip()
+        if not sql:
+            raise ValueError("sql is required.")
+
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/run_query/"
+        session = cls.build_session()
+        old_content_type = session.headers.get("Content-Type")
+        session.headers["Content-Type"] = "text/plain"
+        try:
+            response = make_request(
+                s=session,
+                loaders=cls.LOADERS,
+                r_type="POST",
+                url=url,
+                payload={"data": sql},
+                time_out=timeout,
+            )
+        finally:
+            if old_content_type is None:
+                session.headers.pop("Content-Type", None)
+            else:
+                session.headers["Content-Type"] = old_content_type
+
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+
+        if isinstance(data, dict) and "ok" in data:
+            return data
+
+        raise_for_response(response, payload={"data": sql})
+        return response.json()
+
     def delete_after_date(
         self,
         after_date: str | datetime.datetime,

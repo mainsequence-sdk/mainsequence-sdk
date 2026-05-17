@@ -325,3 +325,60 @@ Ask these questions when designing a `SimpleTable`:
 6. Which fields point to another simple table?
 
 That gives you a clean, row-oriented schema that can still live inside the same dependency graph system as `DataNode`.
+
+## Running Read-Only SQL Against a Simple Table
+
+`SimpleTableStorage.run_query(...)` executes a raw SQL query directly against one published simple table.
+
+Use this for inspection, debugging, and one-off read queries on an existing table. It is not a replacement for a stable application-facing contract.
+
+The SDK uses:
+
+- `POST /orm/api/ts_manager/simple_table/{simple_table_id}/run_query/`
+
+Optional query params:
+
+- `max_rows`
+- `statement_timeout_ms`
+
+Request contract:
+
+- the request body is the raw SQL string
+- content type is `text/plain`
+- do not send JSON like `{"sql": "SELECT ..."}` 
+- do not send `X-MS-SYNC-TOKEN`
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+storage = msc.SimpleTableStorage.get(pk=123)
+result = storage.run_query(
+    "SELECT * FROM my_table LIMIT 100",
+    max_rows=1000,
+    statement_timeout_ms=15000,
+)
+```
+
+Expected success envelope:
+
+```python
+{
+    "ok": True,
+    "query_id": "abc123",
+    "simple_table_id": 123,
+    "results": [
+        {
+            "column_a": "value",
+            "column_b": 10,
+        }
+    ],
+    "truncated": False,
+    "max_rows": 1000,
+    "row_count": 1,
+    "error": None,
+}
+```
+
+If the backend returns a structured error envelope, the SDK returns that envelope directly so callers can inspect the backend validation error instead of losing it to a generic transport exception.

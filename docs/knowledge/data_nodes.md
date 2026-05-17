@@ -513,6 +513,54 @@ CLI equivalent:
 mainsequence data-node refresh-search-index 123
 ```
 
+#### Running read-only SQL against a dynamic table
+
+`DataNodeStorage.run_query(...)` executes a raw SQL query directly against one published dynamic table.
+
+This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `DataNode` API contract.
+
+The SDK uses:
+
+- `POST /orm/api/ts_manager/dynamic_table/{dynamic_table_id}/run_query/`
+
+Request contract:
+
+- the request body is the raw SQL string
+- content type is `text/plain`
+- do not send JSON like `{"sql": "SELECT ..."}` 
+- do not send `X-MS-SYNC-TOKEN`
+
+Example:
+
+```python
+import mainsequence.client as msc
+
+storage = msc.DataNodeStorage.get(pk=456)
+result = storage.run_query("SELECT * FROM my_table LIMIT 100")
+```
+
+Expected success envelope:
+
+```python
+{
+    "ok": True,
+    "query_id": "abc123",
+    "dynamic_table_id": 456,
+    "results": [
+        {
+            "column_a": "value",
+            "column_b": 10,
+        }
+    ],
+    "truncated": False,
+    "max_rows": 1000,
+    "row_count": 1,
+    "error": None,
+}
+```
+
+The method returns the backend query envelope directly. If the backend rejects the SQL with a structured error payload, the SDK still returns that envelope so callers can inspect `error.kind`, `error.message`, and `retryable`.
+
 #### Tail deleting rows after a cutoff
 
 `DataNodeStorage.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.

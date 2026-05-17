@@ -302,6 +302,117 @@ def test_simple_table_storage_upsert_records_into_table_targets_sparse_upsert_ur
     ]
 
 
+def test_simple_table_storage_run_query_posts_plain_text_sql_with_params(monkeypatch):
+    captured: dict[str, object] = {}
+    session = SimpleNamespace(headers={"Content-Type": "application/json"})
+
+    class _Response:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": True,
+                "query_id": "abc123",
+                "simple_table_id": 41,
+                "results": [{"column_a": "value", "column_b": 10}],
+                "truncated": False,
+                "max_rows": 1000,
+                "row_count": 1,
+                "error": None,
+            }
+
+    def fake_make_request(**kwargs):
+        captured["headers"] = dict(kwargs["s"].headers)
+        captured["url"] = kwargs["url"]
+        captured["payload"] = kwargs["payload"]
+        captured["r_type"] = kwargs["r_type"]
+        captured["timeout"] = kwargs["time_out"]
+        return _Response()
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
+
+    storage = client_simple_table_models.SimpleTableStorage(
+        id=41,
+        storage_hash="orders_hash",
+        source_class_name="OrdersTable",
+        data_source=1,
+        creation_date="2026-04-01T00:00:00Z",
+    )
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "build_session",
+        classmethod(lambda cls: session),
+    )
+
+    result = storage.run_query(
+        "SELECT * FROM my_table LIMIT 100",
+        max_rows=1000,
+        statement_timeout_ms=15000,
+        timeout=30,
+    )
+
+    assert result["ok"] is True
+    assert result["simple_table_id"] == 41
+    assert captured == {
+        "headers": {"Content-Type": "text/plain"},
+        "url": f"{client_simple_table_models.SimpleTableStorage.get_object_url()}/41/run_query/",
+        "payload": {
+            "data": "SELECT * FROM my_table LIMIT 100",
+            "params": {"max_rows": 1000, "statement_timeout_ms": 15000},
+        },
+        "r_type": "POST",
+        "timeout": 30,
+    }
+    assert session.headers == {"Content-Type": "application/json"}
+
+
+def test_simple_table_storage_run_query_returns_structured_error_envelope(monkeypatch):
+    session = SimpleNamespace(headers={})
+
+    class _Response:
+        status_code = 400
+        content = b'{"ok": false}'
+
+        @staticmethod
+        def json():
+            return {
+                "ok": False,
+                "query_id": "abc123",
+                "simple_table_id": 41,
+                "results": [],
+                "truncated": False,
+                "max_rows": 0,
+                "row_count": 0,
+                "error": {
+                    "kind": "validation_error",
+                    "message": "Only SELECT/WITH/EXPLAIN queries are allowed.",
+                    "retryable": False,
+                    "sqlstate": None,
+                },
+            }
+
+    monkeypatch.setattr(client_simple_table_models, "make_request", lambda **_kwargs: _Response())
+
+    storage = client_simple_table_models.SimpleTableStorage(
+        id=41,
+        storage_hash="orders_hash",
+        source_class_name="OrdersTable",
+        data_source=1,
+        creation_date="2026-04-01T00:00:00Z",
+    )
+    monkeypatch.setattr(
+        client_simple_table_models.SimpleTableStorage,
+        "build_session",
+        classmethod(lambda cls: session),
+    )
+
+    result = storage.run_query("DELETE FROM my_table")
+    assert result["ok"] is False
+    assert result["error"]["kind"] == "validation_error"
+
+
 def test_simple_table_rejects_user_declared_id_field():
     class InvalidRow(SimpleTable):
         id: int
