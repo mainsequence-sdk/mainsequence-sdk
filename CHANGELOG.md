@@ -20,6 +20,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 
+## [3.19.17] - 2026-05-17
+
+### Added
+
+- Added `mainsequence data-node run_query` and `mainsequence simple_table run_query` so the CLI can execute raw read-only SQL against published dynamic tables and simple tables by storage id through the SDK-backed `run_query(...)` methods.
+
+### Changed
+
+- Documented the new raw query CLI commands in the CLI reference plus the data-node and simple-table knowledge docs, including simple-table query limits via `--max-rows` and `--statement-timeout-ms`.
+
 ## [3.19.16] - 2026-05-17
 
 ### Added

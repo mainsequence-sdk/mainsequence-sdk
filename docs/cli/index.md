@@ -203,6 +203,8 @@ mainsequence organization teams delete 9
 mainsequence simple_table list
 mainsequence simple_table list --filter namespace=pytest_alice
 mainsequence simple_table detail 41
+mainsequence simple_table run_query 41 "SELECT 1 AS ok"
+mainsequence simple_table run_query 41 "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
 mainsequence simple_table add-label 41 --label reference-data
 mainsequence simple_table remove-label 41 --label deprecated
 mainsequence simple_table delete 41
@@ -216,6 +218,7 @@ mainsequence data-node search "close price" --data-source-id 2
 mainsequence data-node search "portfolio weights" --mode description
 mainsequence data-node search close --mode column
 mainsequence data-node detail 123
+mainsequence data-node run_query 123 "SELECT 1 AS ok"
 mainsequence data-node refresh-search-index 123
 mainsequence data-node add-label 123 --label curated
 mainsequence data-node remove-label 123 --label legacy
@@ -381,6 +384,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
 - `mainsequence simple_table list --filter namespace=...` is the first-class CLI form for narrowing simple table storages by storage namespace.
 - `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
+- `mainsequence simple_table run_query` executes `SimpleTableStorage.run_query()` against one storage id and prints the backend query envelope. Use `--max-rows` and `--statement-timeout-ms` when you need server-side limits.
 - `mainsequence simple_table add-label` and `remove-label` mutate `SimpleTableStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
@@ -409,6 +413,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
 - `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
+- `mainsequence data-node run_query` executes `DataNodeStorage.run_query()` against one storage id and prints the backend query envelope.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.

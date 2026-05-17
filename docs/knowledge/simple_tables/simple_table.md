@@ -382,3 +382,10 @@ Expected success envelope:
 ```
 
 If the backend returns a structured error envelope, the SDK returns that envelope directly so callers can inspect the backend validation error instead of losing it to a generic transport exception.
+
+CLI:
+
+```bash
+mainsequence simple_table run_query 123 "SELECT 1 AS ok"
+mainsequence simple_table run_query 123 "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
+```

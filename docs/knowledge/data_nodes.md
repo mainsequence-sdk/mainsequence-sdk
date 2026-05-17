@@ -561,6 +561,13 @@ Expected success envelope:
 
 The method returns the backend query envelope directly. If the backend rejects the SQL with a structured error payload, the SDK still returns that envelope so callers can inspect `error.kind`, `error.message`, and `retryable`.
 
+CLI:
+
+```bash
+mainsequence data-node run_query 456 "SELECT 1 AS ok"
+mainsequence data-node run_query 456 "SELECT * FROM my_table LIMIT 100"
+```
+
 #### Tail deleting rows after a cutoff
 
 `DataNodeStorage.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.

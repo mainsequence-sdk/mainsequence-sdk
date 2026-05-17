@@ -3156,6 +3156,42 @@ def get_simple_table_storage(
         raise ApiError(f"Simple table storage fetch failed: {e}") from e
 
 
+def run_simple_table_storage_query(
+    storage_id: int | str,
+    sql: str,
+    *,
+    max_rows: int | None = None,
+    statement_timeout_ms: int | None = None,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Run a raw SQL query against one simple table storage via SDK client model.
+    """
+    try:
+        def _run_query(ClientSimpleTableStorage):
+            storage = ClientSimpleTableStorage.get(pk=int(storage_id), timeout=timeout)
+            payload = storage.run_query(
+                sql,
+                max_rows=max_rows,
+                statement_timeout_ms=statement_timeout_ms,
+                timeout=timeout,
+            )
+            return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_simple_tables",
+            class_name="SimpleTableStorage",
+            operation=_run_query,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Simple table storage not found: {storage_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Simple table query failed: {e}") from e
+
+
 def delete_simple_table_storage(
     storage_id: int | str,
     *,
@@ -4061,6 +4097,35 @@ def refresh_data_node_storage_search_index(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage search index refresh failed: {e}") from e
+
+
+def run_data_node_storage_query(
+    storage_id: int | str,
+    sql: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Run a raw SQL query against one data node storage via SDK client model.
+    """
+    try:
+        def _run_query(ClientDataNodeStorage):
+            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            payload = storage.run_query(sql, timeout=timeout)
+            return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_tdag",
+            class_name="DataNodeStorage",
+            operation=_run_query,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"Data node storage not found: {storage_id}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"Data node query failed: {e}") from e
 
 
 def delete_data_node_storage(

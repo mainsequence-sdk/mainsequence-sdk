@@ -494,6 +494,65 @@ def test_list_simple_table_storages_uses_client_model(cli_mod, monkeypatch):
     assert out == [{"id": 41, "source_class_name": "OrdersTable"}]
 
 
+def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientSimpleTableStorage:
+            @classmethod
+            def get(cls, pk, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+
+                class _Storage:
+                    def run_query(self, sql, *, max_rows=None, statement_timeout_ms=None, timeout=None):
+                        captured["sql"] = sql
+                        captured["max_rows"] = max_rows
+                        captured["statement_timeout_ms"] = statement_timeout_ms
+                        captured["query_timeout"] = timeout
+                        return {
+                            "ok": True,
+                            "query_id": "query-123",
+                            "simple_table_id": pk,
+                            "results": [{"value": 1}],
+                            "truncated": False,
+                            "max_rows": max_rows,
+                            "row_count": 1,
+                            "error": None,
+                        }
+
+                return _Storage()
+
+        return operation(_ClientSimpleTableStorage)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.run_simple_table_storage_query(
+        41,
+        "SELECT 1 AS value",
+        max_rows=1000,
+        statement_timeout_ms=15000,
+        timeout=12,
+    )
+    assert captured == {
+        "module_name": "mainsequence.client.models_simple_tables",
+        "class_name": "SimpleTableStorage",
+        "pk": 41,
+        "timeout": 12,
+        "sql": "SELECT 1 AS value",
+        "max_rows": 1000,
+        "statement_timeout_ms": 15000,
+        "query_timeout": 12,
+    }
+    assert out["ok"] is True
+    assert out["simple_table_id"] == 41
+    assert out["results"] == [{"value": 1}]
+
+
 def test_simple_tables_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -569,6 +628,58 @@ def test_simple_tables_detail(cli_mod, runner, monkeypatch):
     assert "Simple Table" in result.output
     assert "OrdersTable" in result.output
     assert "orders_symbol_idx" in result.output
+
+
+def test_simple_tables_run_query(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _run_query(storage_id, sql, *, max_rows=None, statement_timeout_ms=None, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["sql"] = sql
+        captured["max_rows"] = max_rows
+        captured["statement_timeout_ms"] = statement_timeout_ms
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "query_id": "query-123",
+            "simple_table_id": storage_id,
+            "results": [{"value": 1}],
+            "truncated": False,
+            "max_rows": max_rows,
+            "row_count": 1,
+            "error": None,
+        }
+
+    monkeypatch.setattr(cli_mod, "run_simple_table_storage_query", _run_query)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "simple_table",
+            "run_query",
+            "41",
+            "SELECT 1 AS value",
+            "--max-rows",
+            "1000",
+            "--statement-timeout-ms",
+            "15000",
+            "--timeout",
+            "25",
+        ],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "storage_id": 41,
+        "sql": "SELECT 1 AS value",
+        "max_rows": 1000,
+        "statement_timeout_ms": 15000,
+        "timeout": 25,
+    }
+    assert "Simple table query completed: id=41" in result.output
+    assert "Simple Table Query" in result.output
+    assert "query-123" in result.output
+    assert '"value": 1' in result.output
 
 
 def test_simple_tables_delete(cli_mod, runner, monkeypatch):
@@ -7809,6 +7920,92 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert "Build Configuration" in result.output
     assert "time_index_name" in result.output
     assert "90 days" in result.output
+
+
+def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientDataNodeStorage:
+            @classmethod
+            def get(cls, pk, timeout=None):
+                captured["pk"] = pk
+                captured["timeout"] = timeout
+
+                class _Storage:
+                    def run_query(self, sql, *, timeout=None):
+                        captured["sql"] = sql
+                        captured["query_timeout"] = timeout
+                        return {
+                            "ok": True,
+                            "query_id": "query-456",
+                            "dynamic_table_id": pk,
+                            "results": [{"value": 1}],
+                            "truncated": False,
+                            "max_rows": 0,
+                            "row_count": 1,
+                            "error": None,
+                        }
+
+                return _Storage()
+
+        return operation(_ClientDataNodeStorage)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.run_data_node_storage_query(42, "SELECT 1 AS value", timeout=14)
+    assert captured == {
+        "module_name": "mainsequence.client.models_tdag",
+        "class_name": "DataNodeStorage",
+        "pk": 42,
+        "timeout": 14,
+        "sql": "SELECT 1 AS value",
+        "query_timeout": 14,
+    }
+    assert out["ok"] is True
+    assert out["dynamic_table_id"] == 42
+    assert out["results"] == [{"value": 1}]
+
+
+def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _run_query(storage_id, sql, *, timeout=None):
+        captured["storage_id"] = storage_id
+        captured["sql"] = sql
+        captured["timeout"] = timeout
+        return {
+            "ok": True,
+            "query_id": "query-456",
+            "dynamic_table_id": storage_id,
+            "results": [{"value": 1}],
+            "truncated": False,
+            "max_rows": 0,
+            "row_count": 1,
+            "error": None,
+        }
+
+    monkeypatch.setattr(cli_mod, "run_data_node_storage_query", _run_query)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "run_query", "42", "SELECT 1 AS value", "--timeout", "15"],
+    )
+    assert result.exit_code == 0
+    assert captured == {
+        "storage_id": 42,
+        "sql": "SELECT 1 AS value",
+        "timeout": 15,
+    }
+    assert "Data node query completed: id=42" in result.output
+    assert "Data Node Query" in result.output
+    assert "query-456" in result.output
+    assert '"value": 1' in result.output
 
 
 def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):

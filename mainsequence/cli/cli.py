@@ -187,7 +187,9 @@ from .api import (
     remove_workspace_labels,
     repo_name_from_git_url,
     resolve_agent_session_runtime_access,
+    run_data_node_storage_query,
     run_project_job,
+    run_simple_table_storage_query,
     safe_slug,
     schedule_batch_project_jobs,
     search_projects,
@@ -4355,6 +4357,28 @@ def _format_simple_table_storage_preview(storage: dict[str, object]) -> list[tup
     ]
 
 
+def _print_storage_query_payload(title: str, payload: dict[str, object]) -> None:
+    print_kv(
+        title,
+        [
+            ("OK", str(payload.get("ok"))),
+            ("Query ID", str(payload.get("query_id") or "-")),
+            ("Dynamic Table ID", str(payload.get("dynamic_table_id") or "-")),
+            ("Simple Table ID", str(payload.get("simple_table_id") or "-")),
+            ("Row Count", str(payload.get("row_count") or 0)),
+            ("Truncated", str(payload.get("truncated"))),
+            ("Max Rows", str(payload.get("max_rows") or "-")),
+        ],
+    )
+    print_kv(
+        f"{title} Payload",
+        [
+            ("Results", _format_json_value(payload.get("results"))),
+            ("Error", _format_json_value(payload.get("error"))),
+        ],
+    )
+
+
 def _simple_tables_list_impl(
     timeout: int | None,
     filter_entries: list[str] | None,
@@ -4468,6 +4492,43 @@ def _simple_tables_delete_impl(
 
     success(f"Simple table deleted: id={storage_id}")
     print_kv("Deleted Simple Table", _format_simple_table_storage_preview(deleted))
+
+
+def _simple_tables_run_query_impl(
+    *,
+    storage_id: int,
+    sql: str,
+    max_rows: int | None,
+    statement_timeout_ms: int | None,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        payload = run_simple_table_storage_query(
+            storage_id,
+            sql,
+            max_rows=max_rows,
+            statement_timeout_ms=statement_timeout_ms,
+            timeout=timeout,
+        )
+    except ApiError as e:
+        error(f"Simple table query failed: {e}")
+        raise typer.Exit(1) from e
+
+    ok = bool(payload.get("ok"))
+    if _emit_json(payload):
+        if not ok:
+            raise typer.Exit(1)
+        return
+
+    if ok:
+        success(f"Simple table query completed: id={storage_id}")
+    else:
+        error(f"Simple table query failed: id={storage_id}")
+    _print_storage_query_payload("Simple Table Query", payload)
+    if not ok:
+        raise typer.Exit(1)
 
 
 def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
@@ -5403,6 +5464,31 @@ def simple_tables_delete_cmd(
     Delete one simple table storage.
     """
     _simple_tables_delete_impl(storage_id=storage_id, timeout=timeout)
+
+
+@simple_table.command("run_query")
+def simple_tables_run_query_cmd(
+    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    sql: str = typer.Argument(..., help="Raw SQL query to run."),
+    max_rows: int | None = typer.Option(None, "--max-rows", min=1, help="Maximum number of rows to return."),
+    statement_timeout_ms: int | None = typer.Option(
+        None,
+        "--statement-timeout-ms",
+        min=1,
+        help="Backend statement timeout in milliseconds.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Run a raw SQL query against one simple table storage.
+    """
+    _simple_tables_run_query_impl(
+        storage_id=storage_id,
+        sql=sql,
+        max_rows=max_rows,
+        statement_timeout_ms=statement_timeout_ms,
+        timeout=timeout,
+    )
 
 
 @simple_table.command("add-label")
@@ -6805,6 +6891,35 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
     )
 
 
+def _data_node_storage_run_query_impl(
+    *,
+    storage_id: int,
+    sql: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        payload = run_data_node_storage_query(storage_id, sql, timeout=timeout)
+    except ApiError as e:
+        error(f"Data node query failed: {e}")
+        raise typer.Exit(1) from e
+
+    ok = bool(payload.get("ok"))
+    if _emit_json(payload):
+        if not ok:
+            raise typer.Exit(1)
+        return
+
+    if ok:
+        success(f"Data node query completed: id={storage_id}")
+    else:
+        error(f"Data node query failed: id={storage_id}")
+    _print_storage_query_payload("Data Node Query", payload)
+    if not ok:
+        raise typer.Exit(1)
+
+
 def _data_node_storage_delete_impl(
     *,
     storage_id: int,
@@ -6916,6 +7031,18 @@ def data_node_storage_detail_cmd(
     ```
     """
     _data_node_storage_detail_impl(storage_id=storage_id, timeout=timeout)
+
+
+@data_node_storage_group.command("run_query")
+def data_node_storage_run_query_cmd(
+    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    sql: str = typer.Argument(..., help="Raw SQL query to run."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Run a raw SQL query against one data node storage.
+    """
+    _data_node_storage_run_query_impl(storage_id=storage_id, sql=sql, timeout=timeout)
 
 
 @data_node_storage_group.command("refresh-search-index")
