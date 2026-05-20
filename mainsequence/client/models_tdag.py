@@ -144,11 +144,18 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         None, description="Last time index value"
     )
     earliest_index_value: datetime.datetime | None = Field(None, description="Earliest index value")
-
-    # multi_index_stats: Optional[Dict[str, Any]] = Field(None, description="Multi-index statistics JSON field")
-    # multi_index_column_stats:Optional[Dict[str, Any]] = Field(None, description="Multi-index statistics JSON field column based")
-
-    table_partition: dict[str, Any] = Field(..., description="Table partition settings")
+    storage_layout: dict[str, Any] | None = Field(
+        None, description="Server-derived logical storage layout"
+    )
+    physical_index_plan: dict[str, Any] | None = Field(
+        None, description="Server-rendered physical index plan"
+    )
+    multi_index_stats: dict[str, Any] | None = Field(
+        None, description="Canonical multi-index progress statistics"
+    )
+    multi_index_column_stats: dict[str, Any] | None = Field(
+        None, description="Column-level multi-index statistics"
+    )
     open_for_everyone: bool = Field(
         default=False, description="Whether the table configuration is open for everyone"
     )
@@ -158,25 +165,66 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     column_index_names: list | None = [None]
 
     def get_data_updates(self) -> UpdateStatistics:
-        max_per_asset = None
-
         url = self.get_object_url() + f"/{self.related_table}/get_stats/"
         s = self.build_session()
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, accept_gzip=True)
         if r.status_code != 200:
             raise_for_response(r)
         data = r.json()
-        multi_index_stats = data["multi_index_stats"]
-        multi_index_column_stats = data["multi_index_column_stats"]
+        multi_index_stats = data.get("multi_index_stats")
+        multi_index_column_stats = data.get("multi_index_column_stats")
         max_time_index_value = self.last_time_index_value
+        global_index_progress = None
+        index_progress = None
+        index_min = None
+
+        def _max_leaf(node):
+            if isinstance(node, Mapping):
+                candidates = [_max_leaf(v) for v in node.values()]
+                candidates = [v for v in candidates if v is not None]
+                return max(candidates) if candidates else None
+            return node
+
         if multi_index_stats is not None:
-            max_per_asset = multi_index_stats["max_per_asset_symbol"]
-            max_per_asset = {k: request_to_datetime(v) for k, v in max_per_asset.items()}
-            max_time_index_value = np.max(list(max_per_asset.values()))
+            global_index_progress = (
+                multi_index_stats.get("_GLOBAL_")
+                or multi_index_stats.get("global_index_progress")
+            )
+            global_index_progress = UpdateStatistics._normalize_nested(global_index_progress)
+            index_progress = UpdateStatistics._normalize_nested(
+                multi_index_stats.get("index_progress")
+            )
+            index_min = UpdateStatistics._normalize_nested(multi_index_stats.get("index_min"))
+
+            if global_index_progress is not None:
+                max_time_index_value = global_index_progress.get("max") or max_time_index_value
+
+            if index_progress is None:
+                # LEGACY_COMPAT: older servers returned asset-keyed progress under
+                # max_per_asset_symbol. Keep this as a fallback only; canonical
+                # callers should use index_progress.
+                index_progress = UpdateStatistics._normalize_nested(
+                    multi_index_stats.get("max_per_asset_symbol")
+                )
+                if max_time_index_value is None and index_progress is not None:
+                    max_time_index_value = _max_leaf(index_progress)
+
+            if index_min is None:
+                # LEGACY_COMPAT: older servers returned asset-keyed minimums under
+                # min_per_asset_symbol. Keep this as a fallback only; canonical
+                # callers should use index_min.
+                index_min = UpdateStatistics._normalize_nested(
+                    multi_index_stats.get("min_per_asset_symbol")
+                )
 
         du = UpdateStatistics(
             max_time_index_value=max_time_index_value,
-            asset_time_statistics=max_per_asset,
+            global_index_progress=global_index_progress,
+            index_progress=index_progress,
+            index_min=index_min,
+            # LEGACY_COMPAT: downstream SDK callers still read asset_time_statistics
+            # until the UpdateStatistics migration removes asset-centric names.
+            asset_time_statistics=index_progress,
             multi_index_column_stats=multi_index_column_stats,
         )
 
@@ -2048,6 +2096,9 @@ class UpdateStatistics(BaseUpdateStatistics):
     Time-series-specific update statistics used by DataNode updaters.
     """
 
+    global_index_progress: dict[str, datetime.datetime | None] | None = None
+    index_progress: dict[str, Any] | None = None
+    index_min: dict[str, Any] | None = None
     asset_time_statistics: dict[str, datetime.datetime | None | dict] | None = None
 
     max_time_index_value: datetime.datetime | None = None  # does not include filter applicable for 1d index
