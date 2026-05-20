@@ -662,9 +662,9 @@ class InterpolatedPrices(DataNode):
         upsampled_df = []
 
         # TODO this should be a helper function
-        unique_identifier_range_map = self.update_statistics.get_update_range_map_great_or_equal()
-        full_last_observation = self.get_ranged_data_per_asset(
-            range_descriptor=unique_identifier_range_map
+        dimension_range_map = self.update_statistics.get_dimension_range_map_great_or_equal()
+        full_last_observation = self.get_df_between_dates(
+            dimension_range_map=dimension_range_map
         )
         last_observation_map = {}
 
@@ -760,10 +760,10 @@ class InterpolatedPrices(DataNode):
         """
         Main method to get upsampled data for prices.
         """
-        unique_identifier_range_map = self.update_statistics.get_update_range_map_great_or_equal()
+        dimension_range_map = self.update_statistics.get_dimension_range_map_great_or_equal()
 
-        raw_data_df = self.bars_ts.get_ranged_data_per_asset(
-            range_descriptor=unique_identifier_range_map
+        raw_data_df = self.bars_ts.get_df_between_dates(
+            dimension_range_map=dimension_range_map
         )
         if raw_data_df.empty:
             self.logger.info("No new data to interpolate")

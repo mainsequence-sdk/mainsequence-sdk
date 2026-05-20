@@ -2574,6 +2574,78 @@ class UpdateStatistics(BaseUpdateStatistics):
             }
         return range_map
 
+    def iter_index_progress_coordinates(
+        self,
+        *,
+        identity_dimensions: Sequence[str] | None = None,
+    ) -> list[tuple[dict[str, Any], Any]]:
+        """
+        Return `(coordinate, timestamp)` leaves from canonical `index_progress`.
+
+        `identity_dimensions` must match `index_names[1:]` for nested
+        multidimensional stats. When omitted, this helper preserves the common
+        two-index asset-table shape by using `unique_identifier`.
+        """
+        progress_stats = self._progress_stats()
+        if not progress_stats:
+            return []
+
+        dimensions = list(identity_dimensions or ["unique_identifier"])
+        coordinates: list[tuple[dict[str, Any], Any]] = []
+
+        def _visit(node: Any, depth: int, coordinate: dict[str, Any]) -> None:
+            if isinstance(node, dict):
+                if depth >= len(dimensions):
+                    raise ValueError(
+                        "identity_dimensions must include a name for every "
+                        "nested index_progress level."
+                    )
+                dimension_name = dimensions[depth]
+                for key, value in node.items():
+                    _visit(value, depth + 1, {**coordinate, dimension_name: key})
+                return
+
+            coordinates.append((coordinate, node))
+
+        _visit(progress_stats, 0, {})
+        return coordinates
+
+    def get_index_progress_leaf_values(self) -> list[Any]:
+        values: list[Any] = []
+
+        def _visit(node: Any) -> None:
+            if isinstance(node, dict):
+                for value in node.values():
+                    _visit(value)
+                return
+            if node is not None:
+                values.append(node)
+
+        _visit(self._progress_stats())
+        return values
+
+    def get_dimension_range_map_great_or_equal(
+        self,
+        *,
+        identity_dimensions: Sequence[str] | None = None,
+        extra_time_delta: datetime.timedelta | None = None,
+    ) -> list[dict[str, Any]]:
+        dimension_range_map = []
+        for coordinate, value in self.iter_index_progress_coordinates(
+            identity_dimensions=identity_dimensions
+        ):
+            start_date = value or self._initial_fallback_date
+            if start_date is not None and extra_time_delta is not None:
+                start_date = start_date + extra_time_delta
+            dimension_range_map.append(
+                {
+                    "coordinate": coordinate,
+                    "start_date_operand": ">=",
+                    "start_date": start_date,
+                }
+            )
+        return dimension_range_map
+
     def get_last_update_index_2d(self, uid):
         return self._progress_stats()[uid] or self._initial_fallback_date
 

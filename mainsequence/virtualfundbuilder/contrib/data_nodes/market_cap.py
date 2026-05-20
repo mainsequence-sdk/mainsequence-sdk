@@ -256,7 +256,10 @@ class MarketCap(WeightsBase, DataNode):
         }
 
         mc = self.historical_market_cap_ts.get_df_between_dates(
-            unique_identifier_range_map=market_cap_uid_range_map,
+            dimension_range_map=[
+                {"coordinate": {"unique_identifier": uid}, **date_info}
+                for uid, date_info in market_cap_uid_range_map.items()
+            ],
             great_or_equal=False,
         )
         mc = mc[~mc.index.duplicated(keep="first")]

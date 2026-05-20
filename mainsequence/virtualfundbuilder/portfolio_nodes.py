@@ -365,7 +365,8 @@ class PortfolioStrategy(DataNode):
         """
         # Get last observations for each exchange
         update_statics_from_dependencies = self.bars_ts.update_statistics
-        earliest_last_value = min(update_statics_from_dependencies.asset_time_statistics.values())
+        progress_values = update_statics_from_dependencies.get_index_progress_leaf_values()
+        earliest_last_value = min(progress_values) if progress_values else None
 
         if earliest_last_value is None:
             self.logger.warning(
@@ -622,7 +623,7 @@ rebalance details:"""
     def _interpolate_bars_index(
         self,
         new_index: pd.DatetimeIndex,
-        unique_identifier_list: list,
+        unique_identifiers: list,
         index_freq: str,
         bars_ts: WrapperDataNode,
     ):
@@ -642,7 +643,7 @@ rebalance details:"""
             end_date=fetch_end_date,
             great_or_equal=True,
             less_or_equal=True,
-            unique_identifier_list=unique_identifier_list,
+            dimension_filters={"unique_identifier": unique_identifiers},
         )
 
         if len(raw_prices) == 0:
@@ -726,7 +727,7 @@ rebalance details:"""
             new_index=new_index,
             bars_ts=self.bars_ts,
             index_freq=index_freq,
-            unique_identifier_list=list(
+            unique_identifiers=list(
                 signal_weights.columns.get_level_values("unique_identifier")
             ),
         )

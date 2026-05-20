@@ -55,7 +55,7 @@ class MSInterface:
         if use_last_observation:
             original_request_date=target_date
             update_statistics = data_node.get_update_statistics()
-            target_date = update_statistics.asset_time_statistics[curve_name]
+            target_date = update_statistics.get_last_update_index_2d(curve_name)
             logger.warning("Curve is using last observation")
 
         limit = target_date + datetime.timedelta(days=1)

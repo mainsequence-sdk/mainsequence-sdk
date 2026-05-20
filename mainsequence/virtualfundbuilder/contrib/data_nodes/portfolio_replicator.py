@@ -264,14 +264,16 @@ class ETFReplicator(WeightsBase, DataNode):
             end_date=None,
             great_or_equal=True,
             less_or_equal=True,
-            unique_identifier_list=[a.unique_identifier for a in self.price_assets],
+            dimension_filters={
+                "unique_identifier": [a.unique_identifier for a in self.price_assets]
+            },
         )
         etf_prices = self.etf_bars_ts.get_df_between_dates(
             start_date=prices_start_date,
             end_date=None,
             great_or_equal=True,
             less_or_equal=True,
-            unique_identifier_list=[self.etf_asset.unique_identifier],
+            dimension_filters={"unique_identifier": [self.etf_asset.unique_identifier]},
         )
 
         prices = pd.concat([prices, etf_prices])

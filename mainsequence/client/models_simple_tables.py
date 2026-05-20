@@ -32,7 +32,8 @@ from .models_tdag import (
     UpdateNodeRef,
     _executor,
     _require_local_pod_project,
-    get_chunk_stats,
+    build_last_update_index_time_payload,
+    get_index_progress_chunk_stats,
     request_to_datetime,
 )
 from .utils import make_request, serialize_to_json
@@ -928,6 +929,42 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
 
         return depth_df
 
+    def set_last_update_index_time_from_update_stats(
+        self,
+        *,
+        global_index_progress: dict[str, Any] | None = None,
+        index_progress: dict[str, Any] | None = None,
+        index_min: dict[str, Any] | None = None,
+        multi_index_stats: dict[str, Any] | None = None,
+        multi_index_column_stats: dict[str, Any] | None = None,
+        timeout=None,
+    ) -> SimpleTableUpdate:
+        s = self.build_session()
+        url = self.get_object_url() + f"/{self.id}/set_last_update_index_time_from_update_stats/"
+
+        data_to_comp = build_last_update_index_time_payload(
+            global_index_progress=global_index_progress,
+            index_progress=index_progress,
+            index_min=index_min,
+            multi_index_stats=multi_index_stats,
+            multi_index_column_stats=multi_index_column_stats,
+        )
+        chunk_json_str = json.dumps(serialize_to_json(data_to_comp))
+        compressed = gzip.compress(chunk_json_str.encode("utf-8"))
+        compressed_b64 = base64.b64encode(compressed).decode("utf-8")
+        payload = {"json": {"data": compressed_b64}}
+        r = make_request(
+            s=s,
+            loaders=self.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if r.status_code != 200:
+            raise Exception(f"Error in request {r.text}")
+        return type(self)(**r.json())
+
     @classmethod
     def get_upstream_nodes(cls, storage_hash, data_source_id, timeout=None):
         s = cls.build_session()
@@ -1144,13 +1181,13 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         if duplicates_exist:
             raise Exception(f"Duplicates found in columns: {index_names}")
 
-        global_stats, grouped_dates = get_chunk_stats(
+        global_stats, grouped_dates = get_index_progress_chunk_stats(
             chunk_df=data, index_names=index_names, time_index_name=time_index_name
         )
         multi_index_column_stats = {}
         column_names = [c for c in data.columns if c not in index_names]
         for c in column_names:
-            multi_index_column_stats[c] = global_stats["_PER_ASSET_"]
+            multi_index_column_stats[c] = global_stats["index_progress"]
         data_source.related_resource.insert_data_into_table(
             serialized_data_frame=data,
             data_node_update=self,
@@ -1160,26 +1197,10 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             grouped_dates=grouped_dates,
         )
 
-        _, last_time_index_value = (
-            global_stats["_GLOBAL_"]["min"],
-            global_stats["_GLOBAL_"]["max"],
-        )
-        max_per_asset_symbol = None
-
-        def extract_max(node):
-            # Leaf case: a dict with 'min' and 'max'
-            if isinstance(node, dict) and "min" in node and "max" in node:
-                return node["max"]
-            # Otherwise recurse
-            return {k: extract_max(v) for k, v in node.items()}
-
-        if len(index_names) > 1:
-            max_per_asset_symbol = {
-                uid: extract_max(stats) for uid, stats in global_stats["_PER_ASSET_"].items()
-            }
         data_node_update = self.set_last_update_index_time_from_update_stats(
-            max_per_asset_symbol=max_per_asset_symbol,
-            last_time_index_value=last_time_index_value,
+            global_index_progress=global_stats["_GLOBAL_"],
+            index_progress=global_stats["index_progress"],
+            index_min=global_stats["index_min"],
             multi_index_column_stats=multi_index_column_stats,
         )
         return data_node_update

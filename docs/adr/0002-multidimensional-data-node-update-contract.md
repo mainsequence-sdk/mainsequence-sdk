@@ -894,6 +894,9 @@ Required test coverage:
 
 ### Phase 5: Data Source Adapters
 
+Status: skipped for now. This phase remains intentionally open while Phase 6
+runtime callers are migrated around backend-bound API payloads.
+
 - [ ] Update DuckDB read filters to use arbitrary dimension filters and coordinate
    ranges.
 - [ ] Update DuckDB merge and deduplication keys to use full `index_names`.
@@ -905,13 +908,13 @@ Required test coverage:
 
 ### Phase 6: Downstream Runtime Audit
 
-- [ ] Audit and migrate `mainsequence/tdag/data_nodes/`.
-- [ ] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
-- [ ] Audit and migrate `mainsequence/virtualfundbuilder/`.
-- [ ] Audit and migrate `mainsequence/instruments/`.
-- [ ] Audit `mainsequence/client/models_simple_tables.py` for the shared chunk
+- [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
+- [x] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
+- [x] Audit and migrate `mainsequence/virtualfundbuilder/`.
+- [x] Audit and migrate `mainsequence/instruments/`.
+- [x] Audit `mainsequence/client/models_simple_tables.py` for the shared chunk
    stats helper dependency.
-- [ ] Replace direct reads of `asset_time_statistics` with canonical helper calls
+- [x] Replace direct reads of `asset_time_statistics` with canonical helper calls
    or clearly marked `LEGACY_COMPAT` projections.
 
 ### Phase 7: Search And Joins

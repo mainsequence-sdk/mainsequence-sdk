@@ -77,6 +77,30 @@ def test_update_statistics_legacy_asset_time_statistics_projects_to_index_progre
     assert stats.asset_time_statistics == stats.index_progress
 
 
+def test_update_statistics_builds_canonical_dimension_range_map_for_nested_progress():
+    stats = UpdateStatistics(
+        index_progress={
+            "account-a": {"asset-1": "2026-05-01T02:00:00Z"},
+            "account-b": {"asset-2": "2026-05-01T03:00:00Z"},
+        },
+    )
+
+    assert stats.get_dimension_range_map_great_or_equal(
+        identity_dimensions=["account_uid", "unique_identifier"],
+    ) == [
+        {
+            "coordinate": {"account_uid": "account-a", "unique_identifier": "asset-1"},
+            "start_date_operand": ">=",
+            "start_date": _dt(2),
+        },
+        {
+            "coordinate": {"account_uid": "account-b", "unique_identifier": "asset-2"},
+            "start_date_operand": ">=",
+            "start_date": _dt(3),
+        },
+    ]
+
+
 def test_update_statistics_three_index_normalizes_nested_stats_and_filters_dataframe():
     stats = UpdateStatistics(
         global_index_progress={

@@ -1,5 +1,6 @@
 import inspect
 import json
+import warnings
 from datetime import datetime
 from enum import Enum
 from typing import Any, Union, get_args, get_origin, get_type_hints
@@ -111,9 +112,20 @@ def get_last_query_times_per_asset(
         Dict[str, Optional[float]]: A dictionary mapping asset IDs to their respective last query times expressed in UNIX timestamp.
     """
     if latest_value:
-        last_query_times_per_asset = data_node_storage["sourcetableconfiguration"][
-            "multi_index_stats"
-        ]["max_per_asset_symbol"]
+        multi_index_stats = data_node_storage["sourcetableconfiguration"]["multi_index_stats"]
+        last_query_times_per_asset = multi_index_stats.get("index_progress")
+        if last_query_times_per_asset is None:
+            # LEGACY_COMPAT: older storage metadata exposed max_per_asset_symbol.
+            # New storage stats use generic index_progress for every identity
+            # dimension after the time index.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: "
+                "multi_index_stats['max_per_asset_symbol'] was read. Use "
+                "multi_index_stats['index_progress'] instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            last_query_times_per_asset = multi_index_stats.get("max_per_asset_symbol", {})
     else:
         last_query_times_per_asset = {}
 

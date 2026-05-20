@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import tempfile
+import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -57,6 +58,17 @@ def get_data_source_from_orm() -> Any:
 
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
+
+
+def _unique_identifier_range_map_to_dimension_range_map(
+    range_descriptor: UniqueIdentifierRangeMap | None,
+) -> list[dict[str, Any]] | None:
+    if range_descriptor is None:
+        return None
+    return [
+        {"coordinate": {"unique_identifier": unique_identifier}, **copy.deepcopy(date_info)}
+        for unique_identifier, date_info in range_descriptor.items()
+    ]
 
 
 def get_latest_update_by_assets_filter(
@@ -314,6 +326,52 @@ class DataAccessMixin:
         pd.DataFrame
             A DataFrame containing rows that satisfy the combined time and identifier filters.
         """
+        if unique_identifier_list is not None:
+            # LEGACY_COMPAT: high-level asset-table alias. Runtime callers should
+            # pass dimension_filters={"unique_identifier": [...]} when targeting
+            # backend-backed data-node storage.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: unique_identifier_list was "
+                "passed to get_df_between_dates(). Use "
+                "dimension_filters={'unique_identifier': [...]} instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
+        if unique_identifier_range_map is not None:
+            # LEGACY_COMPAT: high-level asset-table alias. Runtime callers should
+            # pass dimension_range_map with explicit coordinate dictionaries.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: unique_identifier_range_map "
+                "was passed to get_df_between_dates(). Use dimension_range_map "
+                "with coordinate dictionaries instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
+        if isinstance(self.local_persist_manager, APIPersistManager):
+            if unique_identifier_list is not None:
+                if (
+                    dimension_filters is not None
+                    or index_coordinates is not None
+                    or dimension_range_map is not None
+                ):
+                    raise ValueError(
+                        "Do not mix unique_identifier_list with canonical dimension filters."
+                    )
+                dimension_filters = {"unique_identifier": list(unique_identifier_list)}
+                unique_identifier_list = None
+            if unique_identifier_range_map is not None:
+                if (
+                    dimension_filters is not None
+                    or index_coordinates is not None
+                    or dimension_range_map is not None
+                ):
+                    raise ValueError(
+                        "Do not mix unique_identifier_range_map with canonical dimension filters."
+                    )
+                dimension_range_map = _unique_identifier_range_map_to_dimension_range_map(
+                    unique_identifier_range_map
+                )
+                unique_identifier_range_map = None
         return self.local_persist_manager.get_df_between_dates(
             start_date=start_date,
             end_date=end_date,
@@ -342,7 +400,7 @@ class DataAccessMixin:
             A DataFrame with the ranged data.
         """
         return self.get_df_between_dates(
-            unique_identifier_range_map=range_descriptor,
+            dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor),
             columns=columns,
         )
 
@@ -364,7 +422,7 @@ class DataAccessMixin:
         for k, v in range_descriptor.items():
             v["start_date_operand"] = "=>"
         return self.get_df_between_dates(
-            unique_identifier_range_map=range_descriptor,
+            dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor),
             columns=columns,
         )
 
@@ -1359,7 +1417,24 @@ class DataNode(DataAccessMixin, ABC):
             return self.latest_persisted_time_index
         if hasattr(self, "overwrite_latest_value"):
             return self.overwrite_latest_value
-        return getattr(historical_update, "last_time_index_value", None)
+        update_statistics = getattr(historical_update, "update_statistics", None)
+        max_time_index_value = getattr(update_statistics, "max_time_index_value", None)
+        if max_time_index_value is not None:
+            return max_time_index_value
+
+        legacy_last_time_index_value = getattr(historical_update, "last_time_index_value", None)
+        if legacy_last_time_index_value is not None:
+            # LEGACY_COMPAT: historical_update.last_time_index_value is a scalar
+            # projection kept for older SDK surfaces. Runtime logic should prefer
+            # update_statistics.max_time_index_value from global_index_progress.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: "
+                "historical_update.last_time_index_value was read. Use "
+                "historical_update.update_statistics.max_time_index_value instead.",
+                FutureWarning,
+                stacklevel=2,
+            )
+        return legacy_last_time_index_value
 
     def _validate_update_output(self, temp_df: pd.DataFrame) -> None:
         run_operations.UpdateRunner.validate_data_frame(
@@ -1553,7 +1628,9 @@ class WrapperDataNode(DataNode):
         Returns:
             A DataFrame with the ranged data.
         """
-        return self.get_df_between_dates(unique_identifier_range_map=range_descriptor)
+        return self.get_df_between_dates(
+            dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor)
+        )
 
     def get_df_between_dates(
         self,
@@ -1578,6 +1655,17 @@ class WrapperDataNode(DataNode):
         Returns:
             A pandas DataFrame with the requested data.
         """
+        # LEGACY_COMPAT: translated data-node reads are still expressed in terms
+        # of source unique identifiers. Outbound calls below are converted to
+        # canonical dimension filters/range maps before they reach API data nodes.
+        warnings.warn(
+            "Deprecated TDAG compatibility path: translated data-node reads with "
+            "unique_identifier_list/unique_identifier_range_map should migrate to "
+            "canonical dimension filters once translation tables support arbitrary "
+            "identity dimensions.",
+            FutureWarning,
+            stacklevel=2,
+        )
         if (unique_identifier_list is None) == (unique_identifier_range_map is None):
             raise ValueError(
                 "Pass **either** unique_identifier_list **or** unique_identifier_range_map, but not both."
@@ -1673,7 +1761,9 @@ class WrapperDataNode(DataNode):
                     continue
 
                 tmp_data = api_ts.get_df_between_dates(
-                    unique_identifier_range_map=unique_identifier_range_map_target,
+                    dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(
+                        unique_identifier_range_map_target
+                    ),
                     start_date=start_date,
                     end_date=end_date,
                     great_or_equal=great_or_equal,
@@ -1683,7 +1773,7 @@ class WrapperDataNode(DataNode):
                 tmp_data = api_ts.get_df_between_dates(
                     start_date=start_date,
                     end_date=end_date,
-                    unique_identifier_list=list(target_source_map.keys()),
+                    dimension_filters={"unique_identifier": list(target_source_map.keys())},
                     great_or_equal=great_or_equal,
                     less_or_equal=less_or_equal,
                 )

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_simple_tables, models_tdag
 
 
 def _dt(hour: int) -> datetime.datetime:
@@ -242,34 +242,26 @@ def test_get_index_progress_chunk_stats_for_three_index_frame():
     assert grouped_dates is not None
 
 
-def test_get_chunk_stats_keeps_legacy_per_asset_wrapper_shape():
-    df = pd.DataFrame(
-        {
-            "time_index": [_dt(0), _dt(2)],
-            "unique_identifier": ["asset-1", "asset-1"],
-            "value": [1, 2],
-        }
-    )
+def test_set_last_update_index_time_rejects_legacy_per_asset_backend_payload(monkeypatch):
+    def _unexpected_make_request(**_kwargs):
+        raise AssertionError("legacy backend payload should fail before make_request")
 
-    with pytest.warns(FutureWarning, match="get_chunk_stats"):
-        stats, _ = models_tdag.get_chunk_stats(
-            df,
-            time_index_name="time_index",
-            index_names=["time_index", "unique_identifier"],
+    monkeypatch.setattr(models_tdag, "make_request", _unexpected_make_request)
+
+    update = _minimal_update()
+    with pytest.raises(ValidationError):
+        update.set_last_update_index_time_from_update_stats(
+            multi_index_stats={
+                "_GLOBAL_": {
+                    "min": "2026-05-01 00:00:00+00:00",
+                    "max": "2026-05-01 03:00:00+00:00",
+                },
+                "_PER_ASSET_": {
+                    "asset-1": "2026-05-01 03:00:00+00:00",
+                },
+            },
+            multi_index_column_stats={},
         )
-
-    assert stats == {
-        "_GLOBAL_": {
-            "min": _dt(0).timestamp(),
-            "max": _dt(2).timestamp(),
-        },
-        "_PER_ASSET_": {
-            "asset-1": {
-                "min": _dt(0).timestamp(),
-                "max": _dt(2).timestamp(),
-            }
-        },
-    }
 
 
 def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
@@ -372,3 +364,68 @@ def test_upsert_data_into_table_rejects_full_index_duplicates():
             data_source=SimpleNamespace(related_resource=SimpleNamespace()),
             overwrite=True,
         )
+
+
+def test_simple_table_upsert_data_into_table_computes_canonical_stats():
+    calls = {}
+
+    class FakeStorage:
+        def handle_source_table_configuration_creation(self, **kwargs):
+            calls["source_config"] = kwargs
+
+    class FakeResource:
+        def insert_data_into_table(self, **kwargs):
+            calls["insert"] = kwargs
+
+    update = models_simple_tables.SimpleTableUpdate.model_construct(
+        id=88,
+        update_hash="simple-update-hash",
+        build_configuration={},
+        ogm_dependencies_linked=False,
+        remote_table=FakeStorage(),
+    )
+
+    def _fake_set_last(**kwargs):
+        calls["set_last"] = kwargs
+        return "updated"
+
+    object.__setattr__(
+        update,
+        "set_last_update_index_time_from_update_stats",
+        _fake_set_last,
+    )
+
+    index = pd.MultiIndex.from_tuples(
+        [
+            (_dt(0), "asset-1"),
+            (_dt(2), "asset-1"),
+            (_dt(3), "asset-2"),
+        ],
+        names=["time_index", "unique_identifier"],
+    )
+    df = pd.DataFrame({"value": [1.0, 2.0, 3.0]}, index=index)
+
+    result = update.upsert_data_into_table(
+        df,
+        data_source=SimpleNamespace(related_resource=FakeResource()),
+        overwrite=True,
+    )
+
+    assert result == "updated"
+    assert calls["set_last"]["global_index_progress"] == {"min": _dt(0), "max": _dt(3)}
+    assert calls["set_last"]["index_progress"] == {
+        "asset-1": _dt(2),
+        "asset-2": _dt(3),
+    }
+    assert calls["set_last"]["index_min"] == {
+        "asset-1": _dt(0),
+        "asset-2": _dt(3),
+    }
+    assert calls["set_last"]["multi_index_column_stats"] == {
+        "value": {
+            "asset-1": _dt(2),
+            "asset-2": _dt(3),
+        }
+    }
+    assert "max_per_asset_symbol" not in calls["set_last"]
+    assert "last_time_index_value" not in calls["set_last"]

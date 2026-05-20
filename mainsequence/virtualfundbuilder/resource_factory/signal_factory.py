@@ -58,16 +58,11 @@ class WeightsBase:
             len(weights) == 0
         ):  # or (weights.index.get_level_values("time_index").min() > new_index.min()):
 
-            if self.update_statistics.asset_time_statistics is None:
+            if not self.update_statistics.index_progress:
                 raise Exception("Signal has not been updated")
 
-
-            unique_identifier_range_map = {
-                a: {"start_date": d}
-                for a, d in self.update_statistics.asset_time_statistics.items()
-            }
             last_observation = self.get_df_between_dates(
-                unique_identifier_range_map=unique_identifier_range_map
+                dimension_range_map=self.update_statistics.get_dimension_range_map_great_or_equal()
             )
             if last_observation is None or last_observation.empty:
                 return pd.DataFrame()
@@ -119,6 +114,5 @@ class WeightsBase:
         weights_reindex.index.name = "time_index"
 
         return weights_reindex
-
 
 
