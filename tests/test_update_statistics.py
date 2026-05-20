@@ -1,6 +1,7 @@
 import datetime
 
 import pandas as pd
+import pytest
 
 from mainsequence.client.models_tdag import UpdateStatistics
 
@@ -65,11 +66,12 @@ def test_update_statistics_two_index_normalizes_progress_and_legacy_projection()
 
 
 def test_update_statistics_legacy_asset_time_statistics_projects_to_index_progress():
-    stats = UpdateStatistics(
-        asset_time_statistics={
-            "asset-1": "2026-05-01T02:00:00Z",
-        }
-    )
+    with pytest.warns(FutureWarning, match="asset_time_statistics"):
+        stats = UpdateStatistics(
+            asset_time_statistics={
+                "asset-1": "2026-05-01T02:00:00Z",
+            }
+        )
 
     assert stats.index_progress == {"asset-1": _dt(2)}
     assert stats.asset_time_statistics == stats.index_progress

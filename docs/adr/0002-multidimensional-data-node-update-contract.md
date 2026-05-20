@@ -643,6 +643,16 @@ Every retained compatibility path must include:
 # LEGACY_COMPAT: ...
 ```
 
+Every runtime compatibility path must also emit a deprecation warning that
+names the legacy path and gives the canonical replacement. Examples:
+
+- `max_per_asset_symbol` -> use `index_progress`
+- `min_per_asset_symbol` -> use `index_min`
+- `asset_time_statistics` -> use `index_progress`
+- `get_chunk_stats()` / `_PER_ASSET_` -> use
+  `get_index_progress_chunk_stats()` with `_GLOBAL_`, `index_progress`, and
+  `index_min`
+
 No compatibility projection:
 
 - `table_partition`
@@ -871,16 +881,16 @@ Required test coverage:
 
 ### Phase 4: Query And Tail Delete APIs
 
-- [ ] Add canonical `dimension_filters`, `index_coordinates`, and
-   `dimension_range_map` parameters to `DataNodeStorage` read, latest, and
-   delete methods.
-- [ ] Implement legacy alias translation only in the client communication layer.
-- [ ] Validate that `unique_identifier_list` and `unique_identifier_range_map`
-   aliases are used only for `["time_index", "unique_identifier"]` tables.
-- [ ] Update `DataAccessMixin.get_df_between_dates()` and persist managers to pass
-   canonical dimension arguments.
-- [ ] Add tests for latest-observation, range reads, node-identifier reads, and
-   tail delete.
+- [x] Add canonical `dimension_filters`, `index_coordinates`, and
+  `dimension_range_map` parameters to `DataNodeStorage` read, latest, and
+  delete methods.
+- [x] Implement legacy alias translation only in the client communication layer.
+- [x] Validate that `unique_identifier_list` and `unique_identifier_range_map`
+  aliases are used only for `["time_index", "unique_identifier"]` tables.
+- [x] Update `DataAccessMixin.get_df_between_dates()` and persist managers to pass
+  canonical dimension arguments.
+- [x] Add tests for latest-observation, range reads, node-identifier reads, and
+  tail delete.
 
 ### Phase 5: Data Source Adapters
 

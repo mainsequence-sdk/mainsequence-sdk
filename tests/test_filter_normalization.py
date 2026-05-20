@@ -256,13 +256,32 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
+        sourcetableconfiguration=models_tdag.SourceTableConfiguration(
+            id=11,
+            related_table=714,
+            time_index_name="time_index",
+            index_names=["time_index", "unique_identifier"],
+            column_dtypes_map={
+                "time_index": "datetime64[ns, UTC]",
+                "unique_identifier": "object",
+                "value": "float64",
+            },
+            storage_layout={
+                "time_index": "time_index",
+                "identity_dimensions": ["unique_identifier"],
+            },
+            physical_index_plan={
+                "uniqueness": {"columns": ["time_index", "unique_identifier"]},
+            },
+        ),
     )
 
-    result = storage.delete_after_date(
-        "2026-04-01T00:00:00Z",
-        unique_identifier_list=["AAPL", "MSFT"],
-        timeout=30,
-    )
+    with pytest.warns(FutureWarning, match="unique_identifier_list"):
+        result = storage.delete_after_date(
+            "2026-04-01T00:00:00Z",
+            unique_identifier_list=["AAPL", "MSFT"],
+            timeout=30,
+        )
 
     assert result["ok"] is True
     assert result["deleted_count"] == 123
@@ -272,7 +291,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
-                "unique_identifier_list": ["AAPL", "MSFT"],
+                "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},
             }
         },
         "timeout": 30,
@@ -305,17 +324,36 @@ def test_data_node_storage_delete_after_date_accepts_one_identifier(monkeypatch)
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
+        sourcetableconfiguration=models_tdag.SourceTableConfiguration(
+            id=11,
+            related_table=714,
+            time_index_name="time_index",
+            index_names=["time_index", "unique_identifier"],
+            column_dtypes_map={
+                "time_index": "datetime64[ns, UTC]",
+                "unique_identifier": "object",
+                "value": "float64",
+            },
+            storage_layout={
+                "time_index": "time_index",
+                "identity_dimensions": ["unique_identifier"],
+            },
+            physical_index_plan={
+                "uniqueness": {"columns": ["time_index", "unique_identifier"]},
+            },
+        ),
     )
 
-    storage.delete_after_date(
-        datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
-        unique_identifier="AAPL",
-    )
+    with pytest.warns(FutureWarning, match="unique_identifier"):
+        storage.delete_after_date(
+            datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
+            unique_identifier="AAPL",
+        )
 
     assert captured["payload"] == {
         "json": {
             "after_date": "2026-04-01T00:00:00+00:00",
-            "unique_identifier": "AAPL",
+            "dimension_filters": {"unique_identifier": ["AAPL"]},
         }
     }
 

@@ -58,11 +58,13 @@ class APIPersistManager:
             future_registry.remove_future(self._data_node_storage_future)
 
     def get_last_observation(self, asset_list: list[msc.Asset] | None):
-        unique_identifier_list = []
+        dimension_filters = None
         if asset_list is not None:
-            unique_identifier_list = [a.unique_identifier for a in asset_list]
+            dimension_filters = {
+                "unique_identifier": [a.unique_identifier for a in asset_list]
+            }
         last_observation = self.data_node_storage.get_last_observation(
-            unique_identifier_list=unique_identifier_list
+            dimension_filters=dimension_filters
         )
         return last_observation
 

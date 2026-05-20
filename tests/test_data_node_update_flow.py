@@ -251,11 +251,12 @@ def test_get_chunk_stats_keeps_legacy_per_asset_wrapper_shape():
         }
     )
 
-    stats, _ = models_tdag.get_chunk_stats(
-        df,
-        time_index_name="time_index",
-        index_names=["time_index", "unique_identifier"],
-    )
+    with pytest.warns(FutureWarning, match="get_chunk_stats"):
+        stats, _ = models_tdag.get_chunk_stats(
+            df,
+            time_index_name="time_index",
+            index_names=["time_index", "unique_identifier"],
+        )
 
     assert stats == {
         "_GLOBAL_": {

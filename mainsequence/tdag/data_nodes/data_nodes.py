@@ -259,6 +259,9 @@ class DataAccessMixin:
         great_or_equal: bool = True,
         less_or_equal: bool = True,
         unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
+        dimension_filters: dict[str, list] | None = None,
+        index_coordinates: list[dict] | None = None,
+        dimension_range_map: list[dict] | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
         """
@@ -318,6 +321,9 @@ class DataAccessMixin:
             great_or_equal=great_or_equal,
             less_or_equal=less_or_equal,
             unique_identifier_range_map=unique_identifier_range_map,
+            dimension_filters=dimension_filters,
+            index_coordinates=index_coordinates,
+            dimension_range_map=dimension_range_map,
             columns=columns,
         )
 
