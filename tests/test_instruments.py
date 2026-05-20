@@ -26,9 +26,9 @@ import QuantLib as ql
 
 # Ensure subclasses are registered for InstrumentModel.rebuild()
 # (Importing the module triggers InstrumentModel.__init_subclass__ registration.)
-import mainsequence.instruments.instruments.bond as _bond_module  # noqa: F401
-from mainsequence.instruments.instruments.base_instrument import InstrumentModel
-from mainsequence.instruments.utils import to_ql_date
+import mainsequence.markets.instruments.instruments.bond as _bond_module  # noqa: F401
+from mainsequence.markets.instruments.instruments.base_instrument import InstrumentModel
+from mainsequence.markets.instruments.utils import to_ql_date
 
 
 def wire(instrument_type: str, instrument: dict[str, Any]) -> str:

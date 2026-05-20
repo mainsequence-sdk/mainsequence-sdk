@@ -1,4 +1,4 @@
-"""mainsequence.instruments.pricing_models.indices_builders
+"""mainsequence.markets.instruments.pricing_models.indices_builders
 
 Dependency-light builders for :class:`~IndexSpec`.
 

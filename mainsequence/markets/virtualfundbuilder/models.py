@@ -13,10 +13,12 @@ from pydantic import (
 
 import mainsequence.client as msc
 from mainsequence.client import Asset
-from mainsequence.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceStrategyBase
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
-from mainsequence.virtualfundbuilder.utils import get_vfb_logger
+from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
+from mainsequence.markets.virtualfundbuilder.resource_factory.rebalance_factory import (
+    RebalanceStrategyBase,
+)
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
+from mainsequence.markets.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
 

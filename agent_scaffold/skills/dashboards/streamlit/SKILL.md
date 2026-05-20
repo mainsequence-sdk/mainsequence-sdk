@@ -14,7 +14,7 @@ This skill is for:
 - dashboard folder structure
 - app-owned Streamlit page bootstrapping
 - app-owned Streamlit helpers and components
-- optional instrument form rendering through `mainsequence.instruments.streamlit`
+- optional instrument form rendering through `mainsequence.markets.instruments.streamlit`
 - dashboard-side reads from platform data products
 
 ## This Skill Can Do
@@ -147,7 +147,7 @@ Do not push producer semantics, release orchestration, or unrelated API logic in
 Examples:
 
 - keep asset selection and logged-user display as app-owned Streamlit helpers
-- use `mainsequence.instruments.streamlit` for rich model-driven instrument forms when the optional extra is installed
+- use `mainsequence.markets.instruments.streamlit` for rich model-driven instrument forms when the optional extra is installed
 - use `APIDataNode.build_from_identifier(...)` when a dashboard knows which published table it needs to read
 
 Do not push general-purpose dashboard UI helpers into the SDK.

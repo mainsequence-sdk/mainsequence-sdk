@@ -3,12 +3,12 @@ from datetime import datetime
 import pandas as pd
 import pytz
 
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
-from mainsequence.virtualfundbuilder.utils import TIMEDELTA
+from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 
 class MockSignalConfig(DataNodeConfiguration):

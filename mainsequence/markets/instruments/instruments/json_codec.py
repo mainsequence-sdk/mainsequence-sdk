@@ -8,7 +8,7 @@ from typing import Any
 
 import QuantLib as ql
 
-from mainsequence.instruments.pricing_models.indices import get_index as _index_by_name
+from mainsequence.markets.instruments.pricing_models.indices import get_index as _index_by_name
 
 # ----------------------------- ql.Period -------------------------------------
 

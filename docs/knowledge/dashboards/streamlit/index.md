@@ -25,7 +25,7 @@ The SDK should provide platform capabilities. The application should own present
 
 ## Instrument forms
 
-Model-driven Streamlit forms for instrument configuration live under `mainsequence.instruments.streamlit`.
+Model-driven Streamlit forms for instrument configuration live under `mainsequence.markets.instruments.streamlit`.
 
 Install the optional dependencies before using them:
 

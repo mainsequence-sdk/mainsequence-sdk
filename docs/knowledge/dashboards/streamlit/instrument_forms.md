@@ -1,6 +1,6 @@
 # Instrument Forms
 
-The `mainsequence.instruments.streamlit` package is built around one important idea:
+The `mainsequence.markets.instruments.streamlit` package is built around one important idea:
 
 instrument configuration forms should come from the same Pydantic models that define the configuration itself.
 
@@ -111,7 +111,7 @@ That is a practical design choice. It gives you a better editing experience when
 ```python
 import streamlit as st
 
-from mainsequence.instruments.streamlit.streamlit_form_factory import (
+from mainsequence.markets.instruments.streamlit.streamlit_form_factory import (
     StreamlitModelFormFactory,
 )
 

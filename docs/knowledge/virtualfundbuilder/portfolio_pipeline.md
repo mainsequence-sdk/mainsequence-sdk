@@ -226,9 +226,9 @@ That works, but it also means intraday portfolios need more care around calendar
 This is the smallest realistic VFB pattern worth remembering:
 
 ```python
-from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import AUIDWeight, FixedWeights
-from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
-from mainsequence.virtualfundbuilder.models import (
+from mainsequence.markets.virtualfundbuilder.contrib.data_nodes.market_cap import AUIDWeight, FixedWeights
+from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
+from mainsequence.markets.virtualfundbuilder.models import (
     AssetsConfiguration,
     BacktestingWeightsConfig,
     PortfolioBuildConfiguration,
@@ -237,7 +237,7 @@ from mainsequence.virtualfundbuilder.models import (
     PortfolioMarketsConfig,
     PricesConfiguration,
 )
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
 
 signal_assets_config = AssetsConfiguration(
     assets_category_unique_id=None,

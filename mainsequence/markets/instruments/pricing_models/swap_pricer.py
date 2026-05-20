@@ -4,8 +4,8 @@ from typing import Any
 import matplotlib.pyplot as plt
 import QuantLib as ql
 
-from mainsequence.instruments.data_interface import data_interface
-from mainsequence.instruments.utils import to_py_date, to_ql_date
+from mainsequence.markets.instruments.data_interface import data_interface
+from mainsequence.markets.instruments.utils import to_py_date, to_ql_date
 
 
 def _coerce_to_ql_date(x, fallback: ql.Date) -> ql.Date:

@@ -31,8 +31,8 @@ from datetime import timedelta
 import pandas as pd
 
 from mainsequence.tdag import DataNode, DataNodeConfiguration
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
-from mainsequence.virtualfundbuilder.utils import TIMEDELTA
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
+from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
 
 
 class MySignalConfig(DataNodeConfiguration):
@@ -78,8 +78,8 @@ Their job is to take a wide matrix of signal weights and a price table and retur
 ```python
 import pandas as pd
 
-from mainsequence.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceStrategyBase
+from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
+from mainsequence.markets.virtualfundbuilder.resource_factory.rebalance_factory import RebalanceStrategyBase
 
 
 class MyRebalancer(RebalanceStrategyBase):
@@ -133,7 +133,7 @@ The returned DataFrame must match either the weights schema or the positions sch
 ```python
 import pandas as pd
 
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
+from mainsequence.markets.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
 
 
 class MyExternalPortfolio(PortfolioFromDF):

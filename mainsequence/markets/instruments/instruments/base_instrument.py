@@ -71,7 +71,7 @@ class InstrumentModel(BaseModel, JSONMixin):
         Optional `registry` maps instrument_type -> InstrumentModel subclass.
         Falls back to InstrumentModel._DEFAULT_REGISTRY.
         """
-        import mainsequence.instruments as msi
+        import mainsequence.markets.instruments as msi
         # Parse JSON if needed
         if isinstance(data, str):
             try:

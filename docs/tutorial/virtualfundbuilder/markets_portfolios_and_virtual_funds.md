@@ -135,10 +135,10 @@ class AssetPricingDetail(BasePydanticModel):
 To simplify pricing, we provide an **instrument wrapper** around QuantLib:
 
 ```python
-import  mainsequence.instruments as msi
+import  mainsequence.markets.instruments as msi
 ```
 
-In the code above, we build `mainsequence.instruments.FloatingRateBond` and `mainsequence.instruments.FixedRateBond`. Under the hood, these create QuantLib objects that we can serialize and persist on the platform. From now on, when you fetch an asset, it will carry its **pricing detail**.
+In the code above, we build `mainsequence.markets.instruments.FloatingRateBond` and `mainsequence.markets.instruments.FixedRateBond`. Under the hood, these create QuantLib objects that we can serialize and persist on the platform. From now on, when you fetch an asset, it will carry its **pricing detail**.
 
 Another small but important detail: we assign a custom `security_type` (`SECURITY_TYPE_MOCK`) so we can **indirectly** reference a prices table through a translation rule:
 
@@ -454,7 +454,7 @@ Portfolios also become assets automatically, which means you can build further d
 To import a **Fixed‑Weights** portfolio from the Virtual Fund Builder:
 
 ```python
-from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import FixedWeights, AUIDWeight
+from mainsequence.markets.virtualfundbuilder.contrib.data_nodes.market_cap import FixedWeights, AUIDWeight
 ```
 
 ### 4.1 Building Portfolio Signal Nodes (Optional)
@@ -470,12 +470,12 @@ For example, here’s a stripped implementation of a fixed‑weights signal:
 
 ```python
 
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
     register_signal_class,
 )
 from mainsequence.tdag.data_nodes import DataNode
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
 from datetime import timedelta
 
 
@@ -647,12 +647,12 @@ from src.data_nodes.simulated_daily_close_prices import (
 )
 import mainsequence.client as msc
 
-from mainsequence.virtualfundbuilder.contrib.data_nodes.market_cap import (
+from mainsequence.markets.virtualfundbuilder.contrib.data_nodes.market_cap import (
     FixedWeights,
     AUIDWeight,
 )
-from mainsequence.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.virtualfundbuilder.models import (
+from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
+from mainsequence.markets.virtualfundbuilder.models import (
     AssetsConfiguration,
     PricesConfiguration,
     PortfolioConfiguration,
@@ -662,8 +662,8 @@ from mainsequence.virtualfundbuilder.models import (
     PortfolioMarketsConfig,
     FrontEndDetails,
 )
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
-from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
+from mainsequence.markets.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
 
 assets = ensure_test_assets()
 # Instantiate and update the DataNode (platform would orchestrate this)

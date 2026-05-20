@@ -1,36 +1,22 @@
-__version__ = "0.1.0"
+from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
+import warnings
+from importlib import import_module
 
-from .utils import get_vfb_logger
+_TARGET = "mainsequence.markets.virtualfundbuilder"
 
-logger = get_vfb_logger()
-
-from mainsequence.virtualfundbuilder.utils import (
-    GECKO_SYMBOL_MAPPING,
-    TIMEDELTA,
-    build_rolling_regression_from_df,
-    convert_to_binance_frequency,
-    get_last_query_times_per_asset,
-    reindex_df,
-    runs_in_main_process,
+warnings.warn(
+    "mainsequence.virtualfundbuilder is deprecated; "
+    "use mainsequence.markets.virtualfundbuilder.",
+    DeprecationWarning,
+    stacklevel=2,
 )
 
+_module = import_module(_TARGET)
 
-def register_default_strategies():
-    # Keep this in a function to not clutter the libs namespace
-    import mainsequence.virtualfundbuilder.contrib.data_nodes
-    import mainsequence.virtualfundbuilder.contrib.rebalance_strategies
-
+__path__ = _module.__path__
+__all__ = getattr(_module, "__all__", [])
 
 
-
-RUNS_IN_JOB = os.getenv("JOB_ID", None)
-if RUNS_IN_JOB:
-    # register_default_strategies() #
-    pass
-
-if runs_in_main_process():
-   pass
+def __getattr__(name: str):
+    return getattr(_module, name)

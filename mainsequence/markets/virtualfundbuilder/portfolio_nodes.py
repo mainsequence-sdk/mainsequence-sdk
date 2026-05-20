@@ -11,14 +11,14 @@ import pytz
 
 import mainsequence.client as msc
 from mainsequence.client import Asset, AssetCategory
+from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
+    get_interpolated_prices_timeseries,
+)
 from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
     WrapperDataNode,
-)
-from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
-    get_interpolated_prices_timeseries,
 )
 
 from .. import client as ms_client

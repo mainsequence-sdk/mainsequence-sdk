@@ -410,7 +410,7 @@ class AssetMixin(BaseObjectOrm, BasePydanticModel):
         -------
 
         """
-        import mainsequence.instruments as msi
+        import mainsequence.markets.instruments as msi
         if self.current_pricing_detail:
             if hasattr(self.current_pricing_detail, "instrument_dump"):
                 self._ms_instrument=msi.Instrument.rebuild(self.current_pricing_detail.instrument_dump)

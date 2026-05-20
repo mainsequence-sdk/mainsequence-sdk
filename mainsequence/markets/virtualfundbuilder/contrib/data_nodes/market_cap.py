@@ -13,6 +13,11 @@ from mainsequence.client import (
     AssetTranslationTable,
     DoesNotExist,
 )
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
+    WeightsBase,
+)
+from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
 from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
@@ -20,11 +25,6 @@ from mainsequence.tdag.data_nodes import (
     WrapperDataNode,
     WrapperDataNodeConfig,
 )
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
-    WeightsBase,
-)
-from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 
 class AUIDWeight(VFBConfigBaseModel):

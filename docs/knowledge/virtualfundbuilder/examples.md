@@ -18,10 +18,10 @@ Pattern:
 - config: explicit `PortfolioConfiguration`
 
 ```python
-from mainsequence.virtualfundbuilder import register_default_strategies
-from mainsequence.virtualfundbuilder.contrib.data_nodes import MarketCap
-from mainsequence.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
-from mainsequence.virtualfundbuilder.models import (
+from mainsequence.markets.virtualfundbuilder import register_default_strategies
+from mainsequence.markets.virtualfundbuilder.contrib.data_nodes import MarketCap
+from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
+from mainsequence.markets.virtualfundbuilder.models import (
     AssetsConfiguration,
     BacktestingWeightsConfig,
     PortfolioBuildConfiguration,
@@ -30,8 +30,8 @@ from mainsequence.virtualfundbuilder.models import (
     PortfolioMarketsConfig,
     PricesConfiguration,
 )
-from mainsequence.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
+from mainsequence.markets.virtualfundbuilder.portfolio_nodes import PortfolioStrategy
 
 register_default_strategies()
 
@@ -112,7 +112,7 @@ Pattern:
 ```python
 import pandas as pd
 
-from mainsequence.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
+from mainsequence.markets.virtualfundbuilder.portfolio_nodes import PortfolioFromDF
 
 
 class MyExternalPortfolio(PortfolioFromDF):

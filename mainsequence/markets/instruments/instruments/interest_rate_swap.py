@@ -7,12 +7,12 @@ import pandas as pd
 import QuantLib as ql
 from pydantic import Field, PrivateAttr
 
-from mainsequence.instruments.pricing_models.indices import build_zero_curve, get_index
-from mainsequence.instruments.pricing_models.swap_pricer import (
+from mainsequence.markets.instruments.pricing_models.indices import build_zero_curve, get_index
+from mainsequence.markets.instruments.pricing_models.swap_pricer import (
     get_swap_cashflows,
     price_vanilla_swap_with_curve,
 )
-from mainsequence.instruments.utils import to_py_date, to_ql_date
+from mainsequence.markets.instruments.utils import to_py_date, to_ql_date
 
 from .base_instrument import InstrumentModel
 from .ql_fields import (

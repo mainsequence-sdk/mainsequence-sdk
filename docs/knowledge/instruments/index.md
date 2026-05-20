@@ -38,7 +38,7 @@ This world consumes those stored objects and turns them into runtime pricing inp
 - priceable instrument objects,
 - portfolio positions.
 
-It is powered by components such as `MSInterface`, `IndexSpec`, and the instrument models under `mainsequence.instruments`.
+It is powered by components such as `MSInterface`, `IndexSpec`, and the instrument models under `mainsequence.markets.instruments`.
 
 ## The two handshakes that matter
 

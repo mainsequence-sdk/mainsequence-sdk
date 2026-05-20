@@ -6,10 +6,10 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
-from mainsequence.virtualfundbuilder.utils import get_vfb_logger
+from mainsequence.markets.virtualfundbuilder.utils import get_vfb_logger
 
 if TYPE_CHECKING:
-    from mainsequence.virtualfundbuilder.models import AssetsConfiguration
+    from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
 
 logger = get_vfb_logger()
 

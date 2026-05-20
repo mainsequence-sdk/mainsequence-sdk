@@ -10,15 +10,15 @@ from sklearn.linear_model import ElasticNet, Lasso, LinearRegression
 from tqdm import tqdm
 
 from mainsequence.client import MARKETS_CONSTANTS, Asset, AssetCategory
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
-from mainsequence.virtualfundbuilder import TIMEDELTA
-from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
+from mainsequence.markets.virtualfundbuilder import TIMEDELTA
+from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 if TYPE_CHECKING:
     from mainsequence.tdag.data_nodes.data_nodes import APIDataNode, DataNode

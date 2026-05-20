@@ -16,14 +16,14 @@ from mainsequence.client import (
     AssetCategory,
     AssetTranslationTable,
 )
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
+from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
 from mainsequence.tdag import DataNodeConfiguration, WrapperDataNodeConfig
 from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
     string_frequency_to_minutes,
 )
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.virtualfundbuilder.utils import TIMEDELTA
 
 FULL_CALENDAR = "24/7"
 

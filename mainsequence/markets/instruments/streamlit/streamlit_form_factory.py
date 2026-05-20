@@ -165,7 +165,9 @@ def _available_calendar_names() -> list[str]:
     """
     try:
         # This is in your snippet. It's "private", but it’s the cleanest way to get names.
-        from mainsequence.instruments.instruments.ql_fields import _CAL_FACTORY  # type: ignore
+        from mainsequence.markets.instruments.instruments.ql_fields import (
+            _CAL_FACTORY,  # type: ignore
+        )
 
         names = sorted(list(_CAL_FACTORY.keys()))
         return names if names else ["TARGET"]

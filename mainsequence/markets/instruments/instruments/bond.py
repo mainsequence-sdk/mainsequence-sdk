@@ -10,11 +10,11 @@ from typing import Any
 import QuantLib as ql
 from pydantic import Field, PrivateAttr
 
-from mainsequence.instruments.pricing_models.bond_pricer import (
+from mainsequence.markets.instruments.pricing_models.bond_pricer import (
     create_floating_rate_bond_with_curve,
 )
-from mainsequence.instruments.pricing_models.indices import get_index
-from mainsequence.instruments.utils import to_py_date, to_ql_date
+from mainsequence.markets.instruments.pricing_models.indices import get_index
+from mainsequence.markets.instruments.utils import to_py_date, to_ql_date
 
 from .base_instrument import InstrumentModel
 from .callability import AmortizationParameters, CallabilityItem, DiscountParameters

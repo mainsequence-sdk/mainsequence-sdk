@@ -6,11 +6,14 @@ import pandas as pd
 from pydantic import Field, field_validator, model_validator
 from tqdm import tqdm
 
-from mainsequence.virtualfundbuilder.enums import PriceTypeNames, RebalanceFrequencyStrategyName
-from mainsequence.virtualfundbuilder.resource_factory.rebalance_factory import (
+from mainsequence.markets.virtualfundbuilder.enums import (
+    PriceTypeNames,
+    RebalanceFrequencyStrategyName,
+)
+from mainsequence.markets.virtualfundbuilder.resource_factory.rebalance_factory import (
     RebalanceStrategyBase,
 )
-from mainsequence.virtualfundbuilder.utils import logger
+from mainsequence.markets.virtualfundbuilder.utils import logger
 
 _TIME_RE = re.compile(r"^(?:[01]?\d|2[0-3]):[0-5]\d$")
 

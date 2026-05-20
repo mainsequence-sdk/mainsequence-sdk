@@ -60,8 +60,8 @@ The SDK is organized around a few main areas:
 
 - `mainsequence.tdag`: `DataNode`s, persistence, orchestration, and update workflows
 - `mainsequence.client`: API client models for projects, jobs, tables, assets, and sharing
-- `mainsequence.virtualfundbuilder`: portfolio construction and portfolio time series workflows
-- `mainsequence.instruments`: pricing-oriented market data and instrument tooling
+- `mainsequence.markets.virtualfundbuilder`: portfolio construction and portfolio time series workflows
+- `mainsequence.markets.instruments`: pricing-oriented market data and instrument tooling
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 ## If you are new here

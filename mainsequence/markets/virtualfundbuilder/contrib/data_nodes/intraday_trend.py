@@ -6,15 +6,15 @@ import pandas as pd
 import pandas_market_calendars as mcal
 import pytz
 
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
-from mainsequence.virtualfundbuilder import TIMEDELTA
-from mainsequence.virtualfundbuilder.contrib.prices.data_nodes import (
+from mainsequence.markets.virtualfundbuilder import TIMEDELTA
+from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
-from mainsequence.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.virtualfundbuilder.resource_factory.signal_factory import (
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
+from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
     WeightsBase,
 )
+from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 
 class IntradayTrendConfig(DataNodeConfiguration):
