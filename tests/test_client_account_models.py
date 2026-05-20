@@ -1,0 +1,212 @@
+from __future__ import annotations
+
+import datetime
+from decimal import Decimal
+
+import mainsequence.client.base as base_mod
+import mainsequence.client.markets.models as models_mod
+import mainsequence.client.markets.models.accounts_and_portfolios as accounts_mod
+from mainsequence.client.markets.models import (
+    Account,
+    AccountTargetPosition,
+    VirtualFundHistoricalHoldings,
+)
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, payload):
+        self.status_code = status_code
+        self._payload = payload
+        self.content = b"{}"
+        self.text = str(payload)
+
+    def json(self):
+        return self._payload
+
+
+def _account_payload(uid: str) -> dict:
+    return {
+        "uid": uid,
+        "account_name": "Main Account",
+        "account_is_active": True,
+        "execution_venue": {
+            "uid": "4a8d41d0-f0c4-4de3-bd5f-619f9d8c7ef1",
+            "symbol": "BINANCE",
+            "name": "Binance",
+        },
+        "holdings_data_source": 17,
+        "labels": ["production"],
+        "latest_holdings": {
+            "holdings_set_uid": "665f8a92-4c7a-4c01-9a28-15744b31abbb",
+            "is_trade_snapshot": False,
+            "target_trade_time": None,
+            "holdings_date": "2026-05-20T09:30:00Z",
+            "holdings": [
+                {
+                    "time_index": "2026-05-20T09:30:00Z",
+                    "unique_identifier": "ASSET:BTC",
+                    "quantity": "2.000000000000000000",
+                    "target_trade_time": "2026-05-20T09:35:00Z",
+                    "extra_details": {"source": "api"},
+                }
+            ],
+        },
+        "is_paper": True,
+    }
+
+
+def test_account_model_matches_uid_based_server_contract():
+    account = Account(**_account_payload("cbace713-dff7-42aa-a2d3-252ca7849ade"))
+
+    assert account.uid == "cbace713-dff7-42aa-a2d3-252ca7849ade"
+    assert account.execution_venue.uid == "4a8d41d0-f0c4-4de3-bd5f-619f9d8c7ef1"
+    assert account.holdings_data_source == 17
+    assert account.latest_holdings is not None
+    assert account.latest_holdings.holdings[0].unique_identifier == "ASSET:BTC"
+    assert account.latest_holdings.holdings[0].quantity == Decimal("2.000000000000000000")
+
+
+def test_account_get_uses_uid_detail_route(monkeypatch):
+    captured: dict[str, object] = {}
+    uid = "cbace713-dff7-42aa-a2d3-252ca7849ade"
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out):
+        captured["url"] = url
+        captured["r_type"] = r_type
+        captured["payload"] = payload
+        return _FakeResponse(200, _account_payload(uid))
+
+    monkeypatch.setattr(base_mod, "make_request", fake_make_request)
+
+    account = Account.get(uid=uid)
+
+    assert account.uid == uid
+    assert captured["r_type"] == "GET"
+    assert str(captured["url"]).endswith(f"/orm/api/assets/account/{uid}/")
+
+
+def test_account_get_holdings_uses_collection_route(monkeypatch):
+    account = Account(**_account_payload("cbace713-dff7-42aa-a2d3-252ca7849ade"))
+    captured: dict[str, object] = {}
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out):
+        captured["url"] = url
+        captured["r_type"] = r_type
+        captured["payload"] = payload
+        return _FakeResponse(
+            200,
+            [
+                {
+                    "snapshot_uid": "dff6f5fb-8f0d-46f8-a397-2aa7d6e5f4fd",
+                    "holdings_set_uid": "665f8a92-4c7a-4c01-9a28-15744b31abbb",
+                    "holdings_date": "2026-05-20T09:30:00Z",
+                    "related_account_uid": account.uid,
+                    "is_trade_snapshot": False,
+                    "target_trade_time": None,
+                    "holdings": [
+                        {
+                            "time_index": "2026-05-20T09:30:00Z",
+                            "unique_identifier": "ASSET:BTC",
+                            "quantity": "2.000000000000000000",
+                            "target_trade_time": "2026-05-20T09:35:00Z",
+                            "extra_details": {"source": "api"},
+                        }
+                    ],
+                }
+            ],
+        )
+
+    monkeypatch.setattr(accounts_mod, "make_request", fake_make_request)
+
+    snapshots = account.get_holdings(order="desc", limit=1, include_asset_detail=False)
+
+    assert len(snapshots) == 1
+    assert snapshots[0].related_account_uid == account.uid
+    assert snapshots[0].holdings[0].quantity == Decimal("2.000000000000000000")
+    assert str(captured["url"]).endswith(f"/orm/api/assets/account/{account.uid}/holdings/")
+    assert captured["payload"] == {
+        "params": {
+            "order": "desc",
+            "include_asset_detail": "false",
+            "limit": 1,
+        }
+    }
+
+
+def test_account_add_target_positions_posts_canonical_payload(monkeypatch):
+    account = Account(**_account_payload("cbace713-dff7-42aa-a2d3-252ca7849ade"))
+    captured: dict[str, object] = {}
+
+    def fake_make_request(*, s, loaders, r_type, url, payload, time_out):
+        captured["url"] = url
+        captured["r_type"] = r_type
+        captured["payload"] = payload
+        return _FakeResponse(
+            201,
+            {
+                "related_account_uid": account.uid,
+                "target_positions_date": "2026-05-20T09:30:00Z",
+                "position_set_uid": "86b20a07-e5c8-4c53-bd52-7e40ef2fc772",
+                "positions": [
+                    {
+                        "unique_identifier": "ASSET:BTC",
+                        "weight_notional_exposure": "0.550000000000000000",
+                        "constant_notional_exposure": None,
+                        "single_asset_quantity": None,
+                    }
+                ],
+            },
+        )
+
+    monkeypatch.setattr(accounts_mod, "make_request", fake_make_request)
+
+    response = account.add_target_positions(
+        target_positions_date="2026-05-20T09:30:00Z",
+        overwrite=False,
+        positions=[
+            AccountTargetPosition(
+                unique_identifier="ASSET:BTC",
+                weight_notional_exposure=Decimal("0.55"),
+            )
+        ],
+    )
+
+    assert response.related_account_uid == account.uid
+    assert response.positions[0].weight_notional_exposure == Decimal("0.550000000000000000")
+    assert str(captured["url"]).endswith(
+        f"/orm/api/assets/account/{account.uid}/add-target-positions/"
+    )
+    assert captured["r_type"] == "POST"
+
+
+def test_virtual_fund_historical_holdings_matches_canonical_contract():
+    snapshot = VirtualFundHistoricalHoldings(
+        snapshot_uid="dff6f5fb-8f0d-46f8-a397-2aa7d6e5f4fd",
+        holdings_set_uid="665f8a92-4c7a-4c01-9a28-15744b31abbb",
+        holdings_date=datetime.datetime(2026, 5, 20, 9, 30, tzinfo=datetime.UTC),
+        related_fund_uid="cbace713-dff7-42aa-a2d3-252ca7849ade",
+        is_trade_snapshot=False,
+        target_trade_time=None,
+        holdings=[
+            {
+                "time_index": "2026-05-20T09:30:00Z",
+                "unique_identifier": "ASSET:BTC",
+                "quantity": "2.000000000000000000",
+                "target_weight": "0.500000000000000000",
+                "target_trade_time": "2026-05-20T09:35:00Z",
+                "extra_details": {"source": "api"},
+            }
+        ],
+    )
+
+    assert snapshot.related_fund_uid == "cbace713-dff7-42aa-a2d3-252ca7849ade"
+    assert snapshot.holdings[0].target_weight == Decimal("0.500000000000000000")
+
+
+def test_removed_legacy_account_objects_are_not_exposed():
+    assert not hasattr(models_mod, "AccountHistoricalHoldings")
+    assert not hasattr(models_mod, "AccountPositionDetail")
+    assert not hasattr(models_mod, "AccountRiskFactors")
+    assert not hasattr(models_mod, "AccountExecutionConfiguration")
+    assert not hasattr(models_mod, "AccountPortfolio")
+    assert not hasattr(models_mod, "VirtualFundPositionDetail")
