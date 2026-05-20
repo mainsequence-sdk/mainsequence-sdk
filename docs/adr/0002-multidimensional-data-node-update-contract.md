@@ -414,32 +414,62 @@ set_last_update_index_time_from_update_stats(
 )
 ```
 
-The method should build this compressed payload:
+The backend does not accept legacy keys on this write path. The SDK
+builder/validator for this method must use `extra="forbid"` or an equivalent
+strict-key check and must emit only canonical decoded payload shapes.
+
+Canonical top-level shape:
 
 ```json
 {
-  "multi_index_stats": {
-    "_GLOBAL_": {
-      "max": "2026-05-01T03:00:00Z",
-      "min": "2026-05-01T00:00:00Z"
-    },
-    "index_progress": {
-      "account-a": {
-        "asset-1": "2026-05-01T02:00:00Z"
-      }
-    },
-    "index_min": {
-      "account-a": {
-        "asset-1": "2026-05-01T00:00:00Z"
-      }
+  "global_index_progress": {
+    "max": "2026-05-01 03:00:00+00:00",
+    "min": "2026-05-01 00:00:00+00:00"
+  },
+  "index_progress": {
+    "account-a": {
+      "asset-1": "2026-05-01 02:00:00+00:00"
+    }
+  },
+  "index_min": {
+    "account-a": {
+      "asset-1": "2026-05-01 00:00:00+00:00"
     }
   },
   "multi_index_column_stats": {}
 }
 ```
 
-The SDK should produce only canonical payloads. Legacy payload parsing belongs
-to the server and communication-layer compatibility tests, not new SDK code.
+Equivalent nested shape:
+
+```json
+{
+  "multi_index_stats": {
+    "_GLOBAL_": {
+      "max": "2026-05-01 03:00:00+00:00",
+      "min": "2026-05-01 00:00:00+00:00"
+    },
+    "index_progress": {},
+    "index_min": {}
+  },
+  "multi_index_column_stats": {}
+}
+```
+
+For multi-identity tables, `index_progress` and `index_min` use the same
+nested coordinate shape shown in the top-level example.
+
+Strict allowed keys:
+
+- top-level: `_GLOBAL_`, `global_index_progress`, `index_progress`,
+  `index_min`, `multi_index_stats`, `multi_index_column_stats`
+- inside `multi_index_stats`: `_GLOBAL_`, `index_progress`, `index_min`
+
+The outbound model must not include old names as explicit forbidden examples in
+the model logic. Names such as `last_time_index_value`,
+`max_per_asset_symbol`, `min_per_asset_symbol`, and
+`asset_time_statistics` are simply unknown keys under the strict contract and
+must fail the same way as any other unknown key.
 
 ### `upsert_data_into_table()`
 
@@ -785,6 +815,9 @@ Required test coverage:
 - `set_start_of_execution()` prefers canonical response fields.
 - `set_last_update_index_time_from_update_stats()` sends canonical compressed
   `multi_index_stats`.
+- `set_last_update_index_time_from_update_stats()` validates outbound payloads
+  with strict allowed keys and rejects unknown keys through `extra="forbid"` or
+  an equivalent generic unknown-key mechanism.
 - `get_index_progress_chunk_stats()` returns correct global/index progress for
   one-, two-, and three-index frames.
 - `upsert_data_into_table()` detects duplicates over full `index_names`.
@@ -813,15 +846,15 @@ Required test coverage:
 
 ### Phase 2: UpdateStatistics
 
-- [ ] Add `global_index_progress`, `index_progress`, and `index_min`.
-- [ ] Normalize all nested timestamp leaves to timezone-aware UTC datetimes.
-- [ ] Keep `max_time_index_value` as a projection of
+- [x] Add `global_index_progress`, `index_progress`, and `index_min`.
+- [x] Normalize all nested timestamp leaves to timezone-aware UTC datetimes.
+- [x] Keep `max_time_index_value` as a projection of
    `global_index_progress["max"]`.
-- [ ] Replace internal helper implementations that read `asset_time_statistics`
+- [x] Replace internal helper implementations that read `asset_time_statistics`
    with `index_progress`.
-- [ ] Keep `asset_time_statistics` only as a temporary `LEGACY_COMPAT` projection
+- [x] Keep `asset_time_statistics` only as a temporary `LEGACY_COMPAT` projection
    if needed for downstream compatibility.
-- [ ] Add tests for one-, two-, and three-index update statistics.
+- [x] Add tests for one-, two-, and three-index update statistics.
 
 ### Phase 3: LocalTimeSerie Update Flow
 
@@ -834,7 +867,12 @@ Required test coverage:
    and detect duplicates over full `index_names`.
 - [ ] Replace `set_last_update_index_time_from_update_stats()` with the new
    keyword-only canonical signature.
+- [ ] Add a strict outbound payload model or builder validation for
+   `set_last_update_index_time_from_update_stats()` that allows only canonical
+   keys and relies on generic unknown-key rejection for legacy names.
 - [ ] Add tests that inspect the compressed payload sent to the backend.
+- [ ] Add tests for both allowed decoded payload shapes and for unknown-key
+   rejection at the top level and inside `multi_index_stats`.
 
 ### Phase 4: Query And Tail Delete APIs
 
