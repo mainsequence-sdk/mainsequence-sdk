@@ -4724,7 +4724,9 @@ def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_vam = types.ModuleType("mainsequence.client.models_vam")
+    fake_markets = types.ModuleType("mainsequence.client.markets")
+    fake_markets.__path__ = []
+    fake_market_models = types.ModuleType("mainsequence.client.markets.models")
 
     class FakeLoaders:
         provider = "orig"
@@ -4758,13 +4760,16 @@ def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_vam.Portfolio = FakePortfolio
+    fake_market_models.Portfolio = FakePortfolio
     fake_client_pkg.utils = fake_utils
+    fake_client_pkg.markets = fake_markets
+    fake_markets.models = fake_market_models
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.markets", fake_markets)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.markets.models", fake_market_models)
 
     out = api_mod.list_market_portfolios(filters={"id__in": ["42"]})
     assert captured["filters"][0] == {"id__in": ["42"]}
@@ -5397,7 +5402,9 @@ def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeyp
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_vam = types.ModuleType("mainsequence.client.models_vam")
+    fake_markets = types.ModuleType("mainsequence.client.markets")
+    fake_markets.__path__ = []
+    fake_market_models = types.ModuleType("mainsequence.client.markets.models")
 
     class FakeLoaders:
         provider = "orig"
@@ -5456,13 +5463,16 @@ def test_list_market_asset_translation_tables_uses_client_model(cli_mod, monkeyp
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_vam.AssetTranslationTable = FakeAssetTranslationTable
+    fake_market_models.AssetTranslationTable = FakeAssetTranslationTable
     fake_client_pkg.utils = fake_utils
+    fake_client_pkg.markets = fake_markets
+    fake_markets.models = fake_market_models
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_vam", fake_vam)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.markets", fake_markets)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.markets.models", fake_market_models)
 
     listed = api_mod.list_market_asset_translation_tables(filters={"search": "prices"})
     assert captured["filters"][0] == {"search": "prices"}

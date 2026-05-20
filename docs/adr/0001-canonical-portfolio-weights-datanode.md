@@ -177,7 +177,7 @@ Recommended DataNode name:
 
 - Class: `CanonicalPortfolioWeights` or `PortfolioWeights`
 - Published identifier: `canonical_portfolio_weights`
-- Module: `mainsequence.virtualfundbuilder.portfolio_weights`
+- Module: `mainsequence.markets.virtualfundbuilder.portfolio_weights`
 
 The final class name should be chosen after checking import/API conflicts with
 the existing Markets `HistoricalWeights` endpoint. The published identifier

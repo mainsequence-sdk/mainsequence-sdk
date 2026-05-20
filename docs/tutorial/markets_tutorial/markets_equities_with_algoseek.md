@@ -53,9 +53,7 @@ To address this, the Main Sequence platform makes two architectural decisions th
    b) Create custom assets as part of a private master list and map them to the public master list.
 
    
-The platform is already hydrated with information about many publicly traded assets. You can review the full list of asset attributes here:
-
-https://github.com/mainsequence-sdk/mainsequence-sdk/blob/f3b42bd4f4478574b7375508b1b7441ca5c8d297/mainsequence/client/models_vam.py#L197
+The platform is already hydrated with information about many publicly traded assets. You can review the asset model in the SDK reference docs for `mainsequence.client.markets.models.Asset`.
 
 For this tutorial, focus on the most important field of an `msc.Asset` when integrating with `DataNode`s: the `unique_identifier`.
 

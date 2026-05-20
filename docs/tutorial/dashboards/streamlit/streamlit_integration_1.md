@@ -114,7 +114,7 @@ For the dashboard asset loader, prefer:
 assets = msc.Asset.query(unique_identifier__in=DEFAULT_TEST_ASSET_UIDS)
 ```
 
-This comes from `mainsequence.client.models_vam.AssetMixin.query`.
+This comes from `mainsequence.client.markets.models.AssetMixin.query`.
 
 Why use it here:
 

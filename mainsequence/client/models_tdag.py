@@ -3104,6 +3104,10 @@ def _to_timestamp(value: Any):
     return value
 
 
+def request_to_datetime(value: Any):
+    return UpdateStatistics._to_utc_datetime(value)
+
+
 def _combine_index_min_max_stats_as_timestamps(index_min: dict[str, Any], index_progress: dict[str, Any]):
     combined = combine_index_min_max_stats(index_min=index_min, index_progress=index_progress)
 

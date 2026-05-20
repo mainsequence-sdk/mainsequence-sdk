@@ -2626,7 +2626,7 @@ def list_market_portfolios(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_vam import Portfolio as ClientPortfolio
+        from mainsequence.client.markets.models import Portfolio as ClientPortfolio
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -2671,7 +2671,7 @@ def list_market_portfolios(
                 pass
         if old_portfolio_root_url is not None:
             try:
-                from mainsequence.client.models_vam import Portfolio as ClientPortfolio
+                from mainsequence.client.markets.models import Portfolio as ClientPortfolio
 
                 ClientPortfolio.ROOT_URL = old_portfolio_root_url
             except Exception:
@@ -4423,7 +4423,7 @@ def list_market_asset_translation_tables(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_vam import (
+        from mainsequence.client.markets.models import (
             AssetTranslationTable as ClientAssetTranslationTable,
         )
 
@@ -4470,7 +4470,7 @@ def list_market_asset_translation_tables(
                 pass
         if old_table_root_url is not None:
             try:
-                from mainsequence.client.models_vam import (
+                from mainsequence.client.markets.models import (
                     AssetTranslationTable as ClientAssetTranslationTable,
                 )
 
@@ -4528,7 +4528,7 @@ def get_market_asset_translation_table(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_vam import (
+        from mainsequence.client.markets.models import (
             AssetTranslationTable as ClientAssetTranslationTable,
         )
 
@@ -4572,7 +4572,7 @@ def get_market_asset_translation_table(
                 pass
         if old_table_root_url is not None:
             try:
-                from mainsequence.client.models_vam import (
+                from mainsequence.client.markets.models import (
                     AssetTranslationTable as ClientAssetTranslationTable,
                 )
 

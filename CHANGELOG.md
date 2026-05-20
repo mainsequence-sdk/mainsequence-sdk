@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 - Migrated DataNode source-configuration docs and CLI detail output to the multidimensional layout contract: use backend-derived `storage_layout` and `physical_index_plan` instead of the removed `table_partition` field.
+- Moved market client models to `mainsequence.client.markets.models`; `mainsequence.client.models_vam` remains as a deprecated logging shim.
 
 ## [3.19.17] - 2026-05-17
 

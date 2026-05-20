@@ -11,6 +11,8 @@ from typing import Any, ClassVar, Literal, Union
 import yaml
 from pydantic import BaseModel, Field, PositiveInt
 
+from mainsequence.client.markets.models import *
+
 from ..compute_validation import (
     decimal_to_storage,
     normalize_string,
@@ -24,7 +26,6 @@ from .models_tdag import (
     _require_local_pod_project,
     _resolve_local_pod_project,
 )
-from .models_vam import *
 from .utils import make_request
 
 

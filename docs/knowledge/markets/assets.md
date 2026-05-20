@@ -124,7 +124,7 @@ If you want the deeper pricing side of this story, continue with [Assets and Pri
 
 ## `Asset.filter()` vs `Asset.query()`
 
-When you call `msc.Asset.query(...)`, you are using `mainsequence.client.models_vam.AssetMixin.query`.
+When you call `msc.Asset.query(...)`, you are using `mainsequence.client.markets.models.AssetMixin.query`.
 
 Both `filter()` and `query()` let you search assets with the same field style. They both also translate common shorthand fields such as:
 
