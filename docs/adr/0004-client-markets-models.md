@@ -1,4 +1,4 @@
-# ADR 0004: Move Client Market Models To `mainsequence.client.markets.models.core`
+# ADR 0004: Move Client Market Models To `mainsequence.client.markets.models`
 
 Date: 2026-05-20
 
@@ -18,7 +18,7 @@ funds, and orders. The module name is no longer a good fit for the public API
 surface, and it sits directly under `mainsequence.client` instead of a market
 specific package.
 
-The intended canonical location is:
+The intended implementation file is:
 
 ```text
 mainsequence/client/markets/models/core.py
@@ -27,7 +27,7 @@ mainsequence/client/markets/models/core.py
 The intended canonical import path is:
 
 ```python
-from mainsequence.client.markets.models.core import Asset, Portfolio
+from mainsequence.client.markets.models import Asset, Portfolio
 ```
 
 Existing imports from `mainsequence.client.models_vam` must keep working during
@@ -57,10 +57,15 @@ mainsequence/client/markets/models/__init__.py
 The canonical import path for these models is:
 
 ```python
-from mainsequence.client.markets.models.core import Asset
-from mainsequence.client.markets.models.core import Portfolio
-from mainsequence.client.markets.models.core import AssetTranslationTable
+from mainsequence.client.markets.models import Asset
+from mainsequence.client.markets.models import Portfolio
+from mainsequence.client.markets.models import AssetTranslationTable
 ```
+
+`mainsequence.client.markets.models.core` is the implementation module behind
+the package. It is not the canonical import path for SDK users or internal SDK
+code. `mainsequence.client.markets.models.__init__` must re-export the public
+model symbols from `core.py`.
 
 The moved implementation must use absolute package imports only. Do not use
 relative imports in the moved module.
@@ -102,19 +107,19 @@ from mainsequence.logconf import logger
 
 logger.warning(
     "mainsequence.client.models_vam is deprecated and will be removed in a "
-    "future release. Use mainsequence.client.markets.models.core instead, "
-    "for example: from mainsequence.client.markets.models.core import Asset, "
+    "future release. Use mainsequence.client.markets.models instead, "
+    "for example: from mainsequence.client.markets.models import Asset, "
     "Portfolio."
 )
 
-from mainsequence.client.markets.models.core import *  # noqa: F401,F403
+from mainsequence.client.markets.models import *  # noqa: F401,F403
 ```
 
 `mainsequence.client` may continue to re-export these classes for user
 convenience, but it must import them from the new canonical module:
 
 ```python
-from mainsequence.client.markets.models.core import *
+from mainsequence.client.markets.models import *
 ```
 
 This keeps:
@@ -150,8 +155,8 @@ mainsequence/client/markets/models/
 mainsequence/client/markets/models/__init__.py
 ```
 
-Keep package initializers small. If `mainsequence.client.markets.models` exposes
-convenience imports, it should import from
+Keep package initializers small. `mainsequence.client.markets.models` is the
+canonical import package and must re-export public model symbols from
 `mainsequence.client.markets.models.core`.
 
 ### Task 2: Move The Implementation
@@ -210,9 +215,9 @@ shim that:
 
 - logs a deprecation warning through `mainsequence.logconf.logger`
 - names the deprecated path, `mainsequence.client.models_vam`
-- names the canonical path, `mainsequence.client.markets.models.core`
+- names the canonical path, `mainsequence.client.markets.models`
 - includes a copyable example import
-- re-exports symbols from `mainsequence.client.markets.models.core`
+- re-exports symbols from `mainsequence.client.markets.models`
 
 The shim should not contain model implementation logic.
 
@@ -222,7 +227,7 @@ Update `mainsequence/client/__init__.py` so `mainsequence.client` imports market
 models from the canonical module:
 
 ```python
-from mainsequence.client.markets.models.core import *
+from mainsequence.client.markets.models import *
 ```
 
 It should not import from:
@@ -245,7 +250,7 @@ rg "mainsequence\\.client\\.models_vam|models_vam" docs examples README.md CHANG
 Add reference documentation for:
 
 ```text
-mainsequence.client.markets.models.core
+mainsequence.client.markets.models
 ```
 
 Keep any `models_vam` documentation as migration documentation only, and make it
@@ -255,7 +260,7 @@ clear that the old path is deprecated.
 
 Add tests that verify:
 
-- `from mainsequence.client.markets.models.core import Asset` works
+- `from mainsequence.client.markets.models import Asset` works
 - `from mainsequence.client.models_vam import Asset` still works
 - old-path imports log the deprecation warning and include the new import path
 - `from mainsequence.client import Asset` works without importing the old shim
@@ -264,7 +269,7 @@ Add tests that verify:
 Representative assertion:
 
 ```python
-from mainsequence.client.markets.models.core import Asset as NewAsset
+from mainsequence.client.markets.models import Asset as NewAsset
 from mainsequence.client.models_vam import Asset as OldAsset
 
 assert OldAsset is NewAsset
@@ -286,7 +291,7 @@ Also run import checks:
 
 ```bash
 python - <<'PY'
-from mainsequence.client.markets.models.core import Asset, Portfolio
+from mainsequence.client.markets.models import Asset, Portfolio
 from mainsequence.client.models_vam import Asset as DeprecatedAsset
 from mainsequence.client import Asset as ClientAsset
 
@@ -302,9 +307,9 @@ After the shim and compatibility tests are in place, update SDK implementation
 code so internal imports use the canonical path:
 
 ```python
-from mainsequence.client.markets.models.core import Asset
-from mainsequence.client.markets.models.core import Portfolio
-from mainsequence.client.markets.models.core import AssetTranslationTable
+from mainsequence.client.markets.models import Asset
+from mainsequence.client.markets.models import Portfolio
+from mainsequence.client.markets.models import AssetTranslationTable
 ```
 
 Internal SDK code must not import from:
@@ -326,7 +331,7 @@ Every remaining old-path reference should be one of:
 - migration documentation that intentionally names the old path
 
 Normal library implementation code should use
-`mainsequence.client.markets.models.core`.
+`mainsequence.client.markets.models`.
 
 ## Risks
 
@@ -343,4 +348,4 @@ Normal library implementation code should use
 
 - Which release should remove `mainsequence.client.models_vam`?
 - Should `mainsequence.client.markets.models.__init__` re-export all core
-  symbols, or should users be directed only to `.core`?
+  symbols, or should it define an explicit public `__all__`?
