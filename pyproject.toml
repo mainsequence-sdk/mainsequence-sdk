@@ -56,7 +56,7 @@ instruments = [
   "matplotlib",
   "QuantLib",
 ]
-dashboards = [
+"instruments-streamlit" = [
   "streamlit",
   "streamlit-aggrid",
 ]
@@ -90,7 +90,6 @@ include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*
 # Include your non-.py assets in wheels/sdists
 [tool.setuptools.package-data]
 "mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml"]
-"mainsequence.dashboards.streamlit" = ["assets/*.png", "assets/*.txt"]
 "agent_scaffold" = ["*.md", "**/*.md"]
 
 [[tool.uv.index]]

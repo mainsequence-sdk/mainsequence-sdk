@@ -144,4 +144,4 @@ This version is intentionally narrower and more accurate:
 
 At this point, your tutorial project has a current Streamlit dashboard and a current CLI deployment path that matches the SDK behavior in use today.
 
-For the reusable helper layer behind these dashboard chapters, see [Streamlit Helpers](../../../knowledge/dashboards/streamlit/index.md).
+For the current dashboard guidance, see [Streamlit Dashboards](../../../knowledge/dashboards/streamlit/index.md).

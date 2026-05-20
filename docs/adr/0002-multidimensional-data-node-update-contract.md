@@ -929,12 +929,12 @@ runtime callers are migrated around backend-bound API payloads.
 
 ### Phase 8: CLI And Documentation
 
-- [ ] Update CLI detail rendering to show `storage_layout` and
+- [x] Update CLI detail rendering to show `storage_layout` and
    `physical_index_plan` where useful.
-- [ ] Remove `table_partition` from user-facing docs and examples.
-- [ ] Regenerate `docs/reference/` after code signatures and docstrings are
+- [x] Remove `table_partition` from user-facing docs and examples.
+- [x] Regenerate `docs/reference/` after code signatures and docstrings are
    updated.
-- [ ] Add migration notes to changelog or release notes.
+- [x] Add migration notes to changelog or release notes.
 
 ### Phase 9: Tutorial Fixes
 

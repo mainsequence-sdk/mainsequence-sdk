@@ -6,6 +6,12 @@ instrument configuration forms should come from the same Pydantic models that de
 
 That is what `StreamlitModelFormFactory` does.
 
+Install the optional Streamlit dependencies before importing this module:
+
+```bash
+pip install "mainsequence[instruments-streamlit]"
+```
+
 ## Why this exists
 
 Instrument and pricing configuration models are usually too rich to maintain comfortably as hand-written Streamlit forms.

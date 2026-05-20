@@ -6862,6 +6862,15 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
     if _emit_json(storage):
         return
 
+    source_table_configuration = storage.get("sourcetableconfiguration")
+    storage_layout = storage.get("storage_layout")
+    physical_index_plan = storage.get("physical_index_plan")
+    if isinstance(source_table_configuration, dict):
+        storage_layout = source_table_configuration.get("storage_layout") or storage_layout
+        physical_index_plan = (
+            source_table_configuration.get("physical_index_plan") or physical_index_plan
+        )
+
     print_kv(
         "Data Node Storage",
         [
@@ -6883,7 +6892,9 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
         "Data Node Storage Config",
         [
             ("Build Configuration", _format_json_value(storage.get("build_configuration"))),
-            ("Source Table Configuration", _format_json_value(storage.get("sourcetableconfiguration"))),
+            ("Source Table Configuration", _format_json_value(source_table_configuration)),
+            ("Storage Layout", _format_json_value(storage_layout)),
+            ("Physical Index Plan", _format_json_value(physical_index_plan)),
             ("Table Index Names", _format_json_value(storage.get("table_index_names"))),
             ("Compression Policy", _format_json_value(storage.get("compression_policy_config"))),
             ("Retention Policy", _format_json_value(storage.get("retention_policy_config"))),
@@ -7012,6 +7023,10 @@ def data_node_storage_detail_cmd(
 ):
     """
     Show one data node storage and render its configuration in the terminal.
+
+    The configuration view includes the server-derived `storage_layout` and
+    `physical_index_plan` when the backend exposes them on the source table
+    configuration.
 
     Uses SDK client `DataNodeStorage.get()` as the single source of truth.
 

@@ -1,76 +1,43 @@
-# Streamlit Helpers
+# Streamlit Dashboards
 
-The `mainsequence.dashboards.streamlit` package is the SDK's shared helper layer for Streamlit dashboards.
+Streamlit remains a supported dashboard deployment target on the Main Sequence Platform.
 
-It exists for one reason: building dashboards that behave well both locally and on the Main Sequence Platform without every project re-solving the same problems.
+The SDK no longer ships `mainsequence.dashboards.streamlit` scaffolding, theme helpers, or reusable dashboard UI components. Dashboard projects should own their Streamlit layout, styling, sidebar widgets, and page helpers directly.
 
-!!! warning "IMPORTANT"
-    We recommend using these helpers as your default starting point for Streamlit work on Main Sequence.
-    They have already been tested against the platform's packaging, auth, asset lookup, and deployment flow, so they remove a lot of avoidable friction.
+Use the SDK from Streamlit dashboards for platform work:
 
-This package is not a dashboard framework in the abstract. It is a practical set of helpers for common Main Sequence dashboard needs:
+- read data products with `APIDataNode` and structured filters
+- query assets, releases, constants, users, and other platform resources through `mainsequence.client`
+- deploy dashboards through the CLI `streamlit_dashboard` release flow
 
-- bootstrapping a page with the right theme and logo behavior
-- reusing sidebar controls that already work with platform objects
-- rendering logged-in user information from platform auth context
-- building instrument configuration forms from Pydantic models via `mainsequence.instruments.streamlit`
+## Dashboard code ownership
 
-## What is inside the package
+A Streamlit dashboard should declare its own app dependencies and helper modules in the dashboard project.
 
-### `scaffold.py`
+That means:
 
-This is the main entry point for most apps. It gives you `run_page(...)` and `PageConfig`, which handle page setup, theme wiring, logo/icon selection, CSS injection, and a few platform-friendly UI defaults.
+- call `st.set_page_config(...)` directly from your app
+- keep reusable UI helpers inside the dashboard folder or project package
+- use normal Streamlit widgets for sidebar controls and session state
+- keep dashboard deployment metadata such as `README.md` next to `app.py`
 
-See [Scaffold and Theming](scaffold_and_theming.md).
+The SDK should provide platform capabilities. The application should own presentation code.
 
-### `components/`
+## Instrument forms
 
-This folder contains reusable Streamlit UI helpers for common platform objects and session patterns:
+Model-driven Streamlit forms for instrument configuration live under `mainsequence.instruments.streamlit`.
 
-- asset selection
-- valuation-date settings
-- logged-user display
+Install the optional dependencies before using them:
 
-See [Components](components.md).
-
-### Instrument form factory
-
-The instrument form factory now lives under `mainsequence.instruments.streamlit`. It renders Streamlit inputs from Pydantic models and has special handling for QuantLib-style fields such as schedules, calendars, day counters, and conventions.
+```bash
+pip install "mainsequence[instruments-streamlit]"
+```
 
 See [Instrument Forms](instrument_forms.md).
 
-### `core/`
+## Tutorial
 
-This holds lower-level theme helpers used by the scaffold, such as CSS injection and spinner replacement. Most projects should use them through `run_page(...)` first and only drop down to the lower-level helpers if they need custom behavior.
-
-### `assets/`
-
-These are packaged theme and branding assets used by the scaffold:
-
-- default `config.toml`
-- default logo
-- default favicon
-- spinner frames
-
-This is why the scaffold can bootstrap a usable look and feel even in a brand-new dashboard folder.
-
-### `pages/`
-
-This package folder is currently just structural. The reusable dashboard helpers live in `scaffold.py`, `components/`, and `core/`; instrument Streamlit forms live in `mainsequence.instruments.streamlit`.
-
-## Recommended reading order
-
-If you are starting a new dashboard:
-
-1. Read [Scaffold and Theming](scaffold_and_theming.md)
-2. Reuse the helpers from [Components](components.md)
-3. If your dashboard edits or configures instrument models, use [Instrument Forms](instrument_forms.md)
-
-## Where this fits in the tutorial
-
-This knowledge section complements:
+The tutorial Streamlit chapters show how to build and deploy a dashboard using plain Streamlit app code plus SDK client calls:
 
 - [Part 5.1 — Streamlit Integration I](../../../tutorial/dashboards/streamlit/streamlit_integration_1.md)
 - [Part 5.2 — Streamlit Integration II](../../../tutorial/dashboards/streamlit/streamlit_integration_2.md)
-
-The tutorial shows how to build one concrete dashboard. This section explains the reusable SDK helpers that make that workflow easier to maintain across projects.

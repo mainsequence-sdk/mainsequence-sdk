@@ -7905,7 +7905,18 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
             "organization_owner": 2,
             "description": "Daily portfolio weights",
             "build_configuration": {"window": 30},
-            "sourcetableconfiguration": {"time_index_name": "time_index"},
+            "sourcetableconfiguration": {
+                "time_index_name": "time_index",
+                "storage_layout": {
+                    "time_index": "time_index",
+                    "identity_dimensions": ["account_uid", "unique_identifier"],
+                },
+                "physical_index_plan": {
+                    "uniqueness": {
+                        "columns": ["time_index", "account_uid", "unique_identifier"]
+                    }
+                },
+            },
             "table_index_names": {"0": "time_index"},
             "compression_policy_config": {"after": "7 days"},
             "retention_policy_config": {"after": "90 days"},
@@ -7919,6 +7930,10 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert "Daily portfolio weights" in result.output
     assert "Build Configuration" in result.output
     assert "time_index_name" in result.output
+    assert "Storage Layout" in result.output
+    assert "identity_dimensions" in result.output
+    assert "Physical Index Plan" in result.output
+    assert "uniqueness" in result.output
     assert "90 days" in result.output
 
 

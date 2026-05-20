@@ -2,7 +2,7 @@
 
 !!! warning "IMPORTANT"
     Each dashboard folder must include a `README.md` file in the same directory as `app.py`.
-    The current Streamlit scaffold can create `.streamlit/config.toml` automatically on first run, so you do not need to commit that file unless you want to override the packaged theme.
+    The SDK does not provide Streamlit UI scaffolding. Keep page setup, styling, and shared UI helpers inside the dashboard project.
 
 ## Introduction
 
@@ -129,22 +129,20 @@ For very small one-off filters, `filter(...)` is still fine. But in dashboards, 
 
 Create `dashboards/tutorial_fixed_income_dashboard/app.py`.
 
-Use the current Streamlit scaffold from the SDK:
+Use plain Streamlit page setup in the app:
 
 ```python
-from mainsequence.dashboards.streamlit.scaffold import PageConfig, run_page
+import streamlit as st
 ```
 
 Then initialize the page:
 
 ```python
-run_page(
-    PageConfig(
-        title="Tutorial Fixed-Income Dashboard",
-        use_wide_layout=True,
-        inject_theme_css=True,
-    )
+st.set_page_config(
+    page_title="Tutorial Fixed-Income Dashboard",
+    layout="wide",
 )
+st.title("Tutorial Fixed-Income Dashboard")
 ```
 
 The landing page should:
@@ -167,7 +165,7 @@ Create `dashboards/tutorial_fixed_income_dashboard/pages/01_prices_and_assets.py
 
 This page should:
 
-- start with `run_page(PageConfig(...))`
+- start with `st.set_page_config(...)`
 - offer a sidebar asset selector
 - offer a sidebar lookback window
 - load recent price history from the simulated prices table
@@ -226,9 +224,9 @@ This tutorial chapter stays intentionally small:
 
 - it does not re-teach portfolio construction
 - it does not require cloning an external dashboard repository
-- it uses the current SDK Streamlit scaffold
+- it uses plain Streamlit app code owned by the dashboard project
 - it reuses the data products already created in earlier tutorial chapters
 
 By the end of Part 5.1, you have a working tutorial dashboard in your own project, and Part 5.2 can focus only on deployment.
 
-For a deeper guide to the reusable Streamlit helper package behind this chapter, see [Streamlit Helpers](../../../knowledge/dashboards/streamlit/index.md).
+For the current dashboard guidance, see [Streamlit Dashboards](../../../knowledge/dashboards/streamlit/index.md).

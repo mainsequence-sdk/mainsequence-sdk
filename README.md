@@ -38,7 +38,6 @@ Main package areas:
 - `mainsequence.client`: API client models for projects, jobs, data node storages, assets, sharing, and platform resources
 - `mainsequence.virtualfundbuilder`: portfolio construction and portfolio time series workflows
 - `mainsequence.instruments`: pricing-oriented market data and instrument tooling
-- `mainsequence.dashboards.streamlit`: reusable Streamlit scaffolding and dashboard helpers
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 Repository areas:
@@ -72,7 +71,7 @@ Recommended entry points:
   - [Simple Tables](docs/knowledge/simple_tables/simple_table.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
-  - [Streamlit Helpers](docs/knowledge/dashboards/streamlit/index.md)
+  - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
   - [Virtual Fund Builder](docs/knowledge/virtualfundbuilder/index.md)
   - [Instruments](docs/knowledge/instruments/index.md)
 - CLI:

@@ -38,7 +38,7 @@ Key entry points:
 - [Simple Tables](knowledge/simple_tables/simple_table.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
-- [Streamlit Helpers](knowledge/dashboards/streamlit/index.md)
+- [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
 - [Virtual Fund Builder](knowledge/virtualfundbuilder/index.md)
 - [Instruments](knowledge/instruments/index.md)
 
@@ -62,7 +62,6 @@ The SDK is organized around a few main areas:
 - `mainsequence.client`: API client models for projects, jobs, tables, assets, and sharing
 - `mainsequence.virtualfundbuilder`: portfolio construction and portfolio time series workflows
 - `mainsequence.instruments`: pricing-oriented market data and instrument tooling
-- `mainsequence.dashboards.streamlit`: reusable Streamlit scaffolding and helper components
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 ## If you are new here

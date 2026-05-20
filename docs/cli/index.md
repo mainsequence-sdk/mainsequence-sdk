@@ -412,7 +412,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node search --mode column` only uses `DataNodeStorage.column_search()`.
 - `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
 - `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
-- `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal.
+- `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
 - `mainsequence data-node run_query` executes `DataNodeStorage.run_query()` against one storage id and prints the backend query envelope.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
