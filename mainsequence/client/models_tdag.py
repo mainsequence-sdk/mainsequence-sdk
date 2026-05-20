@@ -21,7 +21,7 @@ import pytz
 import requests
 import yaml
 from cachetools import TTLCache, cachedmethod
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 from mainsequence.logconf import logger
 
@@ -42,7 +42,6 @@ from .utils import (
     is_process_running,
     loaders,
     make_request,
-    request_to_datetime,
     serialize_to_json,
     session,
     set_types_in_table,
@@ -400,26 +399,23 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         if r.status_code != 201:
             raise Exception(f"Error in request {r.text}")
 
-        def _recurse_to_datetime(node):
-            if isinstance(node, dict):
-                return {k: _recurse_to_datetime(v) for k, v in node.items()}
-            # leaf: assume it’s your timestamp string
-            return request_to_datetime(node)
-
         result = r.json()
-        if result["last_time_index_value"] is not None:
-            datetime.datetime.fromtimestamp(result["last_time_index_value"], tz=pytz.utc)
-
-        if result["asset_time_statistics"] is not None:
-            result["asset_time_statistics"] = _recurse_to_datetime(result["asset_time_statistics"])
-
+        multi_index_stats = result.get("multi_index_stats") or {}
+        global_index_progress = (
+            result.get("global_index_progress")
+            or multi_index_stats.get("_GLOBAL_")
+            or multi_index_stats.get("global_index_progress")
+        )
+        index_progress = result.get("index_progress") or multi_index_stats.get("index_progress")
+        index_min = result.get("index_min") or multi_index_stats.get("index_min")
 
         hu = LocalTimeSeriesHistoricalUpdate(
             **result["historical_update"],
             update_statistics=UpdateStatistics(
-                asset_time_statistics=result["asset_time_statistics"],
-                max_time_index_value=result["last_time_index_value"],
-                multi_index_column_stats=result["multi_index_column_stats"],
+                global_index_progress=global_index_progress,
+                index_progress=index_progress,
+                index_min=index_min,
+                multi_index_column_stats=result.get("multi_index_column_stats"),
             ),
             must_update=result["must_update"],
             direct_dependencies_ids=result["direct_dependencies_ids"],
@@ -491,20 +487,25 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     def set_last_update_index_time_from_update_stats(
         self,
-        last_time_index_value: float,
-        max_per_asset_symbol,
-        multi_index_column_stats,
+        *,
+        global_index_progress: dict[str, Any] | None = None,
+        index_progress: dict[str, Any] | None = None,
+        index_min: dict[str, Any] | None = None,
+        multi_index_stats: dict[str, Any] | None = None,
+        multi_index_column_stats: dict[str, Any] | None = None,
         timeout=None,
     ) -> DataNodeUpdate:
         s = self.build_session()
         url = self.get_object_url() + f"/{self.id}/set_last_update_index_time_from_update_stats/"
 
-        data_to_comp = {
-            "last_time_index_value": last_time_index_value,
-            "max_per_asset_symbol": max_per_asset_symbol,
-            "multi_index_column_stats": multi_index_column_stats,
-        }
-        chunk_json_str = json.dumps(data_to_comp)
+        data_to_comp = build_last_update_index_time_payload(
+            global_index_progress=global_index_progress,
+            index_progress=index_progress,
+            index_min=index_min,
+            multi_index_stats=multi_index_stats,
+            multi_index_column_stats=multi_index_column_stats,
+        )
+        chunk_json_str = json.dumps(serialize_to_json(data_to_comp))
         compressed = gzip.compress(chunk_json_str.encode("utf-8"))
         compressed_b64 = base64.b64encode(compressed).decode("utf-8")
         payload = dict(
@@ -655,7 +656,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             )
 
             # Prepare the payload
-            chunk_stats, _ = get_chunk_stats(
+            chunk_stats, _ = get_index_progress_chunk_stats(
                 chunk_df=df_chunk, index_names=index_names, time_index_name=time_index_name
             )
             chunk_json_str = df_chunk.to_json(orient="records", date_format="iso")
@@ -666,7 +667,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             payload = dict(
                 json={
                     "data": compressed_b64,
-                    "chunk_stats": chunk_stats,
+                    "chunk_stats": serialize_to_json(chunk_stats),
                     "overwrite": overwrite,
                     "chunk_index": 0 if is_sub_chunk else chunk_idx,
                     "total_chunks": 1 if is_sub_chunk else total_chunks,
@@ -837,6 +838,13 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         metadata = self.data_node_storage
 
         data, index_names, column_dtypes_map, time_index_name = self._break_pandas_dataframe(data)
+        index_names = list(index_names)
+        missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
+        if missing_index_dtypes:
+            raise ValueError(
+                "Every index column must exist in column_dtypes_map. "
+                f"Missing: {missing_index_dtypes}"
+            )
 
         # overwrite data origina data frame to release memory
         if not data[time_index_name].is_monotonic_increasing:
@@ -854,13 +862,17 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         if duplicates_exist:
             raise Exception(f"Duplicates found in columns: {index_names}")
 
-        global_stats, grouped_dates = get_chunk_stats(
+        index_stats, grouped_dates = get_index_progress_chunk_stats(
             chunk_df=data, index_names=index_names, time_index_name=time_index_name
+        )
+        index_min_max_stats = combine_index_min_max_stats(
+            index_min=index_stats["index_min"],
+            index_progress=index_stats["index_progress"],
         )
         multi_index_column_stats = {}
         column_names = [c for c in data.columns if c not in index_names]
         for c in column_names:
-            multi_index_column_stats[c] = global_stats["_PER_ASSET_"]
+            multi_index_column_stats[c] = index_min_max_stats
         data_source.related_resource.insert_data_into_table(
             serialized_data_frame=data,
             data_node_update=self,
@@ -870,26 +882,10 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             grouped_dates=grouped_dates,
         )
 
-        _, last_time_index_value = (
-            global_stats["_GLOBAL_"]["min"],
-            global_stats["_GLOBAL_"]["max"],
-        )
-        max_per_asset_symbol = None
-
-        def extract_max(node):
-            # Leaf case: a dict with 'min' and 'max'
-            if isinstance(node, dict) and "min" in node and "max" in node:
-                return node["max"]
-            # Otherwise recurse
-            return {k: extract_max(v) for k, v in node.items()}
-
-        if len(index_names) > 1:
-            max_per_asset_symbol = {
-                uid: extract_max(stats) for uid, stats in global_stats["_PER_ASSET_"].items()
-            }
         data_node_update = self.set_last_update_index_time_from_update_stats(
-            max_per_asset_symbol=max_per_asset_symbol,
-            last_time_index_value=last_time_index_value,
+            global_index_progress=index_stats["_GLOBAL_"],
+            index_progress=index_stats["index_progress"],
+            index_min=index_stats["index_min"],
             multi_index_column_stats=multi_index_column_stats,
         )
         return data_node_update
@@ -2635,48 +2631,193 @@ class UpdateStatistics(BaseUpdateStatistics):
         return df
 
 
-def get_chunk_stats(chunk_df, time_index_name, index_names):
+def _assign_nested_coordinate(root: dict[Any, Any], keys: list[Any], value: Any) -> None:
+    if not keys:
+        return
+    sub = root
+    for key in keys[:-1]:
+        sub = sub.setdefault(key, {})
+    sub[keys[-1]] = value
+
+
+def get_index_progress_chunk_stats(chunk_df, time_index_name, index_names):
+    index_names = list(index_names)
     chunk_stats = {
         "_GLOBAL_": {
-            "max": chunk_df[time_index_name].max().timestamp(),
-            "min": chunk_df[time_index_name].min().timestamp(),
-        }
+            "max": UpdateStatistics._to_utc_datetime(chunk_df[time_index_name].max()),
+            "min": UpdateStatistics._to_utc_datetime(chunk_df[time_index_name].min()),
+        },
+        "index_progress": {},
+        "index_min": {},
     }
-    chunk_stats["_PER_ASSET_"] = {}
     grouped_dates = None
     if len(index_names) > 1:
-        grouped_dates = chunk_df.groupby(index_names[1:])[time_index_name].agg(["min", "max"])
-
-        # 2) decompose the grouped index names
-        first, *rest = grouped_dates.index.names
-
-        # 3) reset to a flat DataFrame for easy iteration
+        identity_dimensions = index_names[1:]
+        grouped_dates = chunk_df.groupby(identity_dimensions)[time_index_name].agg(["min", "max"])
         df = grouped_dates.reset_index()
 
-        # 4) build the nested dict
-        per_asset: dict = {}
         for _, row in df.iterrows():
-            uid = row[first]  # e.g. the unique_identifier
-            # only one extra level beyond uid?
-            if len(rest) == 0:
-
-                per_asset[uid] = {
-                    "min": row["min"].timestamp(),
-                    "max": row["max"].timestamp(),
-                }
-            else:
-                # multiple extra levels → walk a path of dicts
-                keys = [row[level] for level in rest]
-                sub = per_asset.setdefault(uid, {})
-                for key in keys[:-1]:
-                    sub = sub.setdefault(key, {})
-                sub[keys[-1]] = {
-                    "min": row["min"].timestamp(),
-                    "max": row["max"].timestamp(),
-                }
-        # 5) assign into your stats structure
-        chunk_stats["_PER_ASSET_"] = per_asset
+            keys = [row[level] for level in identity_dimensions]
+            _assign_nested_coordinate(
+                chunk_stats["index_progress"],
+                keys,
+                UpdateStatistics._to_utc_datetime(row["max"]),
+            )
+            _assign_nested_coordinate(
+                chunk_stats["index_min"],
+                keys,
+                UpdateStatistics._to_utc_datetime(row["min"]),
+            )
     return chunk_stats, grouped_dates
+
+
+def combine_index_min_max_stats(index_min: dict[str, Any], index_progress: dict[str, Any]):
+    if not isinstance(index_progress, dict):
+        return {"min": index_min, "max": index_progress}
+
+    combined = {}
+    for key, progress_value in index_progress.items():
+        min_value = index_min.get(key) if isinstance(index_min, dict) else None
+        if isinstance(progress_value, dict):
+            combined[key] = combine_index_min_max_stats(min_value or {}, progress_value)
+        else:
+            combined[key] = {"min": min_value, "max": progress_value}
+    return combined
+
+
+def _to_timestamp(value: Any):
+    value = UpdateStatistics._to_utc_datetime(value)
+    if isinstance(value, datetime.datetime):
+        return value.timestamp()
+    return value
+
+
+def _combine_index_min_max_stats_as_timestamps(index_min: dict[str, Any], index_progress: dict[str, Any]):
+    combined = combine_index_min_max_stats(index_min=index_min, index_progress=index_progress)
+
+    def _recurse(node):
+        if isinstance(node, dict) and set(node.keys()) == {"min", "max"}:
+            return {"min": _to_timestamp(node["min"]), "max": _to_timestamp(node["max"])}
+        if isinstance(node, dict):
+            return {k: _recurse(v) for k, v in node.items()}
+        return _to_timestamp(node)
+
+    return _recurse(combined)
+
+
+def get_chunk_stats(chunk_df, time_index_name, index_names):
+    # LEGACY_COMPAT: SimpleTable and older SDK paths still import get_chunk_stats
+    # and expect _PER_ASSET_ leaves with min/max timestamps. DataNodeUpdate uses
+    # get_index_progress_chunk_stats() as the canonical helper.
+    canonical_stats, grouped_dates = get_index_progress_chunk_stats(
+        chunk_df=chunk_df,
+        time_index_name=time_index_name,
+        index_names=index_names,
+    )
+    legacy_stats = {
+        "_GLOBAL_": {
+            "max": _to_timestamp(canonical_stats["_GLOBAL_"]["max"]),
+            "min": _to_timestamp(canonical_stats["_GLOBAL_"]["min"]),
+        },
+        "_PER_ASSET_": _combine_index_min_max_stats_as_timestamps(
+            index_min=canonical_stats["index_min"],
+            index_progress=canonical_stats["index_progress"],
+        ),
+    }
+    return legacy_stats, grouped_dates
+
+
+class LastUpdateMultiIndexStatsPayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, arbitrary_types_allowed=True)
+
+    global_stats: dict[str, Any] = Field(..., alias="_GLOBAL_")
+    index_progress: dict[str, Any] = Field(default_factory=dict)
+    index_min: dict[str, Any] = Field(default_factory=dict)
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "_GLOBAL_": self.global_stats,
+            "index_progress": self.index_progress,
+            "index_min": self.index_min,
+        }
+
+
+class LastUpdateIndexTimePayload(BaseModel):
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, arbitrary_types_allowed=True)
+
+    global_stats: dict[str, Any] | None = Field(default=None, alias="_GLOBAL_")
+    global_index_progress: dict[str, Any] | None = None
+    index_progress: dict[str, Any] | None = None
+    index_min: dict[str, Any] | None = None
+    multi_index_stats: LastUpdateMultiIndexStatsPayload | None = None
+    multi_index_column_stats: dict[str, Any] | None = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _validate_shape(self):
+        top_level_progress_keys = [
+            self.global_stats is not None,
+            self.global_index_progress is not None,
+            self.index_progress is not None,
+            self.index_min is not None,
+        ]
+        has_top_level_shape = any(top_level_progress_keys)
+        if self.multi_index_stats is not None and has_top_level_shape:
+            raise ValueError("Use either multi_index_stats or top-level progress fields, not both.")
+
+        if self.multi_index_stats is None:
+            if self.global_stats is not None and self.global_index_progress is not None:
+                raise ValueError("Use either _GLOBAL_ or global_index_progress, not both.")
+            if (self.global_stats is None and self.global_index_progress is None) or (
+                self.index_progress is None or self.index_min is None
+            ):
+                raise ValueError(
+                    "Top-level payloads require global_index_progress or _GLOBAL_, "
+                    "index_progress, and index_min."
+                )
+        return self
+
+    def to_nested_payload(self) -> dict[str, Any]:
+        if self.multi_index_stats is not None:
+            multi_index_stats = self.multi_index_stats.to_payload()
+        else:
+            multi_index_stats = {
+                "_GLOBAL_": self.global_index_progress or self.global_stats,
+                "index_progress": self.index_progress or {},
+                "index_min": self.index_min or {},
+            }
+
+        return {
+            "multi_index_stats": multi_index_stats,
+            "multi_index_column_stats": self.multi_index_column_stats or {},
+        }
+
+
+def build_last_update_index_time_payload(
+    *,
+    global_index_progress: dict[str, Any] | None = None,
+    index_progress: dict[str, Any] | None = None,
+    index_min: dict[str, Any] | None = None,
+    multi_index_stats: dict[str, Any] | None = None,
+    multi_index_column_stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if multi_index_stats is not None and any(
+        value is not None for value in [global_index_progress, index_progress, index_min]
+    ):
+        raise ValueError("Use either multi_index_stats or top-level progress fields, not both.")
+
+    raw_payload: dict[str, Any] = {"multi_index_column_stats": multi_index_column_stats or {}}
+    if multi_index_stats is not None:
+        raw_payload["multi_index_stats"] = multi_index_stats
+    else:
+        raw_payload.update(
+            {
+                "global_index_progress": global_index_progress,
+                "index_progress": index_progress,
+                "index_min": index_min,
+            }
+        )
+
+    return LastUpdateIndexTimePayload.model_validate(raw_payload).to_nested_payload()
 
 
 

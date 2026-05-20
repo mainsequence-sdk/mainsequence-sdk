@@ -325,13 +325,8 @@ Required client behavior reads:
 
 It should construct `UpdateStatistics` from canonical fields and set
 `max_time_index_value` from `global_index_progress["max"]`.
-
-Legacy response fields may be accepted only as fallback:
-
-- `last_time_index_value`
-- `asset_time_statistics`
-
-Those fallback paths must be marked `LEGACY_COMPAT`.
+The backend response for this method is canonical. SDK code must not read
+`last_time_index_value` or `asset_time_statistics` from this response.
 
 ### Chunk Stats
 
@@ -858,20 +853,20 @@ Required test coverage:
 
 ### Phase 3: LocalTimeSerie Update Flow
 
-- [ ] Update `DataNodeUpdate.set_start_of_execution()` to consume canonical
+- [x] Update `DataNodeUpdate.set_start_of_execution()` to consume canonical
    response fields.
-- [ ] Add `get_index_progress_chunk_stats()`.
-- [ ] Replace `_PER_ASSET_`-based SDK payload construction with canonical
+- [x] Add `get_index_progress_chunk_stats()`.
+- [x] Replace `_PER_ASSET_`-based SDK payload construction with canonical
    `index_progress` and `index_min`.
-- [ ] Update `DataNodeUpdate.upsert_data_into_table()` to compute canonical stats
+- [x] Update `DataNodeUpdate.upsert_data_into_table()` to compute canonical stats
    and detect duplicates over full `index_names`.
-- [ ] Replace `set_last_update_index_time_from_update_stats()` with the new
+- [x] Replace `set_last_update_index_time_from_update_stats()` with the new
    keyword-only canonical signature.
-- [ ] Add a strict outbound payload model or builder validation for
+- [x] Add a strict outbound payload model or builder validation for
    `set_last_update_index_time_from_update_stats()` that allows only canonical
    keys and relies on generic unknown-key rejection for legacy names.
-- [ ] Add tests that inspect the compressed payload sent to the backend.
-- [ ] Add tests for both allowed decoded payload shapes and for unknown-key
+- [x] Add tests that inspect the compressed payload sent to the backend.
+- [x] Add tests for both allowed decoded payload shapes and for unknown-key
    rejection at the top level and inside `multi_index_stats`.
 
 ### Phase 4: Query And Tail Delete APIs

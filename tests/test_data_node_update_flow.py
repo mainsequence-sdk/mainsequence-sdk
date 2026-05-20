@@ -1,0 +1,373 @@
+import base64
+import datetime
+import gzip
+import json
+from types import SimpleNamespace
+
+import pandas as pd
+import pytest
+from pydantic import ValidationError
+
+from mainsequence.client import models_tdag
+
+
+def _dt(hour: int) -> datetime.datetime:
+    return datetime.datetime(2026, 5, 1, hour, tzinfo=datetime.UTC)
+
+
+def _minimal_update(**kwargs):
+    payload = {
+        "id": 77,
+        "update_hash": "update-hash",
+        "build_configuration": {},
+        "ogm_dependencies_linked": False,
+        "data_node_storage": 44,
+    }
+    payload.update(kwargs)
+    return models_tdag.DataNodeUpdate(**payload)
+
+
+def _decode_compressed_payload(captured_payload):
+    compressed = base64.b64decode(captured_payload["json"]["data"])
+    return json.loads(gzip.decompress(compressed).decode("utf-8"))
+
+
+def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "historical_update": {
+                    "id": 15,
+                    "related_table": 44,
+                    "update_time_start": "2026-05-01T03:00:00Z",
+                },
+                "global_index_progress": {
+                    "min": "2026-05-01T00:00:00Z",
+                    "max": "2026-05-01T03:00:00Z",
+                },
+                "index_progress": {
+                    "account-a": {"asset-1": "2026-05-01T02:00:00Z"}
+                },
+                "index_min": {
+                    "account-a": {"asset-1": "2026-05-01T00:00:00Z"}
+                },
+                "multi_index_column_stats": {},
+                "time_index_name": "time_index",
+                "index_names": ["time_index", "account_uid", "unique_identifier"],
+                "must_update": True,
+                "direct_dependencies_ids": [1, 2],
+            }
+
+    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
+    monkeypatch.setattr(
+        models_tdag.DataNodeUpdate,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    historical_update = _minimal_update().set_start_of_execution()
+
+    stats = historical_update.update_statistics
+    assert stats.global_index_progress == {"min": _dt(0), "max": _dt(3)}
+    assert stats.max_time_index_value == _dt(3)
+    assert stats.index_progress == {"account-a": {"asset-1": _dt(2)}}
+    assert stats.index_min == {"account-a": {"asset-1": _dt(0)}}
+    assert historical_update.must_update is True
+    assert historical_update.direct_dependencies_ids == [1, 2]
+
+
+def test_last_update_payload_model_accepts_top_level_and_nested_shapes():
+    top_level = models_tdag.LastUpdateIndexTimePayload.model_validate(
+        {
+            "global_index_progress": {
+                "max": "2026-05-01 03:00:00+00:00",
+                "min": "2026-05-01 00:00:00+00:00",
+            },
+            "index_progress": {"account-a": {"asset-1": "2026-05-01 02:00:00+00:00"}},
+            "index_min": {"account-a": {"asset-1": "2026-05-01 00:00:00+00:00"}},
+            "multi_index_column_stats": {},
+        }
+    )
+    assert top_level.to_nested_payload() == {
+        "multi_index_stats": {
+            "_GLOBAL_": {
+                "max": "2026-05-01 03:00:00+00:00",
+                "min": "2026-05-01 00:00:00+00:00",
+            },
+            "index_progress": {"account-a": {"asset-1": "2026-05-01 02:00:00+00:00"}},
+            "index_min": {"account-a": {"asset-1": "2026-05-01 00:00:00+00:00"}},
+        },
+        "multi_index_column_stats": {},
+    }
+
+    nested = models_tdag.LastUpdateIndexTimePayload.model_validate(
+        {
+            "multi_index_stats": {
+                "_GLOBAL_": {
+                    "max": "2026-05-01 03:00:00+00:00",
+                    "min": "2026-05-01 00:00:00+00:00",
+                },
+                "index_progress": {},
+                "index_min": {},
+            },
+            "multi_index_column_stats": {},
+        }
+    )
+    assert nested.to_nested_payload()["multi_index_stats"]["index_progress"] == {}
+
+
+def test_last_update_payload_model_rejects_unknown_keys_generically():
+    with pytest.raises(ValidationError):
+        models_tdag.LastUpdateIndexTimePayload.model_validate(
+            {
+                "unexpected_key": "2026-05-01 03:00:00+00:00",
+                "global_index_progress": {
+                    "max": "2026-05-01 03:00:00+00:00",
+                    "min": "2026-05-01 00:00:00+00:00",
+                },
+                "index_progress": {},
+                "index_min": {},
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        models_tdag.LastUpdateIndexTimePayload.model_validate(
+            {
+                "multi_index_stats": {
+                    "_GLOBAL_": {
+                        "max": "2026-05-01 03:00:00+00:00",
+                        "min": "2026-05-01 00:00:00+00:00",
+                    },
+                    "index_progress": {},
+                    "index_min": {},
+                    "unexpected_nested_key": {},
+                },
+                "multi_index_column_stats": {},
+            }
+        )
+
+
+def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "id": 77,
+                "update_hash": "update-hash",
+                "build_configuration": {},
+                "ogm_dependencies_linked": False,
+                "data_node_storage": 44,
+            }
+
+    def _fake_make_request(*, s, loaders, payload, r_type, url, time_out=None):
+        captured["payload"] = payload
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeUpdate,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    update = _minimal_update()
+    update.set_last_update_index_time_from_update_stats(
+        global_index_progress={
+            "max": "2026-05-01 03:00:00+00:00",
+            "min": "2026-05-01 00:00:00+00:00",
+        },
+        index_progress={"account-a": {"asset-1": "2026-05-01 02:00:00+00:00"}},
+        index_min={"account-a": {"asset-1": "2026-05-01 00:00:00+00:00"}},
+        multi_index_column_stats={},
+        timeout=12,
+    )
+
+    decoded = _decode_compressed_payload(captured["payload"])
+    assert captured["r_type"] == "POST"
+    assert captured["timeout"] == 12
+    assert decoded == {
+        "multi_index_stats": {
+            "_GLOBAL_": {
+                "max": "2026-05-01 03:00:00+00:00",
+                "min": "2026-05-01 00:00:00+00:00",
+            },
+            "index_progress": {"account-a": {"asset-1": "2026-05-01 02:00:00+00:00"}},
+            "index_min": {"account-a": {"asset-1": "2026-05-01 00:00:00+00:00"}},
+        },
+        "multi_index_column_stats": {},
+    }
+    assert "last_time_index_value" not in decoded
+    assert "max_per_asset_symbol" not in decoded
+
+
+def test_get_index_progress_chunk_stats_for_three_index_frame():
+    df = pd.DataFrame(
+        {
+            "time_index": [_dt(0), _dt(2), _dt(1), _dt(3)],
+            "account_uid": ["account-a", "account-a", "account-b", "account-b"],
+            "unique_identifier": ["asset-1", "asset-1", "asset-1", "asset-2"],
+            "value": [1, 2, 3, 4],
+        }
+    )
+
+    stats, grouped_dates = models_tdag.get_index_progress_chunk_stats(
+        df,
+        time_index_name="time_index",
+        index_names=["time_index", "account_uid", "unique_identifier"],
+    )
+
+    assert stats == {
+        "_GLOBAL_": {"min": _dt(0), "max": _dt(3)},
+        "index_progress": {
+            "account-a": {"asset-1": _dt(2)},
+            "account-b": {"asset-1": _dt(1), "asset-2": _dt(3)},
+        },
+        "index_min": {
+            "account-a": {"asset-1": _dt(0)},
+            "account-b": {"asset-1": _dt(1), "asset-2": _dt(3)},
+        },
+    }
+    assert grouped_dates is not None
+
+
+def test_get_chunk_stats_keeps_legacy_per_asset_wrapper_shape():
+    df = pd.DataFrame(
+        {
+            "time_index": [_dt(0), _dt(2)],
+            "unique_identifier": ["asset-1", "asset-1"],
+            "value": [1, 2],
+        }
+    )
+
+    stats, _ = models_tdag.get_chunk_stats(
+        df,
+        time_index_name="time_index",
+        index_names=["time_index", "unique_identifier"],
+    )
+
+    assert stats == {
+        "_GLOBAL_": {
+            "min": _dt(0).timestamp(),
+            "max": _dt(2).timestamp(),
+        },
+        "_PER_ASSET_": {
+            "asset-1": {
+                "min": _dt(0).timestamp(),
+                "max": _dt(2).timestamp(),
+            }
+        },
+    }
+
+
+def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
+    calls = {}
+
+    class FakeStorage:
+        def handle_source_table_configuration_creation(self, **kwargs):
+            calls["source_config"] = kwargs
+
+    class FakeResource:
+        def insert_data_into_table(self, **kwargs):
+            calls["insert"] = kwargs
+
+    update = models_tdag.DataNodeUpdate.model_construct(
+        id=77,
+        update_hash="update-hash",
+        build_configuration={},
+        ogm_dependencies_linked=False,
+        data_node_storage=FakeStorage(),
+    )
+
+    def _fake_set_last(**kwargs):
+        calls["set_last"] = kwargs
+        return "updated"
+
+    object.__setattr__(
+        update,
+        "set_last_update_index_time_from_update_stats",
+        _fake_set_last,
+    )
+
+    index = pd.MultiIndex.from_tuples(
+        [
+            (_dt(0), "account-a", "asset-1"),
+            (_dt(2), "account-a", "asset-1"),
+            (_dt(3), "account-b", "asset-2"),
+        ],
+        names=["time_index", "account_uid", "unique_identifier"],
+    )
+    df = pd.DataFrame({"value": [1.0, 2.0, 3.0]}, index=index)
+
+    result = update.upsert_data_into_table(
+        df,
+        data_source=SimpleNamespace(related_resource=FakeResource()),
+        overwrite=True,
+    )
+
+    assert result == "updated"
+    assert calls["source_config"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+    assert calls["insert"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+    assert calls["set_last"]["global_index_progress"] == {"min": _dt(0), "max": _dt(3)}
+    assert calls["set_last"]["index_progress"] == {
+        "account-a": {"asset-1": _dt(2)},
+        "account-b": {"asset-2": _dt(3)},
+    }
+    assert calls["set_last"]["index_min"] == {
+        "account-a": {"asset-1": _dt(0)},
+        "account-b": {"asset-2": _dt(3)},
+    }
+    assert calls["set_last"]["multi_index_column_stats"] == {
+        "value": {
+            "account-a": {"asset-1": {"min": _dt(0), "max": _dt(2)}},
+            "account-b": {"asset-2": {"min": _dt(3), "max": _dt(3)}},
+        }
+    }
+    assert "max_per_asset_symbol" not in calls["set_last"]
+    assert "last_time_index_value" not in calls["set_last"]
+
+
+def test_upsert_data_into_table_rejects_full_index_duplicates():
+    update = models_tdag.DataNodeUpdate.model_construct(
+        id=77,
+        update_hash="update-hash",
+        build_configuration={},
+        ogm_dependencies_linked=False,
+        data_node_storage=SimpleNamespace(
+            handle_source_table_configuration_creation=lambda **_kwargs: None
+        ),
+    )
+    duplicate_index = pd.MultiIndex.from_tuples(
+        [
+            (_dt(0), "account-a", "asset-1"),
+            (_dt(0), "account-a", "asset-1"),
+        ],
+        names=["time_index", "account_uid", "unique_identifier"],
+    )
+    df = pd.DataFrame({"value": [1.0, 2.0]}, index=duplicate_index)
+
+    with pytest.raises(Exception, match="Duplicates found"):
+        update.upsert_data_into_table(
+            df,
+            data_source=SimpleNamespace(related_resource=SimpleNamespace()),
+            overwrite=True,
+        )
