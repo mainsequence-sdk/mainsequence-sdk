@@ -919,13 +919,13 @@ runtime callers are migrated around backend-bound API payloads.
 
 ### Phase 7: Search And Joins
 
-- [ ] Generalize `mainsequence.tdag.data_nodes.filters.JoinKey` beyond the
+- [x] Generalize `mainsequence.tdag.data_nodes.filters.JoinKey` beyond the
    hardcoded enum if joins need to support higher-dimensional tables.
-- [ ] Relax `SearchRequest` validation so `JoinSpec.on` can match arbitrary
+- [x] Relax `SearchRequest` validation so `JoinSpec.on` can match arbitrary
    configured index dimensions.
-- [ ] Update client response dtype/index restoration to set indexes according to
+- [x] Update client response dtype/index restoration to set indexes according to
    the join keys returned by the server.
-- [ ] Add tests for two-index and three-index joins once server support is exposed.
+- [x] Add tests for two-index and three-index joins once server support is exposed.
 
 ### Phase 8: CLI And Documentation
 

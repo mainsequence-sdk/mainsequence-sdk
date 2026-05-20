@@ -13,7 +13,7 @@ This package is not a dashboard framework in the abstract. It is a practical set
 - bootstrapping a page with the right theme and logo behavior
 - reusing sidebar controls that already work with platform objects
 - rendering logged-in user information from platform auth context
-- building instrument configuration forms from Pydantic models
+- building instrument configuration forms from Pydantic models via `mainsequence.instruments.streamlit`
 
 ## What is inside the package
 
@@ -33,9 +33,9 @@ This folder contains reusable Streamlit UI helpers for common platform objects a
 
 See [Components](components.md).
 
-### `instruments/`
+### Instrument form factory
 
-This folder contains the instrument form factory, which renders Streamlit inputs from Pydantic models and has special handling for QuantLib-style fields such as schedules, calendars, day counters, and conventions.
+The instrument form factory now lives under `mainsequence.instruments.streamlit`. It renders Streamlit inputs from Pydantic models and has special handling for QuantLib-style fields such as schedules, calendars, day counters, and conventions.
 
 See [Instrument Forms](instrument_forms.md).
 
@@ -56,7 +56,7 @@ This is why the scaffold can bootstrap a usable look and feel even in a brand-ne
 
 ### `pages/`
 
-This package folder is currently just structural. The reusable helpers live in `scaffold.py`, `components/`, `core/`, and `instruments/`.
+This package folder is currently just structural. The reusable dashboard helpers live in `scaffold.py`, `components/`, and `core/`; instrument Streamlit forms live in `mainsequence.instruments.streamlit`.
 
 ## Recommended reading order
 

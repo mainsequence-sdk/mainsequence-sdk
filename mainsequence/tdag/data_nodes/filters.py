@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from enum import Enum
-
 from pydantic import Field, model_validator
 
 from ..filters import (
@@ -21,11 +19,22 @@ from ..filters import (
 )
 
 
-class JoinKey(str, Enum):
-    """Allowed data-node join keys."""
+class _JoinKeyValue(str):
+    @property
+    def value(self) -> str:
+        return str(self)
 
-    time_index = "time_index"
-    unique_identifier = "unique_identifier"
+
+class JoinKey:
+    """Compatibility constants for common data-node join keys.
+
+    Data-node joins are no longer limited to this pair. `JoinSpec.on` may
+    contain any configured time-first index vector, for example
+    ["time_index", "account_uid", "unique_identifier"].
+    """
+
+    time_index = _JoinKeyValue("time_index")
+    unique_identifier = _JoinKeyValue("unique_identifier")
 
 
 class SearchRequest(BaseSearchRequest):
@@ -41,7 +50,6 @@ class SearchRequest(BaseSearchRequest):
         if a == b:
             raise ValueError("Exactly one of storage_hash or node_unique_identifier must be provided.")
         super()._validate_join_names()
-        expected_on = {JoinKey.time_index.value, JoinKey.unique_identifier.value}
         for join in self.joins:
             join_storage_hash = bool(join.storage_hash and join.storage_hash.strip())
             join_node_identifier = bool(
@@ -51,8 +59,14 @@ class SearchRequest(BaseSearchRequest):
                 raise ValueError(
                     "JoinSpec requires exactly one of storage_hash or node_unique_identifier."
                 )
-            if set(join.on or []) != expected_on:
-                raise ValueError("JoinSpec.on must be exactly ['time_index', 'unique_identifier'].")
+            join_on = [str(key) for key in (join.on or [])]
+            if not join_on:
+                raise ValueError("JoinSpec.on must include a time-first index vector.")
+            if any(not key.strip() for key in join_on):
+                raise ValueError("JoinSpec.on cannot contain empty index names.")
+            if len(join_on) != len(set(join_on)):
+                raise ValueError("JoinSpec.on cannot contain duplicate index names.")
+            join.on = join_on
         return self
 
 

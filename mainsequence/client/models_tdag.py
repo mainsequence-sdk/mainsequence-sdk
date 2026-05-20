@@ -1863,6 +1863,81 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         # fallback: try what you got
         return dtype_str
 
+    @staticmethod
+    def _get_search_meta_attr(obj: Any, attr: str, default: Any = None) -> Any:
+        if isinstance(obj, Mapping):
+            return obj.get(attr, default)
+        return getattr(obj, attr, default)
+
+    @staticmethod
+    def _coerce_search_index_names(value: Any) -> list[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [value]
+        if isinstance(value, Mapping):
+            try:
+                items = sorted(value.items(), key=lambda item: int(item[0]))
+            except (TypeError, ValueError):
+                items = value.items()
+            value = [item_value for _, item_value in items]
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            return [str(item) for item in value if item is not None and str(item).strip()]
+        return []
+
+    @classmethod
+    def _iter_search_source_configs(cls, data_node_storage_map: dict):
+        for meta in (data_node_storage_map or {}).values():
+            stc = cls._get_search_meta_attr(meta, "sourcetableconfiguration")
+            if stc is None:
+                stc = cls._get_search_meta_attr(meta, "source_table_configuration")
+            if stc is not None:
+                yield stc
+
+    @classmethod
+    def _resolve_search_response_index_names(
+        cls,
+        *,
+        data_node_storage_map: dict,
+        filter_request: SearchRequest,
+        response_index_names: Any = None,
+    ) -> list[str]:
+        explicit_index_names = cls._coerce_search_index_names(response_index_names)
+        if explicit_index_names:
+            return explicit_index_names
+
+        join_vectors = [
+            cls._coerce_search_index_names(getattr(join, "on", None))
+            for join in (getattr(filter_request, "joins", None) or [])
+        ]
+        join_vectors = [join_on for join_on in join_vectors if join_on]
+        if join_vectors:
+            first_join_vector = join_vectors[0]
+            if all(join_on == first_join_vector for join_on in join_vectors):
+                return first_join_vector
+            return []
+
+        for stc in cls._iter_search_source_configs(data_node_storage_map):
+            index_names = cls._coerce_search_index_names(
+                cls._get_search_meta_attr(stc, "index_names")
+            )
+            if index_names:
+                return index_names
+        return []
+
+    @classmethod
+    def _search_response_column_dtype(
+        cls,
+        *,
+        data_node_storage_map: dict,
+        column_name: str,
+    ) -> str | None:
+        for stc in cls._iter_search_source_configs(data_node_storage_map):
+            dtype_map = cls._get_search_meta_attr(stc, "column_dtypes_map", {}) or {}
+            if column_name in dtype_map:
+                return str(dtype_map[column_name])
+        return None
+
     @classmethod
     def _apply_dtypes_from_meta(
             cls,
@@ -1870,37 +1945,70 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             *,
             data_node_storage_map: dict,
             filter_request: SearchRequest,
+            response_index_names: Any = None,
     ) -> pd.DataFrame:
         """
         df columns expected:
-          - time_index (unprefixed)   [later becomes index]
-          - unique_identifier (unprefixed) [later becomes index]
+          - unprefixed join/index key columns returned by the server
           - base__<col>
           - <join_alias>__<col>
         """
         if df.empty:
             return df
 
-        # 1) Parse keys (these exist even in FULL OUTER JOIN)
-        if "time_index" in df.columns:
-            df["time_index"] = pd.to_datetime(df["time_index"], format="ISO8601", errors="coerce", utc=True)
-        if "unique_identifier" in df.columns:
-            df["unique_identifier"] = df["unique_identifier"].astype("string")
+        index_names = cls._resolve_search_response_index_names(
+            data_node_storage_map=data_node_storage_map,
+            filter_request=filter_request,
+            response_index_names=response_index_names,
+        )
+        time_index_names = {"time_index"}
+        for stc in cls._iter_search_source_configs(data_node_storage_map):
+            time_index_name = cls._get_search_meta_attr(stc, "time_index_name")
+            if time_index_name:
+                time_index_names.add(str(time_index_name))
+
+        # 1) Parse unprefixed join/index keys. These exist even in FULL OUTER JOIN.
+        key_columns_to_cast = list(dict.fromkeys([*index_names, "time_index", "unique_identifier"]))
+        for key_col in key_columns_to_cast:
+            if key_col not in df.columns:
+                continue
+            dtype_str = cls._search_response_column_dtype(
+                data_node_storage_map=data_node_storage_map,
+                column_name=key_col,
+            )
+            dtype_name = (dtype_str or "").lower()
+            if key_col in time_index_names or "datetime" in dtype_name:
+                df[key_col] = pd.to_datetime(
+                    df[key_col], format="ISO8601", errors="coerce", utc=True
+                )
+                continue
+            try:
+                pandas_dtype = cls._normalize_dtype_for_pandas(dtype_str or "string")
+                if pandas_dtype == "string":
+                    df[key_col] = df[key_col].astype("string")
+                else:
+                    df[key_col] = df[key_col].astype(pandas_dtype)
+            except Exception:
+                pass
 
         # 2) Cast prefixed columns using each table's SourceTableConfiguration
         for prefix, meta in (data_node_storage_map or {}).items():
-            stc = getattr(meta, "sourcetableconfiguration", None)
+            stc = cls._get_search_meta_attr(meta, "sourcetableconfiguration")
+            if stc is None:
+                stc = cls._get_search_meta_attr(meta, "source_table_configuration")
             if stc is None:
                 continue
 
-            time_col_name = getattr(stc, "time_index_name", None)
-            uid_col_name = getattr(stc, "unique_identifier_name", None) or "unique_identifier"
-
-            dtype_map = getattr(stc, "column_dtypes_map", None) or {}
+            stc_index_names = set(
+                cls._coerce_search_index_names(cls._get_search_meta_attr(stc, "index_names"))
+            )
+            response_index_name_set = set(index_names)
+            dtype_map = cls._get_search_meta_attr(stc, "column_dtypes_map", {}) or {}
 
             for col_name, col_type in dtype_map.items():
-                # We do NOT cast "time_index"/"unique_identifier" via prefixed columns anymore.
-                if col_name in {time_col_name, uid_col_name, "time_index", "unique_identifier"}:
+                # The server returns join/index keys unprefixed; do not look for
+                # prefixed copies of any configured index dimension.
+                if col_name in stc_index_names or col_name in response_index_name_set:
                     continue
 
                 df_col = f"{prefix}__{col_name}"
@@ -1926,19 +2034,9 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                     # last resort: leave as object (do not crash on one bad cast)
                     pass
 
-        # 3) Set index ONLY when join keys are exactly time_index + unique_identifier for every join
-        from mainsequence.tdag.data_nodes.filters import JoinKey
-
-        join_keys_ok = True
-        if getattr(filter_request, "joins", None):
-            for j in filter_request.joins:
-                on = set(getattr(j, "on", []) or [])
-                if on != {JoinKey.time_index, JoinKey.unique_identifier}:
-                    join_keys_ok = False
-                    break
-
-        if join_keys_ok and {"time_index", "unique_identifier"}.issubset(df.columns):
-            df = df.set_index(["time_index", "unique_identifier"])
+        # 3) Restore the server-declared index vector.
+        if index_names and set(index_names).issubset(df.columns):
+            df = df.set_index(index_names)
 
         return df
 
@@ -1956,6 +2054,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         all_results: list[dict] = []
         data_node_storage_map_json: dict | None = None
+        response_index_names: Any = None
 
         while True:
             req = filter_request.model_copy(deep=True)
@@ -1982,6 +2081,11 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             # capture meta map once (same on every page)
             if data_node_storage_map_json is None:
                 data_node_storage_map_json = response_data.get("data_node_storage_map") or {}
+            if response_index_names is None:
+                for key in ("index_names", "join_keys", "join_index_names", "index_columns"):
+                    if key in response_data and response_data[key] is not None:
+                        response_index_names = response_data[key]
+                        break
 
             chunk = response_data.get("results", []) or []
             all_results.extend(chunk)
@@ -2005,7 +2109,12 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         # If instantiation failed and we only have dicts, dtype parsing would require dict access.
         # Assuming cls(**meta_json) works in your client models (it should).
-        df = cls._apply_dtypes_from_meta(df, data_node_storage_map=storage_objs, filter_request=filter_request)
+        df = cls._apply_dtypes_from_meta(
+            df,
+            data_node_storage_map=storage_objs,
+            filter_request=filter_request,
+            response_index_names=response_index_names,
+        )
 
         return df
 
