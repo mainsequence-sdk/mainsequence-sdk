@@ -51,6 +51,7 @@ from .utils import (
 _default_data_source = None  # Module-level cache
 
 JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
+LOGICAL_COLUMN_DTYPES_ATTR = "mainsequence_column_dtypes_map"
 
 
 def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
@@ -830,6 +831,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @classmethod
     def _break_pandas_dataframe(cls, data_frame: pd.DataFrame, time_index_name: str | None = None):
+        logical_column_dtypes_map = data_frame.attrs.get(LOGICAL_COLUMN_DTYPES_ATTR)
         if time_index_name is  None:
             time_index_name = data_frame.index.names[0]
             if time_index_name is None:
@@ -845,6 +847,21 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_frame.columns = [str(c) for c in data_frame.columns]
         data_frame = data_frame.rename(columns={data_frame.columns[time_col_loc]: time_index_name})
         column_dtypes_map = {key: str(value) for key, value in data_frame.dtypes.to_dict().items()}
+        if logical_column_dtypes_map is not None:
+            logical_column_dtypes_map = {
+                str(key): str(value) for key, value in logical_column_dtypes_map.items()
+            }
+            missing_logical_columns = [
+                column_name
+                for column_name in logical_column_dtypes_map
+                if column_name not in data_frame.columns
+            ]
+            if missing_logical_columns:
+                raise ValueError(
+                    "Logical column dtype contract contains columns not present "
+                    f"in the DataFrame: {missing_logical_columns}"
+                )
+            column_dtypes_map.update(logical_column_dtypes_map)
 
         data_frame = data_frame.replace({np.nan: None})
 
