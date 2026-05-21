@@ -266,6 +266,132 @@ def test_initialize_virtual_fund_holdings_source_table_posts_domain_endpoint(
     ]
 
 
+@pytest.mark.parametrize(
+    (
+        "method_name",
+        "url_suffix",
+        "index_names",
+        "column_dtypes_map",
+        "lookup_indexes",
+    ),
+    [
+        (
+            "initialize_portfolio_weights_source_table",
+            "/assets/portfolio-weights-data-node/714/initialize-source-table/",
+            [
+                "time_index",
+                "portfolio_index_asset_unique_identifier",
+                "unique_identifier",
+            ],
+            {
+                "time_index": "datetime64[ns, UTC]",
+                "portfolio_index_asset_unique_identifier": "string",
+                "unique_identifier": "string",
+                "weight": "float64",
+                "weight_before": "float64",
+                "price_current": "float64",
+                "price_before": "float64",
+                "volume_current": "float64",
+                "volume_before": "float64",
+            },
+            ["portfolio_weights_latest_lookup_idx"],
+        ),
+        (
+            "initialize_signal_weights_source_table",
+            "/assets/signal-weights-data-node/714/initialize-source-table/",
+            ["time_index", "signal_uid", "unique_identifier"],
+            {
+                "time_index": "datetime64[ns, UTC]",
+                "signal_uid": "string",
+                "unique_identifier": "string",
+                "signal_weight": "float64",
+            },
+            ["signal_weights_latest_lookup_idx"],
+        ),
+        (
+            "initialize_portfolios_source_table",
+            "/assets/portfolios-data-node/714/initialize-source-table/",
+            ["time_index", "portfolio_index_asset_unique_identifier"],
+            {
+                "time_index": "datetime64[ns, UTC]",
+                "portfolio_index_asset_unique_identifier": "string",
+                "close": "float64",
+                "return": "float64",
+                "calculated_close": "float64",
+                "close_time": "datetime64[ns, UTC]",
+            },
+            ["portfolios_latest_lookup_idx"],
+        ),
+    ],
+)
+def test_initialize_canonical_vfb_source_tables_post_domain_endpoints(
+    monkeypatch,
+    method_name,
+    url_suffix,
+    index_names,
+    column_dtypes_map,
+    lookup_indexes,
+):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "dynamic_table_metadata": {"id": 714},
+                "source_table_configuration": {
+                    "related_table": 714,
+                    "time_index_name": "time_index",
+                    "index_names": index_names,
+                    "column_dtypes_map": column_dtypes_map,
+                    "storage_layout": {},
+                    "physical_index_plan": {},
+                    "open_for_everyone": False,
+                    "columns_metadata": [],
+                },
+                "created_source_table_configuration": True,
+                "created_physical_table": True,
+                "lookup_indexes": lookup_indexes,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = _storage(["time_index"])
+    result = getattr(storage, method_name)(
+        time_index_name="time_index",
+        index_names=index_names,
+        column_dtypes_map=column_dtypes_map,
+        timeout=30,
+    )
+
+    assert result["lookup_indexes"] == lookup_indexes
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith(url_suffix)
+    assert captured["timeout"] == 30
+    assert captured["payload"]["json"] == {
+        "time_index_name": "time_index",
+        "index_names": index_names,
+        "column_dtypes_map": column_dtypes_map,
+    }
+    assert storage.sourcetableconfiguration.index_names == index_names
+    assert storage.sourcetableconfiguration.column_dtypes_map == column_dtypes_map
+
+
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):
     captured = {}
 

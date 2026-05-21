@@ -79,7 +79,7 @@ The table meaning is the stable schema:
 
 - "portfolio weights over time"
 - "signal weights over time"
-- optionally "portfolio values over time"
+- "portfolio values over time"
 
 ### VFB already has the right in-memory frames
 
@@ -120,8 +120,11 @@ index:   time_index, signal_uid, unique_identifier
 column:  signal_weight
 ```
 
-`signal_uid` is the signal identity dimension. `unique_identifier` remains the
-asset being weighted.
+`signal_uid` is the signal identity dimension. It must not be a human label such
+as `"market_cap_top_100"`. It is the deterministic unique hash of the canonical
+signal configuration, matching the identity mechanism that currently makes a
+signal retrievable as its own DataNode. `unique_identifier` remains the asset
+being weighted.
 
 ### Namespace is table-family selection, not a row dimension
 
@@ -149,18 +152,139 @@ The SDK already has `hash_namespace`. The VFB public API should expose a clearer
 domain parameter, likely named `namespace`, and map it to DataNode namespace
 plumbing internally.
 
+## Workflow Comparison
+
+### Old workflow: portfolio identity is the portfolio DataNode identity
+
+Today the `PortfolioStrategy` DataNode identity is doing two jobs at once:
+
+- identifying the physical output table
+- identifying the portfolio configuration
+
+That is why every materially different portfolio configuration produces its own
+portfolio DataNode storage.
+
+```text
+ PortfolioStrategyConfig
+ (assets, prices, execution, signal instance,
+  rebalance strategy, Markets metadata)
+        |
+        | DataNode hashing over full portfolio configuration
+        v
+ PortfolioStrategy DataNode
+ storage_hash/update_hash = hash(PortfolioStrategyConfig)
+        |
+        +--------------------+
+        |                    |
+        v                    v
+ Signal DataNode(s)      Price / interpolation DataNode(s)
+ per signal config       per price config
+        |                    |
+        +----------+---------+
+                   |
+                   v
+ PortfolioStrategy.update()
+ - interpolate signal weights
+ - rebalance into executed weights
+ - compute close / return
+ - serialize rebalance weights into JSON columns
+                   |
+                   v
+ Per-portfolio DynamicTableMetaData
+ one physical table per PortfolioStrategyConfig hash
+ rows contain portfolio values plus serialized weights
+                   |
+                   v
+ Portfolio.create_from_time_series(data_node_update_id)
+                   |
+                   v
+ PortfolioIndexAsset
+ unique_identifier is tied to the backend Portfolio created
+ from that portfolio-specific DataNodeUpdate
+```
+
+Storage produced by the old workflow:
+
+```text
+N portfolio configs
+  -> N PortfolioStrategy DataNode storages
+  -> N portfolio output tables
+  -> signal DataNode storages still fragmented by signal config
+  -> price/interpolation DataNode storages by price config
+```
+
+### New workflow: table identity is static, portfolio identity is a row dimension
+
+The new workflow separates the shared table identity from the portfolio identity.
+The canonical DataNodes identify stable storage contracts. The full portfolio
+configuration is still unique, but that uniqueness becomes the identity of the
+`PortfolioIndexAsset`, not the identity of the canonical table.
+
+```text
+ PortfolioConfiguration
+ (assets, prices, execution, signal config,
+  rebalance strategy, Markets metadata)
+        |
+        | deterministic canonical serialization
+        v
+ portfolio_configuration_hash
+        |
+        | get/create Portfolio domain object
+        v
+ PortfolioIndexAsset
+ unique_identifier = portfolio_configuration_hash
+        |
+        v
+ PortfolioStrategy.update()
+ - interpolate signal weights
+ - rebalance into executed weights
+ - compute close / return
+        |
+        +-----------------------------+-----------------------------+
+        |                             |                             |
+        v                             v                             v
+ PortfolioWeights(namespace)     PortfoliosDataNode(namespace)  SignalWeights(namespace)
+ static DynamicTableMetaData     static DynamicTableMetaData    static DynamicTableMetaData
+        |                             |                             |
+        | row identity includes       | row identity includes       | row identity includes
+        | portfolio_index_asset_      | portfolio_index_asset_      | signal_uid =
+        | unique_identifier =         | unique_identifier =         | hash(signal config)
+        | portfolio_configuration_hash| portfolio_configuration_hash|
+        v                             v                             v
+ one table for all portfolio     one table for all portfolio    one table for all signal
+ weights in the namespace        value series in namespace      weights in namespace
+```
+
+Storage produced by the new workflow:
+
+```text
+N portfolio configs in one namespace
+  -> 1 PortfolioWeights DataNodeStorage
+  -> 1 PortfoliosDataNode DataNodeStorage
+  -> 1 SignalWeights DataNodeStorage
+  -> N PortfolioIndexAsset identities, one per portfolio_configuration_hash
+```
+
+During migration, the legacy per-portfolio `PortfolioStrategy` output can remain
+available for compatibility, but it should not be the canonical identity model.
+The canonical model is simpler: one shared table contract, many portfolio row
+identities.
+
 ## Decision
 
-Introduce unified VFB weight DataNodes modeled after `AccountHoldings`.
+Introduce unified VFB DataNodes modeled after `AccountHoldings`.
 
-The first release should add two primary tables:
+The first release should add three primary tables:
 
 1. `PortfolioWeights`
 2. `SignalWeights`
+3. `PortfoliosDataNode`
 
-It should also reserve a compatible shape for a future `PortfolioValues` table
-so the whole VFB portfolio output can move away from per-portfolio DataNode
-tables over time.
+`PortfoliosDataNode` stores the portfolio value series for all portfolios in
+the same namespace. `PortfolioWeights` stores the asset-level allocations for
+those portfolios. Keeping both canonical tables in the first implementation
+lets VFB move the portfolio output away from one physical DataNode table per
+portfolio without waiting for a later migration.
 
 ## Table Contracts
 
@@ -184,23 +308,19 @@ index_names:
   - time_index
   - portfolio_index_asset_unique_identifier
   - unique_identifier
-columns:
+column_dtypes_map:
+  time_index: datetime64[ns, UTC]
+  portfolio_index_asset_unique_identifier: string
+  unique_identifier: string
   weight: float64
   weight_before: float64
   price_current: float64
   price_before: float64
   volume_current: float64
   volume_before: float64
-  extra_details: jsonb
 ```
 
-Minimum required columns for the first implementation:
-
-```text
-weight
-```
-
-Recommended first implementation columns:
+Required canonical columns:
 
 ```text
 weight
@@ -209,17 +329,21 @@ price_current
 price_before
 volume_current
 volume_before
-extra_details
 ```
 
 Rationale:
 
-- `weight` maps to VFB `weights_current`
-- `weight_before` maps to VFB `weights_before`
-- price and volume fields preserve the execution context currently hidden in
-  serialized portfolio JSON columns
-- `extra_details` gives room for rebalance strategy metadata without schema
-  churn
+- `weight` maps to VFB `weights_current`, the executed/current allocation
+- `weight_before` maps to VFB `weights_before`, the allocation before execution
+- `price_current`, `price_before`, `volume_current`, and `volume_before`
+  represent the actual rebalance execution result and are required for
+  reconstructing or auditing portfolio price calculations
+
+Do not include a catch-all JSON metadata column in the first canonical schema.
+VFB does not currently write a defined payload for one, and it would make the
+canonical contract less precise without solving an active requirement. If future
+rebalance metadata becomes necessary, add typed canonical columns for queryable
+fields or an explicit schema extension with `extra_records`.
 
 The index order should put portfolio identity before asset identity:
 
@@ -243,6 +367,11 @@ time_index
 portfolio_index_asset_unique_identifier
 unique_identifier
 weight
+weight_before
+price_current
+price_before
+volume_current
+volume_before
 ```
 
 ### SignalWeights
@@ -264,51 +393,86 @@ index_names:
   - time_index
   - signal_uid
   - unique_identifier
-columns:
+column_dtypes_map:
+  time_index: datetime64[ns, UTC]
+  signal_uid: string
+  unique_identifier: string
   signal_weight: float64
-  extra_details: jsonb
 ```
 
-`signal_uid` should be stable for the logical signal. The recommended order for
-resolving it is:
+`signal_uid` must be computed from the canonical signal configuration hash.
+Today signal retrievability comes from hashing a signal configuration into its
+own DataNode identity. Moving signal rows into a shared table must preserve that
+property by carrying the same logical identity as a row dimension.
 
-1. explicit `signal_uid` supplied by the user or signal config
-2. `DataNodeStorage.identifier` when the signal is already published under a
-   stable identifier
-3. `DataNodeUpdate.update_hash` as a compatibility fallback
+The hash input should include:
 
-The fallback is acceptable for migration, but not ideal as the long-term public
-identity because update hashes can change when updater scope changes.
+- the concrete signal class/import identity
+- the canonical serialized signal `DataNodeConfiguration`
+- fields that change the emitted `signal_weight` series
 
-### PortfolioValues
+The hash input should exclude:
 
-This ADR does not require `PortfolioValues` in the first implementation, but it
-should be planned now because it completes the migration away from one portfolio
-DataNode table per portfolio.
+- namespace
+- storage id
+- update id
+- run-specific timestamps
+- portfolio-specific consumers of the signal
+- user-facing display names that do not change signal output
+
+Human-readable names can be stored as metadata, but they must not be the
+canonical `signal_uid`. During migration, an existing signal DataNode's hash may
+be reused only when it is the same canonical configuration hash. Arbitrary
+`DataNodeStorage.identifier` values or mutable update metadata should not become
+long-term signal identities.
+
+### PortfoliosDataNode
+
+`PortfoliosDataNode` is required in the first implementation. It stores the
+portfolio value and return series for all portfolios in one table per namespace.
+The asset-level allocations belong in `PortfolioWeights`; this table owns the
+portfolio-level time series.
 
 Recommended contract:
 
 ```text
-role: portfolio_values
-identifier: mainsequence.markets.portfolio_values
+role: portfolios
+identifier: mainsequence.markets.portfolios
 time_index_name: time_index
 index_names:
   - time_index
   - portfolio_index_asset_unique_identifier
-columns:
+column_dtypes_map:
+  time_index: datetime64[ns, UTC]
+  portfolio_index_asset_unique_identifier: string
   close: float64
   return: float64
   calculated_close: float64
   close_time: datetime64[ns, UTC]
-  extra_details: jsonb
 ```
 
-Once this exists, the legacy per-portfolio VFB table can become optional or
-compatibility-only.
+The canonical table should not store serialized rebalance JSON as its primary
+weights representation. Those rows belong in `PortfolioWeights`. Legacy
+serialized columns can remain on per-portfolio output during migration and can
+be parsed only for backfill.
 
 ## DataNode Class Design
 
-Use the AccountHoldings contract pattern.
+Use the current AccountHoldings configuration pattern.
+
+`AccountHoldings` no longer uses a frozen contract object as the primary public
+shape. It uses a `HoldingsDataNodeConfiguration` that carries:
+
+- `time_index_name`
+- `index_names`
+- `records`
+- `node_metadata`
+
+The canonical VFB nodes should use the same config-first pattern, with one
+important restriction: `time_index_name` is not a configurable field. It is
+always `"time_index"` for these canonical tables. Required schema is defined by
+the class, optional `extra_records` are merged through the default config, and
+runtime validation checks the active config.
 
 Recommended module:
 
@@ -319,45 +483,62 @@ mainsequence/markets/virtualfundbuilder/data_nodes.py
 Recommended abstractions:
 
 ```python
-class VFBWeightsDataNodeConfiguration(DataNodeConfiguration):
-    pass
-
-@dataclass(frozen=True)
-class VFBWeightsDataNodeContract:
-    role: str
-    schema_version: int
-    description: str
-    time_index_name: str
+class VFBCanonicalDataNodeConfiguration(DataNodeConfiguration):
     index_names: list[str]
-    column_dtypes_map: dict[str, str]
-    column_labels: dict[str, str]
-    column_descriptions: dict[str, str]
+    records: list[RecordDefinition]
 
-class VFBWeightsDataNode(DataNode):
-    WEIGHTS_CONTRACT: ClassVar[VFBWeightsDataNodeContract]
-    SOURCE_TABLE_INITIALIZER_METHOD: ClassVar[str] = "initialize_source_table"
+class VFBCanonicalDataNode(DataNode):
+    def __init__(
+        self,
+        config: VFBCanonicalDataNodeConfiguration | None = None,
+        *args,
+        **kwargs,
+    ): ...
+
+    @classmethod
+    def default_config(
+        cls,
+        *,
+        identifier: str | None = None,
+        description: str | None = None,
+        extra_records: list[RecordDefinition] | None = None,
+    ) -> VFBCanonicalDataNodeConfiguration: ...
+
+    @classmethod
+    def _required_index_names(cls) -> list[str]: ...
+
+    @classmethod
+    def _required_records(cls) -> list[RecordDefinition]: ...
 ```
 
 Concrete classes:
 
 ```python
-class PortfolioWeights(VFBWeightsDataNode):
-    WEIGHTS_CONTRACT = PORTFOLIO_WEIGHTS_CONTRACT
-    SOURCE_TABLE_INITIALIZER_METHOD = "initialize_portfolio_weights_source_table"
+class PortfolioWeights(VFBCanonicalDataNode):
+    def _initialize_source_table(...):
+        storage.initialize_portfolio_weights_source_table(...)
 
-class SignalWeights(VFBWeightsDataNode):
-    WEIGHTS_CONTRACT = SIGNAL_WEIGHTS_CONTRACT
-    SOURCE_TABLE_INITIALIZER_METHOD = "initialize_signal_weights_source_table"
+class SignalWeights(VFBCanonicalDataNode):
+    def _initialize_source_table(...):
+        storage.initialize_signal_weights_source_table(...)
+
+class PortfoliosDataNode(VFBCanonicalDataNode):
+    def _initialize_source_table(...):
+        storage.initialize_portfolios_source_table(...)
 ```
 
 Each class should provide:
 
 - default config with `DataNodeMetaData(identifier=...)`
 - `build_schema_bootstrap_frame()`
-- `validate_weights_frame()`
+- `validate_frame()` or a domain-specific validator such as
+  `validate_weights_frame()`
 - `ensure_storage_ready()`
 - `_initialize_source_table_storage_or_none()`
 - `_validate_storage_contract()`
+
+The `SignalWeights` integration should also provide `compute_signal_uid()` for
+signal rows, implemented from the canonical signal configuration hash.
 
 The default `update()` may return a schema bootstrap frame, like holdings, so the
 table can be created through the standard DataNode path when the domain endpoint
@@ -372,6 +553,7 @@ Examples:
 ```python
 portfolio_weights = PortfolioWeights(namespace="research")
 signal_weights = SignalWeights(namespace="research")
+portfolios = PortfoliosDataNode(namespace="research")
 ```
 
 and:
@@ -379,23 +561,25 @@ and:
 ```python
 portfolio_node.run(
     add_portfolio_to_markets_backend=True,
-    sync_weight_tables=True,
+    sync_canonical_tables=True,
     namespace="research",
 )
 ```
 
-Implementation rule:
+Resolved implementation rule:
 
-- `namespace` maps to DataNode hash namespace/storage namespace internally
+- `namespace` is the VFB-facing alias for existing DataNode
+  `hash_namespace`/storage namespace plumbing
+- no separate market-domain namespace identity is added
 - namespace is not included as an output column
 - namespace is not a portfolio identity
 - namespace is not a signal identity
 - all canonical VFB weight tables created with the same namespace share the same
   storage family for that namespace
 
-If the SDK keeps `hash_namespace` as the low-level DataNode argument, VFB should
-still expose `namespace` to avoid leaking test-oriented language into market
-domain code.
+VFB should expose `namespace` to avoid leaking the lower-level `hash_namespace`
+name into market-domain code, but the storage identity effect is the same
+existing DataNode namespace mechanism.
 
 ## Storage Identity Rules
 
@@ -420,6 +604,25 @@ The table meaning is:
 
 - `PortfolioWeights`: VFB executed weights indexed by portfolio and asset
 - `SignalWeights`: VFB signal weights indexed by signal and asset
+- `PortfoliosDataNode`: VFB portfolio value series indexed by portfolio
+
+Portfolio uniqueness must move out of the canonical table DataNode identity and
+into the portfolio row identity. The SDK must compute a deterministic
+`portfolio_configuration_hash` from the full canonical `PortfolioConfiguration`
+and use that hash to get or create the corresponding `PortfolioIndexAsset`.
+Canonical portfolio rows then use:
+
+```text
+portfolio_index_asset_unique_identifier =
+  PortfolioIndexAsset.unique_identifier =
+  portfolio_configuration_hash
+```
+
+The hash input must include the fields that change the emitted portfolio weights
+or value series, including the asset universe, price configuration, execution
+configuration, signal identity/config, rebalance strategy, and relevant Markets
+portfolio metadata. It must exclude namespace, storage id, update id, and
+run-specific timestamps.
 
 If an implementation needs writer-specific configuration, mark it
 `update_only` or keep it outside the canonical table DataNode constructor.
@@ -459,11 +662,12 @@ Recommended first release behavior:
 - keep the current per-portfolio DataNode output unchanged
 - add opt-in canonical sync
 - write canonical `PortfolioWeights` from the in-memory `weights` frame
+- write canonical portfolio value rows into `PortfoliosDataNode` from the
+  calculated `portfolio` frame
 - use persisted `rebalance_weights` JSON only for backfill
 
 Recommended later behavior:
 
-- add `PortfolioValues`
 - make the legacy per-portfolio DataNode output optional
 - remove the need to parse serialized rebalance JSON in normal reads
 
@@ -503,7 +707,7 @@ Pros:
 Cons:
 
 - larger refactor
-- every signal config must provide or derive stable `signal_uid`
+- every signal must expose its canonical configuration hash as `signal_uid`
 - `WeightsBase.interpolate_index()` must filter by `signal_uid`
 - custom user signal DataNodes need a migration story
 
@@ -523,6 +727,7 @@ Required client methods on `DataNodeStorage`:
 ```python
 initialize_portfolio_weights_source_table(...)
 initialize_signal_weights_source_table(...)
+initialize_portfolios_source_table(...)
 ```
 
 Recommended backend endpoints:
@@ -530,12 +735,7 @@ Recommended backend endpoints:
 ```text
 POST /orm/api/assets/portfolio-weights-data-node/{id}/initialize-source-table/
 POST /orm/api/assets/signal-weights-data-node/{id}/initialize-source-table/
-```
-
-If `PortfolioValues` is included:
-
-```text
-POST /orm/api/assets/portfolio-values-data-node/{id}/initialize-source-table/
+POST /orm/api/assets/portfolios-data-node/{id}/initialize-source-table/
 ```
 
 The backend should derive:
@@ -551,6 +751,18 @@ The backend should derive:
 
 ```python
 df = portfolio_weights.get_df_between_dates(
+    start_date=start,
+    end_date=end,
+    dimension_filters={
+        "portfolio_index_asset_unique_identifier": [portfolio_uid],
+    },
+)
+```
+
+### Portfolio value series for one portfolio
+
+```python
+df = portfolios.get_df_between_dates(
     start_date=start,
     end_date=end,
     dimension_filters={
@@ -578,7 +790,7 @@ df = signal_weights.get_df_between_dates(
     start_date=start,
     end_date=end,
     dimension_filters={
-        "signal_uid": ["market_cap_top_20"],
+        "signal_uid": [signal_configuration_hash],
     },
 )
 ```
@@ -606,6 +818,8 @@ df = portfolio_weights.get_df_between_dates(
 
 - Portfolio weights can be queried across portfolios without discovering many
   portfolio-specific tables.
+- Portfolio value series can be queried across portfolios without discovering
+  many portfolio-specific tables.
 - Signal weights can be queried across signal producers.
 - The design uses ADR 0002's multidimensional update contract directly.
 - `unique_identifier` keeps its existing meaning: the held or signaled asset.
@@ -616,8 +830,8 @@ df = portfolio_weights.get_df_between_dates(
 
 - The first implementation needs domain-specific table initialization endpoints.
 - Existing VFB signal strategies need a migration path.
-- `PortfolioStrategy` still has a legacy per-portfolio output until
-  `PortfolioValues` is introduced.
+- `PortfolioStrategy` still needs to keep the legacy per-portfolio output during
+  migration even after canonical `PortfoliosDataNode` coverage exists.
 - Stable signal identity is not currently a first-class VFB concept and must be
   added.
 
@@ -633,94 +847,139 @@ until they opt into direct `SignalWeights` storage.
 
 ## Implementation Tasks
 
-### Phase 1: Contracts
+### Phase 1: Config-first contracts
 
-1. Add VFB weight DataNode contract classes.
-2. Define `PORTFOLIO_WEIGHTS_CONTRACT`.
-3. Define `SIGNAL_WEIGHTS_CONTRACT`.
-4. Optionally define `PORTFOLIO_VALUES_CONTRACT`.
-5. Add validators that enforce exact index names, required columns, dtypes, and
-   duplicate-free full index tuples.
+- [x] Add `VFBCanonicalDataNodeConfiguration(DataNodeConfiguration)` with
+      `index_names` and `records`. Do not expose `time_index_name` as a config
+      field; canonical VFB tables always use `"time_index"`.
+- [x] Add a `VFBCanonicalDataNode` base class that mirrors the current
+      `HoldingsDataNode` lifecycle: `default_config()`, `extra_records` merge,
+      `_validate_config()`, schema bootstrap frame, storage readiness, and
+      storage contract validation.
+- [x] Define required record maps, labels, and descriptions for
+      `PortfolioWeights`.
+- [x] Define required record maps, labels, and descriptions for `SignalWeights`.
+- [x] Define required record maps, labels, and descriptions for
+      `PortfoliosDataNode`.
+- [x] Attach logical dtype metadata to bootstrap and validation frames.
+- [x] Add validators that enforce exact `index_names`, required columns, dtypes,
+      fixed `"time_index"` as the first index, and duplicate-free full index
+      tuples.
 
 ### Phase 2: Source table initialization
 
-1. Add `DataNodeStorage.initialize_portfolio_weights_source_table(...)`.
-2. Add `DataNodeStorage.initialize_signal_weights_source_table(...)`.
-3. Add backend domain endpoints and lookup indexes.
-4. Match AccountHoldings fallback behavior: domain initializer first, bootstrap
-   `run(force_update=True)` second.
+- [x] Add `DataNodeStorage.initialize_portfolio_weights_source_table(...)`.
+- [x] Add `DataNodeStorage.initialize_signal_weights_source_table(...)`.
+- [x] Add `DataNodeStorage.initialize_portfolios_source_table(...)`.
+- [x] Target the assumed backend portfolio-domain endpoints and lookup indexes
+      for portfolio and signal weight tables and the canonical portfolios
+      table.
+- [x] Match AccountHoldings fallback behavior: domain initializer first,
+      bootstrap `run(force_update=True)` second.
+- [x] Validate initialized source-table contracts against the active
+      `VFBCanonicalDataNodeConfiguration`, including any `extra_records`.
 
 ### Phase 3: Namespace plumbing
 
-1. Add `namespace` to VFB-facing constructors/helpers.
-2. Internally pass namespace through DataNode namespace plumbing.
-3. Ensure `PortfolioWeights(namespace=X)` and `SignalWeights(namespace=X)` use
-   stable table contracts inside the same namespace.
-4. Add tests that the same table contract with different namespaces produces
-   isolated storage.
+- [x] Add `namespace` to VFB-facing constructors/helpers.
+- [x] Internally map `namespace` to DataNode namespace/hash namespace plumbing.
+- [x] Ensure `PortfolioWeights(namespace=X)`, `SignalWeights(namespace=X)`,
+      and `PortfoliosDataNode(namespace=X)` use stable table contracts inside
+      the same namespace.
+- [x] Ensure namespace never becomes a row column or part of
+      `portfolio_index_asset_unique_identifier`.
+- [x] Add tests that the same table contract with different namespaces produces
+      isolated storage.
 
-### Phase 4: PortfolioWeights sync
+### Phase 4: Signal identity hashing
 
-1. Add a normalizer from postprocessed VFB `weights` frames to
-   `PortfolioWeights` rows.
-2. Add a normalizer from persisted `rebalance_weights` JSON for backfill.
-3. Add opt-in `sync_weight_tables=True` to `PortfolioStrategy.run(...)` or an
-   adjacent VFB orchestration helper.
-4. Require or resolve `portfolio_index_asset_unique_identifier`.
-5. Validate that two portfolios holding the same asset at the same timestamp can
-   write to the same table.
+- [ ] Add a canonical signal configuration serialization helper.
+- [ ] Compute `signal_uid` as the deterministic hash of the canonical signal
+      configuration.
+- [ ] Include the concrete signal class/import identity in the hash input.
+- [ ] Include normalized config fields that affect emitted `signal_weight`
+      values in the hash input.
+- [ ] Exclude namespace, storage id, update id, run timestamps, portfolio
+      consumers, and display-only names from the hash input.
+- [ ] Reuse the existing DataNode configuration hashing semantics where they
+      already represent this identity.
+- [ ] Add tests proving identical signal configs produce identical
+      `signal_uid` values.
+- [ ] Add tests proving output-changing config changes produce different
+      `signal_uid` values.
+- [ ] Add tests proving namespace changes do not change `signal_uid`.
 
-### Phase 5: SignalWeights sync
+### Phase 5: PortfolioWeights sync
 
-1. Add `signal_uid` to VFB signal configuration or wrapper metadata.
-2. Add a mirror path from existing signal DataNodes into `SignalWeights`.
-3. Update `WeightsBase.interpolate_index()` to optionally read from
-   `SignalWeights` with `dimension_filters={"signal_uid": [...]}`.
-4. Migrate built-in signals one by one to direct shared-table storage.
+- [ ] Add a canonical portfolio configuration serialization helper.
+- [ ] Compute `portfolio_configuration_hash` from the full canonical
+      `PortfolioConfiguration`.
+- [ ] Use `portfolio_configuration_hash` to get or create the backend
+      `Portfolio` and `PortfolioIndexAsset`.
+- [ ] Store the resulting `PortfolioIndexAsset.unique_identifier` as
+      `portfolio_index_asset_unique_identifier` in canonical portfolio rows.
+- [ ] Add a normalizer from postprocessed VFB `weights` frames to
+      `PortfolioWeights` rows.
+- [ ] Add a normalizer from persisted `rebalance_weights` JSON for backfill.
+- [ ] Add opt-in `sync_canonical_tables=True` to `PortfolioStrategy.run(...)` or an
+      adjacent VFB orchestration helper.
+- [ ] Validate asset `unique_identifier` values before writing canonical rows.
+- [ ] Validate that two portfolios holding the same asset at the same timestamp
+      can write to the same table.
 
-### Phase 6: PortfolioValues
+### Phase 6: SignalWeights sync
 
-1. Add the optional `PortfolioValues` contract.
-2. Write `close`, `return`, and value metadata indexed by
-   `portfolio_index_asset_unique_identifier`.
-3. Update VFB docs to describe which table owns values and which table owns
-   weights.
-4. De-emphasize per-portfolio JSON output after canonical coverage is complete.
+- [ ] Add a mirror path from existing signal DataNodes into `SignalWeights`.
+- [ ] Populate every mirrored row with the computed `signal_uid`.
+- [ ] Update `WeightsBase.interpolate_index()` to optionally read from
+      `SignalWeights` with `dimension_filters={"signal_uid": [...]}`.
+- [ ] Migrate built-in signals one by one to direct shared-table storage.
+- [ ] Keep the mirror path as a compatibility bridge for custom signal
+      DataNodes.
 
-### Phase 7: Backfill
+### Phase 7: PortfoliosDataNode sync
 
-1. List existing Markets `Portfolio` records with `data_node_update`.
-2. Resolve each `PortfolioIndexAsset`.
-3. Parse existing portfolio output JSON into `PortfolioWeights`.
-4. List existing signal DataNode storages where possible.
-5. Mirror signal rows into `SignalWeights`.
-6. Run backfill per namespace, preserving source table namespace.
-7. Report missing identities and skipped rows explicitly.
+- [ ] Add the required `PortfoliosDataNode` config-first DataNode contract.
+- [ ] Write `close`, `return`, and value metadata indexed by
+      `portfolio_index_asset_unique_identifier`.
+- [ ] Add a normalizer from the VFB calculated `portfolio` frame to
+      `PortfoliosDataNode` rows.
+- [ ] Ensure `PortfoliosDataNode` sync uses the same namespace and
+      `portfolio_index_asset_unique_identifier` as `PortfolioWeights`.
+- [ ] Update VFB docs to describe which table owns values and which table owns
+      weights.
+- [ ] De-emphasize per-portfolio JSON output after canonical coverage is
+      complete.
 
-### Phase 8: Tests
+### Phase 8: Backfill
 
-1. Contract validation for `PortfolioWeights`.
-2. Contract validation for `SignalWeights`.
-3. Namespace isolation tests.
-4. Full-index duplicate detection tests.
-5. Dimension-filter query payload tests.
-6. Incremental update tests using nested `index_progress`.
-7. PortfolioStrategy sync tests.
-8. Signal mirror tests.
-9. Backfill JSON parsing tests.
+- [ ] List existing Markets `Portfolio` records with `data_node_update`.
+- [ ] Resolve each `PortfolioIndexAsset`.
+- [ ] Parse existing portfolio output JSON into `PortfolioWeights`.
+- [ ] Parse existing portfolio value rows into `PortfoliosDataNode`.
+- [ ] List existing signal DataNode storages where possible.
+- [ ] Derive `signal_uid` from each signal's canonical configuration hash.
+- [ ] Mirror signal rows into `SignalWeights`.
+- [ ] Run backfill per namespace, preserving source table namespace.
+- [ ] Report missing identities and skipped rows explicitly.
+
+### Phase 9: Tests
+
+- [x] Contract validation for `PortfolioWeights`.
+- [x] Contract validation for `SignalWeights`.
+- [x] Contract validation for `PortfoliosDataNode`.
+- [x] Namespace isolation tests.
+- [ ] Signal configuration hash identity tests.
+- [x] Full-index duplicate detection tests.
+- [ ] Dimension-filter query payload tests.
+- [ ] Incremental update tests using nested `index_progress`.
+- [ ] PortfolioStrategy sync tests.
+- [ ] Signal mirror tests.
+- [ ] Backfill JSON parsing tests.
 
 ## Open Questions
 
-1. Should `signal_uid` be required in every signal config, or can it be generated
-   from signal DataNode metadata for one release?
-2. Should `namespace` map directly to `hash_namespace`, or should the SDK add a
-   market-domain alias that is stored separately but still affects storage
-   identity?
-3. Should the first implementation include `PortfolioValues`, or should it focus
-   only on `PortfolioWeights` and `SignalWeights`?
-4. Should `PortfolioWeights` store only `weight`, or also the execution context
-   columns currently present in the rebalance output?
-5. Should canonical writes happen inside `PortfolioStrategy.run(...)`, or should
+1. Should canonical writes happen inside `PortfolioStrategy.run(...)`, or should
    an orchestration object own the sync after portfolio construction?
 
 ## Acceptance Criteria
@@ -729,12 +988,15 @@ The new architecture is complete when:
 
 1. All portfolios in the same namespace can write to one `PortfolioWeights`
    DataNodeStorage.
-2. All signals in the same namespace can write to one `SignalWeights`
+2. All portfolio value series in the same namespace can write to one
+   `PortfoliosDataNode` DataNodeStorage.
+3. All signals in the same namespace can write to one `SignalWeights`
    DataNodeStorage.
-3. `unique_identifier` always means the held/signaled asset.
-4. Portfolio identity is represented by
+4. `unique_identifier` always means the held/signaled asset.
+5. Portfolio identity is represented by
    `portfolio_index_asset_unique_identifier`.
-5. Signal identity is represented by `signal_uid`.
-6. The user can pass `namespace` to select an isolated shared table family.
-7. The tables use ADR 0002 dimension filters and nested index progress.
-8. Existing VFB per-portfolio tables remain compatible during migration.
+6. Signal identity is represented by `signal_uid`, computed as the deterministic
+   hash of the canonical signal configuration.
+7. The user can pass `namespace` to select an isolated shared table family.
+8. The tables use ADR 0002 dimension filters and nested index progress.
+9. Existing VFB per-portfolio tables remain compatible during migration.

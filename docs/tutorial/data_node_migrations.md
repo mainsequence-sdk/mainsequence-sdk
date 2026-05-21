@@ -270,11 +270,15 @@ are the concrete three-index example.
 
 ```python
 from mainsequence.markets.accounts.data_nodes import (
-    ACCOUNT_HOLDINGS_CONTRACT,
+    ACCOUNT_HOLDINGS_INDEX_NAMES,
     AccountHoldings,
 )
 
-assert ACCOUNT_HOLDINGS_CONTRACT.index_names == [
+config = AccountHoldings.default_config(
+    identifier="broker.account_holdings",
+    description="Broker account holdings imported from daily files.",
+)
+assert config.index_names == ACCOUNT_HOLDINGS_INDEX_NAMES == [
     "time_index",
     "account_uid",
     "unique_identifier",
@@ -283,13 +287,18 @@ assert ACCOUNT_HOLDINGS_CONTRACT.index_names == [
 
 class BrokerAccountHoldings(AccountHoldings):
     def get_holdings_frame(self):
-        return self.build_schema_bootstrap_account_frame()
+        return self.build_schema_bootstrap_account_frame(config=self.config)
 
 
-node = BrokerAccountHoldings()
+node = BrokerAccountHoldings(config=config)
 frame = node.update()
-assert frame.index.names == ACCOUNT_HOLDINGS_CONTRACT.index_names
+assert list(frame.index.names) == config.index_names
 ```
 
 This table is keyed by observation time, account, and asset. That shape is the
 normal multidimensional DataNode contract.
+
+Use `AccountHoldings.default_config(...)` to set the public DataNode identifier
+or description. If the account holdings import needs extra provider-specific
+columns, add them through `extra_records` and make sure `get_holdings_frame()`
+returns those columns in addition to the required holdings schema.

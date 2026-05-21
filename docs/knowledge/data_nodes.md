@@ -324,11 +324,15 @@ The SDK account holdings DataNodes define a real three-index table contract in
 
 ```python
 from mainsequence.markets.accounts.data_nodes import (
-    ACCOUNT_HOLDINGS_CONTRACT,
+    ACCOUNT_HOLDINGS_INDEX_NAMES,
     AccountHoldings,
 )
 
-assert ACCOUNT_HOLDINGS_CONTRACT.index_names == [
+config = AccountHoldings.default_config(
+    identifier="broker.account_holdings",
+    description="Broker account holdings imported from daily files.",
+)
+assert config.index_names == ACCOUNT_HOLDINGS_INDEX_NAMES == [
     "time_index",
     "account_uid",
     "unique_identifier",
@@ -339,12 +343,12 @@ class BrokerAccountHoldings(AccountHoldings):
     def get_holdings_frame(self):
         # Return a DataFrame indexed by:
         # ["time_index", "account_uid", "unique_identifier"]
-        return self.build_schema_bootstrap_account_frame()
+        return self.build_schema_bootstrap_account_frame(config=self.config)
 
 
-node = BrokerAccountHoldings()
+node = BrokerAccountHoldings(config=config)
 frame = node.update()
-assert frame.index.names == ACCOUNT_HOLDINGS_CONTRACT.index_names
+assert list(frame.index.names) == config.index_names
 ```
 
 Consumers can scope reads and deletes by any identity dimension:

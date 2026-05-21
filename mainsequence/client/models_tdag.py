@@ -1484,6 +1484,96 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             timeout=timeout,
         )
 
+    def initialize_portfolio_weights_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize a canonical PortfolioWeights source table and lookup indexes.
+
+        This calls the portfolio domain wrapper:
+            POST /orm/api/assets/portfolio-weights-data-node/{id}/initialize-source-table/
+        """
+        url = (
+            f"{type(self).ROOT_URL.rstrip('/')}/assets/portfolio-weights-data-node/"
+            f"{self.id}/initialize-source-table/"
+        )
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
+    def initialize_signal_weights_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize a canonical SignalWeights source table and lookup indexes.
+
+        This calls the portfolio domain wrapper:
+            POST /orm/api/assets/signal-weights-data-node/{id}/initialize-source-table/
+        """
+        url = (
+            f"{type(self).ROOT_URL.rstrip('/')}/assets/signal-weights-data-node/"
+            f"{self.id}/initialize-source-table/"
+        )
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
+    def initialize_portfolios_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize a canonical PortfoliosDataNode source table and lookup indexes.
+
+        This calls the portfolio domain wrapper:
+            POST /orm/api/assets/portfolios-data-node/{id}/initialize-source-table/
+        """
+        url = (
+            f"{type(self).ROOT_URL.rstrip('/')}/assets/portfolios-data-node/"
+            f"{self.id}/initialize-source-table/"
+        )
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
     def _initialize_source_table_at_url(
         self,
         *,

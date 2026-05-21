@@ -625,9 +625,10 @@ class DataNode(DataAccessMixin, ABC):
     Resolution order is:
 
     1. explicit ``hash_namespace="..."`` passed at construction,
-    2. ``test_node=True`` which becomes the namespace ``"test"``,
-    3. the active ``with hash_namespace("...")`` context manager,
-    4. otherwise, no namespace.
+    2. subclass-declared aliases such as ``namespace="..."``,
+    3. ``test_node=True`` which becomes the namespace ``"test"``,
+    4. the active ``with hash_namespace("...")`` context manager,
+    5. otherwise, no namespace.
 
     A non-empty namespace is injected into the build configuration, which changes
     both ``storage_hash`` and ``update_hash``. An empty namespace changes nothing.
@@ -721,8 +722,9 @@ class DataNode(DataAccessMixin, ABC):
         Namespace precedence is:
 
         1. explicit ``hash_namespace``
-        2. ``test_node=True``
-        3. active namespacing context manager
+        2. subclass-declared aliases such as ``namespace``
+        3. ``test_node=True``
+        4. active namespacing context manager
 
         Only a non-empty namespace is injected into the hashed build configuration.
         That preserves backward compatibility for normal runs while allowing isolated
@@ -742,9 +744,34 @@ class DataNode(DataAccessMixin, ABC):
 
         @wraps(original_init)
         def wrapped_init(self, *args, **kwargs):
-            # ---- tests-only hashing controls (never forwarded to user __init__) ----
+            # ---- hashing namespace controls (never forwarded to user __init__) ----
             test_node_flag = bool(kwargs.pop("test_node", False))
             explicit_namespace = kwargs.pop("hash_namespace", None)
+            namespace_aliases = tuple(
+                getattr(cls, "_HASH_NAMESPACE_ALIASES", ()) or ()
+            )
+            provided_namespace_aliases = [
+                alias for alias in namespace_aliases if alias in kwargs
+            ]
+            alias_namespace = None
+            alias_namespace_provided = bool(provided_namespace_aliases)
+            if len(provided_namespace_aliases) > 1:
+                raise ValueError(
+                    f"{cls.__name__} received multiple hash namespace aliases: "
+                    f"{provided_namespace_aliases!r}."
+                )
+            if alias_namespace_provided:
+                alias_namespace = kwargs.pop(provided_namespace_aliases[0])
+            if (
+                explicit_namespace is not None
+                and alias_namespace_provided
+                and (explicit_namespace or "").strip()
+                != (alias_namespace or "").strip()
+            ):
+                raise ValueError(
+                    f"{cls.__name__} received both hash_namespace and "
+                    f"{provided_namespace_aliases[0]} with different values."
+                )
             if "init_meta" in kwargs:
                 raise TypeError(
                     "init_meta has been removed from DataNode construction; remove this keyword argument."
@@ -752,10 +779,13 @@ class DataNode(DataAccessMixin, ABC):
 
             # Determine namespace:
             # 1) explicit hash_namespace kwarg wins
-            # 2) test_node=True => "test"
-            # 3) else: context manager namespace (tests)
+            # 2) subclass-declared alias kwarg, such as namespace
+            # 3) test_node=True => "test"
+            # 4) else: context manager namespace
             if explicit_namespace is not None:
                 namespace = explicit_namespace
+            elif alias_namespace_provided:
+                namespace = alias_namespace
             elif test_node_flag:
                 namespace = "test"
             else:
@@ -871,6 +901,8 @@ class DataNode(DataAccessMixin, ABC):
 
             # Remove `args` as it collects un-named positional arguments which are not part of the config hash.
             final_kwargs.pop("args", None)
+            for namespace_alias in namespace_aliases:
+                final_kwargs.pop(namespace_alias, None)
             if final_kwargs.get("config") is None:
                 final_kwargs.pop("config", None)
             if not final_kwargs:

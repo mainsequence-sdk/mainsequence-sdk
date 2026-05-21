@@ -8,6 +8,19 @@ from .utils import get_vfb_logger
 
 logger = get_vfb_logger()
 
+from mainsequence.markets.virtualfundbuilder.data_nodes import (
+    PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP,
+    PORTFOLIO_WEIGHTS_INDEX_NAMES,
+    PORTFOLIOS_COLUMN_DTYPES_MAP,
+    PORTFOLIOS_INDEX_NAMES,
+    SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP,
+    SIGNAL_WEIGHTS_INDEX_NAMES,
+    PortfoliosDataNode,
+    PortfolioWeights,
+    SignalWeights,
+    VFBCanonicalDataNode,
+    VFBCanonicalDataNodeConfiguration,
+)
 from mainsequence.markets.virtualfundbuilder.utils import (
     GECKO_SYMBOL_MAPPING,
     TIMEDELTA,

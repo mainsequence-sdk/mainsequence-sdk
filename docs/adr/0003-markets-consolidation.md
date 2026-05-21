@@ -67,15 +67,9 @@ import mainsequence.markets.instruments
 import mainsequence.markets.virtualfundbuilder
 ```
 
-Keep backwards-compatible shim packages at the old paths:
-
-```python
-import mainsequence.instruments
-import mainsequence.virtualfundbuilder
-```
-
-The shim packages must emit deprecation warnings that point users to the new
-`mainsequence.markets.*` paths.
+Do not keep backwards-compatible shim packages at the old paths. The canonical
+`mainsequence.markets.*` imports are the only supported SDK paths for these
+packages.
 
 ## Non-Goals
 
@@ -123,33 +117,16 @@ mainsequence.markets.virtualfundbuilder
 Also check relative imports inside moved packages. Prefer preserving relative
 imports where they still work after the move.
 
-### Phase 3: Add Compatibility Shims
+### Phase 3: Remove Compatibility Shims
 
-Keep thin shims at the old locations:
+Remove the deprecated top-level packages:
 
 ```text
 mainsequence/instruments/
 mainsequence/virtualfundbuilder/
 ```
 
-Those shims should forward to:
-
-```text
-mainsequence.markets.instruments
-mainsequence.markets.virtualfundbuilder
-```
-
-Each shim should emit a deprecation warning once per import path:
-
-```text
-mainsequence.instruments is deprecated; use mainsequence.markets.instruments.
-```
-
-```text
-mainsequence.virtualfundbuilder is deprecated; use mainsequence.markets.virtualfundbuilder.
-```
-
-The shims should be as small as possible and avoid eager imports where possible.
+Users must import the canonical packages under `mainsequence.markets`.
 
 ### Phase 4: Update Docs And Tests
 
@@ -185,19 +162,21 @@ print("markets imports ok")
 PY
 ```
 
-If compatibility shims are kept, also verify:
+Verify the old top-level compatibility paths are gone:
 
 ```bash
 python - <<'PY'
-import mainsequence.instruments
-import mainsequence.virtualfundbuilder
-print("compat imports ok")
+import importlib.util
+
+assert importlib.util.find_spec("mainsequence.instruments") is None
+assert importlib.util.find_spec("mainsequence.virtualfundbuilder") is None
+print("compat imports removed")
 PY
 ```
 
 ### Phase 6: Correct Internal Imports To Canonical Paths
 
-After the compatibility shims and basic import checks are in place, update SDK
+After the basic import checks are in place, update SDK
 source code to use the proper canonical package paths internally.
 
 Internal SDK code should import:
@@ -207,7 +186,7 @@ mainsequence.markets.instruments
 mainsequence.markets.virtualfundbuilder
 ```
 
-It should not rely on the deprecated compatibility paths:
+It should not rely on removed compatibility paths:
 
 ```python
 mainsequence.instruments
@@ -220,11 +199,8 @@ Run a final search:
 rg "mainsequence\.instruments|mainsequence\.virtualfundbuilder" mainsequence tests docs agent_scaffold
 ```
 
-Every remaining old-path reference should be one of:
-
-- compatibility shim implementation
-- deprecation-warning test
-- migration documentation that intentionally mentions the old path
+Every remaining old-path reference should be migration documentation that
+intentionally mentions the old path.
 
 All normal SDK implementation imports should use `mainsequence.markets.*`.
 
@@ -234,9 +210,8 @@ All normal SDK implementation imports should use `mainsequence.markets.*`.
 - Tests, docs, generated reference pages, or agent scaffold skills may keep old
   paths.
 - Package data rules in `pyproject.toml` may need adjustment after the move.
-- Compatibility shims may need extra handling for nested imports.
-- Deprecation warnings can become noisy if shims import too broadly or warn from
-  nested modules instead of package entrypoints.
+- Removing compatibility shims is a breaking import-path change for users still
+  importing the old top-level packages.
 
 ## Open Questions
 
