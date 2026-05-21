@@ -309,10 +309,11 @@ def get_df_between_dates(
         self,
         start_date: datetime.datetime | None = None,
         end_date: datetime.datetime | None = None,
-        unique_identifier_list: list | None = None,
         great_or_equal: bool = True,
         less_or_equal: bool = True,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
+        dimension_filters: dict[str, list] | None = None,
+        index_coordinates: list[dict] | None = None,
+        dimension_range_map: list[dict] | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
 ```
@@ -322,8 +323,10 @@ in update_statistics, requesting data great_or_equal for that specific asset:
 
 for any data_node:
 ```python
-range_descriptor = update_statistics.get_update_range_map_great_or_equal()
-last_observation = self.get_ranged_data_per_asset(range_descriptor=range_descriptor)
+range_descriptor = update_statistics.get_dimension_range_map_great_or_equal(
+    identity_dimensions=["unique_identifier"],
+)
+last_observation = self.get_df_between_dates(dimension_range_map=range_descriptor)
 ```
 
 After this, we apply a few filters and build a map between the Algoseek sec_id and the FIGI. This is essentially the mapping key used to integrate the Algoseek master list with the Main Sequence public master list.

@@ -44,6 +44,10 @@ Important rules:
 - `unique_identifier` should match `mainsequence.client.Asset.unique_identifier`
 - the output column should be named exactly `signal_weight`
 
+This shape is specific to VFB asset signals. Generic DataNodes can use other
+identity dimensions after `time_index`, including higher-dimensional indexes
+such as `("time_index", "account_uid", "unique_identifier")`.
+
 ## 2. Portfolio-aligned signal weights: the wide form VFB uses internally
 
 After interpolation to the portfolio index, signal weights become a wide table.
@@ -77,6 +81,10 @@ Expected shape:
   - `trade_count`
   - `vwap`
   - `interpolated`
+
+This is the price-table contract consumed by VFB. It remains two-dimensional
+because prices are keyed by asset, while other DataNode domains can add
+additional identity dimensions.
 
 Important details:
 

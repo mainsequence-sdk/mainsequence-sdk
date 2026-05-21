@@ -218,13 +218,14 @@ The `update()` method has one hard requirement: it must return a `pandas.DataFra
 ##### DataFrame structure requirements
 
 - `update()` must always return a `pd.DataFrame()`
-- the first index level must always be `datetime.datetime(timezone="UTC")`
+- the first index level must be named `time_index` and contain UTC-aware datetimes
+- every additional index level is an identity dimension, such as `unique_identifier`,
+  `account_uid`, or another stable business key
 - all column names must be lowercase and no more than 63 characters long
 - column types should be `float`, `int`, or `str`; date values should live in the index or be converted to numeric timestamps
 - if there is new data to return, the DataFrame must contain rows; if there is no new data, return an empty `pd.DataFrame()`
-- a MultiIndex DataFrame is only allowed when the first index level is UTC datetimes and the second index level is a string named `unique_identifier`
-- a single-index DataFrame must not contain duplicate index values; a MultiIndex DataFrame must not contain duplicate `(time_index, unique_identifier)` pairs
-- the first index level must always be named `time_index`, and it should represent the observation time of the data
+- a single-index DataFrame must not contain duplicate index values; a MultiIndex DataFrame must not contain duplicate full index tuples
+- `(time_index, unique_identifier)` is the standard asset-table shape, but DataNodes can also use higher-dimensional indexes such as `(time_index, account_uid, unique_identifier)`
 - `time_index` should be the observation point across the series in the dataset, so rows aligned on the same timestamp are comparable
 - for bar data, `time_index` should usually be the right edge of the bar, not the bar start; for example, daily bars should typically use the session-close timestamp
 - if dates are stored in columns, they should be represented as timestamps

@@ -159,6 +159,9 @@ Its required output is:
 - index: `(time_index, unique_identifier)`
 - column: `signal_weight`
 
+This is the VFB signal contract. It is the standard asset-table specialization
+of DataNode indexing, not a limit on DataNodes in general.
+
 ### Rebalance strategy
 
 Inherits `RebalanceStrategyBase`.

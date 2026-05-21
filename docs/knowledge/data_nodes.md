@@ -272,18 +272,109 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 - subsequent runs: start at `last_time + frequency_step`
 - daily datasets typically end at yesterday 00:00 UTC
 
-### 6.2 MultiIndex asset pattern
+### 6.2 Multidimensional index pattern
 
+- the first index is the UTC `time_index`
+- every remaining index is an identity dimension
+- uniqueness is enforced across the full index tuple
+- compute incremental start points from canonical `UpdateStatistics`
+- return only new rows, or as close as practical
+
+For an asset price table, the index is usually:
+
+```python
+["time_index", "unique_identifier"]
+```
+
+For account holdings, the index includes the account and the asset:
+
+```python
+["time_index", "account_uid", "unique_identifier"]
+```
+
+The nested `UpdateStatistics.index_progress` shape follows the identity
+dimensions in order. For `["time_index", "account_uid", "unique_identifier"]`,
+the progress path is:
+
+```text
+account_uid -> unique_identifier -> timestamp
+```
+
+Use canonical range maps when reading only the needed incremental window:
+
+```python
+range_map = update_statistics.get_dimension_range_map_great_or_equal(
+    identity_dimensions=["account_uid", "unique_identifier"],
+)
+last_observation = self.get_df_between_dates(dimension_range_map=range_map)
+```
+
+### 6.3 MultiIndex asset pattern
+
+- use `unique_identifier` as the asset identity dimension
 - compute per-asset start using each asset's last update
 - include lookback when rolling features need history
 - batch fetch upstream data once when possible
 - return only new rows (or as close as practical)
 
-### 6.3 Backfills
+### 6.4 Three-index account holdings example
+
+The SDK account holdings DataNodes define a real three-index table contract in
+`mainsequence.markets.accounts.data_nodes`.
+
+```python
+from mainsequence.markets.accounts.data_nodes import (
+    ACCOUNT_HOLDINGS_CONTRACT,
+    AccountHoldings,
+)
+
+assert ACCOUNT_HOLDINGS_CONTRACT.index_names == [
+    "time_index",
+    "account_uid",
+    "unique_identifier",
+]
+
+
+class BrokerAccountHoldings(AccountHoldings):
+    def get_holdings_frame(self):
+        # Return a DataFrame indexed by:
+        # ["time_index", "account_uid", "unique_identifier"]
+        return self.build_schema_bootstrap_account_frame()
+
+
+node = BrokerAccountHoldings()
+frame = node.update()
+assert frame.index.names == ACCOUNT_HOLDINGS_CONTRACT.index_names
+```
+
+Consumers can scope reads and deletes by any identity dimension:
+
+```python
+storage = node.data_node_storage
+
+latest_for_account = storage.get_last_observation(
+    dimension_filters={"account_uid": ["00000000-0000-0000-0000-000000000001"]},
+)
+
+latest_for_account_asset = storage.get_last_observation(
+    index_coordinates=[
+        {
+            "account_uid": "00000000-0000-0000-0000-000000000001",
+            "unique_identifier": "BTC",
+        }
+    ],
+)
+```
+
+The important part is that account holdings are not a special VFB-only shape.
+They are the normal multidimensional DataNode contract with two identity
+dimensions after `time_index`.
+
+### 6.5 Backfills
 
 Backfills should be explicit and controlled (separate job/updater, intentional overwrite policy).
 
-### 6.4 Do not rely on implicit filtering
+### 6.6 Do not rely on implicit filtering
 
 Even if runtime filtering removes already persisted rows, you should still:
 
@@ -594,21 +685,35 @@ storage = msc.DataNodeStorage.get(pk=714)
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 
-For a multi-index table, scope the delete to one identifier:
+For an asset table, scope the delete to one asset identity:
 
 ```python
 result = storage.delete_after_date(
     "2026-04-01T00:00:00Z",
-    unique_identifier="AAPL",
+    dimension_filters={"unique_identifier": ["AAPL"]},
 )
 ```
 
-Or scope it to multiple identifiers:
+Or scope it to multiple asset identities:
 
 ```python
 result = storage.delete_after_date(
     "2026-04-01T00:00:00Z",
-    unique_identifier_list=["AAPL", "MSFT"],
+    dimension_filters={"unique_identifier": ["AAPL", "MSFT"]},
+)
+```
+
+For a three-index holdings table, scope the delete to one coordinate:
+
+```python
+result = storage.delete_after_date(
+    "2026-04-01T00:00:00Z",
+    index_coordinates=[
+        {
+            "account_uid": "00000000-0000-0000-0000-000000000001",
+            "unique_identifier": "AAPL",
+        }
+    ],
 )
 ```
 
@@ -620,7 +725,7 @@ The response contains the authoritative post-delete table state:
     "dynamic_table_id": 714,
     "deleted_count": 123,
     "table_empty": False,
-    "unique_identifier_list": ["AAPL", "MSFT"],
+    "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},
     "stats": {
         "last_time_index_value": "2026-03-31T23:59:00Z",
         "earliest_index_value": "2024-01-01T00:00:00Z",
@@ -736,7 +841,7 @@ prices = APIDataNode.build_from_identifier("simulated_prices_tutorial")
 df = prices.get_df_between_dates(
     start_date="2026-01-01",
     columns=["open", "high", "low", "close"],
-    unique_identifier_list=["NVDA", "AAPL"],
+    dimension_filters={"unique_identifier": ["NVDA", "AAPL"]},
 )
 ```
 

@@ -11,6 +11,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import Enum
 from typing import TypedDict
 
@@ -763,6 +764,9 @@ def set_types_in_table(df, column_types):
 
 def serialize_to_json(kwargs):
     def to_jsonable(v):
+        if isinstance(v, Decimal):
+            return str(v)
+
         if isinstance(v, datetime.datetime):
             dt = v
             if dt.tzinfo is None:

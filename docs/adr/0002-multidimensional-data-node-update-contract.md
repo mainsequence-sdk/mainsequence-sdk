@@ -938,23 +938,29 @@ runtime callers are migrated around backend-bound API payloads.
 
 ### Phase 9: Tutorial Fixes
 
-- [ ] Update `docs/tutorial/creating_a_simple_data_node.md` so MultiIndex rules
+- [x] Update `docs/tutorial/creating_a_simple_data_node.md` so MultiIndex rules
    say: first level is UTC `time_index`; remaining levels are identity
    dimensions. Explain that `(time_index, unique_identifier)` is the common
    asset-table case, not the only valid MultiIndex shape.
-- [ ] Update `docs/tutorial/multi_index_columns_working_with_assets.md` to frame
+- [x] Update `docs/tutorial/multi_index_columns_working_with_assets.md` to frame
    asset tables as the standard two-index specialization of the generic
    multidimensional contract.
-- [ ] Update `docs/knowledge/data_nodes.md` with a new section on
+- [x] Update `docs/knowledge/data_nodes.md` with a new section on
    multidimensional identity dimensions, canonical update stats, generic
    dimension reads, and coordinate-scoped tail delete.
-- [ ] Update dashboard and market tutorials that pass `unique_identifier_list` or
-   `unique_identifier_range_map` to mention these are legacy asset-table
-   convenience aliases.
-- [ ] Update VFB docs that describe portfolio or signal indexes. Keep
+- [x] Update dashboard and market tutorials that pass `unique_identifier_list` or
+   `unique_identifier_range_map` so they use canonical `dimension_filters` and
+   `dimension_range_map` syntax instead. Do not document the old aliases as the
+   tutorial path.
+- [x] Update VFB docs that describe portfolio or signal indexes. Keep
    `(time_index, unique_identifier)` where it is still the actual contract, but
    remove language implying it is the only legal DataNode shape.
-- [ ] Update examples and generated snippets that say DataNode MultiIndex tables
+- [x] Update examples and generated snippets that say DataNode MultiIndex tables
    can only have two levels.
-- [ ] Add at least one tutorial or knowledge example for a three-index table such
-   as `["time_index", "account_uid", "unique_identifier"]`.
+- [x] Add at least one tutorial or knowledge example for a three-index table that
+   uses the account DataNodes in `mainsequence.markets.accounts.data_nodes`,
+   with index names such as `["time_index", "account_uid", "unique_identifier"]`.
+- [x] Add a final tutorial document called `DataNode Migrations` that explains
+   this multidimensional DataNode migration and the concrete user code changes
+   required in update-statistics handling, table reads, latest reads, tail
+   delete calls, and join/search methods.

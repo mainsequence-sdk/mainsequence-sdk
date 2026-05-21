@@ -180,7 +180,7 @@ The central read path is:
 ```python
 history = api_node.get_df_between_dates(
     start_date=start_date,
-    unique_identifier_list=unique_identifiers,
+    dimension_filters={"unique_identifier": unique_identifiers},
     columns=["open", "high", "low", "close", "volume", "trade_count", "vwap"],
 )
 ```

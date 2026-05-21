@@ -126,6 +126,13 @@ If you want the deeper pricing side of this story, continue with [Assets and Pri
 
 When you call `msc.Asset.query(...)`, you are using `mainsequence.client.markets.models.AssetMixin.query`.
 
+Use `Asset.quick_search(...)` when you want lightweight interactive search results by asset name, ticker, or unique identifier. It calls the frontend-list asset search endpoint and returns dictionaries with the compact asset fields.
+
+```python
+matches = msc.Asset.quick_search("Bitcoin", limit=5)
+asset_uid = matches[0]["unique_identifier"]
+```
+
 Both `filter()` and `query()` let you search assets with the same field style. They both also translate common shorthand fields such as:
 
 - `ticker`

@@ -942,7 +942,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     def wait_for_update_time(        self,    ):
 
-        if self.update_details.error_on_last_update == True or self.update_details.last_update is None:
+        if self.update_details.error_on_last_update or self.update_details.last_update is None:
             return None
 
         time_to_wait, next_update = self.get_node_time_to_wait()
@@ -1393,6 +1393,137 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         return r.json() if r.content else None
 
+    def initialize_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize this DynamicTableMetaData source table from schema only.
+
+        This calls:
+            POST /orm/api/ts_manager/dynamic_table/{id}/initialize-source-table/
+
+        It creates or validates the SourceTableConfiguration and creates the
+        physical backing table without inserting a bootstrap row.
+        """
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self.id}/initialize-source-table/"
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
+    def initialize_account_holdings_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize an AccountHoldings source table and backend lookup indexes.
+
+        This calls the VAM domain wrapper:
+            POST /orm/api/assets/account-holdings-data-node/{id}/initialize-source-table/
+        """
+        url = (
+            f"{type(self).ROOT_URL.rstrip('/')}/assets/account-holdings-data-node/"
+            f"{self.id}/initialize-source-table/"
+        )
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
+    def initialize_virtual_fund_holdings_source_table(
+        self,
+        *,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """
+        Initialize a VirtualFundHoldings source table and backend lookup indexes.
+
+        This calls the VAM domain wrapper:
+            POST /orm/api/assets/virtual-fund-holdings-data-node/{id}/initialize-source-table/
+        """
+        url = (
+            f"{type(self).ROOT_URL.rstrip('/')}/assets/virtual-fund-holdings-data-node/"
+            f"{self.id}/initialize-source-table/"
+        )
+        return self._initialize_source_table_at_url(
+            url=url,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            storage_layout=storage_layout,
+            open_for_everyone=open_for_everyone,
+            timeout=timeout,
+        )
+
+    def _initialize_source_table_at_url(
+        self,
+        *,
+        url: str,
+        time_index_name: str,
+        index_names: list[str],
+        column_dtypes_map: dict[str, Any],
+        storage_layout: dict[str, Any] | None = None,
+        open_for_everyone: bool | None = None,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        if self.id is None:
+            raise ValueError("DataNodeStorage must have an id before initializing a source table.")
+
+        payload_body: dict[str, Any] = {
+            "time_index_name": time_index_name,
+            "index_names": list(index_names),
+            "column_dtypes_map": dict(column_dtypes_map),
+        }
+        if storage_layout is not None:
+            payload_body["storage_layout"] = storage_layout
+        if open_for_everyone is not None:
+            payload_body["open_for_everyone"] = open_for_everyone
+
+        cls = type(self)
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": serialize_to_json(payload_body)},
+            time_out=timeout,
+        )
+        raise_for_response(response, payload=payload_body)
+        data = response.json()
+        source_config_data = data.get("source_table_configuration")
+        if isinstance(source_config_data, dict):
+            self.sourcetableconfiguration = SourceTableConfiguration(**source_config_data)
+        return data
+
     def run_query(
         self,
         sql: str,
@@ -1733,7 +1864,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             # If dimension_range_map is None, do a single batch with offset-based pagination.
             chunk_results,response_data = fetch_one_batch(None)
             all_results.extend(chunk_results)
-        if return_storage_node ==False:
+        if not return_storage_node:
             return pd.DataFrame(all_results)
         else:
             storage_node=cls(**response_data['storage_node']) if response_data is not None else None
@@ -4153,7 +4284,6 @@ class TimeScaleDB(DataSource):
             less_or_equal=True,
             asset_symbols=None,
             columns=None,
-            execution_venue_symbols=None,
             symbol_range_map=asset_ranges_map,  # <-- key for applying ranges
         )
         return df

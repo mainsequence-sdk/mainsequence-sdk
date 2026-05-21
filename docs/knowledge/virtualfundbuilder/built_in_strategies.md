@@ -21,6 +21,9 @@ Their output is the desired allocation:
 - index: `(time_index, unique_identifier)`
 - column: `signal_weight`
 
+This is the VFB asset-signal shape. It does not restrict generic DataNodes,
+which can use additional identity dimensions after `time_index`.
+
 ### `FixedWeights`
 
 Use this when:

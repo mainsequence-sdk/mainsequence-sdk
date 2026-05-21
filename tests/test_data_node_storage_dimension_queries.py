@@ -40,6 +40,232 @@ def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
     )
 
 
+def test_initialize_source_table_posts_schema_contract(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "dynamic_table_metadata": {"id": 714},
+                "source_table_configuration": {
+                    "related_table": 714,
+                    "time_index_name": "time_index",
+                    "index_names": [
+                        "time_index",
+                        "account_uid",
+                        "unique_identifier",
+                    ],
+                    "column_dtypes_map": {
+                        "time_index": "datetime64[ns, UTC]",
+                        "account_uid": "uuid",
+                        "unique_identifier": "object",
+                    },
+                    "storage_layout": {},
+                    "physical_index_plan": {},
+                    "open_for_everyone": False,
+                    "columns_metadata": [],
+                },
+                "created_source_table_configuration": True,
+                "created_physical_table": True,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = _storage(["time_index"])
+    result = storage.initialize_source_table(
+        time_index_name="time_index",
+        index_names=["time_index", "account_uid", "unique_identifier"],
+        column_dtypes_map={
+            "time_index": "datetime64[ns, UTC]",
+            "account_uid": "uuid",
+            "unique_identifier": "object",
+        },
+        timeout=30,
+    )
+
+    assert result["created_physical_table"] is True
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/714/initialize-source-table/")
+    assert captured["payload"]["json"] == {
+        "time_index_name": "time_index",
+        "index_names": ["time_index", "account_uid", "unique_identifier"],
+        "column_dtypes_map": {
+            "time_index": "datetime64[ns, UTC]",
+            "account_uid": "uuid",
+            "unique_identifier": "object",
+        },
+    }
+    assert storage.sourcetableconfiguration.index_names == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+
+
+def test_initialize_account_holdings_source_table_posts_domain_endpoint(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "dynamic_table_metadata": {"id": 714},
+                "source_table_configuration": {
+                    "related_table": 714,
+                    "time_index_name": "time_index",
+                    "index_names": [
+                        "time_index",
+                        "account_uid",
+                        "unique_identifier",
+                    ],
+                    "column_dtypes_map": {
+                        "time_index": "datetime64[ns, UTC]",
+                        "account_uid": "uuid",
+                        "unique_identifier": "object",
+                    },
+                    "storage_layout": {},
+                    "physical_index_plan": {},
+                    "open_for_everyone": False,
+                    "columns_metadata": [],
+                },
+                "created_source_table_configuration": True,
+                "created_physical_table": True,
+                "lookup_indexes": ["vam_ah_latest_lookup_idx"],
+                "holdings_role": "account_historical_holdings",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = _storage(["time_index"])
+    result = storage.initialize_account_holdings_source_table(
+        time_index_name="time_index",
+        index_names=["time_index", "account_uid", "unique_identifier"],
+        column_dtypes_map={
+            "time_index": "datetime64[ns, UTC]",
+            "account_uid": "uuid",
+            "unique_identifier": "object",
+        },
+        timeout=30,
+    )
+
+    assert result["lookup_indexes"] == ["vam_ah_latest_lookup_idx"]
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith(
+        "/assets/account-holdings-data-node/714/initialize-source-table/"
+    )
+    assert captured["payload"]["json"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+
+
+def test_initialize_virtual_fund_holdings_source_table_posts_domain_endpoint(
+    monkeypatch,
+):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "dynamic_table_metadata": {"id": 714},
+                "source_table_configuration": {
+                    "related_table": 714,
+                    "time_index_name": "time_index",
+                    "index_names": [
+                        "time_index",
+                        "fund_uid",
+                        "unique_identifier",
+                    ],
+                    "column_dtypes_map": {
+                        "time_index": "datetime64[ns, UTC]",
+                        "fund_uid": "uuid",
+                        "unique_identifier": "object",
+                    },
+                    "storage_layout": {},
+                    "physical_index_plan": {},
+                    "open_for_everyone": False,
+                    "columns_metadata": [],
+                },
+                "created_source_table_configuration": True,
+                "created_physical_table": True,
+                "lookup_indexes": ["vam_fh_latest_lookup_idx"],
+                "holdings_role": "virtual_fund_historical_holdings",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = _storage(["time_index"])
+    result = storage.initialize_virtual_fund_holdings_source_table(
+        time_index_name="time_index",
+        index_names=["time_index", "fund_uid", "unique_identifier"],
+        column_dtypes_map={
+            "time_index": "datetime64[ns, UTC]",
+            "fund_uid": "uuid",
+            "unique_identifier": "object",
+        },
+        timeout=30,
+    )
+
+    assert result["lookup_indexes"] == ["vam_fh_latest_lookup_idx"]
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith(
+        "/assets/virtual-fund-holdings-data-node/714/initialize-source-table/"
+    )
+    assert captured["payload"]["json"]["index_names"] == [
+        "time_index",
+        "fund_uid",
+        "unique_identifier",
+    ]
+
+
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):
     captured = {}
 

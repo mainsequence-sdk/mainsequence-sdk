@@ -13,7 +13,7 @@ mainsequence/client/models_vam.py
 ```
 
 That module contains market-facing models such as assets, asset categories,
-translation tables, portfolios, accounts, execution venues, trades, virtual
+translation tables, portfolios, accounts, trades, virtual
 funds, and orders. The module name is no longer a good fit for the public API
 surface, and it sits directly under `mainsequence.client` instead of a market
 specific package.
@@ -25,8 +25,7 @@ mainsequence/client/markets/models/
   __init__.py
   core.py
   assets.py
-  accounts_and_portfolios/
-    __init__.py
+  accounts_and_portfolios.py
 ```
 
 The canonical import path should be:
@@ -53,7 +52,7 @@ to these domain modules:
 ```text
 mainsequence/client/markets/models/core.py
 mainsequence/client/markets/models/assets.py
-mainsequence/client/markets/models/accounts_and_portfolios/__init__.py
+mainsequence/client/markets/models/accounts_and_portfolios.py
 ```
 
 Add package initializers:
@@ -152,8 +151,7 @@ mainsequence/client/markets/__init__.py
 mainsequence/client/markets/models/
 mainsequence/client/markets/models/__init__.py
 mainsequence/client/markets/models/assets.py
-mainsequence/client/markets/models/accounts_and_portfolios/
-mainsequence/client/markets/models/accounts_and_portfolios/__init__.py
+mainsequence/client/markets/models/accounts_and_portfolios.py
 ```
 
 Keep package initializers small. `mainsequence.client.markets.models` is the
@@ -178,7 +176,7 @@ mainsequence/client/markets/models/assets.py
 Move account, portfolio, fund, execution, trade, and order models to:
 
 ```text
-mainsequence/client/markets/models/accounts_and_portfolios/__init__.py
+mainsequence/client/markets/models/accounts_and_portfolios.py
 ```
 
 Preserve model behavior and public class names. This should be a mechanical move
@@ -283,7 +281,7 @@ Run targeted checks:
 ```bash
 python -m py_compile mainsequence/client/markets/models/core.py
 python -m py_compile mainsequence/client/markets/models/assets.py
-python -m py_compile mainsequence/client/markets/models/accounts_and_portfolios/__init__.py
+python -m py_compile mainsequence/client/markets/models/accounts_and_portfolios.py
 pytest tests/test_client_markets_models_compat.py
 ```
 

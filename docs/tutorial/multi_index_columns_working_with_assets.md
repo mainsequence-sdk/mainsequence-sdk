@@ -11,9 +11,9 @@ In this part, you will:
 
 DataNodes created in this part: **`SimulatedPrices`**.
 
-In Part 2, you built a basic `DataNode`. In this part, you will build an asset-based `DataNode` that stores simulated security prices in a two-level `MultiIndex` DataFrame.
+In Part 2, you built a basic `DataNode`. In this part, you will build an asset-based `DataNode` that stores simulated security prices in a `MultiIndex` DataFrame.
 
-You can reuse this pattern for prices, signals, news, or any other asset-centric dataset.
+This is the standard two-index specialization of the generic multidimensional DataNode contract: the first index is always the UTC time index, and `unique_identifier` is the asset identity dimension. You can reuse this pattern for prices, signals, news, or any other asset-centric dataset.
 
 For the broader design rules behind this tutorial, see the [Data Nodes knowledge guide](../knowledge/data_nodes.md). For a deeper explanation of asset identity, custom assets, and when to use `filter()` versus `query()`, see [Assets](../knowledge/markets/assets.md).
 
@@ -40,6 +40,7 @@ For this tutorial:
 - the table `identifier` in `node_metadata` names the dataset and must be unique across your organization
 - the `unique_identifier` in the `MultiIndex` names each asset row and must be unique for the asset it represents
 - `asset_list` is updater scope, so it should usually be ignored from `storage_hash`
+- this table has one identity dimension, so its full uniqueness key is `(time_index, unique_identifier)`
 
 ## Create `src/data_nodes/prices_nodes.py`
 
@@ -255,13 +256,13 @@ The important pattern in `update()` is:
 For a standard asset table, the output should follow these rules:
 
 - first index level: UTC-aware `time_index`
-- second index level: `unique_identifier`
+- identity dimension: `unique_identifier`
 - no duplicate `(time_index, unique_identifier)` pairs
 - lowercase, stable column names
 - consistent dtypes across runs
 - sorted index whenever possible
 
-Those rules are the minimum needed to make the table predictable for downstream users and jobs.
+Those rules are the asset-table version of the broader DataNode rule: every row is unique across the full time-first index tuple.
 
 ## Choosing a table identifier safely
 

@@ -35,16 +35,12 @@ def get_model_class(model_class: str):
     """
     Reverse look from model class by name
     """
-    from mainsequence.client.markets.models.accounts_and_portfolios import (
-        ExecutionVenue,
-        PortfolioGroup,
-    )
+    from mainsequence.client.markets.models.accounts_and_portfolios import PortfolioGroup
 
     MODEL_CLASS_MAP = {
         "Asset": Asset,
         "PortfolioIndexAsset": PortfolioIndexAsset,
         "Calendar": Calendar,
-        "ExecutionVenue": ExecutionVenue,
         "PortfolioGroup": PortfolioGroup,
     }
     return MODEL_CLASS_MAP[model_class]
@@ -909,6 +905,62 @@ class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
 
 class Asset(AssetMixin, BaseObjectOrm):
 
+    @classmethod
+    def quick_search(
+        cls,
+        q: str,
+        *,
+        limit: int = 20,
+        timeout: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Return lightweight asset matches for a name, ticker, or unique identifier.
+
+        This hits the frontend-list serializer path:
+            GET /orm/api/assets/asset/?response_format=frontend_list&search=...
+        """
+        normalized_query = (q or "").strip()
+        if not normalized_query:
+            raise ValueError("Asset search query cannot be empty.")
+
+        limit = int(limit)
+        if limit < 1 or limit > 100:
+            raise ValueError("limit must be between 1 and 100")
+
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=f"{cls.get_object_url()}/",
+            payload={
+                "params": {
+                    "response_format": "frontend_list",
+                    "search": normalized_query,
+                    "limit": limit,
+                }
+            },
+            time_out=timeout,
+        )
+        raise_for_response(response)
+
+        if not response.content:
+            return []
+
+        payload = response.json()
+        if isinstance(payload, dict):
+            results = payload.get("results") or []
+        elif isinstance(payload, list):
+            results = payload
+        else:
+            raise ValueError(
+                f"Unexpected response type for Asset.quick_search(): {type(payload)!r}"
+            )
+        if not isinstance(results, list):
+            raise ValueError(
+                f"Unexpected results type for Asset.quick_search(): {type(results)!r}"
+            )
+        return [dict(item) for item in results]
+
     def get_spot_reference_asset_unique_identifier(self):
         return self.unique_identifier
 
@@ -1016,8 +1068,6 @@ class PortfolioIndexAsset(Asset):
     @property
     def reference_portfolio_details_url(self):
         return f"{MAINSEQUENCE_ENDPOINT}/dashboards/portfolio-detail/?target_portfolio_id={self.reference_portfolios.id}"
-
-
 
 
 

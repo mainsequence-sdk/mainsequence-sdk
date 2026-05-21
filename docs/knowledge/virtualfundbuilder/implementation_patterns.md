@@ -56,6 +56,10 @@ class MySignal(WeightsBase, DataNode):
         ...
 ```
 
+That index shape is the VFB signal contract because VFB signals are keyed by
+asset. Other DataNode tables can use additional identity dimensions after
+`time_index`.
+
 ### Practical rules
 
 - use UTC-aware timestamps

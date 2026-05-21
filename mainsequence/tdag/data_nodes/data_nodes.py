@@ -132,15 +132,7 @@ class DataAccessMixin:
     """A mixin for classes that provide access to time series data."""
 
     def __repr__(self) -> str:
-        try:
-            local_id = self.data_node_update.id
-        except:
-            local_id = 0
-        repr = (
-            self.__class__.__name__
-            + f" {os.environ['MAINSEQUENCE_ENDPOINT']}/local-time-series/details/?local_time_serie_id={local_id}"
-        )
-        return repr
+        return self.__class__.__name__
 
     def get_last_observation(self, asset_list: list[ms_client.AssetMixin] | None=None):
         # update_statistics = self.get_update_statistics()
@@ -258,7 +250,7 @@ class DataAccessMixin:
         """
         global logger
         for key, value in logger_context.items():
-            logger.bind(**dict(key=value))
+            logger.bind(**{key: value})
 
     def unbind_context_variables_from_logger(self) -> None:
         cvars.unbind_contextvars(*self.get_logger_context_variables().keys())
@@ -419,7 +411,7 @@ class DataAccessMixin:
             A DataFrame with the ranged data.
         """
 
-        for k, v in range_descriptor.items():
+        for _k, v in range_descriptor.items():
             v["start_date_operand"] = "=>"
         return self.get_df_between_dates(
             dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor),
@@ -488,17 +480,7 @@ class APIDataNode(DataAccessMixin):
         self.update_statistics = None
 
     def __repr__(self) -> str:
-
-
-        try:
-
-            repr = (
-                self.__class__.__name__
-                + f" {os.environ['MAINSEQUENCE_ENDPOINT']}/dynamic-table-metadatas/details/?dynamic_table_id={self._local_persist_manager.data_node_storage.id}"
-            )
-        except  Exception:
-            logger.exception("DataNode has not resolved yet an storage node")
-        return repr
+        return self.__class__.__name__
 
     @property
     def is_api(self):

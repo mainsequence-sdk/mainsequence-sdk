@@ -84,7 +84,6 @@ class BaseObjectOrm:
         "IndexAsset": "assets/index_asset",
         "VirtualFund": "assets/virtualfund",
         "OrderManager": "assets/order_manager",
-        "ExecutionVenue": "assets/execution_venue",
         "Order": "assets/order",
         "MarketOrder": "assets/market_order",
         "LimitOrder": "assets/limit_order",
@@ -126,11 +125,6 @@ class BaseObjectOrm:
         "ProjectResource":"pods/project-resource",
         "ResourceRelease":"pods/resource-release",
         "Bucket":"pods/bucket",
-
-
-
-        #AI
-        "ResourceRelease": "pods/resource-release",
 
     }
     ROOT_URL = API_ENDPOINT

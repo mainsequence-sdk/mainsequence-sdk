@@ -48,6 +48,7 @@ class AccountLatestHoldings(BasePydanticModel):
     holdings_set_uid: str
     is_trade_snapshot: bool = False
     target_trade_time: datetime.datetime | None = None
+    comments: str | None = None
     holdings: list[AccountHoldingPosition]
     holdings_date: datetime.datetime
 
@@ -102,6 +103,7 @@ class AccountHoldingsWriteResponse(BasePydanticModel):
     related_account_uid: str
     holdings_date: datetime.datetime
     holdings_set_uid: str
+    comments: str | None = None
     positions: list[AccountHoldingsWritePosition]
 
 
@@ -114,24 +116,12 @@ class AccountTargetPositionsWriteResponse(BasePydanticModel):
 
 class AccountMixin(BasePydanticModel):
     uid: str
-    execution_venue: Union["ExecutionVenue", int]
     account_is_active: bool
     account_name: str | None = None
     holdings_data_source: int | None = None
     labels: list[str] = Field(default_factory=list)
     latest_holdings: AccountLatestHoldings | None = None
     is_paper: bool
-
-    @classmethod
-    def _coerce_execution_venue_uid(cls, value: Any) -> str:
-        if isinstance(value, str):
-            return value.strip()
-        venue_uid = getattr(value, "uid", None)
-        if venue_uid is not None:
-            return str(venue_uid)
-        if isinstance(value, dict) and value.get("uid") is not None:
-            return str(value["uid"])
-        raise TypeError("execution_venue must be an ExecutionVenue or execution venue uid.")
 
     @classmethod
     def _coerce_optional_id(cls, value: Any, *, field_name: str) -> int | None:
@@ -148,10 +138,6 @@ class AccountMixin(BasePydanticModel):
     @classmethod
     def _normalize_write_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(kwargs)
-        if "execution_venue" in normalized:
-            normalized["execution_venue"] = cls._coerce_execution_venue_uid(
-                normalized["execution_venue"]
-            )
         if "holdings_data_source" in normalized:
             normalized["holdings_data_source"] = cls._coerce_optional_id(
                 normalized["holdings_data_source"],
@@ -424,17 +410,6 @@ class WeightPosition(BaseObjectOrm, BasePydanticModel):
             values["asset"] = asset
 
         return values
-
-
-class ExecutionVenue(BaseObjectOrm, BasePydanticModel):
-    id: int | None = None
-    uid: str | None = None
-    symbol: str
-    name: str
-
-    @property
-    def unique_identifier(self):
-        return f"{self.symbol}"
 
 
 class TradeSide(IntEnum):
