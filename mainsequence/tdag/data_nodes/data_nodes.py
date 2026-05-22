@@ -1217,8 +1217,12 @@ class DataNode(DataAccessMixin, ABC):
         depth_df = self.local_persist_manager.get_all_dependencies_update_priority()
         self.depth_df = depth_df
         if not depth_df.empty:
+            if "update_node_uid" not in depth_df.columns:
+                raise ValueError("Dependency dataframe must include 'update_node_uid'.")
+            if self.data_node_update.uid is None:
+                raise ValueError("DataNodeUpdate must have uid before filtering dependencies.")
             self.dependencies_df = depth_df[
-                depth_df["update_node_id"] != self.data_node_update.id
+                depth_df["update_node_uid"].astype(str) != str(self.data_node_update.uid)
             ].copy()
 
 

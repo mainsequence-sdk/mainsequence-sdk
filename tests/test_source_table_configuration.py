@@ -9,7 +9,7 @@ from mainsequence.client import models_tdag
 def _source_config_payload():
     return {
         "id": 11,
-        "related_table": 44,
+        "related_table_uid": "storage-uid-44",
         "time_index_name": "time_index",
         "index_names": ["time_index", "account_uid", "unique_identifier"],
         "column_dtypes_map": {
@@ -129,7 +129,7 @@ def test_source_table_configuration_get_data_updates_prefers_canonical_stats(mon
 
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/44/get_stats/",
+        "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/storage-uid-44/get_stats/",
         "accept_gzip": True,
     }
     assert update_stats.max_time_index_value == datetime.datetime(
@@ -146,6 +146,123 @@ def test_source_table_configuration_get_data_updates_prefers_canonical_stats(mon
         "account-a": {"BTC": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)}
     }
     assert update_stats.asset_time_statistics == update_stats.index_progress
+
+
+def test_source_table_configuration_extra_index_route_uses_related_table_uid(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"indexes": ["idx_account"]}
+
+    def _fake_make_request(*, s, loaders, r_type, url):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.SourceTableConfiguration,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+
+    assert config.get_time_scale_extra_table_indices() == {"indexes": ["idx_account"]}
+    assert captured == {
+        "r_type": "GET",
+        "url": (
+            f"{models_tdag.SourceTableConfiguration.get_object_url()}"
+            "/storage-uid-44/get_time_scale_extra_table_indices/"
+        ),
+    }
+
+
+def test_source_table_configuration_column_metadata_route_uses_related_table_uid(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def _fake_make_request(*, s, loaders, r_type, time_out, url, payload):
+        captured["r_type"] = r_type
+        captured["time_out"] = time_out
+        captured["url"] = url
+        captured["payload"] = payload
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.SourceTableConfiguration,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+    metadata = models_tdag.BaseColumnMetaData(
+        column_name="value",
+        dtype="float64",
+        label="Value",
+        description="Metric value",
+    )
+
+    assert config.set_or_update_columns_metadata([metadata], timeout=15) == {"ok": True}
+    assert captured["r_type"] == "POST"
+    assert captured["time_out"] == 15
+    assert captured["url"] == (
+        f"{models_tdag.SourceTableConfiguration.get_object_url()}"
+        "/storage-uid-44/set_or_update_columns_metadata/"
+    )
+    assert captured["payload"]["json"]["columns_metadata"] == [
+        {
+            "column_name": "value",
+            "dtype": "float64",
+            "label": "Value",
+            "description": "Metric value",
+        }
+    ]
+
+
+def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_tdag, "raise_for_response", lambda response, payload=None: None)
+    monkeypatch.setattr(
+        models_tdag.SourceTableConfiguration,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+
+    assert config.patch(open_for_everyone=True) == {"ok": True}
+    assert captured == {
+        "r_type": "PATCH",
+        "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/storage-uid-44/",
+        "payload": {"json": {"open_for_everyone": True}},
+    }
     assert "legacy-asset" not in update_stats.index_progress
     assert update_stats.multi_index_column_stats == {
         "value": {

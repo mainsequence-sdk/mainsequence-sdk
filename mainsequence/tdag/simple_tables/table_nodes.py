@@ -136,7 +136,7 @@ class SimpleTableUpdater(DataNode):
         - ensures a data source is available for storage resolution,
         - verifies foreign-key targets are declared in ``dependencies()``,
         - resolves every foreign-key target to the dependency updater's canonical
-          ``SimpleTableStorage.id``,
+          ``SimpleTableStorage.uid``,
         - injects the resolved schema into the hashed init kwargs,
         - stores the resolved schema on the updater so the persist manager can
           reuse the exact same payload during backend registration.
@@ -240,7 +240,12 @@ class SimpleTableUpdater(DataNode):
                 resolved_storage_cache=resolved_storage_cache,
                 resolution_stack=resolution_stack,
             )
-            resolved_schema["fields"][index]["foreign_key"]["target"] = target_storage.id
+            if target_storage.uid is None:
+                raise ValueError(
+                    f"SimpleTable foreign key target '{field_spec.foreign_key.target}' "
+                    "must resolve to a storage with uid."
+                )
+            resolved_schema["fields"][index]["foreign_key"]["target"] = str(target_storage.uid)
 
         return resolved_schema
 

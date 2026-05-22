@@ -13,8 +13,7 @@ def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfigurati
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
     return models_tdag.SourceTableConfiguration(
-        id=11,
-        related_table=714,
+        related_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
         column_dtypes_map=column_dtypes_map,
@@ -30,7 +29,7 @@ def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfigurati
 
 def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
     return models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
@@ -52,7 +51,7 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
             return {
                 "dynamic_table_metadata": {"id": 714},
                 "source_table_configuration": {
-                    "related_table": 714,
+                    "related_table_uid": "714",
                     "time_index_name": "time_index",
                     "index_names": [
                         "time_index",
@@ -130,7 +129,7 @@ def test_initialize_account_holdings_source_table_posts_domain_endpoint(monkeypa
             return {
                 "dynamic_table_metadata": {"id": 714},
                 "source_table_configuration": {
-                    "related_table": 714,
+                    "related_table_uid": "714",
                     "time_index_name": "time_index",
                     "index_names": [
                         "time_index",
@@ -205,7 +204,7 @@ def test_initialize_virtual_fund_holdings_source_table_posts_domain_endpoint(
             return {
                 "dynamic_table_metadata": {"id": 714},
                 "source_table_configuration": {
-                    "related_table": 714,
+                    "related_table_uid": "714",
                     "time_index_name": "time_index",
                     "index_names": [
                         "time_index",
@@ -266,73 +265,54 @@ def test_initialize_virtual_fund_holdings_source_table_posts_domain_endpoint(
     ]
 
 
-@pytest.mark.parametrize(
-    (
-        "method_name",
-        "url_suffix",
-        "index_names",
-        "column_dtypes_map",
-        "lookup_indexes",
-    ),
-    [
-        (
-            "initialize_portfolio_weights_source_table",
-            "/assets/portfolio-weights-data-node/714/initialize-source-table/",
-            [
-                "time_index",
-                "portfolio_index_asset_unique_identifier",
-                "unique_identifier",
-            ],
-            {
-                "time_index": "datetime64[ns, UTC]",
-                "portfolio_index_asset_unique_identifier": "string",
-                "unique_identifier": "string",
-                "weight": "float64",
-                "weight_before": "float64",
-                "price_current": "float64",
-                "price_before": "float64",
-                "volume_current": "float64",
-                "volume_before": "float64",
-            },
-            ["portfolio_weights_latest_lookup_idx"],
-        ),
-        (
-            "initialize_signal_weights_source_table",
-            "/assets/signal-weights-data-node/714/initialize-source-table/",
-            ["time_index", "signal_uid", "unique_identifier"],
-            {
-                "time_index": "datetime64[ns, UTC]",
-                "signal_uid": "string",
-                "unique_identifier": "string",
-                "signal_weight": "float64",
-            },
-            ["signal_weights_latest_lookup_idx"],
-        ),
-        (
-            "initialize_portfolios_source_table",
-            "/assets/portfolios-data-node/714/initialize-source-table/",
-            ["time_index", "portfolio_index_asset_unique_identifier"],
-            {
-                "time_index": "datetime64[ns, UTC]",
-                "portfolio_index_asset_unique_identifier": "string",
-                "close": "float64",
-                "return": "float64",
-                "calculated_close": "float64",
-                "close_time": "datetime64[ns, UTC]",
-            },
-            ["portfolios_latest_lookup_idx"],
-        ),
-    ],
-)
-def test_initialize_canonical_vfb_source_tables_post_domain_endpoints(
+def test_initialize_canonical_vfb_source_tables_posts_bulk_domain_endpoint(
     monkeypatch,
-    method_name,
-    url_suffix,
-    index_names,
-    column_dtypes_map,
-    lookup_indexes,
 ):
     captured = {}
+    portfolio_weights_contract = {
+        "dynamic_table_metadata_uid": "11111111-1111-4111-8111-111111111111",
+        "time_index_name": "time_index",
+        "index_names": [
+            "time_index",
+            "portfolio_index_asset_unique_identifier",
+            "unique_identifier",
+        ],
+        "column_dtypes_map": {
+            "time_index": "datetime64[ns, UTC]",
+            "portfolio_index_asset_unique_identifier": "string",
+            "unique_identifier": "string",
+            "weight": "float64",
+            "weight_before": "float64",
+            "price_current": "float64",
+            "price_before": "float64",
+            "volume_current": "float64",
+            "volume_before": "float64",
+        },
+    }
+    signal_weights_contract = {
+        "dynamic_table_metadata_uid": "22222222-2222-4222-8222-222222222222",
+        "time_index_name": "time_index",
+        "index_names": ["time_index", "signal_uid", "unique_identifier"],
+        "column_dtypes_map": {
+            "time_index": "datetime64[ns, UTC]",
+            "signal_uid": "string",
+            "unique_identifier": "string",
+            "signal_weight": "float64",
+        },
+    }
+    portfolio_data_contract = {
+        "dynamic_table_metadata_uid": "33333333-3333-4333-8333-333333333333",
+        "time_index_name": "time_index",
+        "index_names": ["time_index", "portfolio_index_asset_unique_identifier"],
+        "column_dtypes_map": {
+            "time_index": "datetime64[ns, UTC]",
+            "portfolio_index_asset_unique_identifier": "string",
+            "close": "float64",
+            "return": "float64",
+            "calculated_close": "float64",
+            "close_time": "datetime64[ns, UTC]",
+        },
+    }
 
     class FakeResponse:
         status_code = 201
@@ -341,20 +321,9 @@ def test_initialize_canonical_vfb_source_tables_post_domain_endpoints(
         @staticmethod
         def json():
             return {
-                "dynamic_table_metadata": {"id": 714},
-                "source_table_configuration": {
-                    "related_table": 714,
-                    "time_index_name": "time_index",
-                    "index_names": index_names,
-                    "column_dtypes_map": column_dtypes_map,
-                    "storage_layout": {},
-                    "physical_index_plan": {},
-                    "open_for_everyone": False,
-                    "columns_metadata": [],
-                },
-                "created_source_table_configuration": True,
-                "created_physical_table": True,
-                "lookup_indexes": lookup_indexes,
+                "portfolio_weights": {"created_source_table_configuration": True},
+                "signal_weights": {"created_source_table_configuration": True},
+                "portfolio_data": {"created_source_table_configuration": True},
             }
 
     def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
@@ -371,25 +340,24 @@ def test_initialize_canonical_vfb_source_tables_post_domain_endpoints(
         classmethod(lambda cls: object()),
     )
 
-    storage = _storage(["time_index"])
-    result = getattr(storage, method_name)(
-        time_index_name="time_index",
-        index_names=index_names,
-        column_dtypes_map=column_dtypes_map,
+    result = models_tdag.DataNodeStorage.initialize_portfolio_storage_source_tables(
+        portfolio_weights=portfolio_weights_contract,
+        signal_weights=signal_weights_contract,
+        portfolio_data=portfolio_data_contract,
         timeout=30,
     )
 
-    assert result["lookup_indexes"] == lookup_indexes
+    assert result["portfolio_weights"]["created_source_table_configuration"] is True
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith(url_suffix)
+    assert captured["url"].endswith(
+        "/assets/portfolio-storage-data-nodes/initialize-source-tables/"
+    )
     assert captured["timeout"] == 30
     assert captured["payload"]["json"] == {
-        "time_index_name": "time_index",
-        "index_names": index_names,
-        "column_dtypes_map": column_dtypes_map,
+        "portfolio_weights": portfolio_weights_contract,
+        "signal_weights": signal_weights_contract,
+        "portfolio_data": portfolio_data_contract,
     }
-    assert storage.sourcetableconfiguration.index_names == index_names
-    assert storage.sourcetableconfiguration.column_dtypes_map == column_dtypes_map
 
 
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):
@@ -562,7 +530,7 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
     )
 
     assert df.empty
-    assert storage.id == 714
+    assert storage.uid == "714"
     assert captured["payload"]["json"]["node_identifier"] == "prices-node"
     assert captured["payload"]["json"]["dimension_filters"] == {
         "account_uid": ["account-a"]

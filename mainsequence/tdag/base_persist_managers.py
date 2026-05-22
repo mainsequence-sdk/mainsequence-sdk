@@ -286,11 +286,11 @@ class BasePersistManager:
     def depends_on_connect(self, new_ts: Any, is_api: bool) -> None:
         if not is_api:
             self.data_node_update.depends_on_connect(
-                target_time_serie_id=new_ts.data_node_update.id
+                target_update_node_uid=new_ts.data_node_update.uid
             )
         else:
             self.data_node_update.depends_on_connect_to_api_table(
-                target_table_id=new_ts.local_persist_manager.data_node_storage.id
+                target_table_uid=new_ts.local_persist_manager.data_node_storage.uid
             )
 
     def get_all_dependencies_update_priority(self) -> pd.DataFrame:

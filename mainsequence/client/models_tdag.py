@@ -104,11 +104,17 @@ class SourceTableConfigurationDoesNotExist(Exception):
 
 
 class UpdateNodeRef(TypedDict):
-    id: int
+    uid: str
     node_type: str
     update_hash: str
     remote_table_hash_id: str
 
+
+def _require_public_uid(obj: Any, object_name: str) -> str:
+    uid = getattr(obj, "uid", None)
+    if uid in (None, ""):
+        raise ValueError(f"{object_name} must have a uid before calling this endpoint.")
+    return str(uid)
 
 
 class BaseColumnMetaData(BasePydanticModel):
@@ -132,7 +138,6 @@ class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
 
 
 class SourceTableConfigurationBase:
-    id: int | None = Field(None, description="Primary key, auto-incremented ID")
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
 
@@ -147,7 +152,9 @@ class SourceTableConfigurationBase:
         raise NotImplementedError
 
 class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, BaseObjectOrm):
-    related_table: int | DataNodeStorage
+    related_table_uid: str | None = Field(
+        None, description="Public uid of the related DataNodeStorage"
+    )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
     last_time_index_value: datetime.datetime | None = Field(
         None, description="Last time index value"
@@ -173,8 +180,13 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     # todo remove
     column_index_names: list | None = [None]
 
+    def _related_table_uid(self) -> str:
+        if self.related_table_uid in (None, ""):
+            raise ValueError("SourceTableConfiguration must have related_table_uid before calling this endpoint.")
+        return str(self.related_table_uid)
+
     def get_data_updates(self) -> UpdateStatistics:
-        url = self.get_object_url() + f"/{self.related_table}/get_stats/"
+        url = self.get_object_url() + f"/{self._related_table_uid()}/get_stats/"
         s = self.build_session()
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, accept_gzip=True)
         if r.status_code != 200:
@@ -254,7 +266,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         return du
 
     def get_time_scale_extra_table_indices(self) -> dict:
-        url = self.get_object_url() + f"/{self.related_table}/get_time_scale_extra_table_indices/"
+        url = self.get_object_url() + f"/{self._related_table_uid()}/get_time_scale_extra_table_indices/"
         s = self.build_session()
         r = make_request(
             s=s,
@@ -275,7 +287,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         """ """
 
         columns_metadata = [c.model_dump(exclude={"orm_class"}) for c in columns_metadata]
-        url = self.get_object_url() + f"/{self.related_table}/set_or_update_columns_metadata/"
+        url = self.get_object_url() + f"/{self._related_table_uid()}/set_or_update_columns_metadata/"
         s = self.build_session()
         r = make_request(
             s=s,
@@ -291,12 +303,17 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         return r.json()
 
     def patch(self, *args, **kwargs):
-        # related table is the primary key of this model
-        if isinstance(self.related_table, int):
-            id = self.related_table
-        else:
-            id = self.related_table.id
-        return self.__class__.patch_by_id(id, *args, **kwargs)
+        url = self.get_object_url() + f"/{self._related_table_uid()}/"
+        payload = {"json": serialize_to_json(kwargs)}
+        r = make_request(
+            s=self.build_session(),
+            loaders=self.LOADERS,
+            r_type="PATCH",
+            url=url,
+            payload=payload,
+        )
+        raise_for_response(r)
+        return self.__class__(**r.json())
 
 
 
@@ -305,7 +322,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
 class TableUpdateNode(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
-    id: int | None = Field(None, description="Primary key, auto-incremented ID")
+    uid: str | None = Field(None, description="Public uid of this update node")
     update_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     build_configuration: dict[str, Any] = Field(..., description="Configuration in JSON format")
     ogm_dependencies_linked: bool = Field(default=False, description="OGM dependencies linked flag")
@@ -318,12 +335,14 @@ class TableUpdateNode(BasePydanticModel):
         description="Optional serialized dependency priority payloads.",
     )
 
-
+    def _public_uid(self) -> str:
+        return _require_public_uid(self, self.__class__.__name__)
 
 
 class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
         "update_hash": ["exact"],
         "remote_table__data_source__id": ["exact"],
         "related_table__namespace": ["contains", "in", "isnull"],
@@ -343,7 +362,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     NODE_TYPE: ClassVar[str] = "local_time_serie"
 
-    data_node_storage: int | DataNodeStorage
+    data_node_storage: str | DataNodeStorage
     tags: list[str] | None = Field(default=[], description="List of tags")
     labels: list[str] = Field(
         default_factory=list,
@@ -353,7 +372,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         ),
     )
     description: str | None = Field(None, description="Optional HTML description")
-    update_details: DataNodeUpdateDetails | int | None = None
+    update_details: DataNodeUpdateDetails | None = None
     run_configuration: RunConfiguration | None = None
     open_for_everyone: bool = Field(
         default=False, description="Whether the ts is open for everyone"
@@ -361,6 +380,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @property
     def data_source_id(self):
+        if isinstance(self.data_node_storage, str):
+            return None
         if isinstance(self.data_node_storage.data_source, int):
             return self.data_node_storage.data_source
         else:
@@ -387,7 +408,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         payload = {"json": {"tags": tags}}
         # r = self.s.get(, )
-        url = f"{base_url}/{self.id}/add_tags/"
+        url = f"{base_url}/{self._public_uid()}/add_tags/"
         r = make_request(
             s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=timeout
         )
@@ -415,7 +436,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         base_url = self.get_object_url()
         payload = {"json": kwargs}
-        url = f"{base_url}/{self.id}/set_start_of_execution/"
+        url = f"{base_url}/{self._public_uid()}/set_start_of_execution/"
         r = make_request(
             s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, accept_gzip=True
         )
@@ -441,7 +462,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                 multi_index_column_stats=result.get("multi_index_column_stats"),
             ),
             must_update=result["must_update"],
-            direct_dependencies_ids=result["direct_dependencies_ids"],
+            direct_dependency_uids=result.get("direct_dependency_uids"),
         )
         return hu
 
@@ -449,7 +470,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         self, historical_update_id: int, timeout=None, threaded_request=True, **kwargs
     ):
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/set_end_of_execution/"
+        url = self.get_object_url() + f"/{self._public_uid()}/set_end_of_execution/"
         kwargs.update(dict(historical_update_id=historical_update_id))
         payload = {"json": kwargs}
 
@@ -498,7 +519,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     @classmethod
     def set_last_update_index_time(cls, data_node_storage, timeout=None):
         s = cls.build_session()
-        url = cls.get_object_url() + f"/{data_node_storage['id']}/set_last_update_index_time/"
+        storage_uid = data_node_storage["uid"]
+        url = cls.get_object_url() + f"/{storage_uid}/set_last_update_index_time/"
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
 
         if r.status_code == 404:
@@ -519,7 +541,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         timeout=None,
     ) -> DataNodeUpdate:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/set_last_update_index_time_from_update_stats/"
+        url = self.get_object_url() + f"/{self._public_uid()}/set_last_update_index_time_from_update_stats/"
 
         data_to_comp = build_last_update_index_time_payload(
             global_index_progress=global_index_progress,
@@ -566,34 +588,34 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/get_all_dependencies_update_priority/"
+        url = self.get_object_url() + f"/{self._public_uid()}/get_all_dependencies_update_priority/"
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
 
         depth_df = pd.DataFrame(r.json())
         if not depth_df.empty:
-            id_candidates = [
+            uid_candidates = [
                 c
-                for c in ["update_node_id", "local_time_serie_id", "data_node_update_id"]
+                for c in ["update_node_uid", "local_time_serie_uid", "data_node_update_uid"]
                 if c in depth_df.columns
             ]
 
-            if id_candidates:
-                update_node_id = None
-                for col in id_candidates:
+            if uid_candidates:
+                update_node_uid = None
+                for col in uid_candidates:
                     series = depth_df[col]
                     if isinstance(series, pd.DataFrame):
                         series = series.iloc[:, 0]
-                    update_node_id = (
-                        series if update_node_id is None else update_node_id.fillna(series)
+                    update_node_uid = (
+                        series if update_node_uid is None else update_node_uid.fillna(series)
                     )
 
                 depth_df = depth_df.drop(
-                    columns=["update_node_id", "local_time_serie_id", "data_node_update_id"],
+                    columns=["update_node_uid", "local_time_serie_uid", "data_node_update_uid"],
                     errors="ignore",
                 )
-                depth_df["update_node_id"] = update_node_id
+                depth_df["update_node_uid"] = update_node_uid
 
 
 
@@ -634,7 +656,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         })
         """
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/verify_if_direct_dependencies_are_updated/"
+        url = self.get_object_url() + f"/{self._public_uid()}/verify_if_direct_dependencies_are_updated/"
         r = make_request(s=s, loaders=None, r_type="GET", url=url)
         if r.status_code != 200:
             raise Exception(f"Error in request: {r.text}")
@@ -660,7 +682,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         If a chunk is too large (HTTP 413), it's automatically split in half and retried.
         """
         s = cls.build_session()
-        url = cls.get_object_url() + f"/{data_node_update.id}/insert_data_into_table/"
+        update_uid = _require_public_uid(data_node_update, "DataNodeUpdate")
+        url = cls.get_object_url() + f"/{update_uid}/insert_data_into_table/"
 
         def _send_chunk_recursively(
             df_chunk: pd.DataFrame, chunk_idx: int, total_chunks: int, is_sub_chunk: bool = False
@@ -756,7 +779,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         cls,
         update_nodes: Sequence[UpdateNodeRef],
         update_details_kwargs: Mapping[str, Any],
-        update_priority_dict: Mapping[int, int] | None,
+        update_priority_dict: Mapping[str, int] | None,
     ):
         """
         {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_id': 1},
@@ -782,13 +805,13 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
         response_json = r.json()
         source_table_config_map = {
-            int(k): SourceTableConfiguration(**v) if v is not None else v
+            str(k): SourceTableConfiguration(**v) if v is not None else v
             for k, v in response_json["source_table_config_map"].items()
         }
         state_data = {
-            int(k): DataNodeUpdateDetails(**v) for k, v in response_json["state_data"].items()
+            str(k): DataNodeUpdateDetails(**v) for k, v in response_json["state_data"].items()
         }
-        all_index_stats = {int(k): v for k, v in response_json["all_index_stats"].items()}
+        all_index_stats = {str(k): v for k, v in response_json["all_index_stats"].items()}
         data_node_updates = [DataNodeUpdate(**v) for v in response_json["local_metadatas"]]
         return UpdateBatchResponse[
             DataNodeUpdate,
@@ -801,26 +824,26 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             data_node_updates=data_node_updates,
         )
 
-    def depends_on_connect(self, target_time_serie_id):
+    def depends_on_connect(self, target_update_node_uid):
 
-        url = self.get_object_url() + f"/{self.id}/depends_on_connect/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_time_serie_id": target_time_serie_id,
+                "target_update_node_uid": str(target_update_node_uid),
             }
         )
         r = make_request(s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload)
         if r.status_code != 204:
             raise Exception(f"Error in request {r.text}")
 
-    def depends_on_connect_to_api_table(self, target_table_id, timeout=None):
+    def depends_on_connect_to_api_table(self, target_table_uid, timeout=None):
 
-        url = self.get_object_url() + f"/{self.id}/depends_on_connect_to_api_table/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect_to_api_table/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_table_id": target_table_id,
+                "target_table_uid": str(target_table_uid),
             }
         )
         r = make_request(
@@ -978,7 +1001,7 @@ class BaseUpdateDetails:
 
 
 class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
-    related_table: int | DataNodeUpdate
+    related_table_uid: str | None = Field(None, description="Public uid of the related DataNodeUpdate")
     run_configuration: RunConfiguration | None = None
 
 
@@ -998,6 +1021,7 @@ class TableMetaData(BaseModel):
 
 
 class AbstractTable:
+    uid: str | None = Field(None, description="Public uid of this table storage")
     storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
     namespace: str | None = Field(
         None,
@@ -1014,19 +1038,22 @@ class AbstractTable:
     )
     description: str | None = None
 
+    def _public_uid(self) -> str:
+        return _require_public_uid(self, self.__class__.__name__)
+
 
 class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
-        "id": ["in", "exact", "contains"],
+        "uid": ["in", "exact"],
         "data_source__id": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "id": "id",
-        "id__in": "id",
+        "uid": "str",
+        "uid__in": "str",
         "data_source__id": "id",
         "labels": "str",
         "labels__in": "str",
@@ -1059,8 +1086,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             "Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true."
         ),
     }
-
-    id: int = Field(None, description="Primary key, auto-incremented ID")
 
     labels: list[str] = Field(
         default_factory=list,
@@ -1251,7 +1276,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         *args,
         **kwargs,
     ):
-        url = self.get_object_url() + f"/{self.id}/"
+        url = self.get_object_url() + f"/{self._public_uid()}/"
         payload = {"json": serialize_to_json(kwargs)}
         s = self.build_session()
         r = make_request(
@@ -1272,9 +1297,9 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         metadata.patch(*args, **kwargs)
 
     @classmethod
-    def destroy_by_id(
+    def destroy_by_uid(
         cls,
-        instance_id,
+        uid: str,
         *,
         full_delete_selected: bool = False,
         full_delete_downstream_tables: bool = False,
@@ -1282,30 +1307,27 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         override_protection: bool = False,
         timeout: int | None = None,
     ):
-        """
-        Delete a DataNodeStorage row using backend delete query parameters.
-
-        Parameters
-        ----------
-        full_delete_selected:
-            Fully delete the selected DataNode instance.
-        full_delete_downstream_tables:
-            Delete downstream tables/dependencies starting from the selected metadata instance.
-        delete_with_no_table:
-            Scan all DataNode rows and fully delete records whose backing DB table does not exist.
-        override_protection:
-            Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true.
-        timeout:
-            Optional request timeout in seconds.
-        """
-        return super().destroy_by_id(
-            instance_id,
-            timeout=timeout,
-            full_delete_selected=full_delete_selected,
-            full_delete_downstream_tables=full_delete_downstream_tables,
-            delete_with_no_table=delete_with_no_table,
-            override_protection=override_protection,
+        """Delete a DataNodeStorage row using its public uid."""
+        if uid in (None, ""):
+            raise ValueError("DataNodeStorage uid is required for deletion.")
+        payload = {
+            "params": {
+                "full_delete_selected": full_delete_selected,
+                "full_delete_downstream_tables": full_delete_downstream_tables,
+                "delete_with_no_table": delete_with_no_table,
+                "override_protection": override_protection,
+            }
+        }
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="DELETE",
+            url=f"{cls.get_object_url()}/{uid}/",
+            payload=payload,
+            time_out=timeout,
         )
+        raise_for_response(r)
+        return r.json() if r.content else None
 
     def delete(
         self,
@@ -1317,10 +1339,10 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         timeout: int | None = None,
     ):
         """
-        Instance wrapper for `destroy_by_id()` with the same delete query parameters.
+        Instance wrapper for `destroy_by_uid()` with the same delete query parameters.
         """
-        return type(self).destroy_by_id(
-            self.id,
+        return type(self).destroy_by_uid(
+            self._public_uid(),
             timeout=timeout,
             full_delete_selected=full_delete_selected,
             full_delete_downstream_tables=full_delete_downstream_tables,
@@ -1345,7 +1367,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         base_url = self.get_object_url()
         payload = {"json": kwargs}
         s = self.build_session()
-        url = f"{base_url}/{self.id}/build_or_update_update_details/"
+        url = f"{base_url}/{self._public_uid()}/build_or_update_update_details/"
         r = make_request(
             r_type="PATCH",
             url=url,
@@ -1369,18 +1391,18 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         embeds that description into a vector representation for smart search.
 
         This hits:
-            POST /{id}/refresh-table-search-index/
+            POST /{uid}/refresh-table-search-index/
 
         Parameters
         ----------
         timeout:
             Optional request timeout in seconds.
         """
-        if self.id is None:
-            raise ValueError("DataNodeStorage must have an id before refreshing the table search index.")
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before refreshing the table search index.")
 
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/refresh-table-search-index/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/refresh-table-search-index/"
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -1407,13 +1429,13 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         Initialize this DynamicTableMetaData source table from schema only.
 
         This calls:
-            POST /orm/api/ts_manager/dynamic_table/{id}/initialize-source-table/
+            POST /orm/api/ts_manager/dynamic_table/{uid}/initialize-source-table/
 
         It creates or validates the SourceTableConfiguration and creates the
         physical backing table without inserting a bootstrap row.
         """
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/initialize-source-table/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/initialize-source-table/"
         return self._initialize_source_table_at_url(
             url=url,
             time_index_name=time_index_name,
@@ -1438,11 +1460,11 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         Initialize an AccountHoldings source table and backend lookup indexes.
 
         This calls the VAM domain wrapper:
-            POST /orm/api/assets/account-holdings-data-node/{id}/initialize-source-table/
+            POST /orm/api/assets/account-holdings-data-node/{uid}/initialize-source-table/
         """
         url = (
             f"{type(self).ROOT_URL.rstrip('/')}/assets/account-holdings-data-node/"
-            f"{self.id}/initialize-source-table/"
+            f"{self._public_uid()}/initialize-source-table/"
         )
         return self._initialize_source_table_at_url(
             url=url,
@@ -1468,11 +1490,11 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         Initialize a VirtualFundHoldings source table and backend lookup indexes.
 
         This calls the VAM domain wrapper:
-            POST /orm/api/assets/virtual-fund-holdings-data-node/{id}/initialize-source-table/
+            POST /orm/api/assets/virtual-fund-holdings-data-node/{uid}/initialize-source-table/
         """
         url = (
             f"{type(self).ROOT_URL.rstrip('/')}/assets/virtual-fund-holdings-data-node/"
-            f"{self.id}/initialize-source-table/"
+            f"{self._public_uid()}/initialize-source-table/"
         )
         return self._initialize_source_table_at_url(
             url=url,
@@ -1484,95 +1506,87 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             timeout=timeout,
         )
 
-    def initialize_portfolio_weights_source_table(
-        self,
+    @classmethod
+    def initialize_portfolio_storage_source_tables(
+        cls,
         *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any],
-        storage_layout: dict[str, Any] | None = None,
-        open_for_everyone: bool | None = None,
+        portfolio_weights: dict[str, Any],
+        signal_weights: dict[str, Any],
+        portfolio_data: dict[str, Any],
         timeout: int | None = None,
     ) -> dict[str, Any]:
         """
-        Initialize a canonical PortfolioWeights source table and lookup indexes.
+        Initialize canonical VFB source tables and lookup indexes in one call.
 
         This calls the portfolio domain wrapper:
-            POST /orm/api/assets/portfolio-weights-data-node/{id}/initialize-source-table/
-        """
-        url = (
-            f"{type(self).ROOT_URL.rstrip('/')}/assets/portfolio-weights-data-node/"
-            f"{self.id}/initialize-source-table/"
-        )
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            storage_layout=storage_layout,
-            open_for_everyone=open_for_everyone,
-            timeout=timeout,
-        )
+            POST /orm/api/assets/portfolio-storage-data-nodes/initialize-source-tables/
 
-    def initialize_signal_weights_source_table(
-        self,
+        The three dynamic_table_metadata_uid values must already exist. This
+        endpoint only initializes source tables for the existing storages.
+        """
+        payload_body = {
+            "portfolio_weights": cls._portfolio_storage_source_table_payload(
+                portfolio_weights,
+                payload_name="portfolio_weights",
+            ),
+            "signal_weights": cls._portfolio_storage_source_table_payload(
+                signal_weights,
+                payload_name="signal_weights",
+            ),
+            "portfolio_data": cls._portfolio_storage_source_table_payload(
+                portfolio_data,
+                payload_name="portfolio_data",
+            ),
+        }
+        url = (
+            f"{cls.ROOT_URL.rstrip('/')}/assets/portfolio-storage-data-nodes/"
+            "initialize-source-tables/"
+        )
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": serialize_to_json(payload_body)},
+            time_out=timeout,
+        )
+        raise_for_response(response, payload=payload_body)
+        return response.json()
+
+    @staticmethod
+    def _portfolio_storage_source_table_payload(
+        payload: dict[str, Any],
         *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any],
-        storage_layout: dict[str, Any] | None = None,
-        open_for_everyone: bool | None = None,
-        timeout: int | None = None,
+        payload_name: str,
     ) -> dict[str, Any]:
-        """
-        Initialize a canonical SignalWeights source table and lookup indexes.
+        required_fields = (
+            "dynamic_table_metadata_uid",
+            "time_index_name",
+            "index_names",
+            "column_dtypes_map",
+        )
+        missing_fields = [
+            field_name for field_name in required_fields if field_name not in payload
+        ]
+        if missing_fields:
+            raise ValueError(
+                f"{payload_name} is missing required source-table fields: "
+                + ", ".join(missing_fields)
+                + "."
+            )
 
-        This calls the portfolio domain wrapper:
-            POST /orm/api/assets/signal-weights-data-node/{id}/initialize-source-table/
-        """
-        url = (
-            f"{type(self).ROOT_URL.rstrip('/')}/assets/signal-weights-data-node/"
-            f"{self.id}/initialize-source-table/"
-        )
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            storage_layout=storage_layout,
-            open_for_everyone=open_for_everyone,
-            timeout=timeout,
-        )
+        dynamic_table_metadata_uid = payload["dynamic_table_metadata_uid"]
+        if dynamic_table_metadata_uid in (None, ""):
+            raise ValueError(
+                f"{payload_name}.dynamic_table_metadata_uid must be a non-empty uid."
+            )
 
-    def initialize_portfolios_source_table(
-        self,
-        *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any],
-        storage_layout: dict[str, Any] | None = None,
-        open_for_everyone: bool | None = None,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Initialize a canonical PortfoliosDataNode source table and lookup indexes.
-
-        This calls the portfolio domain wrapper:
-            POST /orm/api/assets/portfolios-data-node/{id}/initialize-source-table/
-        """
-        url = (
-            f"{type(self).ROOT_URL.rstrip('/')}/assets/portfolios-data-node/"
-            f"{self.id}/initialize-source-table/"
-        )
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            storage_layout=storage_layout,
-            open_for_everyone=open_for_everyone,
-            timeout=timeout,
-        )
+        return {
+            "dynamic_table_metadata_uid": str(dynamic_table_metadata_uid),
+            "time_index_name": str(payload["time_index_name"]),
+            "index_names": list(payload["index_names"]),
+            "column_dtypes_map": dict(payload["column_dtypes_map"]),
+        }
 
     def _initialize_source_table_at_url(
         self,
@@ -1585,8 +1599,8 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
-        if self.id is None:
-            raise ValueError("DataNodeStorage must have an id before initializing a source table.")
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before initializing a source table.")
 
         payload_body: dict[str, Any] = {
             "time_index_name": time_index_name,
@@ -1624,7 +1638,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         Execute a raw SQL query against this dynamic table.
 
         This hits:
-            POST /orm/api/ts_manager/dynamic_table/{id}/run_query/
+            POST /orm/api/ts_manager/dynamic_table/{uid}/run_query/
 
         Request contract:
         - body is the raw SQL string as `text/plain`
@@ -1637,15 +1651,15 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
           that envelope is returned directly so callers can inspect the backend
           error payload
         """
-        if self.id is None:
-            raise ValueError("DataNodeStorage must have an id before running a query.")
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before running a query.")
 
         sql = str(sql or "").strip()
         if not sql:
             raise ValueError("sql is required.")
 
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/run_query/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/run_query/"
         session = cls.build_session()
         old_content_type = session.headers.get("Content-Type")
         session.headers["Content-Type"] = "text/plain"
@@ -1691,7 +1705,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
         This is a backend tail-delete operation:
 
-        - it hits `POST /orm/api/ts_manager/dynamic_table/{id}/delete_after_date/`
+        - it hits `POST /orm/api/ts_manager/dynamic_table/{uid}/delete_after_date/`
         - `after_date` is the inclusive cutoff
         - there is no `end_date`; this is not arbitrary range deletion
         - for multi-index tables, pass `dimension_filters` or
@@ -1704,8 +1718,8 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         can use those stats to update visible table metadata or refetch the table
         detail after the delete.
         """
-        if self.id is None:
-            raise ValueError("DataNodeStorage must have an id before deleting rows after a date.")
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before deleting rows after a date.")
 
         payload_body: dict[str, Any] = {
             "after_date": after_date.isoformat() if isinstance(after_date, datetime.datetime) else after_date
@@ -1721,7 +1735,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         )
 
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/delete_after_date/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/delete_after_date/"
         r = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -1764,7 +1778,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         Parameters:
         ----------
         metadata : dict
-            Metadata dictionary containing "sourcetableconfiguration" and "id".
+            Metadata dictionary containing "sourcetableconfiguration" and "uid".
         column_dtypes_map : dict
             Mapping of column names to their data types.
         index_names : list
@@ -1790,7 +1804,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                     column_dtypes_map=column_dtypes_map,
                     index_names=index_names,
                     time_index_name=time_index_name,
-                    metadata_id=self.id,
+                    metadata_uid=self._public_uid(),
                 )
                 self.sourcetableconfiguration = stc
             except AlreadyExist as err:
@@ -1837,7 +1851,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             )
         }
         s = self.build_session()
-        url = f"{base_url}/{self.id}/get_last_observation/"
+        url = f"{base_url}/{self._public_uid()}/get_last_observation/"
         r = make_request(
             r_type="POST",
             url=url,
@@ -1974,8 +1988,8 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
             column_range_descriptor: None | UniqueIdentifierRangeMap = None,
     ):
-        """Public helper for /{id}/get_data_between_dates_from_remote/."""
-        url = self.get_object_url() + f"/{self.id}/get_data_between_dates_from_remote/"
+        """Public helper for /{uid}/get_data_between_dates_from_remote/."""
+        url = self.get_object_url() + f"/{self._public_uid()}/get_data_between_dates_from_remote/"
         dimension_payload = self._build_dimension_payload(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
@@ -2467,7 +2481,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
-    id: int | None = None
+    uid: str | None = Field(None, description="Public uid of this scheduler")
     name: str
     is_running: bool
     running_process_pid: int | None
@@ -2484,18 +2498,21 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     _stop_heart_beat: bool = False
     _executor: object | None = None
 
+    def _public_uid(self) -> str:
+        return _require_public_uid(self, "Scheduler")
+
     @classmethod
-    def get_scheduler_for_ts(cls, ts_id: int):
-        """
-        GET /schedulers/for-ts/?ts_id=<DataNodeUpdate PK>
-        """
+    def get_scheduler_for_update_node(cls, update_node_uid: str):
+        """GET the scheduler assigned to a DataNodeUpdate uid."""
+        if update_node_uid in (None, ""):
+            raise ValueError("update_node_uid is required.")
         s = cls.build_session()
-        url = cls.get_object_url() + "/for-ts/"
+        url = cls.get_object_url() + "/for-update-node/"
         r = make_request(
             s=s,
             r_type="GET",
             url=url,
-            payload={"params": {"ts_id": ts_id}},
+            payload={"params": {"update_node_uid": str(update_node_uid)}},
             loaders=cls.LOADERS,
         )
         if r.status_code == 404:
@@ -2508,7 +2525,7 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
     def build_and_assign_to_update_nodes(
         cls,
         scheduler_name: str,
-        update_nodes_ids: list[int],
+        update_node_uids: list[str],
         delink_all_ts: bool = False,
         remove_from_other_schedulers: bool = True,
         timeout=None,
@@ -2517,21 +2534,20 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         """
         POST /schedulers/build_and_assign_to_update_nodes/
         body: {
-          scheduler_name, time_serie_ids, delink_all_ts?,
+          scheduler_name, update_node_uids, delink_all_ts?,
           remove_from_other_schedulers?, scheduler_kwargs?
         }
         """
         s = cls.build_session()
         url = cls.get_object_url() + "/build_and_assign_to_update_nodes/"
-        payload = {
-            "json": {
-                "scheduler_name": scheduler_name,
-                "update_nodes_ids": update_nodes_ids,
-                "delink_all_update_nodes": delink_all_ts,
-                "remove_from_other_schedulers": remove_from_other_schedulers,
-                "scheduler_kwargs": kwargs or {},
-            }
+        request_body = {
+            "scheduler_name": scheduler_name,
+            "delink_all_update_nodes": delink_all_ts,
+            "remove_from_other_schedulers": remove_from_other_schedulers,
+            "scheduler_kwargs": kwargs or {},
         }
+        request_body["update_node_uids"] = [str(uid) for uid in update_node_uids]
+        payload = {"json": request_body}
         r = make_request(
             s=s, r_type="POST", url=url, payload=payload, time_out=timeout, loaders=cls.LOADERS
         )
@@ -2539,35 +2555,35 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
             r.raise_for_status()
         return cls(**r.json())
 
-    def in_active_tree_connect(self, local_time_series_ids: list[int]):
+    def in_active_tree_connect(self, update_node_uids: list[str]):
         """
-        PATCH /schedulers/{id}/in-active-tree/
-        body: { time_serie_ids }
+        PATCH /schedulers/{uid}/in-active-tree/
+        body: { update_node_uids }
         """
         s = self.build_session()
-        url = f"{self.get_object_url()}/{self.id}/in-active-tree/"
+        url = f"{self.get_object_url()}/{self._public_uid()}/in-active-tree/"
         r = make_request(
             s=s,
             r_type="PATCH",
             url=url,
-            payload={"json": {"time_serie_ids": local_time_series_ids}},
+            payload={"json": {"update_node_uids": [str(uid) for uid in update_node_uids]}},
             loaders=self.LOADERS,
         )
         if r.status_code not in (200, 204):
             raise Exception(f"Error in request {r.text}")
 
-    def assign_to_scheduler(self, time_serie_ids: list[int]):
+    def assign_to_scheduler(self, update_node_uids: list[str]):
         """
-        PATCH /schedulers/{id}/assign/
-        body: { time_serie_ids }
+        PATCH /schedulers/{uid}/assign/
+        body: { update_node_uids }
         """
         s = self.build_session()
-        url = f"{self.get_object_url()}/{self.id}/assign/"
+        url = f"{self.get_object_url()}/{self._public_uid()}/assign/"
         r = make_request(
             s=s,
             r_type="PATCH",
             url=url,
-            payload={"json": {"time_serie_ids": time_serie_ids}},
+            payload={"json": {"update_node_uids": [str(uid) for uid in update_node_uids]}},
             loaders=self.LOADERS,
         )
         r.raise_for_status()
@@ -3490,11 +3506,11 @@ class HistoricalUpdateRecord:
     # extra fields for local control
     update_statistics: BaseUpdateStatistics | None = None
     must_update: bool | None = None
-    direct_dependencies_ids: list[int] | None = None
+    direct_dependency_uids: list[str] | None = None
 
 class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
 
-    related_table: int
+    related_table_uid: str | None = Field(None, description="Public uid of the related DataNodeUpdate")
     last_time_index_value: datetime.datetime | None = None
 
 
@@ -3506,9 +3522,9 @@ SourceTableConfigurationT = TypeVar("SourceTableConfigurationT")
 class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, SourceTableConfigurationT]):
     model_config = ConfigDict(extra="forbid")
 
-    source_table_config_map: dict[int, SourceTableConfigurationT | None]
-    state_data: dict[int, UpdateDetailsT]
-    all_index_stats: dict[int, Any]
+    source_table_config_map: dict[str, SourceTableConfigurationT | None]
+    state_data: dict[str, UpdateDetailsT]
+    all_index_stats: dict[str, Any]
     data_node_updates: list[UpdateT]
 
 

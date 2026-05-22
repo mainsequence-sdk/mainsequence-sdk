@@ -31,7 +31,11 @@ def _account_payload(uid: str) -> dict:
         "uid": uid,
         "account_name": "Main Account",
         "account_is_active": True,
-        "holdings_data_source": 17,
+        "holdings_data_source": {
+            "uid": "11111111-1111-4111-8111-111111111111",
+            "storage_hash": "account_holdings_hash",
+            "identifier": "examples.account_holdings",
+        },
         "labels": ["production"],
         "latest_holdings": {
             "holdings_set_uid": "665f8a92-4c7a-4c01-9a28-15744b31abbb",
@@ -58,7 +62,8 @@ def test_account_model_matches_uid_based_server_contract():
 
     assert account.uid == "cbace713-dff7-42aa-a2d3-252ca7849ade"
     assert "execution_venue" not in Account.model_fields
-    assert account.holdings_data_source == 17
+    assert account.holdings_data_source is not None
+    assert account.holdings_data_source["uid"] == "11111111-1111-4111-8111-111111111111"
     assert account.latest_holdings is not None
     assert account.latest_holdings.comments is None
     assert account.latest_holdings.holdings[0].unique_identifier == "ASSET:BTC"

@@ -244,7 +244,7 @@ def test_account_can_be_created_before_holdings_data_node(monkeypatch):
     monkeypatch.setattr(data_nodes, "ClientAccount", FakeAccount)
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
-        "holdings_data_source_id",
+        "holdings_data_source_uid",
         fail_storage_lookup,
     )
     node = object.__new__(data_nodes.AccountHoldings)
@@ -283,18 +283,25 @@ def test_holdings_node_can_get_or_create_and_bind_account(monkeypatch):
                     },
                 )
             )
-            return cls(holdings_data_source=kwargs.get("holdings_data_source"))
+            storage_uid = kwargs.get("holdings_data_source_uid")
+            return cls(
+                holdings_data_source=(
+                    {"uid": storage_uid}
+                    if storage_uid is not None
+                    else None
+                )
+            )
 
         def patch(self, timeout=None, **kwargs):
             calls.append(("patch", kwargs))
-            self.holdings_data_source = kwargs["holdings_data_source"]
+            self.holdings_data_source = {"uid": kwargs["holdings_data_source_uid"]}
             return self
 
     monkeypatch.setattr(data_nodes, "ClientAccount", FakeAccount)
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
-        "holdings_data_source_id",
-        lambda self: 42,
+        "holdings_data_source_uid",
+        lambda self: "11111111-1111-4111-8111-111111111111",
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
@@ -302,14 +309,16 @@ def test_holdings_node_can_get_or_create_and_bind_account(monkeypatch):
         account_name="Broker Account",
     )
 
-    assert account.holdings_data_source == 42
+    assert account.holdings_data_source == {
+        "uid": "11111111-1111-4111-8111-111111111111"
+    }
     assert calls == [
         (
             "get_or_create",
             {
                 "create_without_holdings": True,
                 "account_name": "Broker Account",
-                "holdings_data_source": 42,
+                "holdings_data_source_uid": "11111111-1111-4111-8111-111111111111",
             },
         )
     ]
@@ -330,35 +339,39 @@ def test_existing_account_get_or_create_is_patched_to_current_holdings_node(monk
 
         def patch(self, timeout=None, **kwargs):
             calls.append(("patch", kwargs))
-            self.holdings_data_source = kwargs["holdings_data_source"]
+            self.holdings_data_source = {"uid": kwargs["holdings_data_source_uid"]}
             return self
 
     monkeypatch.setattr(data_nodes, "ClientAccount", FakeAccount)
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
-        "holdings_data_source_id",
-        lambda self: 99,
+        "holdings_data_source_uid",
+        lambda self: "99999999-9999-4999-8999-999999999999",
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
     account = node.get_or_create_account(account_name="Existing")
 
-    assert account.holdings_data_source == 99
+    assert account.holdings_data_source == {
+        "uid": "99999999-9999-4999-8999-999999999999"
+    }
     assert calls == [
         (
             "get_or_create",
             {
                 "account_name": "Existing",
-                "holdings_data_source": 99,
+                "holdings_data_source_uid": "99999999-9999-4999-8999-999999999999",
             },
         ),
-        ("patch", {"holdings_data_source": 99}),
+        ("patch", {"holdings_data_source_uid": "99999999-9999-4999-8999-999999999999"}),
     ]
 
 
-def _ready_account_holdings_storage(storage_id=77):
+def _ready_account_holdings_storage(
+    storage_uid="77777777-7777-4777-8777-777777777777",
+):
     return SimpleNamespace(
-        id=storage_id,
+        uid=storage_uid,
         sourcetableconfiguration=SimpleNamespace(
             time_index_name=data_nodes.ACCOUNT_HOLDINGS_TIME_INDEX_NAME,
             index_names=list(data_nodes.ACCOUNT_HOLDINGS_INDEX_NAMES),
@@ -375,7 +388,7 @@ def test_account_holdings_ensure_storage_ready_runs_bootstrap_when_storage_missi
 
     def fake_run(self, **kwargs):
         calls.append(kwargs)
-        storages.append(_ready_account_holdings_storage(storage_id=77))
+        storages.append(_ready_account_holdings_storage())
 
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
@@ -385,7 +398,7 @@ def test_account_holdings_ensure_storage_ready_runs_bootstrap_when_storage_missi
     monkeypatch.setattr(data_nodes.AccountHoldings, "run", fake_run)
     node = object.__new__(data_nodes.AccountHoldings)
 
-    assert node.ensure_storage_ready() == 77
+    assert node.ensure_storage_ready() == "77777777-7777-4777-8777-777777777777"
     assert calls == [
         {
             "debug_mode": True,
@@ -399,7 +412,10 @@ def test_account_holdings_ensure_storage_ready_initializes_schema_when_config_mi
     monkeypatch,
 ):
     calls: list[dict] = []
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
+    storage = SimpleNamespace(
+        uid="77777777-7777-4777-8777-777777777777",
+        sourcetableconfiguration=None,
+    )
 
     def initialize_account_holdings_source_table(**kwargs):
         calls.append(kwargs)
@@ -424,7 +440,7 @@ def test_account_holdings_ensure_storage_ready_initializes_schema_when_config_mi
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
-    assert node.ensure_storage_ready() == 77
+    assert node.ensure_storage_ready() == "77777777-7777-4777-8777-777777777777"
     assert calls == [
         {
             "time_index_name": data_nodes.ACCOUNT_HOLDINGS_TIME_INDEX_NAME,
@@ -441,7 +457,10 @@ def test_account_holdings_ensure_storage_ready_falls_back_when_schema_endpoint_m
         status_code = 404
 
     calls: list[dict] = []
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
+    storage = SimpleNamespace(
+        uid="77777777-7777-4777-8777-777777777777",
+        sourcetableconfiguration=None,
+    )
 
     def initialize_account_holdings_source_table(**kwargs):
         raise MissingEndpoint()
@@ -465,7 +484,7 @@ def test_account_holdings_ensure_storage_ready_falls_back_when_schema_endpoint_m
     monkeypatch.setattr(data_nodes.AccountHoldings, "run", fake_run)
     node = object.__new__(data_nodes.AccountHoldings)
 
-    assert node.ensure_storage_ready() == 77
+    assert node.ensure_storage_ready() == "77777777-7777-4777-8777-777777777777"
     assert calls == [
         {
             "debug_mode": True,
@@ -479,10 +498,14 @@ def test_account_holdings_ensure_storage_ready_skips_bootstrap_when_contract_rea
     monkeypatch,
 ):
     monkeypatch.setattr(
-        data_nodes.AccountHoldings,
-        "data_node_storage",
-        property(lambda self: _ready_account_holdings_storage(storage_id=88)),
-    )
+            data_nodes.AccountHoldings,
+            "data_node_storage",
+            property(
+                lambda self: _ready_account_holdings_storage(
+                    storage_uid="88888888-8888-4888-8888-888888888888",
+                )
+            ),
+        )
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
         "run",
@@ -490,12 +513,12 @@ def test_account_holdings_ensure_storage_ready_skips_bootstrap_when_contract_rea
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
-    assert node.ensure_storage_ready() == 88
+    assert node.ensure_storage_ready() == "88888888-8888-4888-8888-888888888888"
 
 
 def test_account_holdings_ensure_storage_ready_rejects_wrong_contract(monkeypatch):
     bad_storage = SimpleNamespace(
-        id=77,
+        uid="77777777-7777-4777-8777-777777777777",
         sourcetableconfiguration=SimpleNamespace(
             time_index_name="time_index",
             index_names=["time_index", "unique_identifier"],
@@ -520,7 +543,10 @@ def test_virtual_fund_holdings_ensure_storage_ready_initializes_schema_when_conf
     monkeypatch,
 ):
     calls: list[dict] = []
-    storage = SimpleNamespace(id=78, sourcetableconfiguration=None)
+    storage = SimpleNamespace(
+        uid="78787878-7878-4787-8787-787878787878",
+        sourcetableconfiguration=None,
+    )
 
     def initialize_virtual_fund_holdings_source_table(**kwargs):
         calls.append(kwargs)
@@ -545,7 +571,7 @@ def test_virtual_fund_holdings_ensure_storage_ready_initializes_schema_when_conf
     )
     node = object.__new__(data_nodes.VirtualFundHoldings)
 
-    assert node.ensure_storage_ready() == 78
+    assert node.ensure_storage_ready() == "78787878-7878-4787-8787-787878787878"
     assert calls == [
         {
             "time_index_name": data_nodes.VIRTUAL_FUND_HOLDINGS_TIME_INDEX_NAME,
@@ -565,7 +591,7 @@ def test_account_holdings_facade_writes_through_drf_account_methods(monkeypatch)
 
         def patch(self, timeout=None, **kwargs):
             calls.append(("patch", kwargs))
-            self.holdings_data_source = kwargs["holdings_data_source"]
+            self.holdings_data_source = {"uid": kwargs["holdings_data_source_uid"]}
             return self
 
         def add_holdings(self, timeout=None, **kwargs):
@@ -587,7 +613,10 @@ def test_account_holdings_facade_writes_through_drf_account_methods(monkeypatch)
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
         "ensure_storage_ready",
-        lambda self: calls.append(("ensure_storage_ready", {})) or 77,
+        lambda self: (
+            calls.append(("ensure_storage_ready", {}))
+            or "77777777-7777-4777-8777-777777777777"
+        ),
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
@@ -604,7 +633,14 @@ def test_account_holdings_facade_writes_through_drf_account_methods(monkeypatch)
             {"timeout": None, "unique_identifier__in": ["asset-1"]},
         ),
         ("ensure_storage_ready", {}),
-        ("patch", {"holdings_data_source": 77}),
+        (
+            "patch",
+            {
+                "holdings_data_source_uid": (
+                    "77777777-7777-4777-8777-777777777777"
+                )
+            },
+        ),
         (
             "add_holdings",
             {
@@ -643,7 +679,10 @@ def test_account_holdings_facade_rejects_unknown_asset_identifiers(monkeypatch):
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
         "ensure_storage_ready",
-        lambda self: calls.append(("ensure_storage_ready", {})) or 77,
+        lambda self: (
+            calls.append(("ensure_storage_ready", {}))
+            or "77777777-7777-4777-8777-777777777777"
+        ),
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
@@ -678,7 +717,10 @@ def test_account_holdings_facade_rejects_positions_without_identifier(monkeypatc
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
         "ensure_storage_ready",
-        lambda self: calls.append(("ensure_storage_ready", {})) or 77,
+        lambda self: (
+            calls.append(("ensure_storage_ready", {}))
+            or "77777777-7777-4777-8777-777777777777"
+        ),
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
@@ -698,7 +740,9 @@ def test_account_holdings_facade_target_positions_use_drf_account_methods(monkey
     class FakeAccount:
         def __init__(self):
             self.uid = "account-1"
-            self.holdings_data_source = 5
+            self.holdings_data_source = {
+                "uid": "55555555-5555-4555-8555-555555555555"
+            }
 
         def add_target_positions(self, timeout=None, **kwargs):
             calls.append(("add_target_positions", kwargs))
@@ -708,7 +752,10 @@ def test_account_holdings_facade_target_positions_use_drf_account_methods(monkey
     monkeypatch.setattr(
         data_nodes.AccountHoldings,
         "ensure_storage_ready",
-        lambda self: calls.append(("ensure_storage_ready", {})) or 5,
+        lambda self: (
+            calls.append(("ensure_storage_ready", {}))
+            or "55555555-5555-4555-8555-555555555555"
+        ),
     )
     node = object.__new__(data_nodes.AccountHoldings)
 
@@ -741,7 +788,9 @@ def test_account_holdings_facade_latest_read_uses_drf_account_method(monkeypatch
     class FakeAccount:
         def __init__(self):
             self.uid = "account-1"
-            self.holdings_data_source = 7
+            self.holdings_data_source = {
+                "uid": "77777777-7777-4777-8777-777777777777"
+            }
 
         def get_latest_holdings(self, timeout=None, **kwargs):
             calls.append(("get_latest_holdings", kwargs))

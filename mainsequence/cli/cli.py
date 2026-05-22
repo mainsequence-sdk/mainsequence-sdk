@@ -1444,7 +1444,7 @@ def _require_delete_verification(
 
 def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("ID", str(storage.get("id") or "-")),
+        ("UID", str(storage.get("uid") or "-")),
         ("Storage Hash", str(storage.get("storage_hash") or "-")),
         ("Identifier", str(storage.get("identifier") or "-")),
         ("Source Class", str(storage.get("source_class_name") or "-")),
@@ -3315,7 +3315,7 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
     return [
         ("Action", str(payload.get("action") or "-")),
         ("Detail", str(payload.get("detail") or "-")),
-        ("Object ID", str(payload.get("object_id") or "-")),
+        ("Object Reference", str(payload.get("object_uid") or payload.get("object_id") or "-")),
         ("Object Type", str(payload.get("object_type") or "-")),
         ("User ID", str(user.get("id") or "-")),
         ("Username", str(user.get("username") or "-")),
@@ -4066,7 +4066,7 @@ def _shareable_user_list_impl(
     fetch_fn,
     object_label: str,
     access_label: str,
-    object_id: int,
+    object_id: int | str,
     timeout: int | None,
 ) -> None:
     _require_login()
@@ -4136,7 +4136,7 @@ def _shareable_user_access_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int,
+    object_id: int | str,
     user_id: int,
     timeout: int | None,
 ) -> None:
@@ -4160,7 +4160,7 @@ def _shareable_team_access_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int,
+    object_id: int | str,
     team_id: int,
     timeout: int | None,
 ) -> None:
@@ -4205,7 +4205,7 @@ def _labelable_object_labels_update_impl(
     action_fn,
     object_label: str,
     action_label: str,
-    object_id: int,
+    object_id: int | str,
     labels: list[str] | None,
     timeout: int | None,
 ) -> None:
@@ -4345,7 +4345,7 @@ def _format_simple_table_storage_preview(storage: dict[str, object]) -> list[tup
     incoming_fks = storage.get("incoming_fks")
     indexes_meta = storage.get("indexes_meta")
     return [
-        ("ID", str(storage.get("id") or "-")),
+        ("UID", str(storage.get("uid") or "-")),
         ("Source Class", str(storage.get("source_class_name") or "-")),
         ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
         ("Columns", str(len(columns)) if isinstance(columns, list) else "-"),
@@ -4363,8 +4363,8 @@ def _print_storage_query_payload(title: str, payload: dict[str, object]) -> None
         [
             ("OK", str(payload.get("ok"))),
             ("Query ID", str(payload.get("query_id") or "-")),
-            ("Dynamic Table ID", str(payload.get("dynamic_table_id") or "-")),
-            ("Simple Table ID", str(payload.get("simple_table_id") or "-")),
+            ("Dynamic Table UID", str(payload.get("dynamic_table_uid") or "-")),
+            ("Simple Table UID", str(payload.get("simple_table_uid") or "-")),
             ("Row Count", str(payload.get("row_count") or 0)),
             ("Truncated", str(payload.get("truncated"))),
             ("Max Rows", str(payload.get("max_rows") or "-")),
@@ -4406,7 +4406,7 @@ def _simple_tables_list_impl(
         columns = storage.get("columns")
         rows.append(
             [
-                str(storage.get("id") or "-"),
+                str(storage.get("uid") or "-"),
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("namespace") or "-"),
                 _format_data_node_storage_data_source(storage.get("data_source")),
@@ -4419,7 +4419,7 @@ def _simple_tables_list_impl(
     if rows:
         print_table(
             "Simple Tables",
-            ["ID", "Source Class", "Namespace", "Data Source", "Columns", "Open", "Creation Date"],
+            ["UID", "Source Class", "Namespace", "Data Source", "Columns", "Open", "Creation Date"],
             rows,
         )
     else:
@@ -4429,13 +4429,13 @@ def _simple_tables_list_impl(
 
 def _simple_tables_detail_impl(
     *,
-    storage_id: int,
+    storage_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        storage = get_simple_table_storage(storage_id, timeout=timeout)
+        storage = get_simple_table_storage(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Simple table fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -4462,27 +4462,27 @@ def _simple_tables_detail_impl(
 
 def _simple_tables_delete_impl(
     *,
-    storage_id: int,
+    storage_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        storage = get_simple_table_storage(storage_id, timeout=timeout)
+        storage = get_simple_table_storage(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Simple table fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(storage.get("source_class_name") or storage.get("id") or storage_id)
+    verification_value = str(storage.get("source_class_name") or storage.get("uid") or storage_uid)
     _require_delete_verification(
         preview_title="Simple Table Delete Preview",
         preview_items=_format_simple_table_storage_preview(storage),
         verification_value=verification_value,
-        verification_label="source class name" if storage.get("source_class_name") else "simple table id",
+        verification_label="source class name" if storage.get("source_class_name") else "simple table uid",
     )
 
     try:
-        deleted = delete_simple_table_storage(storage_id, timeout=timeout)
+        deleted = delete_simple_table_storage(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Simple table deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -4490,13 +4490,13 @@ def _simple_tables_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Simple table deleted: id={storage_id}")
+    success(f"Simple table deleted: uid={storage_uid}")
     print_kv("Deleted Simple Table", _format_simple_table_storage_preview(deleted))
 
 
 def _simple_tables_run_query_impl(
     *,
-    storage_id: int,
+    storage_uid: str,
     sql: str,
     max_rows: int | None,
     statement_timeout_ms: int | None,
@@ -4506,7 +4506,7 @@ def _simple_tables_run_query_impl(
 
     try:
         payload = run_simple_table_storage_query(
-            storage_id,
+            storage_uid,
             sql,
             max_rows=max_rows,
             statement_timeout_ms=statement_timeout_ms,
@@ -4523,9 +4523,9 @@ def _simple_tables_run_query_impl(
         return
 
     if ok:
-        success(f"Simple table query completed: id={storage_id}")
+        success(f"Simple table query completed: uid={storage_uid}")
     else:
-        error(f"Simple table query failed: id={storage_id}")
+        error(f"Simple table query failed: uid={storage_uid}")
     _print_storage_query_payload("Simple Table Query", payload)
     if not ok:
         raise typer.Exit(1)
@@ -5275,7 +5275,7 @@ def _data_node_storage_list_impl(
     if storages:
         print_table(
             "Data Node Storages",
-            ["ID", "Storage Hash", "Source Class", "Identifier", "Namespace", "Data Source", "Frequency"],
+            ["UID", "Storage Hash", "Source Class", "Identifier", "Namespace", "Data Source", "Frequency"],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -5288,7 +5288,7 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
     for storage in storages:
         rows.append(
             [
-                str(storage.get("id") or "-"),
+                str(storage.get("uid") or "-"),
                 str(storage.get("storage_hash") or "-"),
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("identifier") or "-"),
@@ -5366,7 +5366,7 @@ def _data_node_storage_search_impl(
     if storages:
         print_table(
             title,
-            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            ["UID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -5397,7 +5397,7 @@ def _print_data_node_storage_search_section(
     if storages:
         print_table(
             title,
-            ["ID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            ["UID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -5446,29 +5446,29 @@ def simple_tables_list_cmd(
 
 @simple_table.command("detail")
 def simple_tables_detail_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Show one simple table storage in detail.
     """
-    _simple_tables_detail_impl(storage_id=storage_id, timeout=timeout)
+    _simple_tables_detail_impl(storage_uid=storage_uid, timeout=timeout)
 
 
 @simple_table.command("delete")
 def simple_tables_delete_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Delete one simple table storage.
     """
-    _simple_tables_delete_impl(storage_id=storage_id, timeout=timeout)
+    _simple_tables_delete_impl(storage_uid=storage_uid, timeout=timeout)
 
 
 @simple_table.command("run_query")
 def simple_tables_run_query_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     sql: str = typer.Argument(..., help="Raw SQL query to run."),
     max_rows: int | None = typer.Option(None, "--max-rows", min=1, help="Maximum number of rows to return."),
     statement_timeout_ms: int | None = typer.Option(
@@ -5483,7 +5483,7 @@ def simple_tables_run_query_cmd(
     Run a raw SQL query against one simple table storage.
     """
     _simple_tables_run_query_impl(
-        storage_id=storage_id,
+        storage_uid=storage_uid,
         sql=sql,
         max_rows=max_rows,
         statement_timeout_ms=statement_timeout_ms,
@@ -5493,7 +5493,7 @@ def simple_tables_run_query_cmd(
 
 @simple_table.command("add-label")
 def simple_tables_add_label_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -5510,7 +5510,7 @@ def simple_tables_add_label_cmd(
         action_fn=add_simple_table_storage_labels,
         object_label="Simple Table",
         action_label="add-label",
-        object_id=storage_id,
+        object_id=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -5518,17 +5518,17 @@ def simple_tables_add_label_cmd(
 
 @simple_table.command("add_label", hidden=True)
 def simple_tables_add_label_alias_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence simple_table add-label`."""
-    simple_tables_add_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+    simple_tables_add_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
 
 
 @simple_table.command("remove-label")
 def simple_tables_remove_label_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -5545,7 +5545,7 @@ def simple_tables_remove_label_cmd(
         action_fn=remove_simple_table_storage_labels,
         object_label="Simple Table",
         action_label="remove-label",
-        object_id=storage_id,
+        object_id=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -5553,12 +5553,12 @@ def simple_tables_remove_label_cmd(
 
 @simple_table.command("remove_label", hidden=True)
 def simple_tables_remove_label_alias_cmd(
-    storage_id: int = typer.Argument(..., help="Simple table storage ID."),
+    storage_uid: str = typer.Argument(..., help="Simple table storage UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence simple_table remove-label`."""
-    simple_tables_remove_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+    simple_tables_remove_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
 
 
 @workspace.command("list")
@@ -6850,11 +6850,11 @@ def secrets_remove_team_from_edit_cmd(
     )
 
 
-def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None:
+def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> None:
     _require_login()
 
     try:
-        storage = get_data_node_storage(storage_id, timeout=timeout)
+        storage = get_data_node_storage(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Data node storage fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -6874,7 +6874,7 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
     print_kv(
         "Data Node Storage",
         [
-            ("ID", str(storage.get("id") or storage_id)),
+            ("UID", str(storage.get("uid") or storage_uid)),
             ("Storage Hash", str(storage.get("storage_hash") or "-")),
             ("Identifier", str(storage.get("identifier") or "-")),
             ("Source Class", str(storage.get("source_class_name") or "-")),
@@ -6904,14 +6904,14 @@ def _data_node_storage_detail_impl(storage_id: int, timeout: int | None) -> None
 
 def _data_node_storage_run_query_impl(
     *,
-    storage_id: int,
+    storage_uid: str,
     sql: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        payload = run_data_node_storage_query(storage_id, sql, timeout=timeout)
+        payload = run_data_node_storage_query(storage_uid, sql, timeout=timeout)
     except ApiError as e:
         error(f"Data node query failed: {e}")
         raise typer.Exit(1) from e
@@ -6923,9 +6923,9 @@ def _data_node_storage_run_query_impl(
         return
 
     if ok:
-        success(f"Data node query completed: id={storage_id}")
+        success(f"Data node query completed: uid={storage_uid}")
     else:
-        error(f"Data node query failed: id={storage_id}")
+        error(f"Data node query failed: uid={storage_uid}")
     _print_storage_query_payload("Data Node Query", payload)
     if not ok:
         raise typer.Exit(1)
@@ -6933,7 +6933,7 @@ def _data_node_storage_run_query_impl(
 
 def _data_node_storage_delete_impl(
     *,
-    storage_id: int,
+    storage_uid: str,
     full_delete_selected: bool,
     full_delete_downstream_tables: bool,
     delete_with_no_table: bool,
@@ -6943,12 +6943,12 @@ def _data_node_storage_delete_impl(
     _require_login()
 
     try:
-        storage = get_data_node_storage(storage_id, timeout=timeout)
+        storage = get_data_node_storage(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Data node storage fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(storage.get("storage_hash") or storage.get("id") or storage_id)
+    verification_value = str(storage.get("storage_hash") or storage.get("uid") or storage_uid)
     _require_delete_verification(
         preview_title="Data Node Storage Delete Preview",
         preview_items=_format_data_node_storage_delete_preview(storage)
@@ -6959,12 +6959,12 @@ def _data_node_storage_delete_impl(
             ("override_protection", str(override_protection).lower()),
         ],
         verification_value=verification_value,
-        verification_label="storage hash" if storage.get("storage_hash") else "storage id",
+        verification_label="storage hash" if storage.get("storage_hash") else "storage uid",
     )
 
     try:
         deleted = delete_data_node_storage(
-            storage_id,
+            storage_uid,
             full_delete_selected=full_delete_selected,
             full_delete_downstream_tables=full_delete_downstream_tables,
             delete_with_no_table=delete_with_no_table,
@@ -6978,7 +6978,7 @@ def _data_node_storage_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Data node storage deleted: id={storage_id}")
+    success(f"Data node storage deleted: uid={storage_uid}")
     print_kv("Deleted Data Node Storage", _format_data_node_storage_delete_preview(deleted))
 
 
@@ -7018,7 +7018,7 @@ def data_node_storage_list_cmd(
 
 @data_node_storage_group.command("detail")
 def data_node_storage_detail_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7032,37 +7032,37 @@ def data_node_storage_detail_cmd(
 
     Parameters
     ----------
-    storage_id:
-        Data node storage ID.
+    storage_uid:
+        Data node storage UID.
     timeout:
         Request timeout in seconds.
 
     Examples
     --------
     ```bash
-    mainsequence data-node detail 123
-    mainsequence data_node detail 123
-    mainsequence data-node detail 123 --timeout 60
+    mainsequence data-node detail <DATA_NODE_STORAGE_UID>
+    mainsequence data_node detail <DATA_NODE_STORAGE_UID>
+    mainsequence data-node detail <DATA_NODE_STORAGE_UID> --timeout 60
     ```
     """
-    _data_node_storage_detail_impl(storage_id=storage_id, timeout=timeout)
+    _data_node_storage_detail_impl(storage_uid=storage_uid, timeout=timeout)
 
 
 @data_node_storage_group.command("run_query")
 def data_node_storage_run_query_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     sql: str = typer.Argument(..., help="Raw SQL query to run."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Run a raw SQL query against one data node storage.
     """
-    _data_node_storage_run_query_impl(storage_id=storage_id, sql=sql, timeout=timeout)
+    _data_node_storage_run_query_impl(storage_uid=storage_uid, sql=sql, timeout=timeout)
 
 
 @data_node_storage_group.command("refresh-search-index")
 def data_node_storage_refresh_search_index_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7073,15 +7073,15 @@ def data_node_storage_refresh_search_index_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node refresh-search-index 123
-    mainsequence data_node refresh-search-index 123
-    mainsequence data-node refresh-search-index 123 --timeout 60
+    mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
+    mainsequence data_node refresh-search-index <DATA_NODE_STORAGE_UID>
+    mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID> --timeout 60
     ```
     """
     _require_login()
 
     try:
-        payload = refresh_data_node_storage_search_index(storage_id, timeout=timeout)
+        payload = refresh_data_node_storage_search_index(storage_uid, timeout=timeout)
     except ApiError as e:
         error(f"Data node search index refresh failed: {e}")
         raise typer.Exit(1) from e
@@ -7089,7 +7089,7 @@ def data_node_storage_refresh_search_index_cmd(
     if _emit_json(payload):
         return
 
-    success(f"Data node search index refresh requested: id={storage_id}")
+    success(f"Data node search index refresh requested: uid={storage_uid}")
     print_kv(
         "Data Node Search Index Refresh",
         [(str(k), _format_json_value(v)) for k, v in payload.items()],
@@ -7098,13 +7098,13 @@ def data_node_storage_refresh_search_index_cmd(
 
 @data_node_storage_group.command("refresh_search_index", hidden=True)
 def data_node_storage_refresh_search_index_alias_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Backward-compatible alias for `mainsequence data-node refresh-search-index`.
     """
-    data_node_storage_refresh_search_index_cmd(storage_id=storage_id, timeout=timeout)
+    data_node_storage_refresh_search_index_cmd(storage_uid=storage_uid, timeout=timeout)
 
 
 @data_node_storage_group.command("search")
@@ -7335,7 +7335,7 @@ def data_node_storage_column_search_cmd(
 
 @data_node_storage_group.command("delete")
 def data_node_storage_delete_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     full_delete_selected: bool = typer.Option(
         False,
         "--full-delete-selected/--no-full-delete-selected",
@@ -7366,13 +7366,13 @@ def data_node_storage_delete_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node delete 42
-    mainsequence data-node delete 42 --full-delete-selected
-    mainsequence data-node delete 42 --full-delete-selected --override-protection
+    mainsequence data-node delete <DATA_NODE_STORAGE_UID>
+    mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
+    mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
     ```
     """
     _data_node_storage_delete_impl(
-        storage_id=storage_id,
+        storage_uid=storage_uid,
         full_delete_selected=full_delete_selected,
         full_delete_downstream_tables=full_delete_downstream_tables,
         delete_with_no_table=delete_with_no_table,
@@ -7383,7 +7383,7 @@ def data_node_storage_delete_cmd(
 
 @data_node_storage_group.command("can_view")
 def data_node_storage_can_view_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7394,22 +7394,22 @@ def data_node_storage_can_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node can_view 42
-    mainsequence data_node can_view 42
+    mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
+    mainsequence data_node can_view <DATA_NODE_STORAGE_UID>
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_data_node_storage_users_can_view,
         object_label="Data Node",
         access_label="view",
-        object_id=storage_id,
+        object_id=storage_uid,
         timeout=timeout,
     )
 
 
 @data_node_storage_group.command("can_edit")
 def data_node_storage_can_edit_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7420,22 +7420,22 @@ def data_node_storage_can_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node can_edit 42
-    mainsequence data_node can_edit 42
+    mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
+    mainsequence data_node can_edit <DATA_NODE_STORAGE_UID>
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_data_node_storage_users_can_edit,
         object_label="Data Node",
         access_label="edit",
-        object_id=storage_id,
+        object_id=storage_uid,
         timeout=timeout,
     )
 
 
 @data_node_storage_group.command("add-label")
 def data_node_storage_add_label_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7452,7 +7452,7 @@ def data_node_storage_add_label_cmd(
         action_fn=add_data_node_storage_labels,
         object_label="Data Node",
         action_label="add-label",
-        object_id=storage_id,
+        object_id=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -7460,17 +7460,17 @@ def data_node_storage_add_label_cmd(
 
 @data_node_storage_group.command("add_label", hidden=True)
 def data_node_storage_add_label_alias_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence data-node add-label`."""
-    data_node_storage_add_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+    data_node_storage_add_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
 
 
 @data_node_storage_group.command("remove-label")
 def data_node_storage_remove_label_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7487,7 +7487,7 @@ def data_node_storage_remove_label_cmd(
         action_fn=remove_data_node_storage_labels,
         object_label="Data Node",
         action_label="remove-label",
-        object_id=storage_id,
+        object_id=storage_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -7495,17 +7495,17 @@ def data_node_storage_remove_label_cmd(
 
 @data_node_storage_group.command("remove_label", hidden=True)
 def data_node_storage_remove_label_alias_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence data-node remove-label`."""
-    data_node_storage_remove_label_cmd(storage_id=storage_id, labels=labels, timeout=timeout)
+    data_node_storage_remove_label_cmd(storage_uid=storage_uid, labels=labels, timeout=timeout)
 
 
 @data_node_storage_group.command("add_to_view")
 def data_node_storage_add_to_view_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7515,15 +7515,15 @@ def data_node_storage_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_view 42 7
-    mainsequence data_node add_to_view 42 7
+    mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
+    mainsequence data_node add_to_view <DATA_NODE_STORAGE_UID> 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_data_node_storage_user_to_view,
         object_label="Data Node",
         action_label="add_to_view",
-        object_id=storage_id,
+        object_id=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7531,7 +7531,7 @@ def data_node_storage_add_to_view_cmd(
 
 @data_node_storage_group.command("add_to_edit")
 def data_node_storage_add_to_edit_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7541,15 +7541,15 @@ def data_node_storage_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node add_to_edit 42 7
-    mainsequence data_node add_to_edit 42 7
+    mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
+    mainsequence data_node add_to_edit <DATA_NODE_STORAGE_UID> 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_data_node_storage_user_to_edit,
         object_label="Data Node",
         action_label="add_to_edit",
-        object_id=storage_id,
+        object_id=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7557,7 +7557,7 @@ def data_node_storage_add_to_edit_cmd(
 
 @data_node_storage_group.command("remove_from_view")
 def data_node_storage_remove_from_view_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7567,15 +7567,15 @@ def data_node_storage_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_view 42 7
-    mainsequence data_node remove_from_view 42 7
+    mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
+    mainsequence data_node remove_from_view <DATA_NODE_STORAGE_UID> 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_data_node_storage_user_from_view,
         object_label="Data Node",
         action_label="remove_from_view",
-        object_id=storage_id,
+        object_id=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7583,7 +7583,7 @@ def data_node_storage_remove_from_view_cmd(
 
 @data_node_storage_group.command("remove_from_edit")
 def data_node_storage_remove_from_edit_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7593,15 +7593,15 @@ def data_node_storage_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence data-node remove_from_edit 42 7
-    mainsequence data_node remove_from_edit 42 7
+    mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
+    mainsequence data_node remove_from_edit <DATA_NODE_STORAGE_UID> 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_data_node_storage_user_from_edit,
         object_label="Data Node",
         action_label="remove_from_edit",
-        object_id=storage_id,
+        object_id=storage_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -7609,7 +7609,7 @@ def data_node_storage_remove_from_edit_cmd(
 
 @data_node_storage_group.command("add_team_to_view")
 def data_node_storage_add_team_to_view_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7617,7 +7617,7 @@ def data_node_storage_add_team_to_view_cmd(
         action_fn=add_data_node_storage_team_to_view,
         object_label="Data Node",
         action_label="add_team_to_view",
-        object_id=storage_id,
+        object_id=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7625,7 +7625,7 @@ def data_node_storage_add_team_to_view_cmd(
 
 @data_node_storage_group.command("add_team_to_edit")
 def data_node_storage_add_team_to_edit_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7633,7 +7633,7 @@ def data_node_storage_add_team_to_edit_cmd(
         action_fn=add_data_node_storage_team_to_edit,
         object_label="Data Node",
         action_label="add_team_to_edit",
-        object_id=storage_id,
+        object_id=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7641,7 +7641,7 @@ def data_node_storage_add_team_to_edit_cmd(
 
 @data_node_storage_group.command("remove_team_from_view")
 def data_node_storage_remove_team_from_view_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7649,7 +7649,7 @@ def data_node_storage_remove_team_from_view_cmd(
         action_fn=remove_data_node_storage_team_from_view,
         object_label="Data Node",
         action_label="remove_team_from_view",
-        object_id=storage_id,
+        object_id=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7657,7 +7657,7 @@ def data_node_storage_remove_team_from_view_cmd(
 
 @data_node_storage_group.command("remove_team_from_edit")
 def data_node_storage_remove_team_from_edit_cmd(
-    storage_id: int = typer.Argument(..., help="Data node storage ID."),
+    storage_uid: str = typer.Argument(..., help="Data node storage UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7665,7 +7665,7 @@ def data_node_storage_remove_team_from_edit_cmd(
         action_fn=remove_data_node_storage_team_from_edit,
         object_label="Data Node",
         action_label="remove_team_from_edit",
-        object_id=storage_id,
+        object_id=storage_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -7950,7 +7950,7 @@ def _print_project_data_node_updates(
     for u in updates:
         storage = u.get("data_node_storage")
         if isinstance(storage, dict):
-            storage_value = storage.get("storage_hash") or storage.get("id") or "-"
+            storage_value = storage.get("storage_hash") or storage.get("uid") or storage.get("id") or "-"
         else:
             storage_value = storage if storage is not None else "-"
 

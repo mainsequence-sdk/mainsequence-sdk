@@ -202,39 +202,39 @@ mainsequence organization teams remove_from_edit 9 7
 mainsequence organization teams delete 9
 mainsequence simple_table list
 mainsequence simple_table list --filter namespace=pytest_alice
-mainsequence simple_table detail 41
-mainsequence simple_table run_query 41 "SELECT 1 AS ok"
-mainsequence simple_table run_query 41 "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
-mainsequence simple_table add-label 41 --label reference-data
-mainsequence simple_table remove-label 41 --label deprecated
-mainsequence simple_table delete 41
+mainsequence simple_table detail <SIMPLE_TABLE_UID>
+mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT 1 AS ok"
+mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
+mainsequence simple_table add-label <SIMPLE_TABLE_UID> --label reference-data
+mainsequence simple_table remove-label <SIMPLE_TABLE_UID> --label deprecated
+mainsequence simple_table delete <SIMPLE_TABLE_UID>
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter namespace=pytest_alice
-mainsequence data-node list --filter id__in=42,43
+mainsequence data-node list --filter uid__in=<DATA_NODE_STORAGE_UID>
 mainsequence data-node list --data-source-id 2
 mainsequence data_node search "close price"
 mainsequence data-node search "close price" --data-source-id 2
 mainsequence data-node search "portfolio weights" --mode description
 mainsequence data-node search close --mode column
-mainsequence data-node detail 123
-mainsequence data-node run_query 123 "SELECT 1 AS ok"
-mainsequence data-node refresh-search-index 123
-mainsequence data-node add-label 123 --label curated
-mainsequence data-node remove-label 123 --label legacy
-mainsequence data-node can_view 123
-mainsequence data-node can_edit 123
-mainsequence data-node add_to_view 123 7
-mainsequence data-node add_to_edit 123 7
-mainsequence data-node add_team_to_view 123 9
-mainsequence data-node add_team_to_edit 123 9
-mainsequence data-node remove_from_view 123 7
-mainsequence data-node remove_from_edit 123 7
-mainsequence data-node remove_team_from_view 123 9
-mainsequence data-node remove_team_from_edit 123 9
-mainsequence data-node delete 123
-mainsequence data-node delete 123 --full-delete-selected
-mainsequence data-node delete 123 --full-delete-selected --override-protection
+mainsequence data-node detail <DATA_NODE_STORAGE_UID>
+mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT 1 AS ok"
+mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
+mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
+mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label legacy
+mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
+mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
+mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
+mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
+mainsequence data-node add_team_to_view <DATA_NODE_STORAGE_UID> 9
+mainsequence data-node add_team_to_edit <DATA_NODE_STORAGE_UID> 9
+mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
+mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
+mainsequence data-node remove_team_from_view <DATA_NODE_STORAGE_UID> 9
+mainsequence data-node remove_team_from_edit <DATA_NODE_STORAGE_UID> 9
+mainsequence data-node delete <DATA_NODE_STORAGE_UID>
+mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
+mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
 mainsequence markets portfolios list
 mainsequence markets portfolios list --filter id__in=42
 mainsequence markets asset-translation-table list
@@ -384,7 +384,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
 - `mainsequence simple_table list --filter namespace=...` is the first-class CLI form for narrowing simple table storages by storage namespace.
 - `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
-- `mainsequence simple_table run_query` executes `SimpleTableStorage.run_query()` against one storage id and prints the backend query envelope. Use `--max-rows` and `--statement-timeout-ms` when you need server-side limits.
+- `mainsequence simple_table run_query` executes `SimpleTableStorage.run_query()` against one storage uid and prints the backend query envelope. Use `--max-rows` and `--statement-timeout-ms` when you need server-side limits.
 - `mainsequence simple_table add-label` and `remove-label` mutate `SimpleTableStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
@@ -413,7 +413,7 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
 - `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
-- `mainsequence data-node run_query` executes `DataNodeStorage.run_query()` against one storage id and prints the backend query envelope.
+- `mainsequence data-node run_query` executes `DataNodeStorage.run_query()` against one storage uid and prints the backend query envelope.
 - `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
 - `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.

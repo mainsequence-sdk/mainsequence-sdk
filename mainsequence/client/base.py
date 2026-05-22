@@ -1,5 +1,6 @@
 import inspect
 import os
+import warnings
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any, ClassVar
@@ -74,6 +75,7 @@ class BaseObjectOrm:
     READ_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
     DESTROY_QUERY_PARAMS: ClassVar[dict[str, str | Callable[..., Any]] | None] = None
     DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str] | None] = None
+    PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
 
     END_POINTS = {
         "User": "user",
@@ -154,14 +156,35 @@ class BaseObjectOrm:
         s = self.build_session()
         return s
 
-    def __hash__(self):
+    def _identity_for_repr_or_hash(self):
         if hasattr(self, "unique_identifier"):
-            return hash(self.unique_identifier)
-        return hash(self.id)
+            unique_identifier = self.unique_identifier
+            if unique_identifier is not None:
+                return unique_identifier
+        if hasattr(self, "uid"):
+            uid = self.uid
+            if uid is not None:
+                return uid
+        if hasattr(self, "id"):
+            return self.id
+        return None
+
+    def __hash__(self):
+        return hash(self._identity_for_repr_or_hash())
 
     def __repr__(self):
-        object_id = self.id if hasattr(self, "id") else None
-        return f"{self.class_name()}: {object_id}"
+        object_identifier = self._identity_for_repr_or_hash()
+        return f"{self.class_name()}: {object_identifier}"
+
+    def _public_detail_reference(self) -> str:
+        lookup_field = getattr(type(self), "PUBLIC_LOOKUP_FIELD", "uid")
+        object_reference = getattr(self, lookup_field, None)
+        if object_reference not in (None, ""):
+            return str(object_reference)
+
+        raise ValueError(
+            f"{type(self).__name__} must have a non-empty {lookup_field} before calling this endpoint."
+        )
 
     @classmethod
     def get_object_url(cls, custom_endpoint_name=None):
@@ -483,7 +506,8 @@ class BaseObjectOrm:
     @classmethod
     def get(cls, pk=None, timeout=None, **filters):
         """
-        Retrieves exactly one object by primary key: GET /base_url/<pk>/
+        Retrieves exactly one object by public detail reference: GET /base_url/<uid>/
+        For SDK resource lookup, use `get_by_uid()` or pass a UID.
         Raises `DoesNotExist` if 404 or the response is empty.
         Raises Exception if multiple or unexpected data is returned.
         """
@@ -522,6 +546,10 @@ class BaseObjectOrm:
 
 
         return candidates[0]
+
+    @classmethod
+    def get_by_uid(cls, uid: str, timeout=None, **filters):
+        return cls.get(pk=uid, timeout=timeout, **filters)
 
     @classmethod
     def get_or_none(cls, *arg, **kwargs):
@@ -575,7 +603,16 @@ class BaseObjectOrm:
         return cls(**r.json())
 
     @classmethod
-    def destroy_by_id(cls, instance_id, *args, timeout=None, **kwargs):
+    def _warn_deprecated_id_alias(cls, method_name: str, replacement_name: str) -> None:
+        warnings.warn(
+            f"{cls.__name__}.{method_name}() is deprecated for public resource lookup; "
+            f"use {cls.__name__}.{replacement_name}() with uid instead.",
+            DeprecationWarning,
+            stacklevel=3,
+        )
+
+    @classmethod
+    def _destroy_by_reference(cls, public_reference, *args, timeout=None, **kwargs):
         base_url = cls.get_object_url()
         payload: dict[str, Any] = {}
 
@@ -592,7 +629,7 @@ class BaseObjectOrm:
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="DELETE",
-            url=f"{base_url}/{instance_id}/",
+            url=f"{base_url}/{public_reference}/",
             payload=payload,
             time_out=timeout,
         )
@@ -600,9 +637,18 @@ class BaseObjectOrm:
             raise_for_response(r)
 
     @classmethod
-    def patch_by_id(cls, instance_id, *args, _into=None, **kwargs):
+    def destroy_by_id(cls, instance_id, *args, timeout=None, **kwargs):
+        cls._warn_deprecated_id_alias("destroy_by_id", "destroy_by_uid")
+        return cls._destroy_by_reference(instance_id, *args, timeout=timeout, **kwargs)
+
+    @classmethod
+    def destroy_by_uid(cls, uid: str, *args, timeout=None, **kwargs):
+        return cls._destroy_by_reference(uid, *args, timeout=timeout, **kwargs)
+
+    @classmethod
+    def _patch_by_reference(cls, public_reference, *args, _into=None, **kwargs):
         base_url = cls.get_object_url()
-        url = f"{base_url}/{instance_id}/"
+        url = f"{base_url}/{public_reference}/"
         data = cls.serialize_for_json(kwargs)
         payload = {"json": data}
 
@@ -692,11 +738,20 @@ class BaseObjectOrm:
         # Otherwise return a new instance
         return cls(**body)
 
+    @classmethod
+    def patch_by_id(cls, instance_id, *args, _into=None, **kwargs):
+        cls._warn_deprecated_id_alias("patch_by_id", "patch_by_uid")
+        return cls._patch_by_reference(instance_id, *args, _into=_into, **kwargs)
+
+    @classmethod
+    def patch_by_uid(cls, uid: str, *args, _into=None, **kwargs):
+        return cls._patch_by_reference(uid, *args, _into=_into, **kwargs)
+
     def patch(self, *args, **kwargs):
-        return type(self).patch_by_id(self.id, _into=self, **kwargs)
+        return type(self).patch_by_uid(self._public_detail_reference(), _into=self, **kwargs)
 
     def delete(self, *args, **kwargs):
-        return self.__class__.destroy_by_id(self.id, *args, **kwargs)
+        return self.__class__.destroy_by_uid(self._public_detail_reference(), *args, **kwargs)
 
     def get_app_label(self):
         return self.END_POINTS[self.orm_class].split("/")[0]
@@ -704,12 +759,18 @@ class BaseObjectOrm:
 
 class DetailActionObjectMixin:
     def get_detail_url(self) -> str:
-        object_id = getattr(self, "id", None)
-        if object_id is None:
-            raise ValueError(f"{type(self).__name__} must have an id before calling detail actions.")
+        if hasattr(self, "_public_detail_reference"):
+            object_reference = self._public_detail_reference()
+        else:
+            uid = getattr(self, "uid", None)
+            if uid in (None, ""):
+                raise ValueError(
+                    f"{type(self).__name__} must have a non-empty uid before calling detail actions."
+                )
+            object_reference = uid
 
         base = type(self).get_object_url().rstrip("/")
-        return f"{base}/{object_id}/"
+        return f"{base}/{object_reference}/"
 
     def get_action_url(self, action_name: str) -> str:
         return f"{self.get_detail_url().rstrip('/')}/{action_name.strip('/')}/"

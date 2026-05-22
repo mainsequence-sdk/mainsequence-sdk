@@ -14,16 +14,16 @@ from mainsequence.markets.virtualfundbuilder.contrib.signals.external_weights im
     ExternalWeights,
     ExternalWeightsConfig,
 )
+from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import (
+    AUIDWeight,
+    FixedWeights,
+    FixedWeightsConfig,
+)
 from mainsequence.markets.virtualfundbuilder.contrib.signals.intraday_trend import (
     IntradayTrend,
     IntradayTrendConfig,
 )
-from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import (
-    AUIDWeight,
-    FixedWeights,
-    FixedWeightsConfig,
-    MarketCap,
-)
+from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import MarketCap
 from mainsequence.markets.virtualfundbuilder.contrib.signals.portfolio_replicator import (
     ETFReplicator,
     ETFReplicatorConfig,

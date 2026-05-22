@@ -49,8 +49,8 @@ mainsequence project open-signed-terminal 123
 
 # Project operations
 mainsequence project add-label 123 --label rates --label research
-mainsequence data-node add-label 42 --label curated
-mainsequence simple_table add-label 41 --label reference-data
+mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
+mainsequence simple_table add-label <SIMPLE_TABLE_UID> --label reference-data
 mainsequence cc workspace add-label 7 --label trading
 
 # Compile environment

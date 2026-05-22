@@ -516,7 +516,7 @@ def build_test_simple_tables() -> None:
     }
 
     SimpleTableStorage.upsert_records_into_table(
-        simple_table_id=balances_updater.data_node_storage.id,
+        simple_table_uid=balances_updater.data_node_storage.uid,
         records=[
             {"id": inserted_balance_by_customer_id[customer_id_by_code["ACME"]].id, "balance_usd": 150_000.0},
             {"id": inserted_balance_by_customer_id[customer_id_by_code["BETA"]].id, "balance_usd": 91_250.0},

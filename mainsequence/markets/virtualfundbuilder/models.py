@@ -15,6 +15,7 @@ import mainsequence.client as msc
 from mainsequence.client import Asset
 from mainsequence.markets.virtualfundbuilder.data_nodes import (
     SignalWeights,
+    canonical_rebalance_strategy_configuration,
     canonical_signal_configuration,
 )
 from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
@@ -261,6 +262,15 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     def ser_signal_weights(self, v: SignalWeights) -> dict[str, Any]:
         """Serialize the concrete signal identity, not the canonical table identity."""
         return canonical_signal_configuration(v)
+
+    @field_serializer(
+        "rebalance_strategy_instance",
+        when_used="json",
+        return_type=dict[str, Any],
+    )
+    def ser_rebalance_strategy(self, v: RebalanceStrategyBase) -> dict[str, Any]:
+        """Serialize the concrete rebalance strategy identity."""
+        return canonical_rebalance_strategy_configuration(v)
 
 
 class PortfolioExecutionConfiguration(VFBConfigBaseModel):

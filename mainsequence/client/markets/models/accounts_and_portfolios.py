@@ -118,30 +118,35 @@ class AccountMixin(BasePydanticModel):
     uid: str
     account_is_active: bool
     account_name: str | None = None
-    holdings_data_source: int | None = None
+    holdings_data_source: dict[str, Any] | None = None
     labels: list[str] = Field(default_factory=list)
     latest_holdings: AccountLatestHoldings | None = None
     is_paper: bool
 
     @classmethod
-    def _coerce_optional_id(cls, value: Any, *, field_name: str) -> int | None:
+    def _coerce_optional_uid(cls, value: Any, *, field_name: str) -> str | None:
         if value is None:
             return None
-        if isinstance(value, int):
+        if isinstance(value, str):
             return value
-        if hasattr(value, "id") and value.id is not None:
-            return int(value.id)
-        if isinstance(value, dict) and value.get("id") is not None:
-            return int(value["id"])
-        raise TypeError(f"{field_name} must be an int id or an object with .id.")
+        if hasattr(value, "uid") and value.uid is not None:
+            return str(value.uid)
+        if isinstance(value, dict) and value.get("uid") is not None:
+            return str(value["uid"])
+        raise TypeError(f"{field_name} must be a uid or an object with .uid.")
 
     @classmethod
     def _normalize_write_kwargs(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
         normalized = dict(kwargs)
         if "holdings_data_source" in normalized:
-            normalized["holdings_data_source"] = cls._coerce_optional_id(
-                normalized["holdings_data_source"],
-                field_name="holdings_data_source",
+            raise TypeError(
+                "Use holdings_data_source_uid for account storage binding. "
+                "holdings_data_source is a read field."
+            )
+        if "holdings_data_source_uid" in normalized:
+            normalized["holdings_data_source_uid"] = cls._coerce_optional_uid(
+                normalized["holdings_data_source_uid"],
+                field_name="holdings_data_source_uid",
             )
         return normalized
 

@@ -142,10 +142,6 @@ class VFBCanonicalDataNode(DataNode):
     def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
         raise NotImplementedError
 
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return None
-
     def _canonical_config(self) -> VFBCanonicalDataNodeConfiguration:
         return self.__class__._validate_config(
             getattr(self, "config", None) or self.default_config()
@@ -218,58 +214,34 @@ class VFBCanonicalDataNode(DataNode):
     ) -> pd.DataFrame:
         return cls.validate_frame(data_frame, config=config)
 
-    def canonical_data_source_id(self) -> int:
+    def canonical_data_source_uid(self) -> str:
         return self.ensure_storage_ready()
 
-    def ensure_storage_ready(self, *, force_update: bool = False) -> int:
+    def canonical_data_source_id(self) -> str:
+        return self.canonical_data_source_uid()
+
+    def ensure_storage_ready(self, *, force_update: bool = False) -> str:
         storage = None if force_update else self._ready_storage_or_none()
-        if storage is None and not force_update:
-            storage = self._initialize_source_table_storage_or_none()
         if storage is None:
-            self.run(debug_mode=True, update_tree=False, force_update=True)
-            storage = self._ready_storage_or_none()
+            storage = self._initialize_source_table_storage_or_none()
 
         if storage is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} did not create a ready canonical "
-                "VFB data node. Run the DataNode bootstrap path before writing."
+                "VFB data node. Initialize the canonical VFB storage family "
+                "before writing."
             )
-        return _coerce_required_id(storage, field_name="data_node_storage")
+        return _coerce_required_uid(storage, field_name="data_node_storage")
 
     def _initialize_source_table_storage_or_none(self):
-        storage = self.data_node_storage
-        if _coerce_optional_id(storage, field_name="data_node_storage") is None:
-            return None
+        from .storage_initialization import initialize_portfolio_storage_source_tables
 
-        initializer_name = self._source_table_initializer_name()
-        initializer = (
-            getattr(storage, initializer_name, None) if initializer_name is not None else None
-        )
-        if not callable(initializer):
-            return None
-
-        config = self._canonical_config()
-        try:
-            initializer(
-                time_index_name=config.time_index_name,
-                index_names=config.index_names,
-                column_dtypes_map=config.column_dtypes_map,
-            )
-        except Exception as exc:
-            status_code = getattr(exc, "status_code", None)
-            if status_code in {404, 405}:
-                return None
-            raise
-
-        source_config = _storage_source_config(storage)
-        if source_config is None:
-            return None
-        self._validate_storage_contract(source_config)
-        return storage
+        initialize_portfolio_storage_source_tables(anchor_node=self)
+        return self._ready_storage_or_none()
 
     def _ready_storage_or_none(self):
         storage = self.data_node_storage
-        if _coerce_optional_id(storage, field_name="data_node_storage") is None:
+        if _coerce_optional_uid(storage, field_name="data_node_storage") is None:
             return None
 
         source_config = _storage_source_config(storage)
@@ -602,21 +574,19 @@ def _get_mapping_or_attr(value: Any, field_name: str) -> Any:
     return getattr(value, field_name, None)
 
 
-def _coerce_required_id(value: Any, *, field_name: str) -> int:
-    value_id = _coerce_optional_id(value, field_name=field_name)
-    if value_id is None:
-        raise ValueError(f"{field_name} must expose an integer id.")
-    return value_id
+def _coerce_required_uid(value: Any, *, field_name: str) -> str:
+    value_uid = _coerce_optional_uid(value, field_name=field_name)
+    if value_uid is None:
+        raise ValueError(f"{field_name} must expose a public uid.")
+    return value_uid
 
 
-def _coerce_optional_id(value: Any, *, field_name: str) -> int | None:
+def _coerce_optional_uid(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
-    if isinstance(value, int):
-        return value
-    value_id = getattr(value, "id", None)
-    if value_id is not None:
-        return int(value_id)
-    if isinstance(value, dict) and value.get("id") is not None:
-        return int(value["id"])
-    raise TypeError(f"{field_name} must be an int id or an object with .id.")
+    if isinstance(value, str):
+        return value or None
+    value_uid = value.get("uid") if isinstance(value, dict) else getattr(value, "uid", None)
+    if value_uid in (None, ""):
+        return None
+    return str(value_uid)

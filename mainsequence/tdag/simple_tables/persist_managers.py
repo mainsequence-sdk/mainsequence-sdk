@@ -109,7 +109,7 @@ class SimpleTablePersistManager(BasePersistManager):
     ) -> dict[str, Any]:
         storage_reference = storage_hash
         if self.data_node_storage is not None and not isinstance(self.data_node_storage, dict):
-            storage_reference = self.data_node_storage.id
+            storage_reference = self.data_node_storage.uid
 
         kwargs = dict(
             update_hash=self.update_hash,
@@ -160,7 +160,7 @@ class SimpleTablePersistManager(BasePersistManager):
             for record in records
         ]
         self.UPDATE_CLASS.insert_records_into_table(
-            data_node_update_id=self.data_node_update.id,
+            data_node_update_uid=self.data_node_update.uid,
             records=payload,
             overwrite=overwrite,
         )
@@ -176,7 +176,7 @@ class SimpleTablePersistManager(BasePersistManager):
         if record_id is None:
             raise ValueError("delete(...) requires a record id or a record with an 'id' field value.")
         SimpleTableStorage.delete_records_from_table(
-            data_node_storage_id=self.data_node_storage.id,
+            data_node_storage_uid=self.data_node_storage.uid,
             records_ids=[record_id],
             timeout=timeout,
         )

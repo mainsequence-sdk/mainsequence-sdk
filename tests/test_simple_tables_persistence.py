@@ -105,7 +105,7 @@ def test_insert_records_into_table_raises_before_success_log_on_http_error(monke
 
     with pytest.raises(RuntimeError, match="intentionally not implemented"):
         client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
-            data_node_update_id=1226,
+            data_node_update_uid="update-uid-1226",
             records=[{"id": 1, "name": "Alice"}],
         )
 
@@ -128,7 +128,7 @@ def test_insert_records_into_table_logs_success_only_on_success(monkeypatch):
     )
 
     client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
-        data_node_update_id=1226,
+        data_node_update_uid="update-uid-1226",
         records=[{"id": 1, "name": "Alice"}],
     )
 
@@ -163,7 +163,7 @@ def test_insert_records_into_table_sends_record_chunks(monkeypatch):
     )
 
     client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
-        data_node_update_id=1226,
+        data_node_update_uid="update-uid-1226",
         records=[
             {"id": 1, "as_of_date": datetime.date(2026, 3, 24)},
             {"id": 2, "as_of_date": datetime.date(2026, 3, 25)},
@@ -218,7 +218,7 @@ def test_insert_records_into_table_splits_413_chunks(monkeypatch):
     )
 
     client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
-        data_node_update_id=1226,
+        data_node_update_uid="update-uid-1226",
         records=[{"id": 1}, {"id": 2}, {"id": 3}],
         chunk_size=10,
     )
@@ -258,11 +258,14 @@ def test_simple_table_storage_insert_records_into_table_targets_storage_url(monk
     )
 
     client_simple_table_models.SimpleTableStorage.insert_records_into_table(
-        simple_table_id=41,
+        simple_table_uid="simple-table-uid-41",
         records=[{"id": 1, "as_of_date": datetime.date(2026, 3, 24)}],
     )
 
-    assert urls == [f"{client_simple_table_models.SimpleTableStorage.get_object_url()}/41/insert_records_into_table/"]
+    assert urls == [
+        f"{client_simple_table_models.SimpleTableStorage.get_object_url()}"
+        "/simple-table-uid-41/insert_records_into_table/"
+    ]
     assert requests_payloads[0]["json"]["chunk_index"] == 0
     assert requests_payloads[0]["json"]["total_chunks"] == 1
     assert _decode_chunk_records(requests_payloads[0]) == [
@@ -283,7 +286,7 @@ def test_simple_table_storage_upsert_records_into_table_targets_sparse_upsert_ur
     monkeypatch.setattr(client_simple_table_models, "raise_for_response", lambda response, payload=None: None)
 
     client_simple_table_models.SimpleTableStorage.upsert_records_into_table(
-        simple_table_id=41,
+        simple_table_uid="simple-table-uid-41",
         records=[
             {"id": 1, "as_of_date": datetime.date(2026, 3, 25)},
             {"id": 2, "balance_usd": 150.0},
@@ -292,7 +295,8 @@ def test_simple_table_storage_upsert_records_into_table_targets_sparse_upsert_ur
 
     assert captured["r_type"] == "POST"
     assert captured["url"] == (
-        f"{client_simple_table_models.SimpleTableStorage.get_object_url()}/41/upsert_records_into_table/"
+        f"{client_simple_table_models.SimpleTableStorage.get_object_url()}"
+        "/simple-table-uid-41/upsert_records_into_table/"
     )
     assert captured["payload"].keys() == {"json"}
     assert captured["payload"]["json"].keys() == {"data"}
@@ -334,7 +338,7 @@ def test_simple_table_storage_run_query_posts_plain_text_sql_with_params(monkeyp
     monkeypatch.setattr(client_simple_table_models, "make_request", fake_make_request)
 
     storage = client_simple_table_models.SimpleTableStorage(
-        id=41,
+        uid="storage-uid-41",
         storage_hash="orders_hash",
         source_class_name="OrdersTable",
         data_source=1,
@@ -396,7 +400,7 @@ def test_simple_table_storage_run_query_returns_structured_error_envelope(monkey
     monkeypatch.setattr(client_simple_table_models, "make_request", lambda **_kwargs: _Response())
 
     storage = client_simple_table_models.SimpleTableStorage(
-        id=41,
+        uid="storage-uid-41",
         storage_hash="orders_hash",
         source_class_name="OrdersTable",
         data_source=1,
@@ -449,7 +453,7 @@ def test_simple_table_update_insert_records_drops_none_id(monkeypatch):
     )
 
     client_simple_table_models.SimpleTableUpdate.insert_records_into_table(
-        data_node_update_id=1226,
+        data_node_update_uid="update-uid-1226",
         records=[
             {
                 "id": None,
@@ -468,7 +472,7 @@ def test_simple_table_update_insert_records_drops_none_id(monkeypatch):
     ]
 
 
-def test_delete_records_from_table_posts_ids(monkeypatch):
+def test_delete_records_from_table_routes_by_storage_uid_and_posts_row_ids(monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_make_request(**kwargs):
@@ -485,12 +489,12 @@ def test_delete_records_from_table_posts_ids(monkeypatch):
     )
 
     client_simple_table_models.SimpleTableStorage.delete_records_from_table(
-        data_node_update_id=1226,
+        data_node_storage_uid="storage-uid-1226",
         records_ids=[10, 11, 12],
     )
 
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/1226/delete_records_from_table/")
+    assert captured["url"].endswith("/storage-uid-1226/delete_records_from_table/")
     assert captured["payload"] == {"json": {"records_ids": [10, 11, 12]}}
 
 
@@ -508,7 +512,7 @@ def test_delete_records_from_table_raises_on_http_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="delete failed"):
         client_simple_table_models.SimpleTableStorage.delete_records_from_table(
-            data_node_update_id=1226,
+            data_node_storage_uid="storage-uid-1226",
             records_ids=[10, 11],
         )
 
@@ -556,9 +560,9 @@ def test_simple_table_persist_manager_delete_uses_update_delete_records_endpoint
         client_simple_table_models.SimpleTableStorage,
         "delete_records_from_table",
         classmethod(
-            lambda cls, *, data_node_storage_id, records_ids, timeout=None: captured.update(
+            lambda cls, *, data_node_storage_uid, records_ids, timeout=None: captured.update(
                 {
-                    "data_node_storage_id": data_node_storage_id,
+                    "data_node_storage_uid": data_node_storage_uid,
                     "records_ids": records_ids,
                     "timeout": timeout,
                 }
@@ -584,7 +588,7 @@ def test_simple_table_persist_manager_delete_uses_update_delete_records_endpoint
     manager.delete(row, timeout=33)
 
     assert captured == {
-        "data_node_storage_id": 41,
+        "data_node_storage_uid": "storage-uid-41",
         "records_ids": [9],
         "timeout": 33,
     }
@@ -593,11 +597,11 @@ def test_simple_table_persist_manager_delete_uses_update_delete_records_endpoint
 def _build_update(
     *,
     update_hash: str = "order_updater_hash",
-    remote_table: int | client_simple_table_models.SimpleTableStorage | None = None,
+    remote_table: str | client_simple_table_models.SimpleTableStorage | None = None,
 ) -> client_simple_table_models.SimpleTableUpdate:
     if remote_table is None:
         remote_table = client_simple_table_models.SimpleTableStorage(
-            id=41,
+            uid="storage-uid-41",
             storage_hash="storage_hash",
             data_source={"id": 1},
             build_configuration={"configuration": {}},
@@ -605,7 +609,7 @@ def _build_update(
             source_class_name="OrderUpdater",
         )
     return client_simple_table_models.SimpleTableUpdate(
-        id=11,
+        uid="update-uid-11",
         update_hash=update_hash,
         remote_table=remote_table,
         build_configuration={"configuration": {}},
@@ -637,7 +641,7 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     def fake_storage_get_or_create(cls, **kwargs):
         captured["storage_get_or_create_kwargs"] = kwargs
         return client_simple_table_models.SimpleTableStorage(
-            id=41,
+            uid="storage-uid-41",
             storage_hash=kwargs["storage_hash"],
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
@@ -654,12 +658,12 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
         return _build_update(update_hash=kwargs["update_hash"])
 
     def fake_insert_records_into_table(
-        cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False
+        cls, *, data_node_update_uid, records, overwrite=True, add_insertion_time=False
     ):
         calls = captured.setdefault("insert_calls", [])
         calls.append(
             {
-                "data_node_update_id": data_node_update_id,
+                "data_node_update_uid": data_node_update_uid,
                 "records": records,
                 "overwrite": overwrite,
                 "add_insertion_time": add_insertion_time,
@@ -728,11 +732,11 @@ def test_simple_table_persist_manager_routes_through_simple_table_update(monkeyp
     assert storage_kwargs["schema"]["model"].endswith("OrderRow")
     assert kwargs["update_hash"] == "order_updater_hash"
     assert kwargs["open_for_everyone"] is True
-    assert kwargs["remote_table"] == 41
+    assert kwargs["remote_table"] == "storage-uid-41"
     assert "hash_namespace" not in kwargs
 
     insert_calls = captured["insert_calls"]
-    assert insert_calls[0]["data_node_update_id"] == 11
+    assert insert_calls[0]["data_node_update_uid"] == "update-uid-11"
     assert insert_calls[0]["overwrite"] is False
     assert insert_calls[1]["overwrite"] is True
 
@@ -743,7 +747,7 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
     def fake_storage_get_or_create(cls, **kwargs):
         captured["storage_get_or_create_kwargs"] = kwargs
         return client_simple_table_models.SimpleTableStorage(
-            id=41,
+            uid="storage-uid-41",
             storage_hash=kwargs["storage_hash"],
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
@@ -760,12 +764,12 @@ def test_simple_table_updater_uses_persist_manager_after_backend_registration(mo
         return _build_update(update_hash=kwargs["update_hash"])
 
     def fake_insert_records_into_table(
-        cls, *, data_node_update_id, records, overwrite=True, add_insertion_time=False
+        cls, *, data_node_update_uid, records, overwrite=True, add_insertion_time=False
     ):
         calls = captured.setdefault("insert_calls", [])
         calls.append(
             {
-                "data_node_update_id": data_node_update_id,
+                "data_node_update_uid": data_node_update_uid,
                 "records": records,
                 "overwrite": overwrite,
             }
@@ -825,7 +829,7 @@ def test_simple_table_updater_execute_filter_bootstraps_remote_objects(monkeypat
     def fake_storage_get_or_create(cls, **kwargs):
         captured["storage_get_or_create_kwargs"] = kwargs
         return client_simple_table_models.SimpleTableStorage(
-            id=41,
+            uid="storage-uid-41",
             storage_hash=kwargs["storage_hash"],
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
@@ -927,7 +931,7 @@ def test_simple_table_persist_manager_skips_storage_create_when_remote_loaded(mo
         configuration=OrderUpdaterConfiguration(tenant="desk_a"),
     )
     manager.data_node_storage = client_simple_table_models.SimpleTableStorage(
-        id=41,
+        uid="storage-uid-41",
         storage_hash="existing_storage_hash",
         data_source={"id": 1},
         build_configuration={"configuration": {"tenant": "desk_a"}},
@@ -1017,7 +1021,7 @@ def test_simple_table_delete_uses_detail_delete(monkeypatch):
 
 def test_simple_table_storage_accepts_relations_payloads():
     storage = client_simple_table_models.SimpleTableStorage(
-        id=41,
+        uid="storage-uid-41",
         storage_hash="storage_hash",
         data_source={"id": 1},
         schema={"model": "tests.test_simple_tables_persistence.OrderRow", "fields": []},
@@ -1176,7 +1180,7 @@ def test_simple_table_updater_resolves_foreign_keys_to_storage_ids(monkeypatch):
         schema_model = kwargs["schema"]["model"]
         storage_id = 101 if schema_model.endswith("CustomerRow") else 202
         return client_simple_table_models.SimpleTableStorage(
-            id=storage_id,
+            uid=f"storage-uid-{storage_id}",
             storage_hash=kwargs["storage_hash"],
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
@@ -1235,7 +1239,7 @@ def test_simple_table_updater_resolves_foreign_keys_to_storage_ids(monkeypatch):
         storage_call["source_class_name"] == "CustomersUpdater"
         for storage_call in captured_storage_calls
     )
-    assert foreign_key == {"target": 101, "on_delete": "cascade"}
+    assert foreign_key == {"target": "storage-uid-101", "on_delete": "cascade"}
 
 
 def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypatch):
@@ -1298,7 +1302,7 @@ def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypat
         captured_storage_calls.append(kwargs)
         model_name = kwargs["schema"]["model"].split(".")[-1]
         return client_simple_table_models.SimpleTableStorage(
-            id=storage_ids[model_name],
+            uid=f"storage-uid-{storage_ids[model_name]}",
             storage_hash=kwargs["storage_hash"],
             data_source=kwargs["data_source"],
             build_configuration=kwargs["build_configuration"],
@@ -1366,8 +1370,8 @@ def test_simple_table_updater_recursively_resolves_nested_foreign_keys(monkeypat
         storage_call["source_class_name"] == "CustomersUpdater"
         for storage_call in captured_storage_calls
     )
-    assert balance_fk == {"target": 302, "on_delete": "cascade"}
-    assert customer_fk == {"target": 301, "on_delete": "restrict"}
+    assert balance_fk == {"target": "storage-uid-302", "on_delete": "cascade"}
+    assert customer_fk == {"target": "storage-uid-301", "on_delete": "restrict"}
 
 
 def test_simple_table_updater_requires_foreign_key_targets_in_dependencies():

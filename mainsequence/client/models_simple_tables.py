@@ -83,9 +83,9 @@ class SimpleTableForeignKeyPayload(BasePydanticModel):
         ...,
         description="Column on the source simple table that points to the target table.",
     )
-    target_table: int = Field(
+    target_table_uid: str = Field(
         ...,
-        description="Primary key of the target simple table referenced by this foreign key.",
+        description="Public uid of the target simple table referenced by this foreign key.",
     )
     target_column: str = Field(
         ...,
@@ -277,21 +277,20 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
-        "id": ["in", "exact", "contains"],
+        "uid": ["in", "exact"],
         "data_source__id": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "id": "id",
-        "id__in": "id",
+        "uid": "str",
+        "uid__in": "str",
         "data_source__id": "id",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",
     }
 
-    id: int | None = Field(None, description="Primary key, auto-incremented ID")
     source_class_name: str | None = None
     data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
     simple_table_schema: dict[str, Any] | None = Field(
@@ -375,7 +374,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
         Execute a raw SQL query against this simple table.
 
         This hits:
-            POST /orm/api/ts_manager/simple_table/{id}/run_query/
+            POST /orm/api/ts_manager/simple_table/{uid}/run_query/
 
         Request contract:
         - body is the raw SQL string as `text/plain`
@@ -391,8 +390,8 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
           that envelope is returned directly so callers can inspect the backend
           error payload
         """
-        if self.id is None:
-            raise ValueError("SimpleTableStorage must have an id before running a query.")
+        if self.uid is None:
+            raise ValueError("SimpleTableStorage must have a uid before running a query.")
 
         sql = str(sql or "").strip()
         if not sql:
@@ -405,7 +404,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
             params["statement_timeout_ms"] = int(statement_timeout_ms)
 
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/run_query/"
+        url = f"{cls.get_object_url()}/{self._public_uid()}/run_query/"
         session = cls.build_session()
         old_content_type = session.headers.get("Content-Type")
         session.headers["Content-Type"] = "text/plain"
@@ -524,7 +523,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
     @classmethod
     def insert_records_into_table(
         cls,
-        simple_table_id: int,
+        simple_table_uid: str,
         records: list[dict[str, Any]],
         overwrite: bool = True,
         add_insertion_time: bool = False,
@@ -532,9 +531,10 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
         chunk_size: int = 50_000,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
     ) -> None:
-        url = cls.get_object_url() + f"/{simple_table_id}/insert_records_into_table/"
+        table_uid = str(simple_table_uid)
+        url = cls.get_object_url() + f"/{table_uid}/insert_records_into_table/"
         _insert_records_in_chunks(
-            owner_label=f"simple table {simple_table_id}",
+            owner_label=f"simple table {table_uid}",
             url=url,
             records=records,
             overwrite=overwrite,
@@ -546,7 +546,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
     @classmethod
     def upsert_records_into_table(
         cls,
-        simple_table_id: int,
+        simple_table_uid: str,
         records: list[dict[str, Any]],
         *,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
@@ -564,7 +564,8 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
             logger.info("No records to upsert.")
             return
 
-        url = cls.get_object_url() + f"/{simple_table_id}/upsert_records_into_table/"
+        table_uid = str(simple_table_uid)
+        url = cls.get_object_url() + f"/{table_uid}/upsert_records_into_table/"
         payload = {
             "json": {
                 "data": _compress_records_payload(serialized_records),
@@ -584,7 +585,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
     @classmethod
     def delete_records_from_table(
         cls,
-        data_node_storage_id: int,
+        data_node_storage_uid: str,
         records_ids: list[int],
         *,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
@@ -593,7 +594,8 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
             return
 
         s = cls.build_session()
-        url = cls.get_object_url()  + f"/{data_node_storage_id}/delete_records_from_table/"
+        table_uid = str(data_node_storage_uid)
+        url = cls.get_object_url()  + f"/{table_uid}/delete_records_from_table/"
         payload = {"json": {"records_ids": records_ids}}
 
         response = make_request(
@@ -662,7 +664,7 @@ class SimpleTableStorage(AbstractTable, LabelableObjectMixin, BasePydanticModel,
 class STSourceTableConfiguration(SourceTableConfigurationBase,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables/source_table_configuration"
 
-    related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
+    related_table_uid: str | None = Field(None, description="Public uid of the related SimpleTableStorage")
     columns_metadata: list[STColumnMetaData] | None = None
 
     def set_or_update_columns_metadata(
@@ -689,7 +691,7 @@ class SimpleTableRunConfiguration(BasePydanticModel, BaseObjectOrm):
 class SimpleTableUpdateRecord(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table/update_historical"
 
-    related_table: int | SimpleTableStorage
+    related_table_uid: str | None = Field(None, description="Public uid of the related SimpleTableUpdate")
 
 
 SimpleTableUpdateHistorical = SimpleTableUpdateRecord
@@ -699,6 +701,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     model_config = ConfigDict(extra="forbid")
     ENDPOINT: ClassVar[str] = "ts_manager/simple_table/update"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
         "update_hash": ["exact"],
         "remote_table__data_source__id": ["exact"],
         "related_table__namespace": ["contains", "in", "isnull"],
@@ -717,7 +720,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     }
     NODE_TYPE: ClassVar[str] = "simple_table_update"
 
-    remote_table: int | SimpleTableStorage = Field(
+    remote_table: str | SimpleTableStorage = Field(
         ...,
         validation_alias=AliasChoices("remote_table", "simple_table"),
         description="Simple table storage referenced by this update.",
@@ -731,7 +734,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         ),
     )
     description: str | None = Field(None, description="Optional HTML description")
-    update_details: SimpleTableUpdateDetails | int | None = None
+    update_details: SimpleTableUpdateDetails | None = None
     run_configuration: SimpleTableRunConfiguration | None = None
     open_for_everyone: bool = Field(
         default=False, description="Whether the ts is open for everyone"
@@ -739,7 +742,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
 
     @property
     def data_source_id(self):
-        if isinstance(self.remote_table, int):
+        if isinstance(self.remote_table, str):
             return None
         if isinstance(self.remote_table.data_source, dict):
             return self.remote_table.data_source.get("id")
@@ -775,7 +778,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         payload = {"json": {"tags": tags}}
         # r = self.s.get(, )
-        url = f"{base_url}/{self.id}/add_tags/"
+        url = f"{base_url}/{self._public_uid()}/add_tags/"
         r = make_request(
             s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=timeout
         )
@@ -803,7 +806,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         s = self.build_session()
         base_url = self.get_object_url()
         payload = {"json": kwargs}
-        url = f"{base_url}/{self.id}/set_start_of_execution/"
+        url = f"{base_url}/{self._public_uid()}/set_start_of_execution/"
         r = make_request(
             s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, accept_gzip=True
         )
@@ -824,7 +827,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             **result["historical_update"],
 
             must_update=result["must_update"],
-            direct_dependencies_ids=result["direct_dependencies_ids"],
+            direct_dependency_uids=result.get("direct_dependency_uids"),
         )
         return hu
 
@@ -832,7 +835,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         self, historical_update_id: int, timeout=None, threaded_request=True, **kwargs
     ):
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/set_end_of_execution/"
+        url = self.get_object_url() + f"/{self._public_uid()}/set_end_of_execution/"
         kwargs.update(dict(historical_update_id=historical_update_id))
         payload = {"json": kwargs}
 
@@ -897,7 +900,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
 
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/get_all_dependencies_update_priority/"
+        url = self.get_object_url() + f"/{self._public_uid()}/get_all_dependencies_update_priority/"
         r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout)
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
@@ -905,27 +908,27 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         depth_df = pd.DataFrame(r.json())
 
         if not depth_df.empty:
-            id_candidates = [
+            uid_candidates = [
                 c
-                for c in ["update_node_id", "local_time_serie_id", "data_node_update_id"]
+                for c in ["update_node_uid", "local_time_serie_uid", "data_node_update_uid"]
                 if c in depth_df.columns
             ]
 
-            if id_candidates:
-                update_node_id = None
-                for col in id_candidates:
+            if uid_candidates:
+                update_node_uid = None
+                for col in uid_candidates:
                     series = depth_df[col]
                     if isinstance(series, pd.DataFrame):
                         series = series.iloc[:, 0]
-                    update_node_id = (
-                        series if update_node_id is None else update_node_id.fillna(series)
+                    update_node_uid = (
+                        series if update_node_uid is None else update_node_uid.fillna(series)
                     )
 
                 depth_df = depth_df.drop(
-                    columns=["update_node_id", "local_time_serie_id", "data_node_update_id"],
+                    columns=["update_node_uid", "local_time_serie_uid", "data_node_update_uid"],
                     errors="ignore",
                 )
-                depth_df["update_node_id"] = update_node_id
+                depth_df["update_node_uid"] = update_node_uid
 
         return depth_df
 
@@ -940,7 +943,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         timeout=None,
     ) -> SimpleTableUpdate:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/set_last_update_index_time_from_update_stats/"
+        url = self.get_object_url() + f"/{self._public_uid()}/set_last_update_index_time_from_update_stats/"
 
         data_to_comp = build_last_update_index_time_payload(
             global_index_progress=global_index_progress,
@@ -1000,7 +1003,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         })
         """
         s = self.build_session()
-        url = self.get_object_url() + f"/{self.id}/verify_if_direct_dependencies_are_updated/"
+        url = self.get_object_url() + f"/{self._public_uid()}/verify_if_direct_dependencies_are_updated/"
         r = make_request(s=s, loaders=None, r_type="GET", url=url)
         if r.status_code != 200:
             raise Exception(f"Error in request: {r.text}")
@@ -1014,7 +1017,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     @classmethod
     def insert_records_into_table(
         cls,
-        data_node_update_id,
+        data_node_update_uid: str,
         records: list[dict],
         overwrite: bool = True,
         add_insertion_time: bool = False,
@@ -1022,9 +1025,10 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         chunk_size: int = 50_000,
         timeout: int | float | tuple[float, float] | None = 60 * 15,
     ):
-        url = cls.get_object_url() + f"/{data_node_update_id}/insert_records_into_table/"
+        update_uid = str(data_node_update_uid)
+        url = cls.get_object_url() + f"/{update_uid}/insert_records_into_table/"
         _insert_records_in_chunks(
-            owner_label=f"simple table update {data_node_update_id}",
+            owner_label=f"simple table update {update_uid}",
             url=url,
             records=records,
             overwrite=overwrite,
@@ -1036,7 +1040,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
     @classmethod
     def insert_data_into_table(
         cls,
-        data_node_update_id,
+        data_node_update_uid: str,
         records: list[dict],
         overwrite: bool = True,
         add_insertion_time: bool = False,
@@ -1045,7 +1049,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         timeout: int | float | tuple[float, float] | None = 60 * 15,
     ):
         return cls.insert_records_into_table(
-            data_node_update_id=data_node_update_id,
+            data_node_update_uid=data_node_update_uid,
             records=records,
             overwrite=overwrite,
             add_insertion_time=add_insertion_time,
@@ -1058,7 +1062,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
         cls,
         update_nodes: Sequence[UpdateNodeRef],
         update_details_kwargs: Mapping[str, Any],
-        update_priority_dict: Mapping[int, int] | None,
+        update_priority_dict: Mapping[str, int] | None,
     ):
         """
         {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_id': 1},
@@ -1084,13 +1088,13 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
         response_json = r.json()
         source_table_config_map = {
-            int(k): STSourceTableConfiguration(**v) if v is not None else v
+            str(k): STSourceTableConfiguration(**v) if v is not None else v
             for k, v in response_json["source_table_config_map"].items()
         }
         state_data = {
-            int(k): SimpleTableUpdateDetails(**v) for k, v in response_json["state_data"].items()
+            str(k): SimpleTableUpdateDetails(**v) for k, v in response_json["state_data"].items()
         }
-        all_index_stats = {int(k): v for k, v in response_json["all_index_stats"].items()}
+        all_index_stats = {str(k): v for k, v in response_json["all_index_stats"].items()}
         data_node_updates = [SimpleTableUpdate(**v) for v in response_json["local_metadatas"]]
         return UpdateBatchResponse[
             SimpleTableUpdate,
@@ -1103,26 +1107,26 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
             data_node_updates=data_node_updates,
         )
 
-    def depends_on_connect(self, target_time_serie_id):
+    def depends_on_connect(self, target_update_node_uid: str):
 
-        url = self.get_object_url() + f"/{self.id}/depends_on_connect/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_time_serie_id": target_time_serie_id,
+                "target_update_node_uid": str(target_update_node_uid),
             }
         )
         r = make_request(s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload)
         if r.status_code != 204:
             raise Exception(f"Error in request {r.text}")
 
-    def depends_on_connect_to_api_table(self, target_table_id, timeout=None):
+    def depends_on_connect_to_api_table(self, target_table_uid: str, timeout=None):
 
-        url = self.get_object_url() + f"/{self.id}/depends_on_connect_to_api_table/"
+        url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect_to_api_table/"
         s = self.build_session()
         payload = dict(
             json={
-                "target_table_id": target_table_id,
+                "target_table_uid": str(target_table_uid),
             }
         )
         r = make_request(
@@ -1234,7 +1238,7 @@ class SimpleTableUpdate(TableUpdateNode, BaseObjectOrm):
 
 class SimpleTableUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/simple_tables_update_details"
-    related_table: int | SimpleTableStorage | None = Field(None, description="Related table")
+    related_table_uid: str | None = Field(None, description="Public uid of the related SimpleTableStorage")
     run_configuration: SimpleTableRunConfiguration | None = None
 
     @staticmethod

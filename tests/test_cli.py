@@ -462,12 +462,12 @@ def test_list_simple_table_storages_uses_client_model(cli_mod, monkeypatch):
     captured = {}
 
     class FakeStorage:
-        def __init__(self, storage_id, source_class_name):
-            self.id = storage_id
+        def __init__(self, storage_uid, source_class_name):
+            self.uid = storage_uid
             self.source_class_name = source_class_name
 
         def model_dump(self, mode="json"):
-            return {"id": self.id, "source_class_name": self.source_class_name}
+            return {"uid": self.uid, "source_class_name": self.source_class_name}
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
@@ -478,20 +478,20 @@ def test_list_simple_table_storages_uses_client_model(cli_mod, monkeypatch):
             def filter(cls, timeout=None, **kwargs):
                 captured["timeout"] = timeout
                 captured["filters"] = kwargs
-                return [FakeStorage(41, "OrdersTable")]
+                return [FakeStorage("simple-table-storage-41", "OrdersTable")]
 
         return operation(_ClientSimpleTableStorage)
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.list_simple_table_storages(timeout=5, filters={"id": 41})
+    out = api_mod.list_simple_table_storages(timeout=5, filters={"uid": "simple-table-storage-41"})
     assert captured == {
         "module_name": "mainsequence.client.models_simple_tables",
         "class_name": "SimpleTableStorage",
         "timeout": 5,
-        "filters": {"id": 41},
+        "filters": {"uid": "simple-table-storage-41"},
     }
-    assert out == [{"id": 41, "source_class_name": "OrdersTable"}]
+    assert out == [{"uid": "simple-table-storage-41", "source_class_name": "OrdersTable"}]
 
 
 def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
@@ -504,8 +504,8 @@ def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientSimpleTableStorage:
             @classmethod
-            def get(cls, pk, timeout=None):
-                captured["pk"] = pk
+            def get(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
 
                 class _Storage:
@@ -517,7 +517,7 @@ def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
                         return {
                             "ok": True,
                             "query_id": "query-123",
-                            "simple_table_id": pk,
+                            "simple_table_uid": uid,
                             "results": [{"value": 1}],
                             "truncated": False,
                             "max_rows": max_rows,
@@ -532,7 +532,7 @@ def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
     out = api_mod.run_simple_table_storage_query(
-        41,
+        "simple-table-storage-41",
         "SELECT 1 AS value",
         max_rows=1000,
         statement_timeout_ms=15000,
@@ -541,7 +541,7 @@ def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
     assert captured == {
         "module_name": "mainsequence.client.models_simple_tables",
         "class_name": "SimpleTableStorage",
-        "pk": 41,
+        "uid": "simple-table-storage-41",
         "timeout": 12,
         "sql": "SELECT 1 AS value",
         "max_rows": 1000,
@@ -549,7 +549,7 @@ def test_run_simple_table_storage_query_uses_client_model(cli_mod, monkeypatch):
         "query_timeout": 12,
     }
     assert out["ok"] is True
-    assert out["simple_table_id"] == 41
+    assert out["simple_table_uid"] == "simple-table-storage-41"
     assert out["results"] == [{"value": 1}]
 
 
@@ -560,7 +560,7 @@ def test_simple_tables_list(cli_mod, runner, monkeypatch):
         "list_simple_table_storages",
         lambda timeout=None, filters=None: [
             {
-                "id": 41,
+                "uid": "simple-table-storage-41",
                 "source_class_name": "OrdersTable",
                 "namespace": "pytest_orders",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
@@ -608,8 +608,8 @@ def test_simple_tables_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_simple_table_storage",
-        lambda storage_id, timeout=None: {
-            "id": storage_id,
+        lambda storage_uid, timeout=None: {
+            "uid": storage_uid,
             "source_class_name": "OrdersTable",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "columns": [{"column_name": "id"}, {"column_name": "symbol"}],
@@ -623,7 +623,7 @@ def test_simple_tables_detail(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["simple_table", "detail", "41"])
+    result = runner.invoke(cli_mod.app, ["simple_table", "detail", "simple-table-storage-41"])
     assert result.exit_code == 0
     assert "Simple Table" in result.output
     assert "OrdersTable" in result.output
@@ -634,8 +634,8 @@ def test_simple_tables_run_query(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _run_query(storage_id, sql, *, max_rows=None, statement_timeout_ms=None, timeout=None):
-        captured["storage_id"] = storage_id
+    def _run_query(storage_uid, sql, *, max_rows=None, statement_timeout_ms=None, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["sql"] = sql
         captured["max_rows"] = max_rows
         captured["statement_timeout_ms"] = statement_timeout_ms
@@ -643,7 +643,7 @@ def test_simple_tables_run_query(cli_mod, runner, monkeypatch):
         return {
             "ok": True,
             "query_id": "query-123",
-            "simple_table_id": storage_id,
+            "simple_table_uid": storage_uid,
             "results": [{"value": 1}],
             "truncated": False,
             "max_rows": max_rows,
@@ -658,7 +658,7 @@ def test_simple_tables_run_query(cli_mod, runner, monkeypatch):
         [
             "simple_table",
             "run_query",
-            "41",
+            "simple-table-storage-41",
             "SELECT 1 AS value",
             "--max-rows",
             "1000",
@@ -670,13 +670,13 @@ def test_simple_tables_run_query(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert captured == {
-        "storage_id": 41,
+        "storage_uid": "simple-table-storage-41",
         "sql": "SELECT 1 AS value",
         "max_rows": 1000,
         "statement_timeout_ms": 15000,
         "timeout": 25,
     }
-    assert "Simple table query completed: id=41" in result.output
+    assert "Simple table query completed: uid=simple-table-storage-41" in result.output
     assert "Simple Table Query" in result.output
     assert "query-123" in result.output
     assert '"value": 1' in result.output
@@ -688,8 +688,8 @@ def test_simple_tables_delete(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_simple_table_storage",
-        lambda storage_id, timeout=None: {
-            "id": storage_id,
+        lambda storage_uid, timeout=None: {
+            "uid": storage_uid,
             "source_class_name": "OrdersTable",
             "columns": [{"column_name": "id"}],
             "foreign_keys": [],
@@ -701,11 +701,11 @@ def test_simple_tables_delete(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod, "_require_delete_verification", lambda **kwargs: None)
 
-    def _delete(storage_id, *, timeout=None):
-        captured["storage_id"] = storage_id
+    def _delete(storage_uid, *, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["timeout"] = timeout
         return {
-            "id": storage_id,
+            "uid": storage_uid,
             "source_class_name": "OrdersTable",
             "columns": [{"column_name": "id"}],
             "foreign_keys": [],
@@ -717,18 +717,18 @@ def test_simple_tables_delete(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "delete_simple_table_storage", _delete)
 
-    result = runner.invoke(cli_mod.app, ["simple_table", "delete", "41"])
+    result = runner.invoke(cli_mod.app, ["simple_table", "delete", "simple-table-storage-41"])
     assert result.exit_code == 0
-    assert captured == {"storage_id": 41, "timeout": None}
-    assert "Simple table deleted: id=41" in result.output
+    assert captured == {"storage_uid": "simple-table-storage-41", "timeout": None}
+    assert "Simple table deleted: uid=simple-table-storage-41" in result.output
 
 
 def test_simple_tables_add_label(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(storage_id, labels, timeout=None):
-        captured["storage_id"] = storage_id
+    def _add(storage_uid, labels, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "reference-data"}, {"name": "curated"}]}
@@ -737,10 +737,10 @@ def test_simple_tables_add_label(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["simple_table", "add-label", "41", "--label", "reference-data", "--label", "curated"],
+        ["simple_table", "add-label", "simple-table-storage-41", "--label", "reference-data", "--label", "curated"],
     )
     assert result.exit_code == 0
-    assert captured == {"storage_id": 41, "labels": ["reference-data", "curated"], "timeout": None}
+    assert captured == {"storage_uid": "simple-table-storage-41", "labels": ["reference-data", "curated"], "timeout": None}
     assert "Simple Table add-label completed." in result.output
     assert "reference-data, curated" in result.output
 
@@ -4819,7 +4819,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                 return [
                     types.SimpleNamespace(
                         model_dump=lambda *args, **kwargs: {
-                            "id": 42,
+                            "uid": "data-node-storage-42",
                             "storage_hash": "weights_daily",
                             "source_class_name": "PortfolioWeights",
                             "identifier": "weights_daily",
@@ -4830,11 +4830,11 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             ]
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
             return types.SimpleNamespace(
                 model_dump=lambda *args, **kwargs: {
-                    "id": pk,
+                    "uid": uid,
                     "storage_hash": "weights_daily",
                     "source_class_name": "PortfolioWeights",
                     "identifier": "weights_daily",
@@ -4854,13 +4854,13 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
     out = api_mod.list_data_node_storages(filters={"storage_hash__contains": "weights"})
-    detail = api_mod.get_data_node_storage(42)
+    detail = api_mod.get_data_node_storage("data-node-storage-42")
     assert captured["filters"][0] == {"storage_hash__contains": "weights"}
-    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": None}
+    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": None}
     assert captured["jwt"] == ("acc", "ref")
     assert out == [
         {
-            "id": 42,
+            "uid": "data-node-storage-42",
             "storage_hash": "weights_daily",
             "source_class_name": "PortfolioWeights",
             "identifier": "weights_daily",
@@ -4868,7 +4868,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             "data_frequency_id": "1d",
         }
     ]
-    assert detail["id"] == 42
+    assert detail["uid"] == "data-node-storage-42"
     assert detail["storage_hash"] == "weights_daily"
 
 
@@ -4993,7 +4993,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
                 "results": [
                     types.SimpleNamespace(
                         model_dump=lambda *args, **kwargs: {
-                            "id": 42,
+                            "uid": "data-node-storage-42",
                             "storage_hash": "weights_daily",
                             "identifier": "weights_daily",
                         }
@@ -5038,7 +5038,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
         "previous": None,
         "results": [
             {
-                "id": 42,
+                "uid": "data-node-storage-42",
                 "storage_hash": "weights_daily",
                 "identifier": "weights_daily",
             }
@@ -5080,7 +5080,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             return [
                 types.SimpleNamespace(
                     model_dump=lambda *args, **kwargs: {
-                        "id": 43,
+                        "uid": "data-node-storage-43",
                         "storage_hash": "prices_daily",
                         "identifier": "prices_daily",
                     }
@@ -5102,7 +5102,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "prices"}}
     assert out == [
         {
-            "id": 43,
+            "uid": "data-node-storage-43",
             "storage_hash": "prices_daily",
             "identifier": "prices_daily",
         }
@@ -5138,8 +5138,8 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
         ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
 
             class _Storage:
                 def refresh_table_search_index(self, *, timeout=None):
@@ -5157,12 +5157,12 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.refresh_data_node_storage_search_index(42, timeout=30)
+    out = api_mod.refresh_data_node_storage_search_index("data-node-storage-42", timeout=30)
 
     assert captured["jwt"] == ("acc", "ref")
-    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 30}
+    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 30}
     assert captured["refresh"] == {"timeout": 30}
-    assert out == {"status": "queued", "message": "refresh started", "id": 42}
+    assert out == {"status": "queued", "message": "refresh started", "uid": "data-node-storage-42"}
 
 
 def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
@@ -5194,15 +5194,13 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
 
             class _Storage:
-                id = pk
-
                 def model_dump(self, mode="python"):
                     return {
-                        "id": pk,
+                        "uid": uid,
                         "storage_hash": "weights_daily",
                         "identifier": "weights_daily",
                     }
@@ -5236,14 +5234,14 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
     out = api_mod.delete_data_node_storage(
-        42,
+        "data-node-storage-42",
         full_delete_selected=True,
         full_delete_downstream_tables=True,
         delete_with_no_table=False,
         override_protection=True,
         timeout=30,
     )
-    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 30}
+    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 30}
     assert captured["delete"] == {
         "full_delete_selected": True,
         "full_delete_downstream_tables": True,
@@ -5252,7 +5250,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
         "timeout": 30,
     }
     assert captured["jwt"] == ("acc", "ref")
-    assert out == {"id": 42, "storage_hash": "weights_daily", "identifier": "weights_daily"}
+    assert out == {"uid": "data-node-storage-42", "storage_hash": "weights_daily", "identifier": "weights_daily"}
 
 
 def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkeypatch):
@@ -5284,15 +5282,15 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
         ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
 
             class _Storage:
                 def can_view(self, timeout=None):
                     captured["can_view_timeout"] = timeout
                     return types.SimpleNamespace(
                         model_dump=lambda mode="python": {
-                            "object_id": pk,
+                            "object_id": uid,
                             "object_type": "tdag.datanodestorage",
                             "access_level": "view",
                             "users": [
@@ -5319,8 +5317,8 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.list_data_node_storage_users_can_view(42, timeout=15)
-    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 15}
+    out = api_mod.list_data_node_storage_users_can_view("data-node-storage-42", timeout=15)
+    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 15}
     assert captured["can_view_timeout"] == 15
     assert captured["jwt"] == ("acc", "ref")
     assert out["users"][0]["username"] == "viewer"
@@ -5355,8 +5353,8 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
         ROOT_URL = "https://old.test/orm/api/ts_manager/dynamic_table"
 
         @classmethod
-        def get(cls, pk=None, timeout=None, **filters):
-            captured["get"] = {"pk": pk, "filters": filters, "timeout": timeout}
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
 
             class _Storage:
                 def add_to_edit(self, user_id, timeout=None):
@@ -5365,7 +5363,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
                         "ok": True,
                         "action": "add_to_edit",
                         "detail": "User now has explicit edit access.",
-                        "object_id": pk,
+                        "object_id": uid,
                         "object_type": "tdag.datanodestorage",
                         "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
                         "explicit_can_view": True,
@@ -5385,8 +5383,8 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.add_data_node_storage_user_to_edit(42, 9, timeout=16)
-    assert captured["get"] == {"pk": 42, "filters": {}, "timeout": 16}
+    out = api_mod.add_data_node_storage_user_to_edit("data-node-storage-42", 9, timeout=16)
+    assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 16}
     assert captured["add_to_edit"] == {"user_id": 9, "timeout": 16}
     assert captured["jwt"] == ("acc", "ref")
     assert out["action"] == "add_to_edit"
@@ -7515,7 +7513,7 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
         "list_data_node_storages",
         lambda filters=None, timeout=None: [
             {
-                "id": 42,
+                "uid": "data-node-storage-42",
                 "storage_hash": "weights_daily",
                 "source_class_name": "PortfolioWeights",
                 "identifier": "weights_daily",
@@ -7592,7 +7590,7 @@ def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch)
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
-        return {"id__in": ["42", "43"]}
+        return {"uid__in": ["data-node-storage-42", "data-node-storage-43"]}
 
     def _list(timeout=None, filters=None):
         captured["filters"] = filters
@@ -7601,10 +7599,10 @@ def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch)
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
     monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "list", "--filter", "id__in=42,43"])
+    result = runner.invoke(cli_mod.app, ["data-node", "list", "--filter", "uid__in=data-node-storage-42,data-node-storage-43"])
     assert result.exit_code == 0
-    assert captured["entries"] == ["id__in=42,43"]
-    assert captured["filters"] == {"id__in": ["42", "43"]}
+    assert captured["entries"] == ["uid__in=data-node-storage-42,data-node-storage-43"]
+    assert captured["filters"] == {"uid__in": ["data-node-storage-42", "data-node-storage-43"]}
 
 
 def test_data_node_storage_search_supports_data_source_id_option(cli_mod, runner, monkeypatch):
@@ -7698,7 +7696,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
             "previous": None,
             "results": [
                 {
-                    "id": 42,
+                    "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
                     "source_class_name": "PortfolioWeights",
                     "identifier": "weights_daily",
@@ -7764,7 +7762,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
         captured["search"] = {"q": q, "filters": filters}
         return [
             {
-                "id": 43,
+                "uid": "data-node-storage-43",
                 "storage_hash": "prices_daily",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
@@ -7824,7 +7822,7 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
             "previous": None,
             "results": [
                 {
-                    "id": 42,
+                    "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
                     "source_class_name": "PortfolioWeights",
                     "identifier": "weights_daily",
@@ -7838,7 +7836,7 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
         captured["column"] = {"q": q, "filters": filters}
         return [
             {
-                "id": 43,
+                "uid": "data-node-storage-43",
                 "storage_hash": "prices_daily",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
@@ -7902,8 +7900,8 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_data_node_storage",
-        lambda storage_id, timeout=None: {
-            "id": storage_id,
+        lambda storage_uid, timeout=None: {
+            "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
             "source_class_name": "PortfolioWeights",
@@ -7933,7 +7931,7 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["data-node", "detail", "42"])
+    result = runner.invoke(cli_mod.app, ["data-node", "detail", "data-node-storage-42"])
     assert result.exit_code == 0
     assert "Data Node Storage" in result.output
     assert "weights_daily" in result.output
@@ -7957,8 +7955,8 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientDataNodeStorage:
             @classmethod
-            def get(cls, pk, timeout=None):
-                captured["pk"] = pk
+            def get(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
 
                 class _Storage:
@@ -7968,7 +7966,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
                         return {
                             "ok": True,
                             "query_id": "query-456",
-                            "dynamic_table_id": pk,
+                            "dynamic_table_uid": uid,
                             "results": [{"value": 1}],
                             "truncated": False,
                             "max_rows": 0,
@@ -7982,17 +7980,17 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.run_data_node_storage_query(42, "SELECT 1 AS value", timeout=14)
+    out = api_mod.run_data_node_storage_query("data-node-storage-42", "SELECT 1 AS value", timeout=14)
     assert captured == {
         "module_name": "mainsequence.client.models_tdag",
         "class_name": "DataNodeStorage",
-        "pk": 42,
+        "uid": "data-node-storage-42",
         "timeout": 14,
         "sql": "SELECT 1 AS value",
         "query_timeout": 14,
     }
     assert out["ok"] is True
-    assert out["dynamic_table_id"] == 42
+    assert out["dynamic_table_uid"] == "data-node-storage-42"
     assert out["results"] == [{"value": 1}]
 
 
@@ -8000,14 +7998,14 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _run_query(storage_id, sql, *, timeout=None):
-        captured["storage_id"] = storage_id
+    def _run_query(storage_uid, sql, *, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["sql"] = sql
         captured["timeout"] = timeout
         return {
             "ok": True,
             "query_id": "query-456",
-            "dynamic_table_id": storage_id,
+            "dynamic_table_uid": storage_uid,
             "results": [{"value": 1}],
             "truncated": False,
             "max_rows": 0,
@@ -8019,15 +8017,15 @@ def test_data_node_storage_run_query(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "run_query", "42", "SELECT 1 AS value", "--timeout", "15"],
+        ["data-node", "run_query", "data-node-storage-42", "SELECT 1 AS value", "--timeout", "15"],
     )
     assert result.exit_code == 0
     assert captured == {
-        "storage_id": 42,
+        "storage_uid": "data-node-storage-42",
         "sql": "SELECT 1 AS value",
         "timeout": 15,
     }
-    assert "Data node query completed: id=42" in result.output
+    assert "Data node query completed: uid=data-node-storage-42" in result.output
     assert "Data Node Query" in result.output
     assert "query-456" in result.output
     assert '"value": 1' in result.output
@@ -8038,21 +8036,21 @@ def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _refresh(storage_id, timeout=None):
-        captured["storage_id"] = storage_id
+    def _refresh(storage_uid, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["timeout"] = timeout
         return {
-            "id": storage_id,
+            "uid": storage_uid,
             "status": "queued",
             "message": "refresh started",
         }
 
     monkeypatch.setattr(cli_mod, "refresh_data_node_storage_search_index", _refresh)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "refresh-search-index", "42", "--timeout", "15"])
+    result = runner.invoke(cli_mod.app, ["data-node", "refresh-search-index", "data-node-storage-42", "--timeout", "15"])
     assert result.exit_code == 0
-    assert captured == {"storage_id": 42, "timeout": 15}
-    assert "Data node search index refresh requested: id=42" in result.output
+    assert captured == {"storage_uid": "data-node-storage-42", "timeout": 15}
+    assert "Data node search index refresh requested: uid=data-node-storage-42" in result.output
     assert "Data Node Search Index Refresh" in result.output
     assert "queued" in result.output
     assert "refresh started" in result.output
@@ -8063,7 +8061,7 @@ def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_data_node_storage_users_can_view",
-        lambda storage_id, timeout=None: {
+        lambda storage_uid, timeout=None: {
             "access_level": "view",
             "users": [
                 {
@@ -8078,7 +8076,7 @@ def test_data_node_storage_can_view(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["data-node", "can_view", "42"])
+    result = runner.invoke(cli_mod.app, ["data-node", "can_view", "data-node-storage-42"])
     assert result.exit_code == 0
     assert "Data Node Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
@@ -8089,8 +8087,8 @@ def test_data_node_storage_add_label(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(storage_id, labels, timeout=None):
-        captured["storage_id"] = storage_id
+    def _add(storage_uid, labels, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "curated"}]}
@@ -8099,10 +8097,10 @@ def test_data_node_storage_add_label(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "add-label", "42", "--label", "curated"],
+        ["data-node", "add-label", "data-node-storage-42", "--label", "curated"],
     )
     assert result.exit_code == 0
-    assert captured == {"storage_id": 42, "labels": ["curated"], "timeout": None}
+    assert captured == {"storage_uid": "data-node-storage-42", "labels": ["curated"], "timeout": None}
     assert "Data Node add-label completed." in result.output
     assert "curated" in result.output
 
@@ -8112,15 +8110,15 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(storage_id, user_id, timeout=None):
-        captured["storage_id"] = storage_id
+    def _add(storage_uid, user_id, timeout=None):
+        captured["storage_uid"] = storage_uid
         captured["user_id"] = user_id
         captured["timeout"] = timeout
         return {
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": storage_id,
+            "object_id": storage_uid,
             "object_type": "tdag.datanodestorage",
             "user": {
                 "id": user_id,
@@ -8137,9 +8135,9 @@ def test_data_node_storage_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_data_node_storage_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "add_to_edit", "42", "9"])
+    result = runner.invoke(cli_mod.app, ["data-node", "add_to_edit", "data-node-storage-42", "9"])
     assert result.exit_code == 0
-    assert captured == {"storage_id": 42, "user_id": 9, "timeout": None}
+    assert captured == {"storage_uid": "data-node-storage-42", "user_id": 9, "timeout": None}
     assert "Data Node add_to_edit completed." in result.output
     assert "Data Node Sharing Update" in result.output
     assert "editor@example.com" in result.output
@@ -8152,8 +8150,8 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
     monkeypatch.setattr(
         cli_mod,
         "get_data_node_storage",
-        lambda storage_id, timeout=None: {
-            "id": storage_id,
+        lambda storage_uid, timeout=None: {
+            "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
             "source_class_name": "PortfolioWeights",
@@ -8162,11 +8160,11 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
         },
     )
 
-    def _delete(storage_id, **kwargs):
-        captured["storage_id"] = storage_id
+    def _delete(storage_uid, **kwargs):
+        captured["storage_uid"] = storage_uid
         captured["kwargs"] = kwargs
         return {
-            "id": storage_id,
+            "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
             "source_class_name": "PortfolioWeights",
@@ -8178,15 +8176,15 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "delete", "42", "--full-delete-selected"],
+        ["data-node", "delete", "data-node-storage-42", "--full-delete-selected"],
         input="weights_daily\n",
     )
     assert result.exit_code == 0
     assert "Data Node Storage Delete Preview" in result.output
     assert "Type storage hash 'weights_daily' to confirm deletion" in result.output
-    assert captured["storage_id"] == 42
+    assert captured["storage_uid"] == "data-node-storage-42"
     assert captured["kwargs"]["full_delete_selected"] is True
-    assert "Data node storage deleted: id=42" in result.output
+    assert "Data node storage deleted: uid=data-node-storage-42" in result.output
 
 
 def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, monkeypatch):
@@ -8194,8 +8192,8 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
     monkeypatch.setattr(
         cli_mod,
         "get_data_node_storage",
-        lambda storage_id, timeout=None: {
-            "id": storage_id,
+        lambda storage_uid, timeout=None: {
+            "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
             "source_class_name": "PortfolioWeights",
@@ -8206,7 +8204,7 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
 
     called = {"value": False}
 
-    def _delete(storage_id, **kwargs):
+    def _delete(storage_uid, **kwargs):
         called["value"] = True
         return {}
 
@@ -8214,7 +8212,7 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "delete", "42"],
+        ["data-node", "delete", "data-node-storage-42"],
         input="wrong-value\n",
     )
     assert result.exit_code == 0

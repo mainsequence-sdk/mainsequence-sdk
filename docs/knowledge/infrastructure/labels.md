@@ -58,11 +58,11 @@ The CLI exposes the same verbs on the object groups that support labels:
 mainsequence project add-label 123 --label rates --label research
 mainsequence project remove-label 123 --label legacy
 
-mainsequence data-node add-label 42 --label curated
-mainsequence data-node remove-label 42 --label legacy
+mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
+mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label legacy
 
-mainsequence simple_table add-label 41 --label reference-data
-mainsequence simple_table remove-label 41 --label deprecated
+mainsequence simple_table add-label <SIMPLE_TABLE_UID> --label reference-data
+mainsequence simple_table remove-label <SIMPLE_TABLE_UID> --label deprecated
 
 mainsequence cc workspace add-label 7 --label trading --label desk
 mainsequence cc workspace remove-label 7 --label old-layout

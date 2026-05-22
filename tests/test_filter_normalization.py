@@ -68,6 +68,20 @@ class DemoReadModel(BaseObjectOrm):
 
 
 class DemoShareableModel(ShareableObjectMixin, BaseObjectOrm):
+    def __init__(self, uid: str, object_id: int | None = None):
+        self.uid = uid
+        self.id = object_id
+
+    @classmethod
+    def get_object_url(cls, custom_endpoint_name=None):
+        return "https://backend.test/demo-shareable"
+
+    @classmethod
+    def build_session(cls):
+        return object()
+
+
+class DemoIdOnlyResource(ShareableObjectMixin, BaseObjectOrm):
     def __init__(self, object_id: int):
         self.id = object_id
 
@@ -578,12 +592,13 @@ def test_destroy_by_id_uses_query_params(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    DemoDestroyModel.destroy_by_id(
-        7,
-        full_delete_selected=True,
-        override_protection="false",
-        timeout=30,
-    )
+    with pytest.warns(DeprecationWarning, match="destroy_by_id"):
+        DemoDestroyModel.destroy_by_id(
+            7,
+            full_delete_selected=True,
+            override_protection="false",
+            timeout=30,
+        )
 
     assert captured == {
         "r_type": "DELETE",
@@ -634,7 +649,7 @@ def test_iter_filter_merges_read_query_params(monkeypatch):
     }
 
 
-def test_get_by_pk_normalizes_read_query_params(monkeypatch):
+def test_get_by_uid_normalizes_read_query_params(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -653,13 +668,13 @@ def test_get_by_pk_normalizes_read_query_params(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    result = DemoReadModel.get(pk=9, include_relations_detail=False, timeout=8)
+    result = DemoReadModel.get_by_uid("uid-9", include_relations_detail=False, timeout=8)
 
     assert isinstance(result, DemoReadModel)
     assert result.id == 9
     assert captured == {
         "r_type": "GET",
-        "url": "https://backend.test/demo-read/9/",
+        "url": "https://backend.test/demo-read/uid-9/",
         "payload": {"params": {"include_relations_detail": "false"}},
         "timeout": 8,
     }
@@ -687,8 +702,9 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    with pytest.raises(ValueError) as exc_info:
-        DemoPatchModel.patch_by_id(9, _into=DemoPatchModel(id=9), label="patched")
+    with pytest.warns(DeprecationWarning, match="patch_by_id"):
+        with pytest.raises(ValueError) as exc_info:
+            DemoPatchModel.patch_by_id(9, _into=DemoPatchModel(id=9), label="patched")
 
     assert str(exc_info.value) == (
         "Failed to apply PATCH response to DemoPatchModel at field 'schema'. "
@@ -721,7 +737,7 @@ def test_patch_by_id_updates_aliased_field_on_existing_instance(monkeypatch):
     )
 
     instance = DemoAliasedPatchModel(id=9)
-    patched = DemoAliasedPatchModel.patch_by_id(9, _into=instance)
+    patched = DemoAliasedPatchModel.patch_by_uid("uid-9", _into=instance)
 
     assert patched is instance
     assert instance.schema_payload == {"name": "customers"}
@@ -768,6 +784,38 @@ def test_shareable_action_returns_empty_dict_on_no_content(monkeypatch):
     response = DemoShareableModel(9).remove_from_view(3)
 
     assert response == {}
+
+
+def test_id_only_resource_patch_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a PATCH request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    instance = DemoPatchModel(id=9)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        instance.patch(label="patched")
+
+
+def test_id_only_resource_delete_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a DELETE request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        DemoIdOnlyResource(9).delete()
+
+
+def test_id_only_resource_detail_action_does_not_route_by_integer_id(monkeypatch):
+    def _unexpected_request(**kwargs):
+        raise AssertionError("id-only resource should not make a detail action request")
+
+    monkeypatch.setattr(base_mod, "make_request", _unexpected_request)
+
+    with pytest.raises(ValueError, match="non-empty uid"):
+        DemoIdOnlyResource(9).can_view()
 
 
 def test_shareable_team_action_posts_team_id(monkeypatch):

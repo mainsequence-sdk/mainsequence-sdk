@@ -454,7 +454,7 @@ Portfolios also become assets automatically, which means you can build further d
 To import a **Fixed‑Weights** portfolio from the Virtual Fund Builder:
 
 ```python
-from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import FixedWeights, AUIDWeight
+from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import FixedWeights, AUIDWeight
 ```
 
 ### 4.1 Building Portfolio Signal Nodes (Optional)
@@ -647,7 +647,7 @@ from src.data_nodes.simulated_daily_close_prices import (
 )
 import mainsequence.client as msc
 
-from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import (
+from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import (
     FixedWeights,
     AUIDWeight,
 )

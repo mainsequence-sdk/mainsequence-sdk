@@ -402,7 +402,7 @@ After the balance rows are read back, the example uses the returned backend ids 
 
 ```python
 SimpleTableStorage.upsert_records_into_table(
-    simple_table_id=balances_updater.data_node_storage.id,
+    simple_table_uid=balances_updater.data_node_storage.uid,
     records=[
         {"id": inserted_balance_by_customer_id[customer_id_by_code["ACME"]].id, "balance_usd": 150_000.0},
         {"id": inserted_balance_by_customer_id[customer_id_by_code["BETA"]].id, "balance_usd": 91_250.0},
@@ -526,13 +526,13 @@ mainsequence simple_table list
 Inspect one storage:
 
 ```bash
-mainsequence simple_table detail 41
+mainsequence simple_table detail <SIMPLE_TABLE_UID>
 ```
 
 Delete one storage:
 
 ```bash
-mainsequence simple_table delete 41
+mainsequence simple_table delete <SIMPLE_TABLE_UID>
 ```
 
 These commands operate on `SimpleTableStorage`, not on individual row ids.

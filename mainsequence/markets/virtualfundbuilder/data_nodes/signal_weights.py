@@ -403,10 +403,6 @@ class SignalWeights(VFBCanonicalDataNode):
             ASSET_UNIQUE_IDENTIFIER: SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER,
         }
 
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return "initialize_signal_weights_source_table"
-
     @staticmethod
     def canonical_signal_configuration(signal: Any) -> dict[str, Any]:
         return canonical_signal_configuration(signal)

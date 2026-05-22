@@ -334,7 +334,7 @@ Use this for inspection, debugging, and one-off read queries on an existing tabl
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/simple_table/{simple_table_id}/run_query/`
+- `POST /orm/api/ts_manager/simple_table/{simple_table_uid}/run_query/`
 
 Optional query params:
 
@@ -353,7 +353,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.SimpleTableStorage.get(pk=123)
+storage = msc.SimpleTableStorage.get(uid="<SIMPLE_TABLE_UID>")
 result = storage.run_query(
     "SELECT * FROM my_table LIMIT 100",
     max_rows=1000,
@@ -367,7 +367,7 @@ Expected success envelope:
 {
     "ok": True,
     "query_id": "abc123",
-    "simple_table_id": 123,
+    "simple_table_uid": "<SIMPLE_TABLE_UID>",
     "results": [
         {
             "column_a": "value",
@@ -386,6 +386,6 @@ If the backend returns a structured error envelope, the SDK returns that envelop
 CLI:
 
 ```bash
-mainsequence simple_table run_query 123 "SELECT 1 AS ok"
-mainsequence simple_table run_query 123 "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
+mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT 1 AS ok"
+mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
 ```

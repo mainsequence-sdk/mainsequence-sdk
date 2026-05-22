@@ -43,6 +43,8 @@ class PortfolioWeights(VFBCanonicalDataNode):
         portfolio_configuration: Any | None = None,
         portfolio_index_asset: Any | None = None,
         portfolio_resolver: Any | None = None,
+        portfolio_description: str | None = None,
+        metadata_updater: Any | None = None,
     ) -> PortfolioWeights:
         """Attach runtime calculation inputs without changing table identity."""
         self._weights_frame = weights_frame
@@ -50,13 +52,17 @@ class PortfolioWeights(VFBCanonicalDataNode):
         self._portfolio_configuration = portfolio_configuration
         self._portfolio_index_asset = portfolio_index_asset
         self._portfolio_resolver = portfolio_resolver
+        self._portfolio_description = portfolio_description
+        self._portfolio_metadata_updater = metadata_updater
         return self
 
     def update(self) -> pd.DataFrame:
-        return self.validate_frame(
+        frame = self.validate_frame(
             self._calculate_weights(),
             config=self._canonical_config(),
         )
+        self._upsert_portfolio_metadata_if_available(frame)
+        return frame
 
     def _calculate_weights(self) -> pd.DataFrame:
         weights_frame = getattr(self, "_weights_frame", None)
@@ -103,6 +109,37 @@ class PortfolioWeights(VFBCanonicalDataNode):
             "PortfolioWeights requires a portfolio_index_asset_unique_identifier, "
             "a PortfolioIndexAsset, or a portfolio_configuration that can resolve "
             "one before canonical rows can be written."
+        )
+
+    def _upsert_portfolio_metadata_if_available(self, frame: pd.DataFrame) -> None:
+        portfolio_configuration = getattr(self, "_portfolio_configuration", None)
+        portfolio_description = getattr(self, "_portfolio_description", None)
+        if portfolio_configuration is None and portfolio_description is None:
+            return
+
+        flat = frame.reset_index()
+        if flat.empty or PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER not in flat.columns:
+            return
+        unique_identifier = flat[PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER].iloc[0]
+        if unique_identifier in (None, "", SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER):
+            return
+
+        from .portfolio_metadata import (
+            _extract_portfolio_description,
+            upsert_portfolio_metadata,
+        )
+
+        if (
+            portfolio_description is None
+            and _extract_portfolio_description(portfolio_configuration) is None
+        ):
+            return
+
+        upsert_portfolio_metadata(
+            unique_identifier=str(unique_identifier),
+            description=portfolio_description,
+            portfolio_configuration=portfolio_configuration,
+            updater=getattr(self, "_portfolio_metadata_updater", None),
         )
 
     @staticmethod
@@ -157,10 +194,6 @@ class PortfolioWeights(VFBCanonicalDataNode):
             PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: (SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER),
             ASSET_UNIQUE_IDENTIFIER: SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER,
         }
-
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return "initialize_portfolio_weights_source_table"
 
 
 def normalize_portfolio_weights_frame(

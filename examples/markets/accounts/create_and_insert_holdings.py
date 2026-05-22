@@ -83,7 +83,7 @@ def main() -> None:
     )
 
     print("Account UID:", account.uid)
-    print("Holdings data node id:", holdings_node.holdings_data_source_id())
+    print("Holdings data node uid:", holdings_node.data_node_storage.uid)
     print("Holdings data node identifier:", DATA_NODE_IDENTIFIER)
     print("Selected asset:", asset.get("name"), unique_identifier)
     print("Inserted holdings set:", response.holdings_set_uid)

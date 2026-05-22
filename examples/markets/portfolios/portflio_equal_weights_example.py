@@ -5,7 +5,7 @@ import pandas as pd
 from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies.rebalance_strategies import (
     ImmediateSignal,
 )
-from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import (
+from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import (
     AUIDWeight,
     FixedWeights,
     FixedWeightsConfig,

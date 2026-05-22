@@ -347,10 +347,10 @@ class HoldingsDataNode(DataNode):
             config=cls.default_config(),
         )
 
-    def holdings_data_source_id(self) -> int:
+    def holdings_data_source_uid(self) -> str:
         return self.ensure_storage_ready()
 
-    def ensure_storage_ready(self, *, force_update: bool = False) -> int:
+    def ensure_storage_ready(self, *, force_update: bool = False) -> str:
         storage = None if force_update else self._ready_storage_or_none()
         if storage is None and not force_update:
             storage = self._initialize_source_table_storage_or_none()
@@ -364,11 +364,11 @@ class HoldingsDataNode(DataNode):
                 "data node. Run the DataNode bootstrap path before writing "
                 "holdings."
             )
-        return _coerce_required_id(storage, field_name="data_node_storage")
+        return _coerce_required_uid(storage, field_name="data_node_storage")
 
     def _initialize_source_table_storage_or_none(self):
         storage = self.data_node_storage
-        if _coerce_optional_id(storage, field_name="data_node_storage") is None:
+        if _coerce_optional_uid(storage, field_name="data_node_storage") is None:
             return None
 
         config = self._holdings_config()
@@ -396,7 +396,7 @@ class HoldingsDataNode(DataNode):
 
     def _ready_storage_or_none(self):
         storage = self.data_node_storage
-        if _coerce_optional_id(storage, field_name="data_node_storage") is None:
+        if _coerce_optional_uid(storage, field_name="data_node_storage") is None:
             return None
 
         source_config = _storage_source_config(storage)
@@ -544,30 +544,30 @@ class AccountHoldings(HoldingsDataNode):
         self,
         account: ClientAccount | str | UUID,
         *,
-        holdings_data_source_id: int | None = None,
+        holdings_data_source_uid: str | UUID | None = None,
         timeout=None,
     ) -> ClientAccount:
-        holdings_data_source_id = (
-            holdings_data_source_id
-            if holdings_data_source_id is not None
-            else self.holdings_data_source_id()
+        holdings_data_source_uid = (
+            str(holdings_data_source_uid)
+            if holdings_data_source_uid is not None
+            else self.holdings_data_source_uid()
         )
         account_obj = self._resolve_account(account, timeout=timeout)
-        if _coerce_optional_id(
+        if _coerce_optional_uid(
             getattr(account_obj, "holdings_data_source", None),
             field_name="holdings_data_source",
-        ) == holdings_data_source_id:
+        ) == holdings_data_source_uid:
             return account_obj
 
         if hasattr(account_obj, "patch"):
             return account_obj.patch(
                 timeout=timeout,
-                holdings_data_source=holdings_data_source_id,
+                holdings_data_source_uid=holdings_data_source_uid,
             )
         return ClientAccount.patch_by_id(
             str(account),
             timeout=timeout,
-            holdings_data_source=holdings_data_source_id,
+            holdings_data_source_uid=holdings_data_source_uid,
         )
 
     def add_account_holdings(
@@ -709,20 +709,26 @@ class AccountHoldings(HoldingsDataNode):
         if not bind_holdings_data_node:
             return payload
 
-        holdings_data_source_id = self.holdings_data_source_id()
-        requested_data_source_id = _coerce_optional_id(
-            payload.get("holdings_data_source"),
-            field_name="holdings_data_source",
+        holdings_data_source_uid = self.holdings_data_source_uid()
+        requested_data_source = payload.pop("holdings_data_source_uid", None)
+        if "holdings_data_source" in payload:
+            raise TypeError(
+                "Use holdings_data_source_uid for account storage binding. "
+                "holdings_data_source is a read field."
+            )
+        requested_data_source_uid = _coerce_optional_uid(
+            requested_data_source,
+            field_name="holdings_data_source_uid",
         )
         if (
-            requested_data_source_id is not None
-            and requested_data_source_id != holdings_data_source_id
+            requested_data_source_uid is not None
+            and requested_data_source_uid != holdings_data_source_uid
         ):
             raise ValueError(
                 "AccountHoldings can only bind accounts to its own holdings "
                 "data node."
             )
-        payload["holdings_data_source"] = holdings_data_source_id
+        payload["holdings_data_source_uid"] = holdings_data_source_uid
         return payload
 
     def _resolve_account(
@@ -757,12 +763,12 @@ class AccountHoldings(HoldingsDataNode):
         bind_if_needed: bool,
         timeout=None,
     ) -> ClientAccount:
-        holdings_data_source_id = self.ensure_storage_ready()
+        holdings_data_source_uid = self.ensure_storage_ready()
         account_obj = self._resolve_account(account, timeout=timeout)
         if bind_if_needed:
             return self.bind_account(
                 account_obj,
-                holdings_data_source_id=holdings_data_source_id,
+                holdings_data_source_uid=holdings_data_source_uid,
                 timeout=timeout,
             )
         return account_obj
@@ -1049,24 +1055,24 @@ def _get_mapping_or_attr(value: Any, field_name: str) -> Any:
     return getattr(value, field_name, None)
 
 
-def _coerce_required_id(value: Any, *, field_name: str) -> int:
-    value_id = _coerce_optional_id(value, field_name=field_name)
-    if value_id is None:
-        raise ValueError(f"{field_name} must expose an integer id.")
-    return value_id
+def _coerce_required_uid(value: Any, *, field_name: str) -> str:
+    value_uid = _coerce_optional_uid(value, field_name=field_name)
+    if value_uid is None:
+        raise ValueError(f"{field_name} must expose a uid.")
+    return value_uid
 
 
-def _coerce_optional_id(value: Any, *, field_name: str) -> int | None:
+def _coerce_optional_uid(value: Any, *, field_name: str) -> str | None:
     if value is None:
         return None
-    if isinstance(value, int):
-        return value
-    value_id = getattr(value, "id", None)
-    if value_id is not None:
-        return int(value_id)
-    if isinstance(value, dict) and value.get("id") is not None:
-        return int(value["id"])
-    raise TypeError(f"{field_name} must be an int id or an object with .id.")
+    if isinstance(value, (str, UUID)):
+        return str(value)
+    value_uid = getattr(value, "uid", None)
+    if value_uid is not None:
+        return str(value_uid)
+    if isinstance(value, dict) and value.get("uid") is not None:
+        return str(value["uid"])
+    raise TypeError(f"{field_name} must be a uid or an object with .uid.")
 
 
 def _validate_position_asset_unique_identifiers(

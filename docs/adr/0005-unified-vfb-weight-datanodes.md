@@ -57,6 +57,23 @@ The important design points are:
 
 Portfolio weights and signal weights should follow the same shape.
 
+The direct AccountHoldings initializer is a one-table pattern:
+
+```text
+AccountHoldings DataNodeStorage
+        |
+        | POST /orm/api/assets/account-holdings-data-node/{uid}/initialize-source-table/
+        v
+one holdings source table + holdings lookup indexes
+```
+
+VFB should not copy that as three unrelated per-table calls. The canonical VFB
+storage surface is a table family: `PortfolioWeights`, `SignalWeights`, and
+`PortfoliosDataNode` are initialized together for the same namespace. The
+normal DataNode creation path must still create the three
+`DataNodeStorage`/`DynamicTableMetaData` records first; the portfolio-domain
+endpoint only initializes their source tables and lookup indexes.
+
 ### VFB still stores too much by portfolio-specific DataNode identity
 
 `PortfolioStrategy` is still a `DataNode`. Its configuration contains the whole
@@ -129,6 +146,20 @@ time-series observation and should not affect `signal_uid`. The new workflow
 therefore needs a small `Signals` `SimpleTable` registry keyed by `signal_uid` so
 descriptions remain queryable even when the signal producer itself is no longer
 persisted as a standalone DataNode.
+
+The same applies to rebalance strategies. Rebalance strategy configuration is
+part of portfolio construction identity, but human-facing rebalance descriptions
+are metadata. They should not be stored in canonical weight rows and should not
+affect portfolio table identity. The canonical workflow needs a small
+`RebalanceStrategies` `SimpleTable` registry keyed by deterministic
+`rebalance_strategy_uid`.
+
+Portfolio descriptions follow the same rule. The portfolio identity in
+canonical rows is the `PortfolioIndexAsset.unique_identifier` created from the
+full portfolio configuration hash. Human-facing descriptions should live in a
+small `Portfolios` metadata `SimpleTable` keyed by `unique_identifier`, where
+`unique_identifier` means that `PortfolioIndexAsset.unique_identifier`, not a
+held asset.
 
 ### Namespace is table-family selection, not a row dimension
 
@@ -273,6 +304,8 @@ N portfolio configs in one namespace
   -> 1 PortfoliosDataNode DataNodeStorage
   -> 1 SignalWeights DataNodeStorage
   -> 1 Signals SimpleTable metadata registry
+  -> 1 RebalanceStrategies SimpleTable metadata registry
+  -> 1 Portfolios SimpleTable metadata registry
   -> N PortfolioIndexAsset identities, one per portfolio_configuration_hash
 ```
 
@@ -300,6 +333,17 @@ The first release should also add a `Signals` `SimpleTable` metadata registry
 keyed by `signal_uid`. This table is not a time-series DataNode and is not part
 of the namespace identity. It preserves human-facing signal descriptions while
 `SignalWeights` owns only timestamped weight observations.
+
+The first release should also add a `RebalanceStrategies` `SimpleTable`
+metadata registry keyed by `rebalance_strategy_uid`. This table is not a
+time-series DataNode and is not part of namespace identity. It preserves
+human-facing rebalance strategy descriptions while portfolio weights and values
+stay canonical.
+
+The first release should also add a `Portfolios` `SimpleTable` metadata
+registry keyed by `PortfolioIndexAsset.unique_identifier` through the
+`unique_identifier` column. This table replaces portfolio-description storage
+that previously lived in `PortfolioAbout`/`target_portfolio_about`.
 
 ## Table Contracts
 
@@ -480,6 +524,73 @@ of the unique key for this registry. This must use the existing
 `SimpleTableUpdater` and `SimpleTablePersistManager` machinery, not a new
 DataNode or ad hoc storage path.
 
+### RebalanceStrategies SimpleTable
+
+`RebalanceStrategies` is a small `SimpleTable` metadata registry keyed by
+`rebalance_strategy_uid`.
+
+Purpose:
+
+- preserve human-facing rebalance strategy descriptions
+- keep rebalance metadata queryable without storing it in canonical weight rows
+- keep descriptions out of portfolio and weight table identities
+
+Recommended contract:
+
+```python
+from typing import Annotated
+
+from mainsequence.tdag.simple_tables import Index, SimpleTable
+
+
+class RebalanceStrategyMetadata(SimpleTable):
+    rebalance_strategy_uid: Annotated[str, Index(unique=True)]
+    rebalance_strategy_description: str | None = None
+```
+
+`rebalance_strategy_uid` is the deterministic TDAG hash of the canonical
+rebalance strategy configuration and concrete strategy class/import identity.
+`rebalance_strategy_description` is mutable metadata and must not participate in
+the hash. VFB should upsert this row whenever a rebalance strategy participates
+in a canonical workflow and a description is available. `namespace` must not be
+part of the unique key for this registry. This must use the existing
+`SimpleTableUpdater` and `SimpleTablePersistManager` machinery, not a new
+DataNode or ad hoc storage path.
+
+### Portfolios SimpleTable metadata
+
+`Portfolios` is a small `SimpleTable` metadata registry keyed by
+`unique_identifier`.
+
+Purpose:
+
+- preserve the human-facing portfolio description
+- make portfolio metadata retrievable by `PortfolioIndexAsset.unique_identifier`
+- keep descriptions out of `PortfolioWeights` and `PortfoliosDataNode` rows
+- provide the replacement storage path for the legacy `PortfolioAbout` model
+
+Recommended contract:
+
+```python
+from typing import Annotated
+
+from mainsequence.tdag.simple_tables import Index, SimpleTable
+
+
+class PortfolioMetadata(SimpleTable):
+    unique_identifier: Annotated[str, Index(unique=True)]
+    description: str | None = None
+```
+
+In this table, `unique_identifier` points to the
+`PortfolioIndexAsset.unique_identifier` created by the canonical portfolio
+configuration hash workflow. It is not the held asset identifier used inside
+`PortfolioWeights`. `description` is mutable UI metadata and must not
+participate in the portfolio configuration hash or canonical DataNode table
+identity. VFB should upsert this row whenever a canonical portfolio workflow has
+a resolved `PortfolioIndexAsset.unique_identifier` and a description from
+`PortfolioConfiguration.portfolio_markets_configuration.front_end_details`.
+
 ### PortfoliosDataNode
 
 `PortfoliosDataNode` is required in the first implementation. It stores the
@@ -527,10 +638,15 @@ always `"time_index"` for these canonical tables. Required schema is defined by
 the class, optional `extra_records` are merged through the default config, and
 runtime validation checks the active config.
 
-Recommended module:
+Recommended package:
 
 ```text
-mainsequence/markets/virtualfundbuilder/data_nodes.py
+mainsequence/markets/virtualfundbuilder/data_nodes/
+  base.py
+  portfolio_weights.py
+  signal_weights.py
+  portfolios.py
+  signal_metadata.py
 ```
 
 Recommended abstractions:
@@ -574,9 +690,6 @@ class PortfolioWeights(VFBCanonicalDataNode):
     def _calculate_weights(self) -> pd.DataFrame:
         ...
 
-    def _initialize_source_table(...):
-        storage.initialize_portfolio_weights_source_table(...)
-
 class SignalWeights(VFBCanonicalDataNode):
     def update(self) -> pd.DataFrame:
         return self.validate_frame(self._calculate_signal_weights())
@@ -584,18 +697,12 @@ class SignalWeights(VFBCanonicalDataNode):
     def _calculate_signal_weights(self) -> pd.DataFrame:
         ...
 
-    def _initialize_source_table(...):
-        storage.initialize_signal_weights_source_table(...)
-
 class PortfoliosDataNode(VFBCanonicalDataNode):
     def update(self) -> pd.DataFrame:
         return self.validate_frame(self._calculate_portfolio_values())
 
     def _calculate_portfolio_values(self) -> pd.DataFrame:
         ...
-
-    def _initialize_source_table(...):
-        storage.initialize_portfolios_source_table(...)
 ```
 
 Each class should provide:
@@ -605,11 +712,17 @@ Each class should provide:
 - `validate_frame()` or a domain-specific validator such as
   `validate_weights_frame()`
 - `ensure_storage_ready()`
-- `_initialize_source_table_storage_or_none()`
 - `_validate_storage_contract()`
 
 The `SignalWeights` integration should also provide `compute_signal_uid()` for
 signal rows, implemented from the canonical signal configuration hash.
+
+Source-table initialization is owned by the VFB storage-family initializer, not
+by three concrete DataNode-specific initializer methods. A single canonical VFB
+write setup should resolve the three canonical nodes for the namespace, ensure
+their `DataNodeStorage`/`DynamicTableMetaData` UIDs exist through the normal
+DataNode creation path, and then call the portfolio-domain bulk initializer
+with the three schema contracts.
 
 The base class may keep a schema-bootstrap frame for storage initialization only.
 Concrete VFB runtime nodes must implement `update()` as the canonical write path:
@@ -770,14 +883,24 @@ hook instead of relying on a per-signal DataNode plus mirror step.
 
 ## Backend/API Additions
 
-Mirror the AccountHoldings domain endpoints.
+Use the AccountHoldings source-table initializer pattern, but lift it to the
+portfolio storage family.
 
-Required client methods on `DataNodeStorage`:
+AccountHoldings initializes one existing DataNodeStorage because it owns one
+domain table. Canonical VFB owns three coordinated domain tables in the same
+namespace, so the SDK should initialize them in one portfolio-domain call after
+the normal DataNode creation path has produced the three storage UIDs.
+
+Required SDK helper:
 
 ```python
-initialize_portfolio_weights_source_table(...)
-initialize_signal_weights_source_table(...)
-initialize_portfolios_source_table(...)
+initialize_portfolio_storage_source_tables(
+    *,
+    portfolio_weights: PortfolioWeights,
+    signal_weights: SignalWeights,
+    portfolio_data: PortfoliosDataNode,
+    timeout: int | None = None,
+) -> dict
 ```
 
 Required signal metadata SDK helpers, implemented on top of `SimpleTable`
@@ -788,13 +911,77 @@ upsert_signal_metadata(...)
 get_signal_metadata(...)
 ```
 
-Recommended backend endpoints:
+Required backend endpoint:
 
 ```text
-POST /orm/api/assets/portfolio-weights-data-node/{id}/initialize-source-table/
-POST /orm/api/assets/signal-weights-data-node/{id}/initialize-source-table/
-POST /orm/api/assets/portfolios-data-node/{id}/initialize-source-table/
+POST /orm/api/assets/portfolio-storage-data-nodes/initialize-source-tables/
 ```
+
+Payload shape:
+
+```json
+{
+  "portfolio_weights": {
+    "dynamic_table_metadata_uid": "11111111-1111-4111-8111-111111111111",
+    "time_index_name": "time_index",
+    "index_names": [
+      "time_index",
+      "portfolio_index_asset_unique_identifier",
+      "unique_identifier"
+    ],
+    "column_dtypes_map": {
+      "time_index": "datetime64[ns, UTC]",
+      "portfolio_index_asset_unique_identifier": "string",
+      "unique_identifier": "string",
+      "weight": "float64",
+      "weight_before": "float64",
+      "price_current": "float64",
+      "price_before": "float64",
+      "volume_current": "float64",
+      "volume_before": "float64"
+    }
+  },
+  "signal_weights": {
+    "dynamic_table_metadata_uid": "22222222-2222-4222-8222-222222222222",
+    "time_index_name": "time_index",
+    "index_names": ["time_index", "signal_uid", "unique_identifier"],
+    "column_dtypes_map": {
+      "time_index": "datetime64[ns, UTC]",
+      "signal_uid": "string",
+      "unique_identifier": "string",
+      "signal_weight": "float64"
+    }
+  },
+  "portfolio_data": {
+    "dynamic_table_metadata_uid": "33333333-3333-4333-8333-333333333333",
+    "time_index_name": "time_index",
+    "index_names": [
+      "time_index",
+      "portfolio_index_asset_unique_identifier"
+    ],
+    "column_dtypes_map": {
+      "time_index": "datetime64[ns, UTC]",
+      "portfolio_index_asset_unique_identifier": "string",
+      "close": "float64",
+      "return": "float64",
+      "calculated_close": "float64",
+      "close_time": "datetime64[ns, UTC]"
+    }
+  }
+}
+```
+
+The three `dynamic_table_metadata_uid` values must already exist. They are the
+public UIDs of the `DataNodeStorage`/`DynamicTableMetaData` records created by
+the normal DataNode creation path for `PortfolioWeights`, `SignalWeights`, and
+`PortfoliosDataNode`. This endpoint must not create DataNodes, must not insert
+observations, and must not create bootstrap rows. It only initializes or
+validates the three source tables and portfolio-domain lookup indexes.
+
+Before the POST, the SDK must derive each object in the payload from the active
+canonical DataNode configuration. Any `extra_records` included in that
+configuration are folded into `column_dtypes_map`; no schema information should
+be inferred from runtime data frames.
 
 The backend should derive:
 
@@ -803,10 +990,19 @@ The backend should derive:
 - lookup indexes for portfolio/signal and asset dimensions
 - update progress by full identity coordinate
 
+After the POST, the SDK must refresh or inspect the three storage objects and
+validate their source-table contracts against the active
+`VFBCanonicalDataNodeConfiguration`, including `extra_records`.
+
 The `Signals` registry does not need a `DataNodeStorage` initializer or a custom
 dynamic-table source endpoint. It should use the existing `SimpleTable`
 machinery. The backend must enforce the `Index(unique=True)` constraint on
 `signal_uid`; description updates should be upserts, not new signal identities.
+
+The `RebalanceStrategies` registry follows the same rule. It does not need a
+`DataNodeStorage` initializer or a custom dynamic-table source endpoint. It
+should use the existing `SimpleTable` machinery, enforce a unique
+`rebalance_strategy_uid`, and treat description updates as upserts.
 
 ## Query Examples
 
@@ -898,7 +1094,8 @@ df = portfolio_weights.get_df_between_dates(
 
 ### Negative
 
-- The first implementation needs domain-specific table initialization endpoints.
+- The first implementation needs a portfolio-domain bulk source-table
+  initialization endpoint.
 - Existing VFB portfolio and signal strategies need to be refactored onto the
   canonical update hooks.
 - Stable signal identity is not currently a first-class VFB concept and must be
@@ -936,16 +1133,27 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
 
 ### Phase 2: Source table initialization
 
-- [x] Add `DataNodeStorage.initialize_portfolio_weights_source_table(...)`.
-- [x] Add `DataNodeStorage.initialize_signal_weights_source_table(...)`.
-- [x] Add `DataNodeStorage.initialize_portfolios_source_table(...)`.
-- [x] Target the assumed backend portfolio-domain endpoints and lookup indexes
-      for portfolio and signal weight tables and the canonical portfolios
-      table.
-- [x] Match AccountHoldings fallback behavior: domain initializer first,
-      bootstrap `run(force_update=True)` second.
-- [x] Validate initialized source-table contracts against the active
+- [x] Replace the three VFB per-table initializer calls with one SDK helper for
+      `POST /orm/api/assets/portfolio-storage-data-nodes/initialize-source-tables/`.
+- [x] Resolve or create the `PortfolioWeights`, `SignalWeights`, and
+      `PortfoliosDataNode` `DataNodeStorage`/`DynamicTableMetaData` rows through
+      the normal DataNode creation path before calling the portfolio-domain
+      initializer.
+- [x] Build the `portfolio_weights`, `signal_weights`, and `portfolio_data`
+      payload entries from the active canonical configurations.
+- [x] Send `dynamic_table_metadata_uid`, fixed `time_index_name`, exact
+      `index_names`, and `column_dtypes_map` for all three canonical tables in
+      the same POST body.
+- [x] Include `extra_records` in each `column_dtypes_map` before sending the
+      payload.
+- [x] Ensure the endpoint is treated as source-table initialization only: it
+      must not create DataNodes, insert observations, or write bootstrap rows.
+- [x] Validate all three initialized source-table contracts against the active
       `VFBCanonicalDataNodeConfiguration`, including any `extra_records`.
+- [x] Remove the VFB target architecture dependency on
+      `initialize_portfolio_weights_source_table(...)`,
+      `initialize_signal_weights_source_table(...)`, and
+      `initialize_portfolios_source_table(...)`.
 
 ### Phase 3: Namespace plumbing
 
@@ -989,6 +1197,53 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
       `SignalWeights`.
 - [x] Add tests proving description changes update metadata without changing
       `signal_uid`.
+
+### Phase 4c: Rebalance strategy metadata registry
+
+- [x] Add a `RebalanceStrategies` `SimpleTable` metadata registry with unique
+      `rebalance_strategy_uid`.
+- [x] Store `rebalance_strategy_description` as nullable string metadata.
+- [x] Compute `rebalance_strategy_uid` from the concrete strategy class/import
+      identity and canonical strategy configuration.
+- [x] Ensure `rebalance_strategy_description` is excluded from
+      `rebalance_strategy_uid` hashing.
+- [x] Add SDK upsert and lookup helpers for `RebalanceStrategies` backed by
+      existing `SimpleTable` persistence/query machinery.
+- [x] Add tests proving description changes update metadata without changing
+      `rebalance_strategy_uid`.
+
+### Phase 4d: Portfolio metadata registry
+
+- [x] Add a `Portfolios` `SimpleTable` metadata registry with unique
+      `unique_identifier`.
+- [x] Define `unique_identifier` as the
+      `PortfolioIndexAsset.unique_identifier` created by the canonical portfolio
+      configuration hash workflow.
+- [x] Store `description` as nullable string metadata.
+- [x] Keep `description` out of `PortfolioWeights`, `PortfoliosDataNode`, and
+      portfolio configuration hashing.
+- [x] Add SDK upsert and lookup helpers for `Portfolios` backed by existing
+      `SimpleTable` persistence/query machinery.
+- [x] Upsert portfolio metadata from canonical portfolio weights/value updates
+      when a portfolio description is available.
+- [x] Add tests proving the table is keyed by unique
+      `PortfolioIndexAsset.unique_identifier`.
+
+### PortfolioAbout removal plan
+
+- [ ] Identify every backend/API/UI read path that still expects
+      `PortfolioAbout` or `target_portfolio_about`.
+- [ ] Replace those reads with `PortfolioMetadata` lookup by
+      `PortfolioIndexAsset.unique_identifier`.
+- [ ] Replace portfolio creation/update payloads that write
+      `target_portfolio_about.description` with `PortfolioMetadata` upserts.
+- [ ] Backfill existing `PortfolioAbout`/`target_portfolio_about` descriptions
+      into the `Portfolios` `SimpleTable` keyed by
+      `PortfolioIndexAsset.unique_identifier`.
+- [ ] Remove the `PortfolioAbout` model only after all readers and writers use
+      the simple table.
+- [ ] Delete legacy tests and fixtures that assert portfolio descriptions live
+      in portfolio creation payloads.
 
 ### Phase 5: PortfolioWeights canonical update
 
@@ -1095,3 +1350,8 @@ The new architecture is complete when:
 8. The tables use ADR 0002 dimension filters and nested index progress.
 9. Canonical VFB runtime writes go through the canonical DataNode `update()`
    methods and do not produce per-portfolio JSON output tables.
+10. The three canonical source tables are initialized by one portfolio-domain
+    endpoint call after their `DataNodeStorage`/`DynamicTableMetaData` UIDs
+    already exist.
+11. Portfolio descriptions are retrieved from the `Portfolios` `SimpleTable`
+    keyed by `PortfolioIndexAsset.unique_identifier`, not from `PortfolioAbout`.

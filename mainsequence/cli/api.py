@@ -421,6 +421,8 @@ def _sdk_object_to_dict(obj: Any) -> dict[str, Any]:
         return dict(obj)
     if hasattr(obj, "model_dump"):
         return obj.model_dump(mode="json")
+    if hasattr(obj, "uid"):
+        return {"uid": getattr(obj, "uid", None)}
     return {"id": getattr(obj, "id", None)}
 
 
@@ -3130,7 +3132,7 @@ def get_connection_instance(
 
 
 def get_simple_table_storage(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3142,7 +3144,7 @@ def get_simple_table_storage(
             module_name="mainsequence.client.models_simple_tables",
             class_name="SimpleTableStorage",
             operation=lambda ClientSimpleTableStorage: ClientSimpleTableStorage.get(
-                pk=int(storage_id),
+                uid=str(storage_uid),
                 timeout=timeout,
             ),
         )
@@ -3150,14 +3152,14 @@ def get_simple_table_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Simple table storage not found: {storage_id}") from e
+            raise ApiError(f"Simple table storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table storage fetch failed: {e}") from e
 
 
 def run_simple_table_storage_query(
-    storage_id: int | str,
+    storage_uid: str,
     sql: str,
     *,
     max_rows: int | None = None,
@@ -3169,7 +3171,7 @@ def run_simple_table_storage_query(
     """
     try:
         def _run_query(ClientSimpleTableStorage):
-            storage = ClientSimpleTableStorage.get(pk=int(storage_id), timeout=timeout)
+            storage = ClientSimpleTableStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = storage.run_query(
                 sql,
                 max_rows=max_rows,
@@ -3186,14 +3188,14 @@ def run_simple_table_storage_query(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Simple table storage not found: {storage_id}") from e
+            raise ApiError(f"Simple table storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table query failed: {e}") from e
 
 
 def delete_simple_table_storage(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3202,7 +3204,7 @@ def delete_simple_table_storage(
     """
     try:
         def _delete(ClientSimpleTableStorage):
-            storage = ClientSimpleTableStorage.get(pk=int(storage_id), timeout=timeout)
+            storage = ClientSimpleTableStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = _sdk_object_to_dict(storage)
             storage.delete(timeout=timeout)
             return payload
@@ -3215,14 +3217,14 @@ def delete_simple_table_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Simple table storage not found: {storage_id}") from e
+            raise ApiError(f"Simple table storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Simple table storage deletion failed: {e}") from e
 
 
 def add_simple_table_storage_labels(
-    storage_id: int | str,
+    storage_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -3232,7 +3234,8 @@ def add_simple_table_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_simple_tables",
         class_name="SimpleTableStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
         timeout=timeout,
@@ -3240,7 +3243,7 @@ def add_simple_table_storage_labels(
 
 
 def remove_simple_table_storage_labels(
-    storage_id: int | str,
+    storage_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -3250,7 +3253,8 @@ def remove_simple_table_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_simple_tables",
         class_name="SimpleTableStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,
         timeout=timeout,
@@ -3749,12 +3753,25 @@ def delete_constant(
         raise ApiError(f"Constant deletion failed: {e}") from e
 
 
+def _get_client_object_by_lookup(
+    ClientObject,
+    *,
+    object_id: int | str,
+    lookup_field: str,
+    timeout: int | None = None,
+):
+    if lookup_field == "uid":
+        return ClientObject.get(uid=str(object_id), timeout=timeout)
+    return ClientObject.get(pk=int(object_id), timeout=timeout)
+
+
 def _get_shareable_object_access_state(
     *,
     module_name: str,
     class_name: str,
     object_id: int | str,
     accessor_name: str,
+    object_lookup_field: str = "pk",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3762,7 +3779,12 @@ def _get_shareable_object_access_state(
             module_name=module_name,
             class_name=class_name,
             operation=lambda ClientObject: getattr(
-                ClientObject.get(pk=int(object_id), timeout=timeout),
+                _get_client_object_by_lookup(
+                    ClientObject,
+                    object_id=object_id,
+                    lookup_field=object_lookup_field,
+                    timeout=timeout,
+                ),
                 accessor_name,
             )(timeout=timeout),
         )
@@ -3783,6 +3805,7 @@ def _mutate_shareable_object_access(
     object_id: int | str,
     action_name: str,
     user_id: int | str,
+    object_lookup_field: str = "pk",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3790,7 +3813,12 @@ def _mutate_shareable_object_access(
             module_name=module_name,
             class_name=class_name,
             operation=lambda ClientObject: getattr(
-                ClientObject.get(pk=int(object_id), timeout=timeout),
+                _get_client_object_by_lookup(
+                    ClientObject,
+                    object_id=object_id,
+                    lookup_field=object_lookup_field,
+                    timeout=timeout,
+                ),
                 action_name,
             )(int(user_id), timeout=timeout),
         )
@@ -3811,6 +3839,7 @@ def _mutate_shareable_object_team_access(
     object_id: int | str,
     action_name: str,
     team_id: int | str,
+    object_lookup_field: str = "pk",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3818,7 +3847,12 @@ def _mutate_shareable_object_team_access(
             module_name=module_name,
             class_name=class_name,
             operation=lambda ClientObject: getattr(
-                ClientObject.get(pk=int(object_id), timeout=timeout),
+                _get_client_object_by_lookup(
+                    ClientObject,
+                    object_id=object_id,
+                    lookup_field=object_lookup_field,
+                    timeout=timeout,
+                ),
                 action_name,
             )(int(team_id), timeout=timeout),
         )
@@ -3839,6 +3873,7 @@ def _mutate_labelable_object_labels(
     object_id: int | str,
     action_name: str,
     labels: list[str],
+    object_lookup_field: str = "pk",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3846,7 +3881,12 @@ def _mutate_labelable_object_labels(
             module_name=module_name,
             class_name=class_name,
             operation=lambda ClientObject: getattr(
-                ClientObject.get(pk=int(object_id), timeout=timeout),
+                _get_client_object_by_lookup(
+                    ClientObject,
+                    object_id=object_id,
+                    lookup_field=object_lookup_field,
+                    timeout=timeout,
+                ),
                 action_name,
             )(labels, timeout=timeout),
         )
@@ -4035,7 +4075,7 @@ def remove_constant_team_from_edit(
 
 
 def get_data_node_storage(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4050,7 +4090,7 @@ def get_data_node_storage(
             module_name="mainsequence.client.models_tdag",
             class_name="DataNodeStorage",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get(
-                pk=int(storage_id),
+                uid=str(storage_uid),
                 timeout=timeout,
             ),
         )
@@ -4058,14 +4098,14 @@ def get_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}") from e
+            raise ApiError(f"Data node storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage fetch failed: {e}") from e
 
 
 def refresh_data_node_storage_search_index(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4077,13 +4117,13 @@ def refresh_data_node_storage_search_index(
     """
     try:
         def _refresh(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = storage.refresh_table_search_index(timeout=timeout)
             if isinstance(payload, dict):
                 out = dict(payload)
-                out.setdefault("id", int(storage_id))
+                out.setdefault("uid", str(storage_uid))
                 return out
-            return {"id": int(storage_id)}
+            return {"uid": str(storage_uid)}
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
@@ -4093,14 +4133,14 @@ def refresh_data_node_storage_search_index(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}") from e
+            raise ApiError(f"Data node storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage search index refresh failed: {e}") from e
 
 
 def run_data_node_storage_query(
-    storage_id: int | str,
+    storage_uid: str,
     sql: str,
     *,
     timeout: int | None = None,
@@ -4110,7 +4150,7 @@ def run_data_node_storage_query(
     """
     try:
         def _run_query(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = storage.run_query(sql, timeout=timeout)
             return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
 
@@ -4122,14 +4162,14 @@ def run_data_node_storage_query(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}") from e
+            raise ApiError(f"Data node storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node query failed: {e}") from e
 
 
 def delete_data_node_storage(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     full_delete_selected: bool = False,
     full_delete_downstream_tables: bool = False,
@@ -4145,7 +4185,7 @@ def delete_data_node_storage(
     """
     try:
         def _delete(ClientDataNodeStorage):
-            storage = ClientDataNodeStorage.get(pk=int(storage_id), timeout=timeout)
+            storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = _sdk_object_to_dict(storage)
             storage.delete(
                 full_delete_selected=full_delete_selected,
@@ -4164,14 +4204,14 @@ def delete_data_node_storage(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Data node storage not found: {storage_id}") from e
+            raise ApiError(f"Data node storage not found: {storage_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage deletion failed: {e}") from e
 
 
 def list_data_node_storage_users_can_view(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4181,14 +4221,15 @@ def list_data_node_storage_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         accessor_name="can_view",
         timeout=timeout,
     )
 
 
 def list_data_node_storage_users_can_edit(
-    storage_id: int | str,
+    storage_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -4198,14 +4239,15 @@ def list_data_node_storage_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         accessor_name="can_edit",
         timeout=timeout,
     )
 
 
 def add_data_node_storage_user_to_view(
-    storage_id: int | str,
+    storage_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -4216,7 +4258,8 @@ def add_data_node_storage_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -4224,7 +4267,7 @@ def add_data_node_storage_user_to_view(
 
 
 def add_data_node_storage_user_to_edit(
-    storage_id: int | str,
+    storage_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -4235,7 +4278,8 @@ def add_data_node_storage_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -4243,7 +4287,7 @@ def add_data_node_storage_user_to_edit(
 
 
 def remove_data_node_storage_user_from_view(
-    storage_id: int | str,
+    storage_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -4254,7 +4298,8 @@ def remove_data_node_storage_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -4262,7 +4307,7 @@ def remove_data_node_storage_user_from_view(
 
 
 def remove_data_node_storage_user_from_edit(
-    storage_id: int | str,
+    storage_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -4273,7 +4318,8 @@ def remove_data_node_storage_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -4281,7 +4327,7 @@ def remove_data_node_storage_user_from_edit(
 
 
 def add_data_node_storage_team_to_view(
-    storage_id: int | str,
+    storage_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -4289,7 +4335,8 @@ def add_data_node_storage_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -4297,7 +4344,7 @@ def add_data_node_storage_team_to_view(
 
 
 def add_data_node_storage_team_to_edit(
-    storage_id: int | str,
+    storage_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -4305,7 +4352,8 @@ def add_data_node_storage_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -4313,7 +4361,7 @@ def add_data_node_storage_team_to_edit(
 
 
 def remove_data_node_storage_team_from_view(
-    storage_id: int | str,
+    storage_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -4321,7 +4369,8 @@ def remove_data_node_storage_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -4329,7 +4378,7 @@ def remove_data_node_storage_team_from_view(
 
 
 def remove_data_node_storage_team_from_edit(
-    storage_id: int | str,
+    storage_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -4337,7 +4386,8 @@ def remove_data_node_storage_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,
@@ -4345,7 +4395,7 @@ def remove_data_node_storage_team_from_edit(
 
 
 def add_data_node_storage_labels(
-    storage_id: int | str,
+    storage_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -4355,7 +4405,8 @@ def add_data_node_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
         timeout=timeout,
@@ -4363,7 +4414,7 @@ def add_data_node_storage_labels(
 
 
 def remove_data_node_storage_labels(
-    storage_id: int | str,
+    storage_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -4373,7 +4424,8 @@ def remove_data_node_storage_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_tdag",
         class_name="DataNodeStorage",
-        object_id=storage_id,
+        object_id=storage_uid,
+        object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,
         timeout=timeout,

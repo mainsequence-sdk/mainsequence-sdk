@@ -585,7 +585,7 @@ This method:
 
 It hits:
 
-- `POST /{id}/refresh-table-search-index/`
+- `POST /{data_node_storage_uid}/refresh-table-search-index/`
 
 Use it when:
 
@@ -598,14 +598,14 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(pk=123)
+storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
 storage.refresh_table_search_index()
 ```
 
 CLI equivalent:
 
 ```bash
-mainsequence data-node refresh-search-index 123
+mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
 ```
 
 #### Running read-only SQL against a dynamic table
@@ -616,7 +616,7 @@ This is for inspection and diagnostics on the storage that already exists. It is
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/dynamic_table/{dynamic_table_id}/run_query/`
+- `POST /orm/api/ts_manager/dynamic_table/{data_node_storage_uid}/run_query/`
 
 Request contract:
 
@@ -630,7 +630,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(pk=456)
+storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.run_query("SELECT * FROM my_table LIMIT 100")
 ```
 
@@ -640,7 +640,7 @@ Expected success envelope:
 {
     "ok": True,
     "query_id": "abc123",
-    "dynamic_table_id": 456,
+    "dynamic_table_uid": "<DATA_NODE_STORAGE_UID>",
     "results": [
         {
             "column_a": "value",
@@ -659,8 +659,8 @@ The method returns the backend query envelope directly. If the backend rejects t
 CLI:
 
 ```bash
-mainsequence data-node run_query 456 "SELECT 1 AS ok"
-mainsequence data-node run_query 456 "SELECT * FROM my_table LIMIT 100"
+mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT 1 AS ok"
+mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM my_table LIMIT 100"
 ```
 
 #### Tail deleting rows after a cutoff
@@ -676,7 +676,7 @@ This is not arbitrary range deletion:
 
 The SDK uses:
 
-- `POST /orm/api/ts_manager/dynamic_table/{dynamic_table_id}/delete_after_date/`
+- `POST /orm/api/ts_manager/dynamic_table/{data_node_storage_uid}/delete_after_date/`
 
 Use this for rollback-style cleanup when a bad tail load or backfill needs to be removed.
 
@@ -685,7 +685,7 @@ For a normal table:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(pk=714)
+storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 
@@ -726,7 +726,7 @@ The response contains the authoritative post-delete table state:
 ```python
 {
     "ok": True,
-    "dynamic_table_id": 714,
+    "dynamic_table_uid": "<DATA_NODE_STORAGE_UID>",
     "deleted_count": 123,
     "table_empty": False,
     "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},

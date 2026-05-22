@@ -5,8 +5,12 @@ import datetime as dt
 VFB_CANONICAL_TIME_INDEX_NAME = "time_index"
 PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER = "portfolio_index_asset_unique_identifier"
 ASSET_UNIQUE_IDENTIFIER = "unique_identifier"
+PORTFOLIO_METADATA_UNIQUE_IDENTIFIER = "unique_identifier"
+PORTFOLIO_DESCRIPTION = "description"
 SIGNAL_UID = "signal_uid"
 SIGNAL_DESCRIPTION = "signal_description"
+REBALANCE_STRATEGY_UID = "rebalance_strategy_uid"
+REBALANCE_STRATEGY_DESCRIPTION = "rebalance_strategy_description"
 
 PORTFOLIO_WEIGHTS_INDEX_NAMES = [
     VFB_CANONICAL_TIME_INDEX_NAME,
@@ -119,9 +123,13 @@ SIGNAL_UID_EXCLUDED_CONFIGURATION_KEYS = frozenset(
         "storage_hash",
         "update_hash",
         "storage_id",
+        "storage_uid",
         "update_id",
+        "update_uid",
         "data_node_storage_id",
+        "data_node_storage_uid",
         "data_node_update_id",
+        "data_node_update_uid",
         "data_source_id",
         "portfolio_consumers",
         "portfolio_id",
@@ -139,6 +147,38 @@ SIGNAL_UID_EXCLUDED_CONFIGURATION_KEYS = frozenset(
         "creation_date",
     }
 )
+REBALANCE_STRATEGY_UID_EXCLUDED_CONFIGURATION_KEYS = frozenset(
+    {
+        "hash_namespace",
+        "namespace",
+        "storage_hash",
+        "update_hash",
+        "storage_id",
+        "storage_uid",
+        "update_id",
+        "update_uid",
+        "data_node_storage_id",
+        "data_node_storage_uid",
+        "data_node_update_id",
+        "data_node_update_uid",
+        "data_source_id",
+        "portfolio_consumers",
+        "portfolio_id",
+        "portfolio_uid",
+        "portfolio_unique_identifier",
+        "portfolio_index_asset_unique_identifier",
+        "display_name",
+        "display_label",
+        "rebalance_strategy_name",
+        "rebalance_strategy_description",
+        "description",
+        "run_id",
+        "run_timestamp",
+        "created_at",
+        "updated_at",
+        "creation_date",
+    }
+)
 PORTFOLIO_CONFIGURATION_HASH_EXCLUDED_KEYS = frozenset(
     {
         "hash_namespace",
@@ -146,9 +186,13 @@ PORTFOLIO_CONFIGURATION_HASH_EXCLUDED_KEYS = frozenset(
         "storage_hash",
         "update_hash",
         "storage_id",
+        "storage_uid",
         "update_id",
+        "update_uid",
         "data_node_storage_id",
+        "data_node_storage_uid",
         "data_node_update_id",
+        "data_node_update_uid",
         "data_source_id",
         "run_id",
         "run_timestamp",

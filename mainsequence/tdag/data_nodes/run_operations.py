@@ -34,6 +34,13 @@ class DependencyUpdateError(Exception):
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
 
 
+def _require_uid(obj: Any, object_name: str) -> str:
+    uid = getattr(obj, "uid", None)
+    if uid in (None, ""):
+        raise ValueError(f"{object_name} must have a uid.")
+    return str(uid)
+
+
 class UpdateRunner:
     """
     Orchestrates the entire update process for a DataNode instance.
@@ -70,9 +77,10 @@ class UpdateRunner:
             return
 
         name_prefix = "DEBUG_" if self.debug_mode else ""
+        update_uid = _require_uid(self.ts.data_node_update, "DataNodeUpdate")
         self.scheduler = ms_client.Scheduler.build_and_assign_to_update_nodes(
-            scheduler_name=f"{name_prefix}{self.ts.data_node_update.id}",
-            update_nodes_ids=[self.ts.data_node_update.id],
+            scheduler_name=f"{name_prefix}{update_uid}",
+            update_node_uids=[update_uid],
             remove_from_other_schedulers=True,
             running_in_debug_mode=self.debug_mode,
         )
@@ -80,7 +88,7 @@ class UpdateRunner:
 
     def _pre_update_routines(
         self, data_node_update: dict | None = None
-    ) -> tuple[dict[int, Any], Any]:
+    ) -> tuple[dict[str, Any], Any]:
         """
         Synchronize the head updater, ensure the dependency graph is registered,
         and fetch the latest typed update objects for the full dependency tree.
@@ -103,7 +111,7 @@ class UpdateRunner:
         Returns:
             A tuple containing:
 
-            - a mapping of updater id -> typed update object for the full tree
+            - a mapping of updater uid -> typed update object for the full tree
             - the backend ``state_data`` payload returned by the update class
         """
         # 1. Synchronize the head node and load its dependency structure.
@@ -120,25 +128,27 @@ class UpdateRunner:
         if not self.ts._scheduler_tree_connected and self.update_tree:
             self.logger.debug("Connecting dependency tree to scheduler...")
             if not self.ts.depth_df.empty:
-                all_ids = self.ts.depth_df["update_node_id"].to_list() + [
-                    self.ts.data_node_update.id
+                all_uids = self.ts.depth_df["update_node_uid"].astype(str).to_list() + [
+                    _require_uid(self.ts.data_node_update, "DataNodeUpdate")
                 ]
-                self.scheduler.in_active_tree_connect(local_time_series_ids=all_ids)
+                self.scheduler.in_active_tree_connect(update_node_uids=all_uids)
             self.ts._scheduler_tree_connected = True
 
-        # 3. Collect all IDs in the dependency graph to fetch their metadata.
+        # 3. Collect all UIDs in the dependency graph to fetch their metadata.
         # This correctly initializes the list, fixing the original bug.
         if not self.ts.depth_df.empty:
             update_nodes_in_tree = self.ts.depth_df[
-                ["id", "node_type", "update_hash", "remote_table_hash_id"]
+                ["update_node_uid", "node_type", "update_hash", "remote_table_hash_id"]
             ].to_dict("records")
+            for update_node in update_nodes_in_tree:
+                update_node["uid"] = str(update_node.pop("update_node_uid"))
         else:
             update_nodes_in_tree = []
 
         # Always include the head node itself.
         update_nodes_in_tree.append(
             {
-                "id": self.ts.data_node_update.id,
+                "uid": _require_uid(self.ts.data_node_update, "DataNodeUpdate"),
                 "update_hash": self.ts.data_node_update.update_hash,
                 "remote_table_hash_id": self.ts.data_node_update.data_node_storage.storage_hash,
                 "node_type": self.ts.data_node_update.NODE_TYPE,
@@ -148,7 +158,7 @@ class UpdateRunner:
         # 4. Fetch the latest metadata for the entire tree from the backend.
         update_details_batch = dict(
             error_on_last_update=False,
-            active_update_scheduler_id=self.scheduler.id,
+            active_update_scheduler_uid=_require_uid(self.scheduler, "Scheduler"),
             active_update_status="Q",  # Assuming queue status is always set here
         )
 
@@ -162,7 +172,9 @@ class UpdateRunner:
         # 5. Process and return the results.
         state_data = all_metadatas_response.state_data
         data_node_updates_list = all_metadatas_response.data_node_updates
-        data_node_updates_map = {m.id: m for m in data_node_updates_list}
+        data_node_updates_map = {
+            _require_uid(m, m.__class__.__name__): m for m in data_node_updates_list
+        }
 
         self.ts.scheduler = self.scheduler
         self.ts.update_details_tree = {
@@ -171,7 +183,7 @@ class UpdateRunner:
 
         return data_node_updates_map, state_data
 
-    def _setup_execution_environment(self) -> dict[int, Any]:
+    def _setup_execution_environment(self) -> dict[str, Any]:
         data_node_updates, state_data = self._pre_update_routines()
         return data_node_updates
 
@@ -182,7 +194,7 @@ class UpdateRunner:
     ) -> tuple[bool, LocalUpdateResult]:
         """Orchestrates a single DataNode update, including pre/post routines."""
         historical_update = self.ts.local_persist_manager.data_node_update.set_start_of_execution(
-            active_update_scheduler_id=self.scheduler.id
+            active_update_scheduler_uid=_require_uid(self.scheduler, "Scheduler")
         )
 
         must_update = historical_update.must_update or self.force_update
@@ -333,9 +345,9 @@ class UpdateRunner:
         """
         # 1. Ensure the dependency graph is built in the backend
         declared_dependencies = self.ts.dependencies() or {}
-        deps_ids = [
+        deps_uids = [
             (
-                d.data_node_update.id
+                _require_uid(d.data_node_update, "DataNodeUpdate")
                 if (not d.is_api and d.data_node_update is not None)
                 else None
             )
@@ -344,9 +356,16 @@ class UpdateRunner:
 
         # 2. Get the list of dependencies to update
         dependencies_df = self.ts.dependencies_df
+        if dependencies_df is not None and not dependencies_df.empty and "update_node_uid" not in dependencies_df.columns:
+            raise ValueError("Dependency dataframe must include 'update_node_uid'.")
+        dependency_uids_in_tree = (
+            dependencies_df["update_node_uid"].astype(str).to_list()
+            if dependencies_df is not None and not dependencies_df.empty
+            else []
+        )
 
-        if any([a is None for a in deps_ids]) or any(
-            [d not in dependencies_df["update_node_id"].to_list() for d in deps_ids]
+        if any([a is None for a in deps_uids]) or any(
+            [d not in dependency_uids_in_tree for d in deps_uids]
         ):
             # Datanode not update set
             self.ts.local_persist_manager.data_node_update.patch(ogm_dependencies_linked=False)

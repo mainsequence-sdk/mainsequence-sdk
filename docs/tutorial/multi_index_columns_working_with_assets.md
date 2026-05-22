@@ -461,7 +461,7 @@ mainsequence data-node list --filter identifier__contains=simulated_prices_tutor
 If you want the full record for one row, inspect it directly:
 
 ```bash
-mainsequence data-node detail <DATA_NODE_STORAGE_ID>
+mainsequence data-node detail <DATA_NODE_STORAGE_UID>
 ```
 
 ## Common issues

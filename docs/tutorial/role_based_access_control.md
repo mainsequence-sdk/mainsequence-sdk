@@ -85,10 +85,10 @@ Find the first tutorial table:
 mainsequence data-node list --filter identifier__contains=example_random_number
 ```
 
-If you want to inspect the full record once you have the id:
+If you want to inspect the full record once you have the uid:
 
 ```bash
-mainsequence data-node detail <DATA_NODE_STORAGE_ID>
+mainsequence data-node detail <DATA_NODE_STORAGE_UID>
 ```
 
 For the dependent node, list visible data nodes and use the `Source Class` column to identify the row created by `DailyRandomAddition`:
@@ -99,35 +99,35 @@ mainsequence data-node list
 
 ## Share the DataNode you just created
 
-Once you have the storage id, you can inspect who can read it:
+Once you have the storage uid, you can inspect who can read it:
 
 ```bash
-mainsequence data-node can_view <DATA_NODE_STORAGE_ID>
+mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
 ```
 
 Inspect who can edit it:
 
 ```bash
-mainsequence data-node can_edit <DATA_NODE_STORAGE_ID>
+mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
 ```
 
 Grant user `7` read access:
 
 ```bash
-mainsequence data-node add_to_view <DATA_NODE_STORAGE_ID> 7
+mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
 ```
 
 Grant user `7` edit access:
 
 ```bash
-mainsequence data-node add_to_edit <DATA_NODE_STORAGE_ID> 7
+mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
 ```
 
 Remove those permissions again if needed:
 
 ```bash
-mainsequence data-node remove_from_view <DATA_NODE_STORAGE_ID> 7
-mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_ID> 7
+mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
+mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
 ```
 
 Here, the practical split is:

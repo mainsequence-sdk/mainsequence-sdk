@@ -324,7 +324,7 @@ mainsequence data-node list --filter identifier__contains=example_random_number_
 If you want the full record for one row, inspect it directly:
 
 ```bash
-mainsequence data-node detail <DATA_NODE_STORAGE_ID>
+mainsequence data-node detail <DATA_NODE_STORAGE_UID>
 ```
 
 If your local project auth has expired or your `.env` does not yet contain fresh project JWTs, refresh them first:

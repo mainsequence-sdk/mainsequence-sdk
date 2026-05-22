@@ -10,8 +10,13 @@ from pydantic import Field, ValidationError
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
-from mainsequence.client.models_tdag import LOGICAL_COLUMN_DTYPES_ATTR, DataNodeUpdate
+from mainsequence.client.models_tdag import (
+    LOGICAL_COLUMN_DTYPES_ATTR,
+    DataNodeStorage,
+    DataNodeUpdate,
+)
 from mainsequence.markets.virtualfundbuilder import data_nodes
+from mainsequence.markets.virtualfundbuilder.data_nodes import storage_initialization
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration, RecordDefinition
 
 
@@ -81,6 +86,21 @@ class _FakeSignalMetadataUpdater:
     def execute_filter(self, filter_expr, *, limit=50, offset=0):
         self.filter_calls.append({"filter": filter_expr, "limit": limit, "offset": offset})
         return self.rows
+
+
+class _DemoRebalanceStrategy:
+    def __init__(self, *, lookback: int = 20, description: str | None = None):
+        self.lookback = lookback
+        self.description = description
+
+    def model_dump(self):
+        return {
+            "lookback": self.lookback,
+            "description": self.description,
+        }
+
+    def get_explanation(self):
+        return f"{self.__class__.__name__}: demo rebalance strategy"
 
 
 class _FakeCanonicalSignalWeightsNode:
@@ -366,6 +386,133 @@ def test_upsert_and_get_signal_metadata_use_simple_table_updater():
     assert upserted.signal_description == "Market cap signal"
     assert updater.upserted == [upserted]
     assert fetched.signal_description == "Market cap signal"
+    assert updater.filter_calls[0]["limit"] == 1
+
+
+def test_rebalance_strategy_metadata_is_simple_table_with_unique_uid():
+    field_spec = data_nodes.RebalanceStrategyMetadata.field_spec(
+        data_nodes.REBALANCE_STRATEGY_UID
+    )
+
+    assert issubclass(data_nodes.RebalanceStrategyMetadata, data_nodes.SimpleTable)
+    assert field_spec.index is not None
+    assert field_spec.index.unique is True
+    assert (
+        data_nodes.RebalanceStrategyMetadata.field_spec(
+            data_nodes.REBALANCE_STRATEGY_DESCRIPTION
+        ).nullable
+        is True
+    )
+
+
+def test_build_rebalance_strategy_metadata_uses_uid_and_description():
+    strategy = _DemoRebalanceStrategy(lookback=30)
+
+    metadata = data_nodes.build_rebalance_strategy_metadata(strategy)
+
+    assert metadata.rebalance_strategy_uid == data_nodes.compute_rebalance_strategy_uid(
+        strategy
+    )
+    assert strategy.__class__.__name__ in metadata.rebalance_strategy_description
+
+
+def test_rebalance_strategy_description_does_not_change_uid():
+    first_payload = {
+        "rebalance_strategy_class_import_path": {
+            "module": "strategies",
+            "qualname": "ImmediateSignal",
+        },
+        "config": {"calendar_key": "24/7"},
+        "rebalance_strategy_description": "First description",
+    }
+    second_payload = {
+        **first_payload,
+        "rebalance_strategy_description": "Second description",
+    }
+
+    assert data_nodes.compute_rebalance_strategy_uid(
+        first_payload
+    ) == data_nodes.compute_rebalance_strategy_uid(second_payload)
+
+
+def test_upsert_and_get_rebalance_strategy_metadata_use_simple_table_updater():
+    updater = _FakeSignalMetadataUpdater(
+        rows=[
+            data_nodes.RebalanceStrategyMetadata(
+                rebalance_strategy_uid="rebalance-hash",
+                rebalance_strategy_description="Immediate rebalance",
+            )
+        ]
+    )
+
+    upserted = data_nodes.upsert_rebalance_strategy_metadata(
+        rebalance_strategy_uid="rebalance-hash",
+        rebalance_strategy_description="Immediate rebalance",
+        updater=updater,
+    )
+    fetched = data_nodes.get_rebalance_strategy_metadata(
+        "rebalance-hash",
+        updater=updater,
+    )
+
+    assert upserted.rebalance_strategy_uid == "rebalance-hash"
+    assert upserted.rebalance_strategy_description == "Immediate rebalance"
+    assert updater.upserted == [upserted]
+    assert fetched.rebalance_strategy_description == "Immediate rebalance"
+    assert updater.filter_calls[0]["limit"] == 1
+
+
+def test_portfolio_metadata_is_simple_table_with_unique_identifier():
+    field_spec = data_nodes.PortfolioMetadata.field_spec(
+        data_nodes.PORTFOLIO_METADATA_UNIQUE_IDENTIFIER
+    )
+
+    assert issubclass(data_nodes.PortfolioMetadata, data_nodes.SimpleTable)
+    assert field_spec.index is not None
+    assert field_spec.index.unique is True
+    assert (
+        data_nodes.PortfolioMetadata.field_spec(data_nodes.PORTFOLIO_DESCRIPTION).nullable
+        is True
+    )
+
+
+def test_build_portfolio_metadata_uses_index_asset_identifier_and_description():
+    portfolio_configuration = SimpleNamespace(
+        portfolio_markets_configuration=SimpleNamespace(
+            front_end_details=SimpleNamespace(description="Research portfolio")
+        )
+    )
+
+    metadata = data_nodes.build_portfolio_metadata(
+        SimpleNamespace(unique_identifier="portfolio-hash"),
+        portfolio_configuration=portfolio_configuration,
+    )
+
+    assert metadata.unique_identifier == "portfolio-hash"
+    assert metadata.description == "Research portfolio"
+
+
+def test_upsert_and_get_portfolio_metadata_use_simple_table_updater():
+    updater = _FakeSignalMetadataUpdater(
+        rows=[
+            data_nodes.PortfolioMetadata(
+                unique_identifier="portfolio-hash",
+                description="Research portfolio",
+            )
+        ]
+    )
+
+    upserted = data_nodes.upsert_portfolio_metadata(
+        unique_identifier="portfolio-hash",
+        description="Research portfolio",
+        updater=updater,
+    )
+    fetched = data_nodes.get_portfolio_metadata("portfolio-hash", updater=updater)
+
+    assert upserted.unique_identifier == "portfolio-hash"
+    assert upserted.description == "Research portfolio"
+    assert updater.upserted == [upserted]
+    assert fetched.description == "Research portfolio"
     assert updater.filter_calls[0]["limit"] == 1
 
 
@@ -671,6 +818,40 @@ def test_portfolio_weights_set_weights_frame_uses_explicit_portfolio_identity(
     assert frame.reset_index().loc[0, "portfolio_index_asset_unique_identifier"] == "portfolio-hash"
 
 
+def test_portfolio_weights_update_upserts_portfolio_metadata(monkeypatch):
+    _patch_data_node_source(monkeypatch)
+    updater = _FakeSignalMetadataUpdater()
+    node = data_nodes.PortfolioWeights()
+    raw_frame = pd.DataFrame(
+        {
+            "time_index": ["2024-01-01T00:00:00Z"],
+            "unique_identifier": ["asset:btc"],
+            "weights_current": [0.6],
+            "weights_before": [0.4],
+            "price_current": [100.0],
+            "price_before": [90.0],
+            "volume_current": [10.0],
+            "volume_before": [8.0],
+        }
+    )
+
+    node.set_weights_frame(
+        raw_frame,
+        portfolio_index_asset_unique_identifier="portfolio-hash",
+        portfolio_description="Research portfolio",
+        metadata_updater=updater,
+    )
+
+    node.update()
+
+    assert updater.upserted == [
+        data_nodes.PortfolioMetadata(
+            unique_identifier="portfolio-hash",
+            description="Research portfolio",
+        )
+    ]
+
+
 def test_portfolio_weights_allows_same_asset_timestamp_for_different_portfolios():
     frame = pd.DataFrame(
         {
@@ -906,7 +1087,7 @@ def test_canonical_namespace_never_becomes_row_column_or_portfolio_identity(
 
 def test_canonical_storage_readiness_accepts_ready_contract(monkeypatch):
     storage = SimpleNamespace(
-        id=77,
+        uid="portfolio-weights-uid",
         sourcetableconfiguration=SimpleNamespace(
             time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
             index_names=list(data_nodes.PORTFOLIO_WEIGHTS_INDEX_NAMES),
@@ -925,12 +1106,12 @@ def test_canonical_storage_readiness_accepts_ready_contract(monkeypatch):
     )
     node = object.__new__(data_nodes.PortfolioWeights)
 
-    assert node.ensure_storage_ready() == 77
+    assert node.ensure_storage_ready() == "portfolio-weights-uid"
 
 
 def test_canonical_storage_readiness_rejects_wrong_contract(monkeypatch):
     storage = SimpleNamespace(
-        id=77,
+        uid="portfolio-weights-uid",
         sourcetableconfiguration=SimpleNamespace(
             time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
             index_names=["time_index", "unique_identifier"],
@@ -951,107 +1132,72 @@ def test_canonical_storage_readiness_rejects_wrong_contract(monkeypatch):
         node.ensure_storage_ready()
 
 
-@pytest.mark.parametrize(
-    ("node_cls", "index_names", "column_dtypes_map", "initializer_name"),
-    [
-        (
-            data_nodes.PortfolioWeights,
-            data_nodes.PORTFOLIO_WEIGHTS_INDEX_NAMES,
-            data_nodes.PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP,
-            "initialize_portfolio_weights_source_table",
-        ),
-        (
-            data_nodes.SignalWeights,
-            data_nodes.SIGNAL_WEIGHTS_INDEX_NAMES,
-            data_nodes.SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP,
-            "initialize_signal_weights_source_table",
-        ),
-        (
-            data_nodes.PortfoliosDataNode,
-            data_nodes.PORTFOLIOS_INDEX_NAMES,
-            data_nodes.PORTFOLIOS_COLUMN_DTYPES_MAP,
-            "initialize_portfolios_source_table",
-        ),
-    ],
-)
-def test_canonical_storage_readiness_initializes_domain_schema_when_config_missing(
-    monkeypatch,
-    node_cls,
-    index_names,
-    column_dtypes_map,
-    initializer_name,
-):
-    calls: list[dict] = []
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
-
-    def initialize_source_table(**kwargs):
-        calls.append(kwargs)
-        storage.sourcetableconfiguration = SimpleNamespace(
-            time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
-            index_names=list(index_names),
-            column_dtypes_map=dict(column_dtypes_map),
-        )
-
-    setattr(storage, initializer_name, initialize_source_table)
-    monkeypatch.setattr(
-        node_cls,
-        "data_node_storage",
-        property(lambda self: storage),
-    )
-    monkeypatch.setattr(
-        node_cls,
-        "run",
-        lambda self, **kwargs: pytest.fail("domain schema initialization should not run bootstrap"),
-    )
-    node = object.__new__(node_cls)
-
-    assert node.ensure_storage_ready() == 77
-    assert calls == [
-        {
-            "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
-            "index_names": index_names,
-            "column_dtypes_map": column_dtypes_map,
-        }
-    ]
-
-
-def test_canonical_storage_readiness_falls_back_when_domain_endpoint_missing(
+def test_canonical_storage_readiness_initializes_storage_family_when_config_missing(
     monkeypatch,
 ):
-    class MissingEndpoint(Exception):
-        status_code = 404
-
     calls: list[dict] = []
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
+    storage = SimpleNamespace(uid="portfolio-weights-uid", sourcetableconfiguration=None)
 
-    def initialize_portfolio_weights_source_table(**kwargs):
-        raise MissingEndpoint()
-
-    def fake_run(self, **kwargs):
+    def initialize_storage_family(**kwargs):
         calls.append(kwargs)
         storage.sourcetableconfiguration = SimpleNamespace(
             time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
             index_names=list(data_nodes.PORTFOLIO_WEIGHTS_INDEX_NAMES),
             column_dtypes_map=dict(data_nodes.PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP),
         )
+        return {}
 
-    storage.initialize_portfolio_weights_source_table = initialize_portfolio_weights_source_table
+    monkeypatch.setattr(
+        storage_initialization,
+        "initialize_portfolio_storage_source_tables",
+        initialize_storage_family,
+    )
     monkeypatch.setattr(
         data_nodes.PortfolioWeights,
         "data_node_storage",
         property(lambda self: storage),
     )
-    monkeypatch.setattr(data_nodes.PortfolioWeights, "run", fake_run)
+    monkeypatch.setattr(
+        data_nodes.PortfolioWeights,
+        "run",
+        lambda self, **kwargs: pytest.fail("storage family initialization should not bootstrap"),
+    )
     node = object.__new__(data_nodes.PortfolioWeights)
 
-    assert node.ensure_storage_ready() == 77
-    assert calls == [
-        {
-            "debug_mode": True,
-            "update_tree": False,
-            "force_update": True,
-        }
-    ]
+    assert node.ensure_storage_ready() == "portfolio-weights-uid"
+    assert calls == [{"anchor_node": node}]
+
+
+def test_canonical_storage_readiness_does_not_bootstrap_when_family_endpoint_missing(
+    monkeypatch,
+):
+    class MissingEndpoint(Exception):
+        status_code = 404
+
+    storage = SimpleNamespace(uid="portfolio-weights-uid", sourcetableconfiguration=None)
+
+    def initialize_storage_family(**kwargs):
+        raise MissingEndpoint()
+
+    monkeypatch.setattr(
+        storage_initialization,
+        "initialize_portfolio_storage_source_tables",
+        initialize_storage_family,
+    )
+    monkeypatch.setattr(
+        data_nodes.PortfolioWeights,
+        "data_node_storage",
+        property(lambda self: storage),
+    )
+    monkeypatch.setattr(
+        data_nodes.PortfolioWeights,
+        "run",
+        lambda self, **kwargs: pytest.fail("storage family initialization should not bootstrap"),
+    )
+    node = object.__new__(data_nodes.PortfolioWeights)
+
+    with pytest.raises(MissingEndpoint):
+        node.ensure_storage_ready()
 
 
 def test_canonical_storage_readiness_uses_active_config_with_extra_records(
@@ -1066,18 +1212,23 @@ def test_canonical_storage_readiness_uses_active_config_with_extra_records(
             )
         ]
     )
-    calls: list[dict] = []
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
+    captured: dict[str, dict] = {}
+    storage = SimpleNamespace(uid="portfolio-weights-uid", sourcetableconfiguration=None)
 
-    def initialize_portfolio_weights_source_table(**kwargs):
-        calls.append(kwargs)
+    def initialize_storage_family(**kwargs):
+        captured.update(kwargs)
         storage.sourcetableconfiguration = SimpleNamespace(
             time_index_name=config.time_index_name,
             index_names=list(config.index_names),
             column_dtypes_map=dict(config.column_dtypes_map),
         )
+        return {}
 
-    storage.initialize_portfolio_weights_source_table = initialize_portfolio_weights_source_table
+    monkeypatch.setattr(
+        storage_initialization,
+        "initialize_portfolio_storage_source_tables",
+        initialize_storage_family,
+    )
     monkeypatch.setattr(
         data_nodes.PortfolioWeights,
         "data_node_storage",
@@ -1086,19 +1237,13 @@ def test_canonical_storage_readiness_uses_active_config_with_extra_records(
     monkeypatch.setattr(
         data_nodes.PortfolioWeights,
         "run",
-        lambda self, **kwargs: pytest.fail("domain schema initialization should not run bootstrap"),
+        lambda self, **kwargs: pytest.fail("storage family initialization should not bootstrap"),
     )
     node = object.__new__(data_nodes.PortfolioWeights)
     node.config = config
 
-    assert node.ensure_storage_ready() == 77
-    assert calls == [
-        {
-            "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
-            "index_names": config.index_names,
-            "column_dtypes_map": config.column_dtypes_map,
-        }
-    ]
+    assert node.ensure_storage_ready() == "portfolio-weights-uid"
+    assert captured == {"anchor_node": node}
 
 
 def test_canonical_storage_readiness_rejects_initialized_schema_missing_extra_record(
@@ -1112,16 +1257,21 @@ def test_canonical_storage_readiness_rejects_initialized_schema_missing_extra_re
             )
         ]
     )
-    storage = SimpleNamespace(id=77, sourcetableconfiguration=None)
+    storage = SimpleNamespace(uid="portfolio-weights-uid", sourcetableconfiguration=None)
 
-    def initialize_portfolio_weights_source_table(**kwargs):
+    def initialize_storage_family(**kwargs):
         storage.sourcetableconfiguration = SimpleNamespace(
             time_index_name=config.time_index_name,
             index_names=list(config.index_names),
             column_dtypes_map=dict(data_nodes.PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP),
         )
+        return {}
 
-    storage.initialize_portfolio_weights_source_table = initialize_portfolio_weights_source_table
+    monkeypatch.setattr(
+        storage_initialization,
+        "initialize_portfolio_storage_source_tables",
+        initialize_storage_family,
+    )
     monkeypatch.setattr(
         data_nodes.PortfolioWeights,
         "data_node_storage",
@@ -1132,3 +1282,92 @@ def test_canonical_storage_readiness_rejects_initialized_schema_missing_extra_re
 
     with pytest.raises(ValueError, match="execution_venue"):
         node.ensure_storage_ready()
+
+
+def test_initialize_portfolio_storage_source_tables_builds_one_payload_and_validates_extra_records(
+    monkeypatch,
+):
+    extra_record = RecordDefinition(column_name="execution_venue", dtype="string")
+    portfolio_weights_config = data_nodes.PortfolioWeights.default_config(
+        extra_records=[extra_record],
+    )
+    storages = {
+        data_nodes.PortfolioWeights: SimpleNamespace(
+            id=11,
+            uid="portfolio-weights-uid",
+            sourcetableconfiguration=None,
+        ),
+        data_nodes.SignalWeights: SimpleNamespace(
+            id=22,
+            uid="signal-weights-uid",
+            sourcetableconfiguration=None,
+        ),
+        data_nodes.PortfoliosDataNode: SimpleNamespace(
+            id=33,
+            uid="portfolio-data-uid",
+            sourcetableconfiguration=None,
+        ),
+    }
+    for node_cls, storage in storages.items():
+        monkeypatch.setattr(
+            node_cls,
+            "data_node_storage",
+            property(lambda self, storage=storage: storage),
+        )
+
+    captured: dict[str, Any] = {}
+
+    def initialize_bulk_source_tables(**kwargs):
+        captured.update(kwargs)
+        return {
+            "source_table_configurations": {
+                "portfolio_weights": {
+                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "index_names": list(portfolio_weights_config.index_names),
+                    "column_dtypes_map": dict(portfolio_weights_config.column_dtypes_map),
+                },
+                "signal_weights": {
+                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "index_names": list(data_nodes.SIGNAL_WEIGHTS_INDEX_NAMES),
+                    "column_dtypes_map": dict(data_nodes.SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP),
+                },
+                "portfolio_data": {
+                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "index_names": list(data_nodes.PORTFOLIOS_INDEX_NAMES),
+                    "column_dtypes_map": dict(data_nodes.PORTFOLIOS_COLUMN_DTYPES_MAP),
+                },
+            }
+        }
+
+    monkeypatch.setattr(
+        DataNodeStorage,
+        "initialize_portfolio_storage_source_tables",
+        staticmethod(initialize_bulk_source_tables),
+    )
+    portfolio_weights = object.__new__(data_nodes.PortfolioWeights)
+    portfolio_weights.config = portfolio_weights_config
+    signal_weights = object.__new__(data_nodes.SignalWeights)
+    portfolio_data = object.__new__(data_nodes.PortfoliosDataNode)
+
+    storage_initialization.initialize_portfolio_storage_source_tables(
+        portfolio_weights=portfolio_weights,
+        signal_weights=signal_weights,
+        portfolio_data=portfolio_data,
+        timeout=30,
+    )
+
+    assert captured["timeout"] == 30
+    assert captured["portfolio_weights"] == {
+        "dynamic_table_metadata_uid": "portfolio-weights-uid",
+        "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+        "index_names": portfolio_weights_config.index_names,
+        "column_dtypes_map": portfolio_weights_config.column_dtypes_map,
+    }
+    assert captured["signal_weights"]["dynamic_table_metadata_uid"] == "signal-weights-uid"
+    assert captured["portfolio_data"]["dynamic_table_metadata_uid"] == "portfolio-data-uid"
+    assert (
+        storages[data_nodes.PortfolioWeights]
+        .sourcetableconfiguration
+        .column_dtypes_map["execution_venue"]
+        == "string"
+    )
