@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import datetime as dt
 from typing import Any
 
 import pandas as pd
+from pydantic import Field
 
 from mainsequence.client.models_tdag import LOGICAL_COLUMN_DTYPES_ATTR
 from mainsequence.tdag.data_nodes import (
@@ -13,116 +13,7 @@ from mainsequence.tdag.data_nodes import (
     RecordDefinition,
 )
 
-VFB_CANONICAL_TIME_INDEX_NAME = "time_index"
-PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER = "portfolio_index_asset_unique_identifier"
-ASSET_UNIQUE_IDENTIFIER = "unique_identifier"
-SIGNAL_UID = "signal_uid"
-
-PORTFOLIO_WEIGHTS_INDEX_NAMES = [
-    VFB_CANONICAL_TIME_INDEX_NAME,
-    PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER,
-    ASSET_UNIQUE_IDENTIFIER,
-]
-PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP = {
-    "time_index": "datetime64[ns, UTC]",
-    "portfolio_index_asset_unique_identifier": "string",
-    "unique_identifier": "string",
-    "weight": "float64",
-    "weight_before": "float64",
-    "price_current": "float64",
-    "price_before": "float64",
-    "volume_current": "float64",
-    "volume_before": "float64",
-}
-PORTFOLIO_WEIGHTS_COLUMN_LABELS = {
-    "time_index": "Time Index",
-    "portfolio_index_asset_unique_identifier": "Portfolio Index Asset Unique Identifier",
-    "unique_identifier": "Unique Identifier",
-    "weight": "Weight",
-    "weight_before": "Weight Before",
-    "price_current": "Price Current",
-    "price_before": "Price Before",
-    "volume_current": "Volume Current",
-    "volume_before": "Volume Before",
-}
-PORTFOLIO_WEIGHTS_COLUMN_DESCRIPTIONS = {
-    "time_index": "UTC timestamp for the executed portfolio weight row.",
-    "portfolio_index_asset_unique_identifier": (
-        "Stable PortfolioIndexAsset unique identifier for the portfolio that "
-        "owns this executed weight row."
-    ),
-    "unique_identifier": "Asset unique identifier for the weighted instrument.",
-    "weight": "Executed/current allocation weight for this asset.",
-    "weight_before": "Allocation weight before the rebalance execution.",
-    "price_current": "Asset price used for the current rebalance calculation.",
-    "price_before": "Asset price from the previous rebalance reference.",
-    "volume_current": "Asset volume used for the current rebalance calculation.",
-    "volume_before": "Asset volume from the previous rebalance reference.",
-}
-
-SIGNAL_WEIGHTS_INDEX_NAMES = [
-    VFB_CANONICAL_TIME_INDEX_NAME,
-    SIGNAL_UID,
-    ASSET_UNIQUE_IDENTIFIER,
-]
-SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP = {
-    "time_index": "datetime64[ns, UTC]",
-    "signal_uid": "string",
-    "unique_identifier": "string",
-    "signal_weight": "float64",
-}
-SIGNAL_WEIGHTS_COLUMN_LABELS = {
-    "time_index": "Time Index",
-    "signal_uid": "Signal UID",
-    "unique_identifier": "Unique Identifier",
-    "signal_weight": "Signal Weight",
-}
-SIGNAL_WEIGHTS_COLUMN_DESCRIPTIONS = {
-    "time_index": "UTC timestamp for the signal weight row.",
-    "signal_uid": (
-        "Deterministic hash of the canonical signal configuration that produced "
-        "this signal weight row."
-    ),
-    "unique_identifier": "Asset unique identifier for the signaled instrument.",
-    "signal_weight": "Raw signal allocation weight before portfolio execution.",
-}
-
-PORTFOLIOS_INDEX_NAMES = [
-    VFB_CANONICAL_TIME_INDEX_NAME,
-    PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER,
-]
-PORTFOLIOS_COLUMN_DTYPES_MAP = {
-    "time_index": "datetime64[ns, UTC]",
-    "portfolio_index_asset_unique_identifier": "string",
-    "close": "float64",
-    "return": "float64",
-    "calculated_close": "float64",
-    "close_time": "datetime64[ns, UTC]",
-}
-PORTFOLIOS_COLUMN_LABELS = {
-    "time_index": "Time Index",
-    "portfolio_index_asset_unique_identifier": "Portfolio Index Asset Unique Identifier",
-    "close": "Close",
-    "return": "Return",
-    "calculated_close": "Calculated Close",
-    "close_time": "Close Time",
-}
-PORTFOLIOS_COLUMN_DESCRIPTIONS = {
-    "time_index": "UTC timestamp for the portfolio value row.",
-    "portfolio_index_asset_unique_identifier": (
-        "Stable PortfolioIndexAsset unique identifier for the portfolio value "
-        "series."
-    ),
-    "close": "Published portfolio close value.",
-    "return": "Portfolio period return.",
-    "calculated_close": "Internally calculated close before any price override.",
-    "close_time": "UTC close timestamp represented by this portfolio value row.",
-}
-
-SCHEMA_BOOTSTRAP_TIME_INDEX = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
-SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER = "__schema_bootstrap_portfolio__"
-SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER = "__schema_bootstrap_asset__"
-SCHEMA_BOOTSTRAP_SIGNAL_UID = "__schema_bootstrap_signal__"
+from .constants import *
 
 
 class VFBCanonicalDataNodeConfiguration(DataNodeConfiguration):
@@ -141,10 +32,16 @@ class VFBCanonicalDataNodeConfiguration(DataNodeConfiguration):
 
     @property
     def column_dtypes_map(self) -> dict[str, str]:
-        return {
-            record.column_name: record.dtype
-            for record in self.records
-        }
+        return {record.column_name: record.dtype for record in self.records}
+
+
+class SignalWeightsConfiguration(VFBCanonicalDataNodeConfiguration):
+    """Canonical SignalWeights table config plus runtime signal input."""
+
+    signal_configuration: Any | None = Field(
+        default=None,
+        json_schema_extra={"runtime_only": True},
+    )
 
 
 class VFBCanonicalDataNode(DataNode):
@@ -214,13 +111,10 @@ class VFBCanonicalDataNode(DataNode):
         config: VFBCanonicalDataNodeConfiguration,
     ) -> VFBCanonicalDataNodeConfiguration:
         if not isinstance(config, VFBCanonicalDataNodeConfiguration):
-            raise TypeError(
-                f"{cls.__name__} requires a VFBCanonicalDataNodeConfiguration."
-            )
+            raise TypeError(f"{cls.__name__} requires a VFBCanonicalDataNodeConfiguration.")
         if config.index_names != cls._required_index_names():
             raise ValueError(
-                f"{cls.__name__} requires index_names "
-                f"{cls._required_index_names()!r}."
+                f"{cls.__name__} requires index_names " f"{cls._required_index_names()!r}."
             )
         _validate_records(
             records=list(config.records),
@@ -349,9 +243,7 @@ class VFBCanonicalDataNode(DataNode):
 
         initializer_name = self._source_table_initializer_name()
         initializer = (
-            getattr(storage, initializer_name, None)
-            if initializer_name is not None
-            else None
+            getattr(storage, initializer_name, None) if initializer_name is not None else None
         )
         if not callable(initializer):
             return None
@@ -394,150 +286,26 @@ class VFBCanonicalDataNode(DataNode):
         time_index_name = _get_mapping_or_attr(source_config, "time_index_name")
         if time_index_name != config.time_index_name:
             errors.append(
-                "time_index_name "
-                f"{time_index_name!r} does not match {config.time_index_name!r}"
+                "time_index_name " f"{time_index_name!r} does not match {config.time_index_name!r}"
             )
 
         index_names = list(_get_mapping_or_attr(source_config, "index_names") or [])
         if index_names != config.index_names:
-            errors.append(
-                f"index_names {index_names!r} do not match {config.index_names!r}"
-            )
+            errors.append(f"index_names {index_names!r} do not match {config.index_names!r}")
 
-        column_dtypes_map = dict(
-            _get_mapping_or_attr(source_config, "column_dtypes_map") or {}
-        )
+        column_dtypes_map = dict(_get_mapping_or_attr(source_config, "column_dtypes_map") or {})
         for column_name, expected_dtype in config.column_dtypes_map.items():
             actual_dtype = column_dtypes_map.get(column_name)
             if actual_dtype != expected_dtype:
                 errors.append(
-                    f"{column_name!r} dtype {actual_dtype!r} does not match "
-                    f"{expected_dtype!r}"
+                    f"{column_name!r} dtype {actual_dtype!r} does not match " f"{expected_dtype!r}"
                 )
 
         if errors:
             raise ValueError(
                 f"{self.__class__.__name__} is bound to an incompatible "
-                "canonical VFB data node: "
-                + "; ".join(errors)
+                "canonical VFB data node: " + "; ".join(errors)
             )
-
-
-class PortfolioWeights(VFBCanonicalDataNode):
-    """Canonical DataNode for executed VFB portfolio weights."""
-
-    @classmethod
-    def _default_identifier(cls) -> str:
-        return "mainsequence.markets.portfolio_weights"
-
-    @classmethod
-    def _default_description(cls) -> str:
-        return (
-            "Canonical executed VFB portfolio weights indexed by time_index, "
-            "portfolio_index_asset_unique_identifier, and asset unique_identifier."
-        )
-
-    @classmethod
-    def _required_index_names(cls) -> list[str]:
-        return list(PORTFOLIO_WEIGHTS_INDEX_NAMES)
-
-    @classmethod
-    def _required_records(cls) -> list[RecordDefinition]:
-        return _record_definitions_from_dtype_map(
-            PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP,
-            labels=PORTFOLIO_WEIGHTS_COLUMN_LABELS,
-            descriptions=PORTFOLIO_WEIGHTS_COLUMN_DESCRIPTIONS,
-        )
-
-    @classmethod
-    def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
-        return {
-            PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: (
-                SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER
-            ),
-            ASSET_UNIQUE_IDENTIFIER: SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER,
-        }
-
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return "initialize_portfolio_weights_source_table"
-
-
-class SignalWeights(VFBCanonicalDataNode):
-    """Canonical DataNode for VFB signal weights."""
-
-    @classmethod
-    def _default_identifier(cls) -> str:
-        return "mainsequence.markets.signal_weights"
-
-    @classmethod
-    def _default_description(cls) -> str:
-        return (
-            "Canonical VFB signal weights indexed by time_index, signal_uid, "
-            "and asset unique_identifier."
-        )
-
-    @classmethod
-    def _required_index_names(cls) -> list[str]:
-        return list(SIGNAL_WEIGHTS_INDEX_NAMES)
-
-    @classmethod
-    def _required_records(cls) -> list[RecordDefinition]:
-        return _record_definitions_from_dtype_map(
-            SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP,
-            labels=SIGNAL_WEIGHTS_COLUMN_LABELS,
-            descriptions=SIGNAL_WEIGHTS_COLUMN_DESCRIPTIONS,
-        )
-
-    @classmethod
-    def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
-        return {
-            SIGNAL_UID: SCHEMA_BOOTSTRAP_SIGNAL_UID,
-            ASSET_UNIQUE_IDENTIFIER: SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER,
-        }
-
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return "initialize_signal_weights_source_table"
-
-
-class PortfoliosDataNode(VFBCanonicalDataNode):
-    """Canonical DataNode for VFB portfolio value series."""
-
-    @classmethod
-    def _default_identifier(cls) -> str:
-        return "mainsequence.markets.portfolios"
-
-    @classmethod
-    def _default_description(cls) -> str:
-        return (
-            "Canonical VFB portfolio value series indexed by time_index and "
-            "portfolio_index_asset_unique_identifier."
-        )
-
-    @classmethod
-    def _required_index_names(cls) -> list[str]:
-        return list(PORTFOLIOS_INDEX_NAMES)
-
-    @classmethod
-    def _required_records(cls) -> list[RecordDefinition]:
-        return _record_definitions_from_dtype_map(
-            PORTFOLIOS_COLUMN_DTYPES_MAP,
-            labels=PORTFOLIOS_COLUMN_LABELS,
-            descriptions=PORTFOLIOS_COLUMN_DESCRIPTIONS,
-        )
-
-    @classmethod
-    def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
-        return {
-            PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: (
-                SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER
-            ),
-        }
-
-    @classmethod
-    def _source_table_initializer_name(cls) -> str | None:
-        return "initialize_portfolios_source_table"
 
 
 def _record_definitions_from_dtype_map(
@@ -557,15 +325,95 @@ def _record_definitions_from_dtype_map(
     ]
 
 
+def _is_canonical_frame(
+    frame: pd.DataFrame,
+    *,
+    config: VFBCanonicalDataNodeConfiguration,
+) -> bool:
+    return (
+        isinstance(frame, pd.DataFrame)
+        and isinstance(frame.index, pd.MultiIndex)
+        and list(frame.index.names) == config.index_names
+    )
+
+
+def _class_import_path(cls: type) -> dict[str, str]:
+    return {
+        "module": cls.__module__,
+        "qualname": cls.__qualname__,
+    }
+
+
+def _drop_excluded_keys(value: Any, *, excluded_keys: frozenset[str]) -> Any:
+    if isinstance(value, list):
+        return [_drop_excluded_keys(item, excluded_keys=excluded_keys) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_drop_excluded_keys(item, excluded_keys=excluded_keys) for item in value)
+    if isinstance(value, dict):
+        return {
+            key: _drop_excluded_keys(item, excluded_keys=excluded_keys)
+            for key, item in value.items()
+            if key not in excluded_keys
+        }
+    return value
+
+
+def _reset_frame_index(frame: pd.DataFrame) -> pd.DataFrame:
+    if not isinstance(frame, pd.DataFrame):
+        raise TypeError("canonical VFB normalizers require a pandas DataFrame.")
+    return frame.copy().reset_index()
+
+
+def _empty_flat_frame(
+    *,
+    config: VFBCanonicalDataNodeConfiguration,
+) -> pd.DataFrame:
+    return pd.DataFrame(columns=list(config.column_dtypes_map))
+
+
+def _require_columns(
+    frame: pd.DataFrame,
+    *,
+    required_columns: list[str],
+    frame_name: str,
+) -> None:
+    missing_columns = [
+        column_name for column_name in required_columns if column_name not in frame.columns
+    ]
+    if missing_columns:
+        raise ValueError(
+            f"{frame_name} frame is missing required canonical columns: "
+            f"{', '.join(missing_columns)}."
+        )
+
+
+def _normalize_pivoted_signal_weights(frame: pd.DataFrame) -> pd.DataFrame:
+    if VFB_CANONICAL_TIME_INDEX_NAME not in frame.columns:
+        raise ValueError(
+            "SignalWeights frame must include 'signal_weight' rows or a "
+            "'time_index' column for pivoted signal weights."
+        )
+
+    value_columns = [
+        column_name for column_name in frame.columns if column_name != VFB_CANONICAL_TIME_INDEX_NAME
+    ]
+    if not value_columns:
+        raise ValueError("Pivoted SignalWeights frame must contain asset columns to unpivot.")
+
+    return frame.melt(
+        id_vars=[VFB_CANONICAL_TIME_INDEX_NAME],
+        value_vars=value_columns,
+        var_name=ASSET_UNIQUE_IDENTIFIER,
+        value_name="signal_weight",
+    )
+
+
 def _merge_records(
     required_records: list[RecordDefinition],
     extra_records: list[RecordDefinition],
 ) -> list[RecordDefinition]:
     merged_records = list(required_records)
-    existing_dtypes = {
-        record.column_name: record.dtype
-        for record in required_records
-    }
+    existing_dtypes = {record.column_name: record.dtype for record in required_records}
     for record in extra_records:
         existing_dtype = existing_dtypes.get(record.column_name)
         if existing_dtype is not None:
@@ -599,10 +447,7 @@ def _validate_records(
             + "."
         )
 
-    dtype_by_column = {
-        record.column_name: record.dtype
-        for record in records
-    }
+    dtype_by_column = {record.column_name: record.dtype for record in records}
     errors = []
     for required_record in required_records:
         actual_dtype = dtype_by_column.get(required_record.column_name)
@@ -613,8 +458,7 @@ def _validate_records(
             )
     if errors:
         raise ValueError(
-            "Canonical VFB records must include the required columns: "
-            + "; ".join(errors)
+            "Canonical VFB records must include the required columns: " + "; ".join(errors)
         )
 
 
@@ -641,14 +485,11 @@ def _validate_canonical_frame(
     frame = _ensure_config_index(data_frame, config=config, frame_name=frame_name)
     flat = frame.reset_index()
     missing_columns = [
-        column_name
-        for column_name in config.column_dtypes_map
-        if column_name not in flat.columns
+        column_name for column_name in config.column_dtypes_map if column_name not in flat.columns
     ]
     if missing_columns:
         raise ValueError(
-            f"{frame_name} frame is missing required columns: "
-            f"{', '.join(missing_columns)}."
+            f"{frame_name} frame is missing required columns: " f"{', '.join(missing_columns)}."
         )
 
     flat = _normalize_config_values(flat, config=config, frame_name=frame_name)
@@ -699,8 +540,7 @@ def _normalize_config_values(
             normalized[column_name] = _normalize_string(values)
         else:
             raise ValueError(
-                f"Unsupported canonical VFB dtype {dtype!r} for "
-                f"{frame_name}.{column_name!r}."
+                f"Unsupported canonical VFB dtype {dtype!r} for " f"{frame_name}.{column_name!r}."
             )
     return normalized
 
@@ -716,8 +556,7 @@ def _validate_identity_values(
         invalid_values = values.isna() | (values.astype(str).str.len() == 0)
         if invalid_values.any():
             raise ValueError(
-                f"{frame_name} frame has empty identity values for "
-                f"{index_name!r}."
+                f"{frame_name} frame has empty identity values for " f"{index_name!r}."
             )
 
 
@@ -733,15 +572,11 @@ def _normalize_float64(values: Any, *, column_name: str) -> pd.Series:
     try:
         return pd.to_numeric(values, errors="raise").astype("float64")
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"Invalid float64 canonical VFB value for {column_name!r}."
-        ) from exc
+        raise ValueError(f"Invalid float64 canonical VFB value for {column_name!r}.") from exc
 
 
 def _normalize_string(values: Any) -> pd.Series:
-    return values.map(lambda value: "" if pd.isna(value) else str(value)).astype(
-        "string"
-    )
+    return values.map(lambda value: "" if pd.isna(value) else str(value)).astype("string")
 
 
 def _attach_logical_dtype_contract(
@@ -785,26 +620,3 @@ def _coerce_optional_id(value: Any, *, field_name: str) -> int | None:
     if isinstance(value, dict) and value.get("id") is not None:
         return int(value["id"])
     raise TypeError(f"{field_name} must be an int id or an object with .id.")
-
-
-__all__ = [
-    "ASSET_UNIQUE_IDENTIFIER",
-    "PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER",
-    "PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP",
-    "PORTFOLIO_WEIGHTS_INDEX_NAMES",
-    "PORTFOLIOS_COLUMN_DTYPES_MAP",
-    "PORTFOLIOS_INDEX_NAMES",
-    "SCHEMA_BOOTSTRAP_ASSET_IDENTIFIER",
-    "SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER",
-    "SCHEMA_BOOTSTRAP_SIGNAL_UID",
-    "SCHEMA_BOOTSTRAP_TIME_INDEX",
-    "SIGNAL_UID",
-    "SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP",
-    "SIGNAL_WEIGHTS_INDEX_NAMES",
-    "PortfoliosDataNode",
-    "PortfolioWeights",
-    "SignalWeights",
-    "VFB_CANONICAL_TIME_INDEX_NAME",
-    "VFBCanonicalDataNode",
-    "VFBCanonicalDataNodeConfiguration",
-]

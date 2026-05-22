@@ -10,51 +10,59 @@ from mainsequence.markets.virtualfundbuilder import TIMEDELTA
 from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
-from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
-    WeightsBase,
+from mainsequence.markets.virtualfundbuilder.data_nodes import SignalWeights
+from mainsequence.markets.virtualfundbuilder.models import (
+    AssetsConfiguration,
+    VFBConfigBaseModel,
 )
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 
-class IntradayTrendConfig(DataNodeConfiguration):
+class IntradayTrendConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     calendar: str
     source_frequency: str = "1d"
 
 
-class IntradayTrend(WeightsBase, DataNode):
+class IntradayTrend(SignalWeights):
+    @property
+    def intraday_trend_config(self) -> IntradayTrendConfig:
+        if not isinstance(self.signal_configuration, IntradayTrendConfig):
+            raise TypeError("IntradayTrend requires IntradayTrendConfig as signal_configuration.")
+        return self.signal_configuration
 
-    def __init__(self, trend_config: IntradayTrendConfig, *args, **kwargs):
-        """
-        Signal Weights
+    @property
+    def assets_configuration(self) -> AssetsConfiguration:
+        return self.intraday_trend_config.signal_assets_configuration
 
-        Arguments
-            source_frequency (str): Frequency of market cap source
-        """
-        self.trend_config = trend_config
-        super().__init__(
-            signal_assets_configuration=trend_config.signal_assets_configuration,
-            config=trend_config,
-            *args,
-            **kwargs,
-        )
+    @property
+    def source_frequency(self) -> str:
+        return self.intraday_trend_config.source_frequency
 
-        self.source_frequency = trend_config.source_frequency
-        self.calendar = trend_config.calendar
-        self.bars_ts, self.asset_symbols = get_interpolated_prices_timeseries(
-            copy.deepcopy(self.assets_configuration)
-        )
+    @property
+    def calendar(self) -> str:
+        return self.intraday_trend_config.calendar
 
-    def update(
-        self, latest_value: datetime | None, params_for_tree_run=None, *args, **kwargs
-    ) -> pd.DataFrame:
+    @property
+    def bars_ts(self):
+        bars_ts = getattr(self, "_bars_ts", None)
+        if bars_ts is None:
+            bars_ts, asset_symbols = get_interpolated_prices_timeseries(
+                copy.deepcopy(self.assets_configuration)
+            )
+            self._bars_ts = bars_ts
+            self._asset_symbols = asset_symbols
+        return self._bars_ts
+
+    @property
+    def asset_symbols(self):
+        self.bars_ts
+        return self._asset_symbols
+
+    def _calculate_signal_weights(self) -> pd.DataFrame:
         """
         Updates the weights considering rebalance periods and execution frequency.
-
-        Args:
-            latest_value Union[datetime, None]: The timestamp of the latest available data.
         """
+        latest_value = getattr(self.update_statistics, "max_time_index_value", None)
         asset_symbols = [a for assets in self.asset_symbols.values() for a in assets]
         exchange_per_symbol = {v: k for k, values in self.asset_symbols.items() for v in values}
 

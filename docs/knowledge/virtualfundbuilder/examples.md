@@ -19,7 +19,7 @@ Pattern:
 
 ```python
 from mainsequence.markets.virtualfundbuilder import register_default_strategies
-from mainsequence.markets.virtualfundbuilder.contrib.data_nodes import MarketCap
+from mainsequence.markets.virtualfundbuilder.contrib.signals import MarketCap
 from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies import ImmediateSignal
 from mainsequence.markets.virtualfundbuilder.models import (
     AssetsConfiguration,

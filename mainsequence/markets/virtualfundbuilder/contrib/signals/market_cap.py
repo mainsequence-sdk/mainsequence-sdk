@@ -13,18 +13,20 @@ from mainsequence.client import (
     AssetTranslationTable,
     DoesNotExist,
 )
-from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
-from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
-    WeightsBase,
+from mainsequence.markets.virtualfundbuilder.data_nodes import (
+    SIGNAL_UID,
+    SignalWeights,
 )
+from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
 from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
 from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
-    DataNodeConfiguration,
     WrapperDataNode,
     WrapperDataNodeConfig,
 )
+
+SIGNAL_OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
 
 
 class AUIDWeight(VFBConfigBaseModel):
@@ -32,26 +34,25 @@ class AUIDWeight(VFBConfigBaseModel):
     weight: float
 
 
-class FixedWeightsConfig(DataNodeConfiguration):
+class FixedWeightsConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     asset_unique_identifier_weights: list[AUIDWeight]
 
 
-class FixedWeights(WeightsBase, DataNode):
+class FixedWeights(SignalWeights):
+    @property
+    def fixed_weights_config(self) -> FixedWeightsConfig:
+        if not isinstance(self.signal_configuration, FixedWeightsConfig):
+            raise TypeError("FixedWeights requires FixedWeightsConfig as signal_configuration.")
+        return self.signal_configuration
 
-    def __init__(self, fixed_weights_config: FixedWeightsConfig, *args, **kwargs):
-        """
-        Args:
-            asset_symbol_weights (List[SymbolWeight]): List of SymbolWeights that map asset symbols to weights
-        """
-        self.fixed_weights_config = fixed_weights_config
-        self.asset_unique_identifier_weights = fixed_weights_config.asset_unique_identifier_weights
-        super().__init__(
-            signal_assets_configuration=fixed_weights_config.signal_assets_configuration,
-            config=fixed_weights_config,
-            *args,
-            **kwargs,
-        )
+    @property
+    def assets_configuration(self) -> AssetsConfiguration:
+        return self.fixed_weights_config.signal_assets_configuration
+
+    @property
+    def asset_unique_identifier_weights(self) -> list[AUIDWeight]:
+        return self.fixed_weights_config.asset_unique_identifier_weights
 
     def maximum_forward_fill(self):
         return timedelta(days=200 * 365)  # Always forward-fill to avoid filling the DB
@@ -59,7 +60,6 @@ class FixedWeights(WeightsBase, DataNode):
     def get_explanation(self):
         info = f"<p>{self.__class__.__name__}: Signal uses fixed weights with the following weights:</p>"
         return info
-
 
     def get_asset_list(self) -> None | list:
         asset_list = msc.Asset.filter(
@@ -69,26 +69,24 @@ class FixedWeights(WeightsBase, DataNode):
         )
         return asset_list
 
-
-
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
         return {}
 
-    def update(self) -> pd.DataFrame:
-
-
-
-        if not self.get_df_between_dates().empty:
-            return pd.DataFrame()  # No need to store more than one constant weight
+    def _calculate_signal_weights(self) -> pd.DataFrame:
+        existing_signal_rows = self.get_df_between_dates(
+            dimension_filters={SIGNAL_UID: [self.signal_uid]}
+        )
+        if not existing_signal_rows.empty:
+            return pd.DataFrame(columns=["time_index", "unique_identifier", "signal_weight"])
 
         df = pd.DataFrame([m.model_dump() for m in self.asset_unique_identifier_weights]).rename(
             columns={"weight": "signal_weight"}
         )
         df = df.set_index(["unique_identifier"])
-        #offset 1 day to avoid last filter
-        signals_weights = pd.concat([df], axis=0, keys=[self.OFFSET_START+datetime.timedelta(days=1)]).rename_axis(
-            ["time_index", "unique_identifier"]
-        )
+        # offset 1 day to avoid last filter
+        signals_weights = pd.concat(
+            [df], axis=0, keys=[SIGNAL_OFFSET_START + datetime.timedelta(days=1)]
+        ).rename_axis(["time_index", "unique_identifier"])
 
         signals_weights = signals_weights.dropna()
         return signals_weights
@@ -103,7 +101,7 @@ class VolatilityControlConfiguration(BaseModel):
     ann_factor: int = 252
 
 
-class MarketCapConfig(DataNodeConfiguration):
+class MarketCapConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     volatility_control_configuration: VolatilityControlConfiguration | None
     minimum_atvr_ratio: float = 0.1
@@ -114,44 +112,62 @@ class MarketCapConfig(DataNodeConfiguration):
     num_top_assets: int | None = None
 
 
-class MarketCap(WeightsBase, DataNode):
-    def __init__(self, market_cap_config: MarketCapConfig, *args, **kwargs):
-        """
-        Signal Weights using weighting by Market Capitalization or Equal Weights
+class MarketCap(SignalWeights):
+    @property
+    def market_cap_config(self) -> MarketCapConfig:
+        if not isinstance(self.signal_configuration, MarketCapConfig):
+            raise TypeError("MarketCap requires MarketCapConfig as signal_configuration.")
+        return self.signal_configuration
 
-        Args:
-            source_frequency (str): Frequency of market cap source.
-            num_top_assets (Optional[int]): Number of largest assets by market cap to use for signals. Leave empty to include all assets.
-        """
-        self.market_cap_config = market_cap_config
-        rolling_atvr_volume_windows = market_cap_config.rolling_atvr_volume_windows
-        if rolling_atvr_volume_windows is None:
-            rolling_atvr_volume_windows = [60, 360]
+    @property
+    def assets_configuration(self) -> AssetsConfiguration:
+        return self.market_cap_config.signal_assets_configuration
 
-        super().__init__(
-            signal_assets_configuration=market_cap_config.signal_assets_configuration,
-            config=market_cap_config,
-            *args,
-            **kwargs,
-        )
-        self.source_frequency = market_cap_config.source_frequency
-        self.num_top_assets = market_cap_config.num_top_assets or 50000
-        self.minimum_atvr_ratio = market_cap_config.minimum_atvr_ratio
-        self.rolling_atvr_volume_windows = rolling_atvr_volume_windows
-        self.frequency_trading_percent = market_cap_config.frequency_trading_percent
-        self.min_number_of_assets = market_cap_config.min_number_of_assets
+    @property
+    def rolling_atvr_volume_windows(self) -> list[int]:
+        return self.market_cap_config.rolling_atvr_volume_windows or [60, 360]
+
+    @property
+    def source_frequency(self) -> str:
+        return self.market_cap_config.source_frequency
+
+    @property
+    def num_top_assets(self) -> int:
+        return self.market_cap_config.num_top_assets or 50000
+
+    @property
+    def minimum_atvr_ratio(self) -> float:
+        return self.market_cap_config.minimum_atvr_ratio
+
+    @property
+    def frequency_trading_percent(self) -> float:
+        return self.market_cap_config.frequency_trading_percent
+
+    @property
+    def min_number_of_assets(self) -> int:
+        return self.market_cap_config.min_number_of_assets
+
+    @property
+    def volatility_control_configuration(self) -> VolatilityControlConfiguration | None:
+        return self.market_cap_config.volatility_control_configuration
+
+    @property
+    def historical_market_cap_ts(self) -> WrapperDataNode:
+        historical_market_cap_ts = getattr(self, "_historical_market_cap_ts", None)
+        if historical_market_cap_ts is not None:
+            return historical_market_cap_ts
 
         translation_table = "marketcap_translation_table"
         try:
-            # 1) fetch from server
             translation_table = AssetTranslationTable.get(unique_identifier=translation_table)
         except DoesNotExist:
             self.logger.error(f"Translation table {translation_table} does not exist")
 
-        self.historical_market_cap_ts = WrapperDataNode(
+        historical_market_cap_ts = WrapperDataNode(
             config=WrapperDataNodeConfig(translation_table=translation_table)
         )
-        self.volatility_control_configuration = market_cap_config.volatility_control_configuration
+        self._historical_market_cap_ts = historical_market_cap_ts
+        return historical_market_cap_ts
 
     def maximum_forward_fill(self):
         return timedelta(days=1) - TIMEDELTA
@@ -206,7 +222,7 @@ class MarketCap(WeightsBase, DataNode):
         asset_list = Asset.filter(id__in=asset_category.assets)
         return asset_list
 
-    def update(self):
+    def _calculate_signal_weights(self):
         """
         Args:
             latest_value (Union[datetime, None]): The timestamp of the most recent data point.
@@ -266,7 +282,7 @@ class MarketCap(WeightsBase, DataNode):
 
         if mc.shape[0] == 0:
             self.logger.info("No data in Market Cap historical market cap")
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["time_index", "unique_identifier", "signal_weight"])
 
         mc = mc.reset_index("unique_identifier")
         mc["unique_identifier"] = mc["unique_identifier"].map(market_cap_uid_to_asset_uid)
@@ -281,7 +297,7 @@ class MarketCap(WeightsBase, DataNode):
 
         # If there is no market cap data, return an empty DataFrame.
         if mc.shape[0] == 0:
-            return pd.DataFrame()
+            return pd.DataFrame(columns=["time_index", "unique_identifier", "signal_weight"])
 
         # 3. Pivot the market cap data to get a DataFrame with a datetime index and one column per asset.
         mc_raw = mc.pivot_table(columns="unique_identifier", index="time_index")

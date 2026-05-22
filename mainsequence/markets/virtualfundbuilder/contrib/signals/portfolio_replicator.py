@@ -14,11 +14,8 @@ from mainsequence.markets.virtualfundbuilder import TIMEDELTA
 from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
+from mainsequence.markets.virtualfundbuilder.data_nodes import SignalWeights
 from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration, VFBConfigBaseModel
-from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
-    WeightsBase,
-)
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 if TYPE_CHECKING:
     from mainsequence.tdag.data_nodes.data_nodes import APIDataNode, DataNode
@@ -33,7 +30,7 @@ class TrackingStrategyConfiguration(VFBConfigBaseModel):
     configuration: dict = {"alpha": 0, "l1_ratio": 0}
 
 
-class ETFReplicatorConfig(DataNodeConfiguration):
+class ETFReplicatorConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     etf_ticker: str
     tracking_strategy_configuration: TrackingStrategyConfiguration
@@ -162,37 +159,50 @@ def rolling_elastic_net(y, X, window, alpha=1.0, l1_ratio=0.5):
     return np.array(betas)
 
 
+class ETFReplicator(SignalWeights):
+    @property
+    def replicator_config(self) -> ETFReplicatorConfig:
+        if not isinstance(self.signal_configuration, ETFReplicatorConfig):
+            raise TypeError("ETFReplicator requires ETFReplicatorConfig as signal_configuration.")
+        return self.signal_configuration
 
-class ETFReplicator(WeightsBase, DataNode):
-    def __init__(self, replicator_config: ETFReplicatorConfig, *args, **kwargs):
-        """
-        Initialize the ETFReplicator.
+    @property
+    def assets_configuration(self) -> AssetsConfiguration:
+        return self.replicator_config.signal_assets_configuration
 
-        Args:
-            etf_ticker (str): Figi of the etf to replicate.
-            tracking_strategy_configuration (TrackingStrategyConfiguration): Configuration parameters for the tracking strategy.
-            in_window (int, optional): The size of the rolling window for regression. Defaults to 60.
-            tracking_strategy (TrackingStrategy, optional): The regression strategy to use for tracking. Defaults to TrackingStrategy.LASSO.
-            *args: Variable length argument list.
-            **kwargs: Arbitrary keyword arguments.
-        """
-        self.replicator_config = replicator_config
-        super().__init__(
-            signal_assets_configuration=replicator_config.signal_assets_configuration,
-            config=replicator_config,
-            *args,
-            **kwargs,
-        )
+    @property
+    def in_window(self) -> int:
+        return self.replicator_config.in_window
 
-        self.in_window = replicator_config.in_window
-        self.bars_ts = get_interpolated_prices_timeseries(copy.deepcopy(self.assets_configuration))
-        etf_assets_configuration = copy.deepcopy(self.assets_configuration)
-        etf_assets_configuration.assets_category_unique_id = "etfs"
-        self.etf_bars_ts = get_interpolated_prices_timeseries(etf_assets_configuration)
-        self.etf_ticker = replicator_config.etf_ticker
+    @property
+    def etf_ticker(self) -> str:
+        return self.replicator_config.etf_ticker
 
-        self.tracking_strategy = replicator_config.tracking_strategy
-        self.tracking_strategy_configuration = replicator_config.tracking_strategy_configuration
+    @property
+    def tracking_strategy(self) -> TrackingStrategy:
+        return self.replicator_config.tracking_strategy
+
+    @property
+    def tracking_strategy_configuration(self) -> TrackingStrategyConfiguration:
+        return self.replicator_config.tracking_strategy_configuration
+
+    @property
+    def bars_ts(self):
+        bars_ts = getattr(self, "_bars_ts", None)
+        if bars_ts is None:
+            self._bars_ts = get_interpolated_prices_timeseries(
+                copy.deepcopy(self.assets_configuration)
+            )
+        return self._bars_ts
+
+    @property
+    def etf_bars_ts(self):
+        etf_bars_ts = getattr(self, "_etf_bars_ts", None)
+        if etf_bars_ts is None:
+            etf_assets_configuration = copy.deepcopy(self.assets_configuration)
+            etf_assets_configuration.assets_category_unique_id = "etfs"
+            self._etf_bars_ts = get_interpolated_prices_timeseries(etf_assets_configuration)
+        return self._etf_bars_ts
 
     def get_asset_list(self) -> None | list:
         asset_category = AssetCategory.get(
@@ -251,7 +261,7 @@ class ETFReplicator(WeightsBase, DataNode):
         betas.index.name = "time_index"
         return betas
 
-    def update(self) -> pd.DataFrame:
+    def _calculate_signal_weights(self) -> pd.DataFrame:
         if self.update_statistics.max_time_index_value:
             prices_start_date = self.update_statistics.max_time_index_value - pd.Timedelta(
                 days=self.in_window

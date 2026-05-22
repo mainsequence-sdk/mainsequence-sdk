@@ -607,6 +607,35 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             **response["portfolio_index_asset"]
         )
 
+    @classmethod
+    def get_or_create_from_configuration_hash(
+        cls,
+        portfolio_configuration_hash: str,
+        portfolio_configuration: dict[str, Any],
+        timeout=None,
+    ) -> tuple["Portfolio", PortfolioIndexAsset]:
+        url = f"{cls.get_object_url()}/get_or_create_from_configuration_hash/"
+        payload_data = {
+            "portfolio_configuration_hash": portfolio_configuration_hash,
+            "portfolio_configuration": portfolio_configuration,
+        }
+
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": payload_data},
+            time_out=timeout,
+        )
+        if r.status_code not in [200, 201]:
+            raise_for_response(r)
+        response = r.json()
+
+        return cls(**response["portfolio"]), PortfolioIndexAsset(
+            **response["portfolio_index_asset"]
+        )
+
     @property
     def portfolio_name(self) -> str:
         return self.index_asset.current_snapshot.name

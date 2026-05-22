@@ -72,10 +72,9 @@ portfolio build:
 Those fields are portfolio-specific. If they remain part of the storage identity,
 VFB will keep creating one physical output table per portfolio.
 
-That behavior is useful for legacy self-contained backtests, but it is not the
-right storage model for shared operational tables. In the multidimensional
-contract, the portfolio-specific parts should be writer/update scope and lineage.
-The table meaning is the stable schema:
+That behavior is the legacy storage path being replaced. In the
+multidimensional contract, the portfolio-specific parts should be writer/update
+scope and lineage. The table meaning is the stable schema:
 
 - "portfolio weights over time"
 - "signal weights over time"
@@ -92,12 +91,9 @@ The live portfolio path should not parse JSON when it can avoid it.
 - postprocessed long-form executed weights
 - portfolio `close` and `return`
 
-The best live source for canonical portfolio weights is the post-rebalance
-long-form `weights` frame before `_add_serialized_weights()` turns it into JSON
-columns.
-
-Existing portfolio tables can still be backfilled by parsing `rebalance_weights`,
-but that should be a migration path, not the primary architecture.
+The best source for canonical portfolio weights is the post-rebalance long-form
+`weights` frame. New VFB DataNodes should return this canonical shape directly
+instead of serializing weights into a per-portfolio JSON output table.
 
 ### Signal DataNodes are also fragmented
 
@@ -125,6 +121,14 @@ as `"market_cap_top_100"`. It is the deterministic unique hash of the canonical
 signal configuration, matching the identity mechanism that currently makes a
 signal retrievable as its own DataNode. `unique_identifier` remains the asset
 being weighted.
+
+The previous per-signal DataNode also gave VFB a place to keep human-facing
+signal metadata such as a signal description. Canonical signal weights should
+not make that description part of `SignalWeights`, because it is not part of the
+time-series observation and should not affect `signal_uid`. The new workflow
+therefore needs a small `Signals` `SimpleTable` registry keyed by `signal_uid` so
+descriptions remain queryable even when the signal producer itself is no longer
+persisted as a standalone DataNode.
 
 ### Namespace is table-family selection, not a row dimension
 
@@ -253,6 +257,12 @@ configuration is still unique, but that uniqueness becomes the identity of the
         v                             v                             v
  one table for all portfolio     one table for all portfolio    one table for all signal
  weights in the namespace        value series in namespace      weights in namespace
+                                                                  |
+                                                                  | upsert metadata by signal_uid
+                                                                  v
+                                                         Signals
+                                                         unique key = signal_uid
+                                                         stores signal_description
 ```
 
 Storage produced by the new workflow:
@@ -262,19 +272,19 @@ N portfolio configs in one namespace
   -> 1 PortfolioWeights DataNodeStorage
   -> 1 PortfoliosDataNode DataNodeStorage
   -> 1 SignalWeights DataNodeStorage
+  -> 1 Signals SimpleTable metadata registry
   -> N PortfolioIndexAsset identities, one per portfolio_configuration_hash
 ```
 
-During migration, the legacy per-portfolio `PortfolioStrategy` output can remain
-available for compatibility, but it should not be the canonical identity model.
-The canonical model is simpler: one shared table contract, many portfolio row
-identities.
+The legacy per-portfolio `PortfolioStrategy` output is not part of the new
+runtime workflow. The canonical model is simpler: one shared table contract,
+many portfolio row identities.
 
 ## Decision
 
 Introduce unified VFB DataNodes modeled after `AccountHoldings`.
 
-The first release should add three primary tables:
+The first release should add three primary time-series tables:
 
 1. `PortfolioWeights`
 2. `SignalWeights`
@@ -284,7 +294,12 @@ The first release should add three primary tables:
 the same namespace. `PortfolioWeights` stores the asset-level allocations for
 those portfolios. Keeping both canonical tables in the first implementation
 lets VFB move the portfolio output away from one physical DataNode table per
-portfolio without waiting for a later migration.
+portfolio immediately.
+
+The first release should also add a `Signals` `SimpleTable` metadata registry
+keyed by `signal_uid`. This table is not a time-series DataNode and is not part
+of the namespace identity. It preserves human-facing signal descriptions while
+`SignalWeights` owns only timestamped weight observations.
 
 ## Table Contracts
 
@@ -421,10 +436,49 @@ The hash input should exclude:
 - user-facing display names that do not change signal output
 
 Human-readable names can be stored as metadata, but they must not be the
-canonical `signal_uid`. During migration, an existing signal DataNode's hash may
-be reused only when it is the same canonical configuration hash. Arbitrary
+canonical `signal_uid`. An existing signal DataNode's hash may be reused only
+when it is the same canonical configuration hash. Arbitrary
 `DataNodeStorage.identifier` values or mutable update metadata should not become
 long-term signal identities.
+
+The SDK implementation must use the existing TDAG serialization and hashing
+machinery (`Serializer.serialize_init_kwargs(...)` and `hash_signature(...)`) for
+this computation. VFB should only filter out non-identity fields such as
+namespace, backend ids, portfolio consumers, and display-only metadata before
+delegating to TDAG hashing.
+
+### Signals SimpleTable
+
+`Signals` is a small `SimpleTable` metadata registry keyed by `signal_uid`.
+
+Purpose:
+
+- preserve the human-facing signal description that used to live on the
+  persisted signal DataNode
+- make signal metadata retrievable when weights are written into shared
+  `SignalWeights` storage
+- keep descriptions out of `SignalWeights` so weight observations stay canonical
+
+Recommended contract:
+
+```python
+from typing import Annotated
+
+from mainsequence.tdag.simple_tables import Index, SimpleTable
+
+
+class SignalMetadata(SimpleTable):
+    signal_uid: Annotated[str, Index(unique=True)]
+    signal_description: str | None = None
+```
+
+`signal_uid` remains the deterministic TDAG hash of the canonical signal
+configuration. `signal_description` is mutable metadata and must not participate
+in the hash. VFB should upsert this row whenever a signal participates in a
+canonical workflow and a description is available. `namespace` must not be part
+of the unique key for this registry. This must use the existing
+`SimpleTableUpdater` and `SimpleTablePersistManager` machinery, not a new
+DataNode or ad hoc storage path.
 
 ### PortfoliosDataNode
 
@@ -451,10 +505,9 @@ column_dtypes_map:
   close_time: datetime64[ns, UTC]
 ```
 
-The canonical table should not store serialized rebalance JSON as its primary
-weights representation. Those rows belong in `PortfolioWeights`. Legacy
-serialized columns can remain on per-portfolio output during migration and can
-be parsed only for backfill.
+The canonical table should not store serialized rebalance JSON. Those rows
+belong in `PortfolioWeights`, and the new runtime should not produce a
+per-portfolio JSON DataNode output.
 
 ## DataNode Class Design
 
@@ -515,14 +568,32 @@ Concrete classes:
 
 ```python
 class PortfolioWeights(VFBCanonicalDataNode):
+    def update(self) -> pd.DataFrame:
+        return self.validate_frame(self._calculate_weights())
+
+    def _calculate_weights(self) -> pd.DataFrame:
+        ...
+
     def _initialize_source_table(...):
         storage.initialize_portfolio_weights_source_table(...)
 
 class SignalWeights(VFBCanonicalDataNode):
+    def update(self) -> pd.DataFrame:
+        return self.validate_frame(self._calculate_signal_weights())
+
+    def _calculate_signal_weights(self) -> pd.DataFrame:
+        ...
+
     def _initialize_source_table(...):
         storage.initialize_signal_weights_source_table(...)
 
 class PortfoliosDataNode(VFBCanonicalDataNode):
+    def update(self) -> pd.DataFrame:
+        return self.validate_frame(self._calculate_portfolio_values())
+
+    def _calculate_portfolio_values(self) -> pd.DataFrame:
+        ...
+
     def _initialize_source_table(...):
         storage.initialize_portfolios_source_table(...)
 ```
@@ -540,9 +611,13 @@ Each class should provide:
 The `SignalWeights` integration should also provide `compute_signal_uid()` for
 signal rows, implemented from the canonical signal configuration hash.
 
-The default `update()` may return a schema bootstrap frame, like holdings, so the
-table can be created through the standard DataNode path when the domain endpoint
-is not available.
+The base class may keep a schema-bootstrap frame for storage initialization only.
+Concrete VFB runtime nodes must implement `update()` as the canonical write path:
+`update()` calls the protected calculation method, validates the canonical frame,
+and returns rows for the shared table. Subclasses extend VFB behavior by
+overriding `_calculate_weights()`, `_calculate_signal_weights()`, or
+`_calculate_portfolio_values()`, not by creating another per-portfolio output
+DataNode.
 
 ## Namespace API
 
@@ -554,16 +629,6 @@ Examples:
 portfolio_weights = PortfolioWeights(namespace="research")
 signal_weights = SignalWeights(namespace="research")
 portfolios = PortfoliosDataNode(namespace="research")
-```
-
-and:
-
-```python
-portfolio_node.run(
-    add_portfolio_to_markets_backend=True,
-    sync_canonical_tables=True,
-    namespace="research",
-)
 ```
 
 Resolved implementation rule:
@@ -605,6 +670,7 @@ The table meaning is:
 - `PortfolioWeights`: VFB executed weights indexed by portfolio and asset
 - `SignalWeights`: VFB signal weights indexed by signal and asset
 - `PortfoliosDataNode`: VFB portfolio value series indexed by portfolio
+- `Signals`: VFB signal metadata indexed by `signal_uid`
 
 Portfolio uniqueness must move out of the canonical table DataNode identity and
 into the portfolio row identity. The SDK must compute a deterministic
@@ -624,20 +690,23 @@ configuration, signal identity/config, rebalance strategy, and relevant Markets
 portfolio metadata. It must exclude namespace, storage id, update id, and
 run-specific timestamps.
 
+The implementation must reuse the existing TDAG configuration serialization and
+hashing machinery (`Serializer.serialize_init_kwargs(...)` and
+`hash_signature(...)`) for this hash. VFB must not introduce a new portfolio
+configuration serializer; any VFB helper should only assemble the correct hash
+payload and delegate serialization/hashing to TDAG.
+
 If an implementation needs writer-specific configuration, mark it
 `update_only` or keep it outside the canonical table DataNode constructor.
 
 ## VFB Integration
 
-### PortfolioStrategy live path
+### Canonical PortfolioWeights update path
 
-`PortfolioStrategy.update()` should keep computing:
-
-- long-form postprocessed `weights`
-- `portfolio` values
-
-After `weights = self._postprocess_weights(weights)`, the live path can convert
-that frame into `PortfolioWeights` rows:
+`PortfolioWeights.update()` is the primary portfolio-weight write path. It must
+not call a legacy per-portfolio output DataNode and then mirror that output.
+Instead, `update()` calls `_calculate_weights()`, validates the returned frame,
+and returns canonical rows directly:
 
 ```text
 time_index
@@ -651,72 +720,53 @@ volume_current
 volume_before
 ```
 
-The portfolio identity should come from the `PortfolioIndexAsset`.
+The portfolio identity comes from the `PortfolioIndexAsset`, whose
+`unique_identifier` is the deterministic `portfolio_configuration_hash`.
+`_calculate_weights()` is the extension point for portfolio construction logic.
+The default implementation can reuse extracted VFB calculation helpers, but it
+must return the canonical long-form schema above.
 
-This means canonical sync must run after the portfolio has a Markets backend
-identity, or the user must provide `portfolio_index_asset_unique_identifier`
-explicitly.
+### Canonical PortfoliosDataNode update path
 
-Recommended first release behavior:
+`PortfoliosDataNode.update()` is the primary portfolio-value write path. It
+calls `_calculate_portfolio_values()`, validates the returned frame, and returns
+canonical rows directly:
 
-- keep the current per-portfolio DataNode output unchanged
-- add opt-in canonical sync
-- write canonical `PortfolioWeights` from the in-memory `weights` frame
-- write canonical portfolio value rows into `PortfoliosDataNode` from the
-  calculated `portfolio` frame
-- use persisted `rebalance_weights` JSON only for backfill
+```text
+time_index
+portfolio_index_asset_unique_identifier
+close
+return
+calculated_close
+close_time
+```
 
-Recommended later behavior:
+Portfolio weight and value calculations should share a calculation object or
+helper so the same portfolio execution does not need to be recomputed
+inconsistently. The shared helper is internal orchestration, not a legacy output
+DataNode.
 
-- make the legacy per-portfolio DataNode output optional
-- remove the need to parse serialized rebalance JSON in normal reads
+### Canonical SignalWeights update path
 
-### SignalWeights live path
+`SignalWeights.update()` is the primary signal-weight write path. It calls
+`_calculate_signal_weights()`, validates the returned frame, and returns
+canonical rows directly:
 
-There are two possible migration paths.
+```text
+time_index
+signal_uid
+unique_identifier
+signal_weight
+```
 
-#### Option A: Mirror signal output into SignalWeights
+The signal identity comes from `compute_signal_uid()`, which hashes the canonical
+signal configuration with TDAG hashing. `SignalWeights.update()` should also
+upsert the `Signals` `SimpleTable` metadata row when a signal description is
+available.
 
-Keep existing signal strategy DataNodes unchanged, but after each signal update,
-normalize rows into the shared `SignalWeights` table.
-
-Pros:
-
-- lowest risk
-- preserves all existing VFB code
-- gives immediate canonical query surface
-
-Cons:
-
-- still computes through per-signal DataNode tables
-- requires a mirroring step
-- does not fully eliminate signal table fragmentation yet
-
-#### Option B: Make SignalWeights the primary signal storage
-
-Refactor `WeightsBase` and built-in signal DataNodes so their output includes
-`signal_uid` as an identity dimension and writes directly to the shared
-`SignalWeights` table.
-
-Pros:
-
-- actually unifies signal storage
-- removes one layer of mirroring
-- aligns fully with ADR 0002
-
-Cons:
-
-- larger refactor
-- every signal must expose its canonical configuration hash as `signal_uid`
-- `WeightsBase.interpolate_index()` must filter by `signal_uid`
-- custom user signal DataNodes need a migration story
-
-Recommended path:
-
-1. implement Option A first
-2. expose the canonical `SignalWeights` query surface
-3. migrate built-in signals to Option B
-4. keep Option A as a compatibility bridge for custom signals
+Built-in signal implementations should move to this direct canonical path.
+Custom extensions should subclass or compose the new canonical signal calculation
+hook instead of relying on a per-signal DataNode plus mirror step.
 
 ## Backend/API Additions
 
@@ -728,6 +778,14 @@ Required client methods on `DataNodeStorage`:
 initialize_portfolio_weights_source_table(...)
 initialize_signal_weights_source_table(...)
 initialize_portfolios_source_table(...)
+```
+
+Required signal metadata SDK helpers, implemented on top of `SimpleTable`
+persistence and query APIs:
+
+```python
+upsert_signal_metadata(...)
+get_signal_metadata(...)
 ```
 
 Recommended backend endpoints:
@@ -744,6 +802,11 @@ The backend should derive:
 - uniqueness over full `index_names`
 - lookup indexes for portfolio/signal and asset dimensions
 - update progress by full identity coordinate
+
+The `Signals` registry does not need a `DataNodeStorage` initializer or a custom
+dynamic-table source endpoint. It should use the existing `SimpleTable`
+machinery. The backend must enforce the `Index(unique=True)` constraint on
+`signal_uid`; description updates should be upserts, not new signal identities.
 
 ## Query Examples
 
@@ -795,6 +858,13 @@ df = signal_weights.get_df_between_dates(
 )
 ```
 
+### Signal description
+
+```python
+signal = get_signal_metadata(signal_uid=signal_configuration_hash)
+description = signal.signal_description
+```
+
 ### Incremental range for one portfolio and asset
 
 ```python
@@ -829,21 +899,19 @@ df = portfolio_weights.get_df_between_dates(
 ### Negative
 
 - The first implementation needs domain-specific table initialization endpoints.
-- Existing VFB signal strategies need a migration path.
-- `PortfolioStrategy` still needs to keep the legacy per-portfolio output during
-  migration even after canonical `PortfoliosDataNode` coverage exists.
+- Existing VFB portfolio and signal strategies need to be refactored onto the
+  canonical update hooks.
 - Stable signal identity is not currently a first-class VFB concept and must be
   added.
+- This is a breaking storage architecture change for VFB runtime output.
 
-### Compatibility
+### Compatibility Boundary
 
-Existing per-portfolio VFB DataNodes should remain readable during migration.
-
-Existing columns such as `rebalance_weights` and `weights_at_last_rebalance`
-should not be removed in the first release.
-
-Existing custom signal DataNodes should continue to work through the mirror path
-until they opt into direct `SignalWeights` storage.
+The new runtime does not preserve the per-portfolio VFB output DataNode as a
+parallel compatibility path. If old persisted tables need import, that is a
+separate offline operation, not part of the canonical VFB runtime. Runtime
+writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
+`SignalWeights`, and `Signals`.
 
 ## Implementation Tasks
 
@@ -893,75 +961,97 @@ until they opt into direct `SignalWeights` storage.
 
 ### Phase 4: Signal identity hashing
 
-- [ ] Add a canonical signal configuration serialization helper.
-- [ ] Compute `signal_uid` as the deterministic hash of the canonical signal
+- [x] Add a canonical signal configuration serialization helper.
+- [x] Compute `signal_uid` as the deterministic hash of the canonical signal
       configuration.
-- [ ] Include the concrete signal class/import identity in the hash input.
-- [ ] Include normalized config fields that affect emitted `signal_weight`
+- [x] Include the concrete signal class/import identity in the hash input.
+- [x] Include normalized config fields that affect emitted `signal_weight`
       values in the hash input.
-- [ ] Exclude namespace, storage id, update id, run timestamps, portfolio
+- [x] Exclude namespace, storage id, update id, run timestamps, portfolio
       consumers, and display-only names from the hash input.
-- [ ] Reuse the existing DataNode configuration hashing semantics where they
+- [x] Reuse the existing DataNode configuration hashing semantics where they
       already represent this identity.
-- [ ] Add tests proving identical signal configs produce identical
+- [x] Add tests proving identical signal configs produce identical
       `signal_uid` values.
-- [ ] Add tests proving output-changing config changes produce different
+- [x] Add tests proving output-changing config changes produce different
       `signal_uid` values.
-- [ ] Add tests proving namespace changes do not change `signal_uid`.
+- [x] Add tests proving namespace changes do not change `signal_uid`.
 
-### Phase 5: PortfolioWeights sync
+### Phase 4b: Signal metadata registry
 
-- [ ] Add a canonical portfolio configuration serialization helper.
-- [ ] Compute `portfolio_configuration_hash` from the full canonical
+- [x] Add a `Signals` `SimpleTable` metadata registry with unique
+      `signal_uid`.
+- [x] Store `signal_description` as nullable string metadata.
+- [x] Ensure `signal_description` is excluded from `signal_uid` hashing.
+- [x] Add SDK upsert and lookup helpers for `Signals` backed by existing
+      `SimpleTable` persistence/query machinery.
+- [x] Upsert signal metadata when VFB computes a `signal_uid` for canonical
+      `SignalWeights`.
+- [x] Add tests proving description changes update metadata without changing
+      `signal_uid`.
+
+### Phase 5: PortfolioWeights canonical update
+
+- [x] Reuse the existing TDAG serialization helper for canonical
+      `PortfolioConfiguration`; do not add a new serializer.
+- [x] Compute `portfolio_configuration_hash` from the full canonical
       `PortfolioConfiguration`.
-- [ ] Use `portfolio_configuration_hash` to get or create the backend
+- [x] Use `portfolio_configuration_hash` to get or create the backend
       `Portfolio` and `PortfolioIndexAsset`.
-- [ ] Store the resulting `PortfolioIndexAsset.unique_identifier` as
+- [x] Store the resulting `PortfolioIndexAsset.unique_identifier` as
       `portfolio_index_asset_unique_identifier` in canonical portfolio rows.
-- [ ] Add a normalizer from postprocessed VFB `weights` frames to
+- [x] Implement `PortfolioWeights.update()` as the primary canonical write path.
+- [x] Add `_calculate_weights()` as the explicit extension point called by
+      `PortfolioWeights.update()`.
+- [x] Extract reusable VFB portfolio calculation logic so `_calculate_weights()`
+      can build canonical rows without producing a legacy per-portfolio DataNode.
+- [x] Add a normalizer from postprocessed VFB `weights` frames to
       `PortfolioWeights` rows.
-- [ ] Add a normalizer from persisted `rebalance_weights` JSON for backfill.
-- [ ] Add opt-in `sync_canonical_tables=True` to `PortfolioStrategy.run(...)` or an
-      adjacent VFB orchestration helper.
-- [ ] Validate asset `unique_identifier` values before writing canonical rows.
-- [ ] Validate that two portfolios holding the same asset at the same timestamp
+- [x] Validate asset `unique_identifier` values before writing canonical rows.
+- [x] Validate that two portfolios holding the same asset at the same timestamp
       can write to the same table.
 
-### Phase 6: SignalWeights sync
+### Phase 6: SignalWeights canonical update
 
-- [ ] Add a mirror path from existing signal DataNodes into `SignalWeights`.
-- [ ] Populate every mirrored row with the computed `signal_uid`.
-- [ ] Update `WeightsBase.interpolate_index()` to optionally read from
+- [x] Implement `SignalWeights.update()` as the primary canonical signal write
+      path.
+- [x] Add `_calculate_signal_weights()` as the explicit extension point called
+      by `SignalWeights.update()`.
+- [x] Populate every canonical signal row with the computed `signal_uid`.
+- [x] Upsert the signal metadata row with `signal_uid` and
+      `signal_description` when available.
+- [x] Update `WeightsBase.interpolate_index()` to optionally read from
       `SignalWeights` with `dimension_filters={"signal_uid": [...]}`.
-- [ ] Migrate built-in signals one by one to direct shared-table storage.
-- [ ] Keep the mirror path as a compatibility bridge for custom signal
-      DataNodes.
+- [x] Enable built-in signals to use the direct shared-table read path through
+      `WeightsBase`.
+- [x] Document custom signal extension through `_calculate_signal_weights()`,
+      not per-signal DataNode mirroring.
 
-### Phase 7: PortfoliosDataNode sync
+### Phase 7: PortfoliosDataNode canonical update
 
-- [ ] Add the required `PortfoliosDataNode` config-first DataNode contract.
-- [ ] Write `close`, `return`, and value metadata indexed by
+- [x] Add the required `PortfoliosDataNode` config-first DataNode contract.
+- [x] Implement `PortfoliosDataNode.update()` as the primary canonical
+      portfolio-value write path.
+- [x] Add `_calculate_portfolio_values()` as the explicit extension point called
+      by `PortfoliosDataNode.update()`.
+- [x] Write `close`, `return`, and value metadata indexed by
       `portfolio_index_asset_unique_identifier`.
-- [ ] Add a normalizer from the VFB calculated `portfolio` frame to
+- [x] Add a normalizer from the VFB calculated `portfolio` frame to
       `PortfoliosDataNode` rows.
-- [ ] Ensure `PortfoliosDataNode` sync uses the same namespace and
+- [x] Ensure `PortfoliosDataNode` sync uses the same namespace and
       `portfolio_index_asset_unique_identifier` as `PortfolioWeights`.
-- [ ] Update VFB docs to describe which table owns values and which table owns
+- [x] Update VFB docs to describe which table owns values and which table owns
       weights.
-- [ ] De-emphasize per-portfolio JSON output after canonical coverage is
-      complete.
 
-### Phase 8: Backfill
+### Phase 8: Remove legacy VFB runtime output
 
-- [ ] List existing Markets `Portfolio` records with `data_node_update`.
-- [ ] Resolve each `PortfolioIndexAsset`.
-- [ ] Parse existing portfolio output JSON into `PortfolioWeights`.
-- [ ] Parse existing portfolio value rows into `PortfoliosDataNode`.
-- [ ] List existing signal DataNode storages where possible.
-- [ ] Derive `signal_uid` from each signal's canonical configuration hash.
-- [ ] Mirror signal rows into `SignalWeights`.
-- [ ] Run backfill per namespace, preserving source table namespace.
-- [ ] Report missing identities and skipped rows explicitly.
+- [ ] Remove the VFB runtime dependency on per-portfolio output DataNodes.
+- [ ] Stop writing serialized `rebalance_weights` JSON as the portfolio weight
+      storage surface.
+- [ ] Ensure no canonical runtime path mirrors from legacy portfolio or signal
+      DataNodes.
+- [ ] Keep any one-off legacy data import tooling outside the canonical VFB
+      DataNode runtime.
 
 ### Phase 9: Tests
 
@@ -969,18 +1059,22 @@ until they opt into direct `SignalWeights` storage.
 - [x] Contract validation for `SignalWeights`.
 - [x] Contract validation for `PortfoliosDataNode`.
 - [x] Namespace isolation tests.
-- [ ] Signal configuration hash identity tests.
+- [x] Signal configuration hash identity tests.
 - [x] Full-index duplicate detection tests.
 - [ ] Dimension-filter query payload tests.
 - [ ] Incremental update tests using nested `index_progress`.
-- [ ] PortfolioStrategy sync tests.
-- [ ] Signal mirror tests.
-- [ ] Backfill JSON parsing tests.
+- [x] `PortfolioWeights.update()` calls `_calculate_weights()` and validates
+      canonical rows.
+- [x] `SignalWeights.update()` calls `_calculate_signal_weights()` and validates
+      canonical rows.
+- [x] `PortfoliosDataNode.update()` calls `_calculate_portfolio_values()` and
+      validates canonical rows.
+- [ ] Tests proving canonical runtime does not write per-portfolio JSON output.
 
 ## Open Questions
 
-1. Should canonical writes happen inside `PortfolioStrategy.run(...)`, or should
-   an orchestration object own the sync after portfolio construction?
+None for the write path. Canonical writes belong to the canonical DataNode
+`update()` methods.
 
 ## Acceptance Criteria
 
@@ -999,4 +1093,5 @@ The new architecture is complete when:
    hash of the canonical signal configuration.
 7. The user can pass `namespace` to select an isolated shared table family.
 8. The tables use ADR 0002 dimension filters and nested index progress.
-9. Existing VFB per-portfolio tables remain compatible during migration.
+9. Canonical VFB runtime writes go through the canonical DataNode `update()`
+   methods and do not produce per-portfolio JSON output tables.

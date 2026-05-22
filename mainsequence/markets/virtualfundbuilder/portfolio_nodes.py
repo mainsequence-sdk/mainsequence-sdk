@@ -14,6 +14,7 @@ from mainsequence.client import Asset, AssetCategory
 from mainsequence.markets.virtualfundbuilder.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
+from mainsequence.markets.virtualfundbuilder.data_nodes import SignalWeights
 from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
@@ -88,10 +89,9 @@ POSITIONS_PORTFOLIO_COLUMNS = {
     "positions_at_last_rebalance": "positions_before",
     "price_at_last_rebalance": "price_before",
     "volume_at_last_rebalance": "volume_before",
-
 }
 
-All_PORTFOLIO_COLUMNS_WEIGHTS,All_PORTFOLIO_COLUMNS_POSITIONS = [], []
+All_PORTFOLIO_COLUMNS_WEIGHTS, All_PORTFOLIO_COLUMNS_POSITIONS = [], []
 All_PORTFOLIO_COLUMNS_WEIGHTS.extend(list(WEIGHTS_TO_PORTFOLIO_COLUMNS.keys()))
 All_PORTFOLIO_COLUMNS_WEIGHTS.extend(["last_rebalance_date", "close", "return"])
 
@@ -99,15 +99,14 @@ All_PORTFOLIO_COLUMNS_POSITIONS.extend(list(POSITIONS_PORTFOLIO_COLUMNS.keys()))
 All_PORTFOLIO_COLUMNS_POSITIONS.extend(["last_rebalance_date", "close", "return"])
 
 
-def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
+def _build_target_portfolio_in_backend(
+    portfolio_ts: DataNode,
 ) -> tuple[msc.Portfolio, msc.PortfolioIndexAsset]:
     """
     This method creates a portfolio in VAM with configm file settings.
 
     Returns:
     """
-
-
 
     def build_markets_portfolio(ts):
         # when is live target portfolio
@@ -127,8 +126,7 @@ def _build_target_portfolio_in_backend(portfolio_ts:DataNode,
             portfolio_ts.portfolio_build_configuration.backtesting_weights_configuration.rebalance_strategy_instance.calendar_key
         )
 
-
-            # front end details
+        # front end details
         standard_kwargs["target_portfolio_about"] = {
             "description": ts.get_portfolio_about_text(),
             "signal_name": ts.backtesting_weights_config.signal_weights_instance.__class__.__name__,
@@ -175,15 +173,13 @@ class PortfolioFromDF(DataNode):
     def get_portfolio_df(self):
         raise NotImplementedError()
 
-
-
     def update(self):
         df = self.get_portfolio_df()
         if df.empty:
             return pd.DataFrame()
 
         # Ensure columns are known
-        if   self.builds_from_target_weights:
+        if self.builds_from_target_weights:
             assert all(c in All_PORTFOLIO_COLUMNS_WEIGHTS for c in df.columns)
         else:
             assert all(c in All_PORTFOLIO_COLUMNS_POSITIONS for c in df.columns)
@@ -229,7 +225,11 @@ class PortfolioFromDF(DataNode):
 
         # Apply to expected weight columns
 
-        target_dict=WEIGHTS_TO_PORTFOLIO_COLUMNS if self.builds_from_target_weights else POSITIONS_PORTFOLIO_COLUMNS
+        target_dict = (
+            WEIGHTS_TO_PORTFOLIO_COLUMNS
+            if self.builds_from_target_weights
+            else POSITIONS_PORTFOLIO_COLUMNS
+        )
 
         for c in target_dict.keys():
             if c not in df.columns:
@@ -238,17 +238,11 @@ class PortfolioFromDF(DataNode):
 
         return df
 
-    def run(self,*args,add_portfolio_to_markets_backend=False,
-           **kwargs):
-        super().run(
-
-            *args,**kwargs
-        )
+    def run(self, *args, add_portfolio_to_markets_backend=False, **kwargs):
+        super().run(*args, **kwargs)
 
         ## manualely
-        target_portfolio = msc.Portfolio.get_or_none(
-            data_node_update__id=self.data_node_update.id
-        )
+        target_portfolio = msc.Portfolio.get_or_none(data_node_update__id=self.data_node_update.id)
         standard_kwargs = dict(
             portfolio_name=self.portfolio_name,
             data_node_update_id=self.data_node_update.id,
@@ -270,8 +264,8 @@ class PortfolioFromDF(DataNode):
 
             index_asset = msc.PortfolioIndexAsset.get(reference_portfolio__id=target_portfolio.id)
 
-        self.target_portfolio=target_portfolio
-        self.index_asset=index_asset
+        self.target_portfolio = target_portfolio
+        self.index_asset = index_asset
 
 
 class PortfolioStrategy(DataNode):
@@ -291,13 +285,13 @@ class PortfolioStrategy(DataNode):
         """
         self.portfolio_strategy_config = portfolio_strategy_config
         portfolio_configuration = portfolio_strategy_config.portfolio_configuration
-        portfolio_build_configuration=portfolio_configuration.portfolio_build_configuration
-        self.portfolio_build_configuration=portfolio_build_configuration
+        portfolio_build_configuration = portfolio_configuration.portfolio_build_configuration
+        self.portfolio_build_configuration = portfolio_build_configuration
         self.execution_configuration = portfolio_build_configuration.execution_configuration
         self.backtesting_weights_config = (
             portfolio_build_configuration.backtesting_weights_configuration
         )
-        self.portfolio_markets_config=portfolio_configuration.portfolio_markets_configuration
+        self.portfolio_markets_config = portfolio_configuration.portfolio_markets_configuration
         self.commission_fee = self.execution_configuration.commission_fee
 
         self.portfolio_prices_frequency = portfolio_build_configuration.portfolio_prices_frequency
@@ -308,11 +302,14 @@ class PortfolioStrategy(DataNode):
             self.assets_configuration.prices_configuration.upsample_frequency_id
         )
 
+        self.signal_weights = self.backtesting_weights_config.signal_weights_instance
+        if not isinstance(self.signal_weights, SignalWeights):
+            raise TypeError(
+                "PortfolioStrategy requires signal_weights_instance to inherit "
+                "from SignalWeights."
+            )
 
-        self.signal_weights=self.backtesting_weights_config.signal_weights_instance
-
-        self.rebalancer=self.backtesting_weights_config.rebalance_strategy_instance
-
+        self.rebalancer = self.backtesting_weights_config.rebalance_strategy_instance
 
         self.rebalancer_explanation = ""  # TODO: Add rebalancer explanation
 
@@ -727,9 +724,7 @@ rebalance details:"""
             new_index=new_index,
             bars_ts=self.bars_ts,
             index_freq=index_freq,
-            unique_identifiers=list(
-                signal_weights.columns.get_level_values("unique_identifier")
-            ),
+            unique_identifiers=list(signal_weights.columns.get_level_values("unique_identifier")),
         )
 
         if self.update_statistics.max_time_index_value is not None:
@@ -832,14 +827,7 @@ rebalance details:"""
     def portfolio_frequency_to_pandas(self):
         return translate_to_pandas_freq(self.portfolio_prices_frequency)
 
-
-
-
-
-
-    def run(self,add_portfolio_to_markets_backend=False,
-
-            *args,**kwargs):
+    def run(self, add_portfolio_to_markets_backend=False, *args, **kwargs):
         """
         We override run  to create
         """
@@ -847,5 +835,6 @@ rebalance details:"""
         super().run(*args, **kwargs)
 
         if add_portfolio_to_markets_backend:
-            _build_target_portfolio_in_backend(portfolio_ts=self,
-                )
+            _build_target_portfolio_in_backend(
+                portfolio_ts=self,
+            )

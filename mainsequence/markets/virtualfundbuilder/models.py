@@ -13,11 +13,14 @@ from pydantic import (
 
 import mainsequence.client as msc
 from mainsequence.client import Asset
+from mainsequence.markets.virtualfundbuilder.data_nodes import (
+    SignalWeights,
+    canonical_signal_configuration,
+)
 from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
 from mainsequence.markets.virtualfundbuilder.resource_factory.rebalance_factory import (
     RebalanceStrategyBase,
 )
-from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import WeightsBase
 from mainsequence.markets.virtualfundbuilder.utils import get_vfb_logger
 
 logger = get_vfb_logger()
@@ -32,6 +35,7 @@ class VFBConfigBaseModel(BaseModel):
     VFB configurations often carry non-Pydantic objects (e.g., strategy instances),
     so `arbitrary_types_allowed=True` is required.
     """
+
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -62,7 +66,7 @@ class PricesConfiguration(VFBConfigBaseModel):
 
     This config controls *how VFB fetches and shapes prices*.
     It is distinct from signal-weight validity, which is controlled by
-    `WeightsBase.maximum_forward_fill()`.
+    `SignalWeights.maximum_forward_fill()`.
 
     Attributes:
         bar_frequency_id: Source bars frequency (e.g., "1d", "5m").
@@ -207,7 +211,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     IMPORTANT (VFB design)
     ----------------------
     VFB uses **direct injection** (instances), not string lookups:
-    - `signal_weights_instance` is a WeightsBase strategy (usually also a TDAG DataNode)
+    - `signal_weights_instance` is a SignalWeights DataNode
     - `rebalance_strategy_instance` is a RebalanceStrategyBase strategy (pure pydantic model)
 
     Attributes:
@@ -219,7 +223,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     """
 
     model_config = ConfigDict(
-        extra="forbid",          # reject unknown fields
+        extra="forbid",  # reject unknown fields
         populate_by_name=True,
         arbitrary_types_allowed=True,
     )
@@ -234,12 +238,12 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
     )
 
     signal_weights_instance: Annotated[
-        WeightsBase,
+        SignalWeights,
         Field(
             description=(
-                "Instance of a signal weights strategy. "
-                "This object is typically also a TDAG DataNode and will be serialized "
-                "via its own configuration JSON schema."
+                "Instance of a signal weights DataNode. "
+                "It is serialized from its concrete signal configuration while "
+                "stored in the canonical SignalWeights table."
             ),
             examples=[
                 # Example is intentionally schematic; actual fields depend on the strategy class.
@@ -254,16 +258,9 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
         when_used="json",
         return_type=dict[str, Any],
     )
-    def ser_signal_weights(self, v: WeightsBase) -> dict[str, Any]:
-        """
-        Serialize the signal node as its configuration JSON schema.
-
-        Robust behavior:
-        - works if `build_configuration_json_schema` is a property (dict)
-        - works if it is a method returning dict
-        """
-        schema_or_callable = v.build_configuration_json_schema
-        return schema_or_callable() if callable(schema_or_callable) else schema_or_callable
+    def ser_signal_weights(self, v: SignalWeights) -> dict[str, Any]:
+        """Serialize the concrete signal identity, not the canonical table identity."""
+        return canonical_signal_configuration(v)
 
 
 class PortfolioExecutionConfiguration(VFBConfigBaseModel):

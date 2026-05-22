@@ -1,40 +1,45 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
 
 import pandas as pd
 
 from mainsequence.client import Asset, AssetCategory
 from mainsequence.client.models_tdag import Artifact
-from mainsequence.markets.virtualfundbuilder.models import AssetsConfiguration
-from mainsequence.markets.virtualfundbuilder.resource_factory.signal_factory import (
-    WeightsBase,
+from mainsequence.markets.virtualfundbuilder.data_nodes import SignalWeights
+from mainsequence.markets.virtualfundbuilder.models import (
+    AssetsConfiguration,
+    VFBConfigBaseModel,
 )
 from mainsequence.markets.virtualfundbuilder.utils import TIMEDELTA
-from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
-
-if TYPE_CHECKING:
-    from mainsequence.client.models_tdag import UpdateStatistics
 
 
-class ExternalWeightsConfig(DataNodeConfiguration):
+class ExternalWeightsConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     artifact_name: str
     bucket_name: str
 
 
-class ExternalWeights(WeightsBase, DataNode):
-    def __init__(self, weights_config: ExternalWeightsConfig, *args, **kwargs):
-        self.weights_config = weights_config
-        self.artifact_name = weights_config.artifact_name
-        self.bucket_name = weights_config.bucket_name
-        super().__init__(
-            signal_assets_configuration=weights_config.signal_assets_configuration,
-            config=weights_config,
-            *args,
-            **kwargs,
-        )
+class ExternalWeights(SignalWeights):
+    @property
+    def external_weights_config(self) -> ExternalWeightsConfig:
+        if not isinstance(self.signal_configuration, ExternalWeightsConfig):
+            raise TypeError(
+                "ExternalWeights requires ExternalWeightsConfig as signal_configuration."
+            )
+        return self.signal_configuration
+
+    @property
+    def assets_configuration(self) -> AssetsConfiguration:
+        return self.external_weights_config.signal_assets_configuration
+
+    @property
+    def artifact_name(self) -> str:
+        return self.external_weights_config.artifact_name
+
+    @property
+    def bucket_name(self) -> str:
+        return self.external_weights_config.bucket_name
 
     def maximum_forward_fill(self):
         return timedelta(days=1) - TIMEDELTA
@@ -53,14 +58,14 @@ class ExternalWeights(WeightsBase, DataNode):
         asset_list = Asset.filter(id__in=asset_category.assets)
         return asset_list
 
-    def update(self, update_statistics: UpdateStatistics):
+    def _calculate_signal_weights(self):
         source_artifact = Artifact.get(bucket__name=self.bucket_name, name=self.artifact_name)
         weights_source = pd.read_csv(source_artifact.content)
 
         weights_source["time_index"] = pd.to_datetime(weights_source["time_index"], utc=True)
 
         # convert figis in source data
-        for asset in update_statistics.asset_list:
+        for asset in self.update_statistics.asset_list:
             weights_source.loc[weights_source["figi"] == asset.figi, "unique_identifier"] = (
                 asset.unique_identifier
             )
@@ -69,5 +74,5 @@ class ExternalWeights(WeightsBase, DataNode):
         weights.rename(columns={"weight": "signal_weight"}, inplace=True)
         weights.set_index(["time_index", "unique_identifier"], inplace=True)
 
-        weights = update_statistics.filter_df_by_latest_value(weights)
+        weights = self.update_statistics.filter_df_by_latest_value(weights)
         return weights
