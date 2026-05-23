@@ -1,5 +1,6 @@
 import datetime
 import os
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,10 +18,15 @@ def _clear_command_center_env(monkeypatch):
 class _FakeAPIPersistManager:
     def __init__(self):
         self.calls = []
+        self.last_calls = []
 
     def get_df_between_dates(self, **kwargs):
         self.calls.append(kwargs)
         return "ok"
+
+    def get_last_observation(self, **kwargs):
+        self.last_calls.append(kwargs)
+        return "latest"
 
 
 def _mixin_with_fake_api_manager(monkeypatch):
@@ -103,3 +109,67 @@ def test_data_access_mixin_translates_unique_identifier_range_map_for_api_manage
             "start_date": start,
         }
     ]
+
+
+def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatch):
+    mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
+
+    result = mixin.get_last_observation(
+        dimension_filters={"account_uid": ["account-a"]},
+    )
+
+    assert result == "latest"
+    assert manager.last_calls == [
+        {
+            "dimension_filters": {"account_uid": ["account-a"]},
+            "index_coordinates": None,
+            "dimension_range_map": None,
+        }
+    ]
+
+
+def test_data_access_mixin_asset_latest_observation_shim_warns(monkeypatch):
+    mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
+
+    with pytest.warns(FutureWarning, match="asset_list"):
+        result = mixin.get_last_observation(
+            asset_list=[
+                SimpleNamespace(unique_identifier="BTC"),
+                SimpleNamespace(unique_identifier="ETH"),
+            ],
+        )
+
+    assert result == "latest"
+    assert manager.last_calls[0]["dimension_filters"] == {
+        "unique_identifier": ["BTC", "ETH"]
+    }
+
+
+def test_data_access_mixin_asset_range_shims_warn_without_mutating(monkeypatch):
+    mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
+    start = datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
+    range_descriptor = {"BTC": {"start_date": start}}
+
+    with pytest.warns(FutureWarning, match="get_ranged_data_per_asset"):
+        result = mixin.get_ranged_data_per_asset(range_descriptor)
+
+    assert result == "ok"
+    assert manager.calls[-1]["dimension_range_map"] == [
+        {
+            "coordinate": {"unique_identifier": "BTC"},
+            "start_date": start,
+        }
+    ]
+
+    with pytest.warns(FutureWarning, match="get_ranged_data_per_asset_great_or_equal"):
+        result = mixin.get_ranged_data_per_asset_great_or_equal(range_descriptor)
+
+    assert result == "ok"
+    assert manager.calls[-1]["dimension_range_map"] == [
+        {
+            "coordinate": {"unique_identifier": "BTC"},
+            "start_date": start,
+            "start_date_operand": ">=",
+        }
+    ]
+    assert range_descriptor == {"BTC": {"start_date": start}}

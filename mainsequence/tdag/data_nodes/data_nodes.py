@@ -58,9 +58,10 @@ def get_data_source_from_orm() -> Any:
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
 
 
-def _unique_identifier_range_map_to_dimension_range_map(
+def _legacy_unique_identifier_range_map_to_dimension_range_map(
     range_descriptor: UniqueIdentifierRangeMap | None,
 ) -> list[dict[str, Any]] | None:
+    """LEGACY_COMPAT: asset range maps now belong to MarketDataNode."""
     if range_descriptor is None:
         return None
     return [
@@ -132,15 +133,40 @@ class DataAccessMixin:
     def __repr__(self) -> str:
         return self.__class__.__name__
 
-    def get_last_observation(self, asset_list: list[ms_client.AssetMixin] | None=None):
-        # update_statistics = self.get_update_statistics()
-        # if asset_list is not None:
-        #     update_statistics = update_statistics.update_assets(asset_list=asset_list)
-        # update_range_map = update_statistics.get_update_range_map_great_or_equal()
-        # last_observation = self.get_ranged_data_per_asset(update_range_map)
-        # return last_observation
+    def get_last_observation(
+        self,
+        asset_list: list[Any] | None = None,
+        *,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+    ):
+        """Return the latest observation using generic TDAG dimensions."""
+        if asset_list is not None:
+            # LEGACY_COMPAT: asset-scoped latest-observation lives on MarketDataNode.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: asset_list was passed to "
+                "get_last_observation(). Use MarketDataNode.get_last_observation() "
+                "or pass dimension_filters explicitly.",
+                FutureWarning,
+                stacklevel=2,
+            )
+            if (
+                dimension_filters is not None
+                or index_coordinates is not None
+                or dimension_range_map is not None
+            ):
+                raise ValueError(
+                    "Do not mix asset_list with canonical dimension filters."
+                )
+            dimension_filters = {
+                "unique_identifier": [asset.unique_identifier for asset in asset_list]
+            }
+
         return self.local_persist_manager.get_last_observation(
-            asset_list=asset_list,
+            dimension_filters=dimension_filters,
+            index_coordinates=index_coordinates,
+            dimension_range_map=dimension_range_map,
         )
 
 
@@ -358,7 +384,7 @@ class DataAccessMixin:
                     raise ValueError(
                         "Do not mix unique_identifier_range_map with canonical dimension filters."
                     )
-                dimension_range_map = _unique_identifier_range_map_to_dimension_range_map(
+                dimension_range_map = _legacy_unique_identifier_range_map_to_dimension_range_map(
                     unique_identifier_range_map
                 )
                 unique_identifier_range_map = None
@@ -380,17 +406,18 @@ class DataAccessMixin:
         range_descriptor: UniqueIdentifierRangeMap | None,
         columns=None,
     ) -> pd.DataFrame:
-        """
-        Gets data based on a range descriptor.
-
-        Args:
-            range_descriptor: A UniqueIdentifierRangeMap object.
-
-        Returns:
-            A DataFrame with the ranged data.
-        """
+        """LEGACY_COMPAT: use MarketDataNode or explicit dimension_range_map."""
+        warnings.warn(
+            "Deprecated TDAG compatibility path: get_ranged_data_per_asset() "
+            "moved to MarketDataNode. Use a MarketDataNode subclass or pass "
+            "dimension_range_map to get_df_between_dates().",
+            FutureWarning,
+            stacklevel=2,
+        )
         return self.get_df_between_dates(
-            dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor),
+            dimension_range_map=_legacy_unique_identifier_range_map_to_dimension_range_map(
+                range_descriptor
+            ),
             columns=columns,
         )
 
@@ -399,33 +426,39 @@ class DataAccessMixin:
         range_descriptor: UniqueIdentifierRangeMap | None,
         columns=None,
     ) -> pd.DataFrame:
-        """
-        Gets data based on a range descriptor.
+        """LEGACY_COMPAT: use MarketDataNode or explicit dimension_range_map."""
+        warnings.warn(
+            "Deprecated TDAG compatibility path: "
+            "get_ranged_data_per_asset_great_or_equal() moved to MarketDataNode. "
+            "Use a MarketDataNode subclass or pass dimension_range_map to "
+            "get_df_between_dates().",
+            FutureWarning,
+            stacklevel=2,
+        )
+        if range_descriptor is None:
+            return self.get_df_between_dates(
+                dimension_range_map=None,
+                columns=columns,
+            )
 
-        Args:
-            range_descriptor: A UniqueIdentifierRangeMap object.
-
-        Returns:
-            A DataFrame with the ranged data.
-        """
-
-        for _k, v in range_descriptor.items():
-            v["start_date_operand"] = "=>"
+        inclusive_descriptor = copy.deepcopy(range_descriptor)
+        for date_info in inclusive_descriptor.values():
+            date_info["start_date_operand"] = ">="
         return self.get_df_between_dates(
-            dimension_range_map=_unique_identifier_range_map_to_dimension_range_map(range_descriptor),
+            dimension_range_map=_legacy_unique_identifier_range_map_to_dimension_range_map(
+                inclusive_descriptor
+            ),
             columns=columns,
         )
 
     def filter_by_assets_ranges(self, asset_ranges_map: dict) -> pd.DataFrame:
-        """
-        Filters data by asset ranges.
-
-        Args:
-            asset_ranges_map: A dictionary mapping assets to their date ranges.
-
-        Returns:
-            A DataFrame with the filtered data.
-        """
+        """LEGACY_COMPAT: asset range filtering moved to MarketDataNode."""
+        warnings.warn(
+            "Deprecated TDAG compatibility path: filter_by_assets_ranges() moved "
+            "to MarketDataNode.",
+            FutureWarning,
+            stacklevel=2,
+        )
         return self.local_persist_manager.filter_by_assets_ranges(asset_ranges_map)
 
 

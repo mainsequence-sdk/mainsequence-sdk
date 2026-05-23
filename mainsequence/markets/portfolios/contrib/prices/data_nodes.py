@@ -15,9 +15,13 @@ from mainsequence.client import (
     Asset,
     AssetCategory,
 )
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
+)
 from mainsequence.markets.portfolios.models import AssetsConfiguration
 from mainsequence.markets.portfolios.utils import TIMEDELTA
-from mainsequence.tdag import APIDataNode, DataNodeConfiguration
+from mainsequence.tdag import APIDataNode
 from mainsequence.tdag.data_nodes import DataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
@@ -27,7 +31,7 @@ from mainsequence.tdag.data_nodes.utils import (
 FULL_CALENDAR = "24/7"
 
 
-class InterpolatedPricesConfig(DataNodeConfiguration):
+class InterpolatedPricesConfig(MarketDataNodeConfiguration):
     model_config = ConfigDict(extra="forbid", arbitrary_types_allowed=True)
 
     bar_frequency_id: str
@@ -43,7 +47,7 @@ class InterpolatedPricesConfig(DataNodeConfiguration):
     )
 
 
-class ExternalPricesConfig(DataNodeConfiguration):
+class ExternalPricesConfig(MarketDataNodeConfiguration):
     artifact_name: str
     bucket_name: str
     asset_category_unique_id: str
@@ -582,7 +586,7 @@ def interpolate_intraday_bars(
     return interpolated_data
 
 
-class InterpolatedPrices(DataNode):
+class InterpolatedPrices(MarketDataNode):
     """
     Handles interpolated prices for assets.
     """
@@ -849,7 +853,7 @@ class InterpolatedPrices(DataNode):
         return prices
 
 
-class ExternalPrices(DataNode):
+class ExternalPrices(MarketDataNode):
 
     def __init__(self, external_prices_config: ExternalPricesConfig, *args, **kwargs):
         self.external_prices_config = external_prices_config

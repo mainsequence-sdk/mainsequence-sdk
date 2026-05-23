@@ -83,11 +83,11 @@ SIGNAL_WEIGHTS_COLUMN_DESCRIPTIONS = {
 
 PORTFOLIOS_INDEX_NAMES = [
     PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
-    PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER,
+    ASSET_UNIQUE_IDENTIFIER,
 ]
 PORTFOLIOS_COLUMN_DTYPES_MAP = {
     "time_index": "datetime64[ns, UTC]",
-    "portfolio_index_asset_unique_identifier": "string",
+    "unique_identifier": "string",
     "close": "float64",
     "return": "float64",
     "calculated_close": "float64",
@@ -95,7 +95,7 @@ PORTFOLIOS_COLUMN_DTYPES_MAP = {
 }
 PORTFOLIOS_COLUMN_LABELS = {
     "time_index": "Time Index",
-    "portfolio_index_asset_unique_identifier": "Portfolio Index Asset Unique Identifier",
+    "unique_identifier": "Unique Identifier",
     "close": "Close",
     "return": "Return",
     "calculated_close": "Calculated Close",
@@ -103,8 +103,8 @@ PORTFOLIOS_COLUMN_LABELS = {
 }
 PORTFOLIOS_COLUMN_DESCRIPTIONS = {
     "time_index": "UTC timestamp for the portfolio value row.",
-    "portfolio_index_asset_unique_identifier": (
-        "Stable PortfolioIndexAsset unique identifier for the portfolio value " "series."
+    "unique_identifier": (
+        "Stable asset unique identifier for the portfolio value series."
     ),
     "close": "Published portfolio close value.",
     "return": "Portfolio period return.",
@@ -134,7 +134,6 @@ SIGNAL_UID_EXCLUDED_CONFIGURATION_KEYS = frozenset(
         "portfolio_consumers",
         "portfolio_id",
         "portfolio_uid",
-        "portfolio_unique_identifier",
         "portfolio_index_asset_unique_identifier",
         "display_name",
         "display_label",
@@ -165,7 +164,6 @@ REBALANCE_STRATEGY_UID_EXCLUDED_CONFIGURATION_KEYS = frozenset(
         "portfolio_consumers",
         "portfolio_id",
         "portfolio_uid",
-        "portfolio_unique_identifier",
         "portfolio_index_asset_unique_identifier",
         "display_name",
         "display_label",

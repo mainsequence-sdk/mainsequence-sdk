@@ -127,7 +127,7 @@ portfolio_values = pd.DataFrame(
 node = PortfoliosDataNode()
 node.set_portfolio_values_frame(
     portfolio_values,
-    portfolio_index_asset_unique_identifier="portfolio:external-demo",
+    unique_identifier="portfolio:external-demo",
 )
 ```
 

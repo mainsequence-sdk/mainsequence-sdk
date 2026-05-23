@@ -4,6 +4,7 @@ import mainsequence.tdag.data_nodes.build_operations as build_operations
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration, RecordDefinition
 
 from .base import (
+    AssetScopedPortfolioCanonicalDataNode,
     PortfolioCanonicalDataNode,
     PortfolioCanonicalDataNodeConfiguration,
     SignalWeightsConfiguration,
@@ -52,6 +53,7 @@ __all__ = [
     "SignalWeightsConfiguration",
     "PORTFOLIO_CANONICAL_TIME_INDEX_NAME",
     "PortfolioCanonicalDataNode",
+    "AssetScopedPortfolioCanonicalDataNode",
     "PortfolioCanonicalDataNodeConfiguration",
     "canonical_portfolio_configuration",
     "canonical_signal_configuration",

@@ -175,7 +175,7 @@ Optional canonical columns:
 - `calculated_close`
 - `close_time`
 
-`PortfoliosDataNode` adds `portfolio_index_asset_unique_identifier` from the
+`PortfoliosDataNode` adds the portfolio asset `unique_identifier` from the
 runtime input and validates the frame against the canonical schema.
 
 ## Practical quality rules

@@ -6,6 +6,7 @@ import pandas as pd
 from pydantic import Field
 
 from mainsequence.client.models_tdag import LOGICAL_COLUMN_DTYPES_ATTR
+from mainsequence.markets.markets_data_node import MarketDataNode
 from mainsequence.tdag.data_nodes import (
     DataNode,
     DataNodeConfiguration,
@@ -280,6 +281,14 @@ class PortfolioCanonicalDataNode(DataNode):
             )
 
 
+class AssetScopedPortfolioCanonicalDataNode(PortfolioCanonicalDataNode, MarketDataNode):
+    """Canonical Portfolios DataNode whose identity includes asset unique_identifier."""
+
+    def _initialize_configuration(self, init_kwargs: dict) -> None:
+        _drop_empty_framework_init_kwargs(init_kwargs)
+        super()._initialize_configuration(init_kwargs=init_kwargs)
+
+
 def _record_definitions_from_dtype_map(
     column_dtypes_map: dict[str, str],
     *,
@@ -314,6 +323,13 @@ def _class_import_path(cls: type) -> dict[str, str]:
         "module": cls.__module__,
         "qualname": cls.__qualname__,
     }
+
+
+def _drop_empty_framework_init_kwargs(init_kwargs: dict) -> None:
+    if init_kwargs.get("hash_namespace") in (None, ""):
+        init_kwargs.pop("hash_namespace", None)
+    if init_kwargs.get("test_node") is False:
+        init_kwargs.pop("test_node", None)
 
 
 def _drop_excluded_keys(value: Any, *, excluded_keys: frozenset[str]) -> Any:

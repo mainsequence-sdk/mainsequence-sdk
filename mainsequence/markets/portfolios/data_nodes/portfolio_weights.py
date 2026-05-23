@@ -7,7 +7,7 @@ import pandas as pd
 from mainsequence.tdag.data_nodes import RecordDefinition
 
 from .base import (
-    PortfolioCanonicalDataNode,
+    AssetScopedPortfolioCanonicalDataNode,
     PortfolioCanonicalDataNodeConfiguration,
     _empty_flat_frame,
     _record_definitions_from_dtype_map,
@@ -32,7 +32,7 @@ from .portfolio_identity import (
 )
 
 
-class PortfolioWeights(PortfolioCanonicalDataNode):
+class PortfolioWeights(AssetScopedPortfolioCanonicalDataNode):
     """Canonical DataNode for executed Portfolios portfolio weights."""
 
     def set_weights_frame(

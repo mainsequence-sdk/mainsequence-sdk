@@ -145,13 +145,13 @@ portfolio_values = pd.DataFrame(
 node = PortfoliosDataNode()
 node.set_portfolio_values_frame(
     portfolio_values,
-    portfolio_index_asset_unique_identifier="portfolio:external-demo",
+    unique_identifier="portfolio:external-demo",
 )
 ```
 
 ### What Portfolios does for you
 
-`PortfoliosDataNode` adds the portfolio index asset identifier and normalizes
+`PortfoliosDataNode` adds the portfolio asset `unique_identifier` and normalizes
 the frame into the canonical portfolio values table.
 
 ## Backend sync behavior

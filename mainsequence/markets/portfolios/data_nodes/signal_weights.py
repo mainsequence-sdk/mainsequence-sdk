@@ -11,10 +11,11 @@ import mainsequence.tdag.data_nodes.build_operations as build_operations
 from mainsequence.tdag.data_nodes import DataNodeMetaData, RecordDefinition
 
 from .base import (
-    PortfolioCanonicalDataNode,
+    AssetScopedPortfolioCanonicalDataNode,
     PortfolioCanonicalDataNodeConfiguration,
     SignalWeightsConfiguration,
     _class_import_path,
+    _drop_empty_framework_init_kwargs,
     _drop_excluded_keys,
     _empty_flat_frame,
     _is_canonical_frame,
@@ -36,7 +37,7 @@ from .constants import (
 )
 
 
-class SignalWeights(PortfolioCanonicalDataNode):
+class SignalWeights(AssetScopedPortfolioCanonicalDataNode):
     """Canonical DataNode for Portfolios signal weights."""
 
     def __init__(
@@ -54,6 +55,8 @@ class SignalWeights(PortfolioCanonicalDataNode):
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:
         """Hash every signal subclass as the canonical SignalWeights table."""
+        _drop_empty_framework_init_kwargs(init_kwargs)
+        init_kwargs.pop("config", None)
         init_kwargs["time_series_class_import_path"] = _class_import_path(SignalWeights)
         config = build_operations.create_config(
             kwargs=init_kwargs,

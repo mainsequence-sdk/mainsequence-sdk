@@ -166,8 +166,14 @@ class MarketDataNode(DataNode):
         asset_list: Iterable[AssetMixin] | None = None,
     ) -> pd.DataFrame:
         """Return the latest observation, optionally scoped to market assets."""
-        assets = self.get_asset_list() if asset_list is None else self.validate_asset_list(asset_list)
-        return super().get_last_observation(asset_list=assets)
+        assets = (
+            self.get_asset_list()
+            if asset_list is None
+            else self.validate_asset_list(asset_list)
+        )
+        return self.local_persist_manager.get_last_observation(
+            dimension_filters=self.asset_dimension_filters(assets),
+        )
 
     def get_ranged_data_per_asset(
         self,
@@ -191,7 +197,7 @@ class MarketDataNode(DataNode):
 
         inclusive_descriptor = copy.deepcopy(range_descriptor)
         for date_info in inclusive_descriptor.values():
-            date_info["start_date_operand"] = "=>"
+            date_info["start_date_operand"] = ">="
 
         return self.get_ranged_data_per_asset(
             range_descriptor=inclusive_descriptor,

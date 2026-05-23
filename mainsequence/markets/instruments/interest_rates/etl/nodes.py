@@ -7,7 +7,11 @@ import pytz
 from pydantic import BaseModel, Field
 
 import mainsequence.client as msc
-from mainsequence.tdag import APIDataNode, DataNode, DataNodeConfiguration
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
+)
+from mainsequence.tdag import APIDataNode, DataNode
 
 from .curve_codec import compress_curve_to_string
 from .registry import (
@@ -17,7 +21,7 @@ from .registry import (
 
 UTC = pytz.UTC
 
-class CurveConfig(DataNodeConfiguration):
+class CurveConfig(MarketDataNodeConfiguration):
     curve_const: str = Field(
         ...,
         description="Constant name, e.g. ZERO_CURVE__VALMER_TIIE_28",
@@ -48,7 +52,7 @@ class RateConfig(BaseModel):
         json_schema_extra={"update_only": True},
     )
 
-class FixingRateConfig(DataNodeConfiguration):
+class FixingRateConfig(MarketDataNodeConfiguration):
     rates: list[RateConfig] = Field(
         ...,
         title="Interest rates build",
@@ -57,7 +61,7 @@ class FixingRateConfig(DataNodeConfiguration):
     )
 
 
-class DiscountCurvesNode(DataNode):
+class DiscountCurvesNode(MarketDataNode):
     OFFSET_START = datetime.datetime(1990, 1, 1, tzinfo=UTC)
 
     def __init__(self, curve_config: CurveConfig, *args, **kwargs):
@@ -112,7 +116,7 @@ class DiscountCurvesNode(DataNode):
     def get_column_metadata(self) -> list[msc.ColumnMetaData]:
         return [msc.ColumnMetaData(column_name="curve", dtype="str", label="Compressed Curve", description="Compressed Discount Curve")]
 
-class FixingRatesNode(DataNode):
+class FixingRatesNode(MarketDataNode):
     OFFSET_START = datetime.datetime(1990, 1, 1, tzinfo=UTC)
 
     def __init__(self, rates_config: FixingRateConfig, *args, **kwargs):

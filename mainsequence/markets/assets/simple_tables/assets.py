@@ -42,6 +42,13 @@ class AssetSimpleTable(SimpleTable):
         ...,
         description="Stable asset business identifier within the selected asset master list.",
     )
+    asset_type: constr(max_length=64) | None = Field(
+        None,
+        description=(
+            "Optional client-owned asset type classification "
+            "(for example equity, future, option, crypto, currency, or portfolio_index)."
+        ),
+    )
 
     @classmethod
     def filter_expr(

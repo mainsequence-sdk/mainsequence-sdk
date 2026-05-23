@@ -279,7 +279,7 @@ def test_signal_uid_excludes_storage_identity_from_dict_payload():
         "storage_hash": "signal_storage_a",
         "data_node_update_id": 1,
         "data_node_storage_id": 2,
-        "portfolio_index_asset_unique_identifier": "portfolio-a",
+        "portfolio_uid": "portfolio-a",
         "signal_name": "Research label",
     }
     second_payload = {
@@ -288,7 +288,7 @@ def test_signal_uid_excludes_storage_identity_from_dict_payload():
         "storage_hash": "signal_storage_b",
         "data_node_update_id": 100,
         "data_node_storage_id": 200,
-        "portfolio_index_asset_unique_identifier": "portfolio-b",
+        "portfolio_uid": "portfolio-b",
         "signal_name": "Production label",
     }
 
@@ -551,7 +551,7 @@ def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monk
             return {
                 "portfolio": {
                     "uid": "portfolio-uid",
-                    "portfolio_index_asset_unique_identifier": "portfolio-hash",
+                    "unique_identifier": "portfolio-hash",
                     "portfolio_name": "Research Portfolio",
                     "portfolio_weights_data_node": {"uid": "weights-node"},
                     "signal_weights_data_node": {"uid": "signals-node"},
@@ -575,7 +575,7 @@ def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monk
     monkeypatch.setattr(portfolio_models, "make_request", _fake_make_request)
 
     portfolio = portfolio_models.Portfolio.create_from_time_series(
-        portfolio_index_asset_unique_identifier="portfolio-hash",
+        unique_identifier="portfolio-hash",
         portfolio_weights_data_node_uid="weights-node",
         signal_weights_data_node_uid="signals-node",
         portfolio_data_node_uid="portfolio-data-node",
@@ -586,11 +586,11 @@ def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monk
     payload = request_calls[0]["payload"]["json"]
     assert "target_portfolio_about" not in payload
     assert "portfolio_description" not in payload
-    assert payload["portfolio_index_asset_unique_identifier"] == "portfolio-hash"
+    assert payload["unique_identifier"] == "portfolio-hash"
     assert payload["portfolio_weights_data_node_uid"] == "weights-node"
     assert payload["signal_weights_data_node_uid"] == "signals-node"
     assert payload["portfolio_data_node_uid"] == "portfolio-data-node"
-    assert portfolio.portfolio_index_asset_unique_identifier == "portfolio-hash"
+    assert portfolio.unique_identifier == "portfolio-hash"
 
 
 def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
@@ -606,7 +606,7 @@ def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
     )
     portfolio = portfolio_models.Portfolio(
         uid="portfolio-uid",
-        portfolio_index_asset_unique_identifier="portfolio-hash",
+        unique_identifier="portfolio-hash",
         portfolio_name="Research Portfolio",
         portfolio_weights_data_node={"uid": "weights-node"},
         signal_weights_data_node={"uid": "signals-node"},
@@ -709,18 +709,18 @@ def test_portfolios_data_node_is_canonical_data_node_contract():
 
     frame = data_nodes.PortfoliosDataNode.build_schema_bootstrap_frame(
         index_values={
-            data_nodes.PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: "portfolio:alpha",
+            data_nodes.ASSET_UNIQUE_IDENTIFIER: "portfolio:alpha",
         }
     )
 
     assert list(frame.index.names) == [
         "time_index",
-        "portfolio_index_asset_unique_identifier",
+        "unique_identifier",
     ]
     assert "extra_details" not in data_nodes.PORTFOLIOS_COLUMN_DTYPES_MAP
     assert frame.attrs[LOGICAL_COLUMN_DTYPES_ATTR] == data_nodes.PORTFOLIOS_COLUMN_DTYPES_MAP
     assert (
-        str(frame.reset_index()[data_nodes.PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER].dtype)
+        str(frame.reset_index()[data_nodes.ASSET_UNIQUE_IDENTIFIER].dtype)
         == "string"
     )
     assert str(frame.reset_index()["close_time"].dtype) == "datetime64[ns, UTC]"
@@ -1007,12 +1007,12 @@ def test_normalize_portfolio_values_frame_defaults_calculated_close_and_close_ti
 
     frame = data_nodes.normalize_portfolio_values_frame(
         raw_frame,
-        portfolio_index_asset_unique_identifier="portfolio-hash",
+        unique_identifier="portfolio-hash",
     )
 
     flat = frame.reset_index()
     assert list(frame.index.names) == data_nodes.PORTFOLIOS_INDEX_NAMES
-    assert flat.loc[0, "portfolio_index_asset_unique_identifier"] == "portfolio-hash"
+    assert flat.loc[0, "unique_identifier"] == "portfolio-hash"
     assert flat.loc[0, "calculated_close"] == 1.1
     assert str(flat["close_time"].dtype) == "datetime64[ns, UTC]"
 
@@ -1030,7 +1030,7 @@ def test_portfolios_data_node_update_calls_calculate_portfolio_values(monkeypatc
             return pd.DataFrame(
                 {
                     "time_index": ["2024-01-01T00:00:00Z"],
-                    "portfolio_index_asset_unique_identifier": ["portfolio-hash"],
+                    "unique_identifier": ["portfolio-hash"],
                     "close": [1.1],
                     "return": [0.1],
                     "calculated_close": [1.1],
@@ -1062,12 +1062,12 @@ def test_portfolios_data_node_set_values_frame_uses_explicit_portfolio_identity(
 
     node.set_portfolio_values_frame(
         raw_frame,
-        portfolio_index_asset_unique_identifier="portfolio-hash",
+        unique_identifier="portfolio-hash",
     )
 
     frame = node.update()
 
-    assert frame.reset_index().loc[0, "portfolio_index_asset_unique_identifier"] == "portfolio-hash"
+    assert frame.reset_index().loc[0, "unique_identifier"] == "portfolio-hash"
 
 
 def test_portfolios_data_node_run_orchestrates_canonical_nodes(monkeypatch):
@@ -1199,7 +1199,7 @@ def test_portfolios_data_node_run_orchestrates_canonical_nodes(monkeypatch):
     values_node = canonical_runs[0][1]
     weights_node = canonical_runs[1][1]
     assert weights_node._portfolio_index_asset_unique_identifier == "portfolio-hash"
-    assert values_node._resolved_portfolio_index_asset_unique_identifier == "portfolio-hash"
+    assert values_node._resolved_unique_identifier == "portfolio-hash"
     assert "rebalance_weights" not in results["portfolio_values"][1].columns
     assert not hasattr(data_nodes.PortfoliosDataNode, "_add_serialized_weights")
 

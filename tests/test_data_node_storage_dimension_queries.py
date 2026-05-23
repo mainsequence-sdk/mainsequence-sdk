@@ -303,10 +303,10 @@ def test_initialize_canonical_vfb_source_tables_posts_bulk_domain_endpoint(
     portfolio_data_contract = {
         "dynamic_table_metadata_uid": "33333333-3333-4333-8333-333333333333",
         "time_index_name": "time_index",
-        "index_names": ["time_index", "portfolio_index_asset_unique_identifier"],
+        "index_names": ["time_index", "unique_identifier"],
         "column_dtypes_map": {
             "time_index": "datetime64[ns, UTC]",
-            "portfolio_index_asset_unique_identifier": "string",
+            "unique_identifier": "string",
             "close": "float64",
             "return": "float64",
             "calculated_close": "float64",

@@ -7,7 +7,6 @@ from uuid import UUID
 
 import pandas as pd
 
-from mainsequence.client import Asset
 from mainsequence.client.markets.models.accounts_and_portfolios import (
     Account as ClientAccount,
 )
@@ -29,10 +28,14 @@ from mainsequence.client.markets.models.accounts_and_portfolios import (
 from mainsequence.client.markets.models.accounts_and_portfolios import (
     AccountTargetPositionsWriteResponse as ClientAccountTargetPositionsWriteResponse,
 )
+from mainsequence.client.markets.models.assets import Asset
 from mainsequence.client.models_tdag import LOGICAL_COLUMN_DTYPES_ATTR
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
+)
 from mainsequence.tdag.data_nodes import (
     DataNode,
-    DataNodeConfiguration,
     DataNodeMetaData,
     RecordDefinition,
 )
@@ -158,7 +161,7 @@ SCHEMA_BOOTSTRAP_ROW_IDENTIFIER = "__schema_bootstrap__"
 SCHEMA_BOOTSTRAP_TIME_INDEX = dt.datetime(1970, 1, 1, tzinfo=dt.UTC)
 
 
-class HoldingsDataNodeConfiguration(DataNodeConfiguration):
+class HoldingsDataNodeConfiguration(MarketDataNodeConfiguration):
     """Configuration base for SDK-created holdings data nodes."""
 
     time_index_name: str
@@ -181,7 +184,7 @@ class HoldingsDataNodeConfiguration(DataNodeConfiguration):
         }
 
 
-class HoldingsDataNode(DataNode):
+class HoldingsDataNode(MarketDataNode):
     """Base class for holdings tables created through the standard DataNode path."""
 
     def __init__(

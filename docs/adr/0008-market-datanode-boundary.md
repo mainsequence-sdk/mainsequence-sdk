@@ -132,25 +132,25 @@ corresponding code and tests exist in the SDK.
 6. [x] Keep `AssetTimestampedFrameMixin` as a plain frame/config mixin and
    migrate `AssetTimestampedDataNode` to compose `AssetTimestampedFrameMixin`
    with `MarketDataNode`.
-7. [ ] Migrate `HoldingsDataNode` to inherit from `MarketDataNode`.
-8. [ ] Migrate `PortfolioCanonicalDataNode` to inherit from `MarketDataNode`
+7. [x] Migrate `HoldingsDataNode` to inherit from `MarketDataNode`.
+8. [x] Migrate `PortfolioCanonicalDataNode` to inherit from `MarketDataNode`
    only where the table is asset-scoped.
-9. [ ] Migrate `InterpolatedPrices` and `ExternalPrices` to inherit from
+9. [x] Migrate `InterpolatedPrices` and `ExternalPrices` to inherit from
    `MarketDataNode`.
-10. [ ] Migrate portfolio signal nodes that define `get_asset_list()` to inherit
+10. [x] Migrate portfolio signal nodes that define `get_asset_list()` to inherit
     from `MarketDataNode`.
-11. [ ] Migrate instrument/rate nodes that expose assets through
+11. [x] Migrate instrument/rate nodes that expose assets through
     `get_asset_list()` to inherit from `MarketDataNode`.
-12. [ ] Keep non-asset market tables on plain `DataNode` if their identity
+12. [x] Keep non-asset market tables on plain `DataNode` if their identity
     dimensions are not platform assets.
-13. [ ] Move `get_ranged_data_per_asset(...)` behavior into `MarketDataNode`.
-14. [ ] Move `get_ranged_data_per_asset_great_or_equal(...)` behavior into
+13. [x] Move `get_ranged_data_per_asset(...)` behavior into `MarketDataNode`.
+14. [x] Move `get_ranged_data_per_asset_great_or_equal(...)` behavior into
     `MarketDataNode`.
-15. [ ] Move asset range map conversion into `MarketDataNode`.
-16. [ ] Move asset-scoped latest-observation behavior into `MarketDataNode`.
-17. [ ] Keep temporary deprecation shims in core only if needed to avoid breaking
+15. [x] Move asset range map conversion into `MarketDataNode`.
+16. [x] Move asset-scoped latest-observation behavior into `MarketDataNode`.
+17. [x] Keep temporary deprecation shims in core only if needed to avoid breaking
     existing code during migration.
-18. [ ] Mark every temporary shim with an explicit cleanup comment.
+18. [x] Mark every temporary shim with an explicit cleanup comment.
 19. [ ] Remove `asset_list` from core `DataNodeConfiguration`.
 20. [ ] Add `asset_list` to `MarketDataNodeConfiguration`.
 21. [ ] Update market-specific configs to inherit from

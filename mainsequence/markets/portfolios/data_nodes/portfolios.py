@@ -11,14 +11,14 @@ import pytz
 
 import mainsequence.client as msc
 import mainsequence.tdag.data_nodes.build_operations as build_operations
-from mainsequence.client import Asset, AssetCategory
 from mainsequence.client.models_tdag import UpdateStatistics
 from mainsequence.tdag.data_nodes import APIDataNode, DataNode, RecordDefinition
 
 from .base import (
-    PortfolioCanonicalDataNode,
+    AssetScopedPortfolioCanonicalDataNode,
     PortfolioCanonicalDataNodeConfiguration,
     _class_import_path,
+    _drop_empty_framework_init_kwargs,
     _empty_flat_frame,
     _is_canonical_frame,
     _record_definitions_from_dtype_map,
@@ -26,6 +26,7 @@ from .base import (
     _reset_frame_index,
 )
 from .constants import (
+    ASSET_UNIQUE_IDENTIFIER,
     PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
     PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER,
     PORTFOLIOS_COLUMN_DESCRIPTIONS,
@@ -57,7 +58,7 @@ def translate_to_pandas_freq(custom_freq: str) -> str:
     return f"{number}{freq_mapping[unit]}"
 
 
-class PortfoliosDataNode(PortfolioCanonicalDataNode):
+class PortfoliosDataNode(AssetScopedPortfolioCanonicalDataNode):
     """Canonical portfolio values DataNode and portfolio workflow orchestrator."""
 
     OFFSET_START = datetime(2018, 1, 1, tzinfo=pytz.utc)
@@ -77,10 +78,11 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:
         """Hash every workflow instance as the canonical Portfolios table."""
+        _drop_empty_framework_init_kwargs(init_kwargs)
         for runtime_key in (
             "portfolio_configuration",
             "portfolio_resolver",
-            "portfolio_index_asset",
+            "asset",
             "portfolio_description",
             "metadata_updater",
         ):
@@ -161,18 +163,18 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
         self,
         portfolio_values_frame: pd.DataFrame,
         *,
-        portfolio_index_asset_unique_identifier: str | None = None,
+        unique_identifier: str | None = None,
         portfolio_configuration: Any | None = None,
-        portfolio_index_asset: Any | None = None,
+        asset: Any | None = None,
         portfolio_resolver: Any | None = None,
         portfolio_description: str | None = None,
         metadata_updater: Any | None = None,
     ) -> PortfoliosDataNode:
         """Attach runtime value inputs without changing table identity."""
         self._portfolio_values_frame = portfolio_values_frame
-        self._portfolio_index_asset_unique_identifier = portfolio_index_asset_unique_identifier
+        self._unique_identifier = unique_identifier
         self._portfolio_configuration = portfolio_configuration
-        self._portfolio_index_asset = portfolio_index_asset
+        self._asset = asset
         self._portfolio_resolver = portfolio_resolver
         self._portfolio_description = portfolio_description
         self._portfolio_metadata_updater = metadata_updater
@@ -205,7 +207,7 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
 
         _portfolio, index_asset = self._resolve_portfolio_identity()
         portfolio_uid = str(index_asset.unique_identifier)
-        self._resolved_portfolio_index_asset_unique_identifier = portfolio_uid
+        self._resolved_unique_identifier = portfolio_uid
         portfolio_weights_node = self._canonical_portfolio_weights_node()
         portfolio_weights_node.ensure_storage_ready()
 
@@ -251,9 +253,7 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
             else self.validate_frame(
                 normalize_portfolio_values_frame(
                     raw_frame,
-                    portfolio_index_asset_unique_identifier=(
-                        self._resolve_portfolio_index_asset_unique_identifier()
-                    ),
+                    unique_identifier=self._resolve_unique_identifier(),
                     config=config,
                 ),
                 config=config,
@@ -390,15 +390,26 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
         if portfolio is not None and getattr(index_asset, "unique_identifier", None):
             return portfolio, index_asset
 
+        portfolio_configuration = getattr(self, "portfolio_configuration", None) or getattr(
+            self,
+            "_portfolio_configuration",
+            None,
+        )
+        if portfolio_configuration is None:
+            raise ValueError(
+                "PortfoliosDataNode requires a portfolio_configuration to resolve "
+                "the portfolio asset identity."
+            )
+
         portfolio, index_asset = get_or_create_portfolio_index_asset(
-            self.portfolio_configuration,
+            portfolio_configuration,
             portfolio_resolver=getattr(self, "_portfolio_resolver", None),
         )
         self.target_portfolio = portfolio
         self.index_asset = index_asset
         return portfolio, index_asset
 
-    def _portfolio_index_asset_unique_identifier(self) -> str:
+    def _unique_identifier(self) -> str:
         _portfolio, index_asset = self._resolve_portfolio_identity()
         unique_identifier = getattr(index_asset, "unique_identifier", None)
         if not unique_identifier:
@@ -420,7 +431,7 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
         if update_statistics is None:
             return None
 
-        portfolio_uid = getattr(self, "_resolved_portfolio_index_asset_unique_identifier", None)
+        portfolio_uid = getattr(self, "_resolved_unique_identifier", None)
         if portfolio_uid:
             progress = getattr(update_statistics, "index_progress", None) or {}
             progress_value = progress.get(portfolio_uid)
@@ -440,9 +451,7 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
         return [
             {
                 "coordinate": {
-                    PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: (
-                        self._portfolio_index_asset_unique_identifier()
-                    )
+                    ASSET_UNIQUE_IDENTIFIER: self._unique_identifier()
                 },
                 "start_date": start_date,
                 "start_date_operand": start_date_operand,
@@ -649,12 +658,27 @@ class PortfoliosDataNode(PortfolioCanonicalDataNode):
         return translate_to_pandas_freq(self.portfolio_prices_frequency)
 
     def get_asset_list(self):
-        if self.assets_configuration.assets_category_unique_id:
-            asset_category = AssetCategory.get(
-                unique_identifier=self.assets_configuration.assets_category_unique_id
-            )
-            return Asset.filter(id__in=asset_category.assets)
-        return self.signal_weights.get_asset_list()
+        asset = getattr(self, "_asset", None)
+        if asset is not None:
+            return self.validate_asset_list([asset])
+
+        cached_index_asset = getattr(self, "index_asset", None)
+        if getattr(self, "target_portfolio", None) is not None and getattr(
+            cached_index_asset,
+            "unique_identifier",
+            None,
+        ):
+            return self.validate_asset_list([cached_index_asset])
+
+        has_portfolio_configuration = (
+            getattr(self, "portfolio_configuration", None) is not None
+            or getattr(self, "_portfolio_configuration", None) is not None
+        )
+        if not has_portfolio_configuration:
+            return None
+
+        _portfolio, index_asset = self._resolve_portfolio_identity()
+        return self.validate_asset_list([index_asset])
 
     def get_portfolio_about_text(self):
         portfolio_about = """Portfolio created with Main Sequence Portfolios engine with the following signal and
@@ -668,23 +692,15 @@ rebalance details:"""
         signa_name = self.signal_weights_name
         return f"{reba_strat}_{signa_name}"
 
-    def _resolve_portfolio_index_asset_unique_identifier(self) -> str:
-        explicit_identifier = getattr(
-            self,
-            "_portfolio_index_asset_unique_identifier",
-            None,
-        )
+    def _resolve_unique_identifier(self) -> str:
+        explicit_identifier = getattr(self, "_unique_identifier", None)
         if explicit_identifier:
             return str(explicit_identifier)
 
-        portfolio_index_asset = getattr(self, "_portfolio_index_asset", None)
-        portfolio_index_asset_identifier = getattr(
-            portfolio_index_asset,
-            "unique_identifier",
-            None,
-        )
-        if portfolio_index_asset_identifier:
-            return str(portfolio_index_asset_identifier)
+        asset = getattr(self, "_asset", None)
+        asset_unique_identifier = getattr(asset, "unique_identifier", None)
+        if asset_unique_identifier:
+            return str(asset_unique_identifier)
 
         portfolio_configuration = getattr(self, "_portfolio_configuration", None)
         if portfolio_configuration is not None:
@@ -697,8 +713,8 @@ rebalance details:"""
                 return str(resolved_identifier)
 
         raise ValueError(
-            "PortfoliosDataNode requires a portfolio_index_asset_unique_identifier, "
-            "a PortfolioIndexAsset, or a portfolio_configuration that can resolve "
+            "PortfoliosDataNode requires a unique_identifier, "
+            "an asset, or a portfolio_configuration that can resolve "
             "one before canonical rows can be written."
         )
 
@@ -709,9 +725,9 @@ rebalance details:"""
             return
 
         flat = frame.reset_index()
-        if flat.empty or PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER not in flat.columns:
+        if flat.empty or ASSET_UNIQUE_IDENTIFIER not in flat.columns:
             return
-        unique_identifier = flat[PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER].iloc[0]
+        unique_identifier = flat[ASSET_UNIQUE_IDENTIFIER].iloc[0]
         if unique_identifier in (None, "", SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER):
             return
 
@@ -737,11 +753,11 @@ rebalance details:"""
     def normalize_values_frame(
         portfolio_values_frame: pd.DataFrame,
         *,
-        portfolio_index_asset_unique_identifier: str,
+        unique_identifier: str,
     ) -> pd.DataFrame:
         return normalize_portfolio_values_frame(
             portfolio_values_frame,
-            portfolio_index_asset_unique_identifier=(portfolio_index_asset_unique_identifier),
+            unique_identifier=unique_identifier,
         )
 
     @classmethod
@@ -752,7 +768,7 @@ rebalance details:"""
     def _default_description(cls) -> str:
         return (
             "Canonical Portfolios portfolio value series indexed by time_index and "
-            "portfolio_index_asset_unique_identifier."
+            "unique_identifier."
         )
 
     @classmethod
@@ -770,14 +786,14 @@ rebalance details:"""
     @classmethod
     def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
         return {
-            PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER: (SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER),
+            ASSET_UNIQUE_IDENTIFIER: (SCHEMA_BOOTSTRAP_PORTFOLIO_IDENTIFIER),
         }
 
 
 def normalize_portfolio_values_frame(
     portfolio_values_frame: pd.DataFrame,
     *,
-    portfolio_index_asset_unique_identifier: str,
+    unique_identifier: str,
     config: PortfolioCanonicalDataNodeConfiguration | None = None,
 ) -> pd.DataFrame:
     """Normalize Portfolios portfolio values into canonical PortfoliosDataNode rows."""
@@ -788,7 +804,7 @@ def normalize_portfolio_values_frame(
 
     if PORTFOLIO_CANONICAL_TIME_INDEX_NAME not in flat.columns and "index" in flat.columns:
         flat = flat.rename(columns={"index": PORTFOLIO_CANONICAL_TIME_INDEX_NAME})
-    flat[PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER] = str(portfolio_index_asset_unique_identifier)
+    flat[ASSET_UNIQUE_IDENTIFIER] = str(unique_identifier)
     if "calculated_close" not in flat.columns and "close" in flat.columns:
         flat["calculated_close"] = flat["close"]
     if "close_time" not in flat.columns and PORTFOLIO_CANONICAL_TIME_INDEX_NAME in flat.columns:

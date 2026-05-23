@@ -477,7 +477,7 @@ class PortfolioTags(BasePydanticModel):
 class Portfolio(BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
-        "portfolio_index_asset_unique_identifier": ["in", "exact", "contains"],
+        "unique_identifier": ["in", "exact", "contains"],
         "portfolio_weights_data_node__uid": ["in", "exact"],
         "signal_weights_data_node__uid": ["in", "exact"],
         "portfolio_data_node__uid": ["in", "exact"],
@@ -486,8 +486,8 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "str",
         "uid__in": "str",
-        "portfolio_index_asset_unique_identifier": "str",
-        "portfolio_index_asset_unique_identifier__in": "str",
+        "unique_identifier": "str",
+        "unique_identifier__in": "str",
         "portfolio_weights_data_node__uid": "str",
         "portfolio_weights_data_node__uid__in": "str",
         "signal_weights_data_node__uid": "str",
@@ -505,12 +505,12 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         examples=["11111111-1111-4111-8111-111111111111"],
         json_schema_extra={"label": "Portfolio UID"},
     )
-    portfolio_index_asset_unique_identifier: str = Field(
+    unique_identifier: str = Field(
         ...,
-        title="Portfolio Index Asset Unique Identifier",
+        title="Unique Identifier",
         description="Unique identifier of the asset/catalog row that represents this portfolio publicly.",
         examples=["portfolio:global-equity-index"],
-        json_schema_extra={"label": "Portfolio Index Asset Unique Identifier"},
+        json_schema_extra={"label": "Unique Identifier"},
     )
     portfolio_name: str | None = Field(
         None,
@@ -593,7 +593,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     def create_from_time_series(
         cls,
         *,
-        portfolio_index_asset_unique_identifier: str,
+        unique_identifier: str,
         portfolio_weights_data_node_uid: Any,
         signal_weights_data_node_uid: Any,
         portfolio_data_node_uid: Any,
@@ -605,7 +605,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     ) -> "Portfolio":
         url = f"{cls.get_object_url()}/create_from_time_series/"
         payload_data = {
-            "portfolio_index_asset_unique_identifier": portfolio_index_asset_unique_identifier,
+            "unique_identifier": unique_identifier,
             "portfolio_weights_data_node_uid": cls._coerce_uid(
                 portfolio_weights_data_node_uid,
                 field_name="portfolio_weights_data_node_uid",
@@ -676,14 +676,12 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
 
     @property
     def portfolio_ticker(self) -> str:
-        return self.portfolio_index_asset_unique_identifier
+        return self.unique_identifier
 
-    def _portfolio_index_asset_unique_identifier(self) -> str:
-        unique_identifier = self.portfolio_index_asset_unique_identifier
+    def _unique_identifier(self) -> str:
+        unique_identifier = self.unique_identifier
         if not unique_identifier:
-            raise ValueError(
-                "Portfolio.portfolio_index_asset_unique_identifier is required."
-            )
+            raise ValueError("Portfolio.unique_identifier is required.")
         return str(unique_identifier)
 
     def get_metadata(self, *, updater: Any | None = None):
@@ -692,7 +690,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         )
 
         return get_portfolio_metadata(
-            self._portfolio_index_asset_unique_identifier(),
+            self._unique_identifier(),
             updater=updater,
         )
 
@@ -711,7 +709,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         )
 
         return upsert_portfolio_metadata(
-            unique_identifier=self._portfolio_index_asset_unique_identifier(),
+            unique_identifier=self._unique_identifier(),
             description=description,
             updater=updater,
         )

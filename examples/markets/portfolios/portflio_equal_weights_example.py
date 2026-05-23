@@ -29,7 +29,7 @@ from mainsequence.markets.portfolios.rebalance_strategy import (
 )
 
 NAMESPACE = "example.equal_weights"
-PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER = "portfolio_index_asset:equal_weights_demo"
+PORTFOLIO_ASSET_UNIQUE_IDENTIFIER = "portfolio:equal_weights_demo"
 ASSET_UNIQUE_IDENTIFIERS = [
     "BINANCE_SPOT_BTC_USDT",
     "BINANCE_SPOT_ETH_USDT",
@@ -115,7 +115,7 @@ def build_example_portfolio_weights_frame() -> pd.DataFrame:
     ).set_index(["time_index", "unique_identifier"])
     return PortfolioWeights.normalize_weights_frame(
         raw_portfolio_weights,
-        portfolio_index_asset_unique_identifier=(PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER),
+        portfolio_index_asset_unique_identifier=PORTFOLIO_ASSET_UNIQUE_IDENTIFIER,
     )
 
 
@@ -132,7 +132,7 @@ def build_example_portfolio_values_frame() -> pd.DataFrame:
     ).set_index("time_index")
     return PortfoliosDataNode.normalize_values_frame(
         raw_portfolio_values,
-        portfolio_index_asset_unique_identifier=(PORTFOLIO_INDEX_ASSET_UNIQUE_IDENTIFIER),
+        unique_identifier=PORTFOLIO_ASSET_UNIQUE_IDENTIFIER,
     )
 
 

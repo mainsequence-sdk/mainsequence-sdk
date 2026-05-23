@@ -4,6 +4,7 @@ import hashlib
 import inspect
 import json
 import threading
+import warnings
 from concurrent.futures import Future
 from typing import Any, ClassVar
 
@@ -463,14 +464,36 @@ class BasePersistManager:
             data_node_update=self.data_node_update, *args, **kwargs
         )
 
-    def get_last_observation(self, asset_list: list[ms_client.Asset] | None):
-        dimension_filters = None
+    def get_last_observation(
+        self,
+        asset_list: list[Any] | None = None,
+        *,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+    ):
         if asset_list is not None:
+            # LEGACY_COMPAT: asset-scoped latest-observation lives on MarketDataNode.
+            warnings.warn(
+                "Deprecated TDAG compatibility path: asset_list was passed to "
+                "PersistManager.get_last_observation(). Use dimension_filters "
+                "or MarketDataNode.get_last_observation().",
+                FutureWarning,
+                stacklevel=2,
+            )
+            if (
+                dimension_filters is not None
+                or index_coordinates is not None
+                or dimension_range_map is not None
+            ):
+                raise ValueError("Do not mix asset_list with canonical dimension filters.")
             dimension_filters = {
                 "unique_identifier": [a.unique_identifier for a in asset_list]
             }
         return self.data_node_storage.get_last_observation(
-            dimension_filters=dimension_filters
+            dimension_filters=dimension_filters,
+            index_coordinates=index_coordinates,
+            dimension_range_map=dimension_range_map,
         )
 
     def set_column_metadata(self, columns_metadata: list[ms_client.ColumnMetaData] | None) -> None:
