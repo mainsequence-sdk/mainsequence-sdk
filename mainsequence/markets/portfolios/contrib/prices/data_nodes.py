@@ -14,12 +14,11 @@ import mainsequence.client as msc
 from mainsequence.client import (
     Asset,
     AssetCategory,
-    AssetTranslationTable,
 )
 from mainsequence.markets.portfolios.models import AssetsConfiguration
 from mainsequence.markets.portfolios.utils import TIMEDELTA
-from mainsequence.tdag import DataNodeConfiguration, WrapperDataNodeConfig
-from mainsequence.tdag.data_nodes import DataNode, WrapperDataNode
+from mainsequence.tdag import APIDataNode, DataNodeConfiguration
+from mainsequence.tdag.data_nodes import DataNode
 from mainsequence.tdag.data_nodes.utils import (
     string_freq_to_time_delta,
     string_frequency_to_minutes,
@@ -38,8 +37,10 @@ class InterpolatedPricesConfig(DataNodeConfiguration):
         json_schema_extra={"update_only": True},
     )
     upsample_frequency_id: str | None = None
-    translation_table_unique_id: str | None = None
-    source_bars_data_node: DataNode | None = None
+    source_bars_data_node: DataNode | APIDataNode | None = Field(
+        default=None,
+        json_schema_extra={"runtime_only": True},
+    )
 
 
 class ExternalPricesConfig(DataNodeConfiguration):
@@ -91,21 +92,34 @@ def get_interpolated_prices_timeseries(
     asset_list=None,
 ):
     """
-    Creates a Wrapper Timeseries for an asset configuration.
+    Creates an interpolated price time series for an asset configuration.
     """
 
     if assets_configuration is None:
         assert asset_list is not None, "asset_list and assets_configuration both cant be None"
     if assets_configuration is not None:
         prices_configuration = copy.deepcopy(assets_configuration).prices_configuration
-        prices_configuration_kwargs = prices_configuration.model_dump()
-        prices_configuration_kwargs.pop("is_live", None)
-        prices_configuration_kwargs.pop("markets_time_series", None)
+        source_bars_data_node = prices_configuration.source_bars_data_node
+        markets_time_series = prices_configuration.markets_time_series
+        if source_bars_data_node is None and markets_time_series is not None:
+            source_bars_data_node = APIDataNode.build_from_identifier(
+                identifier=markets_time_series.unique_identifier
+            )
+
+        prices_configuration_kwargs = prices_configuration.model_dump(
+            exclude={
+                "forward_fill_to_now",
+                "is_live",
+                "markets_time_series",
+                "source_bars_data_node",
+            }
+        )
 
         if asset_list is None:
             return InterpolatedPrices(
                 interpolation_config=InterpolatedPricesConfig(
                     asset_category_unique_id=assets_configuration.assets_category_unique_id,
+                    source_bars_data_node=source_bars_data_node,
                     **prices_configuration_kwargs,
                 )
             )
@@ -114,6 +128,7 @@ def get_interpolated_prices_timeseries(
             return InterpolatedPrices(
                 interpolation_config=InterpolatedPricesConfig(
                     asset_list=asset_list,
+                    source_bars_data_node=source_bars_data_node,
                     **prices_configuration_kwargs,
                 )
             )
@@ -589,17 +604,21 @@ class InterpolatedPrices(DataNode):
         asset_category_unique_id = interpolation_config.asset_category_unique_id
         upsample_frequency_id = interpolation_config.upsample_frequency_id
         asset_list = interpolation_config.asset_list
-        translation_table_unique_id = interpolation_config.translation_table_unique_id
         source_bars_data_node = interpolation_config.source_bars_data_node
 
         assert (
             "d" in bar_frequency_id or "m" in bar_frequency_id
         ), f"bar_frequency_id={bar_frequency_id} should be 'd for days' or 'm for min'"
         if source_bars_data_node is None:
-            if asset_category_unique_id is None:
-                assert (
-                    asset_list is not None
-                ), f"asset_category_unique_id={asset_category_unique_id} should not be None or asset_list should be defined"
+            raise ValueError(
+                "InterpolatedPrices requires an explicit source_bars_data_node. "
+                "Provide PricesConfiguration.markets_time_series for an upstream "
+                "MarketsTimeSeries identifier, or inject a normalized source bars DataNode."
+            )
+        if asset_category_unique_id is None:
+            assert (
+                asset_list is not None
+            ), f"asset_category_unique_id={asset_category_unique_id} should not be None or asset_list should be defined"
 
         self.asset_category_unique_id = asset_category_unique_id
         self.interpolator = UpsampleAndInterpolation(
@@ -615,19 +634,7 @@ class InterpolatedPrices(DataNode):
         self.bar_frequency_id = bar_frequency_id
         self.upsample_frequency_id = upsample_frequency_id
         self.source_bars_data_node = source_bars_data_node
-        # get the translation rules
-        if source_bars_data_node is None:
-            if translation_table_unique_id is None:
-                raise Exception("Translation table needs to be set")
-            translation_table = AssetTranslationTable.get(
-                unique_identifier=translation_table_unique_id
-            )
-
-            self.bars_ts = WrapperDataNode(
-                config=WrapperDataNodeConfig(translation_table=translation_table)
-            )
-        else:
-            self.bars_ts = source_bars_data_node
+        self.bars_ts = source_bars_data_node
 
         super().__init__(config=interpolation_config, *args, **kwargs)
 
@@ -778,14 +785,18 @@ class InterpolatedPrices(DataNode):
         """
         Creates mappings from symbols to IDs
         """
-        if self.source_bars_data_node is not None:
-            return self.bars_ts.get_asset_list()
-
         if self.constructor_asset_list is not None:
             asset_list = self.constructor_asset_list
-        else:
+        elif self.asset_category_unique_id is not None:
             asset_category = AssetCategory.get(unique_identifier=self.asset_category_unique_id)
             asset_list = Asset.filter(id__in=asset_category.assets)
+        elif hasattr(self.bars_ts, "get_asset_list"):
+            asset_list = self.bars_ts.get_asset_list()
+        else:
+            raise ValueError(
+                "InterpolatedPrices requires asset_list or asset_category_unique_id "
+                "when the explicit price source does not expose get_asset_list()."
+            )
 
         return asset_list
 

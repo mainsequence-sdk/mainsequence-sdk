@@ -6,8 +6,6 @@ _LAZY_IMPORTS = {
     "BaseConfiguration": ("..configuration_models", "BaseConfiguration"),
     "APIDataNode": (".data_nodes", "APIDataNode"),
     "DataNode": (".data_nodes", "DataNode"),
-    "WrapperDataNode": (".data_nodes", "WrapperDataNode"),
-    "WrapperDataNodeConfig": (".data_nodes", "WrapperDataNodeConfig"),
     "DataNodeConfiguration": (".models", "DataNodeConfiguration"),
     "DataNodeMetaData": (".models", "DataNodeMetaData"),
     "RecordDefinition": (".models", "RecordDefinition"),

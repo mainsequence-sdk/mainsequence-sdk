@@ -4,7 +4,7 @@ In the previous part, you created and updated **assets** and learned how **Data 
 
 Main Sequence can store the key objects used in investment operations: **accounts**, **groups of accounts**, **portfolios**, **portfolio groups**, and **virtual funds**. Most of these are straightforward and share the same CRUD operations (filter, retrieve, create). Portfolios are a special case because they are tightly linked to **Data Nodes** in the platform.
 
-Before moving on to dashboards or deeper analysis, we’ll build a concise **end‑to‑end example**: create assets, group them, link them to a price source via a **translation table**, and then build a portfolio.
+Before moving on to dashboards or deeper analysis, we’ll build a concise **end‑to‑end example**: create assets, group them, point the portfolio to an explicit price source, and then build a portfolio.
 
 ---
 
@@ -12,7 +12,7 @@ Before moving on to dashboards or deeper analysis, we’ll build a concise **end
 
 1. Ensure the assets the portfolio will hold **exist** (and have pricing details).  
 2. Create an **asset category** so we can filter them as a group.  
-3. Build a **translation table** that maps asset characteristics to the **right Data Node**.  
+3. Select the explicit **price DataNode** that already emits prices for those assets.
 4. Create a **signal Data Node** with fixed weights.  
 5. Use the **Portfolios** package to assemble the portfolio.
 
@@ -38,7 +38,6 @@ UTC = pytz.utc
 
 SECURITY_TYPE_MOCK="MOCK_ASSET"
 SIMULATED_PRICES_TABLE="simulated_daily_closes_tutorial"
-TRANSLATION_TABLE_IDENTIFIER = "prices_translation_table_1d"
 # =========================================================
 # 1) DRY helper: ensure both test assets exist and have pricing details
 # =========================================================
@@ -94,8 +93,8 @@ def ensure_test_assets(unique_identifiers=None):
                     coupon_rate=0.05,
                 )
 
-            # Minimal registration payload for a custom asset (keeps your approach)
-            #We Add this custom security_type so we can use a translation table and point to the right prices
+            # Minimal registration payload for a custom asset.
+            # The price source will use these same unique identifiers.
 
             payload_item = {
                 "unique_identifier": uid,
@@ -310,7 +309,7 @@ For a deeper explanation of asset categories as reusable market universes, see [
 
 ---
 
-## 3) Building a Translation Table
+## 3) Selecting the Explicit Price Source
 
 Now that you have:
 
@@ -320,104 +319,20 @@ Now that you have:
 
 - An asset category (mock_category_assets_tutorial)
 
-…you’re ready to build an Asset Translation Table.
-This table defines rules that map asset properties → to a DataNode providing prices.
-
-A **translation table**—a set of rules that route assets to the **correct** Data Node based on their characteristics.
-
-Translation tables let you compose backtests from multiple Data Nodes. For example, you might use one source for `security_type=Equity` and a different one for `security_type=Comdty`. While you can hard‑code this in a node’s `dependencies()`, translation tables make it **extensible** and **data‑driven**.
+...you are ready to connect the portfolio to the price source explicitly.
 
 ```python
-class AssetFilter(BaseModel):
-    security_type: str | None = None
-    security_market_sector: str | None = None
-
-    def filter_triggered(self, asset: "Asset") -> bool:
-        if self.security_type and asset.security_type != self.security_type:
-            return False
-        if (
-            self.security_market_sector
-            and asset.security_market_sector != self.security_market_sector
-        ):
-            return False
-        return True
-
-
-class AssetTranslationRule(BaseModel):
-    asset_filter: AssetFilter
-    markets_time_serie_unique_identifier: str
-    target_exchange_code: str | None = None
-
-    def is_asset_in_rule(self, asset: "Asset") -> bool:
-        return self.asset_filter.filter_triggered(asset)
-
-
-class AssetTranslationTable(BaseObjectOrm, BasePydanticModel):
-    """
-    Mirrors the Django model 'AssetTranslationTableModel' in the backend.
-    """
-
-    id: int = None
-    unique_identifier: str
-    rules: list[AssetTranslationRule] = Field(default_factory=list)
+from src.helpers_mock import ensure_test_assets, SECURITY_TYPE_MOCK, SIMULATED_PRICES_TABLE
 ```
 
-When building dependencies you can use a `WrapperDataNode` initialized with a translation table, so the same code can route to different Data Nodes **dynamically**.
+The important contract is that the price source must already return rows in the portfolio asset namespace:
 
-```python
-class WrapperDataNodeConfig(DataNodeConfiguration):
-    translation_table: AssetTranslationTable
-
-
-class WrapperDataNode(DataNode):
-    """A wrapper class for managing multiple DataNode objects."""
-
-    def __init__(self, config: WrapperDataNodeConfig):
-        super().__init__(config=config)
+```text
+index:   time_index, unique_identifier
+columns: open, high, low, close, volume, ...
 ```
 
-Add the following rule **after** creating the asset category:
-
-```python
-# Create Translation Table to link assets to pricing table
-translation_table = msc.AssetTranslationTable.get_or_create(
-    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
-    rules=[
-            msc.AssetTranslationRule(
-                asset_filter=msc.AssetFilter(
-                    security_type=SECURITY_TYPE_MOCK,
-                ),
-                markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
-            ),
-
-        ]
-)
-```
-
-And also update imports at the top of the file:
-
-```python
-from src.helpers_mock import ensure_test_assets, SECURITY_TYPE_MOCK, SIMULATED_PRICES_TABLE, TRANSLATION_TABLE_IDENTIFIER
-
-```
-
-> [!IMPORTANT]
-> `WrapperDataNode` treats the translation table as a dependency manifest, not only as a per-asset matching rule set.
->
-> During initialization, it loops through every rule in the table and resolves every distinct `markets_time_serie_unique_identifier` into an `APIDataNode` before it evaluates which rule matches a given asset.
->
-> That means this shared-table example is expected to fail fast:
->
-> - Rule A: `security_type=MOCK_ASSET_TUTORIAL_135 -> simulated_daily_closes_tutorial_135`
-> - Rule B: `security_type=SOMETHING_ELSE -> old_deleted_table`
->
-> Even if your current portfolio only contains assets that match Rule A, `WrapperDataNode` will still try to resolve `old_deleted_table` while it is building its dependency map. If that target does not exist, wrapper construction fails immediately.
->
-> This is intentional behavior. Shared translation tables are valid and useful across projects, but every target time series referenced by any rule in the table must exist and remain valid. If you want a tutorial or project to stay isolated from unrelated rules, use a dedicated translation-table identifier.
-
-Now you have a translation table that maps all assets with `security_type=MOCK_ASSET` to the `simulated_daily_closes_tutorial` prices table.
-
-For a deeper explanation of how translation tables work, see [Translation Tables](../../knowledge/markets/translation_tables.md).
+For this tutorial, `SimulatedDailyClosePrices` already writes prices with the same `unique_identifier` values used by the assets, so the explicit source is simply `SIMULATED_PRICES_TABLE`.
 
 ---
 
@@ -510,11 +425,11 @@ class FixedWeights(SignalWeights):
 
 The Portfolios package ships a set of Pydantic models that configure **assets, prices, signals, weights, execution,** and the final **portfolio build**.
 
-All those models will be used to build the portfolio in the next section. Hrere’s a quick overview of the key models.
+All those models will be used to build the portfolio in the next section. Here is a quick overview of the key models.
 
 #### PricesConfiguration
 
-Holds the rules that the portfolio’s interpolation node will apply and references the translation table:
+Holds the rules that the portfolio's interpolation node will apply and references the explicit price source:
 ```python
 class PricesConfiguration(VFBConfigBaseModel):
     """
@@ -525,14 +440,14 @@ class PricesConfiguration(VFBConfigBaseModel):
         upsample_frequency_id (str): Frequency to upsample intraday data to.
         intraday_bar_interpolation_rule (str): Rule for interpolating missing intraday bars.
         is_live (bool): Boolean flag indicating if the price feed is live.
-        translation_table_unique_id (str): The unique identifier of the translation table used to identify the price source.
+        markets_time_series (MarketsTimeSeries): Explicit normalized source used to read price bars.
     """
 
     bar_frequency_id: str = "1d"
     upsample_frequency_id: str = "1d"  # "15m"
     intraday_bar_interpolation_rule: str = "ffill"
     is_live: bool = False
-    translation_table_unique_id: str = "prices_translation_table_1d"
+    markets_time_series: MarketsTimeSeries | None = None
     forward_fill_to_now: bool = False
 ```
 
@@ -635,7 +550,6 @@ from src.helpers_mock import (
     ensure_test_assets,
     SECURITY_TYPE_MOCK,
     SIMULATED_PRICES_TABLE,
-    TRANSLATION_TABLE_IDENTIFIER
 )
 from src.data_nodes.simulated_daily_close_prices import (
     SimulatedDailyClosePrices,
@@ -657,6 +571,7 @@ from mainsequence.markets.portfolios.models import (
     PortfolioExecutionConfiguration,
     PortfolioMarketsConfig,
     FrontEndDetails,
+    MarketsTimeSeries,
 )
 from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
 from mainsequence.markets.portfolios.rebalance_strategy import ImmediateSignal
@@ -676,19 +591,6 @@ asset_category = msc.AssetCategory.get_or_create(
 # add assets to the category
 asset_category.append_assets(assets=assets)
 
-# Create Translation Table to link assets to pricing table
-translation_table = msc.AssetTranslationTable.get_or_create(
-    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
-    rules=[
-        msc.AssetTranslationRule(
-            asset_filter=msc.AssetFilter(
-                security_type=SECURITY_TYPE_MOCK,
-            ),
-            markets_time_serie_unique_identifier=SIMULATED_PRICES_TABLE,
-        ),
-    ]
-)
-
 # build Fixed Weights Portfolio Data Node
 weights = [.4, .6]
 node_weights_input_1, node_weights_input_2 = [], []
@@ -704,7 +606,7 @@ prices_configuration = PricesConfiguration(
     upsample_frequency_id="1d",
     intraday_bar_interpolation_rule="ffill",
     is_live=False,
-    translation_table_unique_id=TRANSLATION_TABLE_IDENTIFIER,
+    markets_time_series=MarketsTimeSeries(unique_identifier=SIMULATED_PRICES_TABLE),
     forward_fill_to_now=False
 )
 

@@ -76,9 +76,11 @@ class PricesConfiguration(VFBConfigBaseModel):
         upsample_frequency_id: Target frequency after interpolation (e.g., "1d", "15m").
         intraday_bar_interpolation_rule: Interpolation rule for gaps ("ffill" or "None").
         is_live: Whether the feed should be treated as live (may be ignored by some nodes).
-        translation_table_unique_id: AssetTranslationTable unique id used by WrapperDataNode.
+        markets_time_series: Explicit normalized bars source used for price reads.
         forward_fill_to_now: If True, extend interpolated prices up to `datetime.now(UTC)` by forward-fill.
     """
+
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
 
     bar_frequency_id: str = Field(
         default="1d",
@@ -116,13 +118,22 @@ class PricesConfiguration(VFBConfigBaseModel):
         examples=[False, True],
     )
 
-    translation_table_unique_id: str = Field(
-        default="prices_translation_table_1d",
+    markets_time_series: MarketsTimeSeries | None = Field(
+        default=None,
         description=(
-            "Unique identifier of the AssetTranslationTable used to map assets into the upstream price source. "
-            "This is used by WrapperDataNode when `source_bars_data_node` is not provided."
+            "Explicit MarketsTimeSeries source for bars. The source must already emit prices in the "
+            "portfolio asset namespace expected by VFB."
         ),
-        examples=["prices_translation_table_1d", "prices_translation_table_15m"],
+        examples=[{"unique_identifier": "alpaca_1d_bars"}],
+    )
+
+    source_bars_data_node: Any | None = Field(
+        default=None,
+        description=(
+            "Optional direct source bars DataNode/APIDataNode. Use this for programmatic portfolio "
+            "builds that inject an already-normalized price source."
+        ),
+        json_schema_extra={"runtime_only": True},
     )
 
     forward_fill_to_now: bool = Field(
@@ -187,7 +198,7 @@ class AssetsConfiguration(VFBConfigBaseModel):
                 "bar_frequency_id": "1d",
                 "upsample_frequency_id": "1d",
                 "intraday_bar_interpolation_rule": "ffill",
-                "translation_table_unique_id": "prices_translation_table_1d",
+                "markets_time_series": {"unique_identifier": "alpaca_1d_bars"},
                 "forward_fill_to_now": False,
             }
         ],
@@ -402,7 +413,7 @@ class PortfolioBuildConfiguration(VFBConfigBaseModel):
                     "bar_frequency_id": "1d",
                     "upsample_frequency_id": "1d",
                     "intraday_bar_interpolation_rule": "ffill",
-                    "translation_table_unique_id": "prices_translation_table_1d",
+                    "markets_time_series": {"unique_identifier": "alpaca_1d_bars"},
                     "forward_fill_to_now": False,
                 },
             }

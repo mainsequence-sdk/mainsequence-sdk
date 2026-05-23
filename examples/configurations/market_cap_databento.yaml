@@ -7,7 +7,8 @@ portfolio_build_configuration:
       bar_frequency_id: 1d
       upsample_frequency_id: 1d
       intraday_bar_interpolation_rule: ffill
-      translation_table_unique_id: databento_prices
+      markets_time_series:
+        unique_identifier: databento_prices
     assets_category_unique_id: magnificent_7
   execution_configuration:
     commission_fee: 0.00018
@@ -29,7 +30,8 @@ portfolio_build_configuration:
           bar_frequency_id: 1d
           intraday_bar_interpolation_rule: ffill
           upsample_frequency_id: 1d
-          translation_table_unique_id: databento_prices
+          markets_time_series:
+            unique_identifier: databento_prices
     rebalance_strategy_configuration:
       calendar: 24/7
       rebalance_end: '23:00'

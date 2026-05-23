@@ -110,7 +110,6 @@ from .api import (
     get_current_user_profile,
     get_data_node_storage,
     get_logged_user_details,
-    get_market_asset_translation_table,
     get_or_create_agent,
     get_organization_team,
     get_project,
@@ -138,7 +137,6 @@ from .api import (
     list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
-    list_market_asset_translation_tables,
     list_market_portfolios,
     list_organization_teams,
     list_project_base_images,
@@ -332,7 +330,6 @@ organization_teams_group = typer.Typer(help="Organization team commands")
 markets = typer.Typer(help="Markets commands")
 data_node_storage_group = typer.Typer(help="Data node commands")
 markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
-markets_asset_translation_table_group = typer.Typer(help="Markets asset translation table commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
 project_project_resource_group = typer.Typer(help="Project resource commands")
@@ -379,7 +376,6 @@ app.add_typer(data_node_storage_group, name="data_node")
 app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)
 app.add_typer(data_node_storage_group, name="data_node_storage", hidden=True)
 markets.add_typer(markets_portfolios_group, name="portfolios")
-markets.add_typer(markets_asset_translation_table_group, name="asset-translation-table")
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
 project.add_typer(project_project_resource_group, name="project_resource")
@@ -431,7 +427,6 @@ CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.Conn
 CONNECTION_INSTANCE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionInstance"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
 PORTFOLIO_MODEL_REF = "mainsequence.client.markets.models.Portfolio"
-ASSET_TRANSLATION_TABLE_MODEL_REF = "mainsequence.client.markets.models.AssetTranslationTable"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
@@ -1713,57 +1708,6 @@ def _format_json_value(value) -> str:
         return json.dumps(value, indent=2, sort_keys=True)
     except Exception:
         return str(value)
-
-
-def _format_asset_filter_summary(asset_filter) -> str:
-    if not isinstance(asset_filter, dict):
-        return str(asset_filter or "All assets")
-
-    parts: list[str] = []
-    security_type = str(asset_filter.get("security_type") or "").strip()
-    if security_type:
-        parts.append(f"security_type={security_type}")
-
-    market_sector = str(asset_filter.get("security_market_sector") or "").strip()
-    if market_sector:
-        parts.append(f"market_sector={market_sector}")
-
-    if asset_filter.get("open_for_everyone") is True:
-        parts.append("open_for_everyone=true")
-
-    return ", ".join(parts) if parts else "All assets"
-
-
-def _format_asset_translation_target(rule: dict) -> str:
-    target = str(rule.get("markets_time_serie_unique_identifier") or "-")
-    exchange = str(rule.get("target_exchange_code") or "").strip()
-    column = str(rule.get("default_column_name") or "").strip()
-
-    if exchange:
-        target = f"{target} @ {exchange}"
-    if column:
-        target = f"{target} ({column})"
-    return target
-
-
-def _format_asset_translation_rules_preview(rules, *, limit: int = 2) -> str:
-    if not isinstance(rules, list) or not rules:
-        return "-"
-
-    previews: list[str] = []
-    for rule in rules[:limit]:
-        if not isinstance(rule, dict):
-            previews.append(str(rule))
-            continue
-        previews.append(
-            f"{_format_asset_filter_summary(rule.get('asset_filter'))} => "
-            f"{_format_asset_translation_target(rule)}"
-        )
-
-    if len(rules) > limit:
-        previews.append(f"+{len(rules) - limit} more")
-
-    return "; ".join(previews)
 
 
 def _find_image_by_id(images: list[dict], image_id: int | None) -> dict | None:

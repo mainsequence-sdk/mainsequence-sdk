@@ -1375,6 +1375,17 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
 - [x] Keep any one-off legacy data import tooling outside the canonical VFB
       DataNode runtime.
 
+### Phase 8b: Explicit portfolio price sources
+
+- [x] Remove portfolio-price construction through `WrapperDataNode` and
+      `AssetTranslationTable`.
+- [x] Require portfolio price pipelines to use an explicit normalized source
+      bars DataNode or `MarketsTimeSeries` identifier.
+- [x] Treat price-source namespace normalization as the responsibility of the
+      source price node before data reaches `InterpolatedPrices`.
+- [x] Keep `InterpolatedPrices` focused on fetching explicit bars,
+      interpolation, upsampling, validation, and schema normalization.
+
 ### Phase 9: Tests
 
 - [x] Contract validation for `PortfolioWeights`.

@@ -4,7 +4,8 @@ portfolio_build_configuration:
     prices_configuration:
       bar_frequency_id: 1d
       upsample_frequency_id: 1d
-      translation_table_unique_id: prices_translation_table_1d
+      markets_time_series:
+        unique_identifier: binance_1d_bars
       intraday_bar_interpolation_rule: ffill
     assets_category_unique_id: top_10_crypto_market_cap
   execution_configuration:
@@ -27,7 +28,8 @@ portfolio_build_configuration:
         prices_configuration:
           bar_frequency_id: 1d
           upsample_frequency_id: 1d
-          translation_table_unique_id: prices_translation_table_1d
+          markets_time_series:
+            unique_identifier: binance_1d_bars
           intraday_bar_interpolation_rule: ffill
         assets_category_unique_id: top_10_crypto_market_cap
       volatility_control_configuration: None

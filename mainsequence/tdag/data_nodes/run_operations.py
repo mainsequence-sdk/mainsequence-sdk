@@ -390,9 +390,6 @@ class UpdateRunner:
         # 4. Delegate to the appropriate execution method
         self.logger.debug(f"Starting update for {len(dependencies_df)} dependencies...")
 
-        dependencies_df = dependencies_df[dependencies_df["source_class_name"] != "WrapperDataNode"]
-        if dependencies_df.empty:
-            return
         if self.debug_mode:
             self._execute_sequential_debug_update(
                 dependencies_df,

@@ -27,7 +27,6 @@ from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
-    WrapperDataNode,
 )
 
 from .models import PortfolioConfiguration
@@ -639,7 +638,7 @@ rebalance details:"""
         new_index: pd.DatetimeIndex,
         unique_identifiers: list,
         index_freq: str,
-        bars_ts: WrapperDataNode,
+        bars_ts: DataNode | APIDataNode,
     ):
         """
         Get interpolated prices for a time index.

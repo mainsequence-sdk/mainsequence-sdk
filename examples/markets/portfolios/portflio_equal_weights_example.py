@@ -17,6 +17,7 @@ from mainsequence.markets.portfolios.enums import PriceTypeNames
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
     BacktestingWeightsConfig,
+    MarketsTimeSeries,
     PortfolioBuildConfiguration,
     PortfolioConfiguration,
     PortfolioExecutionConfiguration,
@@ -44,7 +45,7 @@ def build_assets_configuration() -> AssetsConfiguration:
             bar_frequency_id="1d",
             upsample_frequency_id="1d",
             intraday_bar_interpolation_rule="ffill",
-            translation_table_unique_id="prices_translation_table_1d",
+            markets_time_series=MarketsTimeSeries(unique_identifier="binance_1d_bars"),
         ),
     )
 

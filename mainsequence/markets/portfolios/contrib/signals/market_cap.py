@@ -3,23 +3,23 @@ from typing import Union
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from mainsequence.client import (
     Asset,
     AssetCategory,
-    AssetTranslationTable,
-    DoesNotExist,
 )
 from mainsequence.markets.portfolios.data_nodes import (
     SignalWeights,
 )
-from mainsequence.markets.portfolios.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.portfolios.models import (
+    AssetsConfiguration,
+    MarketsTimeSeries,
+    VFBConfigBaseModel,
+)
 from mainsequence.markets.portfolios.utils import TIMEDELTA
 from mainsequence.tdag.data_nodes import (
     APIDataNode,
-    WrapperDataNode,
-    WrapperDataNodeConfig,
 )
 
 
@@ -34,6 +34,15 @@ class VolatilityControlConfiguration(BaseModel):
 
 class MarketCapConfig(VFBConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
+    market_cap_time_series: MarketsTimeSeries = Field(
+        ...,
+        description=(
+            "Explicit MarketsTimeSeries source for historical market-cap reads. "
+            "The source must expose market_cap, price, and volume columns in the asset namespace "
+            "requested by MarketCap."
+        ),
+        examples=[{"unique_identifier": "polygon_historical_marketcap"}],
+    )
     volatility_control_configuration: VolatilityControlConfiguration | None
     minimum_atvr_ratio: float = 0.1
     rolling_atvr_volume_windows: list[int] | None = None
@@ -83,19 +92,13 @@ class MarketCap(SignalWeights):
         return self.market_cap_config.volatility_control_configuration
 
     @property
-    def historical_market_cap_ts(self) -> WrapperDataNode:
+    def historical_market_cap_ts(self) -> APIDataNode:
         historical_market_cap_ts = getattr(self, "_historical_market_cap_ts", None)
         if historical_market_cap_ts is not None:
             return historical_market_cap_ts
 
-        translation_table = "marketcap_translation_table"
-        try:
-            translation_table = AssetTranslationTable.get(unique_identifier=translation_table)
-        except DoesNotExist:
-            self.logger.error(f"Translation table {translation_table} does not exist")
-
-        historical_market_cap_ts = WrapperDataNode(
-            config=WrapperDataNodeConfig(translation_table=translation_table)
+        historical_market_cap_ts = APIDataNode.build_from_identifier(
+            self.market_cap_config.market_cap_time_series.unique_identifier
         )
         self._historical_market_cap_ts = historical_market_cap_ts
         return historical_market_cap_ts

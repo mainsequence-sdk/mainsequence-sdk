@@ -23,6 +23,7 @@ from mainsequence.markets.portfolios.rebalance_strategy import ImmediateSignal
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
     BacktestingWeightsConfig,
+    MarketsTimeSeries,
     PortfolioBuildConfiguration,
     PortfolioConfiguration,
     PortfolioExecutionConfiguration,
@@ -39,7 +40,7 @@ shared_assets_config = AssetsConfiguration(
         bar_frequency_id="1d",
         upsample_frequency_id="1d",
         intraday_bar_interpolation_rule="ffill",
-        translation_table_unique_id="prices_translation_table_1d",
+        markets_time_series=MarketsTimeSeries(unique_identifier="binance_1d_bars"),
         forward_fill_to_now=False,
     ),
 )

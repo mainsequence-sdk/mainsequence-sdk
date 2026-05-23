@@ -155,6 +155,15 @@ class AssetTimestampedDataNode(DataNode):
         return _validate_asset_data_frame(self.get_frame(), config=self.config)
 
     @classmethod
+    def validate_frame(
+        cls,
+        frame: pd.DataFrame,
+        *,
+        config: AssetDataNodeConfiguration | None = None,
+    ) -> pd.DataFrame:
+        return _validate_asset_data_frame(frame, config=config or cls.default_config())
+
+    @classmethod
     def build_initialization_frame(
         cls,
         **kwargs: Any,

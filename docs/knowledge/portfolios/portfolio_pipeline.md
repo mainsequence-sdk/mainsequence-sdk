@@ -94,7 +94,7 @@ Important fields:
 - `bar_frequency_id`
 - `upsample_frequency_id`
 - `intraday_bar_interpolation_rule`
-- `translation_table_unique_id`
+- `markets_time_series`
 - `forward_fill_to_now`
 
 This config controls the **price path**, not the economic validity of the signal.
@@ -235,6 +235,7 @@ from mainsequence.markets.portfolios.models import (
     PortfolioConfiguration,
     PortfolioExecutionConfiguration,
     PortfolioMarketsConfig,
+    MarketsTimeSeries,
     PricesConfiguration,
 )
 from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
@@ -244,7 +245,7 @@ signal_assets_config = AssetsConfiguration(
     prices_configuration=PricesConfiguration(
         bar_frequency_id="1d",
         upsample_frequency_id="1d",
-        translation_table_unique_id="prices_translation_table_1d",
+        markets_time_series=MarketsTimeSeries(unique_identifier="binance_1d_bars"),
     ),
 )
 

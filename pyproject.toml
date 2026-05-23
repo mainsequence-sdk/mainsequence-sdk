@@ -89,7 +89,7 @@ include = ["mainsequence", "mainsequence.*", "agent_scaffold", "agent_scaffold.*
 
 # Include your non-.py assets in wheels/sdists
 [tool.setuptools.package-data]
-"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml"]
+"mainsequence" = ["**/*.html", "**/*.css", "**/*.png", "**/*.toml", "**/*.json"]
 "agent_scaffold" = ["*.md", "**/*.md"]
 
 [[tool.uv.index]]
