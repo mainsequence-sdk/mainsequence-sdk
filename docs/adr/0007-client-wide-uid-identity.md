@@ -199,7 +199,6 @@ Base audit findings that remain for model-group migration:
 - [ ] Confirm UID detail lookup for `Asset`.
 - [ ] Confirm UID detail lookup for `AssetSnapshot` if it is resource-addressed.
 - [ ] Confirm UID detail lookup for `AssetCategory`.
-- [ ] Confirm UID detail lookup for `AssetTranslationTable`.
 - [ ] Confirm UID detail lookup for `Calendar` if it is resource-addressed.
 - [ ] Confirm UID detail lookup for `Portfolio`.
 - [ ] Confirm UID detail lookup for `PortfolioGroup`.

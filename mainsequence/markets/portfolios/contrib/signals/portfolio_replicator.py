@@ -15,7 +15,7 @@ from mainsequence.markets.portfolios.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,
 )
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
-from mainsequence.markets.portfolios.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.portfolios.models import AssetsConfiguration, PortfolioConfigBaseModel
 
 if TYPE_CHECKING:
     from mainsequence.tdag.data_nodes.data_nodes import APIDataNode, DataNode
@@ -26,11 +26,11 @@ class TrackingStrategy(Enum):
     LASSO = "lasso"
 
 
-class TrackingStrategyConfiguration(VFBConfigBaseModel):
+class TrackingStrategyConfiguration(PortfolioConfigBaseModel):
     configuration: dict = {"alpha": 0, "l1_ratio": 0}
 
 
-class ETFReplicatorConfig(VFBConfigBaseModel):
+class ETFReplicatorConfig(PortfolioConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     etf_ticker: str
     tracking_strategy_configuration: TrackingStrategyConfiguration

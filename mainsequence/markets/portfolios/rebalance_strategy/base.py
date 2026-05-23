@@ -6,7 +6,7 @@ import pandas as pd
 import pandas_market_calendars as mcal
 from pydantic import BaseModel, Field, PrivateAttr, field_validator
 
-logger = logging.getLogger("virtualfundbuilder")
+logger = logging.getLogger("portfolios")
 
 
 class RebalanceStrategyBase(BaseModel):

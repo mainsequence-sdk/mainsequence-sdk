@@ -139,7 +139,7 @@ import  mainsequence.markets.instruments as msi
 
 In the code above, we build `mainsequence.markets.instruments.FloatingRateBond` and `mainsequence.markets.instruments.FixedRateBond`. Under the hood, these create QuantLib objects that we can serialize and persist on the platform. From now on, when you fetch an asset, it will carry its **pricing detail**.
 
-Another small but important detail: we assign a custom `security_type` (`SECURITY_TYPE_MOCK`) so we can **indirectly** reference a prices table through a translation rule:
+Another small but important detail: we assign a custom `security_type` (`SECURITY_TYPE_MOCK`) so the mock assets remain easy to identify and classify across the tutorial:
 
 ```python
 payload_item = {
@@ -387,11 +387,11 @@ For example, here’s a stripped implementation of a fixed‑weights signal:
 
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
 from mainsequence.tdag.data_nodes import DataNode
-from mainsequence.markets.portfolios.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.portfolios.models import AssetsConfiguration, PortfolioConfigBaseModel
 from datetime import timedelta
 
 
-class AUIDWeight(VFBConfigBaseModel):
+class AUIDWeight(PortfolioConfigBaseModel):
     unique_identifier: str
     weight: float
 
@@ -431,7 +431,7 @@ All those models will be used to build the portfolio in the next section. Here i
 
 Holds the rules that the portfolio's interpolation node will apply and references the explicit price source:
 ```python
-class PricesConfiguration(VFBConfigBaseModel):
+class PricesConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for price data handling in a portfolio.
 
@@ -455,7 +455,7 @@ class PricesConfiguration(VFBConfigBaseModel):
 
 Wraps `PricesConfiguration` and assigns an **asset category**, defining how those assets are interpolated:
 ```python
-class AssetsConfiguration(VFBConfigBaseModel):
+class AssetsConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for assets included in a portfolio.
 
@@ -475,7 +475,7 @@ class AssetsConfiguration(VFBConfigBaseModel):
 
 Defines execution‑related parameters (for now, commission as a percent):
 ```python
-class PortfolioExecutionConfiguration(VFBConfigBaseModel):
+class PortfolioExecutionConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for portfolio execution.
 
@@ -490,7 +490,7 @@ class PortfolioExecutionConfiguration(VFBConfigBaseModel):
 
 Joins the **signal** with a **rebalance strategy** using direct instance injection:
 ```python
-class BacktestingWeightsConfig(VFBConfigBaseModel):
+class BacktestingWeightsConfig(PortfolioConfigBaseModel):
     """
     Configuration for backtesting weights.
 
@@ -517,7 +517,7 @@ Instantiate the signal node and rebalance strategy first, then inject those live
 
 Finally, compose the portfolio from assets, weights, and execution parameters:
 ```python
-class PortfolioBuildConfiguration(VFBConfigBaseModel):
+class PortfolioBuildConfiguration(PortfolioConfigBaseModel):
     """
     Main class for configuring and building a portfolio.
 
@@ -573,7 +573,7 @@ from mainsequence.markets.portfolios.models import (
     FrontEndDetails,
     MarketsTimeSeries,
 )
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.portfolios.data_nodes import PortfoliosDataNode
 from mainsequence.markets.portfolios.rebalance_strategy import ImmediateSignal
 
 assets = ensure_test_assets()
@@ -652,11 +652,9 @@ def build_portfolio(portfolio_name, signal_node):
         ),
     )
 
-    portfolio_data_node = PortfolioStrategy(portfolio_configuration=portfolio_configuration)
+    portfolio_data_node = PortfoliosDataNode(portfolio_configuration=portfolio_configuration)
     portfolio_data_node.run(
-        debug_mode=True,
-        add_portfolio_to_markets_backend=True,
-    )
+        debug_mode=True,    )
 
     return portfolio_data_node.target_portfolio
 

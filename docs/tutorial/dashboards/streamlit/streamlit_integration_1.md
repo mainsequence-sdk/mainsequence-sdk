@@ -10,7 +10,7 @@ In this chapter, we will build a small tutorial dashboard that reads the same ob
 
 - mock fixed-income assets with pricing details
 - the simulated daily prices table
-- the translation table that maps those assets to prices
+- the direct API read path for those normalized prices
 
 The goal is to keep the first dashboard chapter small and understandable. Instead of copying a large external example application, we will create a minimal multipage Streamlit app directly inside the tutorial project.
 
@@ -21,12 +21,12 @@ Create the following structure under your project:
 ```text
 dashboards/
   └─ tutorial_fixed_income_dashboard/
-      ├─ README.md
-      ├─ common.py
-      ├─ app.py
-      └─ pages/
-          ├─ 01_prices_and_assets.py
-          └─ 02_metadata_and_rules.py
+          ├─ README.md
+          ├─ common.py
+          ├─ app.py
+          └─ pages/
+              ├─ 01_prices_and_assets.py
+              └─ 02_metadata.py
 ```
 
 This layout is enough for Streamlit discovery on the platform and for a clean local development flow.
@@ -40,20 +40,9 @@ This helper module should:
 1. reuse the tutorial helpers from `src/helpers_mock.py`
 2. reuse the simulated prices node from `src/data_nodes/simulated_daily_close_prices.py`
 3. expose a `bootstrap_tutorial_data()` helper that rebuilds the tutorial state on demand
-4. expose read helpers for assets, table metadata, translation-table rules, and recent price history
+4. expose read helpers for assets, table metadata, and recent price history
 
-Two pieces matter most.
-
-First, keep the translation-table path aligned with the Markets tutorial:
-
-```python
-return msc.AssetTranslationTable.get_or_create(
-    translation_table_identifier=TRANSLATION_TABLE_IDENTIFIER,
-    rules=rules,
-)
-```
-
-Second, read the simulated prices table through `APIDataNode.build_from_identifier(...)`:
+The central piece is reading the simulated prices table through `APIDataNode.build_from_identifier(...)`:
 
 ```python
 api_node = APIDataNode.build_from_identifier(SIMULATED_PRICES_TABLE)
@@ -187,25 +176,15 @@ history = api_node.get_df_between_dates(
 
 That is enough for a useful first dashboard page without introducing a second pricing stack.
 
-## 4) Metadata and rules page
+## 4) Metadata page
 
-Create `dashboards/tutorial_fixed_income_dashboard/pages/02_metadata_and_rules.py`.
+Create `dashboards/tutorial_fixed_income_dashboard/pages/02_metadata.py`.
 
 This page should:
 
-- fetch the project-specific translation table
-- flatten its rules into a table
+- fetch table metadata for the simulated prices source
 - show the key platform objects as JSON
-- explain the fail-fast behavior of shared translation tables
-
-That last point is important. `WrapperDataNode` validates every referenced target time series during initialization, so a shared translation table is not only a matching ruleset. It is also a dependency manifest.
-
-If a table contains:
-
-- Rule A: `security_type=MOCK_ASSET_TUTORIAL_135 -> simulated_daily_closes_tutorial_135`
-- Rule B: `security_type=SOMETHING_ELSE -> old_deleted_table`
-
-then wrapper construction is expected to fail if `old_deleted_table` does not exist, even when the current assets would only match Rule A.
+- explain that consumers should reference the normalized price source explicitly by identifier
 
 ## 5) Local validation
 
@@ -216,7 +195,7 @@ source .venv/bin/activate
 streamlit run dashboards/tutorial_fixed_income_dashboard/app.py
 ```
 
-If the tutorial data does not exist yet, use the landing-page button to create the assets, translation table, and simulated prices.
+If the tutorial data does not exist yet, use the landing-page button to create the assets and simulated prices.
 
 ## Why this chapter is structured this way
 

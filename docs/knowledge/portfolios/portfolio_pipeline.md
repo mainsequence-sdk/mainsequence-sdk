@@ -10,7 +10,7 @@ The single most useful way to think about Portfolios is this:
 
 ## The pipeline
 
-At a high level, `PortfolioStrategy` does five things:
+At a high level, `PortfoliosDataNode` does five things:
 
 1. resolves the asset universe
 2. builds or fetches the relevant price series
@@ -25,9 +25,9 @@ In code terms, the pipeline looks like this:
 - a `RebalanceStrategyBase` instance provides execution logic
 - `PortfolioExecutionConfiguration` provides the fee model
 
-## The main orchestrator: `PortfolioStrategy`
+## The main orchestrator: `PortfoliosDataNode`
 
-`PortfolioStrategy` is the normal portfolio workflow node.
+`PortfoliosDataNode` is the normal portfolio workflow node.
 
 It is a `DataNode`, so it:
 
@@ -39,7 +39,7 @@ It is a `DataNode`, so it:
 You instantiate it with a single top-level config:
 
 ```python
-portfolio_node = PortfolioStrategy(portfolio_configuration=config)
+portfolio_node = PortfoliosDataNode(portfolio_configuration=config)
 ```
 
 ## The top-level config: `PortfolioConfiguration`
@@ -238,7 +238,7 @@ from mainsequence.markets.portfolios.models import (
     MarketsTimeSeries,
     PricesConfiguration,
 )
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.portfolios.data_nodes import PortfoliosDataNode
 
 signal_assets_config = AssetsConfiguration(
     assets_category_unique_id=None,
@@ -272,7 +272,7 @@ config = PortfolioConfiguration(
     ),
 )
 
-portfolio_node = PortfolioStrategy(portfolio_configuration=config)
+portfolio_node = PortfoliosDataNode(portfolio_configuration=config)
 ```
 
 That example already shows the Portfolios design clearly:
@@ -284,17 +284,16 @@ That example already shows the Portfolios design clearly:
 
 ## What happens when you run the node
 
-`PortfolioStrategy.run(...)` behaves like a normal `DataNode` run, but Portfolios adds an important option:
+`PortfoliosDataNode.run(...)` is the canonical runtime path.
 
-- `add_portfolio_to_markets_backend`
-
-When enabled, Portfolios can create or update a portfolio entity in the Markets backend and attach metadata such as:
+It resolves the portfolio identity from the portfolio configuration hash, runs
+the signal and price dependencies, persists portfolio values into
+`PortfoliosDataNode`, and persists executed allocations into `PortfolioWeights`.
+Portfolio metadata is stored in the `Portfolios` SimpleTable, including:
 
 - portfolio name
-- calendar
-- signal description
-- rebalance strategy name
-- tags
+- description
+- portfolio index asset unique identifier
 
 That backend sync is covered in more detail in [Implementation Patterns](./implementation_patterns.md).
 
@@ -302,7 +301,7 @@ That backend sync is covered in more detail in [Implementation Patterns](./imple
 
 ### Keep the signal and the price plumbing aligned
 
-If the signal emits `unique_identifier` values that do not match the assets used by the price translation table, the portfolio will fail in confusing ways.
+If the signal emits `unique_identifier` values that do not exist in the configured price source, the portfolio will fail in confusing ways.
 
 ### Treat the rebalance calendar as part of the strategy definition
 

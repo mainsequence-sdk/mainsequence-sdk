@@ -34,13 +34,13 @@ Every portfolio workflow combines four things:
 - **rebalance logic**
 - **execution fees**
 
-At the center of that process is `PortfolioStrategy`, which is itself a `DataNode`.
+At the center of that process is `PortfoliosDataNode`, which is itself a `DataNode`.
 
 That means a portfolio workflow is not a special side system. It lives inside the same DAG model as the rest of the SDK.
 
 ## Two entrypoints to know
 
-### `PortfolioStrategy`
+### `PortfoliosDataNode`
 
 This is the normal Portfolios entrypoint.
 
@@ -51,15 +51,14 @@ Use it when you want Portfolios to compute the portfolio for you from:
 - a price pipeline
 - a fee model
 
-### `PortfolioFromDF`
+### Imported Frames
 
-This is the import path.
+This is the import path on `PortfoliosDataNode`.
 
 Use it when you already have a portfolio time series from somewhere else and want to:
 
 - store it in the platform
-- normalize the metadata columns
-- optionally sync it to the Markets backend
+- normalize it into the canonical portfolio values table
 
 ## Where readers usually get confused
 

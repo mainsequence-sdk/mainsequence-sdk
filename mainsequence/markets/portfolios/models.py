@@ -29,20 +29,20 @@ from mainsequence.markets.portfolios.utils import get_vfb_logger
 logger = get_vfb_logger()
 
 
-class VFBConfigBaseModel(BaseModel):
+class PortfolioConfigBaseModel(BaseModel):
     """
-    Base class for VFB configuration models.
+    Base class for Portfolios configuration models.
 
     Notes
     -----
-    VFB configurations often carry non-Pydantic objects (e.g., strategy instances),
+    Portfolios configurations often carry non-Pydantic objects (e.g., strategy instances),
     so `arbitrary_types_allowed=True` is required.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class MarketsTimeSeries(VFBConfigBaseModel):
+class MarketsTimeSeries(PortfolioConfigBaseModel):
     """
     Reference to a MarketsTimeSeries by unique identifier.
 
@@ -63,11 +63,11 @@ class MarketsTimeSeries(VFBConfigBaseModel):
     )
 
 
-class PricesConfiguration(VFBConfigBaseModel):
+class PricesConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for price handling and interpolation/upsampling.
 
-    This config controls *how VFB fetches and shapes prices*.
+    This config controls *how Portfolios fetches and shapes prices*.
     It is distinct from signal-weight validity, which is controlled by
     `SignalWeights.maximum_forward_fill()`.
 
@@ -94,7 +94,7 @@ class PricesConfiguration(VFBConfigBaseModel):
     upsample_frequency_id: str = Field(
         default="1d",
         description=(
-            "Frequency identifier for the *interpolated/upsampled* series produced by VFB. "
+            "Frequency identifier for the *interpolated/upsampled* series produced by Portfolios. "
             "For daily portfolios, this is typically '1d'. For intraday portfolios, e.g. '15m'."
         ),
         examples=["1d", "15m", "30m"],
@@ -104,7 +104,7 @@ class PricesConfiguration(VFBConfigBaseModel):
         default="ffill",
         description=(
             "Interpolation rule used to fill gaps in intraday (minute-level) bars. "
-            "Supported values in VFB code paths are typically 'ffill' or 'None'."
+            "Supported values in Portfolios code paths are typically 'ffill' or 'None'."
         ),
         examples=["ffill", "None"],
     )
@@ -122,7 +122,7 @@ class PricesConfiguration(VFBConfigBaseModel):
         default=None,
         description=(
             "Explicit MarketsTimeSeries source for bars. The source must already emit prices in the "
-            "portfolio asset namespace expected by VFB."
+            "portfolio asset namespace expected by Portfolios."
         ),
         examples=[{"unique_identifier": "alpaca_1d_bars"}],
     )
@@ -158,13 +158,13 @@ def cached_asset_filter(*args, **kwargs):
     return Asset.filter_with_asset_class(*args, **kwargs)
 
 
-class AssetsConfiguration(VFBConfigBaseModel):
+class AssetsConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for the asset universe and price field selection.
 
     Attributes:
         assets_category_unique_id:
-            Optional AssetCategory unique id. If provided, VFB will use that category
+            Optional AssetCategory unique id. If provided, Portfolios will use that category
             as the universe for both prices and portfolio construction.
             If None, the signal node is expected to define its own universe via get_asset_list().
         price_type:
@@ -191,7 +191,7 @@ class AssetsConfiguration(VFBConfigBaseModel):
     prices_configuration: PricesConfiguration = Field(
         ...,
         description=(
-            "Price-source and interpolation configuration used by VFB when building/interpolating prices."
+            "Price-source and interpolation configuration used by Portfolios when building/interpolating prices."
         ),
         examples=[
             {
@@ -218,13 +218,13 @@ class AssetsConfiguration(VFBConfigBaseModel):
         return msc.Asset.filter(id__in=asset_category.assets)
 
 
-class BacktestingWeightsConfig(VFBConfigBaseModel):
+class BacktestingWeightsConfig(PortfolioConfigBaseModel):
     """
     Configuration container holding instantiated strategy objects.
 
-    IMPORTANT (VFB design)
+    IMPORTANT (Portfolios design)
     ----------------------
-    VFB uses **direct injection** (instances), not string lookups:
+    Portfolios uses **direct injection** (instances), not string lookups:
     - `signal_weights_instance` is a SignalWeights DataNode
     - `rebalance_strategy_instance` is a RebalanceStrategyBase strategy (pure pydantic model)
 
@@ -286,7 +286,7 @@ class BacktestingWeightsConfig(VFBConfigBaseModel):
         return canonical_rebalance_strategy_configuration(v)
 
 
-class PortfolioExecutionConfiguration(VFBConfigBaseModel):
+class PortfolioExecutionConfiguration(PortfolioConfigBaseModel):
     """
     Configuration for execution / fee model.
 
@@ -300,13 +300,13 @@ class PortfolioExecutionConfiguration(VFBConfigBaseModel):
         ge=0.0,
         description=(
             "Commission fee rate applied as turnover drag. "
-            "PortfolioStrategy computes fees as sum(abs(w_current - w_before)) * commission_fee."
+            "PortfoliosDataNode computes fees as sum(abs(w_current - w_before)) * commission_fee."
         ),
         examples=[0.00018, 0.001, 0.0],
     )
 
 
-class FrontEndDetails(VFBConfigBaseModel):
+class FrontEndDetails(PortfolioConfigBaseModel):
     """
     Optional descriptive metadata intended for UI/front-end surfaces.
 
@@ -350,7 +350,7 @@ class FrontEndDetails(VFBConfigBaseModel):
     )
 
 
-class PortfolioMarketsConfig(VFBConfigBaseModel):
+class PortfolioMarketsConfig(PortfolioConfigBaseModel):
     """
     Portfolio metadata/config used when syncing the portfolio into the Markets/VAM backend layer.
 
@@ -362,7 +362,7 @@ class PortfolioMarketsConfig(VFBConfigBaseModel):
     portfolio_name: str = Field(
         default="Portfolio Strategy Title",
         description="Display name for the portfolio in the Markets/VAM backend.",
-        examples=["Fixed Weights BTC/ETH", "Demo VFB Portfolio - Direct Config"],
+        examples=["Fixed Weights BTC/ETH", "Demo Portfolios Portfolio - Direct Config"],
         min_length=1,
     )
 
@@ -371,7 +371,7 @@ class PortfolioMarketsConfig(VFBConfigBaseModel):
         description="Optional front-end metadata shown in UI (description + strategy details).",
         examples=[
             {
-                "description": "Demo portfolio built with VFB",
+                "description": "Demo portfolio built with Portfolios",
                 "signal_name": "MarketCap",
                 "rebalance_strategy_name": "ImmediateSignal",
             }
@@ -379,9 +379,9 @@ class PortfolioMarketsConfig(VFBConfigBaseModel):
     )
 
 
-class PortfolioBuildConfiguration(VFBConfigBaseModel):
+class PortfolioBuildConfiguration(PortfolioConfigBaseModel):
     """
-    Full build configuration for a VFB portfolio.
+    Full build configuration for a Portfolios portfolio.
 
     This section defines the *behavior* of the portfolio build pipeline:
     - which assets/prices are used
@@ -431,7 +431,7 @@ class PortfolioBuildConfiguration(VFBConfigBaseModel):
 
     execution_configuration: PortfolioExecutionConfiguration = Field(
         ...,
-        description="Execution / fee configuration used by PortfolioStrategy.",
+        description="Execution / fee configuration used by PortfoliosDataNode.",
         examples=[{"commission_fee": 0.00018}],
     )
 
@@ -456,9 +456,9 @@ class PortfolioBuildConfiguration(VFBConfigBaseModel):
         return data
 
 
-class PortfolioConfiguration(VFBConfigBaseModel):
+class PortfolioConfiguration(PortfolioConfigBaseModel):
     """
-    Top-level configuration object for a VFB portfolio.
+    Top-level configuration object for a Portfolios portfolio.
 
     Attributes:
         portfolio_build_configuration:

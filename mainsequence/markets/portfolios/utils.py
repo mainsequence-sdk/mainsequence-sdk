@@ -22,7 +22,7 @@ def get_vfb_logger():
     global logger
 
     # If the logger doesn't have any handlers, create it using the custom function
-    logger.bind(sub_application="virtualfundbuilder")
+    logger.bind(sub_application="portfolios")
     return logger
 
 

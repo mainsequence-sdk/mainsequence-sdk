@@ -42,9 +42,9 @@ def test_interpolated_prices_requires_explicit_source():
         price_nodes.InterpolatedPrices(interpolation_config=config)
 
 
-def test_prices_configuration_rejects_translation_table_source():
-    with pytest.raises(ValidationError, match="translation_table_unique_id"):
-        PricesConfiguration(translation_table_unique_id="prices_translation_table_1d")
+def test_prices_configuration_rejects_legacy_source_fields():
+    with pytest.raises(ValidationError, match="legacy_source_id"):
+        PricesConfiguration(legacy_source_id="old-indirect-source")
 
 
 def test_prices_configuration_markets_time_series_builds_explicit_api_source(monkeypatch):

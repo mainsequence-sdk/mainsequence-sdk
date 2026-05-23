@@ -14,5 +14,5 @@ def test_markets_canonical_imports():
 
 def test_old_top_level_market_shims_are_removed():
     assert importlib.util.find_spec("mainsequence.instruments") is None
-    assert importlib.util.find_spec("mainsequence.virtualfundbuilder") is None
+    assert importlib.util.find_spec("mainsequence.portfolios") is None
     assert importlib.util.find_spec("mainsequence.markets.virtualfundbuilder") is None

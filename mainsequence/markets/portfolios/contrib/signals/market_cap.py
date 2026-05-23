@@ -15,7 +15,7 @@ from mainsequence.markets.portfolios.data_nodes import (
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
     MarketsTimeSeries,
-    VFBConfigBaseModel,
+    PortfolioConfigBaseModel,
 )
 from mainsequence.markets.portfolios.utils import TIMEDELTA
 from mainsequence.tdag.data_nodes import (
@@ -32,7 +32,7 @@ class VolatilityControlConfiguration(BaseModel):
     ann_factor: int = 252
 
 
-class MarketCapConfig(VFBConfigBaseModel):
+class MarketCapConfig(PortfolioConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     market_cap_time_series: MarketsTimeSeries = Field(
         ...,

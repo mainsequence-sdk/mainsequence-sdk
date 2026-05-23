@@ -57,6 +57,7 @@ Use this when:
 What it does:
 
 - selects assets from an asset category
+- reads market-cap data from an explicit `market_cap_time_series`
 - filters by top-N market cap
 - filters by liquidity metrics such as ATVR
 - normalizes the remaining market caps into weights
@@ -209,7 +210,7 @@ Use it when:
 
 - you want the SDK to build the appropriate `InterpolatedPrices` node from your asset and price config
 
-That helper is part of why the default `PortfolioStrategy` constructor feels compact even though the actual price pipeline is doing meaningful work underneath.
+That helper is part of why the default `PortfoliosDataNode` constructor feels compact even though the actual price pipeline is doing meaningful work underneath.
 
 ## Choosing the right built-in
 

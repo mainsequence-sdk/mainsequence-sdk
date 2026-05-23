@@ -11,9 +11,9 @@ import mainsequence.tdag.data_nodes.build_operations as build_operations
 from mainsequence.tdag.data_nodes import DataNodeMetaData, RecordDefinition
 
 from .base import (
+    PortfolioCanonicalDataNode,
+    PortfolioCanonicalDataNodeConfiguration,
     SignalWeightsConfiguration,
-    VFBCanonicalDataNode,
-    VFBCanonicalDataNodeConfiguration,
     _class_import_path,
     _drop_excluded_keys,
     _empty_flat_frame,
@@ -36,8 +36,8 @@ from .constants import (
 )
 
 
-class SignalWeights(VFBCanonicalDataNode):
-    """Canonical DataNode for VFB signal weights."""
+class SignalWeights(PortfolioCanonicalDataNode):
+    """Canonical DataNode for Portfolios signal weights."""
 
     def __init__(
         self,
@@ -144,7 +144,7 @@ class SignalWeights(VFBCanonicalDataNode):
         )
 
     def get_explanation(self):
-        return f"{self.__class__.__name__}: canonical VFB signal weights."
+        return f"{self.__class__.__name__}: canonical Portfolios signal weights."
 
     def maximum_forward_fill(self):
         raise NotImplementedError(
@@ -360,10 +360,10 @@ class SignalWeights(VFBCanonicalDataNode):
     @classmethod
     def _validate_config(
         cls,
-        config: VFBCanonicalDataNodeConfiguration,
+        config: PortfolioCanonicalDataNodeConfiguration,
     ) -> SignalWeightsConfiguration:
         if not isinstance(config, SignalWeightsConfiguration):
-            if isinstance(config, VFBCanonicalDataNodeConfiguration):
+            if isinstance(config, PortfolioCanonicalDataNodeConfiguration):
                 config = SignalWeightsConfiguration(
                     index_names=config.index_names,
                     records=config.records,
@@ -380,7 +380,7 @@ class SignalWeights(VFBCanonicalDataNode):
     @classmethod
     def _default_description(cls) -> str:
         return (
-            "Canonical VFB signal weights indexed by time_index, signal_uid, "
+            "Canonical Portfolios signal weights indexed by time_index, signal_uid, "
             "and asset unique_identifier."
         )
 
@@ -413,7 +413,7 @@ class SignalWeights(VFBCanonicalDataNode):
 
 
 def canonical_signal_configuration(signal: Any) -> dict[str, Any]:
-    """Return the canonical hash payload for a VFB signal producer.
+    """Return the canonical hash payload for a Portfolios signal producer.
 
     The payload keeps signal class/config identity and removes storage/update
     identity so the same signal config keeps the same `signal_uid` across
@@ -428,7 +428,7 @@ def canonical_signal_configuration(signal: Any) -> dict[str, Any]:
 
 
 def compute_signal_uid(signal: Any) -> str:
-    """Compute the deterministic VFB `signal_uid` for a signal producer."""
+    """Compute the deterministic Portfolios `signal_uid` for a signal producer."""
     payload = canonical_signal_configuration(signal)
     _update_hash, storage_hash = build_operations.hash_signature(payload)
     return storage_hash
@@ -438,7 +438,7 @@ def normalize_signal_weights_frame(
     signal_weights_frame: pd.DataFrame,
     *,
     signal_uid: str,
-    config: VFBCanonicalDataNodeConfiguration | None = None,
+    config: PortfolioCanonicalDataNodeConfiguration | None = None,
 ) -> pd.DataFrame:
     """Normalize signal output into canonical SignalWeights rows."""
     config = SignalWeights._validate_config(config or SignalWeights.default_config())

@@ -16,15 +16,15 @@ from mainsequence.tdag.data_nodes import (
 from .constants import *
 
 
-class VFBCanonicalDataNodeConfiguration(DataNodeConfiguration):
-    """Configuration base for SDK-created canonical VFB data nodes."""
+class PortfolioCanonicalDataNodeConfiguration(DataNodeConfiguration):
+    """Configuration base for SDK-created canonical Portfolios data nodes."""
 
     index_names: list[str]
     records: list[RecordDefinition]
 
     @property
     def time_index_name(self) -> str:
-        return VFB_CANONICAL_TIME_INDEX_NAME
+        return PORTFOLIO_CANONICAL_TIME_INDEX_NAME
 
     @property
     def identity_index_names(self) -> list[str]:
@@ -35,7 +35,7 @@ class VFBCanonicalDataNodeConfiguration(DataNodeConfiguration):
         return {record.column_name: record.dtype for record in self.records}
 
 
-class SignalWeightsConfiguration(VFBCanonicalDataNodeConfiguration):
+class SignalWeightsConfiguration(PortfolioCanonicalDataNodeConfiguration):
     """Canonical SignalWeights table config plus runtime signal input."""
 
     signal_configuration: Any | None = Field(
@@ -44,19 +44,19 @@ class SignalWeightsConfiguration(VFBCanonicalDataNodeConfiguration):
     )
 
 
-class VFBCanonicalDataNode(DataNode):
-    """Base DataNode for canonical shared VirtualFundBuilder tables."""
+class PortfolioCanonicalDataNode(DataNode):
+    """Base DataNode for canonical shared Portfolios tables."""
 
     _HASH_NAMESPACE_ALIASES = ("namespace",)
 
     def __init__(
         self,
-        config: VFBCanonicalDataNodeConfiguration | None = None,
+        config: PortfolioCanonicalDataNodeConfiguration | None = None,
         *args,
         namespace: str | None = None,
         **kwargs,
     ):
-        """Create a canonical VFB node.
+        """Create a canonical Portfolios node.
 
         ``namespace`` is the market-domain alias for DataNode ``hash_namespace``.
         The DataNode constructor wrapper consumes it before this method runs, so
@@ -75,9 +75,9 @@ class VFBCanonicalDataNode(DataNode):
         identifier: str | None = None,
         description: str | None = None,
         extra_records: list[RecordDefinition] | None = None,
-    ) -> VFBCanonicalDataNodeConfiguration:
+    ) -> PortfolioCanonicalDataNodeConfiguration:
         return cls._validate_config(
-            VFBCanonicalDataNodeConfiguration(
+            PortfolioCanonicalDataNodeConfiguration(
                 index_names=cls._required_index_names(),
                 records=cls._records_with_extra(extra_records=extra_records),
                 node_metadata=DataNodeMetaData(
@@ -108,10 +108,10 @@ class VFBCanonicalDataNode(DataNode):
     @classmethod
     def _validate_config(
         cls,
-        config: VFBCanonicalDataNodeConfiguration,
-    ) -> VFBCanonicalDataNodeConfiguration:
-        if not isinstance(config, VFBCanonicalDataNodeConfiguration):
-            raise TypeError(f"{cls.__name__} requires a VFBCanonicalDataNodeConfiguration.")
+        config: PortfolioCanonicalDataNodeConfiguration,
+    ) -> PortfolioCanonicalDataNodeConfiguration:
+        if not isinstance(config, PortfolioCanonicalDataNodeConfiguration):
+            raise TypeError(f"{cls.__name__} requires a PortfolioCanonicalDataNodeConfiguration.")
         if config.index_names != cls._required_index_names():
             raise ValueError(
                 f"{cls.__name__} requires index_names " f"{cls._required_index_names()!r}."
@@ -142,7 +142,7 @@ class VFBCanonicalDataNode(DataNode):
     def _schema_bootstrap_index_values(cls) -> dict[str, Any]:
         raise NotImplementedError
 
-    def _canonical_config(self) -> VFBCanonicalDataNodeConfiguration:
+    def _canonical_config(self) -> PortfolioCanonicalDataNodeConfiguration:
         return self.__class__._validate_config(
             getattr(self, "config", None) or self.default_config()
         )
@@ -168,7 +168,7 @@ class VFBCanonicalDataNode(DataNode):
     def build_schema_bootstrap_frame(
         cls,
         *,
-        config: VFBCanonicalDataNodeConfiguration | None = None,
+        config: PortfolioCanonicalDataNodeConfiguration | None = None,
         index_values: dict[str, Any] | None = None,
         time_index: dt.datetime | pd.Timestamp = SCHEMA_BOOTSTRAP_TIME_INDEX,
     ) -> pd.DataFrame:
@@ -197,7 +197,7 @@ class VFBCanonicalDataNode(DataNode):
         cls,
         data_frame: pd.DataFrame,
         *,
-        config: VFBCanonicalDataNodeConfiguration | None = None,
+        config: PortfolioCanonicalDataNodeConfiguration | None = None,
     ) -> pd.DataFrame:
         return _validate_canonical_frame(
             data_frame,
@@ -210,7 +210,7 @@ class VFBCanonicalDataNode(DataNode):
         cls,
         data_frame: pd.DataFrame,
         *,
-        config: VFBCanonicalDataNodeConfiguration | None = None,
+        config: PortfolioCanonicalDataNodeConfiguration | None = None,
     ) -> pd.DataFrame:
         return cls.validate_frame(data_frame, config=config)
 
@@ -228,7 +228,7 @@ class VFBCanonicalDataNode(DataNode):
         if storage is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} did not create a ready canonical "
-                "VFB data node. Initialize the canonical VFB storage family "
+                "Portfolios data node. Initialize the canonical Portfolios storage family "
                 "before writing."
             )
         return _coerce_required_uid(storage, field_name="data_node_storage")
@@ -276,7 +276,7 @@ class VFBCanonicalDataNode(DataNode):
         if errors:
             raise ValueError(
                 f"{self.__class__.__name__} is bound to an incompatible "
-                "canonical VFB data node: " + "; ".join(errors)
+                "canonical Portfolios data node: " + "; ".join(errors)
             )
 
 
@@ -300,7 +300,7 @@ def _record_definitions_from_dtype_map(
 def _is_canonical_frame(
     frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
 ) -> bool:
     return (
         isinstance(frame, pd.DataFrame)
@@ -332,13 +332,13 @@ def _drop_excluded_keys(value: Any, *, excluded_keys: frozenset[str]) -> Any:
 
 def _reset_frame_index(frame: pd.DataFrame) -> pd.DataFrame:
     if not isinstance(frame, pd.DataFrame):
-        raise TypeError("canonical VFB normalizers require a pandas DataFrame.")
+        raise TypeError("canonical Portfolios normalizers require a pandas DataFrame.")
     return frame.copy().reset_index()
 
 
 def _empty_flat_frame(
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
 ) -> pd.DataFrame:
     return pd.DataFrame(columns=list(config.column_dtypes_map))
 
@@ -360,20 +360,20 @@ def _require_columns(
 
 
 def _normalize_pivoted_signal_weights(frame: pd.DataFrame) -> pd.DataFrame:
-    if VFB_CANONICAL_TIME_INDEX_NAME not in frame.columns:
+    if PORTFOLIO_CANONICAL_TIME_INDEX_NAME not in frame.columns:
         raise ValueError(
             "SignalWeights frame must include 'signal_weight' rows or a "
             "'time_index' column for pivoted signal weights."
         )
 
     value_columns = [
-        column_name for column_name in frame.columns if column_name != VFB_CANONICAL_TIME_INDEX_NAME
+        column_name for column_name in frame.columns if column_name != PORTFOLIO_CANONICAL_TIME_INDEX_NAME
     ]
     if not value_columns:
         raise ValueError("Pivoted SignalWeights frame must contain asset columns to unpivot.")
 
     return frame.melt(
-        id_vars=[VFB_CANONICAL_TIME_INDEX_NAME],
+        id_vars=[PORTFOLIO_CANONICAL_TIME_INDEX_NAME],
         value_vars=value_columns,
         var_name=ASSET_UNIQUE_IDENTIFIER,
         value_name="signal_weight",
@@ -414,7 +414,7 @@ def _validate_records(
         seen_columns.add(record.column_name)
     if duplicate_columns:
         raise ValueError(
-            "Canonical VFB records must be duplicate-free. Duplicate columns: "
+            "Canonical Portfolios records must be duplicate-free. Duplicate columns: "
             + ", ".join(sorted(set(duplicate_columns)))
             + "."
         )
@@ -430,7 +430,7 @@ def _validate_records(
             )
     if errors:
         raise ValueError(
-            "Canonical VFB records must include the required columns: " + "; ".join(errors)
+            "Canonical Portfolios records must include the required columns: " + "; ".join(errors)
         )
 
 
@@ -445,13 +445,13 @@ def _schema_bootstrap_value(
         return 0.0
     if dtype == "string":
         return ""
-    raise ValueError(f"Unsupported canonical VFB dtype {dtype!r}.")
+    raise ValueError(f"Unsupported canonical Portfolios dtype {dtype!r}.")
 
 
 def _validate_canonical_frame(
     data_frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
     frame_name: str,
 ) -> pd.DataFrame:
     frame = _ensure_config_index(data_frame, config=config, frame_name=frame_name)
@@ -478,7 +478,7 @@ def _validate_canonical_frame(
 def _ensure_config_index(
     data_frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
     frame_name: str,
 ) -> pd.DataFrame:
     expected_index_names = list(config.index_names)
@@ -496,7 +496,7 @@ def _ensure_config_index(
 def _normalize_config_values(
     frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
     frame_name: str,
 ) -> pd.DataFrame:
     normalized = frame.copy()
@@ -512,7 +512,7 @@ def _normalize_config_values(
             normalized[column_name] = _normalize_string(values)
         else:
             raise ValueError(
-                f"Unsupported canonical VFB dtype {dtype!r} for " f"{frame_name}.{column_name!r}."
+                f"Unsupported canonical Portfolios dtype {dtype!r} for " f"{frame_name}.{column_name!r}."
             )
     return normalized
 
@@ -520,7 +520,7 @@ def _normalize_config_values(
 def _validate_identity_values(
     frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
     frame_name: str,
 ) -> None:
     for index_name in config.identity_index_names:
@@ -544,7 +544,7 @@ def _normalize_float64(values: Any, *, column_name: str) -> pd.Series:
     try:
         return pd.to_numeric(values, errors="raise").astype("float64")
     except (TypeError, ValueError) as exc:
-        raise ValueError(f"Invalid float64 canonical VFB value for {column_name!r}.") from exc
+        raise ValueError(f"Invalid float64 canonical Portfolios value for {column_name!r}.") from exc
 
 
 def _normalize_string(values: Any) -> pd.Series:
@@ -554,7 +554,7 @@ def _normalize_string(values: Any) -> pd.Series:
 def _attach_logical_dtype_contract(
     frame: pd.DataFrame,
     *,
-    config: VFBCanonicalDataNodeConfiguration,
+    config: PortfolioCanonicalDataNodeConfiguration,
 ) -> pd.DataFrame:
     frame.attrs[LOGICAL_COLUMN_DTYPES_ATTR] = dict(config.column_dtypes_map)
     return frame

@@ -237,9 +237,6 @@ mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected
 mainsequence data-node delete <DATA_NODE_STORAGE_UID> --full-delete-selected --override-protection
 mainsequence markets portfolios list
 mainsequence markets portfolios list --filter id__in=42
-mainsequence markets asset-translation-table list
-mainsequence markets asset-translation-table list --show-filters
-mainsequence markets asset-translation-table detail 12
 
 # 1) List and create
 mainsequence project list
@@ -427,8 +424,6 @@ mainsequence skills path workspace_builder --json
 - `mainsequence data-node delete` executes the SDK client `DataNodeStorage.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
 - `mainsequence data-node delete` always requires typed verification before the delete call is sent.
 - `mainsequence markets portfolios list` lists markets portfolios through the SDK client `Portfolio.filter()` path.
-- `mainsequence markets asset-translation-table list` lists translation tables through the SDK client `AssetTranslationTable.filter()` path.
-- `mainsequence markets asset-translation-table detail` fetches one translation table through `AssetTranslationTable.get()` and renders each rule as a readable `match => target` mapping in the terminal.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
 - `ProjectImage` responses include backend metadata such as `creation_date`, and the SDK model accepts that field.
 - All list commands share the same `--filter KEY=VALUE` and `--show-filters` pattern. Commands that already enforce scoping filters reject overriding those keys.

@@ -9,18 +9,18 @@ from mainsequence.markets.portfolios.data_nodes import (
     SIGNAL_UID,
     SignalWeights,
 )
-from mainsequence.markets.portfolios.models import AssetsConfiguration, VFBConfigBaseModel
+from mainsequence.markets.portfolios.models import AssetsConfiguration, PortfolioConfigBaseModel
 from mainsequence.tdag.data_nodes import APIDataNode, DataNode
 
 SIGNAL_OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
 
 
-class AUIDWeight(VFBConfigBaseModel):
+class AUIDWeight(PortfolioConfigBaseModel):
     unique_identifier: str
     weight: float
 
 
-class FixedWeightsConfig(VFBConfigBaseModel):
+class FixedWeightsConfig(PortfolioConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     asset_unique_identifier_weights: list[AUIDWeight]
 

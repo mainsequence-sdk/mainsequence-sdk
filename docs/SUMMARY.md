@@ -37,7 +37,6 @@
     - Markets
         - [Assets](knowledge/markets/assets.md)
         - [Asset Categories](knowledge/markets/asset_categories.md)
-        - [Translation Tables](knowledge/markets/translation_tables.md)
     - Infrastructure
         - [Users and Access](knowledge/infrastructure/users_and_access.md)
         - [Notifications](knowledge/infrastructure/notifications.md)

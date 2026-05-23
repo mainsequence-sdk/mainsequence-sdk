@@ -10,6 +10,7 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 from mainsequence.markets.portfolios import data_nodes, simple_tables
+from mainsequence.markets.portfolios.contrib.signals import market_cap as market_cap_module
 from mainsequence.markets.portfolios.contrib.signals.external_weights import (
     ExternalWeights,
     ExternalWeightsConfig,
@@ -23,7 +24,7 @@ from mainsequence.markets.portfolios.contrib.signals.intraday_trend import (
     IntradayTrend,
     IntradayTrendConfig,
 )
-from mainsequence.markets.portfolios.contrib.signals.market_cap import MarketCap
+from mainsequence.markets.portfolios.contrib.signals.market_cap import MarketCap, MarketCapConfig
 from mainsequence.markets.portfolios.contrib.signals.portfolio_replicator import (
     ETFReplicator,
     ETFReplicatorConfig,
@@ -36,9 +37,10 @@ from mainsequence.markets.portfolios.data_nodes import (
 )
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
+    MarketsTimeSeries,
     PricesConfiguration,
 )
-from mainsequence.tdag.data_nodes import DataNode
+from mainsequence.tdag.data_nodes import APIDataNode, DataNode
 
 
 def _patch_data_node_source(monkeypatch):
@@ -121,6 +123,36 @@ def test_old_contrib_signals_use_runtime_signal_configuration(monkeypatch):
         assert signal.storage_hash == canonical_table.storage_hash
         assert signal.update_hash == canonical_table.update_hash
         assert signal.signal_uid == data_nodes.compute_signal_uid(signal)
+
+
+def test_market_cap_uses_configured_api_source_without_wrapper(monkeypatch):
+    _patch_data_node_source(monkeypatch)
+    source = APIDataNode(data_source_id=1, storage_hash="market-cap-storage")
+    calls: list[str] = []
+
+    def _build_from_identifier(cls, identifier: str):
+        calls.append(identifier)
+        return source
+
+    monkeypatch.setattr(
+        APIDataNode,
+        "build_from_identifier",
+        classmethod(_build_from_identifier),
+    )
+
+    config = MarketCapConfig(
+        signal_assets_configuration=_assets_configuration(),
+        market_cap_time_series=MarketsTimeSeries(
+            unique_identifier="polygon_historical_marketcap"
+        ),
+        volatility_control_configuration=None,
+    )
+    signal = MarketCap.from_signal_configuration(config, namespace="research")
+
+    assert not hasattr(market_cap_module, "".join(("Wrapper", "DataNode")))
+    assert signal.historical_market_cap_ts is source
+    assert signal.dependencies() == {"historical_market_cap_ts": source}
+    assert calls == ["polygon_historical_marketcap"]
 
 
 def test_fixed_weights_uses_shared_signal_weights_storage_hash(monkeypatch):

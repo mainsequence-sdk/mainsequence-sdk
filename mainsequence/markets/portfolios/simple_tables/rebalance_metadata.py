@@ -18,20 +18,20 @@ from ..data_nodes.constants import (
 
 
 class RebalanceStrategyMetadata(SimpleTable):
-    """Metadata registry row for a canonical VFB rebalance strategy."""
+    """Metadata registry row for a canonical Portfolios rebalance strategy."""
 
     rebalance_strategy_uid: Annotated[str, Index(unique=True)]
     rebalance_strategy_description: str | None = None
 
 
 class RebalanceStrategiesMetadataConfiguration(SimpleTableUpdaterConfiguration):
-    """Configuration for the canonical VFB rebalance strategy registry."""
+    """Configuration for the canonical Portfolios rebalance strategy registry."""
 
     identifier: str = "mainsequence.markets.rebalance_strategies"
 
 
 class RebalanceStrategiesMetadataUpdater(SimpleTableUpdater):
-    """SimpleTable updater for canonical VFB rebalance strategy metadata."""
+    """SimpleTable updater for canonical Portfolios rebalance strategy metadata."""
 
     SIMPLE_TABLE_SCHEMA = RebalanceStrategyMetadata
 
@@ -48,7 +48,7 @@ def default_rebalance_strategy_metadata_updater() -> RebalanceStrategiesMetadata
 def canonical_rebalance_strategy_configuration(
     rebalance_strategy: Any,
 ) -> dict[str, Any]:
-    """Return the canonical hash payload for a VFB rebalance strategy."""
+    """Return the canonical hash payload for a Portfolios rebalance strategy."""
     payload = _rebalance_strategy_payload(rebalance_strategy)
     serialized_payload = build_operations.Serializer().serialize_init_kwargs(payload)
     return _drop_excluded_keys(
@@ -58,7 +58,7 @@ def canonical_rebalance_strategy_configuration(
 
 
 def compute_rebalance_strategy_uid(rebalance_strategy: Any) -> str:
-    """Compute the deterministic VFB rebalance_strategy_uid."""
+    """Compute the deterministic Portfolios rebalance_strategy_uid."""
     payload = canonical_rebalance_strategy_configuration(rebalance_strategy)
     _update_hash, storage_hash = build_operations.hash_signature(payload)
     return storage_hash

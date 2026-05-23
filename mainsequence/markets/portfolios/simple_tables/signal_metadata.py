@@ -13,20 +13,20 @@ from ..data_nodes.constants import SIGNAL_DESCRIPTION
 
 
 class SignalMetadata(SimpleTable):
-    """Metadata registry row for a canonical VFB signal."""
+    """Metadata registry row for a canonical Portfolios signal."""
 
     signal_uid: Annotated[str, Index(unique=True)]
     signal_description: str | None = None
 
 
 class SignalsMetadataConfiguration(SimpleTableUpdaterConfiguration):
-    """Configuration for the canonical VFB signal metadata registry."""
+    """Configuration for the canonical Portfolios signal metadata registry."""
 
     identifier: str = "mainsequence.markets.signals"
 
 
 class SignalsMetadataUpdater(SimpleTableUpdater):
-    """SimpleTable updater for canonical VFB signal metadata."""
+    """SimpleTable updater for canonical Portfolios signal metadata."""
 
     SIMPLE_TABLE_SCHEMA = SignalMetadata
 

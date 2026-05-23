@@ -5,18 +5,18 @@ from typing import Any
 
 from mainsequence.client.models_tdag import DataNodeStorage
 
-from .base import VFBCanonicalDataNode, _storage_source_config
+from .base import PortfolioCanonicalDataNode, _storage_source_config
 
 
 def initialize_portfolio_storage_source_tables(
     *,
-    portfolio_weights: VFBCanonicalDataNode | None = None,
-    signal_weights: VFBCanonicalDataNode | None = None,
-    portfolio_data: VFBCanonicalDataNode | None = None,
-    anchor_node: VFBCanonicalDataNode | None = None,
+    portfolio_weights: PortfolioCanonicalDataNode | None = None,
+    signal_weights: PortfolioCanonicalDataNode | None = None,
+    portfolio_data: PortfolioCanonicalDataNode | None = None,
+    anchor_node: PortfolioCanonicalDataNode | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
-    """Initialize the canonical VFB storage family through one backend call."""
+    """Initialize the canonical Portfolios storage family through one backend call."""
     family = _resolve_storage_family(
         portfolio_weights=portfolio_weights,
         signal_weights=signal_weights,
@@ -68,11 +68,11 @@ def initialize_portfolio_storage_source_tables(
 
 def _resolve_storage_family(
     *,
-    portfolio_weights: VFBCanonicalDataNode | None,
-    signal_weights: VFBCanonicalDataNode | None,
-    portfolio_data: VFBCanonicalDataNode | None,
-    anchor_node: VFBCanonicalDataNode | None,
-) -> dict[str, VFBCanonicalDataNode]:
+    portfolio_weights: PortfolioCanonicalDataNode | None,
+    signal_weights: PortfolioCanonicalDataNode | None,
+    portfolio_data: PortfolioCanonicalDataNode | None,
+    anchor_node: PortfolioCanonicalDataNode | None,
+) -> dict[str, PortfolioCanonicalDataNode]:
     from .portfolio_weights import PortfolioWeights
     from .portfolios import PortfoliosDataNode
     from .signal_weights import SignalWeights
@@ -100,7 +100,7 @@ def _resolve_storage_family(
     }
 
 
-def _node_namespace(node: VFBCanonicalDataNode | None) -> str | None:
+def _node_namespace(node: PortfolioCanonicalDataNode | None) -> str | None:
     if node is None:
         return None
     namespace = getattr(node, "hash_namespace", "") or ""
@@ -108,7 +108,7 @@ def _node_namespace(node: VFBCanonicalDataNode | None) -> str | None:
 
 
 def _ensure_storage_metadata(
-    node: VFBCanonicalDataNode,
+    node: PortfolioCanonicalDataNode,
     *,
     timeout: int | None,
 ) -> Any:
@@ -127,7 +127,7 @@ def _ensure_storage_metadata(
 def _source_table_payload(
     *,
     storage: Any,
-    node: VFBCanonicalDataNode,
+    node: PortfolioCanonicalDataNode,
 ) -> dict[str, Any]:
     config = node._canonical_config()
     return {
@@ -187,7 +187,7 @@ def _refresh_storage(storage: Any, *, timeout: int | None) -> Any | None:
     )
 
 
-def _set_node_storage(node: VFBCanonicalDataNode, storage: Any) -> None:
+def _set_node_storage(node: PortfolioCanonicalDataNode, storage: Any) -> None:
     try:
         node.local_persist_manager.data_node_storage = storage
     except Exception:

@@ -14,6 +14,8 @@ portfolio_build_configuration:
     rebalance_strategy_name: ImmediateSignal
     signal_weights_configuration:
       num_top_assets: None
+      market_cap_time_series:
+        unique_identifier: polygon_historical_marketcap
       minimum_atvr_ratio: .05
       rolling_atv_volume_windows: [ 90, 365 ]
       frequency_trading_percent: .9

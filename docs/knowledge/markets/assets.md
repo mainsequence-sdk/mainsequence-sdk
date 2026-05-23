@@ -43,7 +43,7 @@ Instead of relying on public FIGIs, the tutorial creates custom assets for mock 
 
 - register them with `msc.Asset.batch_get_or_register_custom_assets(...)`
 - attach pricing details with `asset.add_instrument_pricing_details_from_ms_instrument(...)`
-- assign a custom `security_type` so other workflows, such as translation tables, can route them correctly
+- assign a custom `security_type` so other workflows can classify them consistently
 
 This is the custom-master flow. The identity is now owned by your organization, so you are responsible for keeping it stable and meaningful.
 
@@ -226,7 +226,5 @@ That flow is idempotent, easy to reason about, and consistent with the rest of t
 - pricing details are what make an asset usable in instrument valuation
 - `filter()` is the normal lookup tool
 - `query()` is the better option for large filter payloads, especially big `__in` searches
-
-If you want the routing layer that maps assets into upstream price tables, continue with [Translation Tables](./translation_tables.md).
 
 If you want the reusable-universe layer that groups many assets into one named object, continue with [Asset Categories](./asset_categories.md).

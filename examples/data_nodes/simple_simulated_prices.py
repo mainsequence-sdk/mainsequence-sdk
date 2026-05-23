@@ -17,13 +17,10 @@ from mainsequence.tdag import (
     DataNode,
     DataNodeConfiguration,
     RecordDefinition,
-    WrapperDataNode,
-    WrapperDataNodeConfig,
 )
 
 np.NaN = np.nan  # Fix for a pandas-ta compatibility issue
 MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES = "simulated_prices_from_category"
-TEST_TRANSLATION_TABLE_UID = "test_translation_table"
 
 import base64
 
@@ -441,8 +438,8 @@ class CategorySimulatedPrices(DataNode):
 
     def run_post_update_routines(self, error_on_last_update: bool) -> None:
         """
-        In this example we will use the post init routines to build an  Asset Translation Table that points
-        prices to this prices
+        The simulated prices node publishes one normalized table that consumers
+        can read directly by identifier with APIDataNode.build_from_identifier(...).
         Args:
             error_on_last_update:
             update_statistics:
@@ -450,29 +447,7 @@ class CategorySimulatedPrices(DataNode):
         Returns:
 
         """
-        translation_table = msc.AssetTranslationTable.get_or_none(
-            unique_identifier=TEST_TRANSLATION_TABLE_UID
-        )
-
-        rules = [
-            msc.AssetTranslationRule(
-                asset_filter=msc.AssetFilter(
-                    execution_venue_symbol=msc.MARKETS_CONSTANTS.MAIN_SEQUENCE_EV,
-                    security_type=msc.MARKETS_CONSTANTS.FIGI_SECURITY_TYPE_COMMON_STOCK,
-                ),
-                markets_time_serie_unique_identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES,
-                target_execution_venue_symbol=msc.MARKETS_CONSTANTS.MAIN_SEQUENCE_EV,
-            )
-        ]
-        rules_serialized = [r.model_dump() for r in rules]
-
-        if translation_table is None:
-            translation_table = msc.AssetTranslationTable.create(
-                unique_identifier=TEST_TRANSLATION_TABLE_UID,
-                rules=rules_serialized,
-            )
-        else:
-            translation_table.add_rules(rules)
+        return None
 
 
 # Mocking UpdateStatistics and Running the Test
@@ -888,12 +863,6 @@ class RollingModelPrediction(DataNode):
         self.external_prices = APIDataNode.build_from_identifier(
             identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES
         )
-        translation_table = msc.AssetTranslationTable.get(
-            unique_identifier=TEST_TRANSLATION_TABLE_UID
-        )
-        self.translated_prices_ts = WrapperDataNode(
-            config=WrapperDataNodeConfig(translation_table=translation_table)
-        )
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
             model_train_config=ModelTrainNodeConfig(
@@ -914,7 +883,6 @@ class RollingModelPrediction(DataNode):
             "prices_ts": self.prices_ts,
             "feature_ts": self.feature_ts,
             "api_prices": self.external_prices,
-            "translated_prices_ts": self.translated_prices_ts,
             "model_train_ts": self.model_train_ts,
         }
 
@@ -1015,12 +983,6 @@ class LivePrediction(DataNode):
         self.external_prices = APIDataNode.build_from_identifier(
             identifier=MARKET_TIME_SERIES_UNIQUE_IDENTIFIER_CATEGORY_PRICES
         )
-        translation_table = msc.AssetTranslationTable.get(
-            unique_identifier=TEST_TRANSLATION_TABLE_UID
-        )
-        self.translated_prices_ts = WrapperDataNode(
-            config=WrapperDataNodeConfig(translation_table=translation_table)
-        )
         # retrainer DataNode
         self.model_train_ts = ModelTrainTimeSerie(
             model_train_config=ModelTrainNodeConfig(
@@ -1041,7 +1003,6 @@ class LivePrediction(DataNode):
             "prices_ts": self.prices_ts,
             "feature_ts": self.feature_ts,
             "api_prices": self.external_prices,
-            "translated_prices_ts": self.translated_prices_ts,
             "model_train_ts": self.model_train_ts,
         }
 

@@ -6,9 +6,11 @@ from typing import Any
 import pandas as pd
 from pydantic import Field
 
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
+)
 from mainsequence.tdag.data_nodes import (
-    DataNode,
-    DataNodeConfiguration,
     DataNodeMetaData,
     RecordDefinition,
 )
@@ -63,7 +65,7 @@ ASSET_PRICING_DETAIL_COLUMN_DESCRIPTIONS = {
 }
 
 
-class AssetDataNodeConfiguration(DataNodeConfiguration):
+class AssetDataNodeConfiguration(MarketDataNodeConfiguration):
     """Configuration for timestamped asset DataNodes."""
 
     time_index_name: str = Field(
@@ -84,8 +86,11 @@ class AssetDataNodeConfiguration(DataNodeConfiguration):
         return {record.column_name: record.dtype for record in self.records}
 
 
-class AssetTimestampedDataNode(DataNode):
-    """Base DataNode for timestamped asset facts keyed by asset unique_identifier."""
+class AssetTimestampedFrameMixin:
+    """Shared frame/config behavior for timestamped asset DataNodes."""
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
 
     def __init__(
         self,
@@ -141,7 +146,7 @@ class AssetTimestampedDataNode(DataNode):
     def _required_records(cls) -> list[RecordDefinition]:
         raise NotImplementedError
 
-    def set_frame(self, frame: pd.DataFrame) -> AssetTimestampedDataNode:
+    def set_frame(self, frame: pd.DataFrame) -> AssetTimestampedFrameMixin:
         self._asset_data_frame = frame
         return self
 
@@ -192,6 +197,13 @@ class AssetTimestampedDataNode(DataNode):
     @classmethod
     def build_mock_frame(cls, **kwargs: Any) -> pd.DataFrame:
         return cls.build_schema_bootstrap_frame(**kwargs)
+
+
+class AssetTimestampedDataNode(AssetTimestampedFrameMixin, MarketDataNode):
+    """Base MarketDataNode for timestamped asset facts keyed by unique_identifier."""
+
+    def dependencies(self) -> dict:
+        return {}
 
 
 class AssetSnapshot(AssetTimestampedDataNode):
@@ -335,4 +347,5 @@ __all__ = [
     "AssetPricingDetail",
     "AssetSnapshot",
     "AssetTimestampedDataNode",
+    "AssetTimestampedFrameMixin",
 ]

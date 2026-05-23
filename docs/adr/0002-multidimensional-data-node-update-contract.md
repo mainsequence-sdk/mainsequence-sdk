@@ -749,15 +749,14 @@ That means the DataNode helper rename cannot be done blindly. Either:
 2. keep `get_chunk_stats()` as a `LEGACY_COMPAT` wrapper until SimpleTable is
    migrated.
 
-### VirtualFundBuilder And Instruments
+### Portfolios And Instruments
 
 Affected files include:
 
-- `mainsequence/portfolios/portfolio_nodes.py`
 - `mainsequence/portfolios/data_nodes/signal_weights.py`
 - `mainsequence/portfolios/contrib/prices/data_nodes.py`
-- `mainsequence/portfolios/contrib/data_nodes/market_cap.py`
-- `mainsequence/portfolios/contrib/data_nodes/portfolio_replicator.py`
+- `mainsequence/portfolios/contrib/signals/market_cap.py`
+- `mainsequence/portfolios/contrib/signals/portfolio_replicator.py`
 - `mainsequence/portfolios/utils.py`
 - `mainsequence/instruments/data_interface/data_interface.py`
 
@@ -784,7 +783,7 @@ Docs currently encode the old two-shape model in user-facing rules:
 - `docs/knowledge/data_nodes.md`
 - `docs/tutorial/dashboards/streamlit/streamlit_integration_1.md`
 - `docs/tutorial/markets_tutorial/markets_equities_with_algoseek.md`
-- VFB knowledge/tutorial pages that describe signal or portfolio indexes as
+- Portfolios knowledge/tutorial pages that describe signal or portfolio indexes as
   only `(time_index, unique_identifier)`
 
 These need a careful rewrite after SDK behavior lands. The docs should teach:
@@ -952,7 +951,7 @@ runtime callers are migrated around backend-bound API payloads.
    `unique_identifier_range_map` so they use canonical `dimension_filters` and
    `dimension_range_map` syntax instead. Do not document the old aliases as the
    tutorial path.
-- [x] Update VFB docs that describe portfolio or signal indexes. Keep
+- [x] Update Portfolios docs that describe portfolio or signal indexes. Keep
    `(time_index, unique_identifier)` where it is still the actual contract, but
    remove language implying it is the only legal DataNode shape.
 - [x] Update examples and generated snippets that say DataNode MultiIndex tables

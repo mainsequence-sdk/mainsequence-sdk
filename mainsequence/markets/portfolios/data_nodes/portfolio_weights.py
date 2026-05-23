@@ -7,8 +7,8 @@ import pandas as pd
 from mainsequence.tdag.data_nodes import RecordDefinition
 
 from .base import (
-    VFBCanonicalDataNode,
-    VFBCanonicalDataNodeConfiguration,
+    PortfolioCanonicalDataNode,
+    PortfolioCanonicalDataNodeConfiguration,
     _empty_flat_frame,
     _record_definitions_from_dtype_map,
     _require_columns,
@@ -32,8 +32,8 @@ from .portfolio_identity import (
 )
 
 
-class PortfolioWeights(VFBCanonicalDataNode):
-    """Canonical DataNode for executed VFB portfolio weights."""
+class PortfolioWeights(PortfolioCanonicalDataNode):
+    """Canonical DataNode for executed Portfolios portfolio weights."""
 
     def set_weights_frame(
         self,
@@ -172,7 +172,7 @@ class PortfolioWeights(VFBCanonicalDataNode):
     @classmethod
     def _default_description(cls) -> str:
         return (
-            "Canonical executed VFB portfolio weights indexed by time_index, "
+            "Canonical executed Portfolios portfolio weights indexed by time_index, "
             "portfolio_index_asset_unique_identifier, and asset unique_identifier."
         )
 
@@ -200,9 +200,9 @@ def normalize_portfolio_weights_frame(
     weights_frame: pd.DataFrame,
     *,
     portfolio_index_asset_unique_identifier: str,
-    config: VFBCanonicalDataNodeConfiguration | None = None,
+    config: PortfolioCanonicalDataNodeConfiguration | None = None,
 ) -> pd.DataFrame:
-    """Normalize postprocessed VFB weights into canonical PortfolioWeights rows."""
+    """Normalize postprocessed Portfolios weights into canonical PortfolioWeights rows."""
     config = PortfolioWeights._validate_config(config or PortfolioWeights.default_config())
     flat = _reset_frame_index(weights_frame)
     if flat.empty:

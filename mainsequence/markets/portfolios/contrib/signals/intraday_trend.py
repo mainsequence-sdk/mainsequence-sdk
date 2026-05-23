@@ -13,11 +13,11 @@ from mainsequence.markets.portfolios.contrib.prices.data_nodes import (
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
-    VFBConfigBaseModel,
+    PortfolioConfigBaseModel,
 )
 
 
-class IntradayTrendConfig(VFBConfigBaseModel):
+class IntradayTrendConfig(PortfolioConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     calendar: str
     source_frequency: str = "1d"

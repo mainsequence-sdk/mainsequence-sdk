@@ -16,6 +16,8 @@ portfolio_build_configuration:
     rebalance_strategy_name: ImmediateSignal
     signal_weights_configuration:
       num_top_assets: 10
+      market_cap_time_series:
+        unique_identifier: coingecko_historical_marketcap
       source_frequency: 1d
       minimum_atvr_ratio: 0.1
       min_number_of_assets: 3

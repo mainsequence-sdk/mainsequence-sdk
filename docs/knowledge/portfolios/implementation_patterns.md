@@ -102,73 +102,57 @@ class MyRebalancer(RebalanceStrategyBase):
 - return the full required wide schema, not a partial subset
 - keep calendar assumptions explicit
 
-## Choosing `PortfolioStrategy` vs `PortfolioFromDF`
+## Choosing computed vs imported portfolio values
 
 This is one of the most important design decisions in Portfolios.
 
-### Use `PortfolioStrategy` when
+### Use computed portfolio values when
 
 - you want Portfolios to compute the portfolio
 - you have a signal and a price pipeline
 - you want the full rebalance logic inside the SDK
 
-### Use `PortfolioFromDF` when
+Instantiate `PortfoliosDataNode` with `portfolio_configuration`.
+
+### Use imported portfolio values when
 
 - the portfolio path already exists
 - another system computed `close` and `return`
-- you want to ingest and sync the series without recreating the full strategy logic
+- you want to ingest the series without recreating the full strategy logic
 
-## `PortfolioFromDF` in practice
+Use `PortfoliosDataNode.set_portfolio_values_frame(...)`.
 
-To use `PortfolioFromDF`, subclass it and implement:
-
-```python
-def get_portfolio_df(self) -> pd.DataFrame:
-    ...
-```
-
-The returned DataFrame must match either the weights schema or the positions schema expected by Portfolios.
+The DataFrame must match the canonical `PortfoliosDataNode` values schema.
 
 ### Minimal example
 
 ```python
 import pandas as pd
 
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioFromDF
+from mainsequence.markets.portfolios.data_nodes import PortfoliosDataNode
 
+idx = pd.to_datetime(
+    ["2025-01-31 23:59:59+00:00", "2025-02-28 23:59:59+00:00"]
+)
+portfolio_values = pd.DataFrame(
+    index=idx,
+    data={
+        "close": [100.0, 101.5],
+        "return": [0.0, 0.015],
+    },
+).rename_axis("time_index")
 
-class MyExternalPortfolio(PortfolioFromDF):
-    def get_portfolio_df(self) -> pd.DataFrame:
-        idx = pd.to_datetime(
-            ["2025-01-31 23:59:59+00:00", "2025-02-28 23:59:59+00:00"]
-        )
-        return pd.DataFrame(
-            index=idx,
-            data={
-                "close": [100.0, 101.5],
-                "return": [0.0, 0.015],
-                "last_rebalance_date": ["2025-01-31", "2025-02-28"],
-                "rebalance_weights": [{"BTC": 0.6}, {"BTC": 0.6}],
-                "rebalance_price": [{"BTC": 42000}, {"BTC": 43000}],
-                "volume": [{"BTC": 0}, {"BTC": 0}],
-                "weights_at_last_rebalance": [{"BTC": 0.6}, {"BTC": 0.6}],
-                "price_at_last_rebalance": [{"BTC": 42000}, {"BTC": 43000}],
-                "volume_at_last_rebalance": [{"BTC": 0}, {"BTC": 0}],
-            },
-        ).rename_axis("time_index")
+node = PortfoliosDataNode()
+node.set_portfolio_values_frame(
+    portfolio_values,
+    portfolio_index_asset_unique_identifier="portfolio:external-demo",
+)
 ```
 
 ### What Portfolios does for you
 
-`PortfolioFromDF` will normalize dict-like metadata columns into canonical JSON strings.
-
-That means you can pass:
-
-- Python dicts
-- JSON strings
-- Python-literal dict strings
-
-and Portfolios will standardize them before storage.
+`PortfoliosDataNode` adds the portfolio index asset identifier and normalizes
+the frame into the canonical portfolio values table.
 
 ## Backend sync behavior
 
@@ -177,7 +161,7 @@ Portfolios can sync a computed or imported portfolio into the Markets backend.
 This happens when you run:
 
 ```python
-node.run(add_portfolio_to_markets_backend=True)
+node.run()
 ```
 
 ### What Portfolios creates or updates
@@ -189,7 +173,7 @@ Depending on the case, Portfolios can create or patch:
 
 ### What metadata it carries
 
-For `PortfolioStrategy`, backend sync can include:
+For `PortfoliosDataNode`, backend sync can include:
 
 - the portfolio name
 - the rebalance calendar
@@ -238,9 +222,9 @@ That improves both schema quality and tooling quality.
 
 This is still the most common custom-strategy mistake.
 
-### Using `PortfolioFromDF` as if it were a generic free-form importer
+### Using imported portfolio values as if they were free-form data
 
-It still has a contract. The metadata columns must exist and must be meaningful.
+They still have a contract. `close` and `return` must be meaningful.
 
 ### Confusing backend sync with portfolio computation
 

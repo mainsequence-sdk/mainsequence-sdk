@@ -9,12 +9,12 @@ from mainsequence.client.models_tdag import Artifact
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
-    VFBConfigBaseModel,
+    PortfolioConfigBaseModel,
 )
 from mainsequence.markets.portfolios.utils import TIMEDELTA
 
 
-class ExternalWeightsConfig(VFBConfigBaseModel):
+class ExternalWeightsConfig(PortfolioConfigBaseModel):
     signal_assets_configuration: AssetsConfiguration
     artifact_name: str
     bucket_name: str

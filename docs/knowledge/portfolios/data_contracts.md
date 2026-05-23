@@ -109,7 +109,7 @@ Expected level-1 keys:
 
 - `unique_identifier`
 
-This is the contract expected by `PortfolioStrategy` after rebalancing.
+This is the contract expected by `PortfoliosDataNode` after rebalancing.
 
 Why it exists:
 
@@ -135,7 +135,7 @@ This form is then used to compute the final portfolio time series and serialize 
 
 ## 6. Final portfolio output
 
-This is what `PortfolioStrategy` stores.
+This is what `PortfoliosDataNode` stores.
 
 Required columns:
 
@@ -161,43 +161,22 @@ Important:
 
 This is a compact storage format that preserves execution context without exploding the schema into many per-asset columns.
 
-## 7. `PortfolioFromDF` input contracts
+## 7. Imported portfolio value contracts
 
-`PortfolioFromDF` accepts two broad modes.
-
-### Weights mode
-
-Use this when the external portfolio is expressed in terms of weights.
+Imported portfolio values use `PortfoliosDataNode.set_portfolio_values_frame(...)`.
 
 Expected columns:
 
 - `close`
 - `return`
-- `last_rebalance_date`
-- `rebalance_weights`
-- `rebalance_price`
-- `volume`
-- `weights_at_last_rebalance`
-- `price_at_last_rebalance`
-- `volume_at_last_rebalance`
 
-### Positions mode
+Optional canonical columns:
 
-Use this when the external portfolio is expressed in terms of positions.
+- `calculated_close`
+- `close_time`
 
-Expected columns:
-
-- `close`
-- `return`
-- `last_rebalance_date`
-- `rebalance_positions`
-- `rebalance_price`
-- `volume`
-- `positions_at_last_rebalance`
-- `price_at_last_rebalance`
-- `volume_at_last_rebalance`
-
-`PortfolioFromDF` will normalize dict-like values into canonical JSON strings before storage.
+`PortfoliosDataNode` adds `portfolio_index_asset_unique_identifier` from the
+runtime input and validates the frame against the canonical schema.
 
 ## Practical quality rules
 

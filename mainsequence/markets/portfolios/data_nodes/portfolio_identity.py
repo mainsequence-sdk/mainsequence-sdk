@@ -13,7 +13,7 @@ from .constants import PORTFOLIO_CONFIGURATION_HASH_EXCLUDED_KEYS
 def canonical_portfolio_configuration(
     portfolio_configuration: Any,
 ) -> dict[str, Any]:
-    """Return the canonical hash payload for a VFB portfolio configuration."""
+    """Return the canonical hash payload for a Portfolios portfolio configuration."""
     payload = _portfolio_configuration_payload(portfolio_configuration)
     serialized_payload = build_operations.Serializer().serialize_init_kwargs(payload)
     return _drop_excluded_keys(
@@ -23,7 +23,7 @@ def canonical_portfolio_configuration(
 
 
 def compute_portfolio_configuration_hash(portfolio_configuration: Any) -> str:
-    """Compute the deterministic identity hash for a VFB portfolio config."""
+    """Compute the deterministic identity hash for a Portfolios portfolio config."""
     payload = canonical_portfolio_configuration(portfolio_configuration)
     _update_hash, storage_hash = build_operations.hash_signature(payload)
     return storage_hash
@@ -86,7 +86,7 @@ def _portfolio_configuration_payload(portfolio_configuration: Any) -> dict[str, 
 
     raise TypeError(
         "portfolio_configuration must be a PortfolioConfiguration-like Pydantic "
-        "model, a PortfolioStrategyConfig-like object, a DataNode-like object "
+        "model, a PortfoliosDataNode-like object "
         "with build_configuration, or a dict payload."
     )
 

@@ -4,9 +4,9 @@ import mainsequence.tdag.data_nodes.build_operations as build_operations
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration, RecordDefinition
 
 from .base import (
+    PortfolioCanonicalDataNode,
+    PortfolioCanonicalDataNodeConfiguration,
     SignalWeightsConfiguration,
-    VFBCanonicalDataNode,
-    VFBCanonicalDataNodeConfiguration,
     _class_import_path,
 )
 from .constants import *
@@ -50,9 +50,9 @@ __all__ = [
     "PortfolioWeights",
     "SignalWeights",
     "SignalWeightsConfiguration",
-    "VFB_CANONICAL_TIME_INDEX_NAME",
-    "VFBCanonicalDataNode",
-    "VFBCanonicalDataNodeConfiguration",
+    "PORTFOLIO_CANONICAL_TIME_INDEX_NAME",
+    "PortfolioCanonicalDataNode",
+    "PortfolioCanonicalDataNodeConfiguration",
     "canonical_portfolio_configuration",
     "canonical_signal_configuration",
     "compute_portfolio_configuration_hash",

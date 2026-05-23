@@ -13,7 +13,7 @@ mainsequence/client/models_vam.py
 ```
 
 That module contains market-facing models such as assets, asset categories,
-translation tables, portfolios, accounts, trades, virtual
+portfolios, accounts, trades, virtual
 funds, and orders. The module name is no longer a good fit for the public API
 surface, and it sits directly under `mainsequence.client` instead of a market
 specific package.
@@ -67,7 +67,6 @@ The canonical import path for these models is:
 ```python
 from mainsequence.client.markets.models import Asset
 from mainsequence.client.markets.models import Portfolio
-from mainsequence.client.markets.models import AssetTranslationTable
 ```
 
 `mainsequence.client.markets.models.core` is for shared definitions used across
@@ -304,7 +303,6 @@ Update SDK implementation code so internal imports use the canonical path:
 ```python
 from mainsequence.client.markets.models import Asset
 from mainsequence.client.markets.models import Portfolio
-from mainsequence.client.markets.models import AssetTranslationTable
 ```
 
 Internal SDK code must not import from:

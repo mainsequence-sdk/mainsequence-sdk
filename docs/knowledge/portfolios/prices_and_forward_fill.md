@@ -25,7 +25,7 @@ At the end of this stage, Portfolios has a clean long-form price table.
 
 ### Stage 2: align prices to the portfolio timeline
 
-This happens inside `PortfolioStrategy`.
+This happens inside `PortfoliosDataNode`.
 
 Its job is to:
 
@@ -40,16 +40,15 @@ This is why price handling is not just a single helper call. The portfolio engin
 In the default setup, prices are usually resolved from:
 
 - an asset category
-- a translation table
-- an upstream bars source
+- an explicit upstream bars source
 
-The translation table matters because the traded asset universe and the upstream price source are not always identical objects.
+The explicit source matters because the portfolio engine should not infer where prices live.
 
 Portfolios needs a stable way to say:
 
-- "for this asset, use this upstream time series"
+- "read bars from this normalized upstream time series"
 
-For the routing model in detail, see [Translation Tables](../markets/translation_tables.md).
+Use `PricesConfiguration.markets_time_series` for configured portfolio builds, or `source_bars_data_node` when constructing the price node programmatically.
 
 ## `InterpolatedPrices` in practice
 
@@ -194,9 +193,9 @@ When a portfolio workflow looks wrong, check these in order.
 
 If the upstream bars are missing, nothing else can save the portfolio.
 
-### 2. Is the translation table correct?
+### 2. Is the explicit price source correct?
 
-If the asset-to-price mapping is wrong, the rest of the pipeline will look broken even when the raw data exists.
+If the configured source does not contain rows for the portfolio asset identifiers, the rest of the pipeline will look broken even when raw data exists somewhere else.
 
 ### 3. Are bars being interpolated as expected?
 
@@ -220,9 +219,9 @@ They solve different business problems.
 
 Intraday portfolios are more fragile because they depend more heavily on calendars and bar quality.
 
-### Treat translation tables as part of the portfolio plumbing
+### Treat explicit price sources as part of the portfolio plumbing
 
-If they are wrong, the portfolio is wrong even if your signal logic is perfect.
+If the selected source is wrong, the portfolio is wrong even if your signal logic is perfect.
 
 ## Related Reading
 

@@ -31,7 +31,7 @@ from mainsequence.markets.portfolios.models import (
     PricesConfiguration,
 )
 from mainsequence.markets.portfolios.enums import PriceTypeNames
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
+from mainsequence.markets.portfolios.data_nodes import PortfoliosDataNode
 
 shared_assets_config = AssetsConfiguration(
     assets_category_unique_id="crypto",
@@ -47,6 +47,7 @@ shared_assets_config = AssetsConfiguration(
 
 signal_node = MarketCap(
     signal_assets_configuration=shared_assets_config,
+    market_cap_time_series=MarketsTimeSeries(unique_identifier="coingecko_historical_marketcap"),
     volatility_control_configuration=None,
     num_top_assets=10,
 )
@@ -66,7 +67,7 @@ portfolio_config = PortfolioConfiguration(
     ),
 )
 
-node = PortfolioStrategy(portfolio_configuration=portfolio_config)
+node = PortfoliosDataNode(portfolio_configuration=portfolio_config)
 ```
 
 Why this example matters:
@@ -104,42 +105,35 @@ Use this when:
 
 Pattern:
 
-- subclass `PortfolioFromDF`
-- return a correctly shaped DataFrame
+- create a correctly shaped DataFrame
+- attach it to `PortfoliosDataNode` with `set_portfolio_values_frame(...)`
 
 ```python
 import pandas as pd
 
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioFromDF
+from mainsequence.markets.portfolios.data_nodes import PortfoliosDataNode
 
+idx = pd.to_datetime(
+    ["2025-01-31 23:59:59+00:00", "2025-02-28 23:59:59+00:00"]
+)
+portfolio_values = pd.DataFrame(
+    index=idx,
+    data={
+        "close": [100.0, 101.5],
+        "return": [0.0, 0.015],
+    },
+).rename_axis("time_index")
 
-class MyExternalPortfolio(PortfolioFromDF):
-    def get_portfolio_df(self) -> pd.DataFrame:
-        idx = pd.to_datetime(
-            ["2025-01-31 23:59:59+00:00", "2025-02-28 23:59:59+00:00"]
-        )
-        return (
-            pd.DataFrame(
-                index=idx,
-                data={
-                    "close": [100.0, 101.5],
-                    "return": [0.0, 0.015],
-                    "last_rebalance_date": ["2025-01-31", "2025-02-28"],
-                    "rebalance_weights": [{"BTC": 0.6}, {"BTC": 0.6}],
-                    "rebalance_price": [{"BTC": 42000}, {"BTC": 43000}],
-                    "volume": [{"BTC": 0}, {"BTC": 0}],
-                    "weights_at_last_rebalance": [{"BTC": 0.6}, {"BTC": 0.6}],
-                    "price_at_last_rebalance": [{"BTC": 42000}, {"BTC": 43000}],
-                    "volume_at_last_rebalance": [{"BTC": 0}, {"BTC": 0}],
-                },
-            )
-            .rename_axis("time_index")
-        )
+node = PortfoliosDataNode()
+node.set_portfolio_values_frame(
+    portfolio_values,
+    portfolio_index_asset_unique_identifier="portfolio:external-demo",
+)
 ```
 
 Why this example matters:
 
-- it shows the import path clearly
+- it shows the import path clearly without a second portfolio runtime class
 - it helps separate "portfolio engine" use cases from "portfolio ingestion" use cases
 
 ## Example 4: External weights from an Artifact
@@ -232,7 +226,7 @@ Best for:
 - learning how a more realistic built-in signal behaves
 - working with an asset-category-driven universe
 
-### Use `ExternalWeights` or `PortfolioFromDF` when the upstream system already exists
+### Use `ExternalWeights` or imported portfolio values when the upstream system already exists
 
 Best for:
 
@@ -251,7 +245,7 @@ Best for:
 Most Portfolios examples assume you already have:
 
 - assets in the platform
-- a translation table that points to valid price sources
+- an explicit `MarketsTimeSeries` price source
 - price data that matches the expected frequency
 - calendars that match the market you are modeling
 

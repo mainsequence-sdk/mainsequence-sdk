@@ -17,7 +17,6 @@ from mainsequence.client.models_tdag import (
 )
 from mainsequence.markets.portfolios import data_nodes, simple_tables
 from mainsequence.markets.portfolios.data_nodes import storage_initialization
-from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration, RecordDefinition
 
 
@@ -540,79 +539,58 @@ def test_backfill_portfolio_metadata_from_legacy_portfolios():
     assert updater.upserted == upserted
 
 
-def test_portfolio_create_from_time_series_uses_metadata_not_about_payload(monkeypatch):
+def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monkeypatch):
     import mainsequence.client.markets.models.accounts_and_portfolios as portfolio_models
 
     request_calls = []
-    upsert_calls = []
 
     class _Response:
         status_code = 201
 
         def json(self):
-            portfolio_index_asset = {
-                "id": 2,
-                "unique_identifier": "portfolio-hash",
-                "reference_portfolio": 1,
-            }
             return {
                 "portfolio": {
-                    "id": 1,
-                    "data_node_update": {
-                        "uid": "dnu-1",
-                        "update_hash": "portfolio_update",
-                        "build_configuration": {},
-                        "data_node_storage": "storage",
-                    },
-                    "signal_data_node_update": None,
+                    "uid": "portfolio-uid",
+                    "portfolio_index_asset_unique_identifier": "portfolio-hash",
+                    "portfolio_name": "Research Portfolio",
+                    "portfolio_weights_data_node": {"uid": "weights-node"},
+                    "signal_weights_data_node": {"uid": "signals-node"},
+                    "portfolio_data_node": {"uid": "portfolio-data-node"},
                     "backtest_table_price_column_name": "close",
                     "calendar": {
                         "id": 1,
                         "name": "NYSE",
                         "calendar_dates": None,
                     },
-                    "index_asset": portfolio_index_asset,
                     "builds_from_target_weights": True,
                     "builds_from_target_positions": False,
                     "creation_date": None,
                 },
-                "portfolio_index_asset": portfolio_index_asset,
             }
 
     def _fake_make_request(**kwargs):
         request_calls.append(kwargs)
         return _Response()
 
-    def _fake_upsert_portfolio_metadata(**kwargs):
-        upsert_calls.append(kwargs)
-        return simple_tables.PortfolioMetadata(
-            unique_identifier=kwargs["portfolio_index_asset"].unique_identifier,
-            description=kwargs["description"],
-        )
-
     monkeypatch.setattr(portfolio_models, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        simple_tables,
-        "upsert_portfolio_metadata",
-        _fake_upsert_portfolio_metadata,
-    )
 
-    portfolio, index_asset = portfolio_models.Portfolio.create_from_time_series(
-        portfolio_name="Research Portfolio",
-        data_node_update_id=10,
-        signal_data_node_update_id=None,
+    portfolio = portfolio_models.Portfolio.create_from_time_series(
+        portfolio_index_asset_unique_identifier="portfolio-hash",
+        portfolio_weights_data_node_uid="weights-node",
+        signal_weights_data_node_uid="signals-node",
+        portfolio_data_node_uid="portfolio-data-node",
         calendar_name="NYSE",
         backtest_table_price_column_name="close",
-        portfolio_description="Research description",
     )
 
     payload = request_calls[0]["payload"]["json"]
     assert "target_portfolio_about" not in payload
     assert "portfolio_description" not in payload
-    assert portfolio.index_asset.unique_identifier == "portfolio-hash"
-    assert index_asset.unique_identifier == "portfolio-hash"
-    assert upsert_calls[0]["description"] == "Research description"
-    assert upsert_calls[0]["portfolio_index_asset"].unique_identifier == "portfolio-hash"
+    assert payload["portfolio_index_asset_unique_identifier"] == "portfolio-hash"
+    assert payload["portfolio_weights_data_node_uid"] == "weights-node"
+    assert payload["signal_weights_data_node_uid"] == "signals-node"
+    assert payload["portfolio_data_node_uid"] == "portfolio-data-node"
+    assert portfolio.portfolio_index_asset_unique_identifier == "portfolio-hash"
 
 
 def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
@@ -627,24 +605,17 @@ def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
         ]
     )
     portfolio = portfolio_models.Portfolio(
-        id=1,
-        data_node_update={
-            "uid": "dnu-1",
-            "update_hash": "portfolio_update",
-            "build_configuration": {},
-            "data_node_storage": "storage",
-        },
-        signal_data_node_update=None,
+        uid="portfolio-uid",
+        portfolio_index_asset_unique_identifier="portfolio-hash",
+        portfolio_name="Research Portfolio",
+        portfolio_weights_data_node={"uid": "weights-node"},
+        signal_weights_data_node={"uid": "signals-node"},
+        portfolio_data_node={"uid": "portfolio-data-node"},
         backtest_table_price_column_name="close",
         calendar={
             "id": 1,
             "name": "NYSE",
             "calendar_dates": None,
-        },
-        index_asset={
-            "id": 2,
-            "unique_identifier": "portfolio-hash",
-            "reference_portfolio": 1,
         },
         builds_from_target_weights=True,
         builds_from_target_positions=False,
@@ -1099,15 +1070,52 @@ def test_portfolios_data_node_set_values_frame_uses_explicit_portfolio_identity(
     assert frame.reset_index().loc[0, "portfolio_index_asset_unique_identifier"] == "portfolio-hash"
 
 
-def test_portfolio_strategy_run_writes_only_canonical_nodes(monkeypatch):
+def test_portfolios_data_node_run_orchestrates_canonical_nodes(monkeypatch):
     _patch_data_node_source(monkeypatch)
     dependency_runs = []
     canonical_runs = []
 
-    def fail_legacy_data_node_run(self, *args, **kwargs):
-        raise AssertionError("PortfolioStrategy.run must not call DataNode.run on itself")
+    def capture_portfolios_data_node_run(
+        self,
+        debug_mode=True,
+        *,
+        update_tree=True,
+        force_update=False,
+        update_only_tree=False,
+        remote_scheduler=None,
+        override_update_stats=None,
+    ):
+        assert isinstance(self, data_nodes.PortfoliosDataNode)
+        canonical_runs.append(
+            (
+                "values",
+                self,
+                {
+                    "debug_mode": debug_mode,
+                    "update_tree": update_tree,
+                    "force_update": force_update,
+                    "update_only_tree": update_only_tree,
+                    "remote_scheduler": remote_scheduler,
+                },
+            )
+        )
+        if update_tree:
+            for dependency in self.dependencies().values():
+                dependency.run(
+                    debug_mode=debug_mode,
+                    update_tree=True,
+                    force_update=force_update,
+                    remote_scheduler=remote_scheduler,
+                )
+        self.update_statistics = override_update_stats or SimpleNamespace(
+            max_time_index_value=None,
+            index_progress=None,
+        )
+        if update_only_tree:
+            return None
+        return ("values", self.update())
 
-    monkeypatch.setattr(DataNode, "run", fail_legacy_data_node_run)
+    monkeypatch.setattr(DataNode, "run", capture_portfolios_data_node_run)
     monkeypatch.setattr(
         data_nodes.PortfolioWeights,
         "ensure_storage_ready",
@@ -1133,25 +1141,27 @@ def test_portfolio_strategy_run_writes_only_canonical_nodes(monkeypatch):
         return ("values", self._portfolio_values_frame)
 
     monkeypatch.setattr(data_nodes.PortfolioWeights, "run", capture_portfolio_weights_run)
-    monkeypatch.setattr(data_nodes.PortfoliosDataNode, "run", capture_portfolio_values_run)
 
-    strategy = object.__new__(PortfolioStrategy)
-    strategy._hash_namespace = "research"
-    strategy.portfolio_strategy_config = _DemoPortfolioConfig(name="Top 100", lookback=20)
-    strategy.portfolio_markets_config = SimpleNamespace(
+    node = object.__new__(data_nodes.PortfoliosDataNode)
+    node._hash_namespace = "research"
+    node.portfolio_configuration = _DemoPortfolioConfig(name="Top 100", lookback=20)
+    node._portfolio_configuration = node.portfolio_configuration
+    node.portfolio_markets_config = SimpleNamespace(
         front_end_details=SimpleNamespace(description="Research portfolio")
     )
-    strategy.signal_weights = SimpleNamespace(
+    node._portfolio_metadata_updater = SimpleNamespace(upsert=lambda record: record)
+    node.signal_weights = SimpleNamespace(
         run=lambda **kwargs: dependency_runs.append(("signal", kwargs))
     )
-    strategy.bars_ts = SimpleNamespace(
+    node.bars_ts = SimpleNamespace(
         run=lambda **kwargs: dependency_runs.append(("bars", kwargs))
     )
-    strategy._resolve_portfolio_identity = lambda: (
+    node._resolve_portfolio_identity = lambda: (
         SimpleNamespace(id=1),
         SimpleNamespace(unique_identifier="portfolio-hash"),
     )
-    strategy.update_statistics = None
+    node.update_statistics = None
+    node.config = data_nodes.PortfoliosDataNode.default_config()
 
     weights_frame = pd.DataFrame(
         {
@@ -1174,24 +1184,49 @@ def test_portfolio_strategy_run_writes_only_canonical_nodes(monkeypatch):
     )
 
     def calculate_canonical_outputs():
-        strategy._last_canonical_weights_frame = weights_frame
-        strategy._last_canonical_portfolio_values_frame = portfolio_values_frame
+        node._last_canonical_weights_frame = weights_frame
+        node._last_canonical_portfolio_values_frame = portfolio_values_frame
         return portfolio_values_frame
 
-    strategy.update = calculate_canonical_outputs
+    node._calculate_portfolio_workflow_values = calculate_canonical_outputs
 
-    results = strategy.run(debug_mode=True, update_tree=True, force_update=True)
+    results = node.run(debug_mode=True, update_tree=True, force_update=True)
 
     assert [run[0] for run in dependency_runs] == ["signal", "bars"]
-    assert [run[0] for run in canonical_runs] == ["weights", "values"]
+    assert [run[0] for run in canonical_runs] == ["values", "weights"]
     assert set(results) == {"portfolio_weights", "portfolio_values"}
 
-    weights_node = canonical_runs[0][1]
-    values_node = canonical_runs[1][1]
+    values_node = canonical_runs[0][1]
+    weights_node = canonical_runs[1][1]
     assert weights_node._portfolio_index_asset_unique_identifier == "portfolio-hash"
-    assert values_node._portfolio_index_asset_unique_identifier == "portfolio-hash"
-    assert "rebalance_weights" not in values_node._portfolio_values_frame.columns
-    assert not hasattr(PortfolioStrategy, "_add_serialized_weights")
+    assert values_node._resolved_portfolio_index_asset_unique_identifier == "portfolio-hash"
+    assert "rebalance_weights" not in results["portfolio_values"][1].columns
+    assert not hasattr(data_nodes.PortfoliosDataNode, "_add_serialized_weights")
+
+
+def test_portfolios_data_node_runtime_configuration_does_not_change_storage_hash(monkeypatch):
+    _patch_data_node_source(monkeypatch)
+    monkeypatch.setattr(
+        data_nodes.PortfoliosDataNode,
+        "_initialize_from_portfolio_configuration",
+        lambda self, portfolio_configuration: setattr(
+            self,
+            "_portfolio_configuration",
+            portfolio_configuration,
+        ),
+    )
+
+    default_node = data_nodes.PortfoliosDataNode()
+    first_node = data_nodes.PortfoliosDataNode(
+        portfolio_configuration=SimpleNamespace(name="first")
+    )
+    second_node = data_nodes.PortfoliosDataNode(
+        portfolio_configuration=SimpleNamespace(name="second")
+    )
+
+    assert first_node.storage_hash == default_node.storage_hash
+    assert second_node.storage_hash == default_node.storage_hash
+    assert first_node.update_hash == default_node.update_hash
 
 
 def test_canonical_config_supports_explicit_extra_records_without_extra_details():
@@ -1231,7 +1266,7 @@ def test_canonical_config_rejects_required_record_dtype_override():
 
 def test_canonical_config_rejects_duplicate_records():
     records = data_nodes.SignalWeights.default_config().records
-    duplicate_config = data_nodes.VFBCanonicalDataNodeConfiguration(
+    duplicate_config = data_nodes.PortfolioCanonicalDataNodeConfiguration(
         index_names=list(data_nodes.SIGNAL_WEIGHTS_INDEX_NAMES),
         records=records + [records[-1]],
     )
@@ -1242,7 +1277,7 @@ def test_canonical_config_rejects_duplicate_records():
 
 def test_canonical_config_does_not_accept_time_index_name_api():
     with pytest.raises(ValidationError, match="time_index_name"):
-        data_nodes.VFBCanonicalDataNodeConfiguration(
+        data_nodes.PortfolioCanonicalDataNodeConfiguration(
             time_index_name="custom_time",
             index_names=list(data_nodes.SIGNAL_WEIGHTS_INDEX_NAMES),
             records=data_nodes.SignalWeights.default_config().records,
@@ -1331,7 +1366,7 @@ def test_canonical_storage_readiness_accepts_ready_contract(monkeypatch):
     storage = SimpleNamespace(
         uid="portfolio-weights-uid",
         sourcetableconfiguration=SimpleNamespace(
-            time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+            time_index_name=data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
             index_names=list(data_nodes.PORTFOLIO_WEIGHTS_INDEX_NAMES),
             column_dtypes_map=dict(data_nodes.PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP),
         ),
@@ -1355,7 +1390,7 @@ def test_canonical_storage_readiness_rejects_wrong_contract(monkeypatch):
     storage = SimpleNamespace(
         uid="portfolio-weights-uid",
         sourcetableconfiguration=SimpleNamespace(
-            time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+            time_index_name=data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
             index_names=["time_index", "unique_identifier"],
             column_dtypes_map={
                 "time_index": "datetime64[ns, UTC]",
@@ -1370,7 +1405,7 @@ def test_canonical_storage_readiness_rejects_wrong_contract(monkeypatch):
     )
     node = object.__new__(data_nodes.PortfolioWeights)
 
-    with pytest.raises(ValueError, match="incompatible canonical VFB data node"):
+    with pytest.raises(ValueError, match="incompatible canonical Portfolios data node"):
         node.ensure_storage_ready()
 
 
@@ -1383,7 +1418,7 @@ def test_canonical_storage_readiness_initializes_storage_family_when_config_miss
     def initialize_storage_family(**kwargs):
         calls.append(kwargs)
         storage.sourcetableconfiguration = SimpleNamespace(
-            time_index_name=data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+            time_index_name=data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
             index_names=list(data_nodes.PORTFOLIO_WEIGHTS_INDEX_NAMES),
             column_dtypes_map=dict(data_nodes.PORTFOLIO_WEIGHTS_COLUMN_DTYPES_MAP),
         )
@@ -1564,17 +1599,17 @@ def test_initialize_portfolio_storage_source_tables_builds_one_payload_and_valid
         return {
             "source_table_configurations": {
                 "portfolio_weights": {
-                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "time_index_name": data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
                     "index_names": list(portfolio_weights_config.index_names),
                     "column_dtypes_map": dict(portfolio_weights_config.column_dtypes_map),
                 },
                 "signal_weights": {
-                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "time_index_name": data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
                     "index_names": list(data_nodes.SIGNAL_WEIGHTS_INDEX_NAMES),
                     "column_dtypes_map": dict(data_nodes.SIGNAL_WEIGHTS_COLUMN_DTYPES_MAP),
                 },
                 "portfolio_data": {
-                    "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+                    "time_index_name": data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
                     "index_names": list(data_nodes.PORTFOLIOS_INDEX_NAMES),
                     "column_dtypes_map": dict(data_nodes.PORTFOLIOS_COLUMN_DTYPES_MAP),
                 },
@@ -1601,7 +1636,7 @@ def test_initialize_portfolio_storage_source_tables_builds_one_payload_and_valid
     assert captured["timeout"] == 30
     assert captured["portfolio_weights"] == {
         "dynamic_table_metadata_uid": "portfolio-weights-uid",
-        "time_index_name": data_nodes.VFB_CANONICAL_TIME_INDEX_NAME,
+        "time_index_name": data_nodes.PORTFOLIO_CANONICAL_TIME_INDEX_NAME,
         "index_names": portfolio_weights_config.index_names,
         "column_dtypes_map": portfolio_weights_config.column_dtypes_map,
     }

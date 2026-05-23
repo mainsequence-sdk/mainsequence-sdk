@@ -17,20 +17,20 @@ from ..data_nodes.constants import (
 
 
 class PortfolioMetadata(SimpleTable):
-    """Metadata registry row for a canonical VFB portfolio."""
+    """Metadata registry row for a canonical Portfolios portfolio."""
 
     unique_identifier: Annotated[str, Index(unique=True)]
     description: str | None = None
 
 
 class PortfoliosMetadataConfiguration(SimpleTableUpdaterConfiguration):
-    """Configuration for the canonical VFB portfolio metadata registry."""
+    """Configuration for the canonical Portfolios portfolio metadata registry."""
 
     identifier: str = "mainsequence.markets.portfolios_metadata"
 
 
 class PortfoliosMetadataUpdater(SimpleTableUpdater):
-    """SimpleTable updater for canonical VFB portfolio metadata."""
+    """SimpleTable updater for canonical Portfolios portfolio metadata."""
 
     SIMPLE_TABLE_SCHEMA = PortfolioMetadata
 

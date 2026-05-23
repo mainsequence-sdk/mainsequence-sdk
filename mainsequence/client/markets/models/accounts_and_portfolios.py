@@ -13,11 +13,9 @@ from mainsequence.client.exceptions import raise_for_response
 from mainsequence.client.markets.models.assets import (
     Asset,
     AssetMixin,
-    PortfolioIndexAsset,
     resolve_asset,
 )
 from mainsequence.client.markets.models.core import Calendar
-from mainsequence.client.models_tdag import DataNodeUpdate
 from mainsequence.client.utils import DATE_FORMAT, make_request
 
 
@@ -478,39 +476,72 @@ class PortfolioTags(BasePydanticModel):
 
 class Portfolio(BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "index_asset__unique_identifier": ["in", "exact", "contains"],
-        "data_node_update__id": ["in", "exact"],
-        "data_node_update": ["isnull"],
-        "signal_data_node_update": ["isnull"],
-        "id": ["in", "exact"],
+        "uid": ["in", "exact"],
+        "portfolio_index_asset_unique_identifier": ["in", "exact", "contains"],
+        "portfolio_weights_data_node__uid": ["in", "exact"],
+        "signal_weights_data_node__uid": ["in", "exact"],
+        "portfolio_data_node__uid": ["in", "exact"],
+        "groups__uid": ["in", "exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "data_node_update__id": "id",
-        "data_node_update__isnull": "bool",
-        "signal_data_node_update__isnull": "bool",
-        "id": "id",
+        "uid": "str",
+        "uid__in": "str",
+        "portfolio_index_asset_unique_identifier": "str",
+        "portfolio_index_asset_unique_identifier__in": "str",
+        "portfolio_weights_data_node__uid": "str",
+        "portfolio_weights_data_node__uid__in": "str",
+        "signal_weights_data_node__uid": "str",
+        "signal_weights_data_node__uid__in": "str",
+        "portfolio_data_node__uid": "str",
+        "portfolio_data_node__uid__in": "str",
+        "groups__uid": "str",
+        "groups__uid__in": "str",
     }
 
-    id: int | None = Field(
+    uid: str = Field(
+        ...,
+        title="Portfolio UID",
+        description="Public UID of the portfolio record.",
+        examples=["11111111-1111-4111-8111-111111111111"],
+        json_schema_extra={"label": "Portfolio UID"},
+    )
+    portfolio_index_asset_unique_identifier: str = Field(
+        ...,
+        title="Portfolio Index Asset Unique Identifier",
+        description="Unique identifier of the asset/catalog row that represents this portfolio publicly.",
+        examples=["portfolio:global-equity-index"],
+        json_schema_extra={"label": "Portfolio Index Asset Unique Identifier"},
+    )
+    portfolio_name: str | None = Field(
         None,
-        title="Portfolio ID",
-        description="Unique identifier of the portfolio record.",
-        examples=[42],
-        json_schema_extra={"label": "Portfolio ID"},
+        title="Portfolio Name",
+        description="Read-only display name resolved by the backend from the referenced asset/catalog row.",
+        examples=["Global Equity Index"],
+        json_schema_extra={"label": "Portfolio Name"},
     )
-    data_node_update: Optional["DataNodeUpdate"] = Field(
-        ...,
-        title="Data Node Update",
-        description="Primary data node update backing the portfolio holdings, weights, or positions time series.",
-        examples=[{"id": 901, "update_hash": "portfolio_weights_daily"}],
-        json_schema_extra={"label": "Data Node Update"},
+    execution_configuration: dict[str, Any] | None = Field(
+        None,
+        title="Execution Configuration",
+        description="Optional execution configuration returned by the backend when enabled.",
+        json_schema_extra={"label": "Execution Configuration"},
     )
-    signal_data_node_update: Optional["DataNodeUpdate"] = Field(
-        ...,
-        title="Signal Data Node Update",
-        description="Signal-generating data node update associated with this portfolio.",
-        examples=[{"id": 902, "update_hash": "rebalance_signal_daily"}],
-        json_schema_extra={"label": "Signal Data Node Update"},
+    portfolio_weights_data_node: dict[str, Any] | None = Field(
+        None,
+        title="Portfolio Weights Data Node",
+        description="Read-only DynamicTable/DataNodeStorage selector for portfolio weights.",
+        json_schema_extra={"label": "Portfolio Weights Data Node"},
+    )
+    signal_weights_data_node: dict[str, Any] | None = Field(
+        None,
+        title="Signal Weights Data Node",
+        description="Read-only DynamicTable/DataNodeStorage selector for signal weights.",
+        json_schema_extra={"label": "Signal Weights Data Node"},
+    )
+    portfolio_data_node: dict[str, Any] | None = Field(
+        None,
+        title="Portfolio Data Node",
+        description="Read-only DynamicTable/DataNodeStorage selector for portfolio prices/returns.",
+        json_schema_extra={"label": "Portfolio Data Node"},
     )
     backtest_table_price_column_name: str | None = Field(
         None,
@@ -522,18 +553,11 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     )
 
     calendar: Optional["Calendar"] = Field(
-        ...,
+        None,
         title="Calendar",
         description="Trading or business calendar used to interpret portfolio dates and rebalance schedules.",
         examples=[{"id": 1, "name": "NYSE"}],
         json_schema_extra={"label": "Calendar"},
-    )
-    index_asset: PortfolioIndexAsset = Field(
-        ...,
-        title="Index Asset",
-        description="Index asset representing the portfolio instrument and its identity metadata.",
-        examples=[{"id": 77}],
-        json_schema_extra={"label": "Index Asset"},
     )
     builds_from_target_weights: bool = Field(
         True,
@@ -549,7 +573,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         examples=[False],
         json_schema_extra={"label": "Builds From Target Positions"},
     )
-    creation_date:str | None = Field()
+    creation_date: datetime.datetime | str | None = Field(None)
 
     def pretty_print(self) -> str:
         def format_field(name, value):
@@ -568,24 +592,36 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     @classmethod
     def create_from_time_series(
         cls,
-        portfolio_name: str,
-        data_node_update_id: int,
-        signal_data_node_update_id: int | None,
+        *,
+        portfolio_index_asset_unique_identifier: str,
+        portfolio_weights_data_node_uid: Any,
+        signal_weights_data_node_uid: Any,
+        portfolio_data_node_uid: Any,
         calendar_name: str,
-        backtest_table_price_column_name: str,
-        portfolio_description: str | None = None,
+        backtest_table_price_column_name: str = "close",
+        builds_from_target_weights: bool = True,
+        builds_from_target_positions: bool = False,
         timeout=None,
-        metadata_updater: Any | None = None,
-    ) -> tuple["Portfolio", PortfolioIndexAsset]:
+    ) -> "Portfolio":
         url = f"{cls.get_object_url()}/create_from_time_series/"
-        # Build the payload with the required arguments.
         payload_data = {
-            "portfolio_name": portfolio_name,
-            "data_node_update_id": data_node_update_id,
-            "signal_data_node_update_id": signal_data_node_update_id,
-            # Using the same ID for local_signal_time_serie_id as specified.
+            "portfolio_index_asset_unique_identifier": portfolio_index_asset_unique_identifier,
+            "portfolio_weights_data_node_uid": cls._coerce_uid(
+                portfolio_weights_data_node_uid,
+                field_name="portfolio_weights_data_node_uid",
+            ),
+            "signal_weights_data_node_uid": cls._coerce_uid(
+                signal_weights_data_node_uid,
+                field_name="signal_weights_data_node_uid",
+            ),
+            "portfolio_data_node_uid": cls._coerce_uid(
+                portfolio_data_node_uid,
+                field_name="portfolio_data_node_uid",
+            ),
             "calendar_name": calendar_name,
             "backtest_table_price_column_name": backtest_table_price_column_name,
+            "builds_from_target_weights": builds_from_target_weights,
+            "builds_from_target_positions": builds_from_target_positions,
         }
 
         r = make_request(
@@ -599,21 +635,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         if r.status_code not in [201]:
             raise_for_response(r)
         response = r.json()
-
-        portfolio = cls(**response["portfolio"])
-        PortfolioIndexAsset.model_rebuild(_types_namespace={"Portfolio": cls})
-        portfolio_index_asset = PortfolioIndexAsset(**response["portfolio_index_asset"])
-        if portfolio_description is not None:
-            from mainsequence.markets.portfolios.simple_tables import (
-                upsert_portfolio_metadata,
-            )
-
-            upsert_portfolio_metadata(
-                portfolio_index_asset=portfolio_index_asset,
-                description=portfolio_description,
-                updater=metadata_updater,
-            )
-        return portfolio, portfolio_index_asset
+        return cls(**response["portfolio"])
 
     @classmethod
     def get_or_create_from_configuration_hash(
@@ -621,7 +643,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         portfolio_configuration_hash: str,
         portfolio_configuration: dict[str, Any],
         timeout=None,
-    ) -> tuple["Portfolio", PortfolioIndexAsset]:
+    ) -> "Portfolio":
         url = f"{cls.get_object_url()}/get_or_create_from_configuration_hash/"
         payload_data = {
             "portfolio_configuration_hash": portfolio_configuration_hash,
@@ -639,24 +661,29 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         if r.status_code not in [200, 201]:
             raise_for_response(r)
         response = r.json()
+        portfolio_payload = response.get("portfolio", response)
+        return cls(**portfolio_payload)
 
-        PortfolioIndexAsset.model_rebuild(_types_namespace={"Portfolio": cls})
-        return cls(**response["portfolio"]), PortfolioIndexAsset(
-            **response["portfolio_index_asset"]
-        )
-
-    @property
-    def portfolio_name(self) -> str:
-        return self.index_asset.current_snapshot.name
+    @classmethod
+    def _coerce_uid(cls, value: Any, *, field_name: str) -> str:
+        if isinstance(value, str):
+            return value
+        if hasattr(value, "uid") and value.uid is not None:
+            return str(value.uid)
+        if isinstance(value, dict) and value.get("uid") is not None:
+            return str(value["uid"])
+        raise TypeError(f"{field_name} must be a uid or an object with .uid.")
 
     @property
     def portfolio_ticker(self) -> str:
-        return self.index_asset.current_snapshot.ticker
+        return self.portfolio_index_asset_unique_identifier
 
     def _portfolio_index_asset_unique_identifier(self) -> str:
-        unique_identifier = getattr(self.index_asset, "unique_identifier", None)
+        unique_identifier = self.portfolio_index_asset_unique_identifier
         if not unique_identifier:
-            raise ValueError("Portfolio.index_asset must expose unique_identifier.")
+            raise ValueError(
+                "Portfolio.portfolio_index_asset_unique_identifier is required."
+            )
         return str(unique_identifier)
 
     def get_metadata(self, *, updater: Any | None = None):
@@ -684,13 +711,13 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         )
 
         return upsert_portfolio_metadata(
-            portfolio_index_asset=self.index_asset,
+            unique_identifier=self._portfolio_index_asset_unique_identifier(),
             description=description,
             updater=updater,
         )
 
     def add_venue(self, venue_id) -> None:
-        url = f"{self.get_object_url()}/{self.id}/add_venue/"
+        url = f"{self.get_object_url()}/{self.uid}/add_venue/"
         payload = {"json": {"venue_id": venue_id}}
         r = make_request(
             s=self.build_session(), loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload
@@ -702,7 +729,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
 
 
     def get_latest_weights(self, timeout=None) -> dict[str, float]:
-        url = f"{self.get_object_url()}/{self.id}/get_latest_weights/"
+        url = f"{self.get_object_url()}/{self.uid}/get_latest_weights/"
         r = make_request(
             s=self.build_session(), loaders=self.LOADERS, r_type="GET", url=url, time_out=timeout
         )
@@ -716,22 +743,42 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
 
 
 class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
-    id: int
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
+        "unique_identifier": ["in", "exact", "contains"],
+        "display_name": ["in", "exact", "contains"],
+        "source": ["in", "exact"],
+        "portfolios__uid": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "str",
+        "uid__in": "str",
+        "unique_identifier": "str",
+        "unique_identifier__in": "str",
+        "display_name": "str",
+        "display_name__in": "str",
+        "source": "str",
+        "source__in": "str",
+        "portfolios__uid": "str",
+        "portfolios__uid__in": "str",
+    }
+
+    uid: str
     unique_identifier: str
     display_name: str
     source: str
-    portfolios: list[Union[int, "Portfolio"]]
+    portfolio_uids: list[str] = Field(default_factory=list)
     description: str | None = None
 
     def __repr__(self):
-        return f"{self.display_name} ({self.unique_identifier}), {len(self.portfolios)} portfolios"
+        return f"{self.display_name} ({self.unique_identifier}), {len(self.portfolio_uids)} portfolios"
 
     @classmethod
     def get_or_create(
         cls,
         unique_identifier: str,
         display_name: str,
-        portfolio_ids: list[int],
+        portfolio_uids: list[str],
         source: str | None = None,
         description: str | None = None,
         timeout=None,
@@ -742,7 +789,7 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
                 "display_name": display_name,
                 "source": source,
                 "unique_identifier": unique_identifier,
-                "portfolios": portfolio_ids,
+                "portfolio_uids": portfolio_uids,
                 "description": description,
             }
         }
@@ -759,21 +806,21 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
         return cls(**r.json())
 
-    def append_portfolios(self, portfolio_ids: list[int]) -> "PortfolioGroup":
+    def append_portfolios(self, portfolio_uids: list[str]) -> "PortfolioGroup":
         """
         Appends portfolios to the group by calling the custom API action.
 
         Args:
-            portfolio_ids: A list of portfolio primary keys to add to the group.
+            portfolio_uids: A list of portfolio public UIDs to add to the group.
 
         Returns:
             The updated PortfolioGroup instance.
         """
-        if not self.id:
+        if not self.uid:
             raise ValueError("Cannot append portfolios to an unsaved PortfolioGroup.")
 
-        url = f"{self.get_object_url()}/{self.id}/append-portfolios/"
-        payload = {"portfolios": portfolio_ids}
+        url = f"{self.get_object_url()}/{self.uid}/append-portfolios/"
+        payload = {"portfolio_uids": portfolio_uids}
 
         r = make_request(
             s=self.build_session(),
@@ -793,21 +840,21 @@ class PortfolioGroup(BaseObjectOrm, BasePydanticModel):
 
         return self
 
-    def remove_portfolios(self, portfolio_ids: list[int]) -> "PortfolioGroup":
+    def remove_portfolios(self, portfolio_uids: list[str]) -> "PortfolioGroup":
         """
         Removes portfolios from the group by calling the custom API action.
 
         Args:
-            portfolio_ids: A list of portfolio primary keys to remove from the group.
+            portfolio_uids: A list of portfolio public UIDs to remove from the group.
 
         Returns:
             The updated PortfolioGroup instance.
         """
-        if not self.id:
+        if not self.uid:
             raise ValueError("Cannot remove portfolios from an unsaved PortfolioGroup.")
 
-        url = f"{self.get_object_url()}/{self.id}/remove-portfolios/"
-        payload = {"portfolios": portfolio_ids}
+        url = f"{self.get_object_url()}/{self.uid}/remove-portfolios/"
+        payload = {"portfolio_uids": portfolio_uids}
 
         r = make_request(
             s=self.build_session(),

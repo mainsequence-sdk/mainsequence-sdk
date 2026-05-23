@@ -159,9 +159,9 @@ Use this when:
 - you want universe changes to happen in one place
 - the asset universe is part of the business definition
 
-## Asset categories vs translation tables
+## Asset categories vs price sources
 
-Readers often confuse these because both sit near the universe and price plumbing.
+Readers often confuse these because both sit near portfolio price plumbing.
 
 They do different jobs.
 
@@ -171,18 +171,18 @@ Answers:
 
 > which assets are in scope?
 
-### Translation table
+### Explicit price source
 
 Answers:
 
-> for a given asset, which upstream time series should be used?
+> which upstream time series should this workflow read?
 
 So:
 
 - category = universe definition
-- translation table = routing definition
+- price source = data-source definition
 
-You often need both in the same workflow, especially in portfolio construction.
+In portfolio construction, the category should define the assets and `PricesConfiguration.markets_time_series` should define the normalized price source.
 
 ## A practical example
 
@@ -229,9 +229,9 @@ If many workflows depend on the same category, changing membership can have broa
 
 ## Common mistakes
 
-### 1. Treating a category like a translation table
+### 1. Treating a category like a price source
 
-Categories do not route prices.
+Categories do not fetch or route prices.
 
 They only define membership.
 
@@ -253,12 +253,11 @@ If the same universe keeps appearing in multiple nodes or portfolios, it probabl
 
 - use assets for identity
 - use asset categories for reusable universes
-- use translation tables for routing
+- use explicit `MarketsTimeSeries` references for normalized price sources
 - use direct asset lists for local or dynamic cases
 
 ## Related reading
 
 - [Assets](./assets.md)
-- [Translation Tables](./translation_tables.md)
 - [Portfolio Pipeline and Configuration](../portfolios/portfolio_pipeline.md)
 - [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/portfolios/markets_portfolios_and_virtual_funds.md)
