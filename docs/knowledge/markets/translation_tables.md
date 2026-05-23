@@ -305,6 +305,6 @@ If multiple listings exist and you need one specific listing, `target_exchange_c
 ## Related reading
 
 - [Assets](./assets.md)
-- [Prices and Forward Fill](../virtualfundbuilder/prices_and_forward_fill.md)
-- [Portfolio Pipeline and Configuration](../virtualfundbuilder/portfolio_pipeline.md)
-- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
+- [Prices and Forward Fill](../portfolios/prices_and_forward_fill.md)
+- [Portfolio Pipeline and Configuration](../portfolios/portfolio_pipeline.md)
+- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/portfolios/markets_portfolios_and_virtual_funds.md)

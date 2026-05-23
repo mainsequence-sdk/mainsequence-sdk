@@ -9,32 +9,32 @@ import pandas as pd
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
-from mainsequence.markets.virtualfundbuilder import data_nodes
-from mainsequence.markets.virtualfundbuilder.contrib.signals.external_weights import (
+from mainsequence.markets.portfolios import data_nodes, simple_tables
+from mainsequence.markets.portfolios.contrib.signals.external_weights import (
     ExternalWeights,
     ExternalWeightsConfig,
 )
-from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import (
+from mainsequence.markets.portfolios.contrib.signals.fixed_weights import (
     AUIDWeight,
     FixedWeights,
     FixedWeightsConfig,
 )
-from mainsequence.markets.virtualfundbuilder.contrib.signals.intraday_trend import (
+from mainsequence.markets.portfolios.contrib.signals.intraday_trend import (
     IntradayTrend,
     IntradayTrendConfig,
 )
-from mainsequence.markets.virtualfundbuilder.contrib.signals.market_cap import MarketCap
-from mainsequence.markets.virtualfundbuilder.contrib.signals.portfolio_replicator import (
+from mainsequence.markets.portfolios.contrib.signals.market_cap import MarketCap
+from mainsequence.markets.portfolios.contrib.signals.portfolio_replicator import (
     ETFReplicator,
     ETFReplicatorConfig,
     TrackingStrategyConfiguration,
 )
-from mainsequence.markets.virtualfundbuilder.data_nodes import (
+from mainsequence.markets.portfolios.data_nodes import (
     SIGNAL_UID,
     SIGNAL_WEIGHTS_INDEX_NAMES,
     SignalWeights,
 )
-from mainsequence.markets.virtualfundbuilder.models import (
+from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
     PricesConfiguration,
 )
@@ -163,7 +163,7 @@ def test_fixed_weights_config_changes_signal_uid_not_signal_weights_identity(
 def test_fixed_weights_calculates_canonical_signal_weight_rows(monkeypatch):
     _patch_data_node_source(monkeypatch)
     monkeypatch.setattr(
-        data_nodes,
+        simple_tables,
         "upsert_signal_metadata",
         lambda **kwargs: None,
     )
@@ -193,7 +193,7 @@ def test_fixed_weights_returns_empty_canonical_frame_when_signal_already_exists(
 ):
     _patch_data_node_source(monkeypatch)
     monkeypatch.setattr(
-        data_nodes,
+        simple_tables,
         "upsert_signal_metadata",
         lambda **kwargs: None,
     )

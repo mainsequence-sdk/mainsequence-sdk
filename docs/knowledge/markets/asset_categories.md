@@ -60,7 +60,7 @@ The point is not only grouping. The point is having a stable platform object tha
 
 The portfolio tutorial introduces an asset category here:
 
-- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
+- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/portfolios/markets_portfolios_and_virtual_funds.md)
 
 In that chapter, the category is used to collect the mock assets so later price and portfolio configuration can refer to the universe by `unique_identifier` instead of by repeating the list manually.
 
@@ -260,5 +260,5 @@ If the same universe keeps appearing in multiple nodes or portfolios, it probabl
 
 - [Assets](./assets.md)
 - [Translation Tables](./translation_tables.md)
-- [Portfolio Pipeline and Configuration](../virtualfundbuilder/portfolio_pipeline.md)
-- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md)
+- [Portfolio Pipeline and Configuration](../portfolios/portfolio_pipeline.md)
+- [Part 4.3 — Markets — Portfolios and Virtual Funds](../../tutorial/portfolios/markets_portfolios_and_virtual_funds.md)

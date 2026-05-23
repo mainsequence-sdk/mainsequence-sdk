@@ -15,8 +15,9 @@ from mainsequence.client.models_tdag import (
     DataNodeStorage,
     DataNodeUpdate,
 )
-from mainsequence.markets.virtualfundbuilder import data_nodes
-from mainsequence.markets.virtualfundbuilder.data_nodes import storage_initialization
+from mainsequence.markets.portfolios import data_nodes, simple_tables
+from mainsequence.markets.portfolios.data_nodes import storage_initialization
+from mainsequence.markets.portfolios.portfolio_nodes import PortfolioStrategy
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration, RecordDefinition
 
 
@@ -327,12 +328,12 @@ def test_signal_uid_uses_tdag_hash_signature(monkeypatch):
 
 
 def test_signal_metadata_is_simple_table_with_unique_signal_uid():
-    field_spec = data_nodes.SignalMetadata.field_spec(data_nodes.SIGNAL_UID)
+    field_spec = simple_tables.SignalMetadata.field_spec(data_nodes.SIGNAL_UID)
 
-    assert issubclass(data_nodes.SignalMetadata, data_nodes.SimpleTable)
+    assert issubclass(simple_tables.SignalMetadata, simple_tables.SimpleTable)
     assert field_spec.index is not None
     assert field_spec.index.unique is True
-    assert data_nodes.SignalMetadata.field_spec(data_nodes.SIGNAL_DESCRIPTION).nullable is True
+    assert simple_tables.SignalMetadata.field_spec(data_nodes.SIGNAL_DESCRIPTION).nullable is True
 
 
 def test_build_signal_metadata_uses_signal_uid_and_description(monkeypatch):
@@ -340,7 +341,7 @@ def test_build_signal_metadata_uses_signal_uid_and_description(monkeypatch):
 
     signal = _DemoSignal(_DemoSignalConfig(lookback=20))
 
-    metadata = data_nodes.build_signal_metadata(signal)
+    metadata = simple_tables.build_signal_metadata(signal)
 
     assert metadata.signal_uid == data_nodes.compute_signal_uid(signal)
     assert signal.__class__.__name__ in metadata.signal_description
@@ -368,19 +369,19 @@ def test_signal_description_does_not_change_signal_uid():
 def test_upsert_and_get_signal_metadata_use_simple_table_updater():
     updater = _FakeSignalMetadataUpdater(
         rows=[
-            data_nodes.SignalMetadata(
+            simple_tables.SignalMetadata(
                 signal_uid="signal-hash",
                 signal_description="Market cap signal",
             )
         ]
     )
 
-    upserted = data_nodes.upsert_signal_metadata(
+    upserted = simple_tables.upsert_signal_metadata(
         signal_uid="signal-hash",
         signal_description="Market cap signal",
         updater=updater,
     )
-    fetched = data_nodes.get_signal_metadata("signal-hash", updater=updater)
+    fetched = simple_tables.get_signal_metadata("signal-hash", updater=updater)
 
     assert upserted.signal_uid == "signal-hash"
     assert upserted.signal_description == "Market cap signal"
@@ -390,15 +391,15 @@ def test_upsert_and_get_signal_metadata_use_simple_table_updater():
 
 
 def test_rebalance_strategy_metadata_is_simple_table_with_unique_uid():
-    field_spec = data_nodes.RebalanceStrategyMetadata.field_spec(
+    field_spec = simple_tables.RebalanceStrategyMetadata.field_spec(
         data_nodes.REBALANCE_STRATEGY_UID
     )
 
-    assert issubclass(data_nodes.RebalanceStrategyMetadata, data_nodes.SimpleTable)
+    assert issubclass(simple_tables.RebalanceStrategyMetadata, simple_tables.SimpleTable)
     assert field_spec.index is not None
     assert field_spec.index.unique is True
     assert (
-        data_nodes.RebalanceStrategyMetadata.field_spec(
+        simple_tables.RebalanceStrategyMetadata.field_spec(
             data_nodes.REBALANCE_STRATEGY_DESCRIPTION
         ).nullable
         is True
@@ -408,9 +409,9 @@ def test_rebalance_strategy_metadata_is_simple_table_with_unique_uid():
 def test_build_rebalance_strategy_metadata_uses_uid_and_description():
     strategy = _DemoRebalanceStrategy(lookback=30)
 
-    metadata = data_nodes.build_rebalance_strategy_metadata(strategy)
+    metadata = simple_tables.build_rebalance_strategy_metadata(strategy)
 
-    assert metadata.rebalance_strategy_uid == data_nodes.compute_rebalance_strategy_uid(
+    assert metadata.rebalance_strategy_uid == simple_tables.compute_rebalance_strategy_uid(
         strategy
     )
     assert strategy.__class__.__name__ in metadata.rebalance_strategy_description
@@ -430,27 +431,27 @@ def test_rebalance_strategy_description_does_not_change_uid():
         "rebalance_strategy_description": "Second description",
     }
 
-    assert data_nodes.compute_rebalance_strategy_uid(
+    assert simple_tables.compute_rebalance_strategy_uid(
         first_payload
-    ) == data_nodes.compute_rebalance_strategy_uid(second_payload)
+    ) == simple_tables.compute_rebalance_strategy_uid(second_payload)
 
 
 def test_upsert_and_get_rebalance_strategy_metadata_use_simple_table_updater():
     updater = _FakeSignalMetadataUpdater(
         rows=[
-            data_nodes.RebalanceStrategyMetadata(
+            simple_tables.RebalanceStrategyMetadata(
                 rebalance_strategy_uid="rebalance-hash",
                 rebalance_strategy_description="Immediate rebalance",
             )
         ]
     )
 
-    upserted = data_nodes.upsert_rebalance_strategy_metadata(
+    upserted = simple_tables.upsert_rebalance_strategy_metadata(
         rebalance_strategy_uid="rebalance-hash",
         rebalance_strategy_description="Immediate rebalance",
         updater=updater,
     )
-    fetched = data_nodes.get_rebalance_strategy_metadata(
+    fetched = simple_tables.get_rebalance_strategy_metadata(
         "rebalance-hash",
         updater=updater,
     )
@@ -463,15 +464,15 @@ def test_upsert_and_get_rebalance_strategy_metadata_use_simple_table_updater():
 
 
 def test_portfolio_metadata_is_simple_table_with_unique_identifier():
-    field_spec = data_nodes.PortfolioMetadata.field_spec(
+    field_spec = simple_tables.PortfolioMetadata.field_spec(
         data_nodes.PORTFOLIO_METADATA_UNIQUE_IDENTIFIER
     )
 
-    assert issubclass(data_nodes.PortfolioMetadata, data_nodes.SimpleTable)
+    assert issubclass(simple_tables.PortfolioMetadata, simple_tables.SimpleTable)
     assert field_spec.index is not None
     assert field_spec.index.unique is True
     assert (
-        data_nodes.PortfolioMetadata.field_spec(data_nodes.PORTFOLIO_DESCRIPTION).nullable
+        simple_tables.PortfolioMetadata.field_spec(data_nodes.PORTFOLIO_DESCRIPTION).nullable
         is True
     )
 
@@ -483,7 +484,7 @@ def test_build_portfolio_metadata_uses_index_asset_identifier_and_description():
         )
     )
 
-    metadata = data_nodes.build_portfolio_metadata(
+    metadata = simple_tables.build_portfolio_metadata(
         SimpleNamespace(unique_identifier="portfolio-hash"),
         portfolio_configuration=portfolio_configuration,
     )
@@ -495,25 +496,171 @@ def test_build_portfolio_metadata_uses_index_asset_identifier_and_description():
 def test_upsert_and_get_portfolio_metadata_use_simple_table_updater():
     updater = _FakeSignalMetadataUpdater(
         rows=[
-            data_nodes.PortfolioMetadata(
+            simple_tables.PortfolioMetadata(
                 unique_identifier="portfolio-hash",
                 description="Research portfolio",
             )
         ]
     )
 
-    upserted = data_nodes.upsert_portfolio_metadata(
+    upserted = simple_tables.upsert_portfolio_metadata(
         unique_identifier="portfolio-hash",
         description="Research portfolio",
         updater=updater,
     )
-    fetched = data_nodes.get_portfolio_metadata("portfolio-hash", updater=updater)
+    fetched = simple_tables.get_portfolio_metadata("portfolio-hash", updater=updater)
 
     assert upserted.unique_identifier == "portfolio-hash"
     assert upserted.description == "Research portfolio"
     assert updater.upserted == [upserted]
     assert fetched.description == "Research portfolio"
     assert updater.filter_calls[0]["limit"] == 1
+
+
+def test_backfill_portfolio_metadata_from_legacy_portfolios():
+    updater = _FakeSignalMetadataUpdater()
+
+    upserted = simple_tables.backfill_portfolio_metadata_from_legacy_portfolios(
+        [
+            {
+                "index_asset": {"unique_identifier": "portfolio-hash"},
+                "target_portfolio_about": {"description": "Legacy description"},
+            },
+            {
+                "index_asset": {"unique_identifier": "missing-description"},
+                "target_portfolio_about": {},
+            },
+        ],
+        updater=updater,
+    )
+
+    assert len(upserted) == 1
+    assert upserted[0].unique_identifier == "portfolio-hash"
+    assert upserted[0].description == "Legacy description"
+    assert updater.upserted == upserted
+
+
+def test_portfolio_create_from_time_series_uses_metadata_not_about_payload(monkeypatch):
+    import mainsequence.client.markets.models.accounts_and_portfolios as portfolio_models
+
+    request_calls = []
+    upsert_calls = []
+
+    class _Response:
+        status_code = 201
+
+        def json(self):
+            portfolio_index_asset = {
+                "id": 2,
+                "unique_identifier": "portfolio-hash",
+                "reference_portfolio": 1,
+            }
+            return {
+                "portfolio": {
+                    "id": 1,
+                    "data_node_update": {
+                        "uid": "dnu-1",
+                        "update_hash": "portfolio_update",
+                        "build_configuration": {},
+                        "data_node_storage": "storage",
+                    },
+                    "signal_data_node_update": None,
+                    "backtest_table_price_column_name": "close",
+                    "calendar": {
+                        "id": 1,
+                        "name": "NYSE",
+                        "calendar_dates": None,
+                    },
+                    "index_asset": portfolio_index_asset,
+                    "builds_from_target_weights": True,
+                    "builds_from_target_positions": False,
+                    "creation_date": None,
+                },
+                "portfolio_index_asset": portfolio_index_asset,
+            }
+
+    def _fake_make_request(**kwargs):
+        request_calls.append(kwargs)
+        return _Response()
+
+    def _fake_upsert_portfolio_metadata(**kwargs):
+        upsert_calls.append(kwargs)
+        return simple_tables.PortfolioMetadata(
+            unique_identifier=kwargs["portfolio_index_asset"].unique_identifier,
+            description=kwargs["description"],
+        )
+
+    monkeypatch.setattr(portfolio_models, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        simple_tables,
+        "upsert_portfolio_metadata",
+        _fake_upsert_portfolio_metadata,
+    )
+
+    portfolio, index_asset = portfolio_models.Portfolio.create_from_time_series(
+        portfolio_name="Research Portfolio",
+        data_node_update_id=10,
+        signal_data_node_update_id=None,
+        calendar_name="NYSE",
+        backtest_table_price_column_name="close",
+        portfolio_description="Research description",
+    )
+
+    payload = request_calls[0]["payload"]["json"]
+    assert "target_portfolio_about" not in payload
+    assert "portfolio_description" not in payload
+    assert portfolio.index_asset.unique_identifier == "portfolio-hash"
+    assert index_asset.unique_identifier == "portfolio-hash"
+    assert upsert_calls[0]["description"] == "Research description"
+    assert upsert_calls[0]["portfolio_index_asset"].unique_identifier == "portfolio-hash"
+
+
+def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
+    import mainsequence.client.markets.models.accounts_and_portfolios as portfolio_models
+
+    updater = _FakeSignalMetadataUpdater(
+        rows=[
+            simple_tables.PortfolioMetadata(
+                unique_identifier="portfolio-hash",
+                description="Stored description",
+            )
+        ]
+    )
+    portfolio = portfolio_models.Portfolio(
+        id=1,
+        data_node_update={
+            "uid": "dnu-1",
+            "update_hash": "portfolio_update",
+            "build_configuration": {},
+            "data_node_storage": "storage",
+        },
+        signal_data_node_update=None,
+        backtest_table_price_column_name="close",
+        calendar={
+            "id": 1,
+            "name": "NYSE",
+            "calendar_dates": None,
+        },
+        index_asset={
+            "id": 2,
+            "unique_identifier": "portfolio-hash",
+            "reference_portfolio": 1,
+        },
+        builds_from_target_weights=True,
+        builds_from_target_positions=False,
+        creation_date=None,
+    )
+
+    assert portfolio.get_description(updater=updater) == "Stored description"
+    upserted = portfolio.upsert_metadata(
+        description="Updated description",
+        updater=updater,
+    )
+
+    assert updater.filter_calls[0]["limit"] == 1
+    assert updater.upserted == [upserted]
+    assert upserted.unique_identifier == "portfolio-hash"
+    assert upserted.description == "Updated description"
 
 
 def test_signal_weights_update_upserts_metadata(monkeypatch):
@@ -548,7 +695,7 @@ def test_signal_weights_update_upserts_metadata(monkeypatch):
 
     flat = frame.reset_index()
     assert flat.loc[0, "signal_uid"] == signal_uid
-    assert updater.upserted[0] == data_nodes.SignalMetadata(
+    assert updater.upserted[0] == simple_tables.SignalMetadata(
         signal_uid=signal_uid,
         signal_description="Research signal",
     )
@@ -845,7 +992,7 @@ def test_portfolio_weights_update_upserts_portfolio_metadata(monkeypatch):
     node.update()
 
     assert updater.upserted == [
-        data_nodes.PortfolioMetadata(
+        simple_tables.PortfolioMetadata(
             unique_identifier="portfolio-hash",
             description="Research portfolio",
         )
@@ -950,6 +1097,101 @@ def test_portfolios_data_node_set_values_frame_uses_explicit_portfolio_identity(
     frame = node.update()
 
     assert frame.reset_index().loc[0, "portfolio_index_asset_unique_identifier"] == "portfolio-hash"
+
+
+def test_portfolio_strategy_run_writes_only_canonical_nodes(monkeypatch):
+    _patch_data_node_source(monkeypatch)
+    dependency_runs = []
+    canonical_runs = []
+
+    def fail_legacy_data_node_run(self, *args, **kwargs):
+        raise AssertionError("PortfolioStrategy.run must not call DataNode.run on itself")
+
+    monkeypatch.setattr(DataNode, "run", fail_legacy_data_node_run)
+    monkeypatch.setattr(
+        data_nodes.PortfolioWeights,
+        "ensure_storage_ready",
+        lambda self: "portfolio-weights-storage",
+    )
+    monkeypatch.setattr(
+        data_nodes.PortfoliosDataNode,
+        "ensure_storage_ready",
+        lambda self: "portfolio-values-storage",
+    )
+    monkeypatch.setattr(
+        data_nodes.PortfoliosDataNode,
+        "get_update_statistics",
+        lambda self: SimpleNamespace(max_time_index_value=None, index_progress=None),
+    )
+
+    def capture_portfolio_weights_run(self, **kwargs):
+        canonical_runs.append(("weights", self, kwargs))
+        return ("weights", self._weights_frame)
+
+    def capture_portfolio_values_run(self, **kwargs):
+        canonical_runs.append(("values", self, kwargs))
+        return ("values", self._portfolio_values_frame)
+
+    monkeypatch.setattr(data_nodes.PortfolioWeights, "run", capture_portfolio_weights_run)
+    monkeypatch.setattr(data_nodes.PortfoliosDataNode, "run", capture_portfolio_values_run)
+
+    strategy = object.__new__(PortfolioStrategy)
+    strategy._hash_namespace = "research"
+    strategy.portfolio_strategy_config = _DemoPortfolioConfig(name="Top 100", lookback=20)
+    strategy.portfolio_markets_config = SimpleNamespace(
+        front_end_details=SimpleNamespace(description="Research portfolio")
+    )
+    strategy.signal_weights = SimpleNamespace(
+        run=lambda **kwargs: dependency_runs.append(("signal", kwargs))
+    )
+    strategy.bars_ts = SimpleNamespace(
+        run=lambda **kwargs: dependency_runs.append(("bars", kwargs))
+    )
+    strategy._resolve_portfolio_identity = lambda: (
+        SimpleNamespace(id=1),
+        SimpleNamespace(unique_identifier="portfolio-hash"),
+    )
+    strategy.update_statistics = None
+
+    weights_frame = pd.DataFrame(
+        {
+            "time_index": ["2024-01-01T00:00:00Z"],
+            "unique_identifier": ["asset:btc"],
+            "weights_current": [0.6],
+            "weights_before": [0.4],
+            "price_current": [100.0],
+            "price_before": [90.0],
+            "volume_current": [10.0],
+            "volume_before": [8.0],
+        }
+    )
+    portfolio_values_frame = pd.DataFrame(
+        {
+            "close": [1.1],
+            "return": [0.1],
+        },
+        index=pd.DatetimeIndex(pd.to_datetime(["2024-01-01T00:00:00Z"], utc=True)),
+    )
+
+    def calculate_canonical_outputs():
+        strategy._last_canonical_weights_frame = weights_frame
+        strategy._last_canonical_portfolio_values_frame = portfolio_values_frame
+        return portfolio_values_frame
+
+    strategy.update = calculate_canonical_outputs
+
+    results = strategy.run(debug_mode=True, update_tree=True, force_update=True)
+
+    assert [run[0] for run in dependency_runs] == ["signal", "bars"]
+    assert [run[0] for run in canonical_runs] == ["weights", "values"]
+    assert set(results) == {"portfolio_weights", "portfolio_values"}
+
+    weights_node = canonical_runs[0][1]
+    values_node = canonical_runs[1][1]
+    assert weights_node._portfolio_index_asset_unique_identifier == "portfolio-hash"
+    assert values_node._portfolio_index_asset_unique_identifier == "portfolio-hash"
+    assert "rebalance_weights" not in values_node._portfolio_values_frame.columns
+    assert not hasattr(PortfolioStrategy, "_add_serialized_weights")
 
 
 def test_canonical_config_supports_explicit_extra_records_without_extra_details():

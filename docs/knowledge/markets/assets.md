@@ -37,7 +37,7 @@ That is the public-master flow. You are not inventing the identity yourself. You
 
 ### Part 4.3: custom fixed-income assets
 
-In [Part 4.3](../../tutorial/virtualfundbuilder/markets_portfolios_and_virtual_funds.md), the flow changes.
+In [Part 4.3](../../tutorial/portfolios/markets_portfolios_and_virtual_funds.md), the flow changes.
 
 Instead of relying on public FIGIs, the tutorial creates custom assets for mock fixed-income instruments:
 

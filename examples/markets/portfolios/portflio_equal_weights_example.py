@@ -2,22 +2,19 @@ from __future__ import annotations
 
 import pandas as pd
 
-from mainsequence.markets.virtualfundbuilder.contrib.rebalance_strategies.rebalance_strategies import (
-    ImmediateSignal,
-)
-from mainsequence.markets.virtualfundbuilder.contrib.signals.fixed_weights import (
+from mainsequence.markets.portfolios.contrib.signals.fixed_weights import (
     AUIDWeight,
     FixedWeights,
     FixedWeightsConfig,
 )
-from mainsequence.markets.virtualfundbuilder.data_nodes import (
+from mainsequence.markets.portfolios.data_nodes import (
     PortfoliosDataNode,
     PortfolioWeights,
     compute_portfolio_configuration_hash,
     normalize_signal_weights_frame,
 )
-from mainsequence.markets.virtualfundbuilder.enums import PriceTypeNames
-from mainsequence.markets.virtualfundbuilder.models import (
+from mainsequence.markets.portfolios.enums import PriceTypeNames
+from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,
     BacktestingWeightsConfig,
     PortfolioBuildConfiguration,
@@ -25,6 +22,9 @@ from mainsequence.markets.virtualfundbuilder.models import (
     PortfolioExecutionConfiguration,
     PortfolioMarketsConfig,
     PricesConfiguration,
+)
+from mainsequence.markets.portfolios.rebalance_strategy import (
+    ImmediateSignal,
 )
 
 NAMESPACE = "example.equal_weights"

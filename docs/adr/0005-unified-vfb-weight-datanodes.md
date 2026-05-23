@@ -1,8 +1,8 @@
-# ADR 0005: Unified VFB Weight DataNodes
+# ADR 0005: Unified Portfolio Weight DataNodes
 
 Date: 2026-05-21
 
-Status: Proposed
+Status: Accepted
 
 Depends on: [ADR 0002](0002-multidimensional-data-node-update-contract.md)
 
@@ -641,13 +641,63 @@ runtime validation checks the active config.
 Recommended package:
 
 ```text
-mainsequence/markets/virtualfundbuilder/data_nodes/
-  base.py
-  portfolio_weights.py
-  signal_weights.py
-  portfolios.py
-  signal_metadata.py
+mainsequence/markets/portfolios/
+  data_nodes/
+    base.py
+    portfolio_weights.py
+    signal_weights.py
+    portfolios.py
+  simple_tables/
+    signal_metadata.py
+    rebalance_metadata.py
+    portfolio_metadata.py
 ```
+
+This package name is now a historical mismatch. After the canonical table
+refactor, this code is no longer mainly a "virtual fund builder"; it is the
+portfolio model surface for portfolio identities, weights, values, signals, and
+rebalance strategy metadata. The follow-up cleanup should move the package to a
+model-oriented namespace:
+
+```text
+mainsequence/markets/portfolios/
+  models.py
+  enums.py
+  portfolio_nodes.py
+  data_nodes/
+    base.py
+    portfolio_weights.py
+    signal_weights.py
+    portfolios.py
+    storage_initialization.py
+  simple_tables/
+    signal_metadata.py
+    rebalance_metadata.py
+    portfolio_metadata.py
+  rebalance_strategy/
+    base.py
+    immediate_signal.py
+    time_weighted.py
+    volume_participation.py
+  utils/
+    helpers.py
+    prices/
+    signals/
+```
+
+`contrib` should not survive the rename. The existing signal and price helper
+modules are first-party reusable portfolio components, not external
+contribution examples. Signals and price helpers should move under
+`mainsequence.markets.portfolios.utils`. Rebalance strategy base and built-in
+strategies should live under `mainsequence.markets.portfolios.rebalance_strategy`.
+Because the current package already has a `utils.py`, the implementation must
+first convert that file into a `utils/` package, for example
+`utils/helpers.py`, before moving the remaining `contrib` children underneath it.
+
+The public package should stay oriented around portfolio models and contracts:
+configuration models, canonical DataNodes, SimpleTable metadata models,
+portfolio strategy runtime, and resource factories. Utility modules should not
+own model identity, schema contracts, or canonical storage decisions.
 
 Recommended abstractions:
 
@@ -903,12 +953,17 @@ initialize_portfolio_storage_source_tables(
 ) -> dict
 ```
 
-Required signal metadata SDK helpers, implemented on top of `SimpleTable`
-persistence and query APIs:
+Required metadata SDK helpers live under
+`mainsequence.markets.portfolios.simple_tables` and are implemented on
+top of `SimpleTable` persistence and query APIs:
 
 ```python
 upsert_signal_metadata(...)
 get_signal_metadata(...)
+upsert_rebalance_strategy_metadata(...)
+get_rebalance_strategy_metadata(...)
+upsert_portfolio_metadata(...)
+get_portfolio_metadata(...)
 ```
 
 Required backend endpoint:
@@ -1003,6 +1058,11 @@ The `RebalanceStrategies` registry follows the same rule. It does not need a
 `DataNodeStorage` initializer or a custom dynamic-table source endpoint. It
 should use the existing `SimpleTable` machinery, enforce a unique
 `rebalance_strategy_uid`, and treat description updates as upserts.
+
+The `Portfolios` metadata registry also follows the same rule. It should use
+the existing `SimpleTable` machinery, enforce a unique `unique_identifier`, and
+treat description updates as upserts keyed by
+`PortfolioIndexAsset.unique_identifier`.
 
 ## Query Examples
 
@@ -1197,6 +1257,8 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
       `SignalWeights`.
 - [x] Add tests proving description changes update metadata without changing
       `signal_uid`.
+- [x] Move signal metadata SimpleTable code into
+      `mainsequence.markets.portfolios.simple_tables`.
 
 ### Phase 4c: Rebalance strategy metadata registry
 
@@ -1211,6 +1273,8 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
       existing `SimpleTable` persistence/query machinery.
 - [x] Add tests proving description changes update metadata without changing
       `rebalance_strategy_uid`.
+- [x] Move rebalance strategy metadata SimpleTable code into
+      `mainsequence.markets.portfolios.simple_tables`.
 
 ### Phase 4d: Portfolio metadata registry
 
@@ -1228,22 +1292,25 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
       when a portfolio description is available.
 - [x] Add tests proving the table is keyed by unique
       `PortfolioIndexAsset.unique_identifier`.
+- [x] Move portfolio metadata SimpleTable code into
+      `mainsequence.markets.portfolios.simple_tables`.
 
 ### PortfolioAbout removal plan
 
-- [ ] Identify every backend/API/UI read path that still expects
+- [x] Identify SDK/backend-client read and write paths that still expect
       `PortfolioAbout` or `target_portfolio_about`.
-- [ ] Replace those reads with `PortfolioMetadata` lookup by
+- [x] Replace SDK reads with `PortfolioMetadata` lookup by
       `PortfolioIndexAsset.unique_identifier`.
-- [ ] Replace portfolio creation/update payloads that write
+- [x] Replace SDK portfolio creation/update payloads that write
       `target_portfolio_about.description` with `PortfolioMetadata` upserts.
-- [ ] Backfill existing `PortfolioAbout`/`target_portfolio_about` descriptions
-      into the `Portfolios` `SimpleTable` keyed by
+- [x] Add an SDK backfill helper for existing
+      `PortfolioAbout`/`target_portfolio_about` descriptions into the
+      `Portfolios` `SimpleTable` keyed by
       `PortfolioIndexAsset.unique_identifier`.
-- [ ] Remove the `PortfolioAbout` model only after all readers and writers use
+- [x] Remove the SDK `PortfolioAbout` model after SDK readers and writers use
       the simple table.
-- [ ] Delete legacy tests and fixtures that assert portfolio descriptions live
-      in portfolio creation payloads.
+- [x] Add regression tests asserting portfolio descriptions do not live in
+      portfolio creation payloads.
 
 ### Phase 5: PortfolioWeights canonical update
 
@@ -1300,12 +1367,12 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
 
 ### Phase 8: Remove legacy VFB runtime output
 
-- [ ] Remove the VFB runtime dependency on per-portfolio output DataNodes.
-- [ ] Stop writing serialized `rebalance_weights` JSON as the portfolio weight
+- [x] Remove the VFB runtime dependency on per-portfolio output DataNodes.
+- [x] Stop writing serialized `rebalance_weights` JSON as the portfolio weight
       storage surface.
-- [ ] Ensure no canonical runtime path mirrors from legacy portfolio or signal
+- [x] Ensure no canonical runtime path mirrors from legacy portfolio or signal
       DataNodes.
-- [ ] Keep any one-off legacy data import tooling outside the canonical VFB
+- [x] Keep any one-off legacy data import tooling outside the canonical VFB
       DataNode runtime.
 
 ### Phase 9: Tests
@@ -1324,7 +1391,41 @@ writes should go directly through `PortfolioWeights`, `PortfoliosDataNode`,
       canonical rows.
 - [x] `PortfoliosDataNode.update()` calls `_calculate_portfolio_values()` and
       validates canonical rows.
-- [ ] Tests proving canonical runtime does not write per-portfolio JSON output.
+- [x] Tests proving canonical runtime does not write per-portfolio JSON output.
+
+### Phase 10: Model-first package cleanup
+
+- [x] Rename `mainsequence.markets.virtualfundbuilder` to
+      `mainsequence.markets.portfolios`.
+- [x] Update the ADR title, docs, tests, examples, and package imports to use
+      "portfolios" as the canonical name.
+- [x] Do not add a compatibility shim package for
+      `mainsequence.markets.virtualfundbuilder`; update callers to the new
+      import path.
+- [ ] Convert the current `utils.py` module into a `utils/` package so it can
+      hold both general helpers and reusable first-party portfolio components.
+- [ ] Move current `utils.py` helpers into `portfolios/utils/helpers.py` or an
+      equivalent internal helper module.
+- [ ] Replace `contrib` with `utils` by moving built-in signals from
+      `contrib/signals` to `portfolios/utils/signals`.
+- [x] Move `RebalanceStrategyBase` into `rebalance_strategy/base.py`.
+- [x] Move built-in rebalance strategies into `rebalance_strategy`.
+- [x] Split built-in rebalance strategy implementations into one module per
+      strategy class.
+- [ ] Move built-in price helpers/nodes from `contrib/prices` to
+      `portfolios/utils/prices`.
+- [ ] Keep canonical DataNodes, SimpleTables, portfolio identity hashing,
+      storage initialization, and public configuration models outside `utils`.
+- [ ] Keep the top-level `mainsequence.markets.portfolios` namespace
+      model-oriented: export portfolio models, canonical DataNodes, SimpleTable
+      metadata models, `PortfolioStrategy`, and resource factories.
+- [ ] Update every internal import, test import, and example import to the new
+      package path in one pass.
+- [ ] Remove stale `virtualfundbuilder` naming from logger names, generated
+      descriptions, documentation, and comments where it refers to the package
+      rather than historical ADR context.
+- [ ] Run focused canonical DataNode, simple table, contrib-signal replacement,
+      and portfolio runtime tests after the rename.
 
 ## Open Questions
 
@@ -1355,3 +1456,9 @@ The new architecture is complete when:
     already exist.
 11. Portfolio descriptions are retrieved from the `Portfolios` `SimpleTable`
     keyed by `PortfolioIndexAsset.unique_identifier`, not from `PortfolioAbout`.
+12. The public package for this architecture is
+    `mainsequence.markets.portfolios`, not
+    `mainsequence.markets.virtualfundbuilder`.
+13. Built-in reusable signals and price helpers live under
+    `mainsequence.markets.portfolios.utils`, while rebalance strategy base and
+    built-ins live under `mainsequence.markets.portfolios.rebalance_strategy`.

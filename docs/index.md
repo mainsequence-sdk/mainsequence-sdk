@@ -39,7 +39,7 @@ Key entry points:
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
 - [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
-- [Virtual Fund Builder](knowledge/virtualfundbuilder/index.md)
+- [Portfolios](knowledge/portfolios/index.md)
 - [Instruments](knowledge/instruments/index.md)
 
 ### CLI
@@ -60,7 +60,7 @@ The SDK is organized around a few main areas:
 
 - `mainsequence.tdag`: `DataNode`s, persistence, orchestration, and update workflows
 - `mainsequence.client`: API client models for projects, jobs, tables, assets, and sharing
-- `mainsequence.markets.virtualfundbuilder`: portfolio construction and portfolio time series workflows
+- `mainsequence.markets.portfolios`: portfolio construction and portfolio time series workflows
 - `mainsequence.markets.instruments`: pricing-oriented market data and instrument tooling
 - `mainsequence.cli`: the `mainsequence` command-line interface
 

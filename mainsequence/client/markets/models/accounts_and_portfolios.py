@@ -3,7 +3,7 @@ import datetime
 import json
 from decimal import Decimal
 from enum import Enum, IntEnum
-from typing import Any, ClassVar, Optional, TypedDict, Union
+from typing import Any, ClassVar, Optional, Union
 
 import pytz
 from pydantic import BaseModel, Field, model_validator
@@ -476,14 +476,6 @@ class PortfolioTags(BasePydanticModel):
 
 
 
-class PortfolioAbout(TypedDict):
-    description: str
-    signal_name: str
-    signal_description: str
-    rebalance_strategy_name: str
-
-
-
 class Portfolio(BaseObjectOrm, BasePydanticModel):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "index_asset__unique_identifier": ["in", "exact", "contains"],
@@ -578,12 +570,13 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
         cls,
         portfolio_name: str,
         data_node_update_id: int,
-        signal_data_node_update_id: int,
+        signal_data_node_update_id: int | None,
         calendar_name: str,
-        target_portfolio_about: PortfolioAbout,
         backtest_table_price_column_name: str,
+        portfolio_description: str | None = None,
         timeout=None,
-    ) -> "Portfolio":
+        metadata_updater: Any | None = None,
+    ) -> tuple["Portfolio", PortfolioIndexAsset]:
         url = f"{cls.get_object_url()}/create_from_time_series/"
         # Build the payload with the required arguments.
         payload_data = {
@@ -592,7 +585,6 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             "signal_data_node_update_id": signal_data_node_update_id,
             # Using the same ID for local_signal_time_serie_id as specified.
             "calendar_name": calendar_name,
-            "target_portfolio_about": target_portfolio_about,
             "backtest_table_price_column_name": backtest_table_price_column_name,
         }
 
@@ -608,9 +600,20 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r)
         response = r.json()
 
-        return cls(**response["portfolio"]), PortfolioIndexAsset(
-            **response["portfolio_index_asset"]
-        )
+        portfolio = cls(**response["portfolio"])
+        PortfolioIndexAsset.model_rebuild(_types_namespace={"Portfolio": cls})
+        portfolio_index_asset = PortfolioIndexAsset(**response["portfolio_index_asset"])
+        if portfolio_description is not None:
+            from mainsequence.markets.portfolios.simple_tables import (
+                upsert_portfolio_metadata,
+            )
+
+            upsert_portfolio_metadata(
+                portfolio_index_asset=portfolio_index_asset,
+                description=portfolio_description,
+                updater=metadata_updater,
+            )
+        return portfolio, portfolio_index_asset
 
     @classmethod
     def get_or_create_from_configuration_hash(
@@ -637,6 +640,7 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
             raise_for_response(r)
         response = r.json()
 
+        PortfolioIndexAsset.model_rebuild(_types_namespace={"Portfolio": cls})
         return cls(**response["portfolio"]), PortfolioIndexAsset(
             **response["portfolio_index_asset"]
         )
@@ -648,6 +652,42 @@ class Portfolio(BaseObjectOrm, BasePydanticModel):
     @property
     def portfolio_ticker(self) -> str:
         return self.index_asset.current_snapshot.ticker
+
+    def _portfolio_index_asset_unique_identifier(self) -> str:
+        unique_identifier = getattr(self.index_asset, "unique_identifier", None)
+        if not unique_identifier:
+            raise ValueError("Portfolio.index_asset must expose unique_identifier.")
+        return str(unique_identifier)
+
+    def get_metadata(self, *, updater: Any | None = None):
+        from mainsequence.markets.portfolios.simple_tables import (
+            get_portfolio_metadata,
+        )
+
+        return get_portfolio_metadata(
+            self._portfolio_index_asset_unique_identifier(),
+            updater=updater,
+        )
+
+    def get_description(self, *, updater: Any | None = None) -> str | None:
+        metadata = self.get_metadata(updater=updater)
+        return None if metadata is None else metadata.description
+
+    def upsert_metadata(
+        self,
+        *,
+        description: str | None = None,
+        updater: Any | None = None,
+    ):
+        from mainsequence.markets.portfolios.simple_tables import (
+            upsert_portfolio_metadata,
+        )
+
+        return upsert_portfolio_metadata(
+            portfolio_index_asset=self.index_asset,
+            description=description,
+            updater=updater,
+        )
 
     def add_venue(self, venue_id) -> None:
         url = f"{self.get_object_url()}/{self.id}/add_venue/"

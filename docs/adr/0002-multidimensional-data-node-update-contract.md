@@ -63,7 +63,7 @@ The relevant client-side model surface is concentrated in:
 - `mainsequence/tdag/data_nodes/`
 - `mainsequence/tdag/base_persist_managers.py`
 - `mainsequence/client/data_sources_interfaces/`
-- `mainsequence/virtualfundbuilder/`
+- `mainsequence/portfolios/`
 
 The update flow today is:
 
@@ -753,12 +753,12 @@ That means the DataNode helper rename cannot be done blindly. Either:
 
 Affected files include:
 
-- `mainsequence/virtualfundbuilder/portfolio_nodes.py`
-- `mainsequence/virtualfundbuilder/resource_factory/signal_factory.py`
-- `mainsequence/virtualfundbuilder/contrib/prices/data_nodes.py`
-- `mainsequence/virtualfundbuilder/contrib/data_nodes/market_cap.py`
-- `mainsequence/virtualfundbuilder/contrib/data_nodes/portfolio_replicator.py`
-- `mainsequence/virtualfundbuilder/utils.py`
+- `mainsequence/portfolios/portfolio_nodes.py`
+- `mainsequence/portfolios/data_nodes/signal_weights.py`
+- `mainsequence/portfolios/contrib/prices/data_nodes.py`
+- `mainsequence/portfolios/contrib/data_nodes/market_cap.py`
+- `mainsequence/portfolios/contrib/data_nodes/portfolio_replicator.py`
+- `mainsequence/portfolios/utils.py`
 - `mainsequence/instruments/data_interface/data_interface.py`
 
 These callers currently read `asset_time_statistics` or construct
@@ -910,7 +910,7 @@ runtime callers are migrated around backend-bound API payloads.
 
 - [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
 - [x] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
-- [x] Audit and migrate `mainsequence/virtualfundbuilder/`.
+- [x] Audit and migrate `mainsequence/portfolios/`.
 - [x] Audit and migrate `mainsequence/instruments/`.
 - [x] Audit `mainsequence/client/models_simple_tables.py` for the shared chunk
    stats helper dependency.

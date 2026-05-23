@@ -46,7 +46,7 @@ dependencies = [
   "duckdb",
   "pyarrow",
 ]
-virtualfundbuilder = [
+portfolios = [
   "docstring-parser",
   "joblib",
   "pandas-market-calendars",
