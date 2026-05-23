@@ -27,12 +27,12 @@ from datetime import timedelta
 
 import pandas as pd
 
-from mainsequence.tdag import DataNodeConfiguration
+from mainsequence.markets.markets_data_node import MarketDataNodeConfiguration
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
 from mainsequence.markets.portfolios.utils import TIMEDELTA
 
 
-class MySignalConfig(DataNodeConfiguration):
+class MySignalConfig(MarketDataNodeConfiguration):
     my_param: int = 10
 
 

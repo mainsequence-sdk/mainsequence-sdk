@@ -4,13 +4,17 @@ import hashlib
 import inspect
 import json
 import threading
-import warnings
 from concurrent.futures import Future
 from typing import Any, ClassVar
 
 import pandas as pd
 
-import mainsequence.client as ms_client
+from mainsequence.client.models_tdag import (
+    ColumnMetaData,
+    DynamicTableDataSource,
+    TableMetaData,
+    UpdateStatistics,
+)
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
 
@@ -75,14 +79,14 @@ class BasePersistManager:
 
     def __init__(
         self,
-        data_source: ms_client.DynamicTableDataSource,
+        data_source: DynamicTableDataSource,
         update_hash: str,
         description: str | None = None,
         class_name: str | None = None,
         data_node_storage: dict | None = None,
         data_node_update: Any | None = None,
     ):
-        self.data_source: ms_client.DynamicTableDataSource = data_source
+        self.data_source: DynamicTableDataSource = data_source
         self.update_hash: str = update_hash
         if data_node_update is not None and data_node_storage is None:
             data_node_storage = self._extract_storage_from_update(data_node_update)
@@ -138,7 +142,7 @@ class BasePersistManager:
         *,
         storage_hash: str,
         remote_configuration: dict,
-        data_source: ms_client.DynamicTableDataSource,
+        data_source: DynamicTableDataSource,
         time_serie_source_code_git_hash: str,
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
@@ -339,7 +343,7 @@ class BasePersistManager:
         storage_hash: str,
         local_configuration: dict,
         remote_configuration: dict,
-        data_source: ms_client.DynamicTableDataSource,
+        data_source: DynamicTableDataSource,
         time_serie_source_code_git_hash: str,
         time_serie_source_code: str,
         build_configuration_json_schema: dict,
@@ -466,37 +470,18 @@ class BasePersistManager:
 
     def get_last_observation(
         self,
-        asset_list: list[Any] | None = None,
         *,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ):
-        if asset_list is not None:
-            # LEGACY_COMPAT: asset-scoped latest-observation lives on MarketDataNode.
-            warnings.warn(
-                "Deprecated TDAG compatibility path: asset_list was passed to "
-                "PersistManager.get_last_observation(). Use dimension_filters "
-                "or MarketDataNode.get_last_observation().",
-                FutureWarning,
-                stacklevel=2,
-            )
-            if (
-                dimension_filters is not None
-                or index_coordinates is not None
-                or dimension_range_map is not None
-            ):
-                raise ValueError("Do not mix asset_list with canonical dimension filters.")
-            dimension_filters = {
-                "unique_identifier": [a.unique_identifier for a in asset_list]
-            }
         return self.data_node_storage.get_last_observation(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
         )
 
-    def set_column_metadata(self, columns_metadata: list[ms_client.ColumnMetaData] | None) -> None:
+    def set_column_metadata(self, columns_metadata: list[ColumnMetaData] | None) -> None:
         source_table_configuration = self._get_source_table_configuration()
         if source_table_configuration is not None:
             if source_table_configuration.columns_metadata is not None:
@@ -510,7 +495,7 @@ class BasePersistManager:
 
     def set_table_metadata(
         self,
-        table_metadata: ms_client.TableMetaData,
+        table_metadata: TableMetaData,
     ):
         if not self.data_node_storage:
             self.logger.warning("metadata not set")
@@ -546,13 +531,13 @@ class BasePersistManager:
             persisted = True
         return persisted
 
-    def get_update_statistics_for_table(self) -> ms_client.UpdateStatistics:
+    def get_update_statistics_for_table(self) -> UpdateStatistics:
         if isinstance(self.data_node_storage, int):
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
         source_table_configuration = self._get_source_table_configuration()
         if source_table_configuration is None:
-            return ms_client.UpdateStatistics()
+            return UpdateStatistics()
 
         return source_table_configuration.get_data_updates()
 

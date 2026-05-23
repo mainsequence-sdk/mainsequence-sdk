@@ -102,7 +102,7 @@ class DiscountCurvesNode(MarketDataNode):
         # compress curve dict -> string
         df["curve"] = df["curve"].apply(compress_curve_to_string)
 
-        last = self.update_statistics.get_last_update_index_2d(curve_uid)
+        last = self.update_statistics.get_last_update_for_identity(curve_uid)
         df = df[df.index.get_level_values("time_index") > last]
         return df if not df.empty else pd.DataFrame()
 
@@ -135,7 +135,7 @@ class FixingRatesNode(MarketDataNode):
 
     def update(self):
         dfs = []
-        for asset in self.update_statistics.asset_list:
+        for asset in self.get_update_asset_list() or []:
             builder = FIXING_RATE_BUILDERS.builder_for_uid(asset.unique_identifier)
             df = builder(update_statistics=self.update_statistics, unique_identifier=asset.unique_identifier)
             if not df.empty:

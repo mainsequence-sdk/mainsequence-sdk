@@ -1,6 +1,6 @@
 import datetime
+import inspect
 import os
-from types import SimpleNamespace
 
 import pytest
 
@@ -8,6 +8,7 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh")
 
 from mainsequence.tdag.data_nodes import data_nodes
+from mainsequence.tdag.data_nodes.models import DataNodeConfiguration
 
 
 def _clear_command_center_env(monkeypatch):
@@ -128,48 +129,15 @@ def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatc
     ]
 
 
-def test_data_access_mixin_asset_latest_observation_shim_warns(monkeypatch):
-    mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
-
-    with pytest.warns(FutureWarning, match="asset_list"):
-        result = mixin.get_last_observation(
-            asset_list=[
-                SimpleNamespace(unique_identifier="BTC"),
-                SimpleNamespace(unique_identifier="ETH"),
-            ],
-        )
-
-    assert result == "latest"
-    assert manager.last_calls[0]["dimension_filters"] == {
-        "unique_identifier": ["BTC", "ETH"]
-    }
-
-
-def test_data_access_mixin_asset_range_shims_warn_without_mutating(monkeypatch):
-    mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
-    start = datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
-    range_descriptor = {"BTC": {"start_date": start}}
-
-    with pytest.warns(FutureWarning, match="get_ranged_data_per_asset"):
-        result = mixin.get_ranged_data_per_asset(range_descriptor)
-
-    assert result == "ok"
-    assert manager.calls[-1]["dimension_range_map"] == [
-        {
-            "coordinate": {"unique_identifier": "BTC"},
-            "start_date": start,
-        }
-    ]
-
-    with pytest.warns(FutureWarning, match="get_ranged_data_per_asset_great_or_equal"):
-        result = mixin.get_ranged_data_per_asset_great_or_equal(range_descriptor)
-
-    assert result == "ok"
-    assert manager.calls[-1]["dimension_range_map"] == [
-        {
-            "coordinate": {"unique_identifier": "BTC"},
-            "start_date": start,
-            "start_date_operand": ">=",
-        }
-    ]
-    assert range_descriptor == {"BTC": {"start_date": start}}
+def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
+    assert "asset_list" not in inspect.signature(
+        data_nodes.DataAccessMixin.get_last_observation
+    ).parameters
+    assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset")
+    assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset_great_or_equal")
+    assert not hasattr(data_nodes.DataAccessMixin, "filter_by_assets_ranges")
+    assert "asset_list" not in DataNodeConfiguration.model_fields
+    assert not hasattr(data_nodes.DataNode, "get_asset_list")
+    assert not hasattr(data_nodes.APIDataNode, "get_earliest_updated_asset_filter")
+    assert not hasattr(data_nodes, "get_latest_update_by_assets_filter")
+    assert not hasattr(data_nodes, "last_update_per_unique_identifier")

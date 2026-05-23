@@ -62,6 +62,10 @@ def _unique_ints(values: list[int]) -> list[int]:
     return unique_values
 
 
+def _quote_sql_identifier(identifier: str) -> str:
+    return '"' + str(identifier).replace('"', '""') + '"'
+
+
 class AssetCategoryMembershipSimpleTable(SimpleTable):
     """Client-owned join row between one category and one asset."""
 
@@ -537,6 +541,83 @@ class AssetCategoryMembershipSimpleTableUpdater(SimpleTableUpdater):
         )
         for membership in memberships:
             self.delete(membership)
+        return self.list_assets_for_category(category_id=resolved_category_id)
+
+    def update_assets(
+        self,
+        *,
+        category: AssetCategorySimpleTable | int | None = None,
+        category_id: int | None = None,
+        category_uid: str | None = None,
+        category_unique_identifier: str | None = None,
+        assets: list[AssetSimpleTable | int] | tuple[AssetSimpleTable | int, ...] | None = None,
+        asset_ids: list[int] | tuple[int, ...] | None = None,
+        asset_unique_identifiers: list[str] | tuple[str, ...] | str | None = None,
+        statement_timeout_ms: int | None = None,
+        timeout: int | None = None,
+    ) -> list[AssetSimpleTable]:
+        resolved_category_id = self.resolve_category_id(
+            category=category,
+            category_id=category_id,
+            category_uid=category_uid,
+            category_unique_identifier=category_unique_identifier,
+        )
+        target_asset_ids = _unique_ints(
+            self.resolve_asset_ids(
+                assets=assets,
+                asset_ids=asset_ids,
+                asset_unique_identifiers=asset_unique_identifiers,
+                require_non_empty=False,
+            )
+        )
+
+        self._ensure_remote_objects_ready(require_update=False)
+        membership_table = _quote_sql_identifier(self.storage_hash)
+        category_column = _quote_sql_identifier("category")
+        asset_column = _quote_sql_identifier("asset")
+
+        if target_asset_ids:
+            values_sql = ", ".join(
+                f"({resolved_category_id}, {asset_id})" for asset_id in target_asset_ids
+            )
+            sql = f"""
+                WITH deleted AS (
+                    DELETE FROM {membership_table}
+                    WHERE {category_column} = {resolved_category_id}
+                    RETURNING 1
+                ),
+                inserted AS (
+                    INSERT INTO {membership_table} ({category_column}, {asset_column})
+                    VALUES {values_sql}
+                    RETURNING 1
+                )
+                SELECT
+                    (SELECT COUNT(*) FROM deleted) AS deleted_count,
+                    (SELECT COUNT(*) FROM inserted) AS inserted_count;
+            """
+        else:
+            sql = f"""
+                WITH deleted AS (
+                    DELETE FROM {membership_table}
+                    WHERE {category_column} = {resolved_category_id}
+                    RETURNING 1
+                )
+                SELECT
+                    (SELECT COUNT(*) FROM deleted) AS deleted_count,
+                    0 AS inserted_count;
+            """
+
+        result = self.data_node_storage.run_query(
+            sql,
+            max_rows=1,
+            statement_timeout_ms=statement_timeout_ms,
+            timeout=timeout,
+        )
+        if isinstance(result, dict) and result.get("ok") is False:
+            error = result.get("error") or {}
+            message = error.get("message") if isinstance(error, dict) else None
+            raise RuntimeError(message or "Asset category update_assets SQL query failed.")
+
         return self.list_assets_for_category(category_id=resolved_category_id)
 
     def set_assets(

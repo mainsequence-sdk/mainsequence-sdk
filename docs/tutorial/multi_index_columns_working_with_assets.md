@@ -4,14 +4,14 @@
 
 In this part, you will:
 
-- build an asset-based DataNode that writes a `(time_index, unique_identifier)` MultiIndex table
+- build an asset-based `MarketDataNode` that writes a `(time_index, unique_identifier)` MultiIndex table
 - use `get_asset_list()` to scope updates by asset
 - run multiple updaters that write to the same dataset
 - understand table identity (`storage_hash`) vs updater identity (`update_hash`)
 
 DataNodes created in this part: **`SimulatedPrices`**.
 
-In Part 2, you built a basic `DataNode`. In this part, you will build an asset-based `DataNode` that stores simulated security prices in a `MultiIndex` DataFrame.
+In Part 2, you built a basic `DataNode`. In this part, you will build an asset-based `MarketDataNode` that stores simulated security prices in a `MultiIndex` DataFrame.
 
 This is the standard two-index specialization of the generic multidimensional DataNode contract: the first index is always the UTC time index, and `unique_identifier` is the asset identity dimension. You can reuse this pattern for prices, signals, news, or any other asset-centric dataset.
 
@@ -21,7 +21,7 @@ For the broader design rules behind this tutorial, see the [Data Nodes knowledge
 
 In this part you will:
 
-- create a `SimulatedPrices` `DataNode` that returns a `(time_index, unique_identifier)` `MultiIndex`
+- create a `SimulatedPrices` `MarketDataNode` that returns a `(time_index, unique_identifier)` `MultiIndex`
 - expose the asset universe through `get_asset_list()`
 - run two updater jobs that write to the same underlying table
 - understand why `asset_list` should usually affect `update_hash`, not `storage_hash`
@@ -60,9 +60,12 @@ import mainsequence.client as msc
 from mainsequence.tdag import (
     APIDataNode,
     DataNode,
-    DataNodeConfiguration,
     DataNodeMetaData,
     RecordDefinition,
+)
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
 )
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
@@ -70,7 +73,7 @@ SIMULATED_PRICES_IDENTIFIER = f"simulated_prices_tutorial_{PROJECT_ID}"
 
 
 class SimulatedPricesManager:
-    def __init__(self, owner: DataNode):
+    def __init__(self, owner: MarketDataNode):
         self.owner = owner
 
     @staticmethod
@@ -90,11 +93,11 @@ class SimulatedPricesManager:
         sigma = 0.01
 
         update_statistics = self.owner.update_statistics
-        asset_list = update_statistics.asset_list or self.owner.get_asset_list() or []
+        asset_list = self.owner.get_update_asset_list() or []
         if not asset_list:
             return pd.DataFrame()
 
-        range_descriptor = update_statistics.get_update_range_map_great_or_equal()
+        range_descriptor = self.owner.get_asset_update_range_map_great_or_equal()
         last_observation = self.owner.get_ranged_data_per_asset(
             range_descriptor=range_descriptor
         )
@@ -105,7 +108,7 @@ class SimulatedPricesManager:
 
         df_list: list[pd.DataFrame] = []
         for asset in asset_list:
-            last_update = update_statistics.get_asset_earliest_multiindex_update(asset=asset)
+            last_update = self.owner.get_asset_earliest_update(asset=asset)
             start_time = (last_update + datetime.timedelta(days=1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
             )
@@ -151,7 +154,7 @@ class SimulatedPricesManager:
         return data
 
 
-class PriceSimulConfig(DataNodeConfiguration):
+class PriceSimulConfig(MarketDataNodeConfiguration):
     offset_start: datetime.datetime | None = Field(
         default=datetime.datetime(2024, 1, 1, tzinfo=pytz.utc),
         description="First-run fallback start date for tutorial backfills.",
@@ -183,7 +186,7 @@ class PriceSimulConfig(DataNodeConfiguration):
     )
 
 
-class SimulatedPrices(DataNode):
+class SimulatedPrices(MarketDataNode):
     """Simulates daily close prices for a fixed batch of assets."""
 
     def __init__(
@@ -247,7 +250,7 @@ For simple nodes, put that metadata directly in `PriceSimulConfig`:
 The important pattern in `update()` is:
 
 - compute the per-asset start from `UpdateStatistics`
-- fetch prior observations once with `get_ranged_data_per_asset(...)`
+- fetch prior observations once with `MarketDataNode.get_ranged_data_per_asset(...)`
 - return only new rows
 - keep the index sorted and stable
 

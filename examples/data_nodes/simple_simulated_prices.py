@@ -12,6 +12,10 @@ from sklearn.linear_model import ElasticNet
 
 import mainsequence.client as msc
 from mainsequence.client.models_tdag import ColumnMetaData, UpdateStatistics
+from mainsequence.markets.markets_data_node import (
+    MarketDataNode,
+    MarketDataNodeConfiguration,
+)
 from mainsequence.tdag import (
     APIDataNode,
     DataNode,
@@ -192,7 +196,7 @@ class SingleIndexTS(DataNode):
         return mts
 
 
-class PriceSimulConfig(DataNodeConfiguration):
+class PriceSimulConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.AssetMixin] = Field(
         ...,
         title="Asset List",
@@ -211,7 +215,7 @@ class PriceSimulConfig(DataNodeConfiguration):
     )
 
 
-class VolatilityNodeConfig(DataNodeConfiguration):
+class VolatilityNodeConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.AssetMixin] = Field(
         ...,
         title="Asset List",
@@ -221,7 +225,7 @@ class VolatilityNodeConfig(DataNodeConfiguration):
     rolling_window: int = Field(..., title="Rolling Window")
 
 
-class CategorySimulatedPricesConfig(DataNodeConfiguration):
+class CategorySimulatedPricesConfig(MarketDataNodeConfiguration):
     asset_category_id: str = Field(
         ...,
         title="Asset Category Identifier",
@@ -230,7 +234,7 @@ class CategorySimulatedPricesConfig(DataNodeConfiguration):
     )
 
 
-class FeatureStoreTAConfig(DataNodeConfiguration):
+class FeatureStoreTAConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.AssetMixin] = Field(
         ...,
         title="Asset List",
@@ -245,7 +249,7 @@ class FeatureStoreTAConfig(DataNodeConfiguration):
     )
 
 
-class ModelTrainNodeConfig(DataNodeConfiguration):
+class ModelTrainNodeConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.Asset]
     ta_feature_config: list[dict[str, Any]]
     model_config: Any
@@ -253,7 +257,7 @@ class ModelTrainNodeConfig(DataNodeConfiguration):
     retrain_config_days: int
 
 
-class RollingModelPredictionConfig(DataNodeConfiguration):
+class RollingModelPredictionConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.Asset]
     ta_feature_config: list[dict[str, Any]]
     model_config: Any
@@ -261,7 +265,7 @@ class RollingModelPredictionConfig(DataNodeConfiguration):
     retrain_config_days: int
 
 
-class LivePredictionConfig(DataNodeConfiguration):
+class LivePredictionConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.Asset]
     ta_feature_config: list[dict[str, Any]]
     model_config: Any
@@ -269,7 +273,7 @@ class LivePredictionConfig(DataNodeConfiguration):
     retrain_config_days: int
 
 
-class WorkflowManagerConfig(DataNodeConfiguration):
+class WorkflowManagerConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.Asset]
     ta_feature_config: list[dict[str, Any]]
     model_config: Any
@@ -277,7 +281,7 @@ class WorkflowManagerConfig(DataNodeConfiguration):
     retrain_config_days: int
 
 
-class SimulatedPrices(DataNode):
+class SimulatedPrices(MarketDataNode):
     """
     Simulates price updates for a specific list of assets provided at initialization.
     """
@@ -322,7 +326,7 @@ class SimulatedPrices(DataNode):
         return mts
 
 
-class Volatility(DataNode):
+class Volatility(MarketDataNode):
     def __init__(self, volatility_config: VolatilityNodeConfig, *args, **kwargs):
         self.volatility_config = volatility_config
         self.asset_list = volatility_config.asset_list
@@ -356,7 +360,7 @@ class Volatility(DataNode):
         return rolling_vol_annualized.dropna().to_frame("volatility")
 
 
-class CategorySimulatedPrices(DataNode):
+class CategorySimulatedPrices(MarketDataNode):
     """
     Simulates price updates for all assets belonging to a specified category.
     This demonstrates using a hook (`get_asset_list`) to dynamically define the asset universe.
@@ -453,7 +457,7 @@ class CategorySimulatedPrices(DataNode):
 # Mocking UpdateStatistics and Running the Test
 
 
-class FeatureStoreTA(DataNode):
+class FeatureStoreTA(MarketDataNode):
     """
     A derived time series that calculates a technical analysis feature from another price series.
     """
@@ -640,7 +644,9 @@ class ElasticNetConfiguration(ModelConfiguration):
 
 
 def _prepare_model_data(
-    feature_ts: DataNode, prices_ts: DataNode, update_statistics: UpdateStatistics
+    feature_ts: MarketDataNode,
+    prices_ts: MarketDataNode,
+    update_statistics: UpdateStatistics,
 ) -> pd.DataFrame:
     """
     Helper to fetch, align, and prepare feature and target data for modeling.
@@ -685,7 +691,7 @@ def _prepare_model_data(
     return feats_df.join(returns, how="inner").dropna()
 
 
-class ModelTrainTimeSerie(DataNode):
+class ModelTrainTimeSerie(MarketDataNode):
     """
     DataNode dedicated solely to retraining the model at the configured frequency.
 
@@ -819,7 +825,7 @@ class ModelTrainTimeSerie(DataNode):
         )
 
 
-class RollingModelPrediction(DataNode):
+class RollingModelPrediction(MarketDataNode):
     """
         Predicts the next-day return via a rolling ElasticNet regression on TA features.
 
@@ -954,7 +960,7 @@ class RollingModelPrediction(DataNode):
         )
 
 
-class LivePrediction(DataNode):
+class LivePrediction(MarketDataNode):
     def __init__(self, live_prediction_config: LivePredictionConfig, *args, **kwargs):
         # Core configuration
         self.live_prediction_config = live_prediction_config
@@ -1019,7 +1025,7 @@ class LivePrediction(DataNode):
         return pd.DataFrame()
 
 
-class WorkflowManager(DataNode):
+class WorkflowManager(MarketDataNode):
     def __init__(self, workflow_manager_config: WorkflowManagerConfig, *args, **kwargs):
         self.workflow_manager_config = workflow_manager_config
         self.prediction_back_test = RollingModelPrediction(

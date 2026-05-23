@@ -178,6 +178,27 @@ class AssetCategorySimpleTable(SimpleTable):
             asset_unique_identifiers=asset_unique_identifiers,
         )
 
+    def update_assets(
+        self,
+        membership_updater: Any,
+        *,
+        assets: list[Any] | tuple[Any, ...] | None = None,
+        asset_ids: list[int] | tuple[int, ...] | None = None,
+        asset_unique_identifiers: list[str] | tuple[str, ...] | None = None,
+        statement_timeout_ms: int | None = None,
+        timeout: int | None = None,
+    ) -> list[Any]:
+        """Replace the category membership set with the provided assets."""
+
+        return membership_updater.update_assets(
+            category=self,
+            assets=assets,
+            asset_ids=asset_ids,
+            asset_unique_identifiers=asset_unique_identifiers,
+            statement_timeout_ms=statement_timeout_ms,
+            timeout=timeout,
+        )
+
     def set_assets(
         self,
         membership_updater: Any,

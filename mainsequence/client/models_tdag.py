@@ -256,9 +256,6 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
             global_index_progress=global_index_progress,
             index_progress=index_progress,
             index_min=index_min,
-            # LEGACY_COMPAT: downstream SDK callers still read asset_time_statistics
-            # until the UpdateStatistics migration removes asset-centric names.
-            asset_time_statistics=index_progress,
             multi_index_column_stats=multi_index_column_stats,
         )
 
@@ -2681,13 +2678,13 @@ class UpdateStatistics(BaseUpdateStatistics):
     Time-series-specific update statistics used by DataNode updaters.
     """
 
+    model_config = ConfigDict(arbitrary_types_allowed=True, extra="forbid")
+
     global_index_progress: dict[str, datetime.datetime | None] | None = None
     index_progress: dict[str, Any] | None = None
     index_min: dict[str, Any] | None = None
-    asset_time_statistics: dict[str, datetime.datetime | None | dict] | None = None
 
     max_time_index_value: datetime.datetime | None = None  # does not include filter applicable for 1d index
-    asset_list: list | None = None
     limit_update_time: datetime.datetime | None = None  # flag to limit the update of data node
 
     _max_time_in_update_statistics: datetime.datetime | None = None  # include filter
@@ -2762,7 +2759,6 @@ class UpdateStatistics(BaseUpdateStatistics):
         "global_index_progress",
         "index_progress",
         "index_min",
-        "asset_time_statistics",
         "multi_index_column_stats",
         mode="before",
     )
@@ -2777,18 +2773,6 @@ class UpdateStatistics(BaseUpdateStatistics):
         return cls._to_utc_datetime(v)
 
     def model_post_init(self, __context: Any) -> None:
-        # LEGACY_COMPAT: asset_time_statistics remains only as a projection of
-        # index_progress while downstream callers migrate to canonical names.
-        if self.index_progress is None and self.asset_time_statistics is not None:
-            _warn_legacy_compat(
-                "UpdateStatistics was constructed with 'asset_time_statistics'. "
-                "Use 'index_progress' instead; it supports arbitrary identity "
-                "dimensions after the time index.",
-            )
-            self.index_progress = self.asset_time_statistics
-        elif self.index_progress is not None:
-            self.asset_time_statistics = self.index_progress
-
         if self.global_index_progress is not None:
             global_max = self.global_index_progress.get("max")
             if global_max is not None:
@@ -2803,9 +2787,6 @@ class UpdateStatistics(BaseUpdateStatistics):
     def _set_progress_stats(self, stats: dict[str, Any] | None) -> None:
         normalized = self._normalize_nested(stats)
         self.index_progress = normalized
-        # LEGACY_COMPAT: keep the old field synchronized as a read-only-style
-        # projection for callers that have not moved to index_progress yet.
-        self.asset_time_statistics = normalized
 
     @classmethod
     def return_empty(cls):
@@ -2813,12 +2794,6 @@ class UpdateStatistics(BaseUpdateStatistics):
 
     def pretty_print(self):
         print(f"{self.__class__.__name__} summary:")
-
-        # asset_list
-        if self.asset_list is None:
-            print("  asset_list: None")
-        else:
-            print(f"  asset_list: {len(self.asset_list)} assets")
 
         # DataFrame
         if self.last_observation is None or self.last_observation.empty:
@@ -2833,7 +2808,7 @@ class UpdateStatistics(BaseUpdateStatistics):
 
 
 
-    def asset_identifier(self):
+    def identity_values(self):
         return list(self._progress_stats().keys())
 
     def get_max_time_in_update_statistics(self):
@@ -2842,56 +2817,47 @@ class UpdateStatistics(BaseUpdateStatistics):
                 self.max_time_index_value or self._initial_fallback_date
             )
         if self._max_time_in_update_statistics is None and self.index_progress is not None:
-            new_update_statistics, _max_time_in_asset_time_statistics = self._get_update_statistics(
-                asset_list=None, unique_identifier_list=None
-            )
-            self._max_time_in_update_statistics = _max_time_in_asset_time_statistics
+            values = self.get_index_progress_leaf_values()
+            self._max_time_in_update_statistics = max(values) if values else None
 
         return self._max_time_in_update_statistics
 
     @property
-    def is_any_asset_on_fallback_date(self)->bool:
-        """"
-        return true if any of the assets in asset_time_statistics equals _initial_fallback_date
-        """
+    def is_any_identity_on_fallback_date(self)->bool:
+        """Return true if any index progress leaf equals _initial_fallback_date."""
+        return any(
+            value == self._initial_fallback_date
+            for value in self.get_index_progress_leaf_values()
+        )
 
-
-        for _,v in self._progress_stats().items():
-            if v==self._initial_fallback_date:
-                return True
-        return False
     @property
-    def are_all_assets_on_fallback_date(self)->bool:
-        """"
-             return true if all assets in asset_time_statistics equals _initial_fallback_date
-             """
-        for _,v in self._progress_stats().items():
-            if v!=self._initial_fallback_date:
-                return False
-        return True
+    def are_all_identities_on_fallback_date(self)->bool:
+        """Return true if all index progress leaves equal _initial_fallback_date."""
+        return all(
+            value == self._initial_fallback_date
+            for value in self.get_index_progress_leaf_values()
+        )
 
 
-    def get_update_range_map_great_or_equal_columnar(
+    def get_columnar_identity_range_map_great_or_equal(
         self,
         extra_time_delta: datetime.timedelta | None = None,
         column_filter: list[str] | None = None,
     ):
-        fallback = {
-            c: {
-                a.unique_identifier: {
-                    "min": self._initial_fallback_date,
-                    "max": self._initial_fallback_date,
-                }
-                for a in self.asset_list
-            }
-            for c in column_filter
+        multi_index_column_stats = self.multi_index_column_stats or {}
+        if column_filter is None:
+            column_filter = list(multi_index_column_stats.keys())
+        column_stats_by_column = {
+            column_name: copy.deepcopy(multi_index_column_stats.get(column_name, {}))
+            for column_name in column_filter
         }
 
-        multi_index_column_stats = self.multi_index_column_stats or {}
-        fallback.update(multi_index_column_stats)
-
         def _start_dt(bounds):
-            dt = (bounds or {}).get("max") or self._initial_fallback_date
+            dt = (
+                (bounds or {}).get("max")
+                if isinstance(bounds, dict)
+                else bounds
+            ) or self._initial_fallback_date
             if extra_time_delta:
                 dt = dt + extra_time_delta
             return dt
@@ -2899,21 +2865,21 @@ class UpdateStatistics(BaseUpdateStatistics):
 
         range_map = {
             col: {
-                asset_id: DateInfo(
+                identity_value: DateInfo(
                     {
                         "start_date_operand": ">=",
                         "start_date": _start_dt(bounds),
                     }
                 )
-                for asset_id, bounds in col_stats.items()
+                for identity_value, bounds in col_stats.items()
             }
-            for col, col_stats in fallback.items()
+            for col, col_stats in column_stats_by_column.items()
             if col in column_filter
         }
 
         return range_map
 
-    def get_update_range_map_great_or_equal(
+    def get_identity_range_map_great_or_equal(
         self,
         extra_time_delta: datetime.timedelta | None = None,
     ):
@@ -2940,20 +2906,20 @@ class UpdateStatistics(BaseUpdateStatistics):
     def iter_index_progress_coordinates(
         self,
         *,
-        identity_dimensions: Sequence[str] | None = None,
+        identity_dimensions: Sequence[str],
     ) -> list[tuple[dict[str, Any], Any]]:
         """
         Return `(coordinate, timestamp)` leaves from canonical `index_progress`.
 
-        `identity_dimensions` must match `index_names[1:]` for nested
-        multidimensional stats. When omitted, this helper preserves the common
-        two-index asset-table shape by using `unique_identifier`.
+        `identity_dimensions` must match `index_names[1:]` for multidimensional
+        stats. Callers must pass it explicitly; UpdateStatistics does not infer
+        identity dimension names.
         """
         progress_stats = self._progress_stats()
         if not progress_stats:
             return []
 
-        dimensions = list(identity_dimensions or ["unique_identifier"])
+        dimensions = list(identity_dimensions)
         coordinates: list[tuple[dict[str, Any], Any]] = []
 
         def _visit(node: Any, depth: int, coordinate: dict[str, Any]) -> None:
@@ -2990,7 +2956,7 @@ class UpdateStatistics(BaseUpdateStatistics):
     def get_dimension_range_map_great_or_equal(
         self,
         *,
-        identity_dimensions: Sequence[str] | None = None,
+        identity_dimensions: Sequence[str],
         extra_time_delta: datetime.timedelta | None = None,
     ) -> list[dict[str, Any]]:
         dimension_range_map = []
@@ -3006,14 +2972,14 @@ class UpdateStatistics(BaseUpdateStatistics):
                     "start_date_operand": ">=",
                     "start_date": start_date,
                 }
-            )
+        )
         return dimension_range_map
 
-    def get_last_update_index_2d(self, uid):
-        return self._progress_stats()[uid] or self._initial_fallback_date
+    def get_last_update_for_identity(self, identity_value):
+        return self._progress_stats()[identity_value] or self._initial_fallback_date
 
-    def get_asset_earliest_multiindex_update(self, asset):
-        stats = self._progress_stats().get(asset.unique_identifier)
+    def get_earliest_update_for_identity(self, identity_value):
+        stats = self._progress_stats().get(identity_value)
         if not stats:
             return self._initial_fallback_date
 
@@ -3031,7 +2997,7 @@ class UpdateStatistics(BaseUpdateStatistics):
 
         return _min_in_nested(stats)
 
-    def filter_assets_by_level(
+    def filter_identity_level(
         self,
         level: int,
         filters: list,
@@ -3054,18 +3020,16 @@ class UpdateStatistics(BaseUpdateStatistics):
         self
             (Allows method chaining.)
         """
-        # Grab the full list of index names, in order
-
         # Determine the numeric depth of the target level
-        #   0 == unique_identifier, 1 == first nested level, etc.
+        #   0 == first identity level, 1 == second identity level, etc.
         target_depth = level - 1
 
-        # Special‐case: filtering on unique_identifier itself
+        # Special-case: filtering on the first identity level.
         if target_depth == 0:
             self._set_progress_stats({
-                asset: stats
-                for asset, stats in self._progress_stats().items()
-                if asset in filters
+                identity_value: stats
+                for identity_value, stats in self._progress_stats().items()
+                if identity_value in filters
             })
             return self
 
@@ -3101,40 +3065,36 @@ class UpdateStatistics(BaseUpdateStatistics):
             return pruned
 
         new_stats: dict[str, Any] = {}
-        # stats dict sits at depth=1 under each asset
-        for asset, stats in self._progress_stats().items():
+        # stats dict sits at depth=1 under each top-level identity.
+        for identity_value, stats in self._progress_stats().items():
             if stats is None:
-                new_stats[asset] = {f: self._initial_fallback_date for f in allowed}
+                new_stats[identity_value] = {
+                    f: self._initial_fallback_date for f in allowed
+                }
             else:
                 pr = _prune(stats, current_depth=1)
-                new_stats[asset] = pr or None
+                new_stats[identity_value] = pr or None
 
         self._set_progress_stats(new_stats)
         return self
 
-    def _get_update_statistics(
-        self, asset_list: list | None, unique_identifier_list: list | None, init_fallback_date=None
+    def _get_update_statistics_for_identity_values(
+        self,
+        identity_values: list | None,
+        init_fallback_date=None,
     ):
         new_update_statistics = {}
         progress_stats = self.index_progress
-        if asset_list is None and unique_identifier_list is None:
-            assert progress_stats is not None
-            unique_identifier_list = list(progress_stats.keys())
+        if identity_values is None:
+            identity_values = list((progress_stats or {}).keys())
 
-        else:
-            unique_identifier_list = (
-                [a.unique_identifier for a in asset_list]
-                if unique_identifier_list is None
-                else unique_identifier_list
-            )
+        for identity_value in identity_values:
 
-        for unique_identifier in unique_identifier_list:
-
-            if progress_stats and unique_identifier in progress_stats:
-                new_update_statistics[unique_identifier] = progress_stats[unique_identifier]
+            if progress_stats and identity_value in progress_stats:
+                new_update_statistics[identity_value] = progress_stats[identity_value]
             else:
 
-                new_update_statistics[unique_identifier] = init_fallback_date
+                new_update_statistics[identity_value] = init_fallback_date
 
         def _max_in_nested(d):
             """
@@ -3152,55 +3112,53 @@ class UpdateStatistics(BaseUpdateStatistics):
                     max_val = candidate
             return max_val
 
-        _max_time_in_asset_time_statistics = (
+        _max_time_in_identity_statistics = (
             _max_in_nested(new_update_statistics)
             if len(new_update_statistics) > 0
             else init_fallback_date
         )
 
-        return new_update_statistics, _max_time_in_asset_time_statistics
+        return new_update_statistics, _max_time_in_identity_statistics
 
-    def update_assets(
+    def update_identity_scope(
         self,
-        asset_list: list | None,
+        identity_values: list | None,
         *,
         init_fallback_date: datetime = None,
-        unique_identifier_list: list | None = None,
     ):
-        self.asset_list = asset_list
         new_update_statistics = self.index_progress
 
-        if asset_list is not None or unique_identifier_list is not None:
-            new_update_statistics, _max_time_in_asset_time_statistics = self._get_update_statistics(
-                unique_identifier_list=unique_identifier_list,
-                asset_list=asset_list,
-                init_fallback_date=init_fallback_date,
+        if identity_values is not None:
+            new_update_statistics, _max_time_in_identity_statistics = (
+                self._get_update_statistics_for_identity_values(
+                    identity_values=identity_values,
+                    init_fallback_date=init_fallback_date,
+                )
             )
 
         else:
-            _max_time_in_asset_time_statistics = self.max_time_index_value or init_fallback_date
+            _max_time_in_identity_statistics = self.max_time_index_value or init_fallback_date
 
         new_multi_index_column_stats = self.multi_index_column_stats
-        if self.max_time_index_value is not None and self.multi_index_column_stats is not None:
+        if (
+            new_update_statistics is not None
+            and self.max_time_index_value is not None
+            and self.multi_index_column_stats is not None
+        ):
             new_multi_index_column_stats = {
                 k: v
                 for k, v in self.multi_index_column_stats.items()
                 if k in new_update_statistics.keys()
             }
 
-
-
         du = UpdateStatistics(
             index_progress=new_update_statistics,
             max_time_index_value=self.max_time_index_value,
-            asset_list=asset_list,
             multi_index_column_stats=new_multi_index_column_stats,
         )
-        du._max_time_in_update_statistics = _max_time_in_asset_time_statistics
+        du._max_time_in_update_statistics = _max_time_in_identity_statistics
         du._initial_fallback_date = init_fallback_date
         return du
-
-
 
     def __getitem__(self, key: str) -> Any:
         if self.index_progress is None:

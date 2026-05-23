@@ -191,9 +191,16 @@ class SignalWeights(AssetScopedPortfolioCanonicalDataNode):
             if not update_statistics.index_progress:
                 raise Exception("Signal has not been updated")
 
+            identity_dimensions = (
+                weights_source._asset_identity_dimensions()
+                if hasattr(weights_source, "_asset_identity_dimensions")
+                else self._asset_identity_dimensions()
+            )
             last_observation = self._get_signal_weights_between_dates(
                 weights_source=weights_source,
-                dimension_range_map=update_statistics.get_dimension_range_map_great_or_equal(),
+                dimension_range_map=update_statistics.get_dimension_range_map_great_or_equal(
+                    identity_dimensions=identity_dimensions,
+                ),
             )
             if last_observation is None or last_observation.empty:
                 return pd.DataFrame()

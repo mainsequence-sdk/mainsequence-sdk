@@ -65,7 +65,7 @@ class ExternalWeights(SignalWeights):
         weights_source["time_index"] = pd.to_datetime(weights_source["time_index"], utc=True)
 
         # convert figis in source data
-        for asset in self.update_statistics.asset_list:
+        for asset in self.get_update_asset_list() or []:
             weights_source.loc[weights_source["figi"] == asset.figi, "unique_identifier"] = (
                 asset.unique_identifier
             )

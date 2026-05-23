@@ -163,13 +163,14 @@ Since this tutorial doesn’t use live market data, we’ll generate simulated d
 # SimulatedDailyClosePrices: generates fake daily OHLCV data for assets
 import datetime, pytz, numpy as np, pandas as pd
 import mainsequence.client as msc
-from mainsequence.tdag import DataNode, DataNodeConfiguration, DataNodeMetaData, RecordDefinition
+from mainsequence.tdag import DataNodeMetaData, RecordDefinition
+from mainsequence.markets.markets_data_node import MarketDataNode, MarketDataNodeConfiguration
 from mainsequence.client.models_tdag import UpdateStatistics
 from pydantic import Field
 
 UTC = pytz.utc
 
-class SimulatedDailyClosePricesConfig(DataNodeConfiguration):
+class SimulatedDailyClosePricesConfig(MarketDataNodeConfiguration):
     asset_list: list[msc.AssetMixin]
     offset_start: datetime.datetime | None = Field(
         default=datetime.datetime(2024, 1, 1, tzinfo=UTC),
@@ -197,7 +198,7 @@ class SimulatedDailyClosePricesConfig(DataNodeConfiguration):
     )
 
 
-class SimulatedDailyClosePrices(DataNode):
+class SimulatedDailyClosePrices(MarketDataNode):
     def __init__(self, config: SimulatedDailyClosePricesConfig):
         self.asset_list = config.asset_list
         super().__init__(config=config)

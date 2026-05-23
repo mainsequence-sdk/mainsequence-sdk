@@ -672,8 +672,7 @@ class InterpolatedPrices(MarketDataNode):
         """
         upsampled_df = []
 
-        # TODO this should be a helper function
-        dimension_range_map = self.update_statistics.get_dimension_range_map_great_or_equal()
+        dimension_range_map = self.get_asset_dimension_range_map_great_or_equal()
         full_last_observation = self.get_df_between_dates(
             dimension_range_map=dimension_range_map
         )
@@ -771,7 +770,7 @@ class InterpolatedPrices(MarketDataNode):
         """
         Main method to get upsampled data for prices.
         """
-        dimension_range_map = self.update_statistics.get_dimension_range_map_great_or_equal()
+        dimension_range_map = self.get_asset_dimension_range_map_great_or_equal()
 
         raw_data_df = self.bars_ts.get_df_between_dates(
             dimension_range_map=dimension_range_map
@@ -811,13 +810,13 @@ class InterpolatedPrices(MarketDataNode):
         us:msc.UpdateStatistics=self.update_statistics
 
         self.asset_calendar_map = {
-            a.unique_identifier: a.get_calendar() for a in self.update_statistics.asset_list
+            a.unique_identifier: a.get_calendar() for a in self.get_update_asset_list() or []
         }
         prices = self.get_upsampled_data()
         if prices.shape[0] == 0:
             return pd.DataFrame()
 
-        if us.are_all_assets_on_fallback_date:
+        if us.are_all_identities_on_fallback_date:
             TARGET_COLS = ["open", "close", "high", "low", "volume", "open_time"]
             assert prices[[c for c in prices.columns if c in TARGET_COLS]].isnull().sum().sum() == 0
 
@@ -885,7 +884,7 @@ class ExternalPrices(MarketDataNode):
         prices_source["time_index"] = pd.to_datetime(prices_source["time_index"], utc=True)
 
         # convert figis in source data
-        for asset in self.update_statistics.asset_list:
+        for asset in self.get_update_asset_list() or []:
             prices_source.loc[prices_source["figi"] == asset.figi, "unique_identifier"] = (
                 asset.unique_identifier
             )

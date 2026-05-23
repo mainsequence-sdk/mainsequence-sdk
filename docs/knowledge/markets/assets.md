@@ -8,7 +8,7 @@ If you have been following the tutorial, you have already worked with assets sev
 
 ## What the tutorial has done with assets so far
 
-### Part 3: asset-based DataNodes
+### Part 3: asset-based MarketDataNodes
 
 In [Part 3](../../tutorial/multi_index_columns_working_with_assets.md), the `SimulatedPrices` node writes a table indexed by:
 
@@ -18,7 +18,7 @@ In [Part 3](../../tutorial/multi_index_columns_working_with_assets.md), the `Sim
 That chapter introduces the most important rule for asset-based tables:
 
 - if your output uses `unique_identifier`, those identifiers should normally correspond to real platform assets
-- `get_asset_list()` tells the platform which assets belong to that updater
+- `MarketDataNode.get_asset_list()` tells the platform which assets belong to that updater
 - per-asset update statistics depend on that asset list being correct
 
 This is where assets stop being just metadata and become part of the update model itself.

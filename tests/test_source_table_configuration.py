@@ -8,7 +8,6 @@ from mainsequence.client import models_tdag
 
 def _source_config_payload():
     return {
-        "id": 11,
         "related_table_uid": "storage-uid-44",
         "time_index_name": "time_index",
         "index_names": ["time_index", "account_uid", "unique_identifier"],
@@ -145,7 +144,17 @@ def test_source_table_configuration_get_data_updates_prefers_canonical_stats(mon
     assert update_stats.index_min == {
         "account-a": {"BTC": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)}
     }
-    assert update_stats.asset_time_statistics == update_stats.index_progress
+    assert "legacy-asset" not in update_stats.index_progress
+    assert update_stats.multi_index_column_stats == {
+        "value": {
+            "account-a": {
+                "BTC": {
+                    "min": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
+                    "max": datetime.datetime(2026, 5, 1, 2, tzinfo=datetime.UTC),
+                }
+            }
+        }
+    }
 
 
 def test_source_table_configuration_extra_index_route_uses_related_table_uid(monkeypatch):
@@ -239,7 +248,9 @@ def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypat
 
         @staticmethod
         def json():
-            return {"ok": True}
+            payload = _source_config_payload()
+            payload["open_for_everyone"] = True
+            return payload
 
     def _fake_make_request(*, s, loaders, r_type, url, payload):
         captured["r_type"] = r_type
@@ -257,22 +268,13 @@ def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypat
 
     config = models_tdag.SourceTableConfiguration(**_source_config_payload())
 
-    assert config.patch(open_for_everyone=True) == {"ok": True}
+    patched = config.patch(open_for_everyone=True)
+    assert isinstance(patched, models_tdag.SourceTableConfiguration)
+    assert patched.open_for_everyone is True
     assert captured == {
         "r_type": "PATCH",
         "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/storage-uid-44/",
         "payload": {"json": {"open_for_everyone": True}},
-    }
-    assert "legacy-asset" not in update_stats.index_progress
-    assert update_stats.multi_index_column_stats == {
-        "value": {
-            "account-a": {
-                "BTC": {
-                    "min": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
-                    "max": datetime.datetime(2026, 5, 1, 2, tzinfo=datetime.UTC),
-                }
-            }
-        }
     }
 
 
@@ -338,4 +340,3 @@ def test_source_table_configuration_get_data_updates_legacy_max_per_asset_fallba
         "AAPL": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
         "MSFT": datetime.datetime(2026, 5, 1, 2, tzinfo=datetime.UTC),
     }
-    assert update_stats.asset_time_statistics == update_stats.index_progress

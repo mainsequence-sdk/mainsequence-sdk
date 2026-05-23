@@ -390,6 +390,7 @@ This is a cost and performance requirement.
 ## 7) Asset discipline for 2D tables
 
 If your index is `(time_index, unique_identifier)`, `unique_identifier` should normally map to `msc.Asset.unique_identifier`.
+Use `MarketDataNode`, not plain `DataNode`, when that identity dimension is a platform market asset.
 
 Business rule:
 

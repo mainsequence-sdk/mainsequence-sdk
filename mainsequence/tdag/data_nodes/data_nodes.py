@@ -13,29 +13,26 @@ from functools import wraps
 from typing import Any, Union
 
 import cloudpickle
-import numpy as np
 import pandas as pd
 import pytz
 import structlog.contextvars as cvars
 
-import mainsequence.client as ms_client
 import mainsequence.tdag.data_nodes.build_operations as build_operations
 import mainsequence.tdag.data_nodes.run_operations as run_operations
-from mainsequence.client import (
-    CONSTANTS,
-    Asset,
-    DataNodeStorage,
-    DataNodeUpdate,
-    DynamicTableDataSource,
-    Scheduler,
-)
 from mainsequence.client.models_tdag import (
     BaseUpdateStatistics,
     ColumnMetaData,
+    DataNodeStorage,
+    DataNodeUpdate,
     DataSource,
+    DynamicTableDataSource,
+    Scheduler,
+    SessionDataSource,
+    TableMetaData,
     UniqueIdentifierRangeMap,
     UpdateStatistics,
 )
+from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
 from mainsequence.tdag.base_persist_managers import get_data_node_source_code
@@ -48,8 +45,6 @@ from .namespacing import hash_namespace as _hash_namespace_cm
 
 
 def get_data_source_from_orm() -> Any:
-    from mainsequence.client import SessionDataSource
-
     if SessionDataSource.data_source.related_resource is None:
         raise Exception("This Pod does not have a default data source")
     return SessionDataSource.data_source
@@ -70,59 +65,6 @@ def _legacy_unique_identifier_range_map_to_dimension_range_map(
     ]
 
 
-def get_latest_update_by_assets_filter(
-    asset_symbols: list | None, last_update_per_asset: dict
-) -> datetime.datetime:
-    """
-    Gets the latest update timestamp for a list of asset symbols.
-
-    Args:
-        asset_symbols: A list of asset symbols.
-        last_update_per_asset: A dictionary mapping assets to their last update time.
-
-    Returns:
-        The latest update timestamp.
-    """
-    if asset_symbols is not None:
-        last_update_in_table = np.max(
-            [
-                timestamp
-                for unique_identifier, timestamp in last_update_per_asset.items()
-                if unique_identifier in asset_symbols
-            ]
-        )
-    else:
-        last_update_in_table = np.max(last_update_per_asset.values)
-    return last_update_in_table
-
-
-def last_update_per_unique_identifier(
-    unique_identifier_list: list | None, last_update_per_asset: dict
-) -> datetime.datetime:
-    """
-    Gets the earliest last update time for a list of unique identifiers.
-
-    Args:
-        unique_identifier_list: A list of unique identifiers.
-        last_update_per_asset: A dictionary mapping assets to their last update times.
-
-    Returns:
-        The earliest last update timestamp.
-    """
-    if unique_identifier_list is not None:
-        last_update_in_table = min(
-            [
-                t
-                for a in last_update_per_asset.values()
-                for t in a.values()
-                if a in unique_identifier_list
-            ]
-        )
-    else:
-        last_update_in_table = min([t for a in last_update_per_asset.values() for t in a.values()])
-    return last_update_in_table
-
-
 class DependencyUpdateError(Exception):
     pass
 
@@ -135,34 +77,12 @@ class DataAccessMixin:
 
     def get_last_observation(
         self,
-        asset_list: list[Any] | None = None,
         *,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ):
         """Return the latest observation using generic TDAG dimensions."""
-        if asset_list is not None:
-            # LEGACY_COMPAT: asset-scoped latest-observation lives on MarketDataNode.
-            warnings.warn(
-                "Deprecated TDAG compatibility path: asset_list was passed to "
-                "get_last_observation(). Use MarketDataNode.get_last_observation() "
-                "or pass dimension_filters explicitly.",
-                FutureWarning,
-                stacklevel=2,
-            )
-            if (
-                dimension_filters is not None
-                or index_coordinates is not None
-                or dimension_range_map is not None
-            ):
-                raise ValueError(
-                    "Do not mix asset_list with canonical dimension filters."
-                )
-            dimension_filters = {
-                "unique_identifier": [asset.unique_identifier for asset in asset_list]
-            }
-
         return self.local_persist_manager.get_last_observation(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
@@ -401,67 +321,6 @@ class DataAccessMixin:
             columns=columns,
         )
 
-    def get_ranged_data_per_asset(
-        self,
-        range_descriptor: UniqueIdentifierRangeMap | None,
-        columns=None,
-    ) -> pd.DataFrame:
-        """LEGACY_COMPAT: use MarketDataNode or explicit dimension_range_map."""
-        warnings.warn(
-            "Deprecated TDAG compatibility path: get_ranged_data_per_asset() "
-            "moved to MarketDataNode. Use a MarketDataNode subclass or pass "
-            "dimension_range_map to get_df_between_dates().",
-            FutureWarning,
-            stacklevel=2,
-        )
-        return self.get_df_between_dates(
-            dimension_range_map=_legacy_unique_identifier_range_map_to_dimension_range_map(
-                range_descriptor
-            ),
-            columns=columns,
-        )
-
-    def get_ranged_data_per_asset_great_or_equal(
-        self,
-        range_descriptor: UniqueIdentifierRangeMap | None,
-        columns=None,
-    ) -> pd.DataFrame:
-        """LEGACY_COMPAT: use MarketDataNode or explicit dimension_range_map."""
-        warnings.warn(
-            "Deprecated TDAG compatibility path: "
-            "get_ranged_data_per_asset_great_or_equal() moved to MarketDataNode. "
-            "Use a MarketDataNode subclass or pass dimension_range_map to "
-            "get_df_between_dates().",
-            FutureWarning,
-            stacklevel=2,
-        )
-        if range_descriptor is None:
-            return self.get_df_between_dates(
-                dimension_range_map=None,
-                columns=columns,
-            )
-
-        inclusive_descriptor = copy.deepcopy(range_descriptor)
-        for date_info in inclusive_descriptor.values():
-            date_info["start_date_operand"] = ">="
-        return self.get_df_between_dates(
-            dimension_range_map=_legacy_unique_identifier_range_map_to_dimension_range_map(
-                inclusive_descriptor
-            ),
-            columns=columns,
-        )
-
-    def filter_by_assets_ranges(self, asset_ranges_map: dict) -> pd.DataFrame:
-        """LEGACY_COMPAT: asset range filtering moved to MarketDataNode."""
-        warnings.warn(
-            "Deprecated TDAG compatibility path: filter_by_assets_ranges() moved "
-            "to MarketDataNode.",
-            FutureWarning,
-            stacklevel=2,
-        )
-        return self.local_persist_manager.filter_by_assets_ranges(asset_ranges_map)
-
-
 class APIDataNode(DataAccessMixin):
 
     @classmethod
@@ -472,7 +331,7 @@ class APIDataNode(DataAccessMixin):
 
     @classmethod
     def build_from_table_id(cls, table_id: str) -> "APIDataNode":
-        table = ms_client.DataNodeStorage.get(id=table_id)
+        table = DataNodeStorage.get(id=table_id)
         ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
         return ts
 
@@ -480,7 +339,7 @@ class APIDataNode(DataAccessMixin):
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
 
-        table = ms_client.DataNodeStorage.get(identifier=identifier)
+        table = DataNodeStorage.get(identifier=identifier)
         ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
         return ts
 
@@ -582,50 +441,13 @@ class APIDataNode(DataAccessMixin):
 
         assert data_node_storage is not None, f"Verify that the table {self.storage_hash} exists "
 
-    def get_update_statistics(
-        self, asset_symbols: list | None = None
-    ) -> tuple[datetime.datetime | None, dict[str, datetime.datetime] | None]:
+    def get_update_statistics(self):
         """
         Gets update statistics from the database.
-
-        Args:
-            asset_symbols: An optional list of asset symbols to filter by.
-
-        Returns:
-            A tuple containing the last update time for the table and a dictionary of last update times per asset.
         """
-
         return (
             self.local_persist_manager.data_node_storage.sourcetableconfiguration.get_data_updates()
         )
-
-    def get_earliest_updated_asset_filter(
-        self, unique_identifier_list: list, last_update_per_asset: dict
-    ) -> datetime.datetime:
-        """
-        Gets the earliest last update time for a list of unique identifiers.
-
-        Args:
-            unique_identifier_list: A list of unique identifiers.
-            last_update_per_asset: A dictionary mapping assets to their last update times.
-
-        Returns:
-            The earliest last update timestamp.
-        """
-        if unique_identifier_list is not None:
-            last_update_in_table = min(
-                [
-                    t
-                    for a in last_update_per_asset.values()
-                    for t in a.values()
-                    if a in unique_identifier_list
-                ]
-            )
-        else:
-            last_update_in_table = min(
-                [t for a in last_update_per_asset.values() for t in a.values()]
-            )
-        return last_update_in_table
 
     def update(self, *args, **kwargs) -> pd.DataFrame:
         self.logger.info("Not updating series")
@@ -677,7 +499,7 @@ class DataNode(DataAccessMixin, ABC):
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
     OPEN_TO_PUBLIC=False # flag for enterprise data providers that want to open their data nmodes
-    DATA_NODE_UPDATE_CLASS = ms_client.DataNodeUpdate
+    DATA_NODE_UPDATE_CLASS = DataNodeUpdate
 
     # --- Dunder & Serialization Methods ---
 
@@ -1267,34 +1089,9 @@ class DataNode(DataAccessMixin, ABC):
         return self.data_node_storage.sourcetableconfiguration.get_data_updates()
 
     def _set_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
-        """
-         UpdateStatistics provides the last-ingested positions:
-          - For a single-index series (time_index only), `update_statistics.max_time` is either:
-              - None: no prior data—fetch all available rows.
-              - a datetime: fetch rows where `time_index > max_time`.
-          - For a dual-index series (time_index, unique_identifier), `update_statistics.max_time_per_id` is either:
-              - None: single-index behavior applies.
-              - dict[str, datetime]: for each `unique_identifier` (matching `Asset.unique_identifier`), fetch rows where
-                `time_index > max_time_per_id[unique_identifier]`.
-
-        Default method to narrow down update statistics un local time series,
-        the method will filter using asset_list if the attribute exists as well as the init fallback date
-        :param update_statistics:
-
-        :return:
-        """
-        # Filter update_statistics to include only assets in self.asset_list.
-
-        asset_list = self.get_asset_list()
-        self._setted_asset_list = asset_list
-
-        update_statistics = update_statistics.update_assets(
-            asset_list, init_fallback_date=self.get_offset_start()
-        )
-
+        """Attach generic update statistics without market asset narrowing."""
         self.update_statistics = update_statistics
-
-    # --- Public API ---
+        return update_statistics
 
     def run(
         self,
@@ -1374,20 +1171,20 @@ class DataNode(DataAccessMixin, ABC):
 
     def get_table_metadata(
         self,
-    ) -> ms_client.TableMetaData | None:
+    ) -> TableMetaData | None:
         """
         Return metadata that describes the table as a dataset.
 
         Base behavior:
         - if the node instance carries a ``DataNodeConfiguration`` with
-          ``node_metadata``, build ``ms_client.TableMetaData`` from it.
+          ``node_metadata``, build ``TableMetaData`` from it.
         - otherwise return ``None``.
 
         Subclasses can still override this for custom behavior.
 
         Returns
         -------
-        ms_client.TableMetaData | None
+        TableMetaData | None
             Table metadata, or ``None`` when not provided.
         """
         config = self._get_data_node_configuration()
@@ -1395,7 +1192,7 @@ class DataNode(DataAccessMixin, ABC):
         if node_metadata is None:
             return None
 
-        return ms_client.TableMetaData(
+        return TableMetaData(
             identifier=node_metadata.identifier,
             description=node_metadata.description,
             data_frequency_id=node_metadata.data_frequency_id,
@@ -1429,27 +1226,6 @@ class DataNode(DataAccessMixin, ABC):
             )
             for record in records
         ]
-
-    def get_asset_list(self) -> list[Asset] | None:
-        """
-        Return the assets this updater should consider.
-
-        For ``(time_index, unique_identifier)`` tables, this is usually the best place
-        to resolve/register assets idempotently before running updates.
-
-        Default behavior:
-        - returns ``self.asset_list`` when that attribute exists,
-        - otherwise returns ``None`` (no explicit asset filtering).
-
-        Returns
-        -------
-        list["Asset"] | None
-            Asset list used by ``UpdateStatistics.update_assets(...)`` or ``None``.
-        """
-        if hasattr(self, "asset_list"):
-            return self.asset_list
-
-        return None
 
     def run_post_update_routines(
         self,
@@ -1509,7 +1285,7 @@ class DataNode(DataAccessMixin, ABC):
 
         if (
             latest_persisted_time_index is None
-            and not ms_client.SessionDataSource.is_local_duck_db
+            and not SessionDataSource.is_local_duck_db
         ):
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 

@@ -4,7 +4,7 @@ import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-import mainsequence.client as ms_client
+from mainsequence.client.utils import DataFrequency
 
 from ..configuration_models import BaseConfiguration
 
@@ -68,7 +68,7 @@ class DataNodeMetaData(BaseModel):
         examples=["Global daily prices dataset."],
         json_schema_extra={"runtime_only": True},
     )
-    data_frequency_id: ms_client.DataFrequency | None = Field(
+    data_frequency_id: DataFrequency | None = Field(
         default=None,
         title="Data Frequency",
         description=(
@@ -96,11 +96,6 @@ class DataNodeConfiguration(BaseConfiguration):
             "Optional first-run fallback start date. This affects updater bootstrap "
             "behavior but should not rotate the storage hash."
         ),
-        json_schema_extra={"update_only": True},
-    )
-    asset_list: list[ms_client.AssetMixin] | None = Field(
-        default=None,
-        description="Optional asset scope selector for updater partitioning.",
         json_schema_extra={"update_only": True},
     )
     records: list[RecordDefinition] | None = Field(

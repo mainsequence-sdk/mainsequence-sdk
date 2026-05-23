@@ -164,7 +164,7 @@ class MarketCap(SignalWeights):
         Returns:
             DataFrame: A DataFrame containing updated signal weights, indexed by time and asset symbol.
         """
-        asset_list = self.update_statistics.asset_list
+        asset_list = self.get_update_asset_list() or []
         if len(asset_list) < self.min_number_of_assets:
             raise AssetMistMatch(
                 f"only {len(asset_list)} in asset_list minum are {self.min_number_of_assets} "
@@ -182,13 +182,13 @@ class MarketCap(SignalWeights):
         ms_asset_list = Asset.filter_with_asset_class(
             exchange_code=None,
             asset_ticker_group_id__in=[
-                a.asset_ticker_group_id for a in self.update_statistics.asset_list
+                a.asset_ticker_group_id for a in asset_list
             ],
         )
 
         ms_asset_list = {a.asset_ticker_group_id: a for a in ms_asset_list}
         asset_list_to_share_class = {
-            a.asset_ticker_group_id: a for a in self.update_statistics.asset_list
+            a.asset_ticker_group_id: a for a in asset_list
         }
 
         market_cap_uid_range_map = {

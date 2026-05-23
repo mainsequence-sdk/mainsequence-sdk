@@ -86,7 +86,7 @@ The current implementation already has partial multidimensional behavior:
 - `get_chunk_stats()` groups by `index_names[1:]`.
 - `UpdateStatistics.filter_df_by_latest_value()` drills through nested
   coordinate stats.
-- `UpdateStatistics.filter_assets_by_level()` expects nested stats.
+- `UpdateStatistics.filter_identity_level()` expects nested stats.
 
 However, the public contract and most helper names are still asset-specific:
 
@@ -222,10 +222,12 @@ index_progress: dict[str, Any] | None
 index_min: dict[str, Any] | None
 max_time_index_value: datetime.datetime | None
 multi_index_column_stats: dict[str, Any] | None
-asset_list: list | None
 limit_update_time: datetime.datetime | None
 is_backfill: bool
 ```
+
+Market asset scope is not part of the generic `UpdateStatistics` field
+contract. Asset-scoped behavior belongs in `MarketDataNode`.
 
 `max_time_index_value` is a scalar projection of
 `global_index_progress["max"]`. It is retained because many producers already
@@ -856,8 +858,7 @@ Required test coverage:
    `global_index_progress["max"]`.
 - [x] Replace internal helper implementations that read `asset_time_statistics`
    with `index_progress`.
-- [x] Keep `asset_time_statistics` only as a temporary `LEGACY_COMPAT` projection
-   if needed for downstream compatibility.
+- [x] Remove `asset_time_statistics` from the public `UpdateStatistics` contract.
 - [x] Add tests for one-, two-, and three-index update statistics.
 
 ### Phase 3: LocalTimeSerie Update Flow

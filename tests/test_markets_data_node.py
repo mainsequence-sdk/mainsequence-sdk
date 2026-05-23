@@ -10,6 +10,7 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 from mainsequence.client.markets.models.assets import Asset
+from mainsequence.client.models_tdag import UpdateStatistics
 from mainsequence.markets.assets.data_nodes import (
     ASSET_DATA_NODE_INDEX_NAMES,
     AssetDataNodeConfiguration,
@@ -133,6 +134,117 @@ def test_market_data_node_asset_data_access_helpers_use_dimension_contract():
         }
     ]
     assert range_descriptor == {"asset:one": {"start_date": start_date}}
+
+
+def test_market_data_node_scopes_update_statistics_to_assets():
+    class TestMarketDataNode(MarketDataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return None
+
+    node = object.__new__(TestMarketDataNode)
+    node.asset_list = [_asset("asset:one"), _asset("asset:two")]
+    node._get_data_node_configuration = lambda: SimpleNamespace(
+        index_names=["time_index", "unique_identifier"]
+    )
+    node.get_offset_start = lambda: dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+
+    scoped = node._set_update_statistics(
+        UpdateStatistics(
+            index_progress={
+                "asset:one": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+                "asset:three": dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+            },
+            index_min={
+                "asset:one": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+                "asset:three": dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+            },
+            max_time_index_value=dt.datetime(2026, 1, 4, tzinfo=dt.UTC),
+            multi_index_column_stats={
+                "close": {
+                    "asset:one": {
+                        "min": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+                        "max": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+                    },
+                    "asset:three": {
+                        "min": dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+                        "max": dt.datetime(2026, 1, 3, tzinfo=dt.UTC),
+                    },
+                }
+            },
+        )
+    )
+
+    fallback = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
+    assert scoped.index_progress == {
+        "asset:one": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        "asset:two": fallback,
+    }
+    assert scoped.index_min == {
+        "asset:one": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+        "asset:two": fallback,
+    }
+    assert scoped.multi_index_column_stats == {
+        "close": {
+            "asset:one": {
+                "min": dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
+                "max": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+            },
+            "asset:two": {
+                "min": fallback,
+                "max": fallback,
+            },
+        }
+    }
+    assert scoped.max_time_index_value == dt.datetime(2026, 1, 4, tzinfo=dt.UTC)
+    assert scoped.get_max_time_in_update_statistics() == dt.datetime(
+        2026, 1, 2, tzinfo=dt.UTC
+    )
+    assert node.get_asset_update_range_map_great_or_equal() == {
+        "asset:one": {
+            "start_date_operand": ">=",
+            "start_date": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        },
+        "asset:two": {
+            "start_date_operand": ">=",
+            "start_date": fallback,
+        },
+    }
+    assert node.get_asset_dimension_range_map_great_or_equal() == [
+        {
+            "coordinate": {"unique_identifier": "asset:one"},
+            "start_date_operand": ">=",
+            "start_date": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+        },
+        {
+            "coordinate": {"unique_identifier": "asset:two"},
+            "start_date_operand": ">=",
+            "start_date": fallback,
+        },
+    ]
+    assert node.get_asset_columnar_update_range_map_great_or_equal(
+        column_filter=["close"]
+    ) == {
+        "close": {
+            "asset:one": {
+                "start_date_operand": ">=",
+                "start_date": dt.datetime(2026, 1, 2, tzinfo=dt.UTC),
+            },
+            "asset:two": {
+                "start_date_operand": ">=",
+                "start_date": fallback,
+            },
+        }
+    }
+    assert node.get_asset_earliest_update(_asset("asset:one")) == dt.datetime(
+        2026, 1, 2, tzinfo=dt.UTC
+    )
+    assert node.get_asset_earliest_update(_asset("asset:two")) == fallback
+    assert not hasattr(scoped, "asset_list")
+    assert node._setted_asset_list == node.asset_list
+    assert node.update_statistics is scoped
 
 
 def test_asset_timestamped_nodes_use_market_data_node_boundary(monkeypatch):

@@ -94,7 +94,7 @@ Now let’s get into the details of how a DataNode update cycle works. Every tim
 1. A `StorageNode` is created if it does not already exist.
 2. A `NodeUpdate` process is created if it does not already exist.
 3. The `DataNode` is updated with the latest data from the `StorageNode`. This value is stored in the `DataNode` property `update_statistics: UpdateStatistics`, which contains the state of the `StorageNode`.
-4. The method `get_asset_list()` is run to set the target assets in the `update_statistics` property.
+4. For asset-scoped `MarketDataNode` implementations, `get_asset_list()` is run to set the target assets in the `update_statistics` property.
 5. The method `update()` is run.
 6. The data is persisted in the `StorageNode`.
 7. The method `get_column_metadata()` is run.
