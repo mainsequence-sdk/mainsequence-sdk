@@ -184,7 +184,7 @@ Good answers should:
 
 Better answer styles are:
 
-- "This workspace is showing current positions by instrument, so it can answer exposure questions but not execution-history questions."
+- "This workspace is showing current positions by entity, so it can answer exposure questions but not execution-history questions."
 - "The chart indicates that the curve moves downward after the short end, so the interpretable takeaway is the shape of the discount curve, not the raw number of plotted points."
 - "The source widget is configured, but the user-facing table is empty, so the workspace does not currently support a business conclusion from the displayed data."
 - "This transform widget only prepares the dataset. The answer to the user's question comes from the downstream chart, which shows the filtered result."
@@ -202,7 +202,7 @@ The default goal is not to describe the dashboard mechanically. The goal is to e
 
 Prefer answers like:
 
-- "The workspace is showing the current composition of the portfolio, so the relevant interpretation is concentration by holding, not just the fact that a table exists."
+- "The workspace is showing the current composition of the dataset, so the relevant interpretation is concentration by holding, not just the fact that a table exists."
 - "The dashboard is answering a pricing question through the downstream chart, which shows the resulting curve behavior. The transform and source widgets are only intermediate steps."
 - "This workspace can answer whether the strategy is long or short a given exposure, but it cannot answer why the position was created because no execution or rationale data is shown."
 

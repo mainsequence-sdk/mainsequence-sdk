@@ -31,8 +31,8 @@ Example:
 ["time_index", "account_uid", "unique_identifier"]
 ```
 
-This is not a VAM-only special case. Account holdings are one example of the
-normal shape: a timestamped table with a higher-dimensional identity coordinate.
+This is not a domain-specific special case. Higher-dimensional identity coordinates
+are a normal timestamped table shape.
 
 Server-to-client naming:
 
@@ -63,7 +63,6 @@ The relevant client-side model surface is concentrated in:
 - `mainsequence/tdag/data_nodes/`
 - `mainsequence/tdag/base_persist_managers.py`
 - `mainsequence/client/data_sources_interfaces/`
-- `mainsequence/portfolios/`
 
 The update flow today is:
 
@@ -226,8 +225,8 @@ limit_update_time: datetime.datetime | None
 is_backfill: bool
 ```
 
-Market asset scope is not part of the generic `UpdateStatistics` field
-contract. Asset-scoped behavior belongs in `MarketDataNode`.
+Domain-specific scope is not part of the generic `UpdateStatistics` field
+contract. Runtime-specific narrowing belongs outside the core table contract.
 
 `max_time_index_value` is a scalar projection of
 `global_index_progress["max"]`. It is retained because many producers already
@@ -665,7 +664,7 @@ Positive:
 
 - DataNodes can represent timestamped tables with any number of identity
   dimensions.
-- Update progress becomes generic and usable for account, portfolio, strategy,
+- Update progress becomes generic and usable for account, strategy,
   venue, asset, or other coordinate shapes.
 - The uniqueness contract becomes unambiguous: the full time-first index tuple.
 - Tail delete and latest-observation lookups can be scoped to full coordinates
@@ -751,21 +750,6 @@ That means the DataNode helper rename cannot be done blindly. Either:
 2. keep `get_chunk_stats()` as a `LEGACY_COMPAT` wrapper until SimpleTable is
    migrated.
 
-### Portfolios And Instruments
-
-Affected files include:
-
-- `mainsequence/portfolios/data_nodes/signal_weights.py`
-- `mainsequence/portfolios/contrib/prices/data_nodes.py`
-- `mainsequence/portfolios/contrib/signals/market_cap.py`
-- `mainsequence/portfolios/contrib/signals/portfolio_replicator.py`
-- `mainsequence/portfolios/utils.py`
-- `mainsequence/instruments/data_interface/data_interface.py`
-
-These callers currently read `asset_time_statistics` or construct
-`unique_identifier_range_map` directly. For two-index market data this remains a
-valid legacy shape, but new code should move to generic coordinate helpers.
-
 ### CLI And Generated References
 
 Affected CLI surface:
@@ -784,9 +768,6 @@ Docs currently encode the old two-shape model in user-facing rules:
 - `docs/tutorial/multi_index_columns_working_with_assets.md`
 - `docs/knowledge/data_nodes.md`
 - `docs/tutorial/dashboards/streamlit/streamlit_integration_1.md`
-- `docs/tutorial/markets_tutorial/markets_equities_with_algoseek.md`
-- Portfolios knowledge/tutorial pages that describe signal or portfolio indexes as
-  only `(time_index, unique_identifier)`
 
 These need a careful rewrite after SDK behavior lands. The docs should teach:
 
@@ -910,8 +891,6 @@ runtime callers are migrated around backend-bound API payloads.
 
 - [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
 - [x] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
-- [x] Audit and migrate `mainsequence/portfolios/`.
-- [x] Audit and migrate `mainsequence/instruments/`.
 - [x] Audit `mainsequence/client/models_simple_tables.py` for the shared chunk
    stats helper dependency.
 - [x] Replace direct reads of `asset_time_statistics` with canonical helper calls
@@ -948,18 +927,12 @@ runtime callers are migrated around backend-bound API payloads.
 - [x] Update `docs/knowledge/data_nodes.md` with a new section on
    multidimensional identity dimensions, canonical update stats, generic
    dimension reads, and coordinate-scoped tail delete.
-- [x] Update dashboard and market tutorials that pass `unique_identifier_list` or
+- [x] Update dashboard tutorials that pass `unique_identifier_list` or
    `unique_identifier_range_map` so they use canonical `dimension_filters` and
    `dimension_range_map` syntax instead. Do not document the old aliases as the
    tutorial path.
-- [x] Update Portfolios docs that describe portfolio or signal indexes. Keep
-   `(time_index, unique_identifier)` where it is still the actual contract, but
-   remove language implying it is the only legal DataNode shape.
 - [x] Update examples and generated snippets that say DataNode MultiIndex tables
    can only have two levels.
-- [x] Add at least one tutorial or knowledge example for a three-index table that
-   uses the account DataNodes in `mainsequence.markets.accounts.data_nodes`,
-   with index names such as `["time_index", "account_uid", "unique_identifier"]`.
 - [x] Add a final tutorial document called `DataNode Migrations` that explains
    this multidimensional DataNode migration and the concrete user code changes
    required in update-statistics handling, table reads, latest reads, tail

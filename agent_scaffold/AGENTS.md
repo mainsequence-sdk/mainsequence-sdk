@@ -116,7 +116,7 @@ Delegation rules:
 ## Main Sequence Source-Of-Truth Rule
 
 For any task involving Main Sequence code, CLI usage, DataNodes, orchestration, jobs, dashboards,
-agents, releases, markets, assets, portfolios, instruments, artifacts, RBAC, or platform
+agents, releases, artifacts, RBAC, or platform
 validation, always consult the latest relevant Main Sequence documentation before acting.
 
 Rules:
@@ -189,14 +189,8 @@ Typical routing:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC, sharing, constants, secrets, and access verification:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- assets, public asset registration, custom assets, asset categories, and translation tables:
-  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - dashboards:
   `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
-- portfolios and Virtual Fund Builder:
-  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
-- instruments and pricing:
-  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 
 ## Mandatory Startup Sequence
 
@@ -270,8 +264,7 @@ At minimum, verify relevant:
 - job runs and logs
 - project images
 - dashboard or agent resources/releases
-- assets
-- portfolios
+- data assets
 - related platform objects used by the project
 
 Typical verification commands:

@@ -36,7 +36,7 @@ This skill must not claim ownership of:
 - Command Center payload design
 - job and release configuration semantics
 - RBAC semantics
-- market, VFB, dashboard, or pricing semantics
+- dashboard, pricing, or other domain-specific semantics
 
 This skill maintains project-state files. It does not own domain implementation rules.
 
@@ -60,12 +60,6 @@ This skill maintains project-state files. It does not own domain implementation 
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- assets and translation tables:
-  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
-- Virtual Fund Builder:
-  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
-- instruments and pricing:
-  `.agents/skills/mainsequence/markets_platform/instruments_and_pricing/SKILL.md`
 - Streamlit dashboards:
   `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 

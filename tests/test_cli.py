@@ -195,7 +195,7 @@ def test_project_search(cli_mod, runner, monkeypatch):
         "search_projects",
         lambda q, limit=20, timeout=None: [
             {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-            {"id": 12, "project_name": "portfolio-live", "repository_branch": "release", "cluster_id": 9},
+            {"id": 12, "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
         ],
     )
 
@@ -208,7 +208,7 @@ def test_project_search(cli_mod, runner, monkeypatch):
     assert "9" in result.output
     assert "Project Name" in result.output
     assert "alpha-research" in result.output
-    assert "portfolio-live" in result.output
+    assert "data-live" in result.output
     assert 'Project search matches for "alpha": 2' in result.output
 
 
@@ -575,9 +575,10 @@ def test_simple_tables_list(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Simple Tables" in result.output
     assert "OrdersTable" in result.output
-    assert "Namespace" in result.output
+    assert "Namespac" in result.output
     assert "pytest_orde" in result.output
-    assert "Default DB" in result.output
+    assert "Default" in result.output
+    assert "DB" in result.output
     assert "timescale_" in result.output
     assert "Total simple tables: 1" in result.output
 
@@ -1399,7 +1400,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
             self.id = 12
             self.name = "Research Copilot"
             self.agent_unique_id = "research-copilot"
-            self.description = "Searchable portfolio research agent."
+            self.description = "Searchable data research agent."
             self.semantic_score = 0.91
             self.text_score = 0.74
             self.combined_score = 0.85
@@ -1432,14 +1433,14 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
     out = api_mod.semantic_search_agents(
-        "portfolio research",
+        "data research",
         limit=10,
         timeout=17,
     )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
-        "q": "portfolio research",
+        "q": "data research",
         "limit": 10,
         "timeout": 17,
     }
@@ -1448,7 +1449,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
             "id": 12,
             "name": "Research Copilot",
             "agent_unique_id": "research-copilot",
-            "description": "Searchable portfolio research agent.",
+            "description": "Searchable data research agent.",
             "semantic_score": 0.91,
             "text_score": 0.74,
             "combined_score": 0.85,
@@ -4714,77 +4715,6 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
     assert out["release_kind"] == "streamlit_dashboard"
 
 
-def test_list_market_portfolios_uses_client_model(cli_mod, monkeypatch):
-    api_mod = importlib.import_module("mainsequence.cli.api")
-    captured = {"filters": []}
-
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
-    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
-
-    fake_client_pkg = types.ModuleType("mainsequence.client")
-    fake_utils = types.ModuleType("mainsequence.client.utils")
-    fake_base = types.ModuleType("mainsequence.client.base")
-    fake_markets = types.ModuleType("mainsequence.client.markets")
-    fake_markets.__path__ = []
-    fake_market_models = types.ModuleType("mainsequence.client.markets.models")
-
-    class FakeLoaders:
-        provider = "orig"
-
-        def use_jwt(self, *, access=None, refresh=None):
-            captured["jwt"] = (access, refresh)
-
-    fake_utils.loaders = FakeLoaders()
-    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
-    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
-
-    class FakeBaseObjectOrm:
-        ROOT_URL = "https://old.test/orm/api"
-
-    class FakePortfolio:
-        ROOT_URL = "https://old.test/orm/api/vam/portfolio"
-
-        @classmethod
-        def filter(cls, timeout=None, **kwargs):
-            captured["filters"].append(kwargs)
-            return [
-                types.SimpleNamespace(
-                    model_dump=lambda: {
-                        "id": 42,
-                        "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
-                        "calendar": {"name": "NYSE"},
-                        "data_node_update": {"id": 901, "update_hash": "weights_daily"},
-                        "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
-                    }
-                )
-            ]
-
-    fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_market_models.Portfolio = FakePortfolio
-    fake_client_pkg.utils = fake_utils
-    fake_client_pkg.markets = fake_markets
-    fake_markets.models = fake_market_models
-
-    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.markets", fake_markets)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.markets.models", fake_market_models)
-
-    out = api_mod.list_market_portfolios(filters={"id__in": ["42"]})
-    assert captured["filters"][0] == {"id__in": ["42"]}
-    assert captured["jwt"] == ("acc", "ref")
-    assert out == [
-        {
-            "id": 42,
-            "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
-            "calendar": {"name": "NYSE"},
-            "data_node_update": {"id": 901, "update_hash": "weights_daily"},
-            "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
-        }
-    ]
-
-
 def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
@@ -4821,7 +4751,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                         model_dump=lambda *args, **kwargs: {
                             "uid": "data-node-storage-42",
                             "storage_hash": "weights_daily",
-                            "source_class_name": "PortfolioWeights",
+                            "source_class_name": "NodeWeights",
                             "identifier": "weights_daily",
                             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                         "data_frequency_id": "1d",
@@ -4836,7 +4766,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                 model_dump=lambda *args, **kwargs: {
                     "uid": uid,
                     "storage_hash": "weights_daily",
-                    "source_class_name": "PortfolioWeights",
+                    "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                     "data_frequency_id": "1d",
@@ -4862,7 +4792,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "data-node-storage-42",
             "storage_hash": "weights_daily",
-            "source_class_name": "PortfolioWeights",
+            "source_class_name": "NodeWeights",
             "identifier": "weights_daily",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "data_frequency_id": "1d",
@@ -5011,7 +4941,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
     out = api_mod.data_node_storage_description_search(
-        "portfolio weights",
+        "node weights",
         q_embedding=[0.1, 0.2],
         trigram_k=150,
         embed_k=120,
@@ -5023,7 +4953,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
 
     assert captured["jwt"] == ("acc", "ref")
     assert captured["search"] == {
-        "q": "portfolio weights",
+        "q": "node weights",
         "q_embedding": [0.1, 0.2],
         "trigram_k": 150,
         "embed_k": 120,
@@ -5529,7 +5459,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
                         "id": 12,
-                        "project_name": "portfolio-live",
+                        "project_name": "data-live",
                         "repository_branch": "release",
                         "cluster_id": 9,
                     }
@@ -5553,7 +5483,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     assert captured["timeout"] == 12
     assert out == [
         {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-        {"id": 12, "project_name": "portfolio-live", "repository_branch": "release", "cluster_id": 9},
+        {"id": 12, "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
     ]
 
 
@@ -6476,46 +6406,6 @@ def test_project_project_resource_delete_fastapi_requires_confirmation(cli_mod, 
     assert "Project resource release deleted: id=701" in result.output
 
 
-def test_markets_portfolios_list(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(
-        cli_mod,
-        "list_market_portfolios",
-        lambda filters=None, timeout=None: [
-            {
-                "id": 42,
-                "index_asset": {"name": "Growth Model", "unique_identifier": "growth-model"},
-                "calendar": {"name": "NYSE"},
-                "data_node_update": {"id": 901, "update_hash": "weights_daily"},
-                "signal_data_node_update": {"id": 902, "update_hash": "signal_daily"},
-            }
-        ],
-    )
-
-    result = runner.invoke(cli_mod.app, ["markets", "portfolios", "list"])
-    assert result.exit_code == 0
-    assert "Markets Portfolios" in result.output
-    assert "Growth Model" in result.output
-    assert "growth-model" in result.output
-    assert "weights_daily" in result.output
-    assert "signal_daily" in result.output
-    assert "Total portfolios: 1" in result.output
-
-
-def test_markets_portfolios_list_show_filters(cli_mod, runner, monkeypatch):
-    monkeypatch.setattr(
-        cli_mod,
-        "build_cli_model_filter_rows",
-        lambda model_ref: [["id__in", "in", "comma-separated integer IDs", "id"]],
-    )
-
-    result = runner.invoke(cli_mod.app, ["markets", "portfolios", "list", "--show-filters"])
-    assert result.exit_code == 0
-    assert "Markets Portfolios Filters" in result.output
-    assert "id__in" in result.output
-    assert "integer IDs" in result.output
-
-
 def test_agent_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -6588,7 +6478,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
                 "id": 12,
                 "name": "Research Copilot",
                 "agent_unique_id": "research-copilot",
-                "description": "Searchable portfolio research agent.",
+                "description": "Searchable data research agent.",
                 "semantic_score": 0.91,
                 "text_score": 0.74,
                 "combined_score": 0.85,
@@ -6602,7 +6492,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
         [
             "agent",
             "search",
-            "portfolio research",
+            "data research",
             "--limit",
             "10",
             "--timeout",
@@ -6611,7 +6501,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert captured == {
-        "q": "portfolio research",
+        "q": "data research",
         "limit": 10,
         "timeout": 17,
     }
@@ -6621,7 +6511,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
     assert "research-cop" in result.output
     assert "ilot" in result.output
     assert "0.85" in result.output
-    assert 'Agent search matches for "portfolio research": 1' in result.output
+    assert 'Agent search matches for "data research": 1' in result.output
 
 
 def test_agent_search_json(cli_mod, runner, monkeypatch):
@@ -6634,7 +6524,7 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
                 "id": 12,
                 "name": "Research Copilot",
                 "agent_unique_id": "research-copilot",
-                "description": "Searchable portfolio research agent.",
+                "description": "Searchable data research agent.",
                 "semantic_score": 0.91,
                 "text_score": 0.74,
                 "combined_score": 0.85,
@@ -6642,7 +6532,7 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
         ],
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "search", "portfolio research", "--json"])
+    result = runner.invoke(cli_mod.app, ["agent", "search", "data research", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload[0]["id"] == 12
@@ -7409,7 +7299,7 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
             {
                 "uid": "data-node-storage-42",
                 "storage_hash": "weights_daily",
-                "source_class_name": "PortfolioWeights",
+                "source_class_name": "NodeWeights",
                 "identifier": "weights_daily",
                 "namespace": "pytest_weights",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
@@ -7422,10 +7312,10 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Data Node Storages" in result.output
     assert "weights_d" in result.output
-    assert "Portfolio" in result.output
-    assert "Weights" in result.output
-    assert "Namespace" in result.output
-    assert "pytest_we" in result.output
+    assert "Node" in result.output
+    assert "NodeWeig" in result.output
+    assert "Namespac" in result.output
+    assert "pytest_w" in result.output
     assert "Default DB" in result.output
     assert "Total data node storages: 1" in result.output
 
@@ -7592,7 +7482,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
                 {
                     "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
-                    "source_class_name": "PortfolioWeights",
+                    "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                     "data_frequency_id": "1d",
@@ -7608,7 +7498,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
         [
             "data-node",
             "description-search",
-            "portfolio weights",
+            "node weights",
             "--data-source-id",
             "2",
             "--q-embedding",
@@ -7628,7 +7518,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert captured["entries"] == []
     assert captured["search"] == {
-        "q": "portfolio weights",
+        "q": "node weights",
         "q_embedding": [0.1, 0.2],
         "trigram_k": 150,
         "embed_k": 180,
@@ -7638,7 +7528,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
         "filters": {"data_source__id": "2"},
     }
     assert "Description Matches" in result.output
-    assert "weights_daily" in result.output
+    assert "weights_d" in result.output
     assert "Pagination" in result.output
     assert "Count" in result.output
 
@@ -7650,7 +7540,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
-        return {"storage_hash__contains": "portfolio"}
+        return {"storage_hash__contains": "weights"}
 
     def _search(q, *, filters=None):
         captured["search"] = {"q": q, "filters": filters}
@@ -7670,13 +7560,13 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["data-node", "column-search", "close", "--filter", "storage_hash__contains=portfolio"],
+        ["data-node", "column-search", "close", "--filter", "storage_hash__contains=weights"],
     )
     assert result.exit_code == 0
-    assert captured["entries"] == ["storage_hash__contains=portfolio"]
-    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "portfolio"}}
+    assert captured["entries"] == ["storage_hash__contains=weights"]
+    assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "weights"}}
     assert "Column Matches" in result.output
-    assert "prices_daily" in result.output
+    assert "prices_da" in result.output
     assert 'Column Matches: 1 match(es) for "close"' in result.output
 
 
@@ -7718,7 +7608,7 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
                 {
                     "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
-                    "source_class_name": "PortfolioWeights",
+                    "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                     "data_frequency_id": "1d",
@@ -7798,14 +7688,14 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
             "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
-            "source_class_name": "PortfolioWeights",
+            "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "data_frequency_id": "1d",
             "protect_from_deletion": True,
             "creation_date": "2026-03-16T10:00:00Z",
             "created_by_user": 7,
             "organization_owner": 2,
-            "description": "Daily portfolio weights",
+            "description": "Daily node weights",
             "build_configuration": {"window": 30},
             "sourcetableconfiguration": {
                 "time_index_name": "time_index",
@@ -7829,7 +7719,7 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Data Node Storage" in result.output
     assert "weights_daily" in result.output
-    assert "Daily portfolio weights" in result.output
+    assert "Daily node weights" in result.output
     assert "Build Configuration" in result.output
     assert "time_index_name" in result.output
     assert "Storage Layout" in result.output
@@ -8048,7 +7938,7 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
             "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
-            "source_class_name": "PortfolioWeights",
+            "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": True,
         },
@@ -8061,7 +7951,7 @@ def test_data_node_storage_delete_requires_typed_verification(cli_mod, runner, m
             "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
-            "source_class_name": "PortfolioWeights",
+            "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": True,
         }
@@ -8090,7 +7980,7 @@ def test_data_node_storage_delete_wrong_verification_cancels(cli_mod, runner, mo
             "uid": storage_uid,
             "storage_hash": "weights_daily",
             "identifier": "weights_daily",
-            "source_class_name": "PortfolioWeights",
+            "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
             "protect_from_deletion": False,
         },

@@ -1,4 +1,3 @@
-import ast
 import inspect
 import os
 from pathlib import Path
@@ -78,7 +77,7 @@ def test_data_access_mixin_uses_explicit_dimension_filters(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
 
     result = mixin.get_df_between_dates(
-        dimension_filters={"instrument_uid": ["BTC", "ETH"]},
+        dimension_filters={"entity_uid": ["BTC", "ETH"]},
     )
 
     assert result == "ok"
@@ -88,7 +87,7 @@ def test_data_access_mixin_uses_explicit_dimension_filters(monkeypatch):
             "end_date": None,
             "great_or_equal": True,
             "less_or_equal": True,
-            "dimension_filters": {"instrument_uid": ["BTC", "ETH"]},
+            "dimension_filters": {"entity_uid": ["BTC", "ETH"]},
             "index_coordinates": None,
             "dimension_range_map": None,
             "columns": None,
@@ -100,7 +99,7 @@ def test_data_access_mixin_uses_explicit_dimension_range_map(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
 
     dimension_range_map = [
-        {"coordinate": {"instrument_uid": "BTC"}, "start_date": "2026-05-01T00:00:00Z"}
+        {"coordinate": {"entity_uid": "BTC"}, "start_date": "2026-05-01T00:00:00Z"}
     ]
     result = mixin.get_df_between_dates(dimension_range_map=dimension_range_map)
 
@@ -152,19 +151,8 @@ def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
     assert not hasattr(data_nodes, "last_update_per_unique_identifier")
 
 
-def test_tdag_does_not_import_market_layer():
-    forbidden_prefixes = ("mainsequence.markets", "mainsequence.client.markets")
-    for path in (PROJECT_ROOT / "mainsequence" / "tdag").rglob("*.py"):
-        tree = ast.parse(path.read_text(), filename=str(path))
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import):
-                for alias in node.names:
-                    assert not alias.name.startswith(forbidden_prefixes), str(path)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                assert not node.module.startswith(forbidden_prefixes), str(path)
 
-
-def test_core_tdag_public_api_has_no_market_asset_compatibility_vocabulary():
+def test_core_tdag_public_api_has_no_domain_asset_compatibility_vocabulary():
     forbidden = (
         "asset_list",
         "get_asset_list",

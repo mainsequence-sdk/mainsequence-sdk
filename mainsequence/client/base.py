@@ -79,28 +79,6 @@ class BaseObjectOrm:
 
     END_POINTS = {
         "User": "user",
-        # VAM
-        "Portfolio": "assets/target_portfolio",
-        "PortfolioGroup": "assets/portfolio_group",
-        "Asset": "assets/asset",
-        "IndexAsset": "assets/index_asset",
-        "VirtualFund": "assets/virtualfund",
-        "OrderManager": "assets/order_manager",
-        "Order": "assets/order",
-        "MarketOrder": "assets/market_order",
-        "LimitOrder": "assets/limit_order",
-        "OrderEvent": "assets/order_event",
-        "Account": "assets/account",
-        "Trade": "assets/trade",
-        "VirtualFundHistoricalHoldings": "assets/historical_holdings",
-        "ExecutionPrediction": "assets/execution_predictions",
-        "ExecutionPositions": "assets/execution_positions",
-        "HistoricalWeights": "assets/portfolio_weights",
-        "PortfolioIndexAsset": "assets/portfolio_index_asset",
-        "HistoricalBarsSource": "data_sources/historical-bars-source",
-        "MarketsTimeSeriesDetails": "data_sources/markets-time-series-details",
-        "AssetCategory": "assets/asset-category",
-        "InstrumentsConfiguration":"assets/instruments-configuration",
         # TDAG
         "Scheduler": "ts_manager/scheduler",
         "MultiIndexMetadata": "orm/multi_index_metadata",

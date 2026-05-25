@@ -120,7 +120,7 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
-        labels=["market-data"],
+        labels=["vendor-data"],
     )
     simple_table_storage = SimpleTableStorage(
         id=15,
@@ -133,7 +133,7 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
 
     assert workspace.labels == ["desk"]
     assert project.labels == ["research"]
-    assert data_node_storage.labels == ["market-data"]
+    assert data_node_storage.labels == ["vendor-data"]
     assert simple_table_storage.labels == ["reference-data"]
 
 

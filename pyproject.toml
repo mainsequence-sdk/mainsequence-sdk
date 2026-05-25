@@ -46,20 +46,6 @@ dependencies = [
   "duckdb",
   "pyarrow",
 ]
-portfolios = [
-  "docstring-parser",
-  "joblib",
-  "pandas-market-calendars",
-  "scikit-learn",
-]
-instruments = [
-  "matplotlib",
-  "QuantLib",
-]
-"instruments-streamlit" = [
-  "streamlit",
-  "streamlit-aggrid",
-]
 # Optional headless browser support for future Command Center workspace/web snapshots.
 # Keep this out of the default SDK install because most users do not need Playwright.
 "workspace-snapshots" = [

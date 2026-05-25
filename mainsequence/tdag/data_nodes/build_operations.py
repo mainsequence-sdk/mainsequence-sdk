@@ -101,7 +101,7 @@ def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> An
 def _(value, pickle_ts: bool):
     new_dict = json.loads(value.model_dump_json())
     if hasattr(value, "unique_identifier"):
-        # Generic SDK object identity, not a market-asset contract.
+        # Generic SDK object identity.
         new_dict["unique_identifier"] = value.unique_identifier
     return new_dict
 
@@ -684,7 +684,7 @@ def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> Da
     """
     ts = load_from_pickle(pickle_path)
     ts._set_state_with_sessions(
-        graph_depth=0, graph_depth_limit=graph_depth_limit, include_vam_client_objects=False
+        graph_depth=0, graph_depth_limit=graph_depth_limit, include_client_objects=False
     )
     return ts
 

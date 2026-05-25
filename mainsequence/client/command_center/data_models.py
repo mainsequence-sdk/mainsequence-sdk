@@ -261,7 +261,7 @@ class TabularTimeSeriesMetaResponse(ContractBaseModel):
     )
     calendar: str | None = Field(
         default=None,
-        description="Optional calendar identifier for market or business-time data.",
+        description="Optional calendar identifier for business-time data.",
     )
     gapPolicy: TabularTimeSeriesGapPolicy | None = Field(
         default=None,

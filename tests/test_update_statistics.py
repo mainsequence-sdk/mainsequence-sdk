@@ -130,7 +130,7 @@ def test_update_statistics_scopes_by_generic_identity_values():
     assert scoped.get_max_time_in_update_statistics() == _dt(2)
 
 
-def test_update_statistics_has_no_market_asset_scoping_api():
+def test_update_statistics_has_no_domain_asset_scoping_api():
     assert not hasattr(UpdateStatistics, "update_assets")
     assert not hasattr(UpdateStatistics, "asset_identifier")
     assert not hasattr(UpdateStatistics, "is_any_asset_on_fallback_date")

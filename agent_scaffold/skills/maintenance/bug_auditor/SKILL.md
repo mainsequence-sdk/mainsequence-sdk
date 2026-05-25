@@ -62,8 +62,8 @@ This skill audits. It does not implement by default.
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and access issues:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- assets, VFB, pricing, or dashboard domain issues:
-  use the relevant domain skill under `.agents/skills/mainsequence/markets_platform/` or `.agents/skills/mainsequence/dashboards/`
+- dashboard domain issues:
+  `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 
 ## Read First
 

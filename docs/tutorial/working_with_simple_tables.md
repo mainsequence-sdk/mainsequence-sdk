@@ -34,7 +34,7 @@ Good examples:
 
 - customers
 - counterparties
-- portfolios
+- account groups
 - mapping tables
 - balance snapshots where time is just another column
 

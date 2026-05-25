@@ -137,7 +137,6 @@ from .api import (
     list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
-    list_market_portfolios,
     list_organization_teams,
     list_project_base_images,
     list_project_images,
@@ -327,9 +326,7 @@ connection_type = typer.Typer(help="Connection type commands")
 connection = typer.Typer(help="Connection commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
-markets = typer.Typer(help="Markets commands")
 data_node_storage_group = typer.Typer(help="Data node commands")
-markets_portfolios_group = typer.Typer(help="Markets portfolio commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
 project_project_resource_group = typer.Typer(help="Project resource commands")
@@ -370,12 +367,10 @@ app.add_typer(connection, name="connection", hidden=True)
 app.add_typer(connection, name="connections", hidden=True)
 app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
-app.add_typer(markets, name="markets")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
 app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)
 app.add_typer(data_node_storage_group, name="data_node_storage", hidden=True)
-markets.add_typer(markets_portfolios_group, name="portfolios")
 app.add_typer(project, name="project")
 project.add_typer(project_list_group, name="list")
 project.add_typer(project_project_resource_group, name="project_resource")
@@ -426,7 +421,6 @@ REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.Registere
 CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionType"
 CONNECTION_INSTANCE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionInstance"
 TEAM_MODEL_REF = "mainsequence.client.models_user.Team"
-PORTFOLIO_MODEL_REF = "mainsequence.markets.client.models.Portfolio"
 JOB_RUN_STATUS_PENDING = "PENDING"
 JOB_RUN_STATUS_RUNNING = "RUNNING"
 RESOURCE_RELEASE_RESOURCE_TYPE_MAP = {
@@ -1660,25 +1654,6 @@ def _format_nested_summary(
     if value is None:
         return "-"
     return str(value)
-
-
-def _format_portfolio_label(portfolio: dict) -> str:
-    index_asset = portfolio.get("index_asset")
-    if isinstance(index_asset, dict):
-        unique_identifier = str(index_asset.get("unique_identifier") or "").strip()
-        name = str(index_asset.get("name") or "").strip()
-        if name and unique_identifier and name != unique_identifier:
-            return f"{name} ({unique_identifier})"
-        if name:
-            return name
-        if unique_identifier:
-            return unique_identifier
-        if index_asset.get("id") is not None:
-            return str(index_asset.get("id"))
-    elif index_asset is not None:
-        return str(index_asset)
-
-    return str(portfolio.get("id") or "-")
 
 
 def _format_data_node_storage_data_source(value) -> str:
@@ -3134,63 +3109,6 @@ def sdk_latest():
         success(f"Latest SDK (GitHub): {v}")
     else:
         warn("Latest SDK version unavailable.")
-
-
-# ---------- markets group ----------
-
-
-def _markets_portfolios_list_impl(
-    timeout: int | None,
-    filter_entries: list[str] | None,
-    show_filters: bool,
-) -> None:
-    filters = _resolve_cli_list_filters(
-        model_ref=PORTFOLIO_MODEL_REF,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
-        command_label="Markets Portfolios",
-    )
-    _require_login()
-
-    try:
-        portfolios = list_market_portfolios(timeout=timeout, filters=filters)
-    except ApiError as e:
-        error(f"Markets portfolios fetch failed: {e}")
-        raise typer.Exit(1) from e
-
-    if _emit_json(portfolios):
-        return
-
-    rows: list[list[str]] = []
-    for portfolio in portfolios:
-        rows.append(
-            [
-                str(portfolio.get("id") or "-"),
-                _format_portfolio_label(portfolio),
-                _format_nested_summary(
-                    portfolio.get("calendar"),
-                    preferred_fields=("name", "display_name", "id"),
-                ),
-                _format_nested_summary(
-                    portfolio.get("data_node_update"),
-                    preferred_fields=("update_hash", "id"),
-                ),
-                _format_nested_summary(
-                    portfolio.get("signal_data_node_update"),
-                    preferred_fields=("update_hash", "id"),
-                ),
-            ]
-        )
-
-    if rows:
-        print_table(
-            "Markets Portfolios",
-            ["ID", "Portfolio", "Calendar", "Data Node Update", "Signal Update"],
-            rows,
-        )
-    else:
-        info("No markets portfolios.")
-    info(f"Total portfolios: {len(portfolios)}")
 
 
 def _constant_category(name: object) -> str:
@@ -5811,7 +5729,7 @@ def agent_search_cmd(
     Examples
     --------
     ```bash
-    mainsequence agent search "portfolio research copilot"
+    mainsequence agent search "data research copilot"
     mainsequence agent search "pricing assistant" --limit 10
     ```
     """
@@ -7087,8 +7005,8 @@ def data_node_storage_search_cmd(
     --------
     ```bash
     mainsequence data_node search "close price"
-    mainsequence data-node search "portfolio weights" --mode description --data-source-id 2
-    mainsequence data-node search "portfolio weights" --q-embedding 0.1,0.2,0.3
+    mainsequence data-node search "node weights" --mode description --data-source-id 2
+    mainsequence data-node search "node weights" --q-embedding 0.1,0.2,0.3
     ```
     """
     normalized_mode = (mode or "").strip().lower()
@@ -7247,7 +7165,7 @@ def data_node_storage_column_search_cmd(
     --------
     ```bash
     mainsequence data-node column-search weight
-    mainsequence data-node column-search close --filter storage_hash__contains=portfolio
+    mainsequence data-node column-search close --filter storage_hash__contains=weights
     ```
     """
     filters = _resolve_cli_list_filters(
@@ -7612,36 +7530,6 @@ def data_node_storage_remove_team_from_edit_cmd(
         object_id=storage_uid,
         team_id=team_id,
         timeout=timeout,
-    )
-
-
-@markets_portfolios_group.command("list")
-def markets_portfolios_list_cmd(
-    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
-    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
-):
-    """
-    List markets portfolios visible to the authenticated user.
-
-    Uses SDK client `Portfolio.filter()` as the single source of truth.
-
-    Parameters
-    ----------
-    timeout:
-        Request timeout in seconds.
-
-    Examples
-    --------
-    ```bash
-    mainsequence markets portfolios list
-    mainsequence markets portfolios list --timeout 60
-    ```
-    """
-    _markets_portfolios_list_impl(
-        timeout=timeout,
-        filter_entries=filter_entries,
-        show_filters=show_filters,
     )
 
 

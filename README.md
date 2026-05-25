@@ -36,8 +36,6 @@ Main package areas:
 
 - `mainsequence.tdag`: data orchestration, `DataNode`s, update workflows, and persistence
 - `mainsequence.client`: API client models for projects, jobs, data node storages, assets, sharing, and platform resources
-- `mainsequence.markets.virtualfundbuilder`: portfolio construction and portfolio time series workflows
-- `mainsequence.markets.instruments`: pricing-oriented market data and instrument tooling
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 Repository areas:
@@ -72,8 +70,6 @@ Recommended entry points:
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
   - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
-  - [Virtual Fund Builder](docs/knowledge/virtualfundbuilder/index.md)
-  - [Instruments](docs/knowledge/instruments/index.md)
 - CLI:
   - [CLI Overview](docs/cli/index.md)
 

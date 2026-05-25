@@ -23,18 +23,6 @@ That means:
 
 The SDK should provide platform capabilities. The application should own presentation code.
 
-## Instrument forms
-
-Model-driven Streamlit forms for instrument configuration live under `mainsequence.markets.instruments.streamlit`.
-
-Install the optional dependencies before using them:
-
-```bash
-pip install "mainsequence[instruments-streamlit]"
-```
-
-See [Instrument Forms](instrument_forms.md).
-
 ## Tutorial
 
 The tutorial Streamlit chapters show how to build and deploy a dashboard using plain Streamlit app code plus SDK client calls:

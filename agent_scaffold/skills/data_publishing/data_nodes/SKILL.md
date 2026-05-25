@@ -37,7 +37,7 @@ This skill must not claim ownership of:
 - workspace/widget layout payloads
 - job creation, scheduling, image pinning, or release creation
 - RBAC or sharing policy
-- portfolio strategy semantics
+- domain strategy semantics
 
 If the task depends on one of those areas, route it explicitly instead of guessing.
 
@@ -59,17 +59,10 @@ If the user is still in the discovery process and does not yet know what data ex
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - RBAC and sharing:
   `.agents/skills/mainsequence/platform_operations/access_control_and_sharing/SKILL.md`
-- Asset categories and translation tables as standalone market concepts:
-  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
-- VFB semantics:
-  `.agents/skills/mainsequence/markets_platform/virtualfundbuilder/SKILL.md`
-
 ## Read First
 
 1. `docs/tutorial/creating_a_simple_data_node.md`
-2. `docs/tutorial/multi_index_columns_working_with_assets.md`
-3. `docs/knowledge/data_nodes.md`
-4. `docs/knowledge/markets/assets.md` when the node is asset-indexed
+2. `docs/knowledge/data_nodes.md`
 
 ## Inputs This Skill Needs
 

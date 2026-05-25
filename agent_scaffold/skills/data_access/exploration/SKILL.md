@@ -55,8 +55,6 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
   `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
 - Command Center surfaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
-- market-specific object discovery:
-  `.agents/skills/mainsequence/markets_platform/assets_and_translation/SKILL.md`
 - project-state reconciliation after exploration:
   `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - blocker and failure analysis:

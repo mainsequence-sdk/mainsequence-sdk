@@ -309,76 +309,11 @@ range_map = update_statistics.get_dimension_range_map_great_or_equal(
 last_observation = self.get_df_between_dates(dimension_range_map=range_map)
 ```
 
-### 6.3 MultiIndex asset pattern
-
-- use `unique_identifier` as the asset identity dimension
-- compute per-asset start using each asset's last update
-- include lookback when rolling features need history
-- batch fetch upstream data once when possible
-- return only new rows (or as close as practical)
-
-### 6.4 Three-index account holdings example
-
-The SDK account holdings DataNodes define a real three-index table contract in
-`mainsequence.markets.accounts.data_nodes`.
-
-```python
-from mainsequence.markets.accounts.data_nodes import (
-    ACCOUNT_HOLDINGS_INDEX_NAMES,
-    AccountHoldings,
-)
-
-config = AccountHoldings.default_config(
-    identifier="broker.account_holdings",
-    description="Broker account holdings imported from daily files.",
-)
-assert config.index_names == ACCOUNT_HOLDINGS_INDEX_NAMES == [
-    "time_index",
-    "account_uid",
-    "unique_identifier",
-]
-
-
-class BrokerAccountHoldings(AccountHoldings):
-    def get_holdings_frame(self):
-        # Return a DataFrame indexed by:
-        # ["time_index", "account_uid", "unique_identifier"]
-        return self.build_schema_bootstrap_account_frame(config=self.config)
-
-
-node = BrokerAccountHoldings(config=config)
-frame = node.update()
-assert list(frame.index.names) == config.index_names
-```
-
-Consumers can scope reads and deletes by any identity dimension:
-
-```python
-storage = node.data_node_storage
-
-latest_for_account = storage.get_last_observation(
-    dimension_filters={"account_uid": ["00000000-0000-0000-0000-000000000001"]},
-)
-
-latest_for_account_asset = storage.get_last_observation(
-    index_coordinates=[
-        {
-            "account_uid": "00000000-0000-0000-0000-000000000001",
-            "unique_identifier": "BTC",
-        }
-    ],
-)
-```
-
-The important part is that account holdings are not a special VFB-only shape.
-They are the normal multidimensional DataNode contract with two identity
-dimensions after `time_index`.
-
-### 6.5 Backfills
+### 6.3 Backfills
 
 Backfills should be explicit and controlled (separate job/updater, intentional overwrite policy).
 
-### 6.6 Do not rely on implicit filtering
+### 6.4 Do not rely on implicit filtering
 
 Even if runtime filtering removes already persisted rows, you should still:
 
@@ -387,45 +322,7 @@ Even if runtime filtering removes already persisted rows, you should still:
 
 This is a cost and performance requirement.
 
-## 7) Asset discipline for 2D tables
-
-If your index is `(time_index, unique_identifier)`, `unique_identifier` should normally map to `msc.Asset.unique_identifier`.
-Use `MarketDataNode`, not plain `DataNode`, when that identity dimension is a platform market asset.
-
-Business rule:
-
-- do not emit unknown asset identifiers,
-- resolve/register assets idempotently,
-- prefer doing this in `get_asset_list()`.
-
-Minimal helper pattern:
-
-```python
-import mainsequence.client as msc
-
-
-def ensure_assets_exist(asset_uids: list[str]) -> list[msc.Asset]:
-    existing = msc.Asset.filter(unique_identifier__in=asset_uids)
-    existing_uids = {a.unique_identifier for a in existing}
-
-    missing = [uid for uid in asset_uids if uid not in existing_uids]
-    if missing:
-        payload = [
-            {"unique_identifier": uid, "snapshot": {"name": uid, "ticker": uid}}
-            for uid in missing
-        ]
-        created = msc.Asset.batch_get_or_register_custom_assets(payload)
-        return list(existing) + list(created)
-
-    return list(existing)
-```
-
-Optional but recommended for instruments use cases:
-
-- attach pricing details when relevant via
-  `asset.add_instrument_pricing_details_from_ms_instrument(...)`.
-
-## 8) DataFrame quality rules
+## 7) DataFrame quality rules
 
 Must-have rules:
 
@@ -445,7 +342,7 @@ Recommended rules:
 - replace `inf/-inf` with `NaN`
 - keep index sorted ascending
 
-## 9) Dependencies best practices
+## 8) Dependencies best practices
 
 Do:
 
@@ -458,7 +355,7 @@ Do not:
 - create dependencies inside `update()`
 - make dependency construction depend on current time or hidden env state
 
-## 10) Metadata and observability
+## 9) Metadata and observability
 
 For production nodes, implement:
 
@@ -497,7 +394,7 @@ Use them differently:
 
 - `description_search(...)` is for natural-language discovery:
   - "close price"
-  - "daily portfolio weights"
+  - "daily allocation weights"
   - "crypto funding rates"
 - `column_search(...)` is for schema-oriented discovery:
   - "close"

@@ -272,25 +272,25 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         sourcetableconfiguration=models_tdag.SourceTableConfiguration(
             related_table_uid="714",
             time_index_name="time_index",
-            index_names=["time_index", "instrument_uid"],
+            index_names=["time_index", "entity_uid"],
             column_dtypes_map={
                 "time_index": "datetime64[ns, UTC]",
-                "instrument_uid": "object",
+                "entity_uid": "object",
                 "value": "float64",
             },
             storage_layout={
                 "time_index": "time_index",
-                "identity_dimensions": ["instrument_uid"],
+                "identity_dimensions": ["entity_uid"],
             },
             physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "instrument_uid"]},
+                "uniqueness": {"columns": ["time_index", "entity_uid"]},
             },
         ),
     )
 
     result = storage.delete_after_date(
         "2026-04-01T00:00:00Z",
-        dimension_filters={"instrument_uid": ["AAPL", "MSFT"]},
+        dimension_filters={"entity_uid": ["AAPL", "MSFT"]},
         timeout=30,
     )
 
@@ -302,7 +302,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
-                "dimension_filters": {"instrument_uid": ["AAPL", "MSFT"]},
+                "dimension_filters": {"entity_uid": ["AAPL", "MSFT"]},
             }
         },
         "timeout": 30,
@@ -338,31 +338,31 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         sourcetableconfiguration=models_tdag.SourceTableConfiguration(
             related_table_uid="714",
             time_index_name="time_index",
-            index_names=["time_index", "instrument_uid"],
+            index_names=["time_index", "entity_uid"],
             column_dtypes_map={
                 "time_index": "datetime64[ns, UTC]",
-                "instrument_uid": "object",
+                "entity_uid": "object",
                 "value": "float64",
             },
             storage_layout={
                 "time_index": "time_index",
-                "identity_dimensions": ["instrument_uid"],
+                "identity_dimensions": ["entity_uid"],
             },
             physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "instrument_uid"]},
+                "uniqueness": {"columns": ["time_index", "entity_uid"]},
             },
         ),
     )
 
     storage.delete_after_date(
         datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
-        index_coordinates=[{"instrument_uid": "AAPL"}],
+        index_coordinates=[{"entity_uid": "AAPL"}],
     )
 
     assert captured["payload"] == {
         "json": {
             "after_date": "2026-04-01T00:00:00+00:00",
-            "index_coordinates": [{"instrument_uid": "AAPL"}],
+            "index_coordinates": [{"entity_uid": "AAPL"}],
         }
     }
 

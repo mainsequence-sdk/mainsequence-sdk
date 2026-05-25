@@ -221,7 +221,7 @@ Use a stable producer label so you can see what created the file:
 
 - `vector-upload-script`
 - `nightly-prices-job`
-- `portfolio-stress-dashboard`
+- `stress-dashboard`
 
 ## Common mistakes
 
@@ -249,7 +249,7 @@ The tutorial introduces Artifacts in Part 4 because that is where infrastructure
 - then you learn how code runs as jobs
 - then you learn how files can move through the same platform
 
-That keeps the flow coherent before the later market and dashboard chapters.
+That keeps the flow coherent before the later dashboard chapters.
 
 ## Related Reading
 

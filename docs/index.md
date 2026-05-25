@@ -14,7 +14,7 @@ The key idea is that you can focus on development and deployment, while the plat
 
 ### Tutorial
 
-Use the tutorial if you want a guided path from project setup to data nodes, orchestration, markets workflows, and dashboards.
+Use the tutorial if you want a guided path from project setup to data nodes, orchestration, and dashboards.
 
 The main tutorial path is intentionally CLI-only. A separate GUI tutorial will live under `docs/tutorial_gui/`.
 
@@ -39,8 +39,6 @@ Key entry points:
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
 - [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
-- [Portfolios](knowledge/portfolios/index.md)
-- [Instruments](knowledge/instruments/index.md)
 
 ### CLI
 
@@ -60,8 +58,6 @@ The SDK is organized around a few main areas:
 
 - `mainsequence.tdag`: `DataNode`s, persistence, orchestration, and update workflows
 - `mainsequence.client`: API client models for projects, jobs, tables, assets, and sharing
-- `mainsequence.markets.portfolios`: portfolio construction and portfolio time series workflows
-- `mainsequence.markets.instruments`: pricing-oriented market data and instrument tooling
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 ## If you are new here

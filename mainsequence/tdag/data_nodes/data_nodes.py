@@ -790,7 +790,7 @@ class DataNode(DataAccessMixin, ABC):
     @tracer.start_as_current_span("TS: set_state_with_sessions")
     def _set_state_with_sessions(
         self,
-        include_vam_client_objects: bool = True,
+        include_client_objects: bool = True,
         graph_depth_limit: int = 1000,
         graph_depth: int = 0,
     ) -> None:
@@ -798,7 +798,7 @@ class DataNode(DataAccessMixin, ABC):
         Sets the state of the DataNode after loading from pickle, including sessions.
 
         Args:
-            include_vam_client_objects: Whether to include VAM client objects.
+            include_client_objects: Whether to include nested client objects.
             graph_depth_limit: The depth limit for graph traversal.
             graph_depth: The current depth in the graph.
         """
@@ -827,7 +827,7 @@ class DataNode(DataAccessMixin, ABC):
         state = deserializer.deserialize_pickle_state(
             state=state,
             data_source_id=self.data_source.id,
-            include_vam_client_objects=include_vam_client_objects,
+            include_client_objects=include_client_objects,
             graph_depth_limit=graph_depth_limit,
             graph_depth=graph_depth + 1,
         )
@@ -982,7 +982,7 @@ class DataNode(DataAccessMixin, ABC):
         return self.data_node_storage.sourcetableconfiguration.get_data_updates()
 
     def _set_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
-        """Attach generic update statistics without market asset narrowing."""
+        """Attach generic update statistics."""
         self.update_statistics = update_statistics
         return update_statistics
 

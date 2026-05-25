@@ -5,7 +5,7 @@
 Use it for tables such as:
 
 - customers
-- portfolios
+- account groups
 - mappings
 - reference lists
 - balance snapshots where time is just another column

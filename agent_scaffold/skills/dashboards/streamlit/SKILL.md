@@ -1,6 +1,6 @@
 ---
 name: mainsequence-dashboards-streamlit
-description: Use this skill when the task is about building a Streamlit dashboard in a Main Sequence project. This skill owns dashboard folder structure, app-owned page bootstrapping, sidebar and session patterns, optional instrument form usage, and dashboard-specific validation rules. It does not own FastAPI APIs, Command Center workspace documents, or release orchestration semantics.
+description: Use this skill when the task is about building a Streamlit dashboard in a Main Sequence project. This skill owns dashboard folder structure, app-owned page bootstrapping, sidebar and session patterns, and dashboard-specific validation rules. It does not own FastAPI APIs, Command Center workspace documents, or release orchestration semantics.
 ---
 
 # Main Sequence Streamlit Dashboards
@@ -14,7 +14,6 @@ This skill is for:
 - dashboard folder structure
 - app-owned Streamlit page bootstrapping
 - app-owned Streamlit helpers and components
-- optional instrument form rendering through `mainsequence.markets.instruments.streamlit`
 - dashboard-side reads from platform data products
 
 ## This Skill Can Do
@@ -24,8 +23,8 @@ This skill is for:
   - `app.py`
   - `README.md`
 - choose a plain Streamlit page bootstrap using `st.set_page_config(...)`
-- review dashboard-owned helpers for asset selection, valuation date settings, and user display
-- use the instrument form factory when the dashboard edits rich Pydantic models
+- review dashboard-owned helpers for entity selection, effective date settings, and user display
+- use model-driven form helpers when the dashboard edits rich Pydantic models
 - review dashboard reads from `APIDataNode` and other platform objects from the dashboard side
 - keep dashboard implementation aligned with Main Sequence packaging and release expectations
 
@@ -60,7 +59,6 @@ This skill must not claim ownership of:
 1. `docs/tutorial/dashboards/streamlit/streamlit_integration_1.md`
 2. `docs/tutorial/dashboards/streamlit/streamlit_integration_2.md`
 3. `docs/knowledge/dashboards/streamlit/index.md`
-4. `docs/knowledge/dashboards/streamlit/instrument_forms.md`
 
 If the dashboard is being deployed or released, also read:
 
@@ -81,9 +79,9 @@ Before changing a Streamlit dashboard, collect or infer:
   - plain Streamlit only
   - app-owned helper components
 - whether the dashboard works with:
-  - assets
+  - data assets
   - valuation dates
-  - instrument configuration forms
+  - model configuration forms
 - which platform data products the dashboard reads
 
 If the dashboard root or entrypoint is unclear, stop before changing packaging-sensitive behavior.
@@ -96,7 +94,7 @@ For every non-trivial Streamlit dashboard task, decide:
 2. Does the root contain both `app.py` and `README.md`?
 3. What page setup and app-owned helper structure should the dashboard use?
 4. Which app-owned helper components should be reused instead of duplicating UI code?
-5. Does the dashboard need model-driven instrument forms?
+5. Does the dashboard need model-driven forms?
 6. Is the task really dashboard implementation, or is it actually an API, AppComponent, or release problem?
 
 ## Build Rules
@@ -146,8 +144,7 @@ Do not push producer semantics, release orchestration, or unrelated API logic in
 
 Examples:
 
-- keep asset selection and logged-user display as app-owned Streamlit helpers
-- use `mainsequence.markets.instruments.streamlit` for rich model-driven instrument forms when the optional extra is installed
+- keep logged-user display as app-owned Streamlit helpers
 - use `APIDataNode.build_from_identifier(...)` when a dashboard knows which published table it needs to read
 
 Do not push general-purpose dashboard UI helpers into the SDK.
@@ -169,7 +166,7 @@ When reviewing a Streamlit dashboard task, look for:
 - missing `README.md` next to `app.py`
 - stale imports from `mainsequence.dashboards.streamlit`
 - missing Streamlit dependencies in the dashboard project when the app imports Streamlit directly
-- hand-built model forms that should use the instrument form factory
+- hand-built model forms that should use model-driven helpers
 - dashboard code taking on API or release responsibilities
 - inconsistent page structure across a multipage app
 - dashboard logic that reads platform objects in an unclear or fragile way
@@ -182,7 +179,7 @@ Do not claim success until you have checked:
 - `README.md` exists next to `app.py`
 - pages use clear app-owned Streamlit setup
 - shared UI helper reuse is intentional and local to the dashboard project
-- instrument forms use the model-driven helpers when rich finance models are involved
+- model forms use the model-driven helpers when rich domain models are involved
 - the dashboard reads the intended published data products
 - the task did not confuse dashboard implementation with release orchestration or API design
 

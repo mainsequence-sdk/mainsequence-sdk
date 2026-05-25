@@ -377,8 +377,8 @@ replacement list.
 - [ ] Fix `SimpleTableUpdater` schema-resolution documentation in
   `table_nodes.py` so it says canonical `SimpleTableStorage.uid`, not
   `SimpleTableStorage.id`.
-- [ ] Extend VFB deterministic-hash exclusion lists to remove UID-shaped
-  backend identity keys as well as old id-shaped keys. At minimum exclude
+- [ ] Extend deterministic-hash exclusion lists to remove UID-shaped backend
+  identity keys as well as old id-shaped keys. At minimum exclude
   `storage_uid`, `update_uid`, `data_node_storage_uid`, and
   `data_node_update_uid` wherever the corresponding `*_id` keys are already
   excluded.

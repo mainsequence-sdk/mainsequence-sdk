@@ -6,7 +6,7 @@
 
 ## Introduction
 
-In this chapter, we will build a small tutorial dashboard that reads the same objects you created in the Markets chapters:
+In this chapter, we will build a small tutorial dashboard that reads normalized time-series objects:
 
 - mock fixed-income assets with pricing details
 - the simulated daily prices table
@@ -95,25 +95,6 @@ history = msc.DataNodeStorage.get_data_from_filter(request)
 
 That is the better path when the UI is assembling filters at runtime, because it gives you a safe, structured request format instead of hard-coding one read shape into dashboard code.
 
-### Why use `Asset.query(...)` in a dashboard?
-
-For the dashboard asset loader, prefer:
-
-```python
-assets = msc.Asset.query(unique_identifier__in=DEFAULT_TEST_ASSET_UIDS)
-```
-
-This comes from `mainsequence.client.markets.models.AssetMixin.query`.
-
-Why use it here:
-
-- it is POST-based, so it is safer for dashboard searches that may grow beyond a short URL
-- it accepts the same filter syntax as normal asset filters
-- it follows pagination and accumulates all pages
-- it also supports friendly aliases such as `ticker`, `name`, and `exchange_code`
-
-For very small one-off filters, `filter(...)` is still fine. But in dashboards, `query(...)` is a better default because UI-driven filters tend to grow over time.
-
 ## 2) Landing page
 
 Create `dashboards/tutorial_fixed_income_dashboard/app.py`.
@@ -201,7 +182,7 @@ If the tutorial data does not exist yet, use the landing-page button to create t
 
 This tutorial chapter stays intentionally small:
 
-- it does not re-teach portfolio construction
+- it does not re-teach domain construction
 - it does not require cloning an external dashboard repository
 - it uses plain Streamlit app code owned by the dashboard project
 - it reuses the data products already created in earlier tutorial chapters

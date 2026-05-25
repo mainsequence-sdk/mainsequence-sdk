@@ -67,8 +67,8 @@ Before producing a workspace design, collect or infer:
 - the intended users and their decisions
 - the primary data objects:
   - SimpleTables
-  - assets
-  - portfolios
+  - data assets
+  - domain records
   - jobs
   - APIs
   - agents
@@ -181,12 +181,7 @@ mainsequence cc registered_widget_type detail <WIDGET_ID> --json
 - use the registered statistic widget for KPIs, single-value summaries, status metrics, and compact numerical cards derived from a bound tabular dataset
 - use statistic widgets when the user needs an at-a-glance answer rather than a full chart or table
 - use `echarts-spec` when the visualization is non-standard, needs richer chart semantics, and a general ECharts chart is the right fit; this chart normally needs an AppComponent or API-backed upstream binding
-- use `lightweight-chart-ts-spec` when the visualization is non-standard, time-series heavy, or financial-market oriented; this chart normally needs an AppComponent or API-backed upstream binding
-
-#### Markets and portfolio views:
-
-- use market widgets such as price, positions, curve, and zero-curve widgets when the workspace is about market data, portfolio inspection, or instrument analytics
-- verify the exact market widget ids and contracts from the registry before proposing them
+- use `lightweight-chart-ts-spec` when the visualization is non-standard or time-series heavy; this chart normally needs an AppComponent or API-backed upstream binding
 
 #### Infrastructure and lineage:
 

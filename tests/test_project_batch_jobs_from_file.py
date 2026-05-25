@@ -13,11 +13,6 @@ def _load_models_helpers_module():
 
     for name in (
         "mainsequence.client.models_helpers",
-        "mainsequence.client.markets.models.accounts_and_portfolios",
-        "mainsequence.client.markets.models.assets",
-        "mainsequence.client.markets.models.core",
-        "mainsequence.client.markets.models",
-        "mainsequence.client.markets",
         "mainsequence.client.models_tdag",
         "mainsequence.client.base",
         "mainsequence.client.utils",

@@ -33,9 +33,7 @@ def get_model_class(model_class: str):
     if local_model is not None:
         return local_model
 
-    from mainsequence.markets.client.models.assets import get_model_class as get_market_model_class
-
-    return get_market_model_class(model_class)
+    raise KeyError(f"Unknown mainsequence SDK model class {model_class!r}.")
 
 
 class CrontabSchedule(BaseModel):
@@ -152,7 +150,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
     app_name: str | None = Field(
         default=None,
         description="Application name to run instead of a file-based execution path.",
-        examples=["portfolio-monitor"],
+        examples=["data-monitor"],
     )
 
     task_schedule: PeriodicTask | None = Field(

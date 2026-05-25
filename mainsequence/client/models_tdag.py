@@ -1299,148 +1299,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             timeout=timeout,
         )
 
-    def initialize_account_holdings_source_table(
-        self,
-        *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any],
-        storage_layout: dict[str, Any] | None = None,
-        open_for_everyone: bool | None = None,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Initialize an AccountHoldings source table and backend lookup indexes.
-
-        This calls the VAM domain wrapper:
-            POST /orm/api/assets/account-holdings-data-node/{uid}/initialize-source-table/
-        """
-        url = (
-            f"{type(self).ROOT_URL.rstrip('/')}/assets/account-holdings-data-node/"
-            f"{self._public_uid()}/initialize-source-table/"
-        )
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            storage_layout=storage_layout,
-            open_for_everyone=open_for_everyone,
-            timeout=timeout,
-        )
-
-    def initialize_virtual_fund_holdings_source_table(
-        self,
-        *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any],
-        storage_layout: dict[str, Any] | None = None,
-        open_for_everyone: bool | None = None,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Initialize a VirtualFundHoldings source table and backend lookup indexes.
-
-        This calls the VAM domain wrapper:
-            POST /orm/api/assets/virtual-fund-holdings-data-node/{uid}/initialize-source-table/
-        """
-        url = (
-            f"{type(self).ROOT_URL.rstrip('/')}/assets/virtual-fund-holdings-data-node/"
-            f"{self._public_uid()}/initialize-source-table/"
-        )
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            storage_layout=storage_layout,
-            open_for_everyone=open_for_everyone,
-            timeout=timeout,
-        )
-
-    @classmethod
-    def initialize_portfolio_storage_source_tables(
-        cls,
-        *,
-        portfolio_weights: dict[str, Any],
-        signal_weights: dict[str, Any],
-        portfolio_data: dict[str, Any],
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Initialize canonical VFB source tables and lookup indexes in one call.
-
-        This calls the portfolio domain wrapper:
-            POST /orm/api/assets/portfolio-storage-data-nodes/initialize-source-tables/
-
-        The three dynamic_table_metadata_uid values must already exist. This
-        endpoint only initializes source tables for the existing storages.
-        """
-        payload_body = {
-            "portfolio_weights": cls._portfolio_storage_source_table_payload(
-                portfolio_weights,
-                payload_name="portfolio_weights",
-            ),
-            "signal_weights": cls._portfolio_storage_source_table_payload(
-                signal_weights,
-                payload_name="signal_weights",
-            ),
-            "portfolio_data": cls._portfolio_storage_source_table_payload(
-                portfolio_data,
-                payload_name="portfolio_data",
-            ),
-        }
-        url = (
-            f"{cls.ROOT_URL.rstrip('/')}/assets/portfolio-storage-data-nodes/"
-            "initialize-source-tables/"
-        )
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": serialize_to_json(payload_body)},
-            time_out=timeout,
-        )
-        raise_for_response(response, payload=payload_body)
-        return response.json()
-
-    @staticmethod
-    def _portfolio_storage_source_table_payload(
-        payload: dict[str, Any],
-        *,
-        payload_name: str,
-    ) -> dict[str, Any]:
-        required_fields = (
-            "dynamic_table_metadata_uid",
-            "time_index_name",
-            "index_names",
-            "column_dtypes_map",
-        )
-        missing_fields = [
-            field_name for field_name in required_fields if field_name not in payload
-        ]
-        if missing_fields:
-            raise ValueError(
-                f"{payload_name} is missing required source-table fields: "
-                + ", ".join(missing_fields)
-                + "."
-            )
-
-        dynamic_table_metadata_uid = payload["dynamic_table_metadata_uid"]
-        if dynamic_table_metadata_uid in (None, ""):
-            raise ValueError(
-                f"{payload_name}.dynamic_table_metadata_uid must be a non-empty uid."
-            )
-
-        return {
-            "dynamic_table_metadata_uid": str(dynamic_table_metadata_uid),
-            "time_index_name": str(payload["time_index_name"]),
-            "index_names": list(payload["index_names"]),
-            "column_dtypes_map": dict(payload["column_dtypes_map"]),
-        }
-
     def _initialize_source_table_at_url(
         self,
         *,
@@ -3636,7 +3494,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         ...,
         title="Project Name",
         description="Human-readable name of the project.",
-        examples=["Markets Research Pipeline"],
+        examples=["Data Research Pipeline"],
         json_schema_extra={"label": "Project Name"},
     )
     data_source: DynamicTableDataSource | None = Field(
@@ -3649,7 +3507,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         None,
         title="Git SSH URL",
         description="SSH repository URL used to access the project's source code repository.",
-        examples=["git@github.com:mainsequence/markets-research-pipeline.git"],
+        examples=["git@github.com:mainsequence/data-pipeline.git"],
         json_schema_extra={"label": "Git SSH URL"},
     )
 

@@ -34,7 +34,7 @@ The final SDK contract is:
 - Use row `id` only for row-level table data.
 - Use provider `id` only for external provider identifiers.
 - Use permission subject identifiers only where the backend permission contract explicitly requires them.
-- Use deterministic names, hashes, and configuration keys for deterministic TDAG or VFB identity.
+- Use deterministic names, hashes, and configuration keys for deterministic TDAG identity.
 - Do not infer that any field named `id` is a resource reference.
 - Do not infer that any field ending in `_id` can be renamed without payload analysis.
 
@@ -58,7 +58,6 @@ In scope:
 - SimpleTable resource models
 - project and infrastructure resource models
 - command-center resource models
-- markets resource models
 - agent and runtime resource models
 - CLI commands that accept or display resource references
 - SDK request and response models that expose resource identity
@@ -98,7 +97,6 @@ Out of scope:
 - [x] Id-only migrated resource instances fail before making patch, delete, label, or share requests.
 - [x] CLI share output prefers `object_uid` over `object_id`.
 - [x] Project data-node update list rendering prefers nested storage `uid`.
-- [x] VFB deterministic hash exclusions include `storage_uid`, `update_uid`, `data_node_storage_uid`, and `data_node_update_uid`.
 - [x] SimpleTable source-table configuration documentation refers to `SimpleTableStorage.uid`.
 
 ## Required implementation tasks
@@ -125,7 +123,6 @@ Base audit findings that remain for model-group migration:
 - `mainsequence/client/models_helpers.py` still has job and job-run direct URLs built from `self.id`.
 - `mainsequence/client/models_tdag.py` still has project and data-source helper paths that use project or data-source IDs.
 - `mainsequence/client/models_simple_tables.py` intentionally still has row-record URL builders that use row `id`; these are out of scope unless they are table resource lookups.
-- `mainsequence/client/markets/models/accounts_and_portfolios.py` still has portfolio and portfolio-group helper URLs built from `self.id`.
 - `mainsequence/client/data_sources_interfaces/timescale.py` still has a data-node-storage helper URL built from `data_node_storage.id`.
 - `mainsequence/client/agent_runtime_models.py` still has runtime/session helper routes that require classification before renaming.
 - `mainsequence/client/models_user.py` still has user detail paths and permission subject identifiers that require separate user/team contract confirmation.
@@ -193,23 +190,7 @@ Base audit findings that remain for model-group migration:
 - [ ] Keep provider connection IDs unchanged where they are external identifiers.
 - [ ] Add tests for UID-only command-center response payloads.
 
-### 7. Markets migration
-
-- [ ] Inventory markets models before changing field names.
-- [ ] Confirm UID detail lookup for `Asset`.
-- [ ] Confirm UID detail lookup for `AssetSnapshot` if it is resource-addressed.
-- [ ] Confirm UID detail lookup for `AssetCategory`.
-- [ ] Confirm UID detail lookup for `Calendar` if it is resource-addressed.
-- [ ] Confirm UID detail lookup for `Portfolio`.
-- [ ] Confirm UID detail lookup for `PortfolioGroup`.
-- [ ] Confirm UID detail lookup for `Trade`.
-- [ ] Confirm UID detail lookup for `Order`.
-- [ ] Confirm UID detail lookup for `OrderManager`.
-- [ ] Confirm UID detail lookup for `VirtualFund`.
-- [ ] Keep tickers, exchange codes, broker IDs, and provider IDs outside this migration.
-- [ ] Add tests proving backend UID changes do not affect deterministic VFB hashes.
-
-### 8. Agent and runtime migration
+### 7. Agent and runtime migration
 
 - [ ] Inventory agent and runtime models before changing field names.
 - [ ] Confirm UID detail lookup for `Agent`.
@@ -220,7 +201,7 @@ Base audit findings that remain for model-group migration:
 - [ ] Keep runtime execution IDs and provider IDs unchanged where they are domain identifiers.
 - [ ] Add tests for UID-only agent and runtime responses.
 
-### 9. User, team, organization, and permission subjects
+### 8. User, team, organization, and permission subjects
 
 - [ ] Inventory user and organization models separately from resource models.
 - [ ] Confirm whether `User`, `Team`, and `OrganizationTeam` expose UID detail routes.
@@ -229,7 +210,7 @@ Base audit findings that remain for model-group migration:
 - [ ] If permission subjects do not migrate, document them as non-resource subject identifiers.
 - [ ] Add tests that distinguish resource UID from permission subject identifiers.
 
-### 10. CLI migration
+### 9. CLI migration
 
 - [ ] Replace public CLI resource option names ending in `_id` with `_uid`.
 - [ ] Stop coercing resource lookup options with `int(...)`.
@@ -240,7 +221,7 @@ Base audit findings that remain for model-group migration:
 - [ ] Add CLI tests proving UUID-like resource values are accepted.
 - [ ] Add CLI tests proving migrated commands do not prefer `object_id` over `object_uid`.
 
-### 11. Request and response typing
+### 10. Request and response typing
 
 - [ ] Audit response models that expose `object_id`.
 - [ ] Replace resource identity response fields with `object_uid` or typed `object_reference`.
@@ -251,7 +232,7 @@ Base audit findings that remain for model-group migration:
 - [ ] Keep row response `id` fields unchanged for SimpleTable records.
 - [ ] Add tests for UID-only response shapes.
 
-### 12. Documentation and tutorials
+### 11. Documentation and tutorials
 
 - [ ] Update ADR 0006 to reference this ADR for client-wide identity rules.
 - [ ] Update hand-written SDK docs to use UID lookup examples.
@@ -273,7 +254,6 @@ Base audit findings that remain for model-group migration:
 - [ ] Add CLI tests for UUID-like resource arguments.
 - [ ] Add response-shape tests for UID-only payloads.
 - [ ] Add SimpleTable tests proving row `id` is preserved.
-- [ ] Add VFB hash tests proving backend UID changes do not change deterministic hashes.
 
 ## Migration sequence
 
@@ -309,7 +289,7 @@ The SDK has one public resource identity model: UID.
 
 This intentionally breaks callers that still pass integer database IDs as SDK resource lookup arguments. That break is required because integer resource lookup is not part of the client public contract anymore.
 
-The migration remains analysis-driven because `id` still has valid non-resource meanings. Keeping that distinction explicit prevents damage to SimpleTable row operations, permission payloads, provider integrations, TDAG configuration hashes, and VFB deterministic hashes.
+The migration remains analysis-driven because `id` still has valid non-resource meanings. Keeping that distinction explicit prevents damage to SimpleTable row operations, permission payloads, provider integrations, and TDAG configuration hashes.
 
 ## Risks
 

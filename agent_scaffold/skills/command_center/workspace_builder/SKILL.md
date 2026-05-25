@@ -440,7 +440,7 @@ Stream source props:
 
 ```json
 {
-  "connectionRef": { "id": 123, "typeId": "binance.market-data" },
+  "connectionRef": { "id": 123, "typeId": "example.stream-data" },
   "queryModelId": "ticker-stream",
   "query": {
     "kind": "ticker-stream",

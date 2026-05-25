@@ -71,16 +71,16 @@ def test_search_request_allows_three_index_join_keys():
             JoinSpec(
                 name="joined",
                 node_unique_identifier="joined",
-                on=[JoinKey.time_index, "account_uid", "instrument_uid"],
+                on=[JoinKey.time_index, "account_uid", "entity_uid"],
             )
         ],
     )
 
-    assert req.joins[0].on == ["time_index", "account_uid", "instrument_uid"]
+    assert req.joins[0].on == ["time_index", "account_uid", "entity_uid"]
     assert req.model_dump(mode="json", exclude_none=True)["joins"][0]["on"] == [
         "time_index",
         "account_uid",
-        "instrument_uid",
+        "entity_uid",
     ]
 
 

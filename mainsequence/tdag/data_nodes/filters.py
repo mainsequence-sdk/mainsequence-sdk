@@ -30,7 +30,7 @@ class JoinKey:
 
     Data-node joins are no longer limited to this constant. `JoinSpec.on` may
     contain any configured time-first index vector, for example
-    ["time_index", "account_uid", "instrument_uid"].
+    ["time_index", "account_uid", "entity_uid"].
     """
 
     time_index = _JoinKeyValue("time_index")

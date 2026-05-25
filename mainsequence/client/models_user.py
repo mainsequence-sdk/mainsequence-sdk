@@ -175,7 +175,7 @@ class Group(BasePydanticModel):
         ...,
         title="Group Name",
         description="Human-readable name of the permission group.",
-        examples=["Portfolio Managers"],
+        examples=["Data Managers"],
     )
 
     normalized_name:str = Field()

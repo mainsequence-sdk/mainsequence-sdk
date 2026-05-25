@@ -344,7 +344,7 @@ A good working rule is:
 
 ## Human-Readable Examples
 
-### Example 1: Market data integration
+### Example 1: Vendor data integration
 
 You are integrating a vendor feed.
 
