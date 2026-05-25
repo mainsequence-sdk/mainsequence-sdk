@@ -521,20 +521,26 @@ def _run_sdk_model_operation(
 
 def get_current_user_profile() -> dict:
     """
-    Return current user profile (username + organization name) via backend endpoints.
+    Return current user profile (username + organization name) via the canonical user-details endpoint.
 
     Returns:
         dict: {"username": "...", "organization": "..."} or {}
     """
-    who = authed("GET", AUTH_PATHS["ping"])
-    d = who.json() if who.ok else {}
-    uid = d.get("id") or d.get("pk") or (d.get("user") or {}).get("id") or d.get("user_id")
-    if not uid:
-        return {}
-    full = authed("GET", f"/user/api/user/{uid}/")
-    u = full.json() if full.ok else {}
-    org_name = (u.get("organization") or {}).get("name") or u.get("organization_name") or ""
-    return {"username": u.get("username") or "", "organization": org_name}
+    details = authed("GET", "/user/api/user/get_user_details/")
+    payload = details.json() if details.ok else {}
+    user = payload.get("user") if isinstance(payload, dict) else {}
+    if not isinstance(user, dict):
+        user = {}
+    organization = user.get("organization") if isinstance(user, dict) else {}
+    if not isinstance(organization, dict):
+        organization = {}
+    org_name = (
+        organization.get("name")
+        or payload.get("organization_name")
+        or payload.get("organization")
+        or ""
+    )
+    return {"username": user.get("username") or payload.get("username") or "", "organization": org_name}
 
 
 def get_logged_user_details() -> dict[str, Any]:

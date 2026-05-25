@@ -6,6 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [4.0.1] - 2026-05-25
+
+### Fixed
+
+- Fixed CLI login persistence on macOS by verifying secure-store readback after login and falling back to backend-scoped local CLI auth storage when keychain readback is not usable in later CLI processes.
+- Fixed cross-backend CLI auth collisions by scoping persisted auth entries to the active backend instead of one global shared token slot.
+
+### Changed
+
+- Updated CLI current-user profile enrichment to use `GET /user/api/user/get_user_details/` instead of deriving a backend user id from `/auth/rest-auth/user/`.
+
 ## [4.0.0] - 2026-05-25
 
 ### Added

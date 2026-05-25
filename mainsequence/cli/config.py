@@ -16,6 +16,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import shlex
 import shutil
 import subprocess
 import sys
@@ -294,27 +295,53 @@ def _normalize_token_payload(data: dict | None) -> dict:
     }
 
 
-def _read_local_tokens() -> dict:
+def _auth_backend_key(backend: str | None = None) -> str:
+    """
+    Return the normalized backend key used for auth persistence scoping.
+    """
+    return normalize_backend_url(backend or backend_url())
+
+
+def _keychain_account_for_backend(backend: str | None = None) -> str:
+    """
+    Return the backend-scoped keychain account name.
+    """
+    digest = hashlib.sha256(_auth_backend_key(backend).encode("utf-8")).hexdigest()[:16]
+    return f"{KEYCHAIN_ACCOUNT}.{digest}"
+
+
+def _read_local_tokens(backend: str | None = None) -> dict:
     """
     Read persisted tokens from the CLI-managed local auth store.
     """
     try:
-        return _normalize_token_payload(read_json(AUTH_JSON, {}))
+        data = read_json(AUTH_JSON, {})
+        if isinstance(data, dict) and isinstance(data.get("by_backend"), dict):
+            return _normalize_token_payload(data["by_backend"].get(_auth_backend_key(backend)))
+        return _normalize_token_payload(data)
     except Exception:
         return {}
 
 
-def _write_local_tokens(*, username: str, access: str, refresh: str) -> bool:
+def _write_local_tokens(*, username: str, access: str, refresh: str, backend: str | None = None) -> bool:
     """
     Persist tokens in the CLI-managed local auth store.
     """
     try:
+        data = read_json(AUTH_JSON, {})
+        by_backend = data.get("by_backend") if isinstance(data, dict) else None
+        if not isinstance(by_backend, dict):
+            by_backend = {}
+        by_backend[_auth_backend_key(backend)] = {
+            "username": username or "",
+            "access": access or "",
+            "refresh": refresh or "",
+        }
         write_json(
             AUTH_JSON,
             {
-                "username": username or "",
-                "access": access or "",
-                "refresh": refresh or "",
+                "version": 2,
+                "by_backend": by_backend,
             },
         )
         if os.name == "posix":
@@ -327,12 +354,27 @@ def _write_local_tokens(*, username: str, access: str, refresh: str) -> bool:
         return False
 
 
-def _clear_local_tokens() -> bool:
+def _clear_local_tokens(backend: str | None = None) -> bool:
     """
     Delete the CLI-managed local auth store. Missing file is treated as success.
     """
     try:
-        if AUTH_JSON.exists():
+        if not AUTH_JSON.exists():
+            return True
+        data = read_json(AUTH_JSON, {})
+        if isinstance(data, dict) and isinstance(data.get("by_backend"), dict):
+            by_backend = dict(data["by_backend"])
+            by_backend.pop(_auth_backend_key(backend), None)
+            if by_backend:
+                write_json(AUTH_JSON, {"version": 2, "by_backend": by_backend})
+                if os.name == "posix":
+                    try:
+                        os.chmod(AUTH_JSON, 0o600)
+                    except Exception:
+                        pass
+            else:
+                AUTH_JSON.unlink()
+        else:
             AUTH_JSON.unlink()
         return True
     except Exception:
@@ -343,7 +385,7 @@ def auth_persistence_label() -> str:
     """
     Return the human-readable auth persistence backend label.
     """
-    if _macos_security_exists():
+    if _macos_security_exists() and _read_secure_tokens():
         return "secure OS storage"
     return "local CLI auth storage"
 
@@ -393,7 +435,11 @@ def save_tokens(username: str, access: str, refresh: str) -> bool:
     os.environ.pop(LEGACY_ENV_ACCESS, None)
     os.environ.pop(LEGACY_ENV_REFRESH, None)
     if _macos_security_exists():
-        return _write_secure_tokens(username=username, access=access, refresh=refresh)
+        if _write_secure_tokens(username=username, access=access, refresh=refresh):
+            readback = _read_secure_tokens()
+            if readback.get("access") == access and readback.get("refresh") == refresh:
+                return True
+        return _write_local_tokens(username=username, access=access, refresh=refresh)
     return _write_local_tokens(username=username, access=access, refresh=refresh)
 
 
@@ -436,38 +482,54 @@ def secure_store_available() -> bool:
     return _macos_security_exists()
 
 
-def _read_secure_tokens() -> dict:
+def _run_security_shell_command(args: list[str]) -> subprocess.CompletedProcess[str]:
+    """
+    Execute `security` through the interactive shell path that matches terminal behavior on macOS.
+    """
+    cmd = " ".join(shlex.quote(part) for part in ["/usr/bin/security", *args])
+    return subprocess.run(
+        ["/bin/zsh", "-lc", cmd],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _read_secure_tokens(backend: str | None = None) -> dict:
     """
     Read persisted tokens from OS keychain (macOS) when available.
     """
     if not _macos_security_exists():
         return {}
     try:
-        proc = subprocess.run(
-            [
-                "security",
-                "find-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                KEYCHAIN_ACCOUNT,
-                "-w",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if proc.returncode != 0:
-            return {}
-        raw = (proc.stdout or "").strip()
-        if not raw:
-            return {}
-        return _normalize_token_payload(json.loads(raw))
+        accounts = [_keychain_account_for_backend(backend)]
+        if KEYCHAIN_ACCOUNT not in accounts:
+            accounts.append(KEYCHAIN_ACCOUNT)
+        for account in accounts:
+            proc = _run_security_shell_command(
+                [
+                    "find-generic-password",
+                    "-s",
+                    KEYCHAIN_SERVICE,
+                    "-a",
+                    account,
+                    "-w",
+                ]
+            )
+            if proc.returncode != 0:
+                continue
+            raw = (proc.stdout or "").strip()
+            if not raw:
+                continue
+            payload = _normalize_token_payload(json.loads(raw))
+            if payload.get("access") and payload.get("refresh"):
+                return payload
+        return {}
     except Exception:
         return {}
 
 
-def _write_secure_tokens(*, username: str, access: str, refresh: str) -> bool:
+def _write_secure_tokens(*, username: str, access: str, refresh: str, backend: str | None = None) -> bool:
     """
     Persist tokens in OS keychain (macOS) without writing plain token files.
     """
@@ -475,52 +537,49 @@ def _write_secure_tokens(*, username: str, access: str, refresh: str) -> bool:
         return True
     payload = json.dumps({"username": username or "", "access": access or "", "refresh": refresh or ""})
     try:
-        proc = subprocess.run(
+        proc = _run_security_shell_command(
             [
-                "security",
                 "add-generic-password",
                 "-s",
                 KEYCHAIN_SERVICE,
                 "-a",
-                KEYCHAIN_ACCOUNT,
+                _keychain_account_for_backend(backend),
                 "-w",
                 payload,
                 "-U",
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
+            ]
         )
         return proc.returncode == 0
     except Exception:
         return False
 
 
-def _clear_secure_tokens() -> bool:
+def _clear_secure_tokens(backend: str | None = None) -> bool:
     """
     Delete persisted tokens from OS keychain (macOS). Missing entry is treated as success.
     """
     if not _macos_security_exists():
         return True
     try:
-        proc = subprocess.run(
-            [
-                "security",
-                "delete-generic-password",
-                "-s",
-                KEYCHAIN_SERVICE,
-                "-a",
-                KEYCHAIN_ACCOUNT,
-            ],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        # Return code 0: deleted. Non-zero with "could not be found" also acceptable.
-        err = (proc.stderr or "").lower()
-        if proc.returncode == 0 or "could not be found" in err:
-            return True
-        return False
+        accounts = [_keychain_account_for_backend(backend)]
+        if KEYCHAIN_ACCOUNT not in accounts:
+            accounts.append(KEYCHAIN_ACCOUNT)
+
+        ok = True
+        for account in accounts:
+            proc = _run_security_shell_command(
+                [
+                    "delete-generic-password",
+                    "-s",
+                    KEYCHAIN_SERVICE,
+                    "-a",
+                    account,
+                ]
+            )
+            err = (proc.stderr or "").lower()
+            if not (proc.returncode == 0 or "could not be found" in err):
+                ok = False
+        return ok
     except Exception:
         return False
 

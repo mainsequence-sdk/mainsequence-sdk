@@ -2629,6 +2629,39 @@ def test_config_get_tokens_fallback_local_store(cli_mod, monkeypatch, tmp_path):
     assert out["refresh"] == "ref"
 
 
+def test_config_get_tokens_fallback_backend_scoped_local_store(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    cli_mod.cfg.write_json(
+        auth_json,
+        {
+            "version": 2,
+            "by_backend": {
+                "https://api.main-sequence.app": {
+                    "username": "prod@example.com",
+                    "access": "prod-acc",
+                    "refresh": "prod-ref",
+                },
+                "http://127.0.0.1:8000": {
+                    "username": "dev@example.com",
+                    "access": "dev-acc",
+                    "refresh": "dev-ref",
+                },
+            },
+        },
+    )
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.delenv(cli_mod.cfg.ENV_ACCESS, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_REFRESH, raising=False)
+    monkeypatch.delenv(cli_mod.cfg.ENV_USERNAME, raising=False)
+    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
+
+    out = cli_mod.cfg.get_tokens()
+    assert out["username"] == "dev@example.com"
+    assert out["access"] == "dev-acc"
+    assert out["refresh"] == "dev-ref"
+
+
 def test_config_get_tokens_runtime_mode_allows_access_without_refresh(cli_mod, monkeypatch, tmp_path):
     auth_json = tmp_path / "auth.json"
     cli_mod.cfg.write_json(
@@ -2746,14 +2779,43 @@ def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(cli
     auth_json = tmp_path / "auth.json"
     monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
     monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: False)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "https://api.main-sequence.app")
 
     ok = cli_mod.cfg.save_tokens("u@example.com", "acc", "ref")
 
     assert ok is True
     assert cli_mod.cfg.read_json(auth_json, {}) == {
-        "username": "u@example.com",
-        "access": "acc",
-        "refresh": "ref",
+        "version": 2,
+        "by_backend": {
+            "https://api.main-sequence.app": {
+                "username": "u@example.com",
+                "access": "acc",
+                "refresh": "ref",
+            }
+        },
+    }
+
+
+def test_config_save_tokens_falls_back_to_local_store_when_secure_readback_fails(cli_mod, monkeypatch, tmp_path):
+    auth_json = tmp_path / "auth.json"
+    monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
+    monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: True)
+    monkeypatch.setattr(cli_mod.cfg, "backend_url", lambda: "http://127.0.0.1:8000")
+    monkeypatch.setattr(cli_mod.cfg, "_write_secure_tokens", lambda **kwargs: True)
+    monkeypatch.setattr(cli_mod.cfg, "_read_secure_tokens", lambda: {})
+
+    ok = cli_mod.cfg.save_tokens("dev@example.com", "dev-acc", "dev-ref")
+
+    assert ok is True
+    assert cli_mod.cfg.read_json(auth_json, {}) == {
+        "version": 2,
+        "by_backend": {
+            "http://127.0.0.1:8000": {
+                "username": "dev@example.com",
+                "access": "dev-acc",
+                "refresh": "dev-ref",
+            }
+        },
     }
 
 
@@ -2776,6 +2838,38 @@ def test_config_clear_tokens_removes_local_store(cli_mod, monkeypatch, tmp_path)
     assert os.environ.get(cli_mod.cfg.ENV_USERNAME) is None
     assert os.environ.get(cli_mod.cfg.ENV_ACCESS) is None
     assert os.environ.get(cli_mod.cfg.ENV_REFRESH) is None
+
+
+def test_get_current_user_profile_uses_user_details_endpoint(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    seen = {}
+
+    class _Response:
+        def __init__(self, payload):
+            self.ok = True
+            self._payload = payload
+
+        def json(self):
+            return self._payload
+
+    def _authed(method, path, body=None):
+        seen["method"] = method
+        seen["path"] = path
+        return _Response(
+            {
+                "user": {
+                    "uid": "user-uid-123",
+                    "username": "jose@main-sequence.io",
+                    "organization": {"uid": "org-uid-456", "name": "Main Sequence"},
+                }
+            }
+        )
+
+    monkeypatch.setattr(api_mod, "authed", _authed)
+
+    out = api_mod.get_current_user_profile()
+    assert seen == {"method": "GET", "path": "/user/api/user/get_user_details/"}
+    assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence"}
 
 
 def test_doctor_command(cli_mod, runner, monkeypatch):
