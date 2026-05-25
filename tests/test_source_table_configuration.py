@@ -278,7 +278,7 @@ def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypat
     }
 
 
-def test_source_table_configuration_get_data_updates_legacy_max_per_asset_fallback(
+def test_source_table_configuration_get_data_updates_ignores_removed_legacy_asset_stats(
     monkeypatch,
 ):
     class FakeResponse:
@@ -322,21 +322,11 @@ def test_source_table_configuration_get_data_updates_legacy_max_per_asset_fallba
     }
     config = models_tdag.SourceTableConfiguration(**payload)
 
-    with pytest.warns(FutureWarning) as warning_records:
-        update_stats = config.get_data_updates()
+    update_stats = config.get_data_updates()
 
-    warning_messages = [str(record.message) for record in warning_records]
-    assert any("max_per_asset_symbol" in message for message in warning_messages)
-    assert any("min_per_asset_symbol" in message for message in warning_messages)
     assert update_stats.global_index_progress is None
     assert update_stats.max_time_index_value == datetime.datetime(
         2026, 5, 1, 3, tzinfo=datetime.UTC
     )
-    assert update_stats.index_progress == {
-        "AAPL": datetime.datetime(2026, 5, 1, 1, tzinfo=datetime.UTC),
-        "MSFT": datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC),
-    }
-    assert update_stats.index_min == {
-        "AAPL": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC),
-        "MSFT": datetime.datetime(2026, 5, 1, 2, tzinfo=datetime.UTC),
-    }
+    assert update_stats.index_progress is None
+    assert update_stats.index_min is None

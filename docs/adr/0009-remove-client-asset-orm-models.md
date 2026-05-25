@@ -87,46 +87,107 @@ This ADR does not:
 
 ### Phase 1: Inventory And Contract Review
 
-- [ ] Review every class and function in
+- [x] Review every class and function in
       `mainsequence/client/markets/models/assets.py` and classify it as
       migrate, replace, or delete.
-- [ ] Review every public export of `Asset`, `AssetMixin`, `AssetCategory`,
+- [x] Review every public export of `Asset`, `AssetMixin`, `AssetCategory`,
       `AssetSnapshot`, `AssetPricingDetail`, `PortfolioIndexAsset`,
       `resolve_asset`, `create_from_serializer_with_class`, and
       `get_model_class`.
-- [ ] Review all `mainsequence.client` top-level exports that come from
+- [x] Review all `mainsequence.client` top-level exports that come from
       `mainsequence.client.markets.models.assets`.
-- [ ] Review ADR 0004 and mark the asset-model ownership decision as
+- [x] Review ADR 0004 and mark the asset-model ownership decision as
       superseded by this ADR.
-- [ ] Review backend endpoints currently used by `Asset` and `AssetCategory`
+- [x] Review backend endpoints currently used by `Asset` and `AssetCategory`
       methods and map each endpoint to the new market asset API/updater owner.
-- [ ] Review whether any lightweight asset DTO is still required; if one is
+- [x] Review whether any lightweight asset DTO is still required; if one is
       required, place it under `mainsequence.markets.assets`, not under
       `mainsequence.client.markets.models`.
 
+#### Phase 1 Findings
+
+The reviewed module exposes these runtime contracts:
+
+| Symbol | Current Responsibility | Target Classification |
+| --- | --- | --- |
+| `get_model_class(...)` | Rebuilds serializer payloads into client ORM classes by string name. | Migrate to an explicit TDAG/client registry if still required. |
+| `create_from_serializer_with_class(...)` | Rebuilds heterogeneous asset payload lists using `AssetClass`. | Delete after `filter_with_asset_class(...)` and `resolve_asset(...)` consumers are removed. |
+| `resolve_asset(...)` | Instantiates client asset ORM models from nested backend payloads. | Replace with non-ORM payload normalization in account, order, and fund models. |
+| `AssetSnapshot` | Nested mutable asset metadata DTO under the client asset model. | Delete from client models; time-series asset snapshot ownership is under `mainsequence.markets.assets.data_nodes`. |
+| `AssetPricingDetail` | Nested instrument-pricing DTO under the client asset model. | Delete from client models; pricing detail persistence belongs to the market asset/instrument owners. |
+| `AssetMixin` | Shared asset fields, filter translation, calendar resolution, and pricing-detail helpers. | Split responsibilities, then delete. Canonical identity goes to `AssetSimpleTable`; FIGI/provider metadata goes to provider-specific owners; pricing helpers go to instrument/pricing owners. |
+| `AssetCategory` | Client ORM category resource plus category membership mutations. | Replace with `AssetCategorySimpleTable`, `AssetCategorySimpleTableUpdater`, and `AssetCategoryMembershipSimpleTableUpdater`. |
+| `Asset` | Public client ORM asset model, search, FIGI/custom registration, portfolio-index asset creation, and pricing helpers. | Split and delete. No single replacement object should inherit all of these responsibilities. |
+| `PortfolioIndexAsset` | Specialized client ORM asset subtype for portfolio identity. | Delete; portfolio code must use `portfolio_index_asset_unique_identifier` strings plus portfolio metadata simple tables. |
+
+Public export review:
+
+- `mainsequence.client.markets.models.__init__` exports `assets.py` through a
+  star import.
+- `mainsequence.client.__init__` then re-exports those symbols through
+  `from mainsequence.client.markets.models import *`.
+- The migration is complete only after `Asset`, `AssetMixin`, `AssetCategory`,
+  `AssetSnapshot`, `AssetPricingDetail`, `PortfolioIndexAsset`,
+  `resolve_asset`, `create_from_serializer_with_class`, and
+  `get_model_class` are no longer exported from `mainsequence.client`.
+- No compatibility shim package or fake replacement asset class should be
+  added under `mainsequence.client.markets.models`.
+
+Backend endpoint ownership mapping:
+
+| Current Client Method Or Endpoint | New Owner |
+| --- | --- |
+| `Asset.filter(...)`, `Asset.get(...)`, base asset collection filtering | `AssetSimpleTableUpdater.filter_assets(...)` only for canonical `unique_identifier` lookup/search; provider/detail filters must move to provider/detail tables. |
+| `Asset.query(...)` and `/query/` | No direct ORM clone. Use simple-table query/filter primitives for canonical asset identity and add specific provider/detail query APIs only where needed. |
+| `Asset.quick_search(...)` and `response_format=frontend_list` | Future market asset search service/updater. It must compose canonical identity and provider/detail search instead of living on a client ORM asset. |
+| `Asset.register_asset_from_figi(...)` and `/register_asset_from_figi/` | FIGI/openfigi owner. |
+| `Asset.get_or_register_from_isin(...)` and `/get_or_register_from_isin/` | FIGI/openfigi owner. |
+| `Asset.get_or_register_custom_asset(...)` and `/get_or_register_custom_asset/` | Market asset service/updater over `AssetSimpleTable` plus any required detail table owner. |
+| `Asset.batch_get_or_register_custom_assets(...)` and `/batch_get_or_register_custom_assets/` | Market asset service/updater over `AssetSimpleTable` plus any required detail table owner. |
+| `Asset.filter_with_asset_class(...)` and `/list_with_asset_class/` | Remove as a client ORM reconstruction path. Consumers must request the concrete market-domain contract they need. |
+| `Asset.create_or_update_index_asset_from_portfolios(...)` and `/create_or_update_index_asset_from_portfolios/` | `mainsequence.markets.portfolios`, using `portfolio_index_asset_unique_identifier` and portfolio metadata simple tables. |
+| `Asset.clear_asset_pricing_details(...)` and `/clear-asset-pricing-details/` | Instrument/pricing detail owner, not the canonical asset identity table. |
+| `Asset.add_instrument_pricing_details(...)` and `/set-asset-pricing-detail/` | Instrument/pricing detail owner, not the canonical asset identity table. |
+| `AssetCategory.get_or_create(...)` and `/get-or-create/` | `AssetCategorySimpleTableUpdater.get_or_create(...)`. |
+| `AssetCategory.append_assets(...)` and `/append-assets/` | `AssetCategoryMembershipSimpleTableUpdater.append_assets(...)`. |
+| `AssetCategory.remove_assets(...)` and `/remove-assets/` | `AssetCategoryMembershipSimpleTableUpdater.remove_assets(...)`. |
+| `AssetCategory.update_assets(...)` | `AssetCategoryMembershipSimpleTableUpdater.update_assets(...)`. |
+| `AssetCategory.get_assets(...)` | `AssetCategoryMembershipSimpleTableUpdater.list_assets_for_category(...)`. |
+
+Lightweight DTO decision:
+
+- Do not add a new general-purpose `Asset` or `AssetMixin` DTO under the client
+  model package.
+- Use `AssetSimpleTable` for canonical asset identity rows.
+- Preserve nested backend asset payloads as dictionaries or reduce them to
+  `unique_identifier` strings while migrating account/order/fund models.
+- If a typed payload helper is still required after migration, it must live
+  under `mainsequence.markets.assets`, not under
+  `mainsequence.client.markets.models`.
+
 ### Phase 2: Asset Catalog Runtime
 
-- [ ] Promote `AssetSimpleTable`, `AssetSimpleTableUpdater`,
-      `AssetCategorySimpleTable`, `AssetCategorySimpleTableUpdater`, and
-      `AssetCategoryMembershipSimpleTableUpdater` as the SDK-owned asset
-      catalog runtime.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.filter(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.query(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.quick_search(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.filter_with_asset_class(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.register_asset_from_figi(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.get_or_register_custom_asset(...)`.
-- [ ] Add or finalize a market asset service/updater method that replaces
-      `Asset.batch_get_or_register_custom_assets(...)`.
-- [ ] Add or finalize asset-category methods that replace
-      `AssetCategory.get_or_create(...)`, `append_assets(...)`,
-      `remove_assets(...)`, `update_assets(...)`, and `get_assets(...)`.
+- [x] Verify `AssetSimpleTable` and `AssetSimpleTableUpdater` already provide
+      the canonical asset identity runtime for `unique_identifier` lookup,
+      `unique_identifier__in`, contains/search over `unique_identifier`, and
+      category-scoped filtering through the membership updater.
+- [x] Verify `AssetSimpleTable` remains intentionally minimal and does not own
+      FIGI, ticker, name, security classification, or snapshot fields.
+- [x] Verify FIGI search, mapping, and provider metadata belong to
+      `mainsequence.markets.assets.openfigi`, not to `AssetSimpleTable`.
+- [x] Verify `AssetCategorySimpleTable` and
+      `AssetCategorySimpleTableUpdater` already provide category filtering,
+      lookup, and `get_or_create(...)`.
+- [x] Verify `AssetCategoryMembershipSimpleTableUpdater` already provides
+      category membership lookup, `append_assets(...)`, `remove_assets(...)`,
+      `set_assets(...)`, `list_assets_for_category(...)`, and
+      `list_categories_for_asset(...)`.
+- [x] Add `AssetCategorySimpleTable.update_assets(...)` as the replacement for
+      legacy `AssetCategory.update_assets(...)`.
+- [x] Add `AssetCategoryMembershipSimpleTableUpdater.update_assets(...)` using
+      `SimpleTableStorage.run_query(...)` to replace a category membership set
+      in one SQL operation.
+- [x] Add focused tests for the asset-category `update_assets(...)` SQL path.
 
 ### Phase 3: Account And Order Model Migration
 
@@ -246,4 +307,3 @@ This ADR does not:
       contract instead of preserving removed asset model imports.
 - [ ] Review generated docs to confirm no removed client asset model appears as
       public API.
-

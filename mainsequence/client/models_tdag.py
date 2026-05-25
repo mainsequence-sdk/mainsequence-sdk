@@ -199,13 +199,6 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
         index_progress = None
         index_min = None
 
-        def _max_leaf(node):
-            if isinstance(node, Mapping):
-                candidates = [_max_leaf(v) for v in node.values()]
-                candidates = [v for v in candidates if v is not None]
-                return max(candidates) if candidates else None
-            return node
-
         if multi_index_stats is not None:
             global_index_progress = (
                 multi_index_stats.get("_GLOBAL_")
@@ -219,37 +212,6 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
 
             if global_index_progress is not None:
                 max_time_index_value = global_index_progress.get("max") or max_time_index_value
-
-            if index_progress is None:
-                # LEGACY_COMPAT: older servers returned asset-keyed progress under
-                # max_per_asset_symbol. Keep this as a fallback only; canonical
-                # callers should use index_progress.
-                legacy_max_per_asset = multi_index_stats.get("max_per_asset_symbol")
-                if legacy_max_per_asset is not None:
-                    _warn_legacy_compat(
-                        "SourceTableConfiguration.get_data_updates() received "
-                        "'max_per_asset_symbol'. The canonical stats key is "
-                        "'index_progress' with one nested level per identity "
-                        "dimension.",
-                        stacklevel=2,
-                    )
-                index_progress = UpdateStatistics._normalize_nested(legacy_max_per_asset)
-                if max_time_index_value is None and index_progress is not None:
-                    max_time_index_value = _max_leaf(index_progress)
-
-            if index_min is None:
-                # LEGACY_COMPAT: older servers returned asset-keyed minimums under
-                # min_per_asset_symbol. Keep this as a fallback only; canonical
-                # callers should use index_min.
-                legacy_min_per_asset = multi_index_stats.get("min_per_asset_symbol")
-                if legacy_min_per_asset is not None:
-                    _warn_legacy_compat(
-                        "SourceTableConfiguration.get_data_updates() received "
-                        "'min_per_asset_symbol'. The canonical stats key is "
-                        "'index_min' with one nested level per identity dimension.",
-                        stacklevel=2,
-                    )
-                index_min = UpdateStatistics._normalize_nested(legacy_min_per_asset)
 
         du = UpdateStatistics(
             max_time_index_value=max_time_index_value,
@@ -1124,53 +1086,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
     _drop_indices: bool = False  # for direct incertion we can pass this values
     _rebuild_indices: bool = False  # for direct incertion we can pass this values
 
-    def _identity_dimensions(self) -> list[str] | None:
-        if self.sourcetableconfiguration is not None:
-            return list(self.sourcetableconfiguration.index_names[1:])
-        if self.table_index_names:
-            try:
-                ordered_index_names = [
-                    value
-                    for _, value in sorted(
-                        self.table_index_names.items(), key=lambda item: int(item[0])
-                    )
-                ]
-            except Exception:
-                ordered_index_names = list(self.table_index_names.values())
-            return ordered_index_names[1:]
-        return None
-
-    def _assert_unique_identifier_alias_allowed(self, alias_name: str) -> None:
-        identity_dimensions = self._identity_dimensions()
-        if identity_dimensions != ["unique_identifier"]:
-            raise ValueError(
-                f"{alias_name} is a legacy alias that is only valid when "
-                'index_names[1:] == ["unique_identifier"]. Use canonical '
-                "dimension_filters, index_coordinates, or dimension_range_map "
-                "for multidimensional tables."
-            )
-
-    def _legacy_unique_identifier_dimension_filters(
-        self,
-        *,
-        unique_identifier: str | None = None,
-        unique_identifier_list: list[Any] | None = None,
-    ) -> dict[str, list[Any]] | None:
-        if unique_identifier is None and unique_identifier_list is None:
-            return None
-        if unique_identifier is not None and unique_identifier_list is not None:
-            raise ValueError("Pass either unique_identifier or unique_identifier_list, not both.")
-
-        alias_name = "unique_identifier" if unique_identifier is not None else "unique_identifier_list"
-        self._assert_unique_identifier_alias_allowed(alias_name)
-        _warn_legacy_compat(
-            f"{alias_name} is a legacy asset-table alias. Use "
-            'dimension_filters={"unique_identifier": [...]} or explicit '
-            "index_coordinates instead.",
-        )
-        values = [unique_identifier] if unique_identifier is not None else list(unique_identifier_list or [])
-        return {"unique_identifier": values}
-
     @staticmethod
     def _date_for_payload(value: Any) -> Any:
         if isinstance(value, datetime.datetime):
@@ -1192,72 +1107,13 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                     descriptor[key] = cls._date_for_payload(descriptor[key])
         return normalized
 
-    def _legacy_unique_identifier_range_map_to_dimension_range_map(
-        self,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None,
-    ) -> list[dict[str, Any]] | None:
-        if unique_identifier_range_map is None:
-            return None
-
-        self._assert_unique_identifier_alias_allowed("unique_identifier_range_map")
-        _warn_legacy_compat(
-            "unique_identifier_range_map is a legacy asset-table alias. Use "
-            "dimension_range_map with coordinate dictionaries instead.",
-        )
-        dimension_range_map: list[dict[str, Any]] = []
-        for unique_identifier, date_info in unique_identifier_range_map.items():
-            descriptor = copy.deepcopy(date_info)
-            descriptor["coordinate"] = {"unique_identifier": unique_identifier}
-            dimension_range_map.append(descriptor)
-        return self._normalize_dimension_range_map(dimension_range_map)
-
     def _build_dimension_payload(
         self,
         *,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        unique_identifier: str | None = None,
-        unique_identifier_list: list[Any] | None = None,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
     ) -> dict[str, Any]:
-        legacy_filter = self._legacy_unique_identifier_dimension_filters(
-            unique_identifier=unique_identifier,
-            unique_identifier_list=unique_identifier_list,
-        )
-        legacy_range_map = self._legacy_unique_identifier_range_map_to_dimension_range_map(
-            unique_identifier_range_map
-        )
-
-        if legacy_filter is not None and legacy_range_map is not None:
-            raise ValueError(
-                "Do not mix legacy unique_identifier filters with unique_identifier_range_map."
-            )
-
-        if legacy_filter is not None:
-            if (
-                dimension_filters is not None
-                or index_coordinates is not None
-                or dimension_range_map is not None
-            ):
-                raise ValueError(
-                    "Do not mix legacy unique_identifier aliases with canonical "
-                    "dimension_filters, index_coordinates, or dimension_range_map."
-                )
-            dimension_filters = legacy_filter
-
-        if legacy_range_map is not None:
-            if (
-                dimension_filters is not None
-                or index_coordinates is not None
-                or dimension_range_map is not None
-            ):
-                raise ValueError(
-                    "Do not mix unique_identifier_range_map with canonical "
-                    "dimension_filters, index_coordinates, or dimension_range_map."
-                )
-            dimension_range_map = legacy_range_map
-
         payload: dict[str, Any] = {}
         if dimension_filters is not None:
             payload["dimension_filters"] = dimension_filters
@@ -1693,8 +1549,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        unique_identifier: str | None = None,
-        unique_identifier_list: list[str] | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
         """
@@ -1726,8 +1580,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                 dimension_filters=dimension_filters,
                 index_coordinates=index_coordinates,
                 dimension_range_map=dimension_range_map,
-                unique_identifier=unique_identifier,
-                unique_identifier_list=unique_identifier_list,
             )
         )
 
@@ -1831,7 +1683,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
 
     def get_last_observation(
         self,
-        unique_identifier_list: list[str] | None = None,
         *,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
@@ -1844,7 +1695,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                 dimension_filters=dimension_filters,
                 index_coordinates=index_coordinates,
                 dimension_range_map=dimension_range_map,
-                unique_identifier_list=unique_identifier_list,
             )
         }
         s = self.build_session()
@@ -1977,12 +1827,10 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             end_date: datetime.datetime = None,
             great_or_equal: bool = None,
             less_or_equal: bool = None,
-            unique_identifier_list: list = None,
             dimension_filters: dict[str, list[Any]] | None = None,
             index_coordinates: list[dict[str, Any]] | None = None,
             dimension_range_map: list[dict[str, Any]] | None = None,
             columns: list = None,
-            unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
             column_range_descriptor: None | UniqueIdentifierRangeMap = None,
     ):
         """Public helper for /{uid}/get_data_between_dates_from_remote/."""
@@ -1991,8 +1839,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
-            unique_identifier_list=unique_identifier_list,
-            unique_identifier_range_map=unique_identifier_range_map,
         )
 
         return self._get_data_between_dates_common(
@@ -2017,59 +1863,17 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             end_date: datetime.datetime = None,
             great_or_equal: bool = None,
             less_or_equal: bool = None,
-            unique_identifier_list: list = None,
             dimension_filters: dict[str, list[Any]] | None = None,
             index_coordinates: list[dict[str, Any]] | None = None,
             dimension_range_map: list[dict[str, Any]] | None = None,
             columns: list = None,
-            unique_identifier_range_map: None | UniqueIdentifierRangeMap = None,
             column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-            index_names: list[str] | None = None,
     )->[pd.DataFrame,DataNodeStorage]:
         """
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.
         """
         url = cls.get_object_url() + "/get_data_between_dates_from_node_identifier/"
-        if unique_identifier_list is not None or unique_identifier_range_map is not None:
-            if unique_identifier_list is not None and unique_identifier_range_map is not None:
-                raise ValueError(
-                    "Do not mix legacy unique_identifier_list with unique_identifier_range_map."
-                )
-            if index_names is None or index_names[1:] != ["unique_identifier"]:
-                raise ValueError(
-                    "Legacy unique_identifier aliases are only valid when "
-                    'index_names[1:] == ["unique_identifier"]. Pass canonical '
-                    "dimension_filters, index_coordinates, or dimension_range_map "
-                    "for node-identifier reads."
-                )
-            _warn_legacy_compat(
-                "unique_identifier aliases are legacy asset-table filters. Use "
-                "canonical dimension filters or dimension range maps instead.",
-            )
-            if unique_identifier_list is not None:
-                if (
-                    dimension_filters is not None
-                    or index_coordinates is not None
-                    or dimension_range_map is not None
-                ):
-                    raise ValueError(
-                        "Do not mix unique_identifier_list with canonical dimension filters."
-                    )
-                dimension_filters = {"unique_identifier": list(unique_identifier_list)}
-            if unique_identifier_range_map is not None:
-                if (
-                    dimension_filters is not None
-                    or index_coordinates is not None
-                    or dimension_range_map is not None
-                ):
-                    raise ValueError(
-                        "Do not mix unique_identifier_range_map with canonical dimension filters."
-                    )
-                dimension_range_map = [
-                    {"coordinate": {"unique_identifier": key}, **copy.deepcopy(date_info)}
-                    for key, date_info in unique_identifier_range_map.items()
-                ]
         dimension_range_map = cls._normalize_dimension_range_map(dimension_range_map)
 
         return cls._get_data_between_dates_common(
@@ -3564,8 +3368,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         great_or_equal: bool = True,
         less_or_equal: bool = True,
         columns: list[str] | None = None,
-        unique_identifier_list: list[str] | None = None,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
@@ -3584,23 +3386,12 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             db_interface = _duckdb_interface()
             table_name = data_node_update.data_node_storage.storage_hash
 
-            adjusted_start, adjusted_end, adjusted_uirm, _ = db_interface.constrain_read(
+            _adjusted_start, _adjusted_end, _adjusted_uirm, _ = db_interface.constrain_read(
                 table=table_name,
                 start=start_date,
                 end=end_date,
-                ids=unique_identifier_list,
-                unique_identifier_range_map=unique_identifier_range_map,
+                ids=None,
             )
-            if unique_identifier_range_map is not None and adjusted_end is not None:
-                adjusted_end = datetime.datetime(
-                    adjusted_end.year,
-                    adjusted_end.month,
-                    adjusted_end.day,
-                    tzinfo=datetime.UTC,
-                )
-                for v in unique_identifier_range_map.values():
-                    v["end_date"] = adjusted_end
-                    v["end_date_operand"] = "<="
 
             df = db_interface.read(
                 table=table_name,
@@ -3608,9 +3399,8 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 end=end_date,
                 great_or_equal=great_or_equal,
                 less_or_equal=less_or_equal,
-                ids=unique_identifier_list,
+                ids=None,
                 columns=columns,
-                unique_identifier_range_map=unique_identifier_range_map,  # Pass range map
             )
 
         else:
@@ -3621,12 +3411,10 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 end_date=end_date,
                 great_or_equal=great_or_equal,
                 less_or_equal=less_or_equal,
-                unique_identifier_list=unique_identifier_list,
                 dimension_filters=dimension_filters,
                 index_coordinates=index_coordinates,
                 dimension_range_map=dimension_range_map,
                 columns=columns,
-                unique_identifier_range_map=unique_identifier_range_map,
             )
         if len(df) == 0:
             logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
@@ -4333,25 +4121,6 @@ class TimeScaleDB(DataSource):
             overwrite=overwrite,
         )
 
-    def filter_by_assets_ranges(
-        self, asset_ranges_map: dict, metadata: dict, update_hash: str, has_direct_connection: bool
-    ):
-
-
-
-        df = DataNodeUpdate.get_data_between_dates_from_api(
-            update_hash=update_hash,
-            data_source_id=self.id,
-            start_date=None,
-            end_date=None,
-            great_or_equal=True,
-            less_or_equal=True,
-            asset_symbols=None,
-            columns=None,
-            symbol_range_map=asset_ranges_map,  # <-- key for applying ranges
-        )
-        return df
-
     def get_data_by_time_index(
         self,
         data_node_update: DataNodeUpdate,
@@ -4360,7 +4129,6 @@ class TimeScaleDB(DataSource):
         great_or_equal: bool = True,
         less_or_equal: bool = True,
         columns: list[str] | None = None,
-        unique_identifier_list: list[str] | None = None,
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
@@ -4372,7 +4140,6 @@ class TimeScaleDB(DataSource):
             end_date=end_date,
             great_or_equal=great_or_equal,
             less_or_equal=less_or_equal,
-            unique_identifier_list=unique_identifier_list,
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,

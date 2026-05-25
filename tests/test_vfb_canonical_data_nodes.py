@@ -540,7 +540,7 @@ def test_backfill_portfolio_metadata_from_legacy_portfolios():
 
 
 def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monkeypatch):
-    import mainsequence.client.markets.models.accounts_and_portfolios as portfolio_models
+    import mainsequence.markets.client.models.accounts_and_portfolios as portfolio_models
 
     request_calls = []
 
@@ -594,7 +594,7 @@ def test_portfolio_create_from_time_series_uses_canonical_data_node_payload(monk
 
 
 def test_portfolio_metadata_read_helpers_use_index_asset_identifier():
-    import mainsequence.client.markets.models.accounts_and_portfolios as portfolio_models
+    import mainsequence.markets.client.models.accounts_and_portfolios as portfolio_models
 
     updater = _FakeSignalMetadataUpdater(
         rows=[

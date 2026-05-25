@@ -6,9 +6,9 @@ from decimal import Decimal
 
 import mainsequence.client as client_mod
 import mainsequence.client.base as base_mod
-import mainsequence.client.markets.models as models_mod
-import mainsequence.client.markets.models.accounts_and_portfolios as accounts_mod
-from mainsequence.client.markets.models import (
+import mainsequence.markets.client.models as models_mod
+import mainsequence.markets.client.models.accounts_and_portfolios as accounts_mod
+from mainsequence.markets.client.models import (
     Account,
     AccountTargetPosition,
     VirtualFundHistoricalHoldings,
@@ -220,9 +220,7 @@ def test_account_add_holdings_serializes_decimal_dict_positions(monkeypatch):
             {
                 "unique_identifier": "ASSET:BTC",
                 "quantity": Decimal("1.234567890123456789"),
-                "target_trade_time": datetime.datetime(
-                    2026, 5, 20, 9, 30, tzinfo=datetime.UTC
-                ),
+                "target_trade_time": datetime.datetime(2026, 5, 20, 9, 30, tzinfo=datetime.UTC),
                 "extra_details": {},
             }
         ],
@@ -232,9 +230,7 @@ def test_account_add_holdings_serializes_decimal_dict_positions(monkeypatch):
     assert payload_json["positions"][0]["quantity"] == "1.234567890123456789"
     assert payload_json["positions"][0]["target_trade_time"] == "2026-05-20T09:30:00Z"
     assert response.positions[0].quantity == Decimal("1.234567890123456789")
-    assert str(captured["url"]).endswith(
-        f"/orm/api/assets/account/{account.uid}/add-holdings/"
-    )
+    assert str(captured["url"]).endswith(f"/orm/api/assets/account/{account.uid}/add-holdings/")
     assert captured["r_type"] == "POST"
 
 

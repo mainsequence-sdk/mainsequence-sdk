@@ -28,13 +28,12 @@ class _JoinKeyValue(str):
 class JoinKey:
     """Compatibility constants for common data-node join keys.
 
-    Data-node joins are no longer limited to this pair. `JoinSpec.on` may
+    Data-node joins are no longer limited to this constant. `JoinSpec.on` may
     contain any configured time-first index vector, for example
-    ["time_index", "account_uid", "unique_identifier"].
+    ["time_index", "account_uid", "instrument_uid"].
     """
 
     time_index = _JoinKeyValue("time_index")
-    unique_identifier = _JoinKeyValue("unique_identifier")
 
 
 class SearchRequest(BaseSearchRequest):

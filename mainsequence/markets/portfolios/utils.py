@@ -14,8 +14,8 @@ from numpy.typing import NDArray
 from pydantic import BaseModel
 from tqdm import tqdm
 
-from mainsequence.client import Asset
 from mainsequence.logconf import logger
+from mainsequence.markets.client.models import Asset
 
 
 def get_vfb_logger():

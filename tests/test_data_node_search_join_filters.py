@@ -12,8 +12,7 @@ def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfigurati
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
     return models_tdag.SourceTableConfiguration(
-        id=11,
-        related_table=714,
+        related_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
         column_dtypes_map=column_dtypes_map,
@@ -29,7 +28,7 @@ def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfigurati
 
 def _storage(index_names: list[str], *, storage_hash: str = "prices_hash") -> models_tdag.DataNodeStorage:
     return models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash=storage_hash,
         data_source=1,
         source_class_name="PricesNode",
@@ -72,16 +71,16 @@ def test_search_request_allows_three_index_join_keys():
             JoinSpec(
                 name="joined",
                 node_unique_identifier="joined",
-                on=[JoinKey.time_index, "account_uid", JoinKey.unique_identifier],
+                on=[JoinKey.time_index, "account_uid", "instrument_uid"],
             )
         ],
     )
 
-    assert req.joins[0].on == ["time_index", "account_uid", "unique_identifier"]
+    assert req.joins[0].on == ["time_index", "account_uid", "instrument_uid"]
     assert req.model_dump(mode="json", exclude_none=True)["joins"][0]["on"] == [
         "time_index",
         "account_uid",
-        "unique_identifier",
+        "instrument_uid",
     ]
 
 

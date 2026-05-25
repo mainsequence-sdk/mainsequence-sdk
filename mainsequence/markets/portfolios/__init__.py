@@ -33,6 +33,11 @@ from mainsequence.markets.portfolios.data_nodes import (
     normalize_signal_weights_frame,
 )
 from mainsequence.markets.portfolios.simple_tables import (
+    PORTFOLIO_ASSET_TYPE,
+    Portfolio,
+    PortfolioAssetDeleteResult,
+    PortfolioAssetDetailConfiguration,
+    PortfolioAssetDetailUpdater,
     PortfolioMetadata,
     PortfoliosMetadataConfiguration,
     PortfoliosMetadataUpdater,

@@ -4,11 +4,11 @@ import datetime as dt
 import os
 from decimal import Decimal
 
-from mainsequence.client import Asset
-from mainsequence.client.markets.models.accounts_and_portfolios import (
+from mainsequence.markets.accounts import AccountHoldings
+from mainsequence.markets.client.models import Asset
+from mainsequence.markets.client.models.accounts_and_portfolios import (
     AccountHoldingsWritePosition,
 )
-from mainsequence.markets.accounts import AccountHoldings
 
 ACCOUNT_NAME = os.getenv("MAINSEQUENCE_EXAMPLE_ACCOUNT_NAME", "SDK Example Account")
 EXECUTION_VENUE_UID = os.getenv("MAINSEQUENCE_EXAMPLE_EXECUTION_VENUE_UID", "paper")

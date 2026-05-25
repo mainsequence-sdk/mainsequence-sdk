@@ -9,7 +9,8 @@ import pandas as pd
 from sklearn.linear_model import ElasticNet, Lasso, LinearRegression
 from tqdm import tqdm
 
-from mainsequence.client import MARKETS_CONSTANTS, Asset, AssetCategory
+from mainsequence.client.utils import MARKETS_CONSTANTS
+from mainsequence.markets.client.models import Asset, AssetCategory
 from mainsequence.markets.portfolios import TIMEDELTA
 from mainsequence.markets.portfolios.contrib.prices.data_nodes import (
     get_interpolated_prices_timeseries,

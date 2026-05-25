@@ -4,7 +4,7 @@ from typing import Union
 
 import pandas as pd
 
-import mainsequence.client as msc
+from mainsequence.markets.client.models import Asset
 from mainsequence.markets.portfolios.data_nodes import (
     SIGNAL_UID,
     SignalWeights,
@@ -48,7 +48,7 @@ class FixedWeights(SignalWeights):
         return info
 
     def get_asset_list(self) -> None | list:
-        asset_list = msc.Asset.filter(
+        asset_list = Asset.filter(
             unique_identifier__in=[
                 w.unique_identifier for w in self.asset_unique_identifier_weights
             ]

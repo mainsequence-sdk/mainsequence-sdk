@@ -101,6 +101,7 @@ def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> An
 def _(value, pickle_ts: bool):
     new_dict = json.loads(value.model_dump_json())
     if hasattr(value, "unique_identifier"):
+        # Generic SDK object identity, not a market-asset contract.
         new_dict["unique_identifier"] = value.unique_identifier
     return new_dict
 
@@ -113,6 +114,7 @@ def _(value: list, pickle_ts: bool):
     # 1. DETECT if it's a list of ORM models
     if isinstance(value[0], BaseObjectOrm):
         # 2. SORT the list to ensure a stable hash
+        # BaseObjectOrm resources expose unique_identifier as generic identity.
         sorted_value = sorted(value, key=lambda x: x.unique_identifier)
 
         # 3. SERIALIZE each item in the now-sorted list

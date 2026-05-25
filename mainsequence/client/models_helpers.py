@@ -5,20 +5,19 @@ import json
 import pathlib
 from collections.abc import Collection
 from decimal import Decimal
+from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal, Union
 
 import yaml
 from pydantic import BaseModel, Field, PositiveInt
 
-from mainsequence.client.markets.models import *
-
 from ..compute_validation import (
     decimal_to_storage,
     normalize_string,
     validate_and_normalize_compute_fields,
 )
-from .base import ShareableObjectMixin
+from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import raise_for_response
 from .models_tdag import (
     Project,
@@ -27,6 +26,16 @@ from .models_tdag import (
     _resolve_local_pod_project,
 )
 from .utils import make_request
+
+
+def get_model_class(model_class: str):
+    local_model = globals().get(model_class)
+    if local_model is not None:
+        return local_model
+
+    from mainsequence.markets.client.models.assets import get_model_class as get_market_model_class
+
+    return get_market_model_class(model_class)
 
 
 class CrontabSchedule(BaseModel):
@@ -101,7 +110,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
     MEMORY_PER_CPU_MAX: ClassVar[Decimal] = Decimal("6.5")
     GPU_MIN: ClassVar[int] = 1
     GPU_MAX: ClassVar[int] = 8
-    DEFAULT_ALLOWED_EXECUTION_EXTENSIONS: ClassVar[frozenset[str]] = frozenset({".py", ".ipynb", ".yaml"})
+    DEFAULT_ALLOWED_EXECUTION_EXTENSIONS: ClassVar[frozenset[str]] = frozenset(
+        {".py", ".ipynb", ".yaml"}
+    )
 
     id: int | None = Field(
         default=None,
@@ -363,7 +374,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
             raise ValueError("Pass only one of task_schedule or task_schedule_id.")
 
         if task_schedule_id is not None:
-            raise ValueError("task_schedule_id is not supported by the current backend. Pass task_schedule instead.")
+            raise ValueError(
+                "task_schedule_id is not supported by the current backend. Pass task_schedule instead."
+            )
 
         if task_schedule in (None, "", {}):
             return None
@@ -407,7 +420,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
             try:
                 every_int = int(every)
             except (TypeError, ValueError) as exc:
-                raise ValueError("task_schedule.schedule.every must be a positive integer.") from exc
+                raise ValueError(
+                    "task_schedule.schedule.every must be a positive integer."
+                ) from exc
             if every_int <= 0:
                 raise ValueError("task_schedule.schedule.every must be a positive integer.")
 
@@ -424,7 +439,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
         elif schedule_type == "crontab":
             expression = str(payload["schedule"].get("expression") or "").strip()
             if not expression:
-                raise ValueError("task_schedule.schedule.expression is required for crontab schedules.")
+                raise ValueError(
+                    "task_schedule.schedule.expression is required for crontab schedules."
+                )
             if len(expression.split()) != 5:
                 raise ValueError(
                     "task_schedule.schedule.expression must have 5 crontab fields: "
@@ -496,8 +513,6 @@ class Job(BaseObjectOrm, BasePydanticModel):
             payload["gpu_request"] = normalized_compute["gpu_request"]
         if normalized_compute["gpu_type"] is not None:
             payload["gpu_type"] = normalized_compute["gpu_type"]
-
-
 
         normalized_task_schedule = cls._normalize_task_schedule_payload(
             task_schedule=task_schedule,
@@ -651,9 +666,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
                 normalized_job.pop("project", None)
                 normalized_jobs.append(normalized_job)
             except TypeError as exc:
-                raise ValueError(
-                    f"jobs[{index}] has unsupported or missing fields: {exc}"
-                ) from exc
+                raise ValueError(f"jobs[{index}] has unsupported or missing fields: {exc}") from exc
             except Exception as exc:
                 raise ValueError(f"jobs[{index}] is invalid: {exc}") from exc
 
@@ -714,10 +727,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
         return r.json()
 
     def run_job(
-            self,
-            *,
-            timeout: int | None = None,
-            command_args: list[str] | None = None,
+        self,
+        *,
+        timeout: int | None = None,
+        command_args: list[str] | None = None,
     ) -> dict[str, Any]:
         if self.id is None:
             raise ValueError("Job must have an id before it can be run.")
@@ -917,7 +930,6 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         return r.json()
 
 
-
 class ProjectResource(BaseObjectOrm, BasePydanticModel):
     SEARCH_FIELDS: ClassVar[list[str]] = [
         "project__id",
@@ -955,7 +967,7 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         description="Display name of the resource discovered in the project's repository.",
         examples=["analytics_dashboard.py"],
     )
-    resource_type: Literal["dashboard",  "fastapi", "markdown"] | None = Field(
+    resource_type: Literal["dashboard", "fastapi", "markdown"] | None = Field(
         None,
         title="Resource Type",
         description="Type of the project resource. Allowed values are `dashboard`,  `fastapi`, and `markdown`.",
@@ -1051,7 +1063,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Unique identifier of the resource release.",
         examples=[123],
     )
-    subdomain: str  = Field(
+    subdomain: str = Field(
         title="Subdomain",
         description="DNS-safe label used as the subdomain for this release.",
         examples=["analytics-123"],
@@ -1068,7 +1080,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Optional project resource containing README or supporting documentation for this release. Can be either the resource ID or the expanded ProjectResource object.",
         examples=[84],
     )
-    related_job: int | Job  = Field(
+    related_job: int | Job = Field(
         title="Related Job",
         description="Job associated with this resource release. Can be either the job ID or the expanded Job object.",
         examples=[7],
@@ -1145,9 +1157,7 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             allowed_release_kinds = {kind.value for kind in ResourceReleaseKind}
             if normalized_release_kind not in allowed_release_kinds:
                 raise ValueError(
-                    "release_kind must be one of: "
-                    + ", ".join(sorted(allowed_release_kinds))
-                    + "."
+                    "release_kind must be one of: " + ", ".join(sorted(allowed_release_kinds)) + "."
                 )
 
         normalized_compute = Job._validate_and_normalize_compute_fields(

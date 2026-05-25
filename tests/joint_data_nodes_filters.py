@@ -50,7 +50,7 @@ def build_full_outer_request(*, figi: str | None = None, join_side_only: bool = 
                 name="polygon_historical_marketcap",
                 node_unique_identifier="polygon_historical_marketcap",
                 type=JoinType.full,
-                on=[JoinKey.time_index, JoinKey.unique_identifier],
+                on=[JoinKey.time_index, "unique_identifier"],
             )
         ],
         filter=and_(*filters),
@@ -210,7 +210,7 @@ req = SearchRequest(
             name="polygon_historical_marketcap",
             node_unique_identifier="polygon_historical_marketcap",
             type=JoinType.full,
-            on=[JoinKey.time_index, JoinKey.unique_identifier],
+            on=[JoinKey.time_index, "unique_identifier"],
         )
     ],
     filter=and_(

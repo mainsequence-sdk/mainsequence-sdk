@@ -2,7 +2,18 @@
 
 Date: 2026-05-20
 
-Status: Proposed
+Status: Partially Superseded
+
+Supersession note: ADR 0009 supersedes this ADR's asset-model ownership
+decision. This ADR remains the historical record for moving client market
+models out of `mainsequence/client/models_vam.py`, but it no longer defines
+`mainsequence.client.markets.models.assets` as the canonical owner for asset
+runtime behavior.
+
+Additional supersession note: ADR 0010 supersedes this ADR's final canonical
+package path decision. `mainsequence.client.markets.models` was a transitional
+target; the final market client model path is
+`mainsequence.markets.client.models`.
 
 ## Context
 
@@ -71,7 +82,8 @@ from mainsequence.client.markets.models import Portfolio
 
 `mainsequence.client.markets.models.core` is for shared definitions used across
 market model domains, such as `Calendar` and common query helpers.
-`mainsequence.client.markets.models.assets` owns asset-related models.
+`mainsequence.client.markets.models.assets` was originally intended to own
+asset-related models, but that ownership is superseded by ADR 0009.
 `mainsequence.client.markets.models.accounts_and_portfolios` owns account,
 portfolio, fund, execution, trade, and order models.
 

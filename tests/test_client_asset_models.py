@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-import mainsequence.client.markets.models.assets as assets_mod
-from mainsequence.client.markets.models.assets import Asset
+import mainsequence.markets.client.models.assets as assets_mod
+from mainsequence.markets.client.models.assets import Asset
 
 
 class _FakeResponse:

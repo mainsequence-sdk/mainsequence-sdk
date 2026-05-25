@@ -276,6 +276,64 @@ Definition of done: inside `UpdateStatistics`, `asset`,
 `asset_time_statistics`, `asset_list`, and `unique_identifier` do not appear in
 fields, method names, method parameters, defaults, docstrings, or comments.
 
+## Follow-Up: Remove Remaining TDAG Vocabulary Leaks
+
+`mainsequence.tdag` no longer imports `mainsequence.markets`, but some generic
+TDAG files still expose legacy asset-table vocabulary. These are compatibility
+paths, not package dependencies. They should be removed in a separate cleanup so
+the TDAG public surface is vocabulary-clean.
+
+Removal plan:
+
+1. [x] Remove `DataAccessMixin.get_df_between_dates(...)` parameters
+   `unique_identifier_list` and `unique_identifier_range_map` from
+   `mainsequence/tdag/data_nodes/data_nodes.py`.
+2. [x] Remove
+   `_legacy_unique_identifier_range_map_to_dimension_range_map(...)` from
+   `mainsequence/tdag/data_nodes/data_nodes.py`.
+3. [x] Update every TDAG and market caller still using
+   `unique_identifier_list` to pass
+   `dimension_filters={<dimension_name>: [...]}` explicitly.
+4. [x] Update every TDAG and market caller still using
+   `unique_identifier_range_map` to pass `dimension_range_map` with explicit
+   coordinate dictionaries.
+5. [x] Rewrite `DataAccessMixin.get_df_between_dates(...)` docstring so it only
+   documents `dimension_filters`, `index_coordinates`, and
+   `dimension_range_map`.
+6. [x] Rewrite `DataNode._execute_local_update(...)` docstring in
+   `mainsequence/tdag/data_nodes/data_nodes.py` so it describes generic
+   multidimensional indexes and does not prescribe `unique_identifier` for
+   asset tables.
+7. [x] Review `mainsequence/tdag/data_nodes/filters.py` and remove or rename
+   `JoinKey.unique_identifier` if it is only a market-table convenience.
+   Keep `node_unique_identifier` only if it means TDAG node identity, not market
+   asset identity.
+8. [x] Review `mainsequence/tdag/data_nodes/build_operations.py` serialization
+   of arbitrary objects with `.unique_identifier`. Replace it with a generic
+   protocol/name only if it is not intentionally modeling SDK object identity.
+9. [x] Remove or rename `filter_by_assets_ranges(...)` compatibility wrappers
+   in `mainsequence/client/models_tdag.py` after all callers use canonical
+   dimension range APIs.
+10. [x] Remove `unique_identifier_list` and `unique_identifier_range_map`
+    compatibility parameters from `mainsequence/client/models_tdag.py` methods
+    after callers are migrated.
+11. [x] Remove `max_per_asset_symbol` and `min_per_asset_symbol` legacy parsing
+    from `SourceTableConfiguration.get_data_updates()` once backend responses
+    only use `index_progress` and `index_min`.
+12. [x] Add tests asserting `mainsequence/tdag` has no imports from
+    `mainsequence.markets` or `mainsequence.client.markets`.
+13. [x] Add tests or static checks for the vocabulary boundary: generic TDAG
+    public APIs should not expose market asset terminology such as `asset_list`,
+    `get_asset_list`, `unique_identifier_list`, or
+    `unique_identifier_range_map`.
+14. [x] Run targeted TDAG, APIDataNode, market, portfolio, and docs-reference
+    checks after the compatibility aliases are removed.
+
+Definition of done: `rg "asset_list|get_asset_list|unique_identifier_list|unique_identifier_range_map|filter_by_assets_ranges" mainsequence/tdag mainsequence/client/models_tdag.py`
+returns no public TDAG compatibility APIs. Remaining `unique_identifier`
+mentions must either be market-layer code or generic object identity code with
+an explicit justification.
+
 ## Risks
 
 - Some market tables use `unique_identifier` together with other identity

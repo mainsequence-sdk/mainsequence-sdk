@@ -1,72 +1,14 @@
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+"""Deprecated compatibility module for market client core models."""
 
-from mainsequence.client.base import BaseObjectOrm, BasePydanticModel
+from __future__ import annotations
 
-COMPOSITE_TO_ISO = {
-    "AR": "XBUE",
-    "AU": "XASX",
-    "BZ": "BVMF",
-    "CN": "XTSE",
-    "CB": "XBOG",
-    "CH": "XSHG",
-    "CI": "XSGO",
-    "CP": "XPRA",
-    "DC": "XCSE",
-    "FH": "XHEL",
-    "FP": "XPAR",
-    "GA": "ASEX",
-    "GR": "XFRA",
-    "HK": "XHKG",
-    "IE": "XDUB",
-    "IM": "XMIL",
-    "IN": "XBOM",
-    "IT": "XTAE",
-    "JP": "XTKS",
-    "KS": "XKRX",
-    "KZ": "AIXK",
-    "LN": "XLON",
-    "MM": "XMEX",
-    "MK": "XKLS",
-    "NA": "XAMS",
-    "PL": "XLIS",
-    "PM": "XPHS",
-    "PW": "XWAR",
-    "RO": "XBSE",
-    "SA": "XSAU",
-    "SM": "XMAD",
-    "SS": "XSTO",
-    "SW": "XSWX",
-    "TH": "XBKK",
-    "TI": "XIST",
-    "TT": "XTAI",
-    "US": "XNYS",
-    "AT": "XWBO",
-    "BB": "XBRU",
-}
+import warnings
 
+warnings.warn(
+    "mainsequence.client.markets.models.core is deprecated; "
+    "use mainsequence.markets.client.models.core.",
+    DeprecationWarning,
+    stacklevel=2,
+)
 
-class Calendar(BaseObjectOrm, BasePydanticModel):
-    id: int | None = None
-    name: str
-    calendar_dates: dict | None = None
-
-    def __str__(self):
-        return self.name
-
-    def __repr__(self) -> str:
-        return self.name
-
-
-
-
-
-def _set_query_param_on_url(url: str, key: str, value) -> str:
-    """
-    Add or replace a query parameter in a URL without disturbing others (e.g., offset/page).
-    Works with absolute or relative URLs.
-    """
-    parts = urlsplit(url)
-    q = dict(parse_qsl(parts.query, keep_blank_values=True))
-    q[key] = str(value)
-    new_query = urlencode(q, doseq=True)
-    return urlunsplit((parts.scheme, parts.netloc, parts.path, new_query, parts.fragment))
+from mainsequence.markets.client.models.core import *  # noqa: F401,F403,E402

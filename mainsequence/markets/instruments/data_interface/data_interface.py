@@ -7,7 +7,7 @@ from typing import TypedDict
 import pandas as pd
 from cachetools import LRUCache, cachedmethod
 
-import mainsequence.client as msc
+from mainsequence.markets.client.models import InstrumentsConfiguration
 
 from ..interest_rates.etl.curve_codec import (
     decompress_string_to_curve as _decompress_string_to_curve,
@@ -26,7 +26,6 @@ class DateInfo(TypedDict, total=False):
 UniqueIdentifierRangeMap = dict[str, DateInfo]
 
 
-
 class MSInterface:
 
     # ---- bounded, shared caches (class-level) ----
@@ -41,19 +40,24 @@ class MSInterface:
     def get_historical_discount_curve(self, curve_name, target_date):
         from mainsequence.logconf import logger
         from mainsequence.tdag import APIDataNode
-        instrument_configuration=msc.InstrumentsConfiguration.filter()[0]
+
+        instrument_configuration = InstrumentsConfiguration.filter()[0]
 
         if instrument_configuration.discount_curves_storage_node is None:
-            raise Exception("discount_curves_storage_node needs to be set in https://main-sequence.app Instruments Section")
+            raise Exception(
+                "discount_curves_storage_node needs to be set in https://main-sequence.app Instruments Section"
+            )
 
-        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.discount_curves_storage_node)
+        data_node = APIDataNode.build_from_table_id(
+            table_id=instrument_configuration.discount_curves_storage_node
+        )
 
         # for test purposes only get lats observations
         use_last_observation = (
             os.environ.get("USE_LAST_OBSERVATION_MS_INSTRUMENT", "false").lower() == "true"
         )
         if use_last_observation:
-            original_request_date=target_date
+            original_request_date = target_date
             update_statistics = data_node.get_update_statistics()
             target_date = update_statistics.get_last_update_for_identity(curve_name)
             logger.warning("Curve is using last observation")
@@ -72,7 +76,9 @@ class MSInterface:
         )
 
         if curve.empty:
-            raise Exception(f"{target_date} is empty. If you want to  use the latest curve available set USE_LAST_OBSERVATION_MS_INSTRUMENT=true")
+            raise Exception(
+                f"{target_date} is empty. If you want to  use the latest curve available set USE_LAST_OBSERVATION_MS_INSTRUMENT=true"
+            )
         zeros = _decompress_string_to_curve(curve["curve"].iloc[0])
         zeros = pd.Series(zeros).reset_index()
         zeros["index"] = pd.to_numeric(zeros["index"])
@@ -81,7 +87,7 @@ class MSInterface:
         nodes = [{"days_to_maturity": d, "zero": z} for d, z in zeros.to_dict().items() if d > 0]
 
         if use_last_observation:
-            target_date=original_request_date
+            target_date = original_request_date
 
         return nodes, target_date
 
@@ -101,13 +107,15 @@ class MSInterface:
         from mainsequence.logconf import logger
         from mainsequence.tdag import APIDataNode
 
-        instrument_configuration = msc.InstrumentsConfiguration.filter()[0]
+        instrument_configuration = InstrumentsConfiguration.filter()[0]
         if instrument_configuration.reference_rates_fixings_storage_node is None:
-            raise Exception("reference_rates_fixings_storage_node needs to be set in https://main-sequence.app  Instruments Section")
+            raise Exception(
+                "reference_rates_fixings_storage_node needs to be set in https://main-sequence.app  Instruments Section"
+            )
 
-        data_node = APIDataNode.build_from_table_id(table_id=instrument_configuration.reference_rates_fixings_storage_node)
-
-
+        data_node = APIDataNode.build_from_table_id(
+            table_id=instrument_configuration.reference_rates_fixings_storage_node
+        )
 
         fixings_df = data_node.get_ranged_data_per_asset(
             range_descriptor={

@@ -9,7 +9,6 @@ import pytest
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
-from mainsequence.client.markets.models.assets import Asset
 from mainsequence.client.models_tdag import UpdateStatistics
 from mainsequence.markets.assets.data_nodes import (
     ASSET_DATA_NODE_INDEX_NAMES,
@@ -25,8 +24,8 @@ from mainsequence.markets.markets_data_node import (
 from mainsequence.tdag.data_nodes import DataNode
 
 
-def _asset(unique_identifier: str) -> Asset:
-    return Asset(unique_identifier=unique_identifier)
+def _asset(unique_identifier: str) -> SimpleNamespace:
+    return SimpleNamespace(unique_identifier=unique_identifier)
 
 
 def test_market_data_node_validates_asset_lists():
@@ -39,16 +38,14 @@ def test_market_data_node_validates_asset_lists():
     with pytest.raises(ValueError, match="cannot be empty"):
         MarketDataNode.validate_asset_list([])
 
-    with pytest.raises(TypeError, match="AssetMixin"):
+    with pytest.raises(TypeError, match="unique_identifier"):
         MarketDataNode.validate_asset_list([object()])
 
     with pytest.raises(ValueError, match="non-empty"):
         MarketDataNode.validate_asset_list([_asset(" ")])
 
     with pytest.raises(ValueError, match="duplicate"):
-        MarketDataNode.validate_asset_list(
-            [_asset("asset:one"), _asset("asset:one")]
-        )
+        MarketDataNode.validate_asset_list([_asset("asset:one"), _asset("asset:one")])
 
 
 def test_market_data_node_converts_assets_to_dimension_filters():
@@ -65,9 +62,7 @@ def test_market_data_node_converts_asset_ranges_to_dimension_ranges():
     start_date = dt.datetime(2026, 1, 1, tzinfo=dt.UTC)
     range_descriptor = {"asset:one": {"start_date": start_date}}
 
-    dimension_range_map = MarketDataNode.asset_range_map_to_dimension_range_map(
-        range_descriptor
-    )
+    dimension_range_map = MarketDataNode.asset_range_map_to_dimension_range_map(range_descriptor)
 
     assert dimension_range_map == [
         {
@@ -199,9 +194,7 @@ def test_market_data_node_scopes_update_statistics_to_assets():
         }
     }
     assert scoped.max_time_index_value == dt.datetime(2026, 1, 4, tzinfo=dt.UTC)
-    assert scoped.get_max_time_in_update_statistics() == dt.datetime(
-        2026, 1, 2, tzinfo=dt.UTC
-    )
+    assert scoped.get_max_time_in_update_statistics() == dt.datetime(2026, 1, 2, tzinfo=dt.UTC)
     assert node.get_asset_update_range_map_great_or_equal() == {
         "asset:one": {
             "start_date_operand": ">=",
@@ -224,9 +217,7 @@ def test_market_data_node_scopes_update_statistics_to_assets():
             "start_date": fallback,
         },
     ]
-    assert node.get_asset_columnar_update_range_map_great_or_equal(
-        column_filter=["close"]
-    ) == {
+    assert node.get_asset_columnar_update_range_map_great_or_equal(column_filter=["close"]) == {
         "close": {
             "asset:one": {
                 "start_date_operand": ">=",

@@ -1,4 +1,3 @@
-import copy
 import datetime
 import inspect
 import json
@@ -29,7 +28,6 @@ from mainsequence.client.models_tdag import (
     Scheduler,
     SessionDataSource,
     TableMetaData,
-    UniqueIdentifierRangeMap,
     UpdateStatistics,
 )
 from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
@@ -51,18 +49,6 @@ def get_data_source_from_orm() -> Any:
 
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
-
-
-def _legacy_unique_identifier_range_map_to_dimension_range_map(
-    range_descriptor: UniqueIdentifierRangeMap | None,
-) -> list[dict[str, Any]] | None:
-    """LEGACY_COMPAT: asset range maps now belong to MarketDataNode."""
-    if range_descriptor is None:
-        return None
-    return [
-        {"coordinate": {"unique_identifier": unique_identifier}, **copy.deepcopy(date_info)}
-        for unique_identifier, date_info in range_descriptor.items()
-    ]
 
 
 class DependencyUpdateError(Exception):
@@ -203,123 +189,30 @@ class DataAccessMixin:
         self,
         start_date: datetime.datetime | None = None,
         end_date: datetime.datetime | None = None,
-        unique_identifier_list: list | None = None,
         great_or_equal: bool = True,
         less_or_equal: bool = True,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
         dimension_filters: dict[str, list] | None = None,
         index_coordinates: list[dict] | None = None,
         dimension_range_map: list[dict] | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
+        """Retrieve rows using time bounds and explicit TDAG dimensions.
+
+        `dimension_filters`, `index_coordinates`, and `dimension_range_map`
+        are the only identity-scoping inputs accepted by core TDAG. Domain
+        specific helpers should live outside the TDAG core.
         """
-        Retrieve rows from this DataNode whose `time_index` (and optional `unique_identifier`) fall within the specified date ranges.
-
-        **Note:** If `unique_identifier_range_map` is provided, **all** other filters
-        (`start_date`, `end_date`, `unique_identifier_list`, `great_or_equal`, `less_or_equal`)
-        are ignored, and only the per-identifier ranges in `unique_identifier_range_map` apply.
-
-        Filtering logic (when `unique_identifier_range_map` is None):
-          - If `start_date` is provided, include rows where
-            `time_index > start_date` (if `great_or_equal=False`)
-            or `time_index >= start_date` (if `great_or_equal=True`).
-          - If `end_date` is provided, include rows where
-            `time_index < end_date` (if `less_or_equal=False`)
-            or `time_index <= end_date` (if `less_or_equal=True`).
-          - If `unique_identifier_list` is provided, only include rows whose
-            `unique_identifier` is in that list.
-
-        Filtering logic (when `unique_identifier_range_map` is provided):
-          - For each `unique_identifier`, apply its own `start_date`/`end_date`
-            filters using the specified operands (`">"`, `">="`, `"<"`, `"<="`):
-            {
-              <uid>: {
-                "start_date": datetime,
-                "start_date_operand": ">=" or ">",
-                "end_date": datetime,
-                "end_date_operand": "<=" or "<"
-              },
-              ...
-            }
-
-        Parameters
-        ----------
-        start_date : datetime.datetime or None
-            Global lower bound for `time_index`. Ignored if `unique_identifier_range_map` is provided.
-        end_date : datetime.datetime or None
-            Global upper bound for `time_index`. Ignored if `unique_identifier_range_map` is provided.
-        unique_identifier_list : list or None
-            If provided, only include rows matching these IDs. Ignored if `unique_identifier_range_map` is provided.
-        great_or_equal : bool, default True
-            If True, use `>=` when filtering by `start_date`; otherwise use `>`. Ignored if `unique_identifier_range_map` is provided.
-        less_or_equal : bool, default True
-            If True, use `<=` when filtering by `end_date`; otherwise use `<`. Ignored if `unique_identifier_range_map` is provided.
-        unique_identifier_range_map : UniqueIdentifierRangeMap or None
-            Mapping of specific `unique_identifier` keys to their own sub-filters. When provided, this is the sole filter applied.
-
-        Returns
-        -------
-        pd.DataFrame
-            A DataFrame containing rows that satisfy the combined time and identifier filters.
-        """
-        if unique_identifier_list is not None:
-            # LEGACY_COMPAT: high-level asset-table alias. Runtime callers should
-            # pass dimension_filters={"unique_identifier": [...]} when targeting
-            # backend-backed data-node storage.
-            warnings.warn(
-                "Deprecated TDAG compatibility path: unique_identifier_list was "
-                "passed to get_df_between_dates(). Use "
-                "dimension_filters={'unique_identifier': [...]} instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-        if unique_identifier_range_map is not None:
-            # LEGACY_COMPAT: high-level asset-table alias. Runtime callers should
-            # pass dimension_range_map with explicit coordinate dictionaries.
-            warnings.warn(
-                "Deprecated TDAG compatibility path: unique_identifier_range_map "
-                "was passed to get_df_between_dates(). Use dimension_range_map "
-                "with coordinate dictionaries instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-        if isinstance(self.local_persist_manager, APIPersistManager):
-            if unique_identifier_list is not None:
-                if (
-                    dimension_filters is not None
-                    or index_coordinates is not None
-                    or dimension_range_map is not None
-                ):
-                    raise ValueError(
-                        "Do not mix unique_identifier_list with canonical dimension filters."
-                    )
-                dimension_filters = {"unique_identifier": list(unique_identifier_list)}
-                unique_identifier_list = None
-            if unique_identifier_range_map is not None:
-                if (
-                    dimension_filters is not None
-                    or index_coordinates is not None
-                    or dimension_range_map is not None
-                ):
-                    raise ValueError(
-                        "Do not mix unique_identifier_range_map with canonical dimension filters."
-                    )
-                dimension_range_map = _legacy_unique_identifier_range_map_to_dimension_range_map(
-                    unique_identifier_range_map
-                )
-                unique_identifier_range_map = None
         return self.local_persist_manager.get_df_between_dates(
             start_date=start_date,
             end_date=end_date,
-            unique_identifier_list=unique_identifier_list,
             great_or_equal=great_or_equal,
             less_or_equal=less_or_equal,
-            unique_identifier_range_map=unique_identifier_range_map,
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
             columns=columns,
         )
+
 
 class APIDataNode(DataAccessMixin):
 
@@ -1339,8 +1232,9 @@ class DataNode(DataAccessMixin, ABC):
         - no duplicate index keys,
         - no datetime payload columns (time should live in the index).
 
-        For asset MultiIndex tables, the second index level should be
-        ``unique_identifier`` and should map to platform assets.
+        MultiIndex tables should use the configured time-first index vector.
+        Any identity dimensions after ``time_index`` must match the table's
+        source-table configuration.
 
         Returns
         -------

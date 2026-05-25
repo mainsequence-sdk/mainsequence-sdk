@@ -586,102 +586,18 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
     }
 
 
-def test_legacy_unique_identifier_list_translates_only_for_two_index_table(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-        text = ""
-
-        @staticmethod
-        def json():
-            return []
-
-    def _fake_make_request(*, r_type, url, payload, s, loaders, time_out=None):
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    with pytest.warns(FutureWarning, match="unique_identifier_list"):
+def test_removed_unique_identifier_aliases_raise_type_error():
+    with pytest.raises(TypeError):
         _storage(["time_index", "unique_identifier"]).get_last_observation(
             unique_identifier_list=["BTC", "ETH"]
         )
 
-    assert captured["payload"] == {
-        "json": {"dimension_filters": {"unique_identifier": ["BTC", "ETH"]}}
-    }
-
-    with pytest.raises(ValueError, match=r'index_names\[1:\] == \["unique_identifier"\]'):
-        _storage(["time_index", "account_uid", "unique_identifier"]).get_last_observation(
-            unique_identifier_list=["BTC"]
-        )
-
-
-def test_legacy_unique_identifier_range_map_translates_only_for_two_index_table(monkeypatch):
-    captured_payloads = []
-
-    class FakeResponse:
-        status_code = 200
-        text = ""
-
-        @staticmethod
-        def json():
-            return {"results": [], "next_offset": None}
-
-    def _fake_make_request(*, s, loaders, payload, r_type, url):
-        captured_payloads.append(payload["json"])
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
-    end = datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC)
-    with pytest.warns(FutureWarning, match="unique_identifier_range_map"):
+    with pytest.raises(TypeError):
         _storage(["time_index", "unique_identifier"]).get_data_between_dates_from_api(
-            unique_identifier_range_map={
-                "BTC": {"start_date": start, "end_date": end}
-            }
+            unique_identifier_range_map={"BTC": {}}
         )
 
-    assert captured_payloads == [
-        {
-            "start_date": None,
-            "end_date": None,
-            "great_or_equal": None,
-            "less_or_equal": None,
-            "columns": None,
-            "offset": 0,
-            "dimension_range_map": [
-                {
-                    "coordinate": {"unique_identifier": "BTC"},
-                    "start_date": int(start.timestamp()),
-                    "end_date": int(end.timestamp()),
-                }
-            ],
-        }
-    ]
-
-    with pytest.raises(ValueError, match=r'index_names\[1:\] == \["unique_identifier"\]'):
-        _storage(["time_index", "account_uid", "unique_identifier"]).get_data_between_dates_from_api(
-            unique_identifier_range_map={
-                "BTC": {"start_date": start, "end_date": end}
-            }
-        )
-
-
-def test_node_identifier_legacy_alias_requires_explicit_two_index_shape():
-    with pytest.raises(ValueError, match="Legacy unique_identifier aliases"):
+    with pytest.raises(TypeError):
         models_tdag.DataNodeStorage.get_data_between_dates_from_node_identifier(
             node_identifier="prices-node",
             unique_identifier_list=["BTC"],

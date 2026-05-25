@@ -5,10 +5,7 @@ import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from mainsequence.client import (
-    Asset,
-    AssetCategory,
-)
+from mainsequence.markets.client.models import Asset, AssetCategory
 from mainsequence.markets.portfolios.data_nodes import (
     SignalWeights,
 )
@@ -181,15 +178,11 @@ class MarketCap(SignalWeights):
 
         ms_asset_list = Asset.filter_with_asset_class(
             exchange_code=None,
-            asset_ticker_group_id__in=[
-                a.asset_ticker_group_id for a in asset_list
-            ],
+            asset_ticker_group_id__in=[a.asset_ticker_group_id for a in asset_list],
         )
 
         ms_asset_list = {a.asset_ticker_group_id: a for a in ms_asset_list}
-        asset_list_to_share_class = {
-            a.asset_ticker_group_id: a for a in asset_list
-        }
+        asset_list_to_share_class = {a.asset_ticker_group_id: a for a in asset_list}
 
         market_cap_uid_range_map = {
             ms_asset.get_spot_reference_asset_unique_identifier(): unique_identifier_range_market_cap_map[

@@ -10,11 +10,8 @@ from joblib import Parallel, delayed
 from pydantic import ConfigDict, Field
 from tqdm import tqdm
 
-import mainsequence.client as msc
-from mainsequence.client import (
-    Asset,
-    AssetCategory,
-)
+from mainsequence.client.models_tdag import UpdateStatistics
+from mainsequence.markets.client.models import Asset, AssetCategory
 from mainsequence.markets.markets_data_node import (
     MarketDataNode,
     MarketDataNodeConfiguration,
@@ -673,9 +670,7 @@ class InterpolatedPrices(MarketDataNode):
         upsampled_df = []
 
         dimension_range_map = self.get_asset_dimension_range_map_great_or_equal()
-        full_last_observation = self.get_df_between_dates(
-            dimension_range_map=dimension_range_map
-        )
+        full_last_observation = self.get_df_between_dates(dimension_range_map=dimension_range_map)
         last_observation_map = {}
 
         for unique_identifier in raw_data_df["unique_identifier"].unique():
@@ -772,9 +767,7 @@ class InterpolatedPrices(MarketDataNode):
         """
         dimension_range_map = self.get_asset_dimension_range_map_great_or_equal()
 
-        raw_data_df = self.bars_ts.get_df_between_dates(
-            dimension_range_map=dimension_range_map
-        )
+        raw_data_df = self.bars_ts.get_df_between_dates(dimension_range_map=dimension_range_map)
         if raw_data_df.empty:
             self.logger.info("No new data to interpolate")
             return pd.DataFrame()
@@ -807,7 +800,7 @@ class InterpolatedPrices(MarketDataNode):
         """
         Updates the series from the source based on the latest value.
         """
-        us:msc.UpdateStatistics=self.update_statistics
+        us: UpdateStatistics = self.update_statistics
 
         self.asset_calendar_map = {
             a.unique_identifier: a.get_calendar() for a in self.get_update_asset_list() or []

@@ -4,8 +4,8 @@ from datetime import timedelta
 
 import pandas as pd
 
-from mainsequence.client import Asset, AssetCategory
 from mainsequence.client.models_tdag import Artifact
+from mainsequence.markets.client.models import Asset, AssetCategory
 from mainsequence.markets.portfolios.data_nodes import SignalWeights
 from mainsequence.markets.portfolios.models import (
     AssetsConfiguration,

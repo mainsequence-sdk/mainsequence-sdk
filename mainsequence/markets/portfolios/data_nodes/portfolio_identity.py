@@ -42,9 +42,9 @@ def get_or_create_portfolio_index_asset(
     )
     resolver = portfolio_resolver
     if resolver is None:
-        import mainsequence.client as msc
+        from mainsequence.markets.client.models import Portfolio
 
-        resolver = msc.Portfolio
+        resolver = Portfolio
 
     get_or_create = getattr(resolver, "get_or_create_from_configuration_hash", None)
     if not callable(get_or_create):

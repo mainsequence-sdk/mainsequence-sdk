@@ -245,7 +245,6 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
                 "dynamic_table_id": 714,
                 "deleted_count": 123,
                 "table_empty": False,
-                "unique_identifier_list": ["AAPL", "MSFT"],
                 "stats": {
                     "last_time_index_value": "2026-03-31T23:59:00Z",
                     "earliest_index_value": "2024-01-01T00:00:00Z",
@@ -265,37 +264,35 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
 
     storage = models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         sourcetableconfiguration=models_tdag.SourceTableConfiguration(
-            id=11,
-            related_table=714,
+            related_table_uid="714",
             time_index_name="time_index",
-            index_names=["time_index", "unique_identifier"],
+            index_names=["time_index", "instrument_uid"],
             column_dtypes_map={
                 "time_index": "datetime64[ns, UTC]",
-                "unique_identifier": "object",
+                "instrument_uid": "object",
                 "value": "float64",
             },
             storage_layout={
                 "time_index": "time_index",
-                "identity_dimensions": ["unique_identifier"],
+                "identity_dimensions": ["instrument_uid"],
             },
             physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "unique_identifier"]},
+                "uniqueness": {"columns": ["time_index", "instrument_uid"]},
             },
         ),
     )
 
-    with pytest.warns(FutureWarning, match="unique_identifier_list"):
-        result = storage.delete_after_date(
-            "2026-04-01T00:00:00Z",
-            unique_identifier_list=["AAPL", "MSFT"],
-            timeout=30,
-        )
+    result = storage.delete_after_date(
+        "2026-04-01T00:00:00Z",
+        dimension_filters={"instrument_uid": ["AAPL", "MSFT"]},
+        timeout=30,
+    )
 
     assert result["ok"] is True
     assert result["deleted_count"] == 123
@@ -305,14 +302,14 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
-                "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},
+                "dimension_filters": {"instrument_uid": ["AAPL", "MSFT"]},
             }
         },
         "timeout": 30,
     }
 
 
-def test_data_node_storage_delete_after_date_accepts_one_identifier(monkeypatch):
+def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypatch):
     from mainsequence.client import models_tdag
 
     captured = {}
@@ -333,60 +330,63 @@ def test_data_node_storage_delete_after_date_accepts_one_identifier(monkeypatch)
     monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
 
     storage = models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
         sourcetableconfiguration=models_tdag.SourceTableConfiguration(
-            id=11,
-            related_table=714,
+            related_table_uid="714",
             time_index_name="time_index",
-            index_names=["time_index", "unique_identifier"],
+            index_names=["time_index", "instrument_uid"],
             column_dtypes_map={
                 "time_index": "datetime64[ns, UTC]",
-                "unique_identifier": "object",
+                "instrument_uid": "object",
                 "value": "float64",
             },
             storage_layout={
                 "time_index": "time_index",
-                "identity_dimensions": ["unique_identifier"],
+                "identity_dimensions": ["instrument_uid"],
             },
             physical_index_plan={
-                "uniqueness": {"columns": ["time_index", "unique_identifier"]},
+                "uniqueness": {"columns": ["time_index", "instrument_uid"]},
             },
         ),
     )
 
-    with pytest.warns(FutureWarning, match="unique_identifier"):
-        storage.delete_after_date(
-            datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
-            unique_identifier="AAPL",
-        )
+    storage.delete_after_date(
+        datetime.datetime(2026, 4, 1, 0, 0, tzinfo=datetime.UTC),
+        index_coordinates=[{"instrument_uid": "AAPL"}],
+    )
 
     assert captured["payload"] == {
         "json": {
             "after_date": "2026-04-01T00:00:00+00:00",
-            "dimension_filters": {"unique_identifier": ["AAPL"]},
+            "index_coordinates": [{"instrument_uid": "AAPL"}],
         }
     }
 
 
-def test_data_node_storage_delete_after_date_rejects_both_identifier_shapes():
+def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases():
     from mainsequence.client.models_tdag import DataNodeStorage
 
     storage = DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
     )
 
-    with pytest.raises(ValueError, match="either unique_identifier or unique_identifier_list"):
+    with pytest.raises(TypeError):
         storage.delete_after_date(
             "2026-04-01T00:00:00Z",
             unique_identifier="AAPL",
+        )
+
+    with pytest.raises(TypeError):
+        storage.delete_after_date(
+            "2026-04-01T00:00:00Z",
             unique_identifier_list=["AAPL"],
         )
 
@@ -426,7 +426,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
 
     storage = models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
@@ -478,7 +478,7 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
     monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
 
     storage = models_tdag.DataNodeStorage(
-        id=714,
+        uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",

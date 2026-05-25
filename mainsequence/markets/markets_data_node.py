@@ -2,23 +2,23 @@ from __future__ import annotations
 
 import copy
 import datetime
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import pandas as pd
 from pydantic import Field
 
-from mainsequence.client.markets.models.assets import AssetMixin
 from mainsequence.client.models_tdag import UniqueIdentifierRangeMap, UpdateStatistics
 from mainsequence.tdag.data_nodes import DataNode, DataNodeConfiguration
 
 ASSET_UNIQUE_IDENTIFIER_DIMENSION = "unique_identifier"
+MarketAssetScopeItem = str | Mapping[str, Any] | Any
 
 
 class MarketDataNodeConfiguration(DataNodeConfiguration):
     """Base configuration for DataNodes scoped to platform market assets."""
 
-    asset_list: list[AssetMixin] | None = Field(
+    asset_list: list[MarketAssetScopeItem] | None = Field(
         default=None,
         description=(
             "Optional platform asset scope for updater partitioning. Asset "
@@ -39,12 +39,28 @@ class MarketDataNode(DataNode):
     asset_identity_dimension = ASSET_UNIQUE_IDENTIFIER_DIMENSION
 
     @classmethod
+    def _asset_unique_identifier(cls, asset: MarketAssetScopeItem) -> str:
+        if isinstance(asset, str):
+            return asset
+        if isinstance(asset, Mapping):
+            value = asset.get(cls.asset_identity_dimension)
+        else:
+            value = getattr(asset, cls.asset_identity_dimension, None)
+
+        if not isinstance(value, str):
+            raise TypeError(
+                "MarketDataNode asset scopes must contain strings, mappings, "
+                f"or objects with {cls.asset_identity_dimension!r}."
+            )
+        return value
+
+    @classmethod
     def validate_asset_list(
         cls,
-        asset_list: Iterable[AssetMixin] | None,
+        asset_list: Iterable[MarketAssetScopeItem] | None,
         *,
         allow_empty: bool = False,
-    ) -> list[AssetMixin] | None:
+    ) -> list[MarketAssetScopeItem] | None:
         """Validate and normalize an explicit market asset scope."""
         if asset_list is None:
             return None
@@ -55,14 +71,12 @@ class MarketDataNode(DataNode):
 
         seen_unique_identifiers: set[str] = set()
         for position, asset in enumerate(assets):
-            if not isinstance(asset, AssetMixin):
-                raise TypeError(
-                    "MarketDataNode asset scopes must contain AssetMixin instances; "
-                    f"item {position} has type {type(asset).__name__}."
-                )
+            try:
+                unique_identifier = cls._asset_unique_identifier(asset)
+            except TypeError as exc:
+                raise TypeError(f"{exc} Item {position} has type {type(asset).__name__}.") from exc
 
-            unique_identifier = getattr(asset, cls.asset_identity_dimension, None)
-            if not isinstance(unique_identifier, str) or not unique_identifier.strip():
+            if not unique_identifier.strip():
                 raise ValueError(
                     "MarketDataNode asset scopes require a non-empty "
                     f"{cls.asset_identity_dimension!r}; item {position} is invalid."
@@ -80,19 +94,19 @@ class MarketDataNode(DataNode):
     @classmethod
     def asset_unique_identifiers(
         cls,
-        asset_list: Iterable[AssetMixin] | None,
+        asset_list: Iterable[MarketAssetScopeItem] | None,
     ) -> list[str] | None:
         """Return validated asset unique identifiers."""
         assets = cls.validate_asset_list(asset_list)
         if assets is None:
             return None
 
-        return [getattr(asset, cls.asset_identity_dimension) for asset in assets]
+        return [cls._asset_unique_identifier(asset) for asset in assets]
 
     @classmethod
     def asset_dimension_filters(
         cls,
-        asset_list: Iterable[AssetMixin] | None,
+        asset_list: Iterable[MarketAssetScopeItem] | None,
     ) -> dict[str, list[str]] | None:
         """Translate an asset scope into canonical DataNode dimension filters."""
         unique_identifiers = cls.asset_unique_identifiers(asset_list)
@@ -169,9 +183,7 @@ class MarketDataNode(DataNode):
             max_value = None
             for child in value.values():
                 child_max = cls._max_in_nested_values(child)
-                if child_max is not None and (
-                    max_value is None or child_max > max_value
-                ):
+                if child_max is not None and (max_value is None or child_max > max_value):
                     max_value = child_max
             return max_value
 
@@ -194,7 +206,7 @@ class MarketDataNode(DataNode):
             for unique_identifier, date_info in range_descriptor.items()
         ]
 
-    def get_asset_list(self) -> list[AssetMixin] | None:
+    def get_asset_list(self) -> list[MarketAssetScopeItem] | None:
         """
         Return and validate the asset scope for this market DataNode.
 
@@ -208,7 +220,7 @@ class MarketDataNode(DataNode):
 
         return self.validate_asset_list(asset_list)
 
-    def get_update_asset_list(self) -> list[AssetMixin] | None:
+    def get_update_asset_list(self) -> list[MarketAssetScopeItem] | None:
         """Return the asset scope selected for the current update cycle."""
         asset_list = getattr(self, "_setted_asset_list", None)
         if asset_list is not None:
@@ -216,11 +228,11 @@ class MarketDataNode(DataNode):
 
         return self.get_asset_list()
 
-    def get_asset_earliest_update(self, asset: AssetMixin) -> Any:
+    def get_asset_earliest_update(self, asset: MarketAssetScopeItem) -> Any:
         """Return the earliest scoped update timestamp for a platform asset."""
         self.validate_asset_list([asset])
         return self.update_statistics.get_earliest_update_for_identity(
-            getattr(asset, self.asset_identity_dimension)
+            self._asset_unique_identifier(asset)
         )
 
     def get_asset_update_range_map_great_or_equal(
@@ -371,13 +383,11 @@ class MarketDataNode(DataNode):
 
     def get_last_observation(
         self,
-        asset_list: Iterable[AssetMixin] | None = None,
+        asset_list: Iterable[MarketAssetScopeItem] | None = None,
     ) -> pd.DataFrame:
         """Return the latest observation, optionally scoped to market assets."""
         assets = (
-            self.get_asset_list()
-            if asset_list is None
-            else self.validate_asset_list(asset_list)
+            self.get_asset_list() if asset_list is None else self.validate_asset_list(asset_list)
         )
         return self.local_persist_manager.get_last_observation(
             dimension_filters=self.asset_dimension_filters(assets),
@@ -412,13 +422,10 @@ class MarketDataNode(DataNode):
             columns=columns,
         )
 
-    def filter_by_assets_ranges(self, asset_ranges_map: dict[str, Any]) -> pd.DataFrame:
-        """Compatibility wrapper for older market callers using asset range maps."""
-        return self.local_persist_manager.filter_by_assets_ranges(asset_ranges_map)
-
 
 __all__ = [
     "ASSET_UNIQUE_IDENTIFIER_DIMENSION",
+    "MarketAssetScopeItem",
     "MarketDataNode",
     "MarketDataNodeConfiguration",
 ]

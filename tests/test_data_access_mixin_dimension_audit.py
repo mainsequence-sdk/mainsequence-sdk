@@ -1,6 +1,7 @@
-import datetime
+import ast
 import inspect
 import os
+from pathlib import Path
 
 import pytest
 
@@ -70,22 +71,24 @@ def test_api_data_node_repr_omits_detail_url_with_command_center_env(monkeypatch
     assert repr(node) == "APIDataNode"
 
 
-def test_data_access_mixin_translates_unique_identifier_list_for_api_manager(monkeypatch):
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_data_access_mixin_uses_explicit_dimension_filters(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
 
-    with pytest.warns(FutureWarning, match="unique_identifier_list"):
-        result = mixin.get_df_between_dates(unique_identifier_list=["BTC", "ETH"])
+    result = mixin.get_df_between_dates(
+        dimension_filters={"instrument_uid": ["BTC", "ETH"]},
+    )
 
     assert result == "ok"
     assert manager.calls == [
         {
             "start_date": None,
             "end_date": None,
-            "unique_identifier_list": None,
             "great_or_equal": True,
             "less_or_equal": True,
-            "unique_identifier_range_map": None,
-            "dimension_filters": {"unique_identifier": ["BTC", "ETH"]},
+            "dimension_filters": {"instrument_uid": ["BTC", "ETH"]},
             "index_coordinates": None,
             "dimension_range_map": None,
             "columns": None,
@@ -93,23 +96,26 @@ def test_data_access_mixin_translates_unique_identifier_list_for_api_manager(mon
     ]
 
 
-def test_data_access_mixin_translates_unique_identifier_range_map_for_api_manager(monkeypatch):
+def test_data_access_mixin_uses_explicit_dimension_range_map(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
-    start = datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
 
-    with pytest.warns(FutureWarning, match="unique_identifier_range_map"):
-        result = mixin.get_df_between_dates(
-            unique_identifier_range_map={"BTC": {"start_date": start}},
-        )
+    dimension_range_map = [
+        {"coordinate": {"instrument_uid": "BTC"}, "start_date": "2026-05-01T00:00:00Z"}
+    ]
+    result = mixin.get_df_between_dates(dimension_range_map=dimension_range_map)
 
     assert result == "ok"
-    assert manager.calls[0]["unique_identifier_range_map"] is None
-    assert manager.calls[0]["dimension_range_map"] == [
-        {
-            "coordinate": {"unique_identifier": "BTC"},
-            "start_date": start,
-        }
-    ]
+    assert manager.calls[0]["dimension_range_map"] == dimension_range_map
+
+
+def test_data_access_mixin_rejects_removed_unique_identifier_aliases(monkeypatch):
+    mixin, _manager = _mixin_with_fake_api_manager(monkeypatch)
+
+    with pytest.raises(TypeError):
+        mixin.get_df_between_dates(unique_identifier_list=["BTC"])
+
+    with pytest.raises(TypeError):
+        mixin.get_df_between_dates(unique_identifier_range_map={"BTC": {}})
 
 
 def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatch):
@@ -130,6 +136,9 @@ def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatc
 
 
 def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
+    signature = inspect.signature(data_nodes.DataAccessMixin.get_df_between_dates)
+    assert "unique_identifier_list" not in signature.parameters
+    assert "unique_identifier_range_map" not in signature.parameters
     assert "asset_list" not in inspect.signature(
         data_nodes.DataAccessMixin.get_last_observation
     ).parameters
@@ -141,3 +150,36 @@ def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
     assert not hasattr(data_nodes.APIDataNode, "get_earliest_updated_asset_filter")
     assert not hasattr(data_nodes, "get_latest_update_by_assets_filter")
     assert not hasattr(data_nodes, "last_update_per_unique_identifier")
+
+
+def test_tdag_does_not_import_market_layer():
+    forbidden_prefixes = ("mainsequence.markets", "mainsequence.client.markets")
+    for path in (PROJECT_ROOT / "mainsequence" / "tdag").rglob("*.py"):
+        tree = ast.parse(path.read_text(), filename=str(path))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    assert not alias.name.startswith(forbidden_prefixes), str(path)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                assert not node.module.startswith(forbidden_prefixes), str(path)
+
+
+def test_core_tdag_public_api_has_no_market_asset_compatibility_vocabulary():
+    forbidden = (
+        "asset_list",
+        "get_asset_list",
+        "unique_identifier_list",
+        "unique_identifier_range_map",
+        "filter_by_assets_ranges",
+    )
+    paths = list((PROJECT_ROOT / "mainsequence" / "tdag").rglob("*.py"))
+    paths.append(PROJECT_ROOT / "mainsequence" / "client" / "models_tdag.py")
+
+    violations = []
+    for path in paths:
+        text = path.read_text()
+        for token in forbidden:
+            if token in text:
+                violations.append(f"{path.relative_to(PROJECT_ROOT)} contains {token}")
+
+    assert violations == []

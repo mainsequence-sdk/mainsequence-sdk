@@ -11,8 +11,7 @@ from pydantic import (
     field_serializer,
 )
 
-import mainsequence.client as msc
-from mainsequence.client import Asset
+from mainsequence.markets.client.models import Asset, AssetCategory
 from mainsequence.markets.portfolios.data_nodes import (
     SignalWeights,
     canonical_signal_configuration,
@@ -214,8 +213,8 @@ class AssetsConfiguration(PortfolioConfigBaseModel):
             raise ValueError(
                 "assets_category_unique_id is None. Either set it, or let the signal strategy define the universe."
             )
-        asset_category = msc.AssetCategory.get(unique_identifier=self.assets_category_unique_id)
-        return msc.Asset.filter(id__in=asset_category.assets)
+        asset_category = AssetCategory.get(unique_identifier=self.assets_category_unique_id)
+        return Asset.filter(id__in=asset_category.assets)
 
 
 class BacktestingWeightsConfig(PortfolioConfigBaseModel):

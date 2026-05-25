@@ -2628,7 +2628,7 @@ def list_market_portfolios(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.markets.models import Portfolio as ClientPortfolio
+        from mainsequence.markets.client.models import Portfolio as ClientPortfolio
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -2673,7 +2673,7 @@ def list_market_portfolios(
                 pass
         if old_portfolio_root_url is not None:
             try:
-                from mainsequence.client.markets.models import Portfolio as ClientPortfolio
+                from mainsequence.markets.client.models import Portfolio as ClientPortfolio
 
                 ClientPortfolio.ROOT_URL = old_portfolio_root_url
             except Exception:

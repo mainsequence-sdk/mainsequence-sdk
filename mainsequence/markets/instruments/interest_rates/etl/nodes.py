@@ -6,7 +6,9 @@ import pandas as pd
 import pytz
 from pydantic import BaseModel, Field
 
-import mainsequence.client as msc
+from mainsequence.client.models_tdag import ColumnMetaData, TableMetaData
+from mainsequence.client.utils import DataFrequency
+from mainsequence.markets.client.models import Asset
 from mainsequence.markets.markets_data_node import (
     MarketDataNode,
     MarketDataNodeConfiguration,
@@ -20,6 +22,7 @@ from .registry import (
 )
 
 UTC = pytz.UTC
+
 
 class CurveConfig(MarketDataNodeConfiguration):
     curve_const: str = Field(
@@ -39,6 +42,7 @@ class CurveConfig(MarketDataNodeConfiguration):
         json_schema_extra={"update_only": True},
     )
 
+
 class RateConfig(BaseModel):
     rate_const: str = Field(
         ...,
@@ -51,6 +55,7 @@ class RateConfig(BaseModel):
         description="string name of curve to create",
         json_schema_extra={"update_only": True},
     )
+
 
 class FixingRateConfig(MarketDataNodeConfiguration):
     rates: list[RateConfig] = Field(
@@ -81,11 +86,13 @@ class DiscountCurvesNode(MarketDataNode):
 
     def get_asset_list(self):
         curve_uid = DISCOUNT_CURVE_BUILDERS.uid(self.curve_config.curve_const)  # VALUE
-        payload = [{
-            "unique_identifier": curve_uid,
-            "snapshot": {"name": self.curve_config.name, "ticker": curve_uid},
-        }]
-        return msc.Asset.batch_get_or_register_custom_assets(payload)
+        payload = [
+            {
+                "unique_identifier": curve_uid,
+                "snapshot": {"name": self.curve_config.name, "ticker": curve_uid},
+            }
+        ]
+        return Asset.batch_get_or_register_custom_assets(payload)
 
     def update(self):
         curve_uid = DISCOUNT_CURVE_BUILDERS.uid(self.curve_config.curve_const)
@@ -106,15 +113,23 @@ class DiscountCurvesNode(MarketDataNode):
         df = df[df.index.get_level_values("time_index") > last]
         return df if not df.empty else pd.DataFrame()
 
-    def get_table_metadata(self) -> msc.TableMetaData:
-        return msc.TableMetaData(
+    def get_table_metadata(self) -> TableMetaData:
+        return TableMetaData(
             identifier="discount_curves",
-            data_frequency_id=msc.DataFrequency.one_d,
+            data_frequency_id=DataFrequency.one_d,
             description="Collection of Discount Curves",
         )
 
-    def get_column_metadata(self) -> list[msc.ColumnMetaData]:
-        return [msc.ColumnMetaData(column_name="curve", dtype="str", label="Compressed Curve", description="Compressed Discount Curve")]
+    def get_column_metadata(self) -> list[ColumnMetaData]:
+        return [
+            ColumnMetaData(
+                column_name="curve",
+                dtype="str",
+                label="Compressed Curve",
+                description="Compressed Discount Curve",
+            )
+        ]
+
 
 class FixingRatesNode(MarketDataNode):
     OFFSET_START = datetime.datetime(1990, 1, 1, tzinfo=UTC)
@@ -128,7 +143,7 @@ class FixingRatesNode(MarketDataNode):
         for rc in self.rates_config.rates:
             uid = FIXING_RATE_BUILDERS.uid(rc.rate_const)
             payload.append({"unique_identifier": uid, "snapshot": {"name": rc.name, "ticker": uid}})
-        return msc.Asset.batch_get_or_register_custom_assets(payload)
+        return Asset.batch_get_or_register_custom_assets(payload)
 
     def dependencies(self):
         return {}
@@ -137,7 +152,9 @@ class FixingRatesNode(MarketDataNode):
         dfs = []
         for asset in self.get_update_asset_list() or []:
             builder = FIXING_RATE_BUILDERS.builder_for_uid(asset.unique_identifier)
-            df = builder(update_statistics=self.update_statistics, unique_identifier=asset.unique_identifier)
+            df = builder(
+                update_statistics=self.update_statistics, unique_identifier=asset.unique_identifier
+            )
             if not df.empty:
                 dfs.append(df)
 
@@ -148,16 +165,16 @@ class FixingRatesNode(MarketDataNode):
         assert out.index.names == ["time_index", "unique_identifier"]
         return out[["rate"]].dropna()
 
-    def get_table_metadata(self) -> msc.TableMetaData:
-        return msc.TableMetaData(
+    def get_table_metadata(self) -> TableMetaData:
+        return TableMetaData(
             identifier="fixing_rates_1d",
-            data_frequency_id=msc.DataFrequency.one_d,
+            data_frequency_id=DataFrequency.one_d,
             description="Daily fixing rates ",
         )
 
-    def get_column_metadata(self) -> list[msc.ColumnMetaData]:
+    def get_column_metadata(self) -> list[ColumnMetaData]:
         return [
-            msc.ColumnMetaData(
+            ColumnMetaData(
                 column_name="rate",
                 dtype="float",
                 label="Fixing Rate (decimal)",

@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 import pytz
 
-import mainsequence.client as msc
 import mainsequence.tdag.data_nodes.build_operations as build_operations
 from mainsequence.client.models_tdag import UpdateStatistics
+from mainsequence.markets.client.models import Asset
 from mainsequence.tdag.data_nodes import APIDataNode, DataNode, RecordDefinition
 
 from .base import (
@@ -146,7 +146,7 @@ class PortfoliosDataNode(AssetScopedPortfolioCanonicalDataNode):
             asset_list = self.signal_weights.get_asset_list()
             portfolio_asset_uid = self.signal_weights.get_asset_uid_to_override_portfolio_price()
             if portfolio_asset_uid is not None:
-                asset = msc.Asset.get_or_none(unique_identifier=portfolio_asset_uid)
+                asset = Asset.get_or_none(unique_identifier=portfolio_asset_uid)
                 if asset is None:
                     raise Exception(
                         f"{portfolio_asset_uid} not found. be sure that is on the price transaltion table"
@@ -450,9 +450,7 @@ class PortfoliosDataNode(AssetScopedPortfolioCanonicalDataNode):
     ) -> list[dict]:
         return [
             {
-                "coordinate": {
-                    ASSET_UNIQUE_IDENTIFIER: self._unique_identifier()
-                },
+                "coordinate": {ASSET_UNIQUE_IDENTIFIER: self._unique_identifier()},
                 "start_date": start_date,
                 "start_date_operand": start_date_operand,
             }

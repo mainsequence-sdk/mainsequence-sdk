@@ -479,7 +479,7 @@ def process_and_update_table(
     recompress = False
     if overwrite:
         url = f"{base_url}/{data_node_storage.id}/decompress_chunks/"
-        from mainsequence.client.markets.models import BaseObject
+        from mainsequence.client.base import BaseObjectOrm as BaseObject
 
         s = BaseObject.build_session()
 
