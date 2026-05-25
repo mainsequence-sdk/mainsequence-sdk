@@ -649,14 +649,6 @@ def get_constants_tdag():
     return r.json()
 
 
-def get_constants_vam():
-    url = f"{MAINSEQUENCE_ENDPOINT}/orm/api/assets/api/constants"
-    r = make_request(s=session, loaders=loaders, r_type="GET", url=url)
-    return r.json()
-
-
-
-
 class LazyConstants(dict):
     """
     Class Method to load constants only once they are called. this minimizes the calls to the API
@@ -665,8 +657,6 @@ class LazyConstants(dict):
     def __init__(self, constant_type: str):
         if constant_type == "tdag":
             self.CONSTANTS_METHOD = get_constants_tdag
-        elif constant_type == "vam":
-            self.CONSTANTS_METHOD = get_constants_vam
         else:
             raise NotImplementedError(f"{constant_type} not implemented")
         self._initialized = False
@@ -709,12 +699,6 @@ class LazyConstants(dict):
 
 if "TDAG_CONSTANTS" not in locals():
     TDAG_CONSTANTS = LazyConstants("tdag")
-
-if "MARKETS_CONSTANTS" not in locals():
-    MARKETS_CONSTANTS = LazyConstants("vam")
-
-
-
 
 
 def get_network_ip():
