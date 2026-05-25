@@ -1178,7 +1178,7 @@ class DataNode(DataAccessMixin, ABC):
 
         if (
             latest_persisted_time_index is None
-            and not SessionDataSource.is_local_duck_db
+            and not SessionDataSource.is_local_db
         ):
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 

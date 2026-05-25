@@ -150,6 +150,260 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
     assert debugs == []
 
 
+def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(models_tdag, "bios_uuid", lambda: "host-123")
+
+    def _get_or_create(cls, time_out=None, **kwargs):
+        captured["time_out"] = time_out
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(id=7, class_type=models_tdag.DUCK_DB)
+
+    monkeypatch.setattr(
+        models_tdag.DataSource,
+        "get_or_create_duck_db",
+        classmethod(_get_or_create),
+    )
+
+    data_source = models_tdag.DataSource.create_duckdb(time_out=15)
+
+    assert data_source.id == 7
+    assert captured == {
+        "time_out": 15,
+        "kwargs": {
+            "display_name": "DuckDB_host-123",
+            "host_mac_address": "host-123",
+        },
+    }
+
+
+def test_data_source_create_sqlite_makes_creation_explicit(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(models_tdag, "bios_uuid", lambda: "host-456")
+
+    def _get_or_create(cls, time_out=None, **kwargs):
+        captured["time_out"] = time_out
+        captured["kwargs"] = kwargs
+        return types.SimpleNamespace(id=8, class_type=models_tdag.SQLITE)
+
+    monkeypatch.setattr(
+        models_tdag.DataSource,
+        "get_or_create_sqlite",
+        classmethod(_get_or_create),
+    )
+
+    data_source = models_tdag.DataSource.create_sqlite(time_out=20)
+
+    assert data_source.id == 8
+    assert captured == {
+        "time_out": 20,
+        "kwargs": {
+            "display_name": "SQLite_host-456",
+            "host_mac_address": "host-456",
+        },
+    }
+
+
+def test_set_local_db_requires_explicit_duckdb_data_source():
+    with pytest.raises(ValueError, match="DataSource.create_duckdb"):
+        models_tdag.PodDataSource().set_local_db()
+
+
+def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkeypatch):
+    physical_data_source = types.SimpleNamespace(
+        id=7,
+        display_name="Local DuckDB",
+        class_type=models_tdag.DUCK_DB,
+        status="AVAILABLE",
+    )
+    dynamic_data_source = types.SimpleNamespace(
+        id=42,
+        uid="dynamic-duckdb",
+        related_resource=physical_data_source,
+    )
+    captured = {}
+
+    def _hidden_create(*args, **kwargs):
+        raise AssertionError("set_local_db should not create the physical DuckDB DataSource")
+
+    def _create_dynamic(cls, *, data_source, **kwargs):
+        captured["dynamic_data_source"] = data_source
+        captured["dynamic_kwargs"] = kwargs
+        return dynamic_data_source
+
+    def _filter_storages(cls, **kwargs):
+        captured["filter_kwargs"] = kwargs
+        return []
+
+    class _DuckDB:
+        db_path = "/tmp/duckdb"
+
+        @staticmethod
+        def list_tables():
+            return []
+
+        @staticmethod
+        def drop_table(table):
+            raise AssertionError(f"unexpected drop_table({table!r})")
+
+    monkeypatch.setattr(
+        models_tdag.DataSource,
+        "get_or_create_duck_db",
+        classmethod(_hidden_create),
+    )
+    monkeypatch.setattr(
+        models_tdag.DynamicTableDataSource,
+        "create_duckdb",
+        classmethod(_create_dynamic),
+    )
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "filter",
+        classmethod(_filter_storages),
+    )
+    monkeypatch.setattr(models_tdag, "_duckdb_interface", lambda: _DuckDB())
+
+    pod_data_source = models_tdag.PodDataSource()
+    pod_data_source.set_local_db(data_source=physical_data_source)
+
+    assert pod_data_source.data_source is dynamic_data_source
+    assert captured["dynamic_data_source"] is physical_data_source
+    assert captured["dynamic_kwargs"] == {}
+    assert captured["filter_kwargs"] == {"data_source__id": 42, "list_tables": True}
+
+
+def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(monkeypatch):
+    physical_data_source = types.SimpleNamespace(
+        id=8,
+        display_name="Local SQLite",
+        class_type=models_tdag.SQLITE,
+        status="AVAILABLE",
+    )
+    dynamic_data_source = types.SimpleNamespace(
+        id=43,
+        uid="dynamic-sqlite",
+        related_resource=physical_data_source,
+    )
+    captured = {}
+
+    def _hidden_create(*args, **kwargs):
+        raise AssertionError("set_local_db should not create the physical SQLite DataSource")
+
+    def _create_dynamic(cls, *, data_source, **kwargs):
+        captured["dynamic_data_source"] = data_source
+        captured["dynamic_kwargs"] = kwargs
+        return dynamic_data_source
+
+    def _filter_storages(cls, **kwargs):
+        captured["filter_kwargs"] = kwargs
+        return []
+
+    class _SQLite:
+        db_file = "/tmp/mainsequence.sqlite"
+
+        @staticmethod
+        def list_tables():
+            return []
+
+        @staticmethod
+        def drop_table(table):
+            raise AssertionError(f"unexpected drop_table({table!r})")
+
+    monkeypatch.setattr(
+        models_tdag.DataSource,
+        "get_or_create_sqlite",
+        classmethod(_hidden_create),
+    )
+    monkeypatch.setattr(
+        models_tdag.DynamicTableDataSource,
+        "create_sqlite",
+        classmethod(_create_dynamic),
+    )
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "filter",
+        classmethod(_filter_storages),
+    )
+    monkeypatch.setattr(models_tdag, "_sqlite_interface", lambda: _SQLite())
+
+    pod_data_source = models_tdag.PodDataSource()
+    pod_data_source.set_local_db(data_source=physical_data_source)
+
+    assert pod_data_source.data_source is dynamic_data_source
+    assert captured["dynamic_data_source"] is physical_data_source
+    assert captured["dynamic_kwargs"] == {}
+    assert captured["filter_kwargs"] == {"data_source__id": 43, "list_tables": True}
+
+
+def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
+    drops = []
+    deletes = []
+
+    def _hidden_create(*args, **kwargs):
+        raise AssertionError("delete_table should not create DuckDB data sources")
+
+    monkeypatch.setattr(
+        models_tdag.DataSource,
+        "get_or_create_duck_db",
+        classmethod(_hidden_create),
+    )
+    monkeypatch.setattr(
+        models_tdag.DynamicTableDataSource,
+        "get_or_create_duck_db",
+        classmethod(_hidden_create),
+    )
+    monkeypatch.setattr(
+        models_tdag,
+        "_duckdb_interface",
+        lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
+    )
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "delete",
+        lambda self: deletes.append(self.storage_hash),
+    )
+
+    storage = models_tdag.DataNodeStorage.model_construct(
+        storage_hash="node-storage",
+        data_source=types.SimpleNamespace(
+            related_resource=types.SimpleNamespace(class_type=models_tdag.DUCK_DB),
+        ),
+    )
+
+    storage.delete_table()
+
+    assert drops == ["node-storage"]
+    assert deletes == ["node-storage"]
+
+
+def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
+    drops = []
+    deletes = []
+
+    monkeypatch.setattr(
+        models_tdag,
+        "_sqlite_interface",
+        lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
+    )
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "delete",
+        lambda self: deletes.append(self.storage_hash),
+    )
+
+    storage = models_tdag.DataNodeStorage.model_construct(
+        storage_hash="node-storage",
+        data_source=types.SimpleNamespace(
+            related_resource=types.SimpleNamespace(class_type=models_tdag.SQLITE),
+        ),
+    )
+
+    storage.delete_table()
+
+    assert drops == ["node-storage"]
+    assert deletes == ["node-storage"]
+
+
 def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)

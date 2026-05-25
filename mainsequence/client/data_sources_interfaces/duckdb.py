@@ -12,17 +12,14 @@ import pyarrow.fs as pafs
 import pyarrow.parquet as pq
 from pyarrow import fs
 
-from mainsequence.logconf import logger
+from mainsequence.logconf import logger as base_logger
 
 from ..utils import DataFrequency, UniqueIdentifierRangeMap
 
 
 def get_logger():
-    global logger
-
-    # If the logger doesn't have any handlers, create it using the custom function
-    logger.bind(sub_application="duck_db_interface")
-    return logger
+    base_logger.bind(sub_application="duck_db_interface")
+    return base_logger
 
 
 logger = get_logger()
@@ -35,7 +32,7 @@ def _list_parquet_files(fs, dir_path: str) -> list[str]:
 
 class DuckDBInterface:
     """
-    Persist/serve (time_index, unique_identifier, …) DataFrames in a DuckDB file.
+    Persist/serve configured-index DataFrames in a DuckDB file.
     """
 
     def __init__(self, db_path: str | Path | None = None):
@@ -118,43 +115,21 @@ class DuckDBInterface:
     def time_index_minima(
         self,
         table: str,
-        ids: list[str] | None = None,
+        *,
+        index_names: list[str],
+        time_index_name: str,
     ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
         """
-        Compute the minimum time_index over the entire dataset AND the minimum per unique_identifier.
-
-        Returns:
-            (global_min, per_id_dict)
-
-            global_min:  pd.Timestamp (UTC) or None if table is empty / all-NULL
-            per_id_dict: {uid: pd.Timestamp (UTC) or None} for each distinct uid (after optional filtering)
-
-        Fast path:
-            Uses a single scan with GROUPING SETS ((), (unique_identifier)), reading only
-            (unique_identifier, time_index). DuckDB will push projection to Parquet and parallelize.
-
-        Fallback:
-            Runs two simple queries (global MIN + per-id MIN) if GROUPING SETS isn't supported
-            in your DuckDB build.
-
-        Args:
-            table: logical name (your view name); if the view is missing, we scan the Parquet
-                   directly under {self.db_path}/{table}/**/*.parquet with hive_partitioning.
-            ids:   optional list; if provided, restricts to those unique_identifiers only.
+        Compute the minimum temporal value globally and per configured identity coordinate.
         """
-
-        import duckdb
-        import pandas as pd
 
         def qident(name: str) -> str:
             return '"' + str(name).replace('"', '""') + '"'
 
+        identity_dimensions = [name for name in index_names if name != time_index_name]
         qtbl = qident(table)
-        qid = qident("unique_identifier")
-        qts = qident("time_index")
+        qtime = qident(time_index_name)
 
-        # --- Choose fastest reliable source relation ---
-        # Prefer scanning the view if it exists (it normalizes schema); otherwise scan Parquet directly.
         try:
             use_view = bool(self.table_exists(table))
         except Exception:
@@ -167,78 +142,39 @@ class DuckDBInterface:
             else f"parquet_scan('{file_glob}', hive_partitioning=TRUE, union_by_name=TRUE)"
         )
 
-        # Optional filter to reduce the output cardinality if the caller only cares about some ids
-        params: list[Any] = []
-        where_clause = ""
-        if ids:
-            placeholders = ", ".join("?" for _ in ids)
-            where_clause = f"WHERE {qid} IN ({placeholders})"
-            params.extend(list(ids))
+        def to_ts(value):
+            return pd.to_datetime(value, utc=True) if value is not None else None
 
-        # --- Single-pass: GROUPING SETS (grand total + per-id) ---
-        sql_one_pass = f"""
-            WITH src AS (
-                SELECT {qid} AS uid, {qts} AS ts
-                FROM {src_rel}
-                {where_clause}
-            )
-            SELECT
-                uid,
-                MIN(ts) AS min_val,
-                GROUPING(uid) AS is_total_row
-            FROM src
-            GROUP BY GROUPING SETS ((), (uid));
-        """
+        global_min_raw = self.con.execute(f"SELECT MIN({qtime}) FROM {src_rel}").fetchone()[0]
+        global_min = to_ts(global_min_raw)
 
-        try:
-            rows = self.con.execute(sql_one_pass, params).fetchall()
+        if not identity_dimensions:
+            return global_min, {}
 
-            global_min_raw: Any | None = None
-            per_id_raw: dict[Any, Any | None] = {}
-
-            for uid, min_val, is_total in rows:
-                if is_total:
-                    global_min_raw = min_val  # grand total row
-                else:
-                    per_id_raw[uid] = min_val
-
-            # Normalize to tz-aware pandas Timestamps (UTC) for consistency with your interface
-            to_ts = lambda v: pd.to_datetime(v, utc=True) if v is not None else None
-            global_min = to_ts(global_min_raw)
-            per_id = {uid: to_ts(v) for uid, v in per_id_raw.items()}
-            return global_min, per_id
-
-        except duckdb.Error as e:
-            # --- Fallback: two straightforward queries (still reads only needed columns) ---
-            logger.info(f"time_index_minima: GROUPING SETS path failed; falling back. Reason: {e}")
-
-            sql_global = f"""
-                SELECT MIN(ts)
-                FROM (
-                    SELECT {qts} AS ts
-                    FROM {src_rel}
-                    {where_clause}
-                )
+        dimension_select = ", ".join(qident(name) for name in identity_dimensions)
+        rows = self.con.execute(
+            f"""
+            SELECT {dimension_select}, MIN({qtime}) AS min_val
+            FROM {src_rel}
+            GROUP BY {dimension_select}
             """
-            sql_per_id = f"""
-                SELECT uid, MIN(ts) AS min_val
-                FROM (
-                    SELECT {qid} AS uid, {qts} AS ts
-                    FROM {src_rel}
-                    {where_clause}
-                )
-                GROUP BY uid
-            """
+        ).fetchall()
 
-            global_min_raw = self.con.execute(sql_global, params).fetchone()[0]
-            pairs = self.con.execute(sql_per_id, params).fetchall()
+        per_coordinate: dict[Any, pd.Timestamp | None] = {}
+        for row in rows:
+            values = row[: len(identity_dimensions)]
+            key = values[0] if len(values) == 1 else tuple(values)
+            per_coordinate[key] = to_ts(row[-1])
+        return global_min, per_coordinate
 
-            to_ts = lambda v: pd.to_datetime(v, utc=True) if v is not None else None
-            global_min = to_ts(global_min_raw)
-            per_id = {uid: to_ts(min_val) for uid, min_val in pairs}
-            return global_min, per_id
-
-    def remove_columns(self, table: str, columns: list[str]) -> dict[str, Any]:
+    def remove_columns(
+        self,
+        table: str,
+        columns: list[str],
+        *,
+        index_names: list[str],
+        time_index_name: str,
+    ) -> dict[str, Any]:
         """
         Forcefully drop the given columns from the dataset backing `table`.
 
@@ -250,19 +186,23 @@ class DuckDBInterface:
 
         Notes:
           • Protected keys to keep storage model consistent:
-            {'time_index','unique_identifier','year','month','day'} are not dropped.
+            configured index columns plus {'year','month','day'} are not dropped.
           • If a requested column doesn’t exist in some partitions, those partitions are still rebuilt.
           • Destructive and idempotent.
         """
-        import uuid
 
         import duckdb
 
         def qident(name: str) -> str:
             return '"' + str(name).replace('"', '""') + '"'
 
+        if time_index_name not in index_names:
+            raise ValueError(
+                f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
+            )
+
         requested = list(dict.fromkeys(columns or []))
-        protected = {"time_index", "unique_identifier", "year", "month", "day"}
+        protected = set(index_names) | {"year", "month", "day"}
 
         # Discover unified schema to know which requested columns actually exist
         file_glob = f"{self.db_path}/{table}/**/*.parquet"
@@ -287,6 +227,12 @@ class DuckDBInterface:
 
         to_drop_global = [c for c in requested if c in present_cols and c not in protected]
         skipped_global = [c for c in requested if c not in present_cols or c in protected]
+        missing_index_columns = [name for name in index_names if name not in present_cols]
+        if missing_index_columns:
+            raise ValueError(
+                "DuckDB remove_columns requires every configured index column in the table. "
+                f"Missing: {missing_index_columns}"
+            )
 
         # Enumerate all partition directories that currently contain Parquet files
         selector = fs.FileSelector(f"{self.db_path}/{table}", recursive=True)
@@ -359,8 +305,18 @@ class DuckDBInterface:
                 except duckdb.Error:
                     file_col = None
 
-                # 4) Decide ordering key for recency; fall back to time_index if helper missing
-                order_key = qident(file_col) if file_col else "time_index"
+                missing_partition_index_columns = [
+                    name for name in index_names if name not in part_cols_set
+                ]
+                if missing_partition_index_columns:
+                    raise ValueError(
+                        "DuckDB remove_columns requires every configured index column in each "
+                        f"partition. Missing in {part_path}: {missing_partition_index_columns}"
+                    )
+
+                # 4) Decide ordering key for recency; fall back to temporal column if helper missing
+                order_key = qident(file_col) if file_col else qident(time_index_name)
+                partition_by = ", ".join(qident(name) for name in index_names)
 
                 # 5) Rebuild partition with explicit projection + window de-dup
                 tmp_file = f"{part_path}/rebuild-{uuid.uuid4().hex}.parquet"
@@ -370,7 +326,7 @@ class DuckDBInterface:
                   FROM (
                     SELECT {keep_csv},
                            ROW_NUMBER() OVER (
-                             PARTITION BY time_index, unique_identifier
+                             PARTITION BY {partition_by}
                              ORDER BY {order_key} DESC
                            ) AS rn
                     FROM parquet_scan('{part_path}/*.parquet',
@@ -420,31 +376,56 @@ class DuckDBInterface:
         }
 
     def upsert(
-        self, df: pd.DataFrame, table: str, data_frequency: DataFrequency = DataFrequency.one_m
+        self,
+        df: pd.DataFrame,
+        table: str,
+        *,
+        index_names: list[str],
+        time_index_name: str,
+        data_frequency: DataFrequency = DataFrequency.one_m,
     ) -> None:
         """
-        Idempotently writes a DataFrame into *table* using (time_index, unique_identifier) PK.
-        Extra columns are added to the table automatically.
+        Idempotently write a DataFrame into *table* using the configured index tuple.
         """
         import datetime
         import os
-        import uuid
 
         from pyarrow import fs  # used for cleanup listing
+
+        def qident(name: str) -> str:
+            return '"' + str(name).replace('"', '""') + '"'
+
+        def aliased_key_predicate(left_alias: str, right_alias: str) -> str:
+            return " AND ".join(
+                f"{left_alias}.{qident(name)} IS NOT DISTINCT FROM {right_alias}.{qident(name)}"
+                for name in index_names
+            )
+
+        def order_by_clause(alias: str | None = None) -> str:
+            prefix = f"{alias}." if alias else ""
+            return ", ".join(f"{prefix}{qident(name)}" for name in index_names)
 
         if df.empty:
             logger.warning(f"Attempted to upsert an empty DataFrame to table '{table}'. Skipping.")
             return
 
+        if time_index_name not in index_names:
+            raise ValueError(
+                f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
+            )
+        missing_index_columns = [name for name in index_names if name not in df.columns]
+        if missing_index_columns:
+            raise ValueError(
+                "DuckDB upsert requires every configured index column in the DataFrame. "
+                f"Missing: {missing_index_columns}"
+            )
+
         # —— basic hygiene ——--------------------------------------------------
         df = df.copy()
-        df["time_index"] = pd.to_datetime(df["time_index"], utc=True)
-        if "unique_identifier" not in df.columns:
-            df["unique_identifier"] = ""  # degenerate PK for daily data
-        df["unique_identifier"] = df["unique_identifier"].astype(str)  # ADDED: harden as text
+        df[time_index_name] = pd.to_datetime(df[time_index_name], utc=True)
 
         # —— derive partition columns ——---------------------------------------
-        partitions = self._partition_keys(df["time_index"], data_frequency=data_frequency)
+        partitions = self._partition_keys(df[time_index_name], data_frequency=data_frequency)
         for col, values in partitions.items():
             df[col] = values
         part_cols = list(partitions)
@@ -452,7 +433,7 @@ class DuckDBInterface:
         logger.debug(f"Starting upsert of {len(df)} rows into table '{table}' in {self.db_path}")
 
         # —— de‑duplication inside *this* DataFrame ——--------------------------
-        df = df.drop_duplicates(subset=["time_index", "unique_identifier"], keep="last")
+        df = df.drop_duplicates(subset=index_names, keep="last")
 
         # ──  Write each partition safely ─────────────────────────────────
         for keys, sub in df.groupby(part_cols, sort=False):
@@ -468,7 +449,7 @@ class DuckDBInterface:
             try:
                 row = self.con.execute(
                     f"""
-                    SELECT min(time_index) AS mn, max(time_index) AS mx
+                    SELECT min({qident(time_index_name)}) AS mn, max({qident(time_index_name)}) AS mx
                     FROM parquet_scan('{part_path}/*.parquet', hive_partitioning=TRUE)
                     """
                 ).fetchone()
@@ -476,8 +457,8 @@ class DuckDBInterface:
                     has_existing = True
                     mn = pd.to_datetime(row[0], utc=True)
                     mx = pd.to_datetime(row[1], utc=True)
-                    smin = sub["time_index"].min()
-                    smax = sub["time_index"].max()
+                    smin = sub[time_index_name].min()
+                    smax = sub[time_index_name].max()
                     time_overlap = not (smax < mn or smin > mx)
             except Exception:
                 has_existing = False
@@ -492,8 +473,7 @@ class DuckDBInterface:
                       SELECT 1
                       FROM incoming_sub i
                       JOIN parquet_scan('{part_path}/*.parquet', hive_partitioning=TRUE) e
-                        ON e.time_index = i.time_index
-                       AND e.unique_identifier = i.unique_identifier
+                        ON {aliased_key_predicate("e", "i")}
                       LIMIT 1
                     );
                     """
@@ -503,7 +483,7 @@ class DuckDBInterface:
             # -------------------- Append path (no PK collision) --------------------
             if not has_existing or not time_overlap or not overlap_exists:
                 try:
-                    ts = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+                    ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d%H%M%S")
                     final_name = f"part-{ts}-{uuid.uuid4().hex}.parquet"
                     tmp_name = final_name + ".tmp"
                     tmp_path = f"{part_path}/{tmp_name}"
@@ -517,10 +497,9 @@ class DuckDBInterface:
                             WHERE NOT EXISTS (
                               SELECT 1
                               FROM parquet_scan('{part_path}/*.parquet', hive_partitioning=TRUE) e
-                              WHERE e.time_index = i.time_index
-                                AND e.unique_identifier = i.unique_identifier
+                              WHERE {aliased_key_predicate("e", "i")}
                             )
-                            ORDER BY i.unique_identifier, i.time_index
+                            ORDER BY {order_by_clause("i")}
                         """
                         n_new = self.con.execute(
                             f"SELECT COUNT(*) FROM ({anti_join_select})"
@@ -541,7 +520,7 @@ class DuckDBInterface:
                             COPY (
                               SELECT i.*
                               FROM incoming_sub i
-                              ORDER BY i.unique_identifier, i.time_index
+                              ORDER BY {order_by_clause("i")}
                             )
                             TO '{tmp_path}'
                             (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 512000);
@@ -623,7 +602,7 @@ class DuckDBInterface:
                             e_select_exprs.append(f"NULL AS {qc}")  # ADDED
                 e_select_list = ", ".join(e_select_exprs)
 
-                ts = datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+                ts = datetime.datetime.now(datetime.UTC).strftime("%Y%m%d%H%M%S")
                 final_name = f"part-{ts}-{uuid.uuid4().hex}.parquet"
                 tmp_name = final_name + ".tmp"
                 tmp_path = f"{part_path}/{tmp_name}"
@@ -642,8 +621,7 @@ class DuckDBInterface:
                     SELECT {select_list}
                     FROM incoming_sub i
                     LEFT JOIN existing e
-                      ON e.time_index = i.time_index
-                     AND e.unique_identifier = i.unique_identifier
+                      ON {aliased_key_predicate("e", "i")}
                   )
                   SELECT *
                   FROM (
@@ -654,10 +632,9 @@ class DuckDBInterface:
                     SELECT {e_select_list}  -- REPLACED: used to be 'SELECT e.*'
                     FROM existing e
                     ANTI JOIN incoming_sub i
-                      ON e.time_index = i.time_index
-                     AND e.unique_identifier = i.unique_identifier
+                      ON {aliased_key_predicate("e", "i")}
                   )
-                  ORDER BY unique_identifier, time_index
+                  ORDER BY {order_by_clause()}
                 )
                 TO '{tmp_path}'
                 (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 512000);
@@ -717,6 +694,11 @@ class DuckDBInterface:
         *,
         start: datetime.datetime | None = None,
         end: datetime.datetime | None = None,
+        time_index_name: str,
+        index_names: list[str],
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
         ids: list[str] | None = None,
         unique_identifier_range_map: dict[str, dict[str, Any]] | None = None,
         max_rows: int | None = None,
@@ -724,7 +706,7 @@ class DuckDBInterface:
     ) -> tuple[
         datetime.datetime | None,  # adjusted_start
         datetime.datetime | None,  # adjusted_end
-        dict[str, dict[str, Any]] | None,  # adjusted_unique_identifier_range_map
+        list[dict[str, Any]] | None,  # adjusted_dimension_range_map
         dict[str, Any],  # diagnostics
     ]:
         """
@@ -733,7 +715,7 @@ class DuckDBInterface:
         scan full data and does not depend on bar frequency.
 
         Inputs are the same "shape" as DuckDBInterface.read(...). The function returns adjusted
-        (start, end, unique_identifier_range_map) that you can pass to read(...), plus diagnostics.
+        (start, end, dimension_range_map) that you can pass to read(...), plus diagnostics.
 
         Row cap source:
           • max_rows argument if provided
@@ -748,10 +730,10 @@ class DuckDBInterface:
           • Otherwise finds the latest limit_dt so that estimated rows in [start, limit_dt] ~= max_rows,
             and tightens:
                 - global 'end'  → min(end, limit_dt) if plain start/end was used
-                - per-uid 'end_date' in unique_identifier_range_map → min(existing, limit_dt)
+                - per-coordinate 'end_date' in dimension_range_map → min(existing, limit_dt)
 
         Returns:
-          adjusted_start, adjusted_end, adjusted_unique_identifier_range_map, diagnostics
+          adjusted_start, adjusted_end, adjusted_dimension_range_map, diagnostics
         """
         import os
         import re
@@ -776,9 +758,11 @@ class DuckDBInterface:
                 ts = ts.tz_convert("UTC")
             return ts
 
-        def _effective_start_from_range_map(rmap: dict[str, dict[str, Any]]) -> pd.Timestamp | None:
+        def _effective_start_from_range_map(
+            rmap: list[dict[str, Any]],
+        ) -> pd.Timestamp | None:
             starts = []
-            for v in rmap.values():
+            for v in rmap:
                 s = v.get("start_date")
                 if s is None:
                     continue
@@ -791,9 +775,9 @@ class DuckDBInterface:
                 starts.append(ts)
             return min(starts) if starts else None
 
-        def _effective_end_from_range_map(rmap: dict[str, dict[str, Any]]) -> pd.Timestamp | None:
+        def _effective_end_from_range_map(rmap: list[dict[str, Any]]) -> pd.Timestamp | None:
             ends = []
-            for v in rmap.values():
+            for v in rmap:
                 e = v.get("end_date")
                 if e is not None:
                     ends.append(_to_utc_ts(e))
@@ -835,7 +819,7 @@ class DuckDBInterface:
             file_path: str,
         ) -> tuple[list[tuple[pd.Timestamp, pd.Timestamp, int]], str | None]:
             """
-            Return list of (rg_min, rg_max, rg_rows) for 'time_index' from Parquet footer.
+            Return list of (rg_min, rg_max, rg_rows) for the temporal column from Parquet footer.
             If stats are missing, returns empty list and a reason.
             """
             try:
@@ -846,7 +830,7 @@ class DuckDBInterface:
             # Find Arrow time unit (ns/us/ms/s)
             try:
                 arr_schema = pf.schema_arrow
-                tfield = arr_schema.field("time_index")
+                tfield = arr_schema.field(time_index_name)
                 ttype = tfield.type  # pyarrow.TimestampType
                 unit = getattr(ttype, "unit", "ns")
             except Exception:
@@ -861,7 +845,7 @@ class DuckDBInterface:
                 col_idx = None
                 # Try direct mapping via schema_arrow index first
                 try:
-                    idx = arr_schema.get_field_index("time_index")
+                    idx = arr_schema.get_field_index(time_index_name)
                     if idx != -1:
                         col_idx = idx
                 except Exception:
@@ -875,7 +859,7 @@ class DuckDBInterface:
                         # Verify we picked the right column name; if not, search by path
                         try:
                             name = str(col.path_in_schema)
-                            if name.split(".")[-1] != "time_index":
+                            if name.split(".")[-1] != time_index_name:
                                 col = None
                             # else ok
                         except Exception:
@@ -888,7 +872,7 @@ class DuckDBInterface:
                                 name = str(cj.path_in_schema)
                             except Exception:
                                 name = ""
-                            if name.split(".")[-1] == "time_index":
+                            if name.split(".")[-1] == time_index_name:
                                 col = cj
                                 break
                     if col is None:
@@ -970,16 +954,37 @@ class DuckDBInterface:
         # Normalize inputs
         start_ts = _to_utc_ts(start)
         end_ts = _to_utc_ts(end)
-        uirm = (
-            None
-            if unique_identifier_range_map is None
-            else {k: dict(v) for k, v in unique_identifier_range_map.items()}
+        normalized_dimension_range_map = (
+            None if dimension_range_map is None else [dict(item) for item in dimension_range_map]
         )
 
+        if time_index_name not in index_names:
+            raise ValueError(
+                f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
+            )
+
+        identity_dimensions = [name for name in index_names if name != time_index_name]
+        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
+
+        if ids is not None and unique_identifier_range_map is not None:
+            raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
+        if ids is not None and not uses_legacy_unique_identifier:
+            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
+        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
+            raise ValueError(
+                "Legacy 'unique_identifier_range_map' reads are valid only for "
+                "unique_identifier tables."
+            )
+        if unique_identifier_range_map is not None and normalized_dimension_range_map is not None:
+            raise ValueError(
+                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
+            )
+
         # If ids are given without a range map, create a simple one from start/end
-        if ids and (uirm is None):
-            uirm = {
-                uid: {
+        if ids and (normalized_dimension_range_map is None):
+            normalized_dimension_range_map = [
+                {
+                    "coordinate": {"unique_identifier": uid},
                     "start_date": start_ts.to_pydatetime() if start_ts is not None else None,
                     "start_date_operand": ">=",
                     "end_date": (
@@ -990,12 +995,17 @@ class DuckDBInterface:
                     "end_date_operand": "<=",
                 }
                 for uid in ids
-            }
+            ]
+        if unique_identifier_range_map is not None:
+            normalized_dimension_range_map = [
+                {"coordinate": {"unique_identifier": uid}, **dict(info)}
+                for uid, info in unique_identifier_range_map.items()
+            ]
 
         # Compute global window from inputs
-        if uirm:
-            eff_start = _effective_start_from_range_map(uirm)
-            eff_end_in_map = _effective_end_from_range_map(uirm)
+        if normalized_dimension_range_map:
+            eff_start = _effective_start_from_range_map(normalized_dimension_range_map)
+            eff_end_in_map = _effective_end_from_range_map(normalized_dimension_range_map)
         else:
             eff_start = start_ts
             eff_end_in_map = None
@@ -1061,7 +1071,7 @@ class DuckDBInterface:
                 "files_skipped_partition": files_skipped_part,
                 "files_meta_errors": files_meta_errors,
             }
-            return start_ts, end_ts or _to_utc_ts(now), uirm, diagnostics
+            return start_ts, end_ts or _to_utc_ts(now), normalized_dimension_range_map, diagnostics
 
         # If start still None, derive earliest available tmin from metadata
         if eff_start is None:
@@ -1078,7 +1088,7 @@ class DuckDBInterface:
                 "window": [str(eff_start), str(eff_end)],
                 "max_rows": max_rows,
             }
-            return eff_start, eff_end, uirm, diagnostics
+            return eff_start, eff_end, normalized_dimension_range_map, diagnostics
 
         # --- estimate rows & binary search limit_dt ----------------------------
 
@@ -1097,7 +1107,7 @@ class DuckDBInterface:
                 "mode": "row_group_metadata",
             }
             # Nothing to change
-            return start_ts or eff_start, end_ts or eff_end, uirm, diagnostics
+            return start_ts or eff_start, end_ts or eff_end, normalized_dimension_range_map, diagnostics
 
         # Binary search for latest T in [eff_start, eff_end] with est_rows <= max_rows
         lo = eff_start.value
@@ -1118,10 +1128,10 @@ class DuckDBInterface:
         adjusted_start = start_ts or eff_start
         adjusted_end = min(end_ts or eff_end, limit_dt)
 
-        adjusted_uirm = None
-        if uirm is not None:
-            adjusted_uirm = {}
-            for uid, info in uirm.items():
+        adjusted_dimension_range_map = None
+        if normalized_dimension_range_map is not None:
+            adjusted_dimension_range_map = []
+            for info in normalized_dimension_range_map:
                 new_info = dict(info)
                 # tighten end_date by limit_dt
                 cur_end = info.get("end_date")
@@ -1131,7 +1141,7 @@ class DuckDBInterface:
                 # preserve or default operand
                 if "end_date_operand" not in new_info:
                     new_info["end_date_operand"] = "<="
-                adjusted_uirm[uid] = new_info
+                adjusted_dimension_range_map.append(new_info)
 
         diagnostics = {
             "limited": True,
@@ -1148,7 +1158,12 @@ class DuckDBInterface:
             "effective_window_after": [str(adjusted_start), str(adjusted_end)],
         }
 
-        return adjusted_start, adjusted_end, adjusted_uirm or uirm, diagnostics
+        return (
+            adjusted_start,
+            adjusted_end,
+            adjusted_dimension_range_map or normalized_dimension_range_map,
+            diagnostics,
+        )
 
     def read(
         self,
@@ -1159,6 +1174,11 @@ class DuckDBInterface:
         end: datetime.datetime | None = None,
         great_or_equal: bool = True,  # Changed back to boolean
         less_or_equal: bool = True,  # Changed back to boolean
+        index_names: list[str],
+        time_index_name: str,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
         ids: list[str] | None = None,
         columns: list[str] | None = None,
         unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
@@ -1170,8 +1190,8 @@ class DuckDBInterface:
 
         Args:
             table (str): The name of the table to read from.
-            start (Optional[datetime.datetime]): Minimum time_index filter.
-            end (Optional[datetime.datetime]): Maximum time_index filter.
+            start (Optional[datetime.datetime]): Minimum temporal-column filter.
+            end (Optional[datetime.datetime]): Maximum temporal-column filter.
             great_or_equal (bool): If True, use >= for start date comparison. Defaults to True.
             less_or_equal (bool): If True, use <= for end date comparison. Defaults to True.
             ids (Optional[List[str]]): List of specific unique_identifiers to include.
@@ -1187,31 +1207,84 @@ class DuckDBInterface:
         Raises:
             ValueError: If both `ids` and `unique_identifier_range_map` are provided.
         """
-        # Map boolean flags to operator strings internally
+        def qident(name: str) -> str:
+            return '"' + str(name).replace('"', '""') + '"'
+
+        def validate_dimension_name(name: str) -> None:
+            if name not in identity_dimensions:
+                raise ValueError(
+                    f"Unknown identity dimension {name!r}; expected one of {identity_dimensions!r}"
+                )
+
+        def as_datetime_param(value: Any) -> Any:
+            if value is None:
+                return None
+            if isinstance(value, (int, float)):
+                value = pd.to_datetime(value, unit="s", utc=True)
+            else:
+                value = pd.to_datetime(value, utc=True)
+            py_value = value.to_pydatetime() if hasattr(value, "to_pydatetime") else value
+            return py_value.replace(tzinfo=None) if getattr(py_value, "tzinfo", None) else py_value
+
         start_operator = ">=" if great_or_equal else ">"
         end_operator = "<=" if less_or_equal else "<"
 
+        if time_index_name not in index_names:
+            raise ValueError(
+                f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
+            )
+        identity_dimensions = [name for name in index_names if name != time_index_name]
+        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
+
         if ids is not None and unique_identifier_range_map is not None:
             raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
+        if ids is not None and not uses_legacy_unique_identifier:
+            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
+        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
+            raise ValueError(
+                "Legacy 'unique_identifier_range_map' reads are valid only for "
+                "unique_identifier tables."
+            )
+        if unique_identifier_range_map is not None and dimension_range_map is not None:
+            raise ValueError(
+                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
+            )
+        if column_range_descriptor is not None:
+            raise NotImplementedError("DuckDB column_range_descriptor reads are not supported.")
+
+        if ids:
+            dimension_filters = dict(dimension_filters or {})
+            if "unique_identifier" in dimension_filters:
+                raise ValueError("Cannot provide both 'ids' and a unique_identifier filter.")
+            dimension_filters["unique_identifier"] = list(ids)
+
+        if unique_identifier_range_map is not None:
+            dimension_range_map = [
+                {"coordinate": {"unique_identifier": uid}, **dict(info)}
+                for uid, info in unique_identifier_range_map.items()
+            ]
 
         logger.debug(
             f"Duck DB: Reading from table '{table}' with filters: start={start}, end={end}, "
-            f"ids={ids is not None}, columns={columns}, range_map={unique_identifier_range_map is not None}"
+            f"ids={ids is not None}, columns={columns}, range_map={dimension_range_map is not None}"
         )
 
+        if not self.table_exists(table):
+            logger.warning(f"Table '{table}' does not exist in {self.db_path}.")
+            return pd.DataFrame()
+
         if columns is not None:
-            table_exists_result = self.table_exists(table)
             df_cols = self.con.execute(f"SELECT * FROM {table} AS _q LIMIT 0").fetch_df()
-            if any([c not in df_cols.columns for c in columns]):
+            projected_columns = list(dict.fromkeys([*index_names, *columns]))
+            if any([c not in df_cols.columns for c in projected_columns]):
                 logger.warning(
-                    f"not all Columns '{columns}' are not present in table '{table}'. returning an empty DF"
+                    f"not all Columns '{projected_columns}' are present in table '{table}'. returning an empty DF"
                 )
                 return pd.DataFrame()
 
         cols_select = "*"
         if columns:
-            required_cols = {"time_index", "unique_identifier"}
-            select_set = set(columns) | required_cols
+            select_set = list(dict.fromkeys([*index_names, *columns]))
             cols_select = ", ".join(f'"{c}"' for c in select_set)
 
         sql_parts = [f'SELECT {cols_select} FROM "{table}"']
@@ -1220,48 +1293,66 @@ class DuckDBInterface:
 
         # --- Build WHERE clauses ---
         if start is not None:
-            where_clauses.append(f"time_index {start_operator} ?")
-            params.append(start.replace(tzinfo=None) if start.tzinfo else start)
+            where_clauses.append(f"{qident(time_index_name)} {start_operator} ?")
+            params.append(as_datetime_param(start))
         if end is not None:
-            where_clauses.append(f"time_index {end_operator} ?")
-            params.append(end.replace(tzinfo=None) if end.tzinfo else end)
-        if ids:
-            if not isinstance(ids, list):
-                ids = list(ids)
-            if ids:
-                placeholders = ", ".join("?" for _ in ids)
-                where_clauses.append(f"unique_identifier IN ({placeholders})")
-                params.extend(ids)
-        if unique_identifier_range_map:
+            where_clauses.append(f"{qident(time_index_name)} {end_operator} ?")
+            params.append(as_datetime_param(end))
+        if dimension_filters:
+            for dimension, values in dimension_filters.items():
+                validate_dimension_name(dimension)
+                value_list = list(values)
+                if not value_list:
+                    where_clauses.append("FALSE")
+                    continue
+                placeholders = ", ".join("?" for _ in value_list)
+                where_clauses.append(f"{qident(dimension)} IN ({placeholders})")
+                params.extend(value_list)
+        if index_coordinates:
+            coordinate_conditions = []
+            for coordinate in index_coordinates:
+                parts = []
+                for dimension, value in coordinate.items():
+                    validate_dimension_name(dimension)
+                    parts.append(f"{qident(dimension)} IS NOT DISTINCT FROM ?")
+                    params.append(value)
+                if parts:
+                    coordinate_conditions.append(f"({' AND '.join(parts)})")
+            if coordinate_conditions:
+                where_clauses.append(f"({' OR '.join(coordinate_conditions)})")
+        if dimension_range_map:
             range_conditions = []
-            for uid, date_info in unique_identifier_range_map.items():
-                uid_conditions = ["unique_identifier = ?"]
-                range_params = [uid]
+            for date_info in dimension_range_map:
+                coordinate = date_info.get("coordinate") or {}
+                range_parts = []
+                range_params = []
+                for dimension, value in coordinate.items():
+                    validate_dimension_name(dimension)
+                    range_parts.append(f"{qident(dimension)} IS NOT DISTINCT FROM ?")
+                    range_params.append(value)
                 # Use operands from map if present, otherwise default to >= and <=
                 s_op = date_info.get("start_date_operand", ">=")
                 e_op = date_info.get("end_date_operand", "<=")
-                if date_info.get("start_date"):
-                    uid_conditions.append(f"time_index {s_op} ?")
-                    s_date = date_info["start_date"]
-                    range_params.append(s_date.replace(tzinfo=None) if s_date.tzinfo else s_date)
-                if date_info.get("end_date"):
-                    uid_conditions.append(f"time_index {e_op} ?")
-                    e_date = date_info["end_date"]
-                    range_params.append(e_date.replace(tzinfo=None) if e_date.tzinfo else e_date)
-                range_conditions.append(f"({' AND '.join(uid_conditions)})")
+                if date_info.get("start_date") is not None:
+                    range_parts.append(f"{qident(time_index_name)} {s_op} ?")
+                    range_params.append(as_datetime_param(date_info["start_date"]))
+                if date_info.get("end_date") is not None:
+                    range_parts.append(f"{qident(time_index_name)} {e_op} ?")
+                    range_params.append(as_datetime_param(date_info["end_date"]))
+                if range_parts:
+                    range_conditions.append(f"({' AND '.join(range_parts)})")
                 params.extend(range_params)
             if range_conditions:
                 where_clauses.append(f"({' OR '.join(range_conditions)})")
 
         if where_clauses:
             sql_parts.append("WHERE " + " AND ".join(where_clauses))
-        sql_parts.append("ORDER BY time_index")
+        order_by = ", ".join(qident(name) for name in index_names)
+        sql_parts.append(f"ORDER BY {order_by}")
         query = " ".join(sql_parts)
         logger.debug(f"Executing read query: {query} with params: {params}")
 
         try:
-            table_exists_result = self.table_exists(table)
-
             df = self.con.execute(query, params).fetch_df()
 
             if not df.empty:
@@ -1488,64 +1579,3 @@ class DuckDBInterface:
 
         # --- everything else ------------------------------------------------
         return pd.StringDtype()  # pandas‘ native nullable string
-
-        # ─────────────────────────────────────────────────────────────────────── #
-        # 3. OVERNIGHT DEDUP & COMPACTION                                        #
-        # ─────────────────────────────────────────────────────────────────────── #
-        def overnight_dedup(self, table: str, date: datetime.date | None = None) -> None:
-            """
-            Keep only the newest row per (time_index, unique_identifier)
-            for each partition, coalesce small files into one Parquet file.
-
-            Run this once a day during low‑traffic hours.
-            """
-            # --- select partitions to touch ------------------------------------
-            base = f"{self.db_path}/{table}"
-            selector = fs.FileSelector(base, recursive=True)
-            dirs = {
-                info.path.rpartition("/")[0]
-                for info in self._fs.get_file_info(selector)
-                if info.type == fs.FileType.File and info.path.endswith(".parquet")
-            }
-
-            if date:
-                y, m, d = date.year, date.month, date.day
-                dirs = {
-                    p
-                    for p in dirs
-                    if f"year={y:04d}" in p
-                    and f"month={m:02d}" in p
-                    and (data_frequency != "minute" or f"day={d:02d}" in p)
-                }
-
-            for part_path in sorted(dirs):
-                tmp_file = f"{part_path}/compact-{uuid.uuid4().hex}.parquet"
-
-                # DuckDB SQL: window‑deduplicate & write in one shot
-                copy_sql = f"""
-                COPY (
-                  SELECT *
-                  FROM (
-                    SELECT *,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY time_index, unique_identifier
-                               ORDER BY _file_path DESC
-                           ) AS rn
-                    FROM parquet_scan('{part_path}/*.parquet',
-                                      hive_partitioning=TRUE,
-                                      filename=true)       -- exposes _file_path
-                  )
-                  WHERE rn = 1
-                )
-                TO '{tmp_file}'
-                (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 512000)
-                """
-                self.con.execute(copy_sql)
-
-                # remove old fragments & leave only the compacted file
-                for info in self._fs.get_file_info(fs.FileSelector(part_path)):
-                    if info.type == fs.FileType.File and info.path != tmp_file:
-                        self._fs.delete_file(info.path)
-
-                # Optionally rename to a deterministic name; here we just keep tmp_file
-                logger.info(f"Compacted + de‑duplicated partition {part_path}")

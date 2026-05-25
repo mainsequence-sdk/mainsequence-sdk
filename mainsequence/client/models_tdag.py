@@ -27,7 +27,7 @@ from mainsequence.logconf import logger
 
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
-from .data_sources_interfaces import get_duckdb_interface_class
+from .data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
 from .exceptions import raise_for_response
 from .utils import (
     MAINSEQUENCE_ENDPOINT,
@@ -63,6 +63,8 @@ def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 DUCK_DB = "duck_db"
+SQLITE = "sqlite"
+LOCAL_DATA_SOURCE_CLASS_TYPES = {DUCK_DB, SQLITE}
 
 _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
@@ -80,6 +82,17 @@ class AlreadyExist(Exception):
 def _duckdb_interface():
     return get_duckdb_interface_class()()
 
+
+def _sqlite_interface():
+    return get_sqlite_interface_class()()
+
+
+def _local_data_interface(class_type: str):
+    if class_type == DUCK_DB:
+        return _duckdb_interface()
+    if class_type == SQLITE:
+        return _sqlite_interface()
+    raise ValueError(f"Unsupported local data source class_type: {class_type!r}")
 
 
 
@@ -1457,19 +1470,32 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         raise_for_response(r, payload=payload_body)
         return r.json()
 
-    def delete_table(self):
-        data_source = PodDataSource._get_duck_db()
-        duckdb_dynamic_data_source = DynamicTableDataSource.get_or_create_duck_db(
-            related_resource=data_source.id,
+    def _uses_session_duckdb_data_source(self) -> bool:
+        return self._uses_session_local_data_source()
+
+    def _uses_session_local_data_source(self) -> bool:
+        if not isinstance(self.data_source, int):
+            related_resource = getattr(self.data_source, "related_resource", None)
+            return getattr(related_resource, "class_type", None) in LOCAL_DATA_SOURCE_CLASS_TYPES
+
+        session_dynamic_data_source = getattr(SessionDataSource, "data_source", None)
+        related_resource = getattr(session_dynamic_data_source, "related_resource", None)
+        return (
+            getattr(session_dynamic_data_source, "id", None) == self.data_source
+            and getattr(related_resource, "class_type", None) in LOCAL_DATA_SOURCE_CLASS_TYPES
         )
-        if (
-            isinstance(self.data_source, int)
-            and self.data_source == duckdb_dynamic_data_source.id
-        ) or (
-            not isinstance(self.data_source, int)
-            and self.data_source.related_resource.class_type == DUCK_DB
-        ):
-            db_interface = _duckdb_interface()
+
+    def delete_table(self):
+        if self._uses_session_local_data_source():
+            class_type = None
+            if not isinstance(self.data_source, int):
+                related_resource = getattr(self.data_source, "related_resource", None)
+                class_type = getattr(related_resource, "class_type", None)
+            else:
+                session_dynamic_data_source = getattr(SessionDataSource, "data_source", None)
+                related_resource = getattr(session_dynamic_data_source, "related_resource", None)
+                class_type = getattr(related_resource, "class_type", None)
+            db_interface = _local_data_interface(class_type)
             db_interface.drop_table(self.storage_hash)
 
         self.delete()
@@ -3189,6 +3215,54 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
 
+    @classmethod
+    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_sqlite/"
+        payload = {"json": serialize_to_json(kwargs)}
+        s = cls.build_session()
+        r = make_request(
+            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def create_duckdb(
+        cls,
+        time_out: int | None = None,
+        *,
+        display_name: str | None = None,
+        host_mac_address: str | None = None,
+        **kwargs,
+    ):
+        """
+        Explicitly create or resolve the physical DuckDB DataSource for this host.
+        """
+        host_uid = host_mac_address or bios_uuid()
+        payload = dict(kwargs)
+        payload.setdefault("host_mac_address", host_uid)
+        payload.setdefault("display_name", display_name or f"DuckDB_{host_uid}")
+        return cls.get_or_create_duck_db(time_out=time_out, **payload)
+
+    @classmethod
+    def create_sqlite(
+        cls,
+        time_out: int | None = None,
+        *,
+        display_name: str | None = None,
+        host_mac_address: str | None = None,
+        **kwargs,
+    ):
+        """
+        Explicitly create or resolve the physical SQLite DataSource for this host.
+        """
+        host_uid = host_mac_address or bios_uuid()
+        payload = dict(kwargs)
+        payload.setdefault("host_mac_address", host_uid)
+        payload.setdefault("display_name", display_name or f"SQLite_{host_uid}")
+        return cls.get_or_create_sqlite(time_out=time_out, **payload)
+
     def insert_data_into_table(
         self,
         serialized_data_frame: pd.DataFrame,
@@ -3199,9 +3273,12 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         grouped_dates: dict,
     ):
 
-        if self.class_type == DUCK_DB:
-            _duckdb_interface().upsert(
-                df=serialized_data_frame, table=data_node_update.data_node_storage.storage_hash
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            _local_data_interface(self.class_type).upsert(
+                df=serialized_data_frame,
+                table=data_node_update.data_node_storage.storage_hash,
+                index_names=index_names,
+                time_index_name=time_index_name,
             )
         else:
             DataNodeUpdate.post_data_frame_in_chunks(
@@ -3247,32 +3324,35 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
     ) -> pd.DataFrame:
 
-        if self.class_type == DUCK_DB:
-            if (
-                dimension_filters is not None
-                or index_coordinates is not None
-                or dimension_range_map is not None
-            ):
-                raise NotImplementedError(
-                    "Canonical dimension filters for DuckDB reads are handled in Phase 5."
-                )
-            db_interface = _duckdb_interface()
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            db_interface = _local_data_interface(self.class_type)
             table_name = data_node_update.data_node_storage.storage_hash
+            stc = data_node_update.data_node_storage.sourcetableconfiguration
 
-            _adjusted_start, _adjusted_end, _adjusted_uirm, _ = db_interface.constrain_read(
-                table=table_name,
-                start=start_date,
-                end=end_date,
-                ids=None,
+            adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
+                db_interface.constrain_read(
+                    table=table_name,
+                    start=start_date,
+                    end=end_date,
+                    time_index_name=stc.time_index_name,
+                    index_names=stc.index_names,
+                    dimension_filters=dimension_filters,
+                    index_coordinates=index_coordinates,
+                    dimension_range_map=dimension_range_map,
+                )
             )
 
             df = db_interface.read(
                 table=table_name,
-                start=start_date,
-                end=end_date,
+                start=adjusted_start,
+                end=adjusted_end,
                 great_or_equal=great_or_equal,
                 less_or_equal=less_or_equal,
-                ids=None,
+                index_names=stc.index_names,
+                time_index_name=stc.time_index_name,
+                dimension_filters=dimension_filters,
+                index_coordinates=index_coordinates,
+                dimension_range_map=adjusted_dimension_range_map,
                 columns=columns,
             )
 
@@ -3298,7 +3378,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format="ISO8601")
         except Exception as e:
             raise e
-        columns_to_loop = columns or stc.column_dtypes_map.keys()
+        columns_to_loop = set(columns or stc.column_dtypes_map.keys()) | set(stc.index_names)
         for c, c_type in stc.column_dtypes_map.items():
             if c not in columns_to_loop:
                 continue
@@ -3313,10 +3393,16 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         self,
         data_node_update: DataNodeUpdate,
     ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
-        if self.class_type == DUCK_DB:
-            db_interface = _duckdb_interface()
-            table_name = data_node_update.data_node_storage.table_name
-            return db_interface.time_index_minima(table=table_name)
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            db_interface = _local_data_interface(self.class_type)
+            storage = data_node_update.data_node_storage
+            table_name = getattr(storage, "storage_hash", None) or storage.table_name
+            stc = storage.sourcetableconfiguration
+            return db_interface.time_index_minima(
+                table=table_name,
+                index_names=stc.index_names,
+                time_index_name=stc.time_index_name,
+            )
 
         else:
             raise NotImplementedError
@@ -3360,13 +3446,90 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
             cloudpickle.dump(self, handle)
 
     @classmethod
-    def get_or_create_duck_db(cls, *args, **kwargs):
+    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
         url = cls.get_object_url() + "/get_or_create_duck_db/"
         s = cls.build_session()
-        r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload={"json": kwargs})
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": kwargs},
+            time_out=time_out,
+        )
         if r.status_code not in [200, 201]:
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
+
+    @classmethod
+    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_sqlite/"
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": kwargs},
+            time_out=time_out,
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def create_duckdb(
+        cls,
+        *,
+        data_source: int | DataSource,
+        time_out: int | None = None,
+        **kwargs,
+    ):
+        related_resource_id = (
+            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
+        )
+        if related_resource_id is None:
+            raise ValueError("A DuckDB DataSource with an id is required.")
+
+        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
+        if class_type is not None and class_type != DUCK_DB:
+            raise ValueError(
+                f"DynamicTableDataSource.create_duckdb requires a {DUCK_DB!r} "
+                f"DataSource, got {class_type!r}."
+            )
+
+        return cls.get_or_create_duck_db(
+            time_out=time_out,
+            related_resource=related_resource_id,
+            **kwargs,
+        )
+
+    @classmethod
+    def create_sqlite(
+        cls,
+        *,
+        data_source: int | DataSource,
+        time_out: int | None = None,
+        **kwargs,
+    ):
+        related_resource_id = (
+            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
+        )
+        if related_resource_id is None:
+            raise ValueError("A SQLite DataSource with an id is required.")
+
+        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
+        if class_type is not None and class_type != SQLITE:
+            raise ValueError(
+                f"DynamicTableDataSource.create_sqlite requires a {SQLITE!r} "
+                f"DataSource, got {class_type!r}."
+            )
+
+        return cls.get_or_create_sqlite(
+            time_out=time_out,
+            related_resource=related_resource_id,
+            **kwargs,
+        )
 
     def get_data_by_time_index(self, *args, **kwargs):
         return self.related_resource.get_data_by_time_index(*args, **kwargs)
@@ -4306,36 +4469,54 @@ class PodDataSource:
         if self.data_source.related_resource.status != "AVAILABLE":
             raise Exception(f"Project Database {self.data_source} is not available")
 
-    @staticmethod
-    def _get_duck_db():
-        host_uid = bios_uuid()
-        data_source = DataSource.get_or_create_duck_db(
-            display_name=f"DuckDB_{host_uid}", host_mac_address=host_uid
-        )
-        return data_source
-
     @property
     def is_local_duck_db(self):
-        return SessionDataSource.data_source.related_resource.class_type == DUCK_DB
+        related_resource = getattr(getattr(self, "data_source", None), "related_resource", None)
+        return getattr(related_resource, "class_type", None) == DUCK_DB
 
-    def set_local_db(self):
-        data_source = self._get_duck_db()
+    @property
+    def is_local_db(self):
+        return self.local_db_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
-        duckdb_dynamic_data_source = DynamicTableDataSource.get_or_create_duck_db(
-            related_resource=data_source.id,
-        )
+    @property
+    def local_db_class_type(self):
+        related_resource = getattr(getattr(self, "data_source", None), "related_resource", None)
+        return getattr(related_resource, "class_type", None)
+
+    def set_local_db(self, *, data_source: DataSource | None = None):
+        if data_source is None:
+            raise ValueError(
+                "set_local_db requires an explicit local DataSource. "
+                "Create one with DataSource.create_duckdb() or DataSource.create_sqlite() and pass "
+                "SessionDataSource.set_local_db(data_source=data_source)."
+            )
+        class_type = getattr(data_source, "class_type", None)
+        if class_type not in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            raise ValueError(
+                "set_local_db requires a supported local DataSource "
+                f"{sorted(LOCAL_DATA_SOURCE_CLASS_TYPES)!r}, got {class_type!r}."
+            )
+        if getattr(data_source, "id", None) is None:
+            raise ValueError("set_local_db requires a persisted local DataSource with an id.")
+
+        if class_type == DUCK_DB:
+            local_dynamic_data_source = DynamicTableDataSource.create_duckdb(data_source=data_source)
+        elif class_type == SQLITE:
+            local_dynamic_data_source = DynamicTableDataSource.create_sqlite(data_source=data_source)
+        else:
+            raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
         remote_node_storages = DataNodeStorage.filter(
-            data_source__id=duckdb_dynamic_data_source.id, list_tables=True
+            data_source__id=local_dynamic_data_source.id, list_tables=True
         )
         remote_table_names = [t.storage_hash for t in remote_node_storages]
-        db_interface = _duckdb_interface()
+        db_interface = _local_data_interface(class_type)
         local_table_names = db_interface.list_tables()
 
         tables_to_delete_locally = set(local_table_names) - set(remote_table_names)
         for table_name in tables_to_delete_locally:
-            logger.debug(f"Deleting table in local duck db {table_name}")
+            logger.debug(f"Deleting table in local {class_type} db {table_name}")
             db_interface.drop_table(table_name)
 
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
@@ -4347,18 +4528,25 @@ class PodDataSource:
 
                 remote_table.delete()
 
-        self.data_source = duckdb_dynamic_data_source
+        self.data_source = local_dynamic_data_source
 
         physical_ds = self.data_source.related_resource
-        banner = (
-            "─" * 40 + "\n"
-            f"LOCAL: {physical_ds.display_name} (engine={physical_ds.class_type})\n\n"
-            "import duckdb, pathlib\n"
-            f"path = pathlib.Path('{db_interface.db_path}') / 'duck_meta.duckdb'\n"
-            "conn = duckdb.connect(':memory:')\n"
-            "conn.execute(f\"ATTACH '{path}' AS ro (READ_ONLY)\")\n"
-            "conn.execute('INSTALL ui; LOAD ui; CALL start_ui();')\n" + "─" * 40
-        )
+        if class_type == DUCK_DB:
+            banner = (
+                "─" * 40 + "\n"
+                f"LOCAL: {physical_ds.display_name} (engine={physical_ds.class_type})\n\n"
+                "import duckdb, pathlib\n"
+                f"path = pathlib.Path('{db_interface.db_path}') / 'duck_meta.duckdb'\n"
+                "conn = duckdb.connect(':memory:')\n"
+                "conn.execute(f\"ATTACH '{path}' AS ro (READ_ONLY)\")\n"
+                "conn.execute('INSTALL ui; LOAD ui; CALL start_ui();')\n" + "─" * 40
+            )
+        else:
+            banner = (
+                "─" * 40 + "\n"
+                f"LOCAL: {physical_ds.display_name} (engine={physical_ds.class_type})\n\n"
+                f"sqlite file: {db_interface.db_file}\n" + "─" * 40
+            )
         logger.info(banner)
 
     def __repr__(self):

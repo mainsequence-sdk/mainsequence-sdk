@@ -880,10 +880,10 @@ Required test coverage:
 Status: skipped for now. This phase remains intentionally open while Phase 6
 runtime callers are migrated around backend-bound API payloads.
 
-- [ ] Update DuckDB read filters to use arbitrary dimension filters and coordinate
+- [x] Update DuckDB read filters to use arbitrary dimension filters and coordinate
    ranges.
-- [ ] Update DuckDB merge and deduplication keys to use full `index_names`.
-- [ ] Update DuckDB row-limit constraining to understand `dimension_range_map`.
+- [x] Update DuckDB merge and deduplication keys to use full `index_names`.
+- [x] Update DuckDB row-limit constraining to understand `dimension_range_map`.
 - [x] Remove legacy Timescale direct reads instead of modernizing their
    dimension predicates. See ADR 0010.
 - [x] Remove legacy Timescale direct overwrite/delete handling instead of

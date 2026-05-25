@@ -74,3 +74,12 @@ def test_duckdb_helper_points_to_local_data_extra(monkeypatch):
         assert "mainsequence[local-data]" in str(exc)
     else:
         raise AssertionError("Expected optional local-data dependency error")
+
+
+def test_sqlite_helper_uses_standard_library_storage(monkeypatch):
+    _reset_mainsequence_modules()
+    _seed_mainsequence_packages()
+
+    module = importlib.import_module("mainsequence.client.data_sources_interfaces")
+
+    assert module.get_sqlite_interface_class().__name__ == "SQLiteInterface"

@@ -16,4 +16,10 @@ def get_duckdb_interface_class():
     return DuckDBInterface
 
 
-__all__ = ["get_duckdb_interface_class"]
+def get_sqlite_interface_class():
+    from .sqlite import SQLiteInterface
+
+    return SQLiteInterface
+
+
+__all__ = ["get_duckdb_interface_class", "get_sqlite_interface_class"]

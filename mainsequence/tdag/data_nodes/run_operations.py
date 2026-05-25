@@ -238,7 +238,10 @@ class UpdateRunner:
             )
             table_metadata = self.ts.get_table_metadata()
 
-            if self.ts.data_source.related_resource.class_type != ms_client.DUCK_DB:
+            if (
+                self.ts.data_source.related_resource.class_type
+                not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES
+            ):
                 self.ts.local_persist_manager.set_table_metadata(table_metadata=table_metadata)
 
         return error_on_last_update, update_result
@@ -265,7 +268,7 @@ class UpdateRunner:
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
         # Check for forbidden data types and enforce lowercase columns
-        if storage_class_type != ms_client.DUCK_DB:
+        if storage_class_type not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES:
 
             for col, dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
@@ -440,7 +443,7 @@ class UpdateRunner:
                 continue
 
             # Ensure the dependency is initialized in the persistence layer
-            dependency_ts.local_persist_manager
+            _ = dependency_ts.local_persist_manager
 
             logger.debug(f"Adding dependency '{name}' to update map.")
             dependecy_map[key] = {"is_pickle": False, "ts": dependency_ts}

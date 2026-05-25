@@ -10,6 +10,9 @@ from typing import Any, ClassVar
 import pandas as pd
 
 from mainsequence.client.models_tdag import (
+    DUCK_DB,
+    LOCAL_DATA_SOURCE_CLASS_TYPES,
+    SQLITE,
     ColumnMetaData,
     DynamicTableDataSource,
     TableMetaData,
@@ -465,7 +468,9 @@ class BasePersistManager:
 
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         return self.data_source.get_data_by_time_index(
-            data_node_update=self.data_node_update, *args, **kwargs
+            *args,
+            data_node_update=self.data_node_update,
+            **kwargs,
         )
 
     def get_last_observation(
@@ -507,10 +512,19 @@ class BasePersistManager:
         self.data_node_storage.patch(**table_metadata.model_dump())
 
     def delete_table(self) -> None:
-        if self.data_source.related_resource.class_type == "duck_db":
-            from mainsequence.client.data_sources_interfaces import get_duckdb_interface_class
+        class_type = self.data_source.related_resource.class_type
+        if class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            from mainsequence.client.data_sources_interfaces import (
+                get_duckdb_interface_class,
+                get_sqlite_interface_class,
+            )
 
-            db_interface = get_duckdb_interface_class()()
+            if class_type == DUCK_DB:
+                db_interface = get_duckdb_interface_class()()
+            elif class_type == SQLITE:
+                db_interface = get_sqlite_interface_class()()
+            else:
+                raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
             db_interface.drop_table(self.data_node_storage.storage_hash)
 
         self.data_node_storage.delete()
