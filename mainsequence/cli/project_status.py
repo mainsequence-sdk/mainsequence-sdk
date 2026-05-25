@@ -4,10 +4,11 @@ from __future__ import annotations
 mainsequence.cli.project_status
 ===============================
 
-Current project detection aligned with VS Code extension logic:
+Current project detection aligned with CLI local project conventions:
 
 - Detect a project by path structure containing ".../projects/<folder>"
-- Extract project id from "<slug>-<digits>" folder suffix
+- Prefer `MAIN_SEQUENCE_PROJECT_UID` from local `.env`
+- Fall back to legacy numeric folder suffixes / `MAIN_SEQUENCE_PROJECT_ID`
 - If outside configured base, allow detection via .env markers:
     MAINSEQUENCE_ACCESS_TOKEN, MAINSEQUENCE_REFRESH_TOKEN, MAINSEQUENCE_ENDPOINT
 - Detect .venv and infer Python version
@@ -25,6 +26,7 @@ from dataclasses import dataclass
 class CurrentProjectInfo:
     path: str
     folder: str
+    project_uid: str | None = None
     project_id: str | None = None
     venv_path: str | None = None
     python_version: str | None = None
@@ -41,6 +43,7 @@ class WorkspaceCheckDebug:
     within_base: bool | None = None
     projects_segment_index: int | None = None
     projects_folder: str | None = None
+    project_uid: str | None = None
     project_id: str | None = None
     env_path: str | None = None
     env_exists: bool | None = None
@@ -142,15 +145,19 @@ def _analyze_workspace(workspace_dir: str, base_dir: str) -> tuple[CurrentProjec
         folder = parts[idx + 1]
         check.projects_folder = folder
 
-        m = re.search(r"-(\d+)$", folder)
-        pid = m.group(1) if m else None
-        check.project_id = pid
+        project_uid, project_id = _read_project_identity_from_env(resolved_workspace)
+        if not project_id:
+            m = re.search(r"-(\d+)$", folder)
+            project_id = m.group(1) if m else None
+        check.project_uid = project_uid
+        check.project_id = project_id
 
         venv_path, pyver = _detect_venv_info(resolved_workspace)
         project = CurrentProjectInfo(
             path=str(resolved_workspace),
             folder=folder,
-            project_id=pid,
+            project_uid=project_uid,
+            project_id=project_id,
             venv_path=venv_path,
             python_version=pyver,
         )
@@ -196,6 +203,23 @@ def _read_env_markers(workspace: pathlib.Path) -> tuple[str, bool, list[str], bo
         return env_path, True, found, has_auth_marker
     except Exception:
         return env_path, False, [], False
+
+
+def _read_project_identity_from_env(workspace: pathlib.Path) -> tuple[str | None, str | None]:
+    env_file = workspace / ".env"
+    if not env_file.exists():
+        return None, None
+
+    try:
+        content = env_file.read_text(encoding="utf-8", errors="replace")
+    except Exception:
+        return None, None
+
+    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
+    id_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(.+?)\s*$", content)
+    project_uid = uid_match.group(1).strip() if uid_match else None
+    project_id = id_match.group(1).strip() if id_match else None
+    return project_uid or None, project_id or None
 
 
 def _detect_venv_info(workspace: pathlib.Path) -> tuple[str | None, str | None]:

@@ -194,8 +194,8 @@ def test_project_search(cli_mod, runner, monkeypatch):
         cli_mod,
         "search_projects",
         lambda q, limit=20, timeout=None: [
-            {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-            {"id": 12, "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
+            {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+            {"uid": "project-uid-12", "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
         ],
     )
 
@@ -206,6 +206,8 @@ def test_project_search(cli_mod, runner, monkeypatch):
     assert "release" in result.output
     assert "7" in result.output
     assert "9" in result.output
+    assert "UID" in result.output
+    assert "project-uid-11" in result.output
     assert "Project Name" in result.output
     assert "alpha-research" in result.output
     assert "data-live" in result.output
@@ -231,14 +233,14 @@ def test_project_search_json(cli_mod, runner, monkeypatch):
         cli_mod,
         "search_projects",
         lambda q, limit=20, timeout=None: [
-            {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+            {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
         ],
     )
 
     result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload == [{"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7}]
+    assert payload == [{"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7}]
 
 
 def test_organization_github_organizations(cli_mod, runner, monkeypatch):
@@ -879,9 +881,8 @@ def test_registered_widget_type_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["cc", "registered_widget_type", "list"])
     assert result.exit_code == 0
     assert "Registered Widget Types" in result.output
-    assert "17" in result.output
+    assert "Widget ID" in result.output
     assert "main-sequ" in result.output
-    assert "uence-da" in result.output
     assert "-node" in result.output
     assert "Total registered widget types: 1" in result.output
 
@@ -925,7 +926,6 @@ def test_registered_widget_type_detail(cli_mod, runner, monkeypatch):
     )
     assert result.exit_code == 0
     assert "Registered Widget Type" in result.output
-    assert "17" in result.output
     assert "main-sequence-data-node" in result.output
     assert "Renders a data node payload." in result.output
     assert "Schema" in result.output
@@ -2705,7 +2705,7 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
     project_dir.mkdir(parents=True, exist_ok=True)
     (project_dir / ".env").write_text(
         "MAINSEQUENCE_ENDPOINT=https://project-backend.test\n"
-        "MAIN_SEQUENCE_PROJECT_ID=123\n",
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n",
         encoding="utf-8",
     )
 
@@ -2718,6 +2718,7 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
     )
     for key in (
         "MAINSEQUENCE_ENDPOINT",
+        "MAIN_SEQUENCE_PROJECT_UID",
         "MAIN_SEQUENCE_PROJECT_ID",
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
@@ -2727,7 +2728,8 @@ def test_prime_runtime_env_prefers_local_project_env(cli_mod, monkeypatch, tmp_p
     bootstrap.prime_runtime_env()
 
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "https://project-backend.test"
-    assert os.environ["MAIN_SEQUENCE_PROJECT_ID"] == "123"
+    assert os.environ["MAIN_SEQUENCE_PROJECT_UID"] == "project-uid-123"
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
 
@@ -2746,6 +2748,7 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
     )
     for key in (
         "MAINSEQUENCE_ENDPOINT",
+        "MAIN_SEQUENCE_PROJECT_UID",
         "MAIN_SEQUENCE_PROJECT_ID",
         "MAINSEQUENCE_ACCESS_TOKEN",
         "MAINSEQUENCE_REFRESH_TOKEN",
@@ -2755,6 +2758,7 @@ def test_prime_runtime_env_falls_back_to_cli_login_context(cli_mod, monkeypatch,
     bootstrap.prime_runtime_env()
 
     assert os.environ["MAINSEQUENCE_ENDPOINT"] == "http://127.0.0.1:8000"
+    assert "MAIN_SEQUENCE_PROJECT_UID" not in os.environ
     assert "MAIN_SEQUENCE_PROJECT_ID" not in os.environ
     assert os.environ["MAINSEQUENCE_ACCESS_TOKEN"] == "acc-123"
     assert os.environ["MAINSEQUENCE_REFRESH_TOKEN"] == "ref-456"
@@ -2872,6 +2876,36 @@ def test_get_current_user_profile_uses_user_details_endpoint(cli_mod, monkeypatc
     assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence"}
 
 
+def test_get_current_user_profile_accepts_top_level_organization_object(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+
+    class _Response:
+        ok = True
+
+        @staticmethod
+        def json():
+            return {
+                "username": "jose@main-sequence.io",
+                "organization": {"uid": "org-uid-456", "name": "Main Sequence Dev"},
+            }
+
+    monkeypatch.setattr(api_mod, "authed", lambda method, path, body=None: _Response())
+
+    out = api_mod.get_current_user_profile()
+    assert out == {"username": "jose@main-sequence.io", "organization": "Main Sequence Dev"}
+
+
+def test_org_slug_from_profile_handles_organization_object(cli_mod, monkeypatch):
+    monkeypatch.setattr(
+        cli_mod,
+        "get_current_user_profile",
+        lambda: {"organization": {"uid": "org-uid-456", "name": "Main Sequence Dev"}},
+    )
+
+    out = cli_mod._org_slug_from_profile()
+    assert out == "main-sequence-dev"
+
+
 def test_doctor_command(cli_mod, runner, monkeypatch):
     called = {"value": False}
 
@@ -2925,15 +2959,22 @@ def test_project_list(cli_mod, runner, monkeypatch):
         "get_projects",
         lambda: [
             {
-                "id": 1,
+                "uid": "project-uid-1",
                 "project_name": "Demo",
                 "data_source": {"related_resource": {"display_name": "DS"}},
+                "is_initialized": True,
             }
         ],
     )
     result = runner.invoke(cli_mod.app, ["project", "list"])
     assert result.exit_code == 0
+    assert "UID" in result.output
+    assert "project-uid-1" in result.output
+    assert "Initialized" in result.output
+    assert "yes" in result.output
     assert "Demo" in result.output
+    assert "Data Source" not in result.output
+    assert "Class" not in result.output
 
 
 def test_project_get_data_node_updates(cli_mod, runner, monkeypatch):
@@ -3154,7 +3195,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
     out = api_mod.get_project_data_node_updates(123)
-    assert captured["project_id_arg"] == 123
+    assert captured["project_id_arg"] == "123"
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
     assert out == [{"id": 10, "update_hash": "abc123"}]
@@ -5255,7 +5296,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
             return [
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
-                        "id": 11,
+                        "uid": "project-uid-11",
                         "project_name": "alpha-research",
                         "repository_branch": "main",
                         "cluster_id": 7,
@@ -5263,7 +5304,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
                 ),
                 types.SimpleNamespace(
                     model_dump=lambda mode="json": {
-                        "id": 12,
+                        "uid": "project-uid-12",
                         "project_name": "data-live",
                         "repository_branch": "release",
                         "cluster_id": 9,
@@ -5287,8 +5328,8 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     assert captured["limit"] == 10
     assert captured["timeout"] == 12
     assert out == [
-        {"id": 11, "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-        {"id": 12, "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
+        {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+        {"uid": "project-uid-12", "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
     ]
 
 
@@ -5338,11 +5379,11 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
     out = api_mod.sync_project_after_commit(123)
-    assert captured["project_id"] == 123
+    assert captured["project_id"] == "123"
     assert captured["timeout"] is None
     assert captured["env_project_id"] == "123"
     assert captured["jwt"] == ("acc", "ref")
-    assert out == {"id": 123, "project_name": "Demo"}
+    assert out == {"id": "123", "project_name": "Demo"}
     assert os.environ.get("MAIN_SEQUENCE_PROJECT_ID") is None
 
 
@@ -6219,6 +6260,7 @@ def test_agent_list(cli_mod, runner, monkeypatch):
         lambda timeout=None, filters=None: [
             {
                 "id": 12,
+                "agent_unique_id": "research-copilot",
                 "name": "Research Copilot",
                 "status": "active",
                 "labels": ["research", "desk"],
@@ -6233,7 +6275,10 @@ def test_agent_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["agent", "list"])
     assert result.exit_code == 0
     assert "Agents" in result.output
-    assert "Research" in result.output
+    assert "Unique" in result.output
+    assert "researc" in result.output
+    assert "h-copil" in result.output
+    assert "Researc" in result.output
     assert "Copilot" in result.output
     assert "Total agents: 1" in result.output
 
@@ -6311,6 +6356,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
         "timeout": 17,
     }
     assert "Agent Search Results" in result.output
+    assert "Unique ID" in result.output
     assert "Research" in result.output
     assert "Copilot" in result.output
     assert "research-cop" in result.output
@@ -6593,6 +6639,7 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
         "get_agent",
         lambda agent_id, timeout=None: {
             "id": agent_id,
+            "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
             "labels": ["research"],
@@ -6604,6 +6651,7 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
         captured["timeout"] = timeout
         return {
             "id": agent_id,
+            "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
             "labels": ["research"],
@@ -6620,7 +6668,7 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     assert "Agent Delete Preview" in result.output
     assert "Type agent name 'Research Copilot' to confirm deletion" in result.output
     assert captured["agent_id"] == 12
-    assert "Agent deleted: id=12" in result.output
+    assert "Agent deleted: agent_unique_id=research-copilot" in result.output
 
 
 def test_agent_can_edit(cli_mod, runner, monkeypatch):
@@ -8449,7 +8497,12 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
 
     def _create_project(**kwargs):
         captured.update(kwargs)
-        return {"id": 321, "project_name": kwargs["project_name"], "git_ssh_url": "git@github.com:org/repo.git"}
+        return {
+            "id": 321,
+            "uid": "project-uid-321",
+            "project_name": kwargs["project_name"],
+            "git_ssh_url": "git@github.com:org/repo.git",
+        }
 
     monkeypatch.setattr(cli_mod, "create_project", _create_project)
 
@@ -8470,7 +8523,7 @@ def test_project_create_interactive_defaults(cli_mod, runner, monkeypatch):
     assert captured["github_org_id"] == 33
     assert captured["repository_branch"] == "main"
     assert captured["env_vars"] == {"FOO": "bar", "BAZ": "qux"}
-    assert "Project created: demo-project (id=321)" in result.output
+    assert "Project created: demo-project (uid=project-uid-321)" in result.output
 
 
 def test_project_create_polls_until_initialized(cli_mod, runner, monkeypatch):
@@ -8574,8 +8627,8 @@ def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
-        lambda: [{"id": 321, "project_name": "Demo Project"}],
+        "resolve_project",
+        lambda project_id: {"id": 321, "uid": "project-uid-321", "project_name": "Demo Project"},
     )
 
     captured = {}
@@ -8589,12 +8642,12 @@ def test_project_delete_remote_yes(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "delete", "321", "--yes", "--delete-repositories"],
+        ["project", "delete", "project-uid-321", "--yes", "--delete-repositories"],
     )
     assert result.exit_code == 0
-    assert captured["project_id"] == 321
+    assert captured["project_id"] == "project-uid-321"
     assert captured["delete_repositories"] is True
-    assert "Project deleted: Demo Project (id=321)" in result.output
+    assert "Project deleted: Demo Project (uid=project-uid-321)" in result.output
 
 
 def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
@@ -8613,15 +8666,14 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
-        lambda: [
-            {
-                "id": 123,
-                "project_name": "Demo",
-                "git_ssh_url": "git@github.com:org/repo.git",
-                "is_initialized": True,
-            }
-        ],
+        "resolve_project",
+        lambda project_ref: {
+            "id": 123,
+            "uid": "project-uid-123",
+            "project_name": "Demo",
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": True,
+        },
     )
     monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
@@ -8640,16 +8692,17 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
         lambda: {"username": "u", "access": "access-123", "refresh": "refresh-456"},
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
+    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
     assert result.exit_code == 0
 
-    env_file = base / "org" / "projects" / "demo-123" / ".env"
+    env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     assert env_file.exists()
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_ACCESS_TOKEN=access-123" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=refresh-456" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
     assert "MAINSEQUENCE_TOKEN=legacy-token" not in env_text
@@ -8674,15 +8727,14 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
-        lambda: [
-            {
-                "id": 123,
-                "project_name": "Demo",
-                "git_ssh_url": "git@github.com:org/repo.git",
-                "is_initialized": True,
-            }
-        ],
+        "resolve_project",
+        lambda project_ref: {
+            "id": 123,
+            "uid": "project-uid-123",
+            "project_name": "Demo",
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": True,
+        },
     )
     monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
@@ -8706,17 +8758,18 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
         lambda backend_url: "runtime-access",
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
+    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
     assert result.exit_code == 0
 
-    env_file = base / "org" / "projects" / "demo-123" / ".env"
+    env_file = base / "org" / "projects" / "demo-project-uid-123" / ".env"
     env_text = env_file.read_text(encoding="utf-8")
     assert "MAINSEQUENCE_AUTH_MODE=runtime_credential" in env_text
     assert "MAINSEQUENCE_ACCESS_TOKEN=runtime-access" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "DEFAULT_BASE_IMAGE" not in env_text
     assert "FOO=bar" not in env_text
@@ -8737,15 +8790,14 @@ def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, m
     monkeypatch.setattr(cli_mod, "_org_slug_from_profile", lambda: "org")
     monkeypatch.setattr(
         cli_mod,
-        "get_projects",
-        lambda: [
-            {
-                "id": 123,
-                "project_name": "Demo",
-                "git_ssh_url": "git@github.com:org/repo.git",
-                "is_initialized": False,
-            }
-        ],
+        "resolve_project",
+        lambda project_ref: {
+            "id": 123,
+            "uid": "project-uid-123",
+            "project_name": "Demo",
+            "git_ssh_url": "git@github.com:org/repo.git",
+            "is_initialized": False,
+        },
     )
 
     clone_calls = {"count": 0}
@@ -8756,7 +8808,7 @@ def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, m
 
     monkeypatch.setattr(cli_mod.subprocess, "call", _clone)
 
-    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "123"])
+    result = runner.invoke(cli_mod.app, ["project", "set-up-locally", "project-uid-123"])
 
     assert result.exit_code == 1
     assert "Project has not finished initializing yet." in result.output
@@ -8775,11 +8827,12 @@ def test_project_open(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-123"
+    target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n"
         "MAINSEQUENCE_ENDPOINT=https://old-backend.test\n"
@@ -8803,18 +8856,20 @@ def test_project_refresh_token(cli_mod, runner, monkeypatch, tmp_path):
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_TOKEN=legacy-token" in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 
 
 def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-123"
+    target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
         "MAINSEQUENCE_AUTH_MODE=jwt\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
@@ -8847,18 +8902,20 @@ def test_project_refresh_token_runtime_credential(cli_mod, runner, monkeypatch, 
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=cred-id" in env_text
     assert "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=cred-secret" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_ID" not in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN" not in env_text
     assert "old-access" not in env_text
     assert "old-refresh" not in env_text
 
 
 def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-123"
+    target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     env_path = target / ".env"
     env_path.write_text(
         "FOO=bar\n"
+        "MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n"
         "MAINSEQUENCE_ACCESS_TOKEN=old-access\n"
         "MAINSEQUENCE_REFRESH_TOKEN=old-refresh\n",
         encoding="utf-8",
@@ -8880,7 +8937,7 @@ def test_project_refresh_token_defaults_to_cwd(cli_mod, runner, monkeypatch, tmp
     assert "MAINSEQUENCE_ACCESS_TOKEN=new-access" in env_text
     assert "MAINSEQUENCE_REFRESH_TOKEN=new-refresh" in env_text
     assert "MAINSEQUENCE_ENDPOINT=https://backend.test" in env_text
-    assert "MAIN_SEQUENCE_PROJECT_ID=123" in env_text
+    assert "MAIN_SEQUENCE_PROJECT_UID=project-uid-123" in env_text
 
 
 def test_project_delete_local(cli_mod, runner, monkeypatch, tmp_path):
@@ -8959,9 +9016,9 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
-    target = tmp_path / "demo-123"
+    target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     (target / "pyproject.toml").write_text(
         '[project]\nname = "demo"\nrequires-python = ">=3.11,<3.13"\n',
         encoding="utf-8",
@@ -9340,7 +9397,7 @@ def test_project_schedule_batch_jobs_renders_summary_response(cli_mod, runner, m
 def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     post_sync = {}
@@ -9368,16 +9425,16 @@ def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypa
 
     result = runner.invoke(cli_mod.app, ["project", "sync", "Update deps"])
     assert result.exit_code == 0
-    assert post_sync["project_id"] == 123
+    assert post_sync["project_id"] == "project-uid-123"
     assert call_order[0] == "prime"
     assert "post_sync" == call_order[-1]
-    assert "Triggered backend sync for project 123." in result.output
+    assert "Triggered backend sync for project project-uid-123." in result.output
 
 
 def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
-    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
+    (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
     key = tmp_path / "id_ed25519"
     uv_path = target / ".venv" / "bin" / "uv"
     uv_calls = []
@@ -9427,7 +9484,7 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
         ["git", "commit", "-m", "Update deps"],
         ["git", "push"],
     ]
-    assert post_sync["project_id"] == 123
+    assert post_sync["project_id"] == "project-uid-123"
 
 
 def test_project_sync_project_defaults_to_current_project_dir(cli_mod, runner, monkeypatch, tmp_path):
@@ -9492,12 +9549,13 @@ def test_project_build_docker_env(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
-    project_path = tmp_path / "org" / "projects" / "demo-123"
+    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
     project_path.mkdir(parents=True, exist_ok=True)
 
     project_info = types.SimpleNamespace(
         path=str(project_path),
-        folder="demo-123",
+        folder="demo-project-uid-123",
+        project_uid="project-uid-123",
         project_id="123",
         venv_path=None,
         python_version=None,
@@ -9519,12 +9577,13 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
 
 
 def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
-    project_path = tmp_path / "org" / "projects" / "demo-123"
+    project_path = tmp_path / "org" / "projects" / "demo-project-uid-123"
     project_path.mkdir(parents=True, exist_ok=True)
 
     project_info = types.SimpleNamespace(
         path=str(project_path),
-        folder="demo-123",
+        folder="demo-project-uid-123",
+        project_uid="project-uid-123",
         project_id="123",
         venv_path=None,
         python_version=None,
@@ -9543,7 +9602,8 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
     result = runner.invoke(cli_mod.app, ["project", "current", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload["project"]["project_id"] == "123"
+    assert payload["project"]["project_uid"] == "project-uid-123"
+    assert payload["project"]["legacy_project_id"] == "123"
     assert payload["sdk_status"]["status"] == "match"
 
 

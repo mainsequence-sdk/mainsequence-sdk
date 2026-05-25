@@ -20,7 +20,7 @@ def _read_local_env_values(env_path: pathlib.Path) -> dict[str, str]:
         return {}
 
     values: dict[str, str] = {}
-    for key in ("MAINSEQUENCE_ENDPOINT", "MAIN_SEQUENCE_PROJECT_ID"):
+    for key in ("MAINSEQUENCE_ENDPOINT", "MAIN_SEQUENCE_PROJECT_UID", "MAIN_SEQUENCE_PROJECT_ID"):
         match = re.search(rf"(?m)^{re.escape(key)}=(.+?)\s*$", content)
         if match:
             values[key] = match.group(1).strip()
@@ -35,6 +35,7 @@ def prime_runtime_env() -> None:
     local_values = _read_local_env_values(pathlib.Path.cwd() / ".env")
 
     _set_if_missing("MAINSEQUENCE_ENDPOINT", local_values.get("MAINSEQUENCE_ENDPOINT"))
+    _set_if_missing("MAIN_SEQUENCE_PROJECT_UID", local_values.get("MAIN_SEQUENCE_PROJECT_UID"))
     _set_if_missing("MAIN_SEQUENCE_PROJECT_ID", local_values.get("MAIN_SEQUENCE_PROJECT_ID"))
 
     try:

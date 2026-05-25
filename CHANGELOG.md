@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [4.0.2] - 2026-05-25
+
+### Added
+
+- Added ADR `0009-cli-public-resource-identity` to define CLI-wide canonical public identifier rules by object family and to record that `Workspace` and `AgentSession` remain numeric until their client contracts migrate.
+
+### Changed
+
+- Migrated project-facing CLI arguments, local env write-paths, and current-project detection to prefer `project_uid` and `MAIN_SEQUENCE_PROJECT_UID`.
+- Updated local project setup, token refresh, sync, and project resolution helpers to operate on public project references while keeping internal numeric compatibility adapters only where older client filters still require backend row ids.
+- Aligned `Project` client helpers and quick-search models with the public UID contract used by the CLI migration.
+
 ## [4.0.1] - 2026-05-25
 
 ### Fixed

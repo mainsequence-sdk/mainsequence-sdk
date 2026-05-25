@@ -179,6 +179,7 @@ from .api import (
     remove_workspace_labels,
     repo_name_from_git_url,
     resolve_agent_session_runtime_access,
+    resolve_project,
     run_data_node_storage_query,
     run_project_job,
     safe_slug,
@@ -650,6 +651,10 @@ def _projects_root(base_dir: str, org_slug: str) -> pathlib.Path:
 def _org_slug_from_profile() -> str:
     prof = get_current_user_profile()
     name = prof.get("organization") or "default"
+    if isinstance(name, dict):
+        name = name.get("name") or name.get("slug") or "default"
+    if not isinstance(name, str):
+        name = str(name or "default")
     return re.sub(r"[^a-z0-9-_]+", "-", name.lower()).strip("-") or "default"
 
 
@@ -664,24 +669,52 @@ def _determine_repo_url(p: dict) -> str:
     return repo
 
 
-def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, project_name: str | None = None) -> str | None:
+def _project_identity_value(project: dict, *, prefer_uid: bool = True) -> str:
     """
-    Find local folder for a project id.
+    Return the public project identifier for display purposes.
 
-    Parity note:
-    VS Code extension considers folders ending in '-<id>' as local even if .env is missing.
-    We match that behavior (and still keep a legacy fallback).
+    Public CLI surfaces should prefer `uid`, while still tolerating legacy payloads
+    that only expose numeric `id`.
     """
-    pid = str(project_id).strip()
+    primary = project.get("uid") if prefer_uid else project.get("id")
+    fallback = project.get("id") if prefer_uid else project.get("uid")
+    value = primary or fallback or ""
+    return str(value).strip()
+
+
+def _project_ref_matches_env(project_dir: pathlib.Path, project_ref: str) -> bool:
+    env_path = project_dir / ".env"
+    if not env_path.is_file():
+        return False
     try:
-        pid = str(int(pid))
+        content = env_path.read_text(encoding="utf-8", errors="replace")
     except Exception:
-        pass
-    suffix = f"-{pid}"
+        return False
+
+    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
+    if uid_match and uid_match.group(1).strip() == project_ref:
+        return True
+
+    id_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(.+?)\s*$", content)
+    if id_match and id_match.group(1).strip() == project_ref:
+        return True
+
+    return False
+
+
+def _find_local_project_dir(base_dir: str, org_slug: str, project_ref: int | str, project_name: str | None = None) -> str | None:
+    """
+    Find local folder for a project reference.
+
+    Preferred matching is by `.env` markers, especially `MAIN_SEQUENCE_PROJECT_UID`.
+    Legacy numeric `-<id>` folder suffixes remain supported for older local clones.
+    """
+    normalized_ref = str(project_ref).strip()
+    legacy_suffix = f"-{normalized_ref}" if normalized_ref.isdigit() else None
 
     root = _projects_root(base_dir, org_slug)
     if root.exists():
-        # Prefer CWD hints
+        # Prefer CWD hints when the local .env explicitly points at this project.
         try:
             cwd = pathlib.Path.cwd().resolve()
             for parent in [cwd] + list(cwd.parents):
@@ -689,7 +722,7 @@ def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, p
                     parent.relative_to(root)
                 except Exception:
                     continue
-                if parent.is_dir() and parent.name.endswith(suffix):
+                if parent.is_dir() and _project_ref_matches_env(parent, normalized_ref):
                     return str(parent)
         except Exception:
             pass
@@ -697,14 +730,18 @@ def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, p
         # canonical if name provided
         if project_name:
             slug = safe_slug(project_name)
-            cand = root / f"{slug}-{pid}"
+            cand = root / f"{slug}-{normalized_ref}"
             if cand.is_dir():
                 return str(cand)
 
-        # scan root
+        # scan root for .env markers first
         try:
             for d in root.iterdir():
-                if d.is_dir() and d.name.endswith(suffix):
+                if not d.is_dir():
+                    continue
+                if _project_ref_matches_env(d, normalized_ref):
+                    return str(d)
+                if legacy_suffix and d.name.endswith(legacy_suffix):
                     return str(d)
         except Exception:
             pass
@@ -719,34 +756,21 @@ def _find_local_dir_by_id(base_dir: str, org_slug: str, project_id: int | str, p
 
 
 def _render_projects_table(items: list[dict], base_dir: str, org_slug: str) -> str:
-    """Return an aligned table with Local status + path."""
-
-    def ds(obj, path, default=""):
-        try:
-            for k in path.split("."):
-                obj = obj.get(k, {})
-            return obj or default
-        except Exception:
-            return default
+    """Return an aligned table with project identity, init state, and local mapping."""
 
     rows = []
     for p in items:
-        pid = str(p.get("id", ""))
+        public_id = _project_identity_value(p)
+        local_lookup_id = _project_identity_value(p, prefer_uid=False) or public_id
         name = p.get("project_name") or "(unnamed)"
-        dname = ds(p, "data_source.related_resource.display_name", "")
-        klass = ds(
-            p,
-            "data_source.related_resource.class_type",
-            ds(p, "data_source.related_resource_class_type", ""),
-        )
-        status_ = ds(p, "data_source.related_resource.status", "")
+        initialized = "yes" if p.get("is_initialized") is True else "no"
 
-        local_path = _find_local_dir_by_id(base_dir, org_slug, pid, name)
+        local_path = _find_local_project_dir(base_dir, org_slug, local_lookup_id, name)
         local = "Local" if local_path else "-"
         path_col = local_path or "-"
-        rows.append((pid, name, dname, klass, status_, local, path_col))
+        rows.append((public_id or "-", name, initialized, local, path_col))
 
-    header = ["ID", "Project", "Data Source", "Class", "Status", "Local", "Path"]
+    header = ["UID", "Project", "Initialized", "Local", "Path"]
     if not rows:
         return "No projects."
 
@@ -802,12 +826,12 @@ def _exchange_runtime_credential_for_cli_login(backend_url: str) -> str:
     return access
 
 
-def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Path:
+def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Path:
     """
     Resolve project directory by:
       - explicit --path, or
-      - current working directory when local `.env` exposes `MAIN_SEQUENCE_PROJECT_ID`, or
-      - scanning base projects root for '-<id>' suffix
+      - current working directory when local `.env` exposes `MAIN_SEQUENCE_PROJECT_UID`, or
+      - scanning base projects root for a matching project ref / legacy numeric suffix
 
     Raises:
         typer.Exit(1) on failure.
@@ -834,9 +858,9 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
     except Exception:
         pass
 
-    found = _find_local_dir_by_id(base, org_slug, project_id, None)
+    found = _find_local_project_dir(base, org_slug, project_id, None)
     if not found:
-        error("No local folder mapped for this project. Run `mainsequence project set-up-locally <id>` first.")
+        error("No local folder mapped for this project. Run `mainsequence project set-up-locally <project_uid>` first.")
         raise typer.Exit(1)
 
     p = pathlib.Path(found)
@@ -846,9 +870,12 @@ def _resolve_project_dir(project_id: int | None, path: str | None) -> pathlib.Pa
     return p
 
 
-def _read_project_id_from_env_file(project_dir: pathlib.Path) -> int | None:
+def _read_project_ref_from_env_file(project_dir: pathlib.Path) -> str | None:
     """
-    Read `MAIN_SEQUENCE_PROJECT_ID` from `<project_dir>/.env` when available.
+    Read the preferred local project reference from `<project_dir>/.env`.
+
+    The public contract is `MAIN_SEQUENCE_PROJECT_UID`.
+    Legacy `MAIN_SEQUENCE_PROJECT_ID` remains readable for older local clones.
     """
     env_path = project_dir / ".env"
     if not env_path.is_file():
@@ -858,41 +885,42 @@ def _read_project_id_from_env_file(project_dir: pathlib.Path) -> int | None:
     except Exception:
         return None
 
-    match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(\d+)\s*$", content)
-    if not match:
-        return None
+    uid_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_UID=(.+?)\s*$", content)
+    if uid_match:
+        return uid_match.group(1).strip() or None
 
-    try:
-        return int(match.group(1))
-    except ValueError:
-        return None
+    id_match = re.search(r"(?m)^MAIN_SEQUENCE_PROJECT_ID=(.+?)\s*$", content)
+    if id_match:
+        return id_match.group(1).strip() or None
+
+    return None
 
 
 def _resolve_current_project_dir_from_env() -> pathlib.Path:
     """
     Resolve the current working directory as a project folder when local `.env`
-    declares `MAIN_SEQUENCE_PROJECT_ID`.
+    declares `MAIN_SEQUENCE_PROJECT_UID`.
     """
     cwd = pathlib.Path.cwd()
-    if _read_project_id_from_env_file(cwd) is None:
+    if _read_project_ref_from_env_file(cwd) is None:
         error(
-            "No PROJECT_ID was provided and the current directory does not expose "
-            "MAIN_SEQUENCE_PROJECT_ID in .env."
+            "No PROJECT_UID was provided and the current directory does not expose "
+            "MAIN_SEQUENCE_PROJECT_UID in .env."
         )
         raise typer.Exit(1)
     return cwd
 
 
-def _resolve_project_id_from_local_env(path: str | None = None) -> int:
+def _resolve_project_id_from_local_env(path: str | None = None) -> str:
     """
-    Resolve project id from `<path>/.env` or `./.env`.
+    Resolve the local project reference from `<path>/.env` or `./.env`.
     """
     project_dir = normalize_path(path) if path else pathlib.Path.cwd()
-    project_id = _read_project_id_from_env_file(project_dir)
-    if project_id is None:
-        error(f"Could not determine project id from {project_dir / '.env'}.")
+    project_ref = _read_project_ref_from_env_file(project_dir)
+    if project_ref is None:
+        error(f"Could not determine project uid from {project_dir / '.env'}.")
         raise typer.Exit(1)
-    return project_id
+    return project_ref
 
 
 def _project_agent_scaffold_bundle_dir(project_dir: pathlib.Path) -> pathlib.Path:
@@ -1271,7 +1299,7 @@ def _prompt_select_id(
 
 def _prepare_batch_jobs_file_with_selected_related_image(
     *,
-    project_id: int,
+    project_id: str,
     batch_file: pathlib.Path,
     timeout: int | None,
 ) -> pathlib.Path:
@@ -2080,7 +2108,7 @@ def _render_project_runtime_env_text(
     *,
     auth_env: dict[str, str],
     backend_url: str,
-    project_runtime_id: str | None = None,
+    project_runtime_uid: str | None = None,
 ) -> str:
     """
     Return `.env` text with managed runtime auth keys refreshed.
@@ -2094,7 +2122,9 @@ def _render_project_runtime_env_text(
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=",
         "MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=",
         "MAINSEQUENCE_ENDPOINT=",
-    ) + (("MAIN_SEQUENCE_PROJECT_ID=",) if project_runtime_id is not None else ())
+        "MAIN_SEQUENCE_PROJECT_UID=",
+        "MAIN_SEQUENCE_PROJECT_ID=",
+    )
     lines = [
         ln
         for ln in (env_text or "").replace("\r", "").splitlines()
@@ -2109,7 +2139,7 @@ def _render_project_runtime_env_text(
         + [
             f"MAINSEQUENCE_ENDPOINT={backend_url}",
         ]
-        + ([f"MAIN_SEQUENCE_PROJECT_ID={project_runtime_id}"] if project_runtime_id is not None else [])
+        + ([f"MAIN_SEQUENCE_PROJECT_UID={project_runtime_uid}"] if project_runtime_uid is not None else [])
     )
 
     final_env = "\n".join(lines).replace("\r", "")
@@ -3225,9 +3255,8 @@ def _parse_json_dict_option(raw_value: str, *, field_label: str) -> dict[str, ob
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
     labels = agent_payload.get("labels")
     return [
-        ("ID", str(agent_payload.get("id") or "-")),
-        ("Name", str(agent_payload.get("name") or "-")),
         ("Unique ID", str(agent_payload.get("agent_unique_id") or "-")),
+        ("Name", str(agent_payload.get("name") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
         ("Status", str(agent_payload.get("status") or "-")),
         ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
@@ -3366,7 +3395,7 @@ def _agent_list_impl(
         labels = agent_payload.get("labels")
         rows.append(
             [
-                str(agent_payload.get("id") or "-"),
+                str(agent_payload.get("agent_unique_id") or "-"),
                 str(agent_payload.get("name") or "-"),
                 str(agent_payload.get("status") or "-"),
                 ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
@@ -3378,7 +3407,7 @@ def _agent_list_impl(
         )
 
     if rows:
-        print_table("Agents", ["ID", "Name", "Status", "Labels", "Provider", "Model", "Engine", "Last Run"], rows)
+        print_table("Agents", ["Unique ID", "Name", "Status", "Labels", "Provider", "Model", "Engine", "Last Run"], rows)
     else:
         info("No agents.")
     info(f"Total agents: {len(agents)}")
@@ -3429,7 +3458,6 @@ def _agent_search_impl(
     for result in results:
         rows.append(
             [
-                str(result.get("id") or "-"),
                 str(result.get("agent_unique_id") or "-"),
                 str(result.get("name") or "-"),
                 str(result.get("combined_score") if result.get("combined_score") is not None else "-"),
@@ -3442,7 +3470,7 @@ def _agent_search_impl(
     if rows:
         print_table(
             "Agent Search Results",
-            ["ID", "Unique ID", "Name", "Combined", "Semantic", "Text", "Description"],
+            ["Unique ID", "Name", "Combined", "Semantic", "Text", "Description"],
             rows,
         )
     else:
@@ -3628,7 +3656,7 @@ def _agent_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Agent deleted: id={agent_id}")
+    success(f"Agent deleted: agent_unique_id={agent_payload.get('agent_unique_id') or '-'}")
     print_kv("Deleted Agent", _format_agent_preview(deleted))
 
 
@@ -4322,7 +4350,6 @@ def _format_workspace_details(workspace_payload: dict[str, object]) -> list[tupl
 def _format_registered_widget_type_preview(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("Widget ID", str(widget_payload.get("widget_id") or widget_payload.get("widgetId") or "-")),
-        ("ID", str(widget_payload.get("id") or "-")),
         ("Title", str(widget_payload.get("title") or "-")),
         ("Category", str(widget_payload.get("category") or "-")),
         ("Kind", str(widget_payload.get("kind") or "-")),
@@ -4448,7 +4475,6 @@ def _format_connection_type_details(connection_type_payload: dict[str, object]) 
 def _format_connection_preview(connection_payload: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("UID", str(connection_payload.get("uid") or connection_payload.get("id") or "-")),
-        ("ID", str(connection_payload.get("id") or "-")),
         ("Name", str(connection_payload.get("name") or "-")),
         ("Type ID", str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-")),
         ("Type Version", str(connection_payload.get("type_version") or connection_payload.get("typeVersion") or "-")),
@@ -4747,7 +4773,6 @@ def _registered_widget_type_list_impl(
     for widget in widgets:
         rows.append(
             [
-                str(widget.get("id") or "-"),
                 str(widget.get("widget_id") or "-"),
                 str(widget.get("title") or "-"),
                 str(widget.get("category") or "-"),
@@ -4761,7 +4786,7 @@ def _registered_widget_type_list_impl(
     if rows:
         print_table(
             "Registered Widget Types",
-            ["ID", "Widget ID", "Title", "Category", "Kind", "Source", "Active", "Registry Version"],
+            ["Widget ID", "Title", "Category", "Kind", "Source", "Active", "Registry Version"],
             rows,
         )
     else:
@@ -7221,7 +7246,7 @@ def project_list(
     """
     List projects visible to the authenticated user.
 
-    The output includes remote metadata and local mapping status.
+    The output includes project identity, initialization state, and local mapping status.
 
     Examples
     --------
@@ -7250,7 +7275,7 @@ def project_list(
 
 
 def _print_project_data_node_updates(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = None,
     show_filters: bool = False,
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -7264,7 +7289,7 @@ def _print_project_data_node_updates(
     Parameters
     ----------
     project_id:
-        Platform project ID. If omitted, resolve it from `MAIN_SEQUENCE_PROJECT_ID` in `./.env`.
+        Platform project UID. If omitted, resolve it from `MAIN_SEQUENCE_PROJECT_UID` in `./.env`.
     timeout:
         Optional request timeout in seconds.
 
@@ -7272,8 +7297,8 @@ def _print_project_data_node_updates(
     --------
     ```bash
     mainsequence project data-node-updates list
-    mainsequence project data-node-updates list 123
-    mainsequence project data-node-updates list 123 --timeout 60
+    mainsequence project data-node-updates list project-uid-123
+    mainsequence project data-node-updates list project-uid-123 --timeout 60
     ```
     """
     _resolve_cli_list_filters(
@@ -7281,7 +7306,7 @@ def _print_project_data_node_updates(
         filter_entries=filter_entries,
         show_filters=show_filters,
         command_label="Project Data Node Updates",
-        reserved_filter_descriptions={"project_id": "always set from PROJECT_ID or local .env"},
+        reserved_filter_descriptions={"project_id": "always set from PROJECT_UID or local .env"},
     )
 
     if project_id is None:
@@ -7337,7 +7362,7 @@ def _print_project_data_node_updates(
 
 @project_data_node_updates_group.command("list")
 def project_data_node_updates_list_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -7349,8 +7374,8 @@ def project_data_node_updates_list_cmd(
     --------
     ```bash
     mainsequence project data-node-updates list
-    mainsequence project data-node-updates list 123
-    mainsequence project data-node-updates list 123 --timeout 60
+    mainsequence project data-node-updates list project-uid-123
+    mainsequence project data-node-updates list project-uid-123 --timeout 60
     ```
     """
     _print_project_data_node_updates(
@@ -7363,7 +7388,7 @@ def project_data_node_updates_list_cmd(
 
 @project_list_group.command("data_nodes_updates", hidden=True)
 def project_list_data_nodes_updates_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -7381,7 +7406,7 @@ def project_list_data_nodes_updates_cmd(
 
 @project.command("get-data-node-updates", hidden=True)
 def project_get_data_node_updates_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
@@ -7490,10 +7515,10 @@ def project_search_cmd(
     if projects:
         print_table(
             "Project Search Results",
-            ["ID", "Project Name", "Repository Branch", "Cluster ID"],
+            ["UID", "Project Name", "Repository Branch", "Cluster ID"],
             [
                 [
-                    str(project.get("id") or "-"),
+                    _project_identity_value(project) or "-",
                     str(project.get("project_name") or "-"),
                     str(project.get("repository_branch") or "-"),
                     str(project.get("cluster_id") or "-"),
@@ -7680,16 +7705,17 @@ def project_create_cmd(
         error(str(e))
         raise typer.Exit(1) from e
 
-    pid = created.get("id")
+    project_uid = _project_identity_value(created)
+    project_poll_ref = project_uid or str(created.get("id") or "").strip() or None
 
     if _emit_json(created):
         return
 
-    success(f"Project created: {created.get('project_name') or project_name} (id={pid})")
+    success(f"Project created: {created.get('project_name') or project_name} (uid={project_uid or '-'})")
 
     # A freshly created project can take several minutes to initialize on backend.
     # Keep polling until API reports is_initialized=True.
-    if pid is not None and created.get("is_initialized") is False:
+    if project_poll_ref and created.get("is_initialized") is False:
         info("Project is still initializing. Waiting until is_initialized=true (poll every 30s).")
         attempt = 0
         try:
@@ -7698,7 +7724,7 @@ def project_create_cmd(
                 with status(f"Project not ready yet (attempt {attempt}). Next check in 30s..."):
                     time.sleep(30)
                 try:
-                    latest = get_project(pid)
+                    latest = get_project(project_poll_ref)
                 except ApiError as e:
                     warn(f"Project status poll failed (attempt {attempt}): {e}")
                     continue
@@ -7715,19 +7741,19 @@ def project_create_cmd(
     print_kv(
         "Project",
         [
-            ("ID", str(created.get("id", "-"))),
+            ("UID", project_uid or "-"),
             ("Project Name", str(created.get("project_name") or project_name)),
             ("Git SSH URL", str(created.get("git_ssh_url") or "-")),
             ("Branch", branch),
         ],
     )
-    if pid is not None:
-        info(f"Next: mainsequence project set-up-locally {pid}")
+    if project_uid:
+        info(f"Next: mainsequence project set-up-locally {project_uid}")
 
 
 @project.command("delete")
 def project_delete_remote_cmd(
-    project_id: int = typer.Argument(..., help="Project ID"),
+    project_id: str = typer.Argument(..., help="Project UID"),
     delete_repositories: bool = typer.Option(
         False,
         "--delete-repositories/--no-delete-repositories",
@@ -7743,7 +7769,7 @@ def project_delete_remote_cmd(
     Parameters
     ----------
     project_id:
-        Platform project ID.
+        Platform project UID.
     delete_repositories:
         Also delete linked repositories on backend workflow.
     yes:
@@ -7752,26 +7778,27 @@ def project_delete_remote_cmd(
     Examples
     --------
     ```bash
-    mainsequence project delete 123
-    mainsequence project delete 123 --yes
-    mainsequence project delete 123 --delete-repositories --yes
+    mainsequence project delete project-uid-123
+    mainsequence project delete project-uid-123 --yes
+    mainsequence project delete project-uid-123 --delete-repositories --yes
     ```
     """
     _require_login()
 
     project_name = f"project-{project_id}"
+    project_uid = str(project_id)
     try:
-        items = get_projects()
-        found = next((x for x in items if str(x.get("id")) == str(project_id)), None)
+        found = resolve_project(project_id)
         if found and found.get("project_name"):
             project_name = str(found.get("project_name"))
+            project_uid = _project_identity_value(found) or project_uid
     except Exception:
         # Best-effort metadata lookup only.
         pass
 
     if not yes:
         warning = (
-            f"This will permanently delete project '{project_name}' (id={project_id}) from the platform.\n"
+            f"This will permanently delete project '{project_name}' (uid={project_uid}) from the platform.\n"
             "This action cannot be undone."
         )
         if delete_repositories:
@@ -7792,7 +7819,7 @@ def project_delete_remote_cmd(
     if _emit_json(resp):
         return
 
-    success(f"Project deleted: {project_name} (id={project_id})")
+    success(f"Project deleted: {project_name} (uid={project_uid})")
     if isinstance(resp, dict) and resp:
         detail = resp.get("detail") or resp.get("message")
         if detail:
@@ -7801,7 +7828,7 @@ def project_delete_remote_cmd(
 
 @project.command("can_view")
 def project_can_view_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7826,7 +7853,7 @@ def project_can_view_cmd(
 
 @project.command("can_edit")
 def project_can_edit_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7851,7 +7878,7 @@ def project_can_edit_cmd(
 
 @project.command("add-label")
 def project_add_label_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7876,7 +7903,7 @@ def project_add_label_cmd(
 
 @project.command("add_label", hidden=True)
 def project_add_label_alias_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7886,7 +7913,7 @@ def project_add_label_alias_cmd(
 
 @project.command("remove-label")
 def project_remove_label_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -7911,7 +7938,7 @@ def project_remove_label_cmd(
 
 @project.command("remove_label", hidden=True)
 def project_remove_label_alias_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7921,7 +7948,7 @@ def project_remove_label_alias_cmd(
 
 @project.command("add_to_view")
 def project_add_to_view_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7946,7 +7973,7 @@ def project_add_to_view_cmd(
 
 @project.command("add_to_edit")
 def project_add_to_edit_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7971,7 +7998,7 @@ def project_add_to_edit_cmd(
 
 @project.command("remove_from_view")
 def project_remove_from_view_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -7996,7 +8023,7 @@ def project_remove_from_view_cmd(
 
 @project.command("remove_from_edit")
 def project_remove_from_edit_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8021,7 +8048,7 @@ def project_remove_from_edit_cmd(
 
 @project.command("add_team_to_view")
 def project_add_team_to_view_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8037,7 +8064,7 @@ def project_add_team_to_view_cmd(
 
 @project.command("add_team_to_edit")
 def project_add_team_to_edit_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8053,7 +8080,7 @@ def project_add_team_to_edit_cmd(
 
 @project.command("remove_team_from_view")
 def project_remove_team_from_view_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8069,7 +8096,7 @@ def project_remove_team_from_view_cmd(
 
 @project.command("remove_team_from_edit")
 def project_remove_team_from_edit_cmd(
-    project_id: int = typer.Argument(..., help="Project ID."),
+    project_id: str = typer.Argument(..., help="Project UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -8084,7 +8111,7 @@ def project_remove_team_from_edit_cmd(
 
 
 def _project_resources_list_impl(
-    project_id: int | None,
+    project_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -8096,7 +8123,7 @@ def _project_resources_list_impl(
         show_filters=show_filters,
         command_label="Project Resources",
         reserved_filter_descriptions={
-            "project__id": "always set from PROJECT_ID or local .env",
+            "project__id": "always set from the selected project",
             "repo_commit_sha": "always set from the upstream remote branch head commit",
         },
     )
@@ -8155,7 +8182,7 @@ def _project_resources_list_impl(
 
 @project_project_resource_group.command("list")
 def project_project_resource_list_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
@@ -8170,9 +8197,9 @@ def project_project_resource_list_cmd(
     Parameters
     ----------
     project_id:
-        Platform project ID. Defaults to local `.env`.
+        Platform project UID. Defaults to local `.env`.
     path:
-        Local project path. Used when resolving project id and remote branch head commit.
+        Local project path. Used when resolving project uid and remote branch head commit.
     timeout:
         Request timeout in seconds.
 
@@ -8180,7 +8207,7 @@ def project_project_resource_list_cmd(
     --------
     ```bash
     mainsequence project project_resource list
-    mainsequence project project_resource list 123
+    mainsequence project project_resource list project-uid-123
     mainsequence project project_resource list --path .
     ```
     """
@@ -8196,7 +8223,7 @@ def project_project_resource_list_cmd(
 def _project_resource_release_create_impl(
     *,
     release_kind: str,
-    project_id: int | None,
+    project_id: str | None,
     resource_id: int | None,
     path: str | None,
     related_image_id: int | None,
@@ -8355,7 +8382,7 @@ def _project_resource_release_create_impl(
 
 @project_project_resource_group.command("create_dashboard")
 def project_project_resource_create_dashboard_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
@@ -8391,7 +8418,7 @@ def project_project_resource_create_dashboard_cmd(
 
 @project_project_resource_group.command("create_fastapi")
 def project_project_resource_create_fastapi_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
@@ -8521,7 +8548,7 @@ def project_project_resource_delete_fastapi_cmd(
 
 
 def _project_images_list_impl(
-    project_id: int | None,
+    project_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -8533,7 +8560,7 @@ def _project_images_list_impl(
         show_filters=show_filters,
         command_label="Project Images",
         reserved_filter_descriptions={
-            "related_project__id__in": "always set from PROJECT_ID or local .env",
+            "related_project__id__in": "always set from the selected project",
         },
     )
 
@@ -8570,7 +8597,7 @@ def _project_images_list_impl(
 
 @project_images_group.command("list")
 def project_images_list_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
@@ -8584,9 +8611,9 @@ def project_images_list_cmd(
     Parameters
     ----------
     project_id:
-        Platform project ID. Defaults to local `.env`.
+        Platform project UID. Defaults to local `.env`.
     path:
-        Local project path. Used when resolving project id from `.env`.
+        Local project path. Used when resolving project uid from `.env`.
     timeout:
         Request timeout in seconds.
 
@@ -8594,8 +8621,8 @@ def project_images_list_cmd(
     --------
     ```bash
     mainsequence project images list
-    mainsequence project images list 123
-    mainsequence project images list 123 --path .
+    mainsequence project images list project-uid-123
+    mainsequence project images list project-uid-123 --path .
     ```
     """
     _project_images_list_impl(
@@ -8661,7 +8688,7 @@ def project_images_delete_cmd(
 
 
 def _project_images_create_impl(
-    project_id: int | None,
+    project_id: str | None,
     project_repo_hash: str | None,
     path: str | None,
     base_image_id: int | None,
@@ -8817,7 +8844,7 @@ def _project_images_create_impl(
         "Project Image",
         [
             ("ID", str(created.get("id") or "-")),
-            ("Project ID", str(project_id)),
+            ("Project UID", str(project_id)),
             ("Project Repo Hash", project_repo_hash),
             ("Base Image", str(base_image_value or base_image_id or "-")),
             ("Is Ready", str(created.get("is_ready")) if created.get("is_ready") is not None else "-"),
@@ -8827,7 +8854,7 @@ def _project_images_create_impl(
 
 @project_images_group.command("create")
 def project_images_create_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     project_repo_hash: str | None = typer.Argument(
         None,
         help="Git commit hash for the image build. Must already be pushed to the remote.",
@@ -8840,14 +8867,14 @@ def project_images_create_cmd(
     """
     Create a project image from a pushed git commit.
 
-    If `project_id` is omitted, the command reads `MAIN_SEQUENCE_PROJECT_ID`
+    If `project_id` is omitted, the command reads `MAIN_SEQUENCE_PROJECT_UID`
     from the local project `.env`. If `project_repo_hash` is omitted, it shows
     only commits already present on the remote and prompts for a selection.
 
     Parameters
     ----------
     project_id:
-        Platform project ID. Defaults to local `.env`.
+        Platform project UID. Defaults to local `.env`.
     project_repo_hash:
         Git commit hash already pushed to remote.
     path:
@@ -8863,10 +8890,10 @@ def project_images_create_cmd(
     --------
     ```bash
     mainsequence project images create
-    mainsequence project images create 123
-    mainsequence project images create 123 4a1b2c3d
-    mainsequence project images create 123 --path .
-    mainsequence project images create 123 --timeout 600 --poll-interval 15
+    mainsequence project images create project-uid-123
+    mainsequence project images create project-uid-123 4a1b2c3d
+    mainsequence project images create project-uid-123 --path .
+    mainsequence project images create project-uid-123 --timeout 600 --poll-interval 15
     ```
     """
     _project_images_create_impl(
@@ -8881,7 +8908,7 @@ def project_images_create_cmd(
 
 @project.command("create_image", hidden=True)
 def project_create_image_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     project_repo_hash: str | None = typer.Argument(
         None,
         help="Git commit hash for the image build. Must already be pushed to the remote.",
@@ -8905,7 +8932,7 @@ def project_create_image_cmd(
 
 
 def _project_jobs_list_impl(
-    project_id: int | None,
+    project_id: str | None,
     path: str | None,
     filter_entries: list[str] | None,
     show_filters: bool,
@@ -9038,7 +9065,7 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
 
 @project_jobs_group.command("list")
 def project_jobs_list_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
     show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
@@ -9053,8 +9080,8 @@ def project_jobs_list_cmd(
     --------
     ```bash
     mainsequence project jobs list
-    mainsequence project jobs list 123
-    mainsequence project jobs list 123 --path .
+    mainsequence project jobs list project-uid-123
+    mainsequence project jobs list project-uid-123 --path .
     ```
     """
     _project_jobs_list_impl(
@@ -9271,7 +9298,7 @@ def project_job_runs_logs_cmd(
 
 
 def _project_jobs_create_impl(
-    project_id: int | None,
+    project_id: str | None,
     name: str | None,
     path: str | None,
     execution_path: str | None,
@@ -9419,7 +9446,7 @@ def _project_jobs_create_impl(
         [
             ("ID", str(created.get("id") or "-")),
             ("Name", str(created.get("name") or name)),
-            ("Project ID", str(project_id)),
+            ("Project UID", str(project_id)),
             ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
             ("App Name", str(created.get("app_name") or app_name or "-")),
             ("Related Image", _format_related_image_label(created.get("related_image") or related_image_id)),
@@ -9440,7 +9467,7 @@ def _project_jobs_create_impl(
 
 @project_jobs_group.command("create")
 def project_jobs_create_cmd(
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
     path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
     execution_path: str | None = pydantic_option(
@@ -9541,10 +9568,10 @@ def project_jobs_create_cmd(
     --------
     ```bash
     mainsequence project jobs create
-    mainsequence project jobs create 123 --name daily-run --execution-path scripts/test.py --related-image-id 77
-    mainsequence project jobs create 123 --name dashboard --app-name dashboard-api --related-image-id 77
-    mainsequence project jobs create 123 --name hourly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type interval --schedule-every 1 --schedule-period hours
-    mainsequence project jobs create 123 --name nightly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type crontab --schedule-expression "0 0 * * *"
+    mainsequence project jobs create project-uid-123 --name daily-run --execution-path scripts/test.py --related-image-id 77
+    mainsequence project jobs create project-uid-123 --name dashboard --app-name dashboard-api --related-image-id 77
+    mainsequence project jobs create project-uid-123 --name hourly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type interval --schedule-every 1 --schedule-period hours
+    mainsequence project jobs create project-uid-123 --name nightly-run --execution-path scripts/test.py --related-image-id 77 --schedule-type crontab --schedule-expression "0 0 * * *"
     ```
     """
     _project_jobs_create_impl(
@@ -9573,8 +9600,8 @@ def project_jobs_create_cmd(
 @project.command("schedule_batch_jobs")
 def project_schedule_batch_jobs_cmd(
     file_path: str = typer.Argument(..., help="Path to the scheduled jobs YAML file."),
-    project_id: int | None = typer.Argument(None, help="Project ID. Defaults to local .env when omitted."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path used to resolve project id."),
+    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    path: str | None = typer.Option(None, "--path", help="Project repository path used to resolve project uid."),
     strict: bool = typer.Option(
         False,
         "--strict/--no-strict",
@@ -9595,7 +9622,7 @@ def project_schedule_batch_jobs_cmd(
     --------
     ```bash
     mainsequence project schedule_batch_jobs scheduled_jobs.yaml
-    mainsequence project schedule_batch_jobs scheduled_jobs.yaml 123
+    mainsequence project schedule_batch_jobs scheduled_jobs.yaml project-uid-123
     mainsequence project schedule_batch_jobs scheduled_jobs.yaml --strict
     mainsequence project schedule_batch_jobs configs/scheduled_jobs.yaml --path .
     ```
@@ -9621,7 +9648,7 @@ def project_schedule_batch_jobs_cmd(
         prepared_batch_file = batch_file
     try:
         prepared_batch_file = _prepare_batch_jobs_file_with_selected_related_image(
-            project_id=int(project_id),
+            project_id=project_id,
             batch_file=batch_file,
             timeout=timeout,
         )
@@ -9670,7 +9697,7 @@ def project_schedule_batch_jobs_cmd(
 
     success(f"Scheduled jobs from {batch_file.name}.")
     summary_items = [
-        ("Project ID", str(created.get("project_id") or project_id)),
+        ("Project UID", str(project_id)),
         ("File", str(batch_file)),
         ("Strict", str(bool(created.get("strict", strict))).lower()),
         ("Created", str(created.get("created_count", 0))),
@@ -9732,7 +9759,7 @@ def project_schedule_batch_jobs_cmd(
 
 @project.command("set-up-locally")
 def project_set_up_locally(
-    project_id: int = typer.Argument(..., help="Project ID from the platform"),
+    project_id: str = typer.Argument(..., help="Project UID from the platform"),
     base_dir: str | None = typer.Option(None, "--base-dir", help="Override base dir (default from settings)"),
     scaffold_docker: bool = typer.Option(
         True,
@@ -9752,7 +9779,7 @@ def project_set_up_locally(
     Parameters
     ----------
     project_id:
-        Platform project ID.
+        Platform project UID.
     base_dir:
         Override local projects base directory.
     scaffold_docker:
@@ -9761,9 +9788,9 @@ def project_set_up_locally(
     Examples
     --------
     ```bash
-    mainsequence project set-up-locally 123
-    mainsequence project set-up-locally 123 --base-dir ~/mainsequence
-    mainsequence project set-up-locally 123 --no-scaffold-docker
+    mainsequence project set-up-locally project-uid-123
+    mainsequence project set-up-locally project-uid-123 --base-dir ~/mainsequence
+    mainsequence project set-up-locally project-uid-123 --no-scaffold-docker
     ```
     """
     _require_login()
@@ -9772,16 +9799,19 @@ def project_set_up_locally(
     base = base_dir or cfg_obj["mainsequence_path"]
     org_slug = _org_slug_from_profile()
 
-    items = get_projects()
-    p = next((x for x in items if int(x.get("id", -1)) == project_id), None)
-    if not p:
-        error("Project not found/visible.")
-        raise typer.Exit(1)
+    try:
+        p = resolve_project(project_id)
+    except ApiError as e:
+        error(f"Project not found/visible: {e}")
+        raise typer.Exit(1) from e
+
+    project_uid = _project_identity_value(p) or str(project_id).strip()
+    project_row_id = str(p.get("id") or "").strip()
 
     is_initialized = p.get("is_initialized")
     if is_initialized is None:
         try:
-            p = get_project(project_id)
+            p = get_project(project_uid)
         except ApiError as e:
             error(f"Could not verify project initialization status: {e}")
             raise typer.Exit(1) from e
@@ -9799,9 +9829,9 @@ def project_set_up_locally(
         error("No repository URL found for this project.")
         raise typer.Exit(1)
 
-    name = safe_slug(p.get("project_name") or f"project-{project_id}")
+    name = safe_slug(p.get("project_name") or f"project-{project_uid}")
     projects_root = _projects_root(base, org_slug)
-    target_dir = projects_root / f"{name}-{project_id}"
+    target_dir = projects_root / f"{name}-{project_uid}"
     projects_root.mkdir(parents=True, exist_ok=True)
 
     key_path, _pub_path, pub = ensure_key_for_repo(repo)
@@ -9810,7 +9840,7 @@ def project_set_up_locally(
     # Best-effort deploy key (do not fail set-up-locally on this)
     try:
         host = platform.node()
-        add_deploy_key(project_id, host, pub)
+        add_deploy_key(project_uid, host, pub)
     except Exception as e:
         warn(f"Could not add deploy key automatically (continuing): {e}")
 
@@ -9850,19 +9880,21 @@ def project_set_up_locally(
         "",
         auth_env=auth_env,
         backend_url=backend_url,
-        project_runtime_id=str(project_id),
+        project_runtime_uid=project_uid,
     )
     (target_dir / ".env").write_text(final_env, encoding="utf-8")
 
     success(f"Local folder: {target_dir}")
     info(f"Repo URL: {repo}")
+    if project_row_id:
+        info(f"Resolved backend row id: {project_row_id}")
     if copied:
         info("Public key copied to clipboard.")
 
 
 @project.command("open")
 def project_open(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Open an explicit path instead of resolving by id"),
 ):
     """
@@ -9871,14 +9903,14 @@ def project_open(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path to open.
 
     Examples
     --------
     ```bash
-    mainsequence project open 123
+    mainsequence project open project-uid-123
     mainsequence project open --path .
     ```
     """
@@ -9889,7 +9921,7 @@ def project_open(
 
 @project.command("delete-local")
 def project_delete_local(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Delete an explicit path instead of resolving by id"),
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
@@ -9901,7 +9933,7 @@ def project_delete_local(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local path.
+        Project UID to resolve local path.
     path:
         Explicit local path to delete.
     yes:
@@ -9910,7 +9942,7 @@ def project_delete_local(
     Examples
     --------
     ```bash
-    mainsequence project delete-local 123
+    mainsequence project delete-local project-uid-123
     mainsequence project delete-local --path ./my-project --yes
     ```
     """
@@ -9951,7 +9983,7 @@ def project_delete_local(
 
 @project.command("open-signed-terminal")
 def project_open_signed_terminal(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Open in a specific project directory"),
 ):
     """
@@ -9960,14 +9992,14 @@ def project_open_signed_terminal(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
-    mainsequence project open-signed-terminal 123
+    mainsequence project open-signed-terminal project-uid-123
     mainsequence project open-signed-terminal --path .
     ```
     """
@@ -9981,7 +10013,7 @@ def project_open_signed_terminal(
 
 @project.command("build_local_venv")
 def project_build_local_venv(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -9992,8 +10024,8 @@ def project_build_local_venv(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder. If omitted, the current directory is used when
-        `MAIN_SEQUENCE_PROJECT_ID` is present in `./.env`.
+        Project UID to resolve local folder. If omitted, the current directory is used when
+        `MAIN_SEQUENCE_PROJECT_UID` is present in `./.env`.
     path:
         Explicit local path.
 
@@ -10001,7 +10033,7 @@ def project_build_local_venv(
     --------
     ```bash
     mainsequence project build_local_venv
-    mainsequence project build_local_venv 123
+    mainsequence project build_local_venv project-uid-123
     mainsequence project build_local_venv --path .
     ```
     """
@@ -10077,7 +10109,7 @@ def project_build_local_venv(
 
 @project.command("refresh_token")
 def project_refresh_token(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10090,7 +10122,7 @@ def project_refresh_token(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder. If omitted, the current directory is used.
+        Project UID to resolve local folder. If omitted, the current directory is used.
     path:
         Explicit local path. If omitted, the current directory is used.
 
@@ -10098,7 +10130,7 @@ def project_refresh_token(
     --------
     ```bash
     mainsequence project refresh_token
-    mainsequence project refresh_token 123
+    mainsequence project refresh_token project-uid-123
     mainsequence project refresh_token --path .
     ```
     """
@@ -10107,7 +10139,7 @@ def project_refresh_token(
     env_path = project_dir / ".env"
     if not env_path.is_file():
         error(f".env not found in project root: {env_path}")
-        info("Run: mainsequence project set-up-locally <id> to provision the local runtime first.")
+        info("Run: mainsequence project set-up-locally <project_uid> to provision the local runtime first.")
         raise typer.Exit(1)
 
     backend_url = cfg.backend_url()
@@ -10126,17 +10158,13 @@ def project_refresh_token(
         error(f"Could not read .env: {e}")
         raise typer.Exit(1) from e
 
-    inferred_project_id = str(project_id) if project_id is not None else None
-    if inferred_project_id is None:
-        match = re.search(r"-(\d+)$", project_dir.name)
-        if match:
-            inferred_project_id = match.group(1)
+    inferred_project_id = str(project_id) if project_id is not None else _read_project_ref_from_env_file(project_dir)
 
     final_env = _render_project_runtime_env_text(
         env_text,
         auth_env=auth_env,
         backend_url=backend_url,
-        project_runtime_id=inferred_project_id,
+        project_runtime_uid=inferred_project_id,
     )
     env_path.write_text(final_env, encoding="utf-8")
     success(f"Refreshed auth entries in: {env_path}")
@@ -10144,7 +10172,7 @@ def project_refresh_token(
 
 @project.command("freeze-env")
 def project_freeze_env(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     ensure_uv: bool = typer.Option(True, "--ensure-uv/--no-ensure-uv", help="Allow resolving uv from PATH when it is not present inside .venv."),
 ):
@@ -10154,7 +10182,7 @@ def project_freeze_env(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
     ensure_uv:
@@ -10163,7 +10191,7 @@ def project_freeze_env(
     Examples
     --------
     ```bash
-    mainsequence project freeze-env 123
+    mainsequence project freeze-env project-uid-123
     mainsequence project freeze-env --path .
     mainsequence project freeze-env --path . --no-ensure-uv
     ```
@@ -10185,7 +10213,7 @@ def project_freeze_env(
 @project.command("sync")
 def project_sync(
     message: str | None = typer.Argument(None, help="Git commit message"),
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
     bump: str = typer.Option("patch", "--bump", help="uv version bump: patch|minor|major (default: patch)"),
@@ -10206,7 +10234,7 @@ def project_sync(
     message:
         Commit message. Can be passed positionally or via `--message`.
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
     bump:
@@ -10231,13 +10259,13 @@ def project_sync(
 
     message = message if message is not None else message_opt
     project_dir = _resolve_project_dir(project_id, path)
-    resolved_project_id = project_id if project_id is not None else _read_project_id_from_env_file(project_dir)
+    resolved_project_id = project_id if project_id is not None else _read_project_ref_from_env_file(project_dir)
     if not dry_run and not no_push:
         _require_login()
         if resolved_project_id is None:
             error(
-                "Could not determine project id from local .env. "
-                "Pass PROJECT_ID or ensure MAIN_SEQUENCE_PROJECT_ID is present before syncing."
+                "Could not determine project uid from local .env. "
+                "Pass PROJECT_UID or ensure MAIN_SEQUENCE_PROJECT_UID is present before syncing."
             )
             raise typer.Exit(1)
         try:
@@ -10313,7 +10341,7 @@ def project_sync(
 @project.command("sync_project", hidden=True)
 def project_sync_project(
     message: str = typer.Argument(..., help="Git commit message"),
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10332,7 +10360,7 @@ def project_sync_project(
 
 @project.command("build-docker-env")
 def project_build_docker_env(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     image_ref: str | None = typer.Option(None, "--image-ref", help="Docker image ref to build (default: computed)"),
     devcontainer: bool = typer.Option(
@@ -10347,7 +10375,7 @@ def project_build_docker_env(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
     image_ref:
@@ -10358,7 +10386,7 @@ def project_build_docker_env(
     Examples
     --------
     ```bash
-    mainsequence project build-docker-env 123
+    mainsequence project build-docker-env project-uid-123
     mainsequence project build-docker-env --path . --image-ref ghcr.io/acme/proj:dev
     mainsequence project build-docker-env --path . --no-devcontainer
     ```
@@ -10391,7 +10419,7 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
     """
     Detect and display current project context from current directory.
 
-    Includes detected path, project id, virtual environment, Python version,
+    Includes detected path, project uid, virtual environment, Python version,
     and SDK status when available.
 
     Parameters
@@ -10420,7 +10448,8 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
     current_project_payload = {
         "path": project_info.path,
         "folder": project_info.folder,
-        "project_id": project_info.project_id,
+        "project_uid": project_info.project_uid,
+        "legacy_project_id": project_info.project_id,
         "venv_path": project_info.venv_path,
         "python_version": project_info.python_version,
     }
@@ -10462,7 +10491,7 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
     items = [
         ("Path", project_info.path),
         ("Folder", project_info.folder),
-        ("Project ID", project_info.project_id or "-"),
+        ("Project UID", project_info.project_uid or project_info.project_id or "-"),
         ("Venv", project_info.venv_path or "not found"),
         ("Python", project_info.python_version or "unknown"),
     ]
@@ -10485,7 +10514,7 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
 
 @project.command("sdk-status")
 def project_sdk_status(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10494,14 +10523,14 @@ def project_sdk_status(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
 
     Examples
     --------
     ```bash
-    mainsequence project sdk-status 123
+    mainsequence project sdk-status project-uid-123
     mainsequence project sdk-status --path .
     ```
     """
@@ -10538,7 +10567,7 @@ def project_sdk_status(
 
 @project.command("update-sdk")
 def project_update_sdk(
-    project_id: int | None = typer.Argument(None, help="Project ID"),
+    project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
@@ -10548,7 +10577,7 @@ def project_update_sdk(
     Parameters
     ----------
     project_id:
-        Project ID to resolve local folder.
+        Project UID to resolve local folder.
     path:
         Explicit local path.
     dry_run:
@@ -10557,7 +10586,7 @@ def project_update_sdk(
     Examples
     --------
     ```bash
-    mainsequence project update-sdk 123
+    mainsequence project update-sdk project-uid-123
     mainsequence project update-sdk --path .
     mainsequence project update-sdk --path . --dry-run
     ```
@@ -10587,7 +10616,7 @@ def project_update_sdk(
 @project.command("update")
 def project_update_scaffold_target(
     target: str = typer.Argument(..., help="Scaffold target to update. Currently supported: AGENTS.md"),
-    project_id: int | None = typer.Option(None, "--project-id", help="Project ID to resolve local folder"),
+    project_id: str | None = typer.Option(None, "--project-uid", "--project-id", help="Project UID to resolve local folder"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10603,7 +10632,7 @@ def project_update_scaffold_target(
     ```bash
     mainsequence project update AGENTS.md
     mainsequence project update AGENTS.md --path .
-    mainsequence project update AGENTS.md --project-id 123
+    mainsequence project update AGENTS.md --project-uid project-uid-123
     ```
     """
     if target != "AGENTS.md":
@@ -10659,7 +10688,7 @@ def project_update_scaffold_target(
 @project.command("update_agent_skills")
 @project.command("update-agent-skills", hidden=True)
 def project_update_agent_skills(
-    project_id: int | None = typer.Option(None, "--project-id", help="Project ID to resolve local folder"),
+    project_id: str | None = typer.Option(None, "--project-uid", "--project-id", help="Project UID to resolve local folder"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10675,7 +10704,7 @@ def project_update_agent_skills(
     ```bash
     mainsequence project update_agent_skills
     mainsequence project update_agent_skills --path .
-    mainsequence project update_agent_skills --project-id 123
+    mainsequence project update_agent_skills --project-uid project-uid-123
     ```
     """
     project_dir = _resolve_project_dir(project_id, path)

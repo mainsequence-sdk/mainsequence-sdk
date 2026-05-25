@@ -8,7 +8,6 @@ import gzip
 import json
 import math
 import os
-import re
 import time
 import warnings
 from collections.abc import Mapping, Sequence
@@ -3443,10 +3442,16 @@ class ProjectNameValidationResult(BasePydanticModel):
 
 
 class ProjectQuickSearchResult(BasePydanticModel):
-    id: int = Field(
-        ...,
+    uid: str | None = Field(
+        None,
+        title="UID",
+        description="Public uid of the matching project.",
+        json_schema_extra={"label": "UID"},
+    )
+    id: int | None = Field(
+        None,
         title="ID",
-        description="Primary key of the matching project.",
+        description="Optional backend row id of the matching project.",
         json_schema_extra={"label": "ID"},
     )
     project_name: str = Field(
@@ -3472,10 +3477,13 @@ class ProjectQuickSearchResult(BasePydanticModel):
 class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
+        "uid": ["in", "exact"],
         "id": ["in", "exact"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "str",
+        "uid__in": "str",
         "id": "id",
         "id__in": "id",
         "project_name": "str",
@@ -3483,6 +3491,13 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         "labels__in": "str",
         "labels__contains": "str",
     }
+    uid: str | None = Field(
+        None,
+        title="Project UID",
+        description="Public uid of the project.",
+        examples=["project-uid-142"],
+        json_schema_extra={"label": "Project UID"},
+    )
     id: int = Field(
         ...,
         title="Project ID",
@@ -3756,10 +3771,10 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
     @classmethod
     def sync_project_after_commit(
         cls,
-        project_id: int,
+        project_uid: str | int,
         timeout: int | None = None,
     ) -> Project | dict[str, Any] | None:
-        url = f"{cls.get_object_url()}/{project_id}/sync_project_after_commit/"
+        url = f"{cls.get_object_url()}/{project_uid}/sync_project_after_commit/"
 
         s = cls.build_session()
         r = make_request(
@@ -3775,7 +3790,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             return None
 
         data = r.json()
-        if isinstance(data, dict) and {"id", "project_name"}.issubset(data):
+        if isinstance(data, dict) and ({"project_name"} <= set(data.keys())):
             return cls(**data)
         return data
 
@@ -3786,13 +3801,13 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             timeout: int | None = None,
     ) -> dict[str, Any] | None:
         """
-        DELETE /projects/{id}/
+        DELETE /projects/{uid}/
 
         Optional query param:
           - delete_repositories=true
         """
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/"
+        url = f"{cls.get_object_url()}/{self._public_detail_reference()}/"
 
         request_payload: dict[str, Any] = {}
         if delete_repositories:
@@ -3814,12 +3829,12 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
     def get_data_nodes_updates(self, *, timeout: int | None = None) -> list[DataNodeUpdate]:
         """
-        GET /projects/{id}/get-data-nodes-updates/
+        GET /projects/{uid}/get-data-nodes-updates/
 
         Returns a list of DataNodeUpdate objects for this project.
         """
         cls = type(self)
-        url = f"{cls.get_object_url()}/{self.id}/get-data-nodes-updates/"
+        url = f"{cls.get_object_url()}/{self._public_detail_reference()}/get-data-nodes-updates/"
 
         s = cls.build_session()
         r = make_request(
@@ -4191,40 +4206,30 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 
 def _build_local_pod_project_resolution() -> _PodProjectResolution:
+    running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
     running_project_id = (os.environ.get("MAIN_SEQUENCE_PROJECT_ID") or "").strip()
-    if not running_project_id:
+    project_reference = running_project_uid or running_project_id
+    if not project_reference:
         return _PodProjectResolution(
             project=None,
             status="missing",
-            detail="MAIN_SEQUENCE_PROJECT_ID is not configured.",
+            detail="MAIN_SEQUENCE_PROJECT_UID is not configured.",
         )
-
-    if not re.fullmatch(r"\d+", running_project_id):
-        return _PodProjectResolution(
-            project=None,
-            status="invalid",
-            detail=(
-                f"Ignoring MAIN_SEQUENCE_PROJECT_ID={running_project_id!r}: "
-                "expected an integer project id."
-            ),
-        )
-
-    project_id = int(running_project_id)
     try:
-        project = Project.get(pk=project_id)
+        project = Project.get(pk=project_reference)
     except DoesNotExist:
         return _PodProjectResolution(
             project=None,
             status="not_found",
-            detail=f"Project id {project_id} from MAIN_SEQUENCE_PROJECT_ID was not found.",
+            detail=f"Project reference {project_reference!r} from local runtime env was not found.",
         )
     except Exception as exc:
         return _PodProjectResolution(
             project=None,
             status="lookup_failed",
             detail=(
-                "Could not resolve project id "
-                f"{project_id} from MAIN_SEQUENCE_PROJECT_ID: {exc}"
+                "Could not resolve project reference "
+                f"{project_reference!r} from local runtime env: {exc}"
             ),
         )
 

@@ -432,6 +432,7 @@ def _run_sdk_model_operation(
     class_name: str,
     operation,
     project_id_env: int | str | None = None,
+    project_uid_env: str | None = None,
 ):
     tokens = get_tokens()
     access = (tokens.get("access") or "").strip()
@@ -447,6 +448,7 @@ def _run_sdk_model_operation(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -464,6 +466,12 @@ def _run_sdk_model_operation(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
+        if project_uid_env is not None:
+            os.environ["MAIN_SEQUENCE_PROJECT_UID"] = str(project_uid_env)
+        elif project_id_env is not None and not str(project_id_env).strip().isdigit():
+            os.environ["MAIN_SEQUENCE_PROJECT_UID"] = str(project_id_env)
+        else:
+            os.environ.pop("MAIN_SEQUENCE_PROJECT_UID", None)
         if project_id_env is not None:
             os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id_env)
         else:
@@ -534,8 +542,12 @@ def get_current_user_profile() -> dict:
     organization = user.get("organization") if isinstance(user, dict) else {}
     if not isinstance(organization, dict):
         organization = {}
+    payload_organization = payload.get("organization") if isinstance(payload, dict) else {}
+    if not isinstance(payload_organization, dict):
+        payload_organization = {}
     org_name = (
         organization.get("name")
+        or payload_organization.get("name")
         or payload.get("organization_name")
         or payload.get("organization")
         or ""
@@ -680,6 +692,65 @@ def get_projects() -> list[dict]:
     if isinstance(data, list):
         return data
     return data.get("results") or []
+
+
+def _normalize_project_reference(project_ref: int | str) -> str:
+    normalized = str(project_ref).strip()
+    if not normalized:
+        raise ApiError("Project UID is required.")
+    return normalized
+
+
+def _project_matches_reference(project_payload: dict[str, Any], project_ref: str) -> bool:
+    return (
+        str(project_payload.get("uid") or "").strip() == project_ref
+        or str(project_payload.get("id") or "").strip() == project_ref
+    )
+
+
+def resolve_project(project_ref: int | str) -> dict[str, Any]:
+    normalized_ref = _normalize_project_reference(project_ref)
+
+    try:
+        payload = get_project(normalized_ref)
+        if isinstance(payload, dict) and payload:
+            return payload
+    except ApiError:
+        pass
+
+    for project_payload in get_projects():
+        if isinstance(project_payload, dict) and _project_matches_reference(project_payload, normalized_ref):
+            return project_payload
+
+    raise ApiError(f"Project not found: {normalized_ref}")
+
+
+def resolve_project_uid(project_ref: int | str) -> str:
+    normalized_ref = _normalize_project_reference(project_ref)
+    if normalized_ref.isdigit():
+        return normalized_ref
+
+    payload = resolve_project(project_ref)
+    normalized_uid = str(payload.get("uid") or "").strip()
+    if normalized_uid:
+        return normalized_uid
+    if not normalized_ref.isdigit():
+        return normalized_ref
+    raise ApiError(f"Project UID is not available for project reference: {normalized_ref}")
+
+
+def resolve_project_row_id(project_ref: int | str) -> int:
+    normalized_ref = _normalize_project_reference(project_ref)
+    if normalized_ref.isdigit():
+        return int(normalized_ref)
+
+    payload = resolve_project(project_ref)
+    row_id = payload.get("id")
+    if row_id is None:
+        if normalized_ref.isdigit():
+            return int(normalized_ref)
+        raise ApiError(f"Backend row id is not available for project reference: {normalized_ref}")
+    return int(row_id)
 
 
 def search_projects(
@@ -1401,7 +1472,7 @@ def get_agent_run(
 
 def get_project(project_id: int | str) -> dict:
     """
-    Fetch a single project by id.
+    Fetch a single project by public reference.
     """
     r = authed("GET", f"/orm/api/pods/projects/{project_id}/")
     if not r.ok:
@@ -1754,6 +1825,7 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -1771,7 +1843,10 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+        project_uid = resolve_project_uid(project_id)
+        project_row_id = resolve_project_row_id(project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -1788,7 +1863,7 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
         BaseObjectOrm.ROOT_URL = root_url
         ClientProject.ROOT_URL = root_url
 
-        project = ClientProject.get(pk=project_id, timeout=timeout)
+        project = ClientProject.get(pk=project_uid, timeout=timeout)
         updates = project.get_data_nodes_updates(timeout=timeout)
 
         out: list[dict[str, Any]] = []
@@ -1845,14 +1920,16 @@ def sync_project_after_commit(project_id: int | str, *, timeout: int | None = No
       - delegates request behavior and payload parsing to `Project.sync_project_after_commit()`
     """
     try:
+        project_uid = resolve_project_uid(project_id)
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
             class_name="Project",
             operation=lambda ClientProject: ClientProject.sync_project_after_commit(
-                int(project_id),
+                project_uid,
                 timeout=timeout,
             ),
-            project_id_env=project_id,
+            project_id_env=resolve_project_row_id(project_id),
+            project_uid_env=project_uid,
         )
         if payload is None:
             return None
@@ -1917,6 +1994,7 @@ def create_project_image(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -1933,7 +2011,10 @@ def create_project_image(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
+        project_uid = resolve_project_uid(related_project_id)
+        project_row_id = resolve_project_row_id(related_project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -1952,7 +2033,7 @@ def create_project_image(
 
         created = ClientProjectImage.create(
             project_repo_hash=project_repo_hash,
-            related_project_id=int(related_project_id),
+            related_project_id=project_row_id,
             base_image_id=base_image_id,
             timeout=timeout,
         )
@@ -2024,6 +2105,7 @@ def list_project_images(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -2040,7 +2122,10 @@ def list_project_images(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(related_project_id)
+        project_uid = resolve_project_uid(related_project_id)
+        project_row_id = resolve_project_row_id(related_project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2058,7 +2143,7 @@ def list_project_images(
         ClientProjectImage.ROOT_URL = root_url
 
         merged_filters = dict(filters or {})
-        merged_filters["related_project__id__in"] = [int(related_project_id)]
+        merged_filters["related_project__id__in"] = [project_row_id]
         images = ClientProjectImage.filter(timeout=timeout, **merged_filters)
 
         out: list[dict[str, Any]] = []
@@ -2249,6 +2334,7 @@ def list_project_jobs(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -2265,7 +2351,10 @@ def list_project_jobs(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+        project_uid = resolve_project_uid(project_id)
+        project_row_id = resolve_project_row_id(project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2285,7 +2374,7 @@ def list_project_jobs(
         extra_filters = dict(filters or {})
         jobs = ClientJob.filter(
             timeout=timeout,
-            **{**extra_filters, "project__id": int(project_id)},
+            **{**extra_filters, "project__id": project_row_id},
         )
 
         out: list[dict[str, Any]] = []
@@ -2361,6 +2450,7 @@ def list_project_resources(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -2377,7 +2467,10 @@ def list_project_resources(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+        project_uid = resolve_project_uid(project_id)
+        project_row_id = resolve_project_row_id(project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -2397,7 +2490,7 @@ def list_project_resources(
         merged_filters: dict[str, Any] = dict(filters or {})
         merged_filters.update(
             {
-            "project__id": int(project_id),
+            "project__id": project_row_id,
             "repo_commit_sha": str(repo_commit_sha).strip(),
             }
         )
@@ -4216,6 +4309,7 @@ def create_project_job(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -4232,7 +4326,10 @@ def create_project_job(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+        project_uid = resolve_project_uid(project_id)
+        project_row_id = resolve_project_row_id(project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -4251,7 +4348,7 @@ def create_project_job(
 
         created = ClientJob.create(
             name=name,
-            project_id=int(project_id),
+            project_id=project_row_id,
             execution_path=execution_path,
             app_name=app_name,
             task_schedule=task_schedule,
@@ -4337,6 +4434,7 @@ def schedule_batch_project_jobs(
         "MAINSEQUENCE_ACCESS_TOKEN": os.environ.get("MAINSEQUENCE_ACCESS_TOKEN"),
         "MAINSEQUENCE_REFRESH_TOKEN": os.environ.get("MAINSEQUENCE_REFRESH_TOKEN"),
         "MAINSEQUENCE_ENDPOINT": os.environ.get("MAINSEQUENCE_ENDPOINT"),
+        "MAIN_SEQUENCE_PROJECT_UID": os.environ.get("MAIN_SEQUENCE_PROJECT_UID"),
         "MAIN_SEQUENCE_PROJECT_ID": os.environ.get("MAIN_SEQUENCE_PROJECT_ID"),
     }
 
@@ -4353,7 +4451,10 @@ def schedule_batch_project_jobs(
         else:
             os.environ.pop("MAINSEQUENCE_REFRESH_TOKEN", None)
         os.environ["MAINSEQUENCE_ENDPOINT"] = endpoint
-        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_id)
+        project_uid = resolve_project_uid(project_id)
+        project_row_id = resolve_project_row_id(project_id)
+        os.environ["MAIN_SEQUENCE_PROJECT_UID"] = project_uid
+        os.environ["MAIN_SEQUENCE_PROJECT_ID"] = str(project_row_id)
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
@@ -4372,7 +4473,7 @@ def schedule_batch_project_jobs(
 
         created = ClientJob.bulk_get_or_create(
             yaml_file=file_path,
-            project_id=int(project_id),
+            project_id=project_row_id,
             strict=bool(strict),
             timeout=timeout,
         )
@@ -4872,13 +4973,14 @@ def create_project(
 
 def delete_project(project_id: int | str, *, delete_repositories: bool = False) -> dict[str, Any] | None:
     """
-    Delete a project by id.
+    Delete a project by public reference.
 
     Mirrors backend behavior:
-      - DELETE /orm/api/pods/projects/{id}/
+      - DELETE /orm/api/pods/projects/{uid}/
       - optional query param delete_repositories=true
     """
-    path = f"/orm/api/pods/projects/{project_id}/"
+    project_uid = resolve_project_uid(project_id)
+    path = f"/orm/api/pods/projects/{project_uid}/"
     if delete_repositories:
         path = f"{path}?delete_repositories=true"
 
@@ -4948,7 +5050,7 @@ def add_deploy_key(project_id: int | str, key_title: str, public_key: str) -> No
     """
     r = authed(
         "POST",
-        f"/orm/api/pods/projects/{project_id}/add_deploy_key/",
+        f"/orm/api/pods/projects/{resolve_project_uid(project_id)}/add_deploy_key/",
         {"key_title": key_title, "public_key": public_key},
     )
     r.raise_for_status()
