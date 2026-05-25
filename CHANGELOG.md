@@ -6,8 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-05-25
+
+### Added
+
+- Added MetaTable client contracts for row-oriented relational application data, including registration, contract validation, introspection, governed compiled SQL operations, labels, and sharing.
+- Added MetaTable tutorial and ADR guidance for backend-managed tables, governed SQL payloads, and future CLI parity.
+- Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
+
 ### Changed
 
+- Released the SDK as version 4.0.0 to mark the shift to a general-purpose MainSequence platform SDK for several application domains instead of a domain-specific client package.
+- Standardized row-oriented application data around MetaTables and DataNodes, with stable UID-based public resource identity.
 - Removed unsupported `MAINSEQUENCE_TOKEN` authentication from the SDK runtime and auth loader paths. JWT access/refresh tokens are now the only supported authentication mechanism.
 - Added `MAINSEQUENCE_AUTH_MODE=runtime_credential` for runtime credential authentication. This mode behaves like JWT access-only request auth, but refreshes by exchanging `MAINSEQUENCE_RUNTIME_CREDENTIAL_ID` and `MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET` for a new access token.
 - Runtime credential auth writes exchanged access tokens to `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment and does not use `MAINSEQUENCE_REFRESH_TOKEN`.
@@ -16,11 +26,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth instead of the removed legacy token path.
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
 - Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time-series update payloads.
-- Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
 - Migrated DataNode source-configuration docs and CLI detail output to the multidimensional layout contract: use backend-derived `storage_layout` and `physical_index_plan` instead of the removed `table_partition` field.
+
+### Removed
+
 - Removed the legacy domain application packages from the core SDK tree so this repository stays focused on platform client primitives.
+- Removed deprecated row-oriented table APIs, examples, tutorials, and scaffold guidance in favor of MetaTables.
 
 ## [3.19.17] - 2026-05-17
 
