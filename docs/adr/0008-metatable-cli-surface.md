@@ -170,10 +170,10 @@ mainsequence meta-table detail <META_TABLE_UID>
 ```yaml
 data_source_uid: <DATA_SOURCE_UID>
 management_mode: platform_managed
-storage_hash: tutorial_assets
-identifier: tutorial_assets
+storage_hash: tutorial_products
+identifier: tutorial_products
 namespace: tutorial
-description: Backend-managed asset registry used by the tutorial.
+description: Backend-managed product catalog used by the tutorial.
 protect_from_deletion: true
 open_for_everyone: false
 labels:
@@ -185,13 +185,13 @@ table_contract:
   version: relational-table.v1
   physical:
     schema: tutorial
-    table_name: assets
+    table_name: products
   columns:
     - name: id
       data_type: integer
       nullable: false
       primary_key: true
-    - name: symbol
+    - name: sku
       data_type: text
       nullable: false
       unique: true
@@ -202,9 +202,9 @@ table_contract:
       data_type: boolean
       nullable: false
   indexes:
-    - name: tutorial_assets_symbol_idx
+    - name: tutorial_products_sku_idx
       columns:
-        - symbol
+        - sku
       unique: true
   foreign_keys: []
 ```
@@ -221,18 +221,18 @@ mainsequence meta-table introspect <META_TABLE_UID>
 
 ```yaml
 management_mode: platform_managed
-storage_hash: tutorial_assets
+storage_hash: tutorial_products
 table_contract:
   version: relational-table.v1
   physical:
     schema: tutorial
-    table_name: assets
+    table_name: products
   columns:
     - name: id
       data_type: integer
       nullable: false
       primary_key: true
-    - name: symbol
+    - name: sku
       data_type: text
       nullable: false
       unique: true
@@ -249,7 +249,7 @@ Read-oriented convenience command:
 
 ```bash
 mainsequence meta-table run-query <META_TABLE_UID> \
-  "select id, symbol, name from tutorial.assets where is_active = true order by symbol" \
+  "select id, sku, name from tutorial.products where is_active = true order by sku" \
   --max-rows 100 \
   --statement-timeout-ms 5000
 ```
@@ -263,14 +263,14 @@ operation: select
 version: compiled-sql.v1
 dialect: postgresql
 statement:
-  sql: "select id, symbol, name from tutorial.assets where is_active = %(is_active)s order by symbol"
+  sql: "select id, sku, name from tutorial.products where is_active = %(is_active)s order by sku"
   parameters:
     is_active: true
   paramstyle: pyformat
 scope:
   tables:
     - meta_table_uid: <META_TABLE_UID>
-      alias: assets
+      alias: products
       access: read
 limits:
   max_rows: 100
@@ -302,8 +302,8 @@ destructive call is made.
 ## Tutorial guidelines
 
 The tutorial must teach MetaTables as the CLI-visible row-oriented application
-data contract. It should use a market-domain scenario only as application data,
-not as an SDK-bundled market library.
+data contract. Domain-specific examples must be user-owned application code, not
+SDK-bundled domain libraries.
 
 Required tutorial structure:
 
@@ -398,7 +398,7 @@ Required tutorial structure:
 - [ ] Structure the tutorial according to the tutorial guidelines in this ADR.
 - [ ] Include backend-managed registration examples using JSON/YAML payload files.
 - [ ] Include governed query examples using `run-query` and `execute-operation`.
-- [ ] Make any market-domain tutorial code application-owned instead of SDK-owned.
+- [ ] Make any domain tutorial code user-owned instead of SDK-owned.
 - [ ] Ensure docs do not reference deprecated row-table APIs.
 
 ### 7. Tests
