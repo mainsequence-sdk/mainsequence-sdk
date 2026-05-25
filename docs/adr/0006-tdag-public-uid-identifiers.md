@@ -15,14 +15,12 @@ The immediate SDK resources in scope are:
 
 - `DataNodeStorage`
 - `DataNodeUpdate`
-- `SimpleTableStorage`
-- `SimpleTableUpdate`
 - Source-table, update-details, scheduler, and dependency relation surfaces that
   refer to those resources
 
 This ADR is not a blind rename. The SDK still contains unrelated `id` concepts,
-especially SimpleTable row ids and ids for models outside this TDAG migration.
-Those are not part of this decision.
+especially ids for models outside this TDAG migration. Those are not part of
+this decision.
 
 ## Decision
 
@@ -37,7 +35,7 @@ For the affected TDAG resources:
 - SDK runtime joins should use UID-based columns and maps.
 - CLI and docs should teach UID-based references.
 - Remaining `*_id` usages in these resource paths are implementation defects to
-  audit and remove unless they are SimpleTable row ids or unrelated model ids.
+  audit and remove unless they are unrelated model ids.
 
 ## Terminology
 
@@ -47,7 +45,6 @@ For the affected TDAG resources:
 
 Valid `id` usages outside this migration include:
 
-- SimpleTable row `id` / `record_id` / `records_ids`
 - unrelated model ids, such as users, teams, projects, data sources, jobs, or
   assets
 - local variable names inside unrelated code paths
@@ -77,27 +74,6 @@ Observed migrated surfaces in `mainsequence/client/models_tdag.py`:
 - Scheduler client methods expose `update_node_uids` at the model boundary.
 - Historical update payloads include `direct_dependency_uids`.
 
-### SimpleTable client models
-
-Observed migrated surfaces in `mainsequence/client/models_simple_tables.py`:
-
-- `UUID` is imported and used for SimpleTable public identifiers.
-- `SimpleTableStorage.FILTERSET_FIELDS` exposes `uid`.
-- `SimpleTableStorage.run_query()` uses `_public_uid()` in the route.
-- `SimpleTableStorage.insert_records_into_table(simple_table_uid=...)` uses a
-  UID parameter.
-- `SimpleTableStorage.upsert_records_into_table(simple_table_uid=...)` uses a
-  UID parameter.
-- `SimpleTableStorage.delete_records_from_table(data_node_storage_uid=...)`
-  uses a UID parameter while preserving row `records_ids`.
-- `STSourceTableConfiguration` carries `related_table_uid`.
-- `SimpleTableUpdateRecord` carries `related_table_uid`.
-- `SimpleTableUpdateDetails` carries `related_table_uid`.
-- `SimpleTableUpdate.FILTERSET_FIELDS` exposes `uid`.
-- `SimpleTableUpdate.remote_table` is typed as `UUID | SimpleTableStorage`.
-- `SimpleTableUpdate` action URLs use `_public_uid()` for public-resource
-  routes.
-
 ## Known SDK Gaps
 
 These are SDK facts observed in the current code and should be fixed or verified
@@ -114,18 +90,6 @@ Affected methods:
 - `get_time_scale_extra_table_indices()`
 - `set_or_update_columns_metadata()`
 - `patch()`
-
-### SimpleTable foreign-key metadata still exposes `target_table`
-
-`SimpleTableForeignKeyPayload.target_table` remains typed as `int` and is
-documented as a target simple-table primary key. This must be audited before
-changing schema relation generation.
-
-### SimpleTable update upload methods still expose id-named parameters
-
-`SimpleTableUpdate.insert_records_into_table(...)` and
-`SimpleTableUpdate.insert_data_into_table(...)` still use a parameter named
-`data_node_update_id`.
 
 ### BaseObjectOrm still assumes `.id`
 
@@ -178,15 +142,6 @@ id-named arguments:
 - `depends_on_connect(target_time_serie_id=new_ts.data_node_update.id)`
 - `depends_on_connect_to_api_table(target_table_id=...data_node_storage.id)`
 
-SimpleTable update persistence has the same issue:
-
-- `mainsequence/tdag/simple_tables/persist_managers.py` calls
-  `SimpleTableUpdate.insert_records_into_table(data_node_update_id=self.data_node_update.id, ...)`.
-- The same file calls
-  `SimpleTableStorage.delete_records_from_table(data_node_storage_id=self.data_node_storage.id, ...)`.
-- `mainsequence/tdag/simple_tables/table_nodes.py` resolves foreign-key schema
-  targets with `target_storage.id`.
-
 ### Update-process migration rule
 
 The DataNode update process should have one canonical SDK key:
@@ -219,7 +174,6 @@ call path. They do not assert unknown server behavior.
   site.
 - Verify response rows include enough UID information before changing runtime
   joins.
-- Keep SimpleTable row ids separate from TDAG resource UIDs.
 - Keep unrelated model ids out of this migration.
 - Do not keep an affected TDAG `*_id` parameter as public compatibility API.
 
@@ -306,34 +260,6 @@ replacement list.
 - [x] Add tests proving SourceTableConfiguration methods route through
   `related_table_uid`.
 
-### SimpleTable update-process tasks
-
-- [x] Rename `SimpleTablePersistManager.persist_records()` call from
-  `data_node_update_id=self.data_node_update.id` to a UID-based argument.
-- [x] Rename `SimpleTableUpdate.insert_records_into_table(...)` parameter
-  `data_node_update_id` to `data_node_update_uid`.
-- [x] Rename `SimpleTableUpdate.insert_data_into_table(...)` parameter
-  `data_node_update_id` to `data_node_update_uid`.
-- [x] Update `SimpleTablePersistManager.delete()` to call
-  `SimpleTableStorage.delete_records_from_table(data_node_storage_uid=...)`
-  with `self.data_node_storage.uid`.
-- [x] Keep `records_ids` unchanged because those are SimpleTable row ids.
-- [x] Update tests to prove row deletion still uses row ids while table routing
-  uses storage UIDs.
-
-### SimpleTable relation and schema tasks
-
-- [x] Audit whether `SimpleTableForeignKeyPayload.target_table` belongs to SDK
-  public resource identity or backend metadata.
-- [x] If the SDK schema contract should use public table identity, add
-  `target_table_uid`.
-- [x] Update `SimpleTableUpdater._resolve_simple_table_schema_dict()` to write
-  `target_storage.uid` into the resolved schema if the SDK schema contract
-  expects public table UIDs.
-- [x] Do not change SimpleTable record `id` fields as part of this migration.
-- [x] Add tests for foreign-key schema generation with UID targets if that path
-  is migrated.
-
 ### Client model consistency tasks
 
 - [x] Add or confirm `uid: UUID | None` on every affected public TDAG resource
@@ -361,22 +287,16 @@ replacement list.
   custom object-reference resolution. This is required because
   `LabelableObjectMixin` and `ShareableObjectMixin` build their action URLs
   from `get_detail_url()`.
-- [ ] Confirm `delete_simple_table_storage()` works through the generic
-  resolution above. It fetches `SimpleTableStorage` by `uid` and then calls
-  `storage.delete()`, so it must not require `.id`.
 - [ ] Confirm CLI label helpers for affected TDAG storages work through the
-  generic resolution above. The CLI fetches `SimpleTableStorage` and
-  `DataNodeStorage` by `uid`, then calls label/share instance methods whose
-  detail-action URLs must also use `uid`.
+  generic resolution above. The CLI fetches `DataNodeStorage` by `uid`, then
+  calls label/share instance methods whose detail-action URLs must also use
+  `uid`.
 - [ ] Update CLI sharing output so affected TDAG resources do not prefer
   `object_id` over `object_uid`. Public display should prefer `object_uid`
   when present and only show `object_id` for unrelated id-based models.
 - [ ] Update project data-node update list rendering so nested
   `data_node_storage` display prefers `uid` over `id`. Project itself is not
   the affected identity here; the nested TDAG storage reference is.
-- [ ] Fix `SimpleTableUpdater` schema-resolution documentation in
-  `table_nodes.py` so it says canonical `SimpleTableStorage.uid`, not
-  `SimpleTableStorage.id`.
 - [ ] Extend deterministic-hash exclusion lists to remove UID-shaped backend
   identity keys as well as old id-shaped keys. At minimum exclude
   `storage_uid`, `update_uid`, `data_node_storage_uid`, and
@@ -387,18 +307,14 @@ replacement list.
 
 - [x] Update DataNode CLI argument names from `storage_id` to `storage_uid`.
 - [x] Remove `int(...)` coercion from CLI paths that now accept public UIDs.
-- [x] Update SimpleTable CLI argument names from `storage_id` or
-  `simple_table_id` to `storage_uid` or `simple_table_uid`.
 - [x] Do not present numeric ids as public compatibility behavior for affected
   TDAG resources.
 - [x] Update `docs/knowledge/data_nodes.md` examples from `get(pk=123)` to
   UID-based access.
-- [x] Update `docs/knowledge/simple_tables/simple_table.md` examples from
-  `get(pk=123)` and `{simple_table_id}` to UID-based access.
 - [x] Update tutorial examples to use `<DATA_NODE_STORAGE_UID>`,
-  `<SIMPLE_TABLE_UID>`, and `.uid` fields for affected TDAG storage references.
+  and `.uid` fields for affected TDAG storage references.
 - [x] Update examples under `examples/data_nodes` that pass `.id` from
-  DataNodeStorage, DataNodeUpdate, SimpleTableStorage, or SimpleTableUpdate.
+  DataNodeStorage or DataNodeUpdate.
 
 ### Test tasks
 
@@ -409,9 +325,6 @@ replacement list.
   `update_nodes_in_tree`.
 - [x] Add unit tests for UID-keyed `data_node_updates_map`.
 - [x] Add unit tests for `_verify_tree_is_updated()` UID dependency comparison.
-- [x] Add unit tests for SimpleTable update insert using update UID.
-- [x] Add unit tests for SimpleTable delete routing using storage UID and row
-  ids in the body.
 - [x] Add CLI tests showing UID strings are accepted without integer coercion.
 - [ ] Add docs or snapshot checks if the docs build supports them.
 
@@ -420,7 +333,6 @@ replacement list.
 This ADR does not:
 
 - replace unrelated model ids
-- change SimpleTable row identity
 - rename logical identifiers such as `identifier`, `node_unique_identifier`,
   `storage_hash`, or `update_hash`
 - preserve affected TDAG `id` references as public SDK compatibility behavior
@@ -433,11 +345,6 @@ If scheduler assignment, dependency dataframe filtering, dependency rebuild
 checks, and update maps do not use the same UID key, update execution may become
 unstable.
 
-### Risk: SimpleTable row ids are confused with table UIDs
-
-SimpleTable row operations use row identifiers. Those should not be renamed as
-part of TDAG resource UID migration.
-
 ### Risk: Generic ORM identity behavior changes unrelated models
 
 Changing `BaseObjectOrm` globally can affect models outside this migration.
@@ -449,11 +356,10 @@ The SDK will expose `uid` as the only stable public reference for affected TDAG
 resources. For those resources, `id` is not part of the client SDK contract.
 
 Implementation remains an analysis-driven migration rather than a broad rename.
-That avoids corrupting SimpleTable row operations, dependency graph joins, and
-unrelated model APIs.
+That avoids corrupting dependency graph joins and unrelated model APIs.
 
 The final public API should make identity explicit:
 
 - use `uid` for affected TDAG resource references
-- keep `id` only where it means SimpleTable row identity or unrelated models
+- keep `id` only where it means unrelated model identity
 - use logical names and hashes for deterministic TDAG configuration identity

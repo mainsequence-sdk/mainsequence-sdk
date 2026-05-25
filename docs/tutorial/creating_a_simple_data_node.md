@@ -142,7 +142,7 @@ builds `msc.TableMetaData` for you, so you do not need to override
     later repoint a published identifier to a different backing table during a migration
     without rotating `storage_hash` or `update_hash`.
 
-    This is different from the `unique_identifier` field used later in MultiIndex asset tables. Here, you are naming the table itself, not an individual asset row.
+    This is different from the `unique_identifier` field used later in MultiIndex entity tables. Here, you are naming the table itself, not an individual row entity.
 
     If you want to inspect existing DataNode table identifiers before choosing one, run:
 
@@ -150,7 +150,7 @@ builds `msc.TableMetaData` for you, so you do not need to override
     mainsequence data-node list
     ```
 
-    The `Identifier` column lists DataNode table identifiers, not asset `unique_identifier` values.
+    The `Identifier` column lists DataNode table identifiers, not row-level `unique_identifier` values.
 
 In Pydantic v2, mark updater-scope fields with `json_schema_extra={"update_only": True}` when they should affect `update_hash` but not `storage_hash`.
 
@@ -225,7 +225,7 @@ The `update()` method has one hard requirement: it must return a `pandas.DataFra
 - column types should be `float`, `int`, or `str`; date values should live in the index or be converted to numeric timestamps
 - if there is new data to return, the DataFrame must contain rows; if there is no new data, return an empty `pd.DataFrame()`
 - a single-index DataFrame must not contain duplicate index values; a MultiIndex DataFrame must not contain duplicate full index tuples
-- `(time_index, unique_identifier)` is the standard asset-table shape, but DataNodes can also use higher-dimensional indexes such as `(time_index, account_uid, unique_identifier)`
+- `(time_index, unique_identifier)` is the standard two-index entity-table shape, but DataNodes can also use higher-dimensional indexes such as `(time_index, account_uid, unique_identifier)`
 - `time_index` should be the observation point across the series in the dataset, so rows aligned on the same timestamp are comparable
 - for bar data, `time_index` should usually be the right edge of the bar, not the bar start; for example, daily bars should typically use the session-close timestamp
 - if dates are stored in columns, they should be represented as timestamps

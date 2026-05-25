@@ -1,6 +1,6 @@
 ---
 name: mainsequence-data-nodes
-description: Use this skill when the task is about producing, changing, validating, or reviewing Main Sequence DataNodes. This skill owns DataNode contracts, hashing, namespaces, update logic, metadata, asset-indexed nodes, and DataNode validation. It does not own SimpleTable row modeling, API route contracts, scheduling, or sharing policy.
+description: Use this skill when the task is about producing, changing, validating, or reviewing Main Sequence DataNodes. This skill owns DataNode contracts, hashing, namespaces, update logic, metadata, asset-indexed nodes, and DataNode validation. It does not own MetaTable registration, API route contracts, scheduling, or sharing policy.
 ---
 
 # Main Sequence Data Nodes
@@ -32,7 +32,7 @@ This skill is for producer-side table engineering.
 
 This skill must not claim ownership of:
 
-- SimpleTable row modeling or row-mutation semantics
+- MetaTable registration or governed operation semantics
 - HTTP route design or FastAPI response contracts
 - workspace/widget layout payloads
 - job creation, scheduling, image pinning, or release creation
@@ -47,8 +47,8 @@ If the user is still in the discovery process and does not yet know what data ex
 
 - discovery-only data inventory before DataNode implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:
@@ -183,7 +183,7 @@ For asset-indexed nodes, also check:
 - the change may break an existing published table contract and the versioning decision is unclear
 - the intended identifier is likely to collide and no naming decision was made
 - the node needs asset identities but the asset-resolution strategy is unclear
-- the task is actually an API, SimpleTable, orchestration, or sharing problem
+- the task is actually an API, MetaTable, orchestration, or sharing problem
 - docs and code disagree on hashing or runtime behavior
 
 Do not guess through contract changes.

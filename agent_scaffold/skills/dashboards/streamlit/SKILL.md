@@ -37,7 +37,7 @@ This skill must not claim ownership of:
 - AppComponent contracts
 - project-resource or release orchestration semantics
 - DataNode producer implementation
-- SimpleTable schema design
+- MetaTable schema design
 
 ## Route Adjacent Work
 
@@ -51,8 +51,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 
 ## Read First
 

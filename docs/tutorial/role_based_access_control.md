@@ -177,7 +177,7 @@ mainsequence secrets add_to_view 42 7
 
 Later parts of the tutorial introduce:
 
-- multi-asset data nodes
+- multi-entity data nodes
 - scheduled jobs
 - artifacts and buckets
 - dashboards and releases

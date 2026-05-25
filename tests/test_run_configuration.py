@@ -8,7 +8,6 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client.command_center import Workspace
-from mainsequence.client.models_simple_tables import SimpleTableStorage, SimpleTableUpdate
 from mainsequence.client.models_tdag import (
     DataNodeStorage,
     DataNodeUpdate,
@@ -22,16 +21,16 @@ from mainsequence.tdag.data_nodes.run_operations import UpdateRunner
 
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
     payload = {
-        "id": 44,
+        "uid": "data-node-update-44",
         "update_hash": "issue-44-update-hash",
-        "data_node_storage": 1,
+        "data_node_storage": "data-node-storage-1",
         "build_configuration": {},
         "run_configuration": {
             "update_schedule": "*/1 * * * *",
             "local_time_serie_update_details": 8053,
         },
         "update_details": {
-            "related_table": 44,
+            "related_table_uid": "data-node-update-44",
             "run_configuration": {
                 "update_schedule": "*/1 * * * *",
                 "local_time_serie_update_details": 8053,
@@ -50,7 +49,7 @@ def test_data_node_update_accepts_local_time_serie_update_details_in_run_configu
 
 def test_data_node_storage_accepts_namespace():
     storage = DataNodeStorage(
-        id=12,
+        uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         namespace="pytest_case_123",
         data_source=1,
@@ -63,39 +62,14 @@ def test_data_node_storage_accepts_namespace():
 
 def test_data_node_update_accepts_labels():
     update = DataNodeUpdate(
-        id=44,
+        uid="data-node-update-44",
         update_hash="issue-44-update-hash",
-        data_node_storage=1,
+        data_node_storage="data-node-storage-1",
         build_configuration={},
         labels=["pricing", "daily"],
     )
 
     assert update.labels == ["pricing", "daily"]
-
-
-def test_simple_table_storage_accepts_namespace():
-    storage = SimpleTableStorage(
-        id=15,
-        storage_hash="orders_storage_hash",
-        namespace="pytest_case_456",
-        data_source={"id": 1},
-        schema={"model": "tests.OrderRow", "fields": []},
-        source_class_name="OrderUpdater",
-    )
-
-    assert storage.namespace == "pytest_case_456"
-
-
-def test_simple_table_update_accepts_labels():
-    update = SimpleTableUpdate(
-        id=44,
-        update_hash="simple-table-update-hash",
-        remote_table=1,
-        build_configuration={},
-        labels=["reference", "daily"],
-    )
-
-    assert update.labels == ["reference", "daily"]
 
 
 def test_label_fields_exist_on_workspace_project_and_storage_models():
@@ -115,26 +89,16 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         labels=["research"],
     )
     data_node_storage = DataNodeStorage(
-        id=12,
+        uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
         labels=["vendor-data"],
     )
-    simple_table_storage = SimpleTableStorage(
-        id=15,
-        storage_hash="orders_storage_hash",
-        data_source={"id": 1},
-        schema={"model": "tests.OrderRow", "fields": []},
-        source_class_name="OrderUpdater",
-        labels=["reference-data"],
-    )
-
     assert workspace.labels == ["desk"]
     assert project.labels == ["research"]
     assert data_node_storage.labels == ["vendor-data"]
-    assert simple_table_storage.labels == ["reference-data"]
 
 
 def test_record_definition_rejects_column_names_longer_than_63_characters():

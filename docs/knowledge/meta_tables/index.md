@@ -6,8 +6,7 @@ Use it when your application already has table models, usually SQLAlchemy/Core
 or SQLAlchemy ORM models, and you want Main Sequence to know about those tables
 for metadata, permissions, discovery, search, and governed query execution.
 
-`MetaTable` is not a replacement ORM and it is not the legacy `SimpleTable`
-authoring model. Your application keeps its normal model layer. The SDK turns
+`MetaTable` is not a replacement ORM. Your application keeps its normal model layer. The SDK turns
 resolved table metadata and compiled query artifacts into TS Manager contracts.
 
 ## Mental Model

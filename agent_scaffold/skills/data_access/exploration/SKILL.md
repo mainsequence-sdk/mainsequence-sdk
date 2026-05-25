@@ -1,31 +1,31 @@
 ---
 name: mainsequence-data-exploration
-description: Use this skill when the task is to discover what `DataNode` or `SimpleTable` data already exists on the Main Sequence platform before implementation starts.
+description: Use this skill when the task is to discover what `DataNode` or `MetaTable` data already exists on the Main Sequence platform before implementation starts.
 ---
 
 # Main Sequence Data Exploration
 
 ## Overview
 
-Use this skill when the task is about discovering what `DataNode` or `SimpleTable` data is already available on the platform before implementation starts.
+Use this skill when the task is about discovering what `DataNode` or `MetaTable` data is already available on the platform before implementation starts.
 
 This skill is for discovery only.
 
 It helps answer questions such as:
 
 - what published data already exists on this platform
-- whether the right surface is a `DataNode` or `SimpleTable`
-- which identifier, storage id, or object id should be used
+- whether the right surface is a `DataNode` or `MetaTable`
+- which identifier, storage UID, or object UID should be used
 - what metadata is available for those objects
 - what still needs to be clarified before implementation starts
 
 ## This Skill Can Do
 
 - discover published `DataNode` tables through the CLI
-- inspect published table identifiers, storage ids, and metadata
+- inspect published table identifiers, storage UIDs, and metadata
 - search for tables by keyword, description, or column name
 - inspect organization-visible table identifiers
-- inspect `SimpleTable` objects through the CLI
+- inspect registered `MetaTable` objects through the SDK client
 - summarize what data is available, what is missing, and what evidence supports that conclusion
 
 ## This Skill Must Not Claim
@@ -33,7 +33,7 @@ It helps answer questions such as:
 This skill must not claim ownership of:
 
 - producing or modifying `DataNode` pipelines
-- designing `SimpleTable` schemas or mutation behavior
+- designing `MetaTable` registration or operation behavior
 - deciding code-level read patterns for discovered datasets
 - building APIs or dashboards
 - scheduling jobs, images, or releases
@@ -47,8 +47,8 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
   `.agents/skills/mainsequence/project_builder/SKILL.md`
 - `DataNode` creation or modification:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- `SimpleTable` schema or updater work:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- `MetaTable` registration or operation work:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - FastAPI or application-facing implementation:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboards:
@@ -65,7 +65,7 @@ This skill discovers and identifies data. It does not publish, redesign, or defi
 1. `AGENTS.md`
 2. `docs/cli/index.md`
 3. `docs/knowledge/data_nodes.md`
-4. `docs/knowledge/simple_tables/simple_table.md` when the exploration touches row-oriented storage
+4. `docs/knowledge/meta_tables/index.md` when the exploration touches row-oriented storage
 
 ## Inputs This Skill Needs
 
@@ -74,14 +74,14 @@ Before exploring, collect or infer:
 - the business question being asked
 - whether the user is exploring organization-wide data or project-scoped data
 - whether the target is a published table or a row-oriented table
-- whether the user already knows an identifier, keyword, or object id
+- whether the user already knows an identifier, keyword, or object UID
 - whether metadata discovery alone answers the question
 
 ## Required Decisions
 
 For every non-trivial exploration task, decide:
 
-1. Is the data surface a `DataNode` or `SimpleTable`?
+1. Is the data surface a `DataNode` or `MetaTable`?
 2. Do we know the identifier already, or do we need to search first?
 3. What metadata or object details are needed to complete the discovery?
 4. Which implementation skill should receive the handoff after discovery?
@@ -108,13 +108,11 @@ Typical commands include:
 - `mainsequence data-node list`
 - `mainsequence data-node list --show-filters`
 - `mainsequence data-node list --filter KEY=VALUE`
-- `mainsequence data-node detail <DATA_NODE_STORAGE_ID>`
-- `mainsequence simple_table list`
-- `mainsequence simple_table detail <SIMPLE_TABLE_ID>`
+- `mainsequence data-node detail <DATA_NODE_STORAGE_UID>`
 
 ### 2. Stop at discovery boundaries
 
-Use the CLI to identify what exists and collect the relevant identifiers, object ids, and metadata.
+Use the CLI or SDK client to identify what exists and collect the relevant identifiers, object UIDs, and metadata.
 
 Do not define code-level read patterns here.
 
@@ -129,7 +127,7 @@ For `DataNode` discovery specifically:
 When you say data exists, include the evidence you used:
 
 - identifier
-- storage id or object id
+- storage UID or object UID
 - object type
 - command used to discover it
 - metadata or filter evidence when available
@@ -141,7 +139,7 @@ Once the discovery is complete, hand off to the correct implementation skill.
 Examples:
 
 - if the task is about publishing or modifying time-series data, hand off to `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- if the task is about row-oriented operational data, hand off to `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- if the task is about row-oriented operational data, hand off to `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - if the task is about APIs or dashboards, hand off to the relevant surface skill after discovery is complete
 
 ## Review Rules
@@ -149,7 +147,7 @@ Examples:
 When reviewing an exploration result, look for:
 
 - a discovery claim without CLI evidence
-- confusion between `DataNode` and `SimpleTable`
+- confusion between `DataNode` and `MetaTable`
 - jumping into implementation work before discovery is complete
 - claiming implementation conclusions from a discovery-only pass
 
@@ -159,7 +157,7 @@ Do not claim exploration success until you have checked:
 
 - the correct platform surface was identified
 - CLI discovery was used first
-- existing identifiers or object ids were captured
+- existing identifiers or object UIDs were captured
 - the result clearly distinguishes:
   - what exists
   - what is missing

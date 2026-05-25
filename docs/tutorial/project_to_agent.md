@@ -239,7 +239,7 @@ agent session.
 One project can expose:
 
 - published data through `DataNode`s
-- operational rows through `SimpleTable`
+- operational rows through `MetaTable`
 - application APIs through FastAPI
 - released dashboards
 - released agent resources

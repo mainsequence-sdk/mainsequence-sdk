@@ -16,7 +16,7 @@ The important distinction is semantic, not textual:
 
 - `uid` is the public SDK resource reference.
 - `id` is not a public SDK resource reference.
-- `id` may still appear only when it means something else, such as a SimpleTable row identifier, a provider identifier, a permission subject identifier that has not migrated, or backend-internal metadata that SDK callers do not use for resource lookup.
+- `id` may still appear only when it means something else, such as a provider identifier, a permission subject identifier that has not migrated, or backend-internal metadata that SDK callers do not use for resource lookup.
 
 The migration must not be implemented as a broad rename. Every use must be classified before it is changed because some `id` fields are valid domain data and some `_id` fields are stale public resource references that must be removed.
 
@@ -45,7 +45,6 @@ The final SDK contract is:
 - No CLI resource argument should coerce UID values with `int(...)`.
 - No public example should teach users to lookup SDK resources by integer ID.
 - No deterministic hash should include backend-generated resource UID fields unless that UID is explicitly part of business configuration.
-- No SimpleTable row operation should be broken by replacing row `id` with resource `uid`.
 - No permission subject payload should be changed until the backend subject identity contract is confirmed.
 
 ## Scope
@@ -55,7 +54,7 @@ In scope:
 - `mainsequence/client/base.py`
 - maintained `BaseObjectOrm` subclasses
 - TDAG resource models
-- SimpleTable resource models
+- MetaTable resource models
 - project and infrastructure resource models
 - command-center resource models
 - agent and runtime resource models
@@ -67,7 +66,6 @@ In scope:
 
 Out of scope:
 
-- SimpleTable row mutation identifiers
 - external provider identifiers
 - backend-internal metadata not accepted as SDK lookup input
 - permission subject identifiers until their backend contracts migrate
@@ -97,7 +95,7 @@ Out of scope:
 - [x] Id-only migrated resource instances fail before making patch, delete, label, or share requests.
 - [x] CLI share output prefers `object_uid` over `object_id`.
 - [x] Project data-node update list rendering prefers nested storage `uid`.
-- [x] SimpleTable source-table configuration documentation refers to `SimpleTableStorage.uid`.
+- [x] MetaTable documentation uses `MetaTable.uid` for registered table references.
 
 ## Required implementation tasks
 
@@ -122,7 +120,6 @@ Base audit findings that remain for model-group migration:
 
 - `mainsequence/client/models_helpers.py` still has job and job-run direct URLs built from `self.id`.
 - `mainsequence/client/models_tdag.py` still has project and data-source helper paths that use project or data-source IDs.
-- `mainsequence/client/models_simple_tables.py` intentionally still has row-record URL builders that use row `id`; these are out of scope unless they are table resource lookups.
 - `mainsequence/client/data_sources_interfaces/timescale.py` still has a data-node-storage helper URL built from `data_node_storage.id`.
 - `mainsequence/client/agent_runtime_models.py` still has runtime/session helper routes that require classification before renaming.
 - `mainsequence/client/models_user.py` still has user detail paths and permission subject identifiers that require separate user/team contract confirmation.
@@ -152,19 +149,14 @@ Base audit findings that remain for model-group migration:
 - [ ] Add tests proving DataNode update methods work with `uid` and no `.id`.
 - [ ] Add tests proving DataNode patch, delete, label, and share URLs use UID.
 
-### 4. SimpleTable migration
+### 4. MetaTable migration
 
-- [ ] Confirm UID detail lookup for `SimpleTableStorage`.
-- [ ] Confirm UID detail lookup for `SimpleTableUpdate`.
-- [ ] Confirm UID detail lookup for `SimpleTableUpdateDetails`.
-- [ ] Confirm UID detail lookup for SimpleTable run-configuration resources before changing public arguments.
-- [ ] Make `SimpleTableForeignKeyPayload.target_table` hold target table UID.
-- [ ] Add `target_table_uid` only if the backend schema requires a separate explicit field.
-- [ ] Keep SimpleTable row create, update, and delete row IDs unchanged.
-- [ ] Add tests proving foreign-key payloads use target table UID.
-- [ ] Add tests proving SimpleTable storage delete uses UID.
-- [ ] Add tests proving SimpleTable label and share actions use UID.
-- [ ] Add tests proving row `id` behavior remains unchanged.
+- [x] Add `MetaTable` client models and registration contracts.
+- [x] Confirm `MetaTable` uses `uid` for registered table references.
+- [x] Add SQLAlchemy helpers that produce `MetaTableRegistrationRequest` payloads.
+- [x] Add governed compiled SQL operation helpers with declared table scope.
+- [x] Add tests proving registration and operation payloads use `meta_table_uid`.
+- [x] Update tutorials and examples to use backend-managed `MetaTable`s for row-oriented application data.
 
 ### 5. Project and infrastructure migration
 
@@ -225,11 +217,10 @@ Base audit findings that remain for model-group migration:
 
 - [ ] Audit response models that expose `object_id`.
 - [ ] Replace resource identity response fields with `object_uid` or typed `object_reference`.
-- [ ] Audit request models that expose `dynamic_table_id`, `simple_table_id`, `storage_id`, `update_id`, or similar keys.
+- [ ] Audit request models that expose `dynamic_table_id`, `storage_id`, `update_id`, or similar keys.
 - [ ] Replace resource request keys with UID keys only after confirming backend contract migration.
 - [ ] Remove code that assumes UID and ID keys both exist.
 - [ ] Remove code that prefers `id` over `uid` for migrated resources.
-- [ ] Keep row response `id` fields unchanged for SimpleTable records.
 - [ ] Add tests for UID-only response shapes.
 
 ### 11. Documentation and tutorials
@@ -237,11 +228,10 @@ Base audit findings that remain for model-group migration:
 - [ ] Update ADR 0006 to reference this ADR for client-wide identity rules.
 - [ ] Update hand-written SDK docs to use UID lookup examples.
 - [ ] Update TDAG tutorials to use `storage.uid`, `update.uid`, and table UID references.
-- [ ] Update SimpleTable tutorials to explain row `id` versus table `uid`.
 - [ ] Update CLI docs to use `--*_uid` options for resource references.
 - [ ] Update SDK examples to use `get_by_uid()`, `patch_by_uid()`, and `destroy_by_uid()`.
 - [ ] Regenerate reference docs after public method and signature changes.
-- [ ] Remove stale generated examples that expose `storage_id`, `dynamic_table_id`, or `simple_table_id` as public resource lookup examples.
+- [ ] Remove stale generated examples that expose `storage_id` or `dynamic_table_id` as public resource lookup examples.
 
 ### 13. Tests and acceptance criteria
 
@@ -253,7 +243,6 @@ Base audit findings that remain for model-group migration:
 - [ ] Add endpoint URL tests for each migrated model group.
 - [ ] Add CLI tests for UUID-like resource arguments.
 - [ ] Add response-shape tests for UID-only payloads.
-- [ ] Add SimpleTable tests proving row `id` is preserved.
 
 ## Migration sequence
 
@@ -289,13 +278,12 @@ The SDK has one public resource identity model: UID.
 
 This intentionally breaks callers that still pass integer database IDs as SDK resource lookup arguments. That break is required because integer resource lookup is not part of the client public contract anymore.
 
-The migration remains analysis-driven because `id` still has valid non-resource meanings. Keeping that distinction explicit prevents damage to SimpleTable row operations, permission payloads, provider integrations, and TDAG configuration hashes.
+The migration remains analysis-driven because `id` still has valid non-resource meanings. Keeping that distinction explicit prevents damage to permission payloads, provider integrations, and TDAG configuration hashes.
 
 ## Risks
 
 - Backend UID detail routes may be incomplete for some resources.
 - Under-typed response models may hide assumptions that `id` exists.
-- Broad renames can corrupt row-level SimpleTable operations.
 - Permission subject payloads may still use identifiers that are not resource UID.
 - Generated docs may continue to expose stale signatures until regenerated.
 - Id-named compatibility aliases may confuse users unless removed or clearly deprecated.

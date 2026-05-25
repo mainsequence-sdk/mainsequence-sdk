@@ -3,7 +3,7 @@
     - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
     - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 2.1 — Role-Based Access Control](tutorial/role_based_access_control.md)
-    - [Part 3.1 — Working With Simple Tables](tutorial/working_with_simple_tables.md)
+    - [Part 3.1 — Working With MetaTables](tutorial/working_with_meta_tables.md)
     - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)
     - FastAPI Tutorial
         - [Overview](tutorial/fastapi_tutorial/index.md)
@@ -20,9 +20,6 @@
         - [Workspaces](knowledge/command_center/workspaces.md)
         - [Forms](knowledge/command_center/forms.md)
         - [Widget Data Contracts](knowledge/command_center/widget_data_contracts.md)
-    - Simple Tables
-        - [Overview](knowledge/simple_tables/simple_table.md)
-        - [Filtering](knowledge/simple_tables/filtering.md)
     - MetaTables
         - [Overview](knowledge/meta_tables/index.md)
         - [SDK API And Backend Contract](knowledge/meta_tables/api.md)

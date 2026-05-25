@@ -806,7 +806,7 @@ Use `SearchRequest` when:
 
 They are complementary APIs:
 
-- `APIDataNode.build_from_identifier(...)` is the simple table reader
+- `APIDataNode.build_from_identifier(...)` is the fixed-table reader
 - `SearchRequest` is the structured query layer for more flexible reads
 
 ## 15) Quick pre-ship checklist

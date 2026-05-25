@@ -43,7 +43,7 @@ This skill must not claim ownership of:
 
 - job scheduling or image pinning
 - DataNode producer implementation
-- SimpleTable schema design
+- MetaTable schema design
 - FastAPI route design
 - Streamlit dashboard implementation
 - workspace document structure
@@ -54,8 +54,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Streamlit dashboards:

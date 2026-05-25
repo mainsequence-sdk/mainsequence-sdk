@@ -8,7 +8,7 @@ The focus here is implementation quality:
 
 - how to structure the app
 - how to keep routes thin
-- how to read from `SimpleTable` and `APIDataNode` cleanly
+- how to read from `MetaTable` and `APIDataNode` cleanly
 - how to bind the authenticated platform user into FastAPI request handling
 - how to return exact Command Center widget contracts when the API feeds a widget directly
 - how to think about request validation and response contracts
@@ -66,32 +66,56 @@ def list_customers(
 
 The service layer then holds the actual query logic.
 
-## 3. Reading From `SimpleTable`
+## 3. Reading From `MetaTable`
 
-For application-facing rows, `SimpleTableUpdater.execute_filter(...)` is usually the cleanest read path.
+For application-facing rows, use governed MetaTable operations. Keep the table
+UID and physical table name in configuration after registration.
 
 Example service:
 
 ```python
-from examples.data_nodes.simple_tables import (
-    CustomerRecord,
-    CustomersUpdater,
-    CustomersUpdaterConfiguration,
-)
+import os
+
+from mainsequence.client import MetaTable
+from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+
+
+CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
+CUSTOMER_META_TABLE_NAME = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_NAME"]
+CUSTOMER_META_TABLE_SCHEMA = os.getenv("MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA", "public")
 
 
 def get_customers(*, region: str | None, limit: int) -> list[dict[str, object]]:
-    updater = CustomersUpdater(configuration=CustomersUpdaterConfiguration())
-    filter_expr = CustomerRecord.filters.region.eq(region) if region else None
-    rows = updater.execute_filter(filter_expr, limit=limit)
-    return [row.model_dump(mode="json") for row in rows]
+    operation = build_compiled_sql_v1_operation(
+        operation="select",
+        sql=f"""
+            SELECT uid, customer_code, name, region
+            FROM {CUSTOMER_META_TABLE_SCHEMA}.{CUSTOMER_META_TABLE_NAME}
+            WHERE (%(region)s IS NULL OR region = %(region)s)
+            ORDER BY customer_code
+            LIMIT %(limit)s
+        """,
+        parameters={"region": region, "limit": limit},
+        scope={
+            "tables": [
+                {
+                    "meta_table_uid": CUSTOMER_META_TABLE_UID,
+                    "alias": "customers",
+                    "access": "read",
+                }
+            ]
+        },
+        limits={"max_rows": limit, "statement_timeout_ms": 15000},
+    )
+    result = MetaTable.execute_operation(operation)
+    return result.get("rows", result) if isinstance(result, dict) else result
 ```
 
 Why this is a good fit:
 
-- it keeps the table schema as the source of truth
-- it reuses the typed filter DSL
-- it avoids hand-written HTTP request code in the route layer
+- it keeps the registered MetaTable as the source of truth
+- it declares the table scope and access mode explicitly
+- it avoids direct database credentials in the API process
 
 ## 4. Reading From `DataNode`
 
@@ -281,7 +305,7 @@ Keep stable:
 This is the same discipline already used for:
 
 - `DataNode` identifiers
-- `SimpleTable` schemas
+- `MetaTable` schemas
 - dashboard and agent interfaces
 
 ## 10. Local Development Flow
@@ -290,7 +314,7 @@ A practical local loop is:
 
 ```bash
 uv add fastapi uvicorn
-uv run python examples/data_nodes/simple_tables.py
+# Register the backend-managed MetaTable first, then export its UID and table name.
 uv run python scripts/random_number_launcher.py
 uv run uvicorn src.apis.tutorial_api.main:app --reload
 ```
@@ -343,8 +367,8 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 ## 12. Related Pages
 
 - [Part 3.2 — Create Your First API](../create_your_first_api.md)
-- [Part 3.1 — Working With Simple Tables](../working_with_simple_tables.md)
+- [Part 3.1 — Working With MetaTables](../working_with_meta_tables.md)
 - [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
 - [Data Nodes](../../knowledge/data_nodes.md)
-- [Simple Tables Overview](../../knowledge/simple_tables/simple_table.md)
+- [MetaTables Overview](../../knowledge/meta_tables/index.md)
 - [Part 5.2 — Streamlit Integration II](../dashboards/streamlit/streamlit_integration_2.md)

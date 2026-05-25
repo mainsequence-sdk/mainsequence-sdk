@@ -1,6 +1,6 @@
 ---
 name: mainsequence-api-surfaces
-description: Use this skill when the task is about building or changing APIs in a Main Sequence repository. In a Main Sequence project, project APIs should be implemented as FastAPI project resources. Unless the user explicitly says the API is standalone or for a non-Command Center client, assume the API is meant to be Command Center integrated, load the related Command Center skills, and use Command Center SDK response models whenever the endpoint can reasonably match them. Main Sequence is platform-first: a Command Center-facing project API is not considered usable until it exists as a FastAPI project resource and has a corresponding FastAPI ResourceRelease. Resource and release creation belong to the orchestration-and-releases skill. This skill owns FastAPI structure, request and response contracts, request user binding, APIDataNode and SimpleTable consumption inside APIs, and exact widget-facing API response contracts. It does not own producer-side DataNode or SimpleTable design, workspace payloads, or scheduling and release workflows.
+description: Use this skill when the task is about building or changing APIs in a Main Sequence repository. In a Main Sequence project, project APIs should be implemented as FastAPI project resources. Unless the user explicitly says the API is standalone or for a non-Command Center client, assume the API is meant to be Command Center integrated, load the related Command Center skills, and use Command Center SDK response models whenever the endpoint can reasonably match them. Main Sequence is platform-first: a Command Center-facing project API is not considered usable until it exists as a FastAPI project resource and has a corresponding FastAPI ResourceRelease. Resource and release creation belong to the orchestration-and-releases skill. This skill owns FastAPI structure, request and response contracts, request user binding, APIDataNode and MetaTable consumption inside APIs, and exact widget-facing API response contracts. It does not own producer-side DataNode or MetaTable design, workspace payloads, or scheduling and release workflows.
 ---
 
 # Main Sequence API Surfaces
@@ -22,7 +22,7 @@ This skill is for FastAPI structure, request/response contracts, request user co
 - define request and response models
 - keep route handlers thin and contract-driven
 - use `APIDataNode` to read published DataNode tables
-- use `SimpleTableUpdater.execute_filter(...)` to read simple-table rows
+- use `MetaTable.execute_operation(...)` to read governed MetaTable rows
 - add `LoggedUserContextMiddleware` when request-local user context is needed
 - assume Command Center is the default API consumer unless the user clearly says otherwise
 - load the related Command Center skills when the API feeds widgets, AppComponents, or workspaces
@@ -35,7 +35,7 @@ This skill is for FastAPI structure, request/response contracts, request user co
 This skill must not claim ownership of:
 
 - DataNode producer design
-- SimpleTable schema design
+- MetaTable schema design
 - workspace document creation or mutation
 - AppComponent custom form design
 - job creation, scheduling, image pinning, or releases
@@ -46,8 +46,8 @@ This skill must not claim ownership of:
 
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Command Center workspaces:
   `.agents/skills/mainsequence/command_center/workspace_builder/SKILL.md`
 - AppComponents and custom forms:
@@ -105,7 +105,7 @@ If the upstream producer contract is unclear, stop and resolve that first.
 For every non-trivial API task, decide:
 
 1. Is this route exposing application logic or should the data stay as a producer table?
-2. Should the route read from `APIDataNode`, `SimpleTable`, or something else?
+2. Should the route read from `APIDataNode`, `MetaTable`, or something else?
 3. Does the route need request-local user context?
 4. Is this API serving Command Center by default, or did the user explicitly ask for a different consumer?
 5. Does this task require the AppComponents skill, the workspace-builder skill, or both?
@@ -211,7 +211,7 @@ A route should mainly:
 When reading published data:
 
 - use `APIDataNode` for published DataNode tables
-- use `SimpleTableUpdater.execute_filter(...)` for simple-table rows
+- use `MetaTable.execute_operation(...)` for governed MetaTable rows
 
 Do not rebuild producer logic just because the API needs the result.
 
@@ -353,7 +353,7 @@ Do not claim success until you have checked:
 - every structured route has an explicit `response_model`
 - route handlers are thin
 - `APIDataNode` is used when the route reads a published DataNode
-- `SimpleTableUpdater.execute_filter(...)` is used when the route reads simple-table rows
+- `MetaTable.execute_operation(...)` is used when the route reads governed MetaTable rows
 - middleware is present when request-local user context is required
 - middleware is absent when the route does not consume `request.state.user`
 - endpoints built specifically for workspace visualizations live under `/workspace`

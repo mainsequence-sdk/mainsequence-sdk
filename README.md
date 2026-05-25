@@ -35,7 +35,7 @@ This repository contains the SDK and the documentation used to build and operate
 Main package areas:
 
 - `mainsequence.tdag`: data orchestration, `DataNode`s, update workflows, and persistence
-- `mainsequence.client`: API client models for projects, jobs, data node storages, assets, sharing, and platform resources
+- `mainsequence.client`: API client models for projects, jobs, data node storages, sharing, and platform resources
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 Repository areas:
@@ -58,7 +58,7 @@ Recommended entry points:
 - Tutorial:
   - [Setting a Project (CLI)](docs/tutorial/setting_a_project.md)
   - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
-  - [Working With Simple Tables](docs/tutorial/working_with_simple_tables.md)
+  - [Working With MetaTables](docs/tutorial/working_with_meta_tables.md)
   - [Create Your First API](docs/tutorial/create_your_first_api.md)
   - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
   - [Turn Your Project Into an Agent](docs/tutorial/project_to_agent.md)
@@ -66,7 +66,7 @@ Recommended entry points:
   - [Data Nodes](docs/knowledge/data_nodes.md)
   - [Command Center](docs/knowledge/command_center/index.md)
   - [Command Center Widget Data Contracts](docs/knowledge/command_center/widget_data_contracts.md)
-  - [Simple Tables](docs/knowledge/simple_tables/simple_table.md)
+  - [MetaTables](docs/knowledge/meta_tables/index.md)
   - [Constants and Secrets](docs/knowledge/infrastructure/constants_and_secrets.md)
   - [Scheduling Jobs](docs/knowledge/infrastructure/scheduling_jobs.md)
   - [Streamlit Dashboards](docs/knowledge/dashboards/streamlit/index.md)
@@ -110,7 +110,7 @@ mainsequence project build_local_venv --path .
 From there, the normal learning path is:
 
 1. create your first `DataNode`
-2. model app-facing data with `SimpleTable` when needed
+2. model app-facing relational data with backend-managed `MetaTable`s when needed
 3. add an API or another application surface
 4. understand sharing and RBAC
 5. schedule jobs

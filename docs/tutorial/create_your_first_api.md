@@ -7,7 +7,7 @@ In this tutorial, you will:
 
 - create a minimal FastAPI application inside the project
 - expose a health endpoint
-- read tutorial `SimpleTable` rows from an API endpoint
+- read tutorial `MetaTable` rows from an API endpoint
 - read tutorial `DataNode` output through `APIDataNode`
 - understand how to return exact Command Center widget contracts when the API should feed a Main Sequence widget directly
 - run the API locally
@@ -15,8 +15,8 @@ In this tutorial, you will:
 
 This chapter belongs here for a reason.
 
-Up to this point, the tutorial has shown you how to publish data with `DataNode`s and how to model application-facing 
-rows with `SimpleTable`s. An API is the next layer: it lets you turn those project resources into a request/response surface with your own validation, routing, and response shape.
+Up to this point, the tutorial has shown you how to publish data with `DataNode`s and how to model application-facing
+rows with backend-managed `MetaTable`s. An API is the next layer: it lets you turn those project resources into a request/response surface with your own validation, routing, and response shape.
 
 ## 1. When To Build an API Instead of Another Table
 
@@ -31,7 +31,7 @@ Typical reasons:
 
 If all you need is a reusable dataset, keep using `DataNode`s.
 
-If all you need is small relational application data, keep using `SimpleTable`.
+If all you need is small relational application data, keep using backend-managed `MetaTable`s.
 
 If you need an application surface on top of those building blocks, add an API.
 
@@ -68,23 +68,22 @@ import os
 
 from fastapi import FastAPI, Query, Request
 
+from mainsequence.client import MetaTable
 from mainsequence.client.fastapi import LoggedUserContextMiddleware
 from mainsequence.tdag import APIDataNode
-
-from examples.data_nodes.simple_tables import (
-    CustomerRecord,
-    CustomersUpdater,
-    CustomersUpdaterConfiguration,
-)
+from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
 
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
 RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}_0.0"
+CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
+CUSTOMER_META_TABLE_NAME = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_NAME"]
+CUSTOMER_META_TABLE_SCHEMA = os.getenv("MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA", "public")
 
 app = FastAPI(
     title="Tutorial API",
     version="0.1.0",
-    description="Small API that exposes tutorial SimpleTable and DataNode data.",
+    description="Small API that exposes tutorial MetaTable and DataNode data.",
 )
 
 app.add_middleware(LoggedUserContextMiddleware)
@@ -110,12 +109,29 @@ def list_customers(
     region: str | None = None,
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict[str, object]]:
-    customers_updater = CustomersUpdater(
-        configuration=CustomersUpdaterConfiguration()
+    operation = build_compiled_sql_v1_operation(
+        operation="select",
+        sql=f"""
+            SELECT uid, customer_code, name, region
+            FROM {CUSTOMER_META_TABLE_SCHEMA}.{CUSTOMER_META_TABLE_NAME}
+            WHERE (%(region)s IS NULL OR region = %(region)s)
+            ORDER BY customer_code
+            LIMIT %(limit)s
+        """,
+        parameters={"region": region, "limit": limit},
+        scope={
+            "tables": [
+                {
+                    "meta_table_uid": CUSTOMER_META_TABLE_UID,
+                    "alias": "customers",
+                    "access": "read",
+                }
+            ]
+        },
+        limits={"max_rows": limit, "statement_timeout_ms": 15000},
     )
-    filter_expr = CustomerRecord.filters.region.eq(region) if region else None
-    rows = customers_updater.execute_filter(filter_expr, limit=limit)
-    return [row.model_dump(mode="json") for row in rows]
+    result = MetaTable.execute_operation(operation)
+    return result.get("rows", result) if isinstance(result, dict) else result
 
 
 @app.get("/random-numbers")
@@ -137,7 +153,7 @@ def list_random_numbers(
 Why this is a good tutorial example:
 
 - `/me` shows how to read the currently authenticated Main Sequence user inside FastAPI
-- `/customers` uses the `SimpleTable` objects you just created
+- `/customers` uses the `MetaTable` object you just registered
 - `/random-numbers` uses `APIDataNode.build_from_identifier(...)` to read a published table
 - the API layer is thin and explicit
 
@@ -237,14 +253,18 @@ The automatic FastAPI docs are useful here because they let you verify the reque
 
 ## 7. Test It Against the Tutorial Data
 
-The `/customers` route expects that you already created the tutorial simple-table data.
+The `/customers` route expects that you already registered the tutorial
+backend-managed customer `MetaTable` and saved its UID and physical table name
+in environment variables.
 
 The `/me` route expects that the request is coming through a Main Sequence-authenticated context, because the middleware resolves the current platform user from request headers.
 
-If you have not done that yet, run the example from the previous chapter:
+If you have not done that yet, follow the previous chapter and export:
 
 ```bash
-uv run python examples/data_nodes/simple_tables.py
+export MAINSEQUENCE_CUSTOMER_META_TABLE_UID="<customer-metatable-uid>"
+export MAINSEQUENCE_CUSTOMER_META_TABLE_NAME="<customer-physical-table-name>"
+export MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA="public"
 ```
 
 The `/random-numbers` route expects that the first `DataNode` tutorial has already been built and updated.
@@ -274,7 +294,7 @@ The deployment model is the same one you later use for dashboards:
 That is the important continuity point:
 
 - `DataNode`s publish data contracts
-- `SimpleTable`s publish application-facing rows
+- `MetaTable`s publish application-facing rows
 - APIs and dashboards are deployment-facing project resources built on top of that data layer
 
 You can deploy the discovered FastAPI project resource through the same CLI surface used for other releases:
@@ -295,7 +315,7 @@ The CLI uses the same deployment model as dashboards and other project resources
 
 ## 9. What To Keep Stable
 
-Treat the API as a contract just like you treat a `DataNode` identifier or a `SimpleTable` schema as a contract.
+Treat the API as a contract just like you treat a `DataNode` identifier or a `MetaTable` schema as a contract.
 
 Keep these stable unless you mean to introduce a breaking change:
 
@@ -312,8 +332,8 @@ For the data layer behind this chapter, see:
 
 - [Data Nodes](../knowledge/data_nodes.md)
 - [Command Center Widget Data Contracts](../knowledge/command_center/widget_data_contracts.md)
-- [Simple Tables Overview](../knowledge/simple_tables/simple_table.md)
-- [Simple Tables Filtering](../knowledge/simple_tables/filtering.md)
+- [MetaTables Overview](../knowledge/meta_tables/index.md)
+- [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)
 - [FastAPI Tutorial Overview](fastapi_tutorial/index.md)
 - [FastAPI Implementation Details](fastapi_tutorial/implementation_details.md)
 

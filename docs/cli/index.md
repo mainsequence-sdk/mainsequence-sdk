@@ -73,7 +73,6 @@ mainsequence doctor
 mainsequence constants --help
 mainsequence secrets --help
 mainsequence agent --help
-mainsequence simple_table --help
 mainsequence cc --help
 mainsequence organization --help
 mainsequence skills list
@@ -199,14 +198,6 @@ mainsequence organization teams add_to_edit 9 7
 mainsequence organization teams remove_from_view 9 7
 mainsequence organization teams remove_from_edit 9 7
 mainsequence organization teams delete 9
-mainsequence simple_table list
-mainsequence simple_table list --filter namespace=pytest_alice
-mainsequence simple_table detail <SIMPLE_TABLE_UID>
-mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT 1 AS ok"
-mainsequence simple_table run_query <SIMPLE_TABLE_UID> "SELECT * FROM my_table LIMIT 100" --max-rows 1000 --statement-timeout-ms 15000
-mainsequence simple_table add-label <SIMPLE_TABLE_UID> --label reference-data
-mainsequence simple_table remove-label <SIMPLE_TABLE_UID> --label deprecated
-mainsequence simple_table delete <SIMPLE_TABLE_UID>
 mainsequence data-node list
 mainsequence data-node list --show-filters
 mainsequence data-node list --filter namespace=pytest_alice
@@ -375,12 +366,6 @@ mainsequence skills path workspace_builder --json
 - `mainsequence agent add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate explicit team access on agents through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence agent run list` and `detail` use the SDK client `mainsequence.client.agent_runtime_models.AgentRun` paths for runtime inspection.
 - `mainsequence agent_runtime` is kept as a compatibility alias for the `agent run` command group.
-- `mainsequence simple_table list` lists simple table storages through the SDK client `SimpleTableStorage.filter()` path.
-- `mainsequence simple_table list --filter namespace=...` is the first-class CLI form for narrowing simple table storages by storage namespace.
-- `mainsequence simple_table detail` fetches one simple table storage through `SimpleTableStorage.get()` and renders its schema/configuration in the terminal.
-- `mainsequence simple_table run_query` executes `SimpleTableStorage.run_query()` against one storage uid and prints the backend query envelope. Use `--max-rows` and `--statement-timeout-ms` when you need server-side limits.
-- `mainsequence simple_table add-label` and `remove-label` mutate `SimpleTableStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
-- `mainsequence simple_table delete` deletes a simple table storage through the SDK client `SimpleTableStorage.delete()` path and always requires typed verification before the delete call is sent.
 - `mainsequence constants list` lists constants through the SDK client `Constant.filter()` path.
 - `mainsequence constants create` creates a constant through the SDK client `Constant.create()` path and only accepts `name` and `value`.
 - `mainsequence constants can_view` lists users returned by the SDK `ShareableObjectMixin.users_can_view()` path for `Constant`.

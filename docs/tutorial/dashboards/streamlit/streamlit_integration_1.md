@@ -8,7 +8,7 @@
 
 In this chapter, we will build a small tutorial dashboard that reads normalized time-series objects:
 
-- mock fixed-income assets with pricing details
+- mock fixed-income securities with pricing details
 - the simulated daily prices table
 - the direct API read path for those normalized prices
 
@@ -25,7 +25,7 @@ dashboards/
           ├─ common.py
           ├─ app.py
           └─ pages/
-              ├─ 01_prices_and_assets.py
+              ├─ 01_prices_and_securities.py
               └─ 02_metadata.py
 ```
 
@@ -40,7 +40,7 @@ This helper module should:
 1. reuse the tutorial helpers from `src/helpers_mock.py`
 2. reuse the simulated prices node from `src/data_nodes/simulated_daily_close_prices.py`
 3. expose a `bootstrap_tutorial_data()` helper that rebuilds the tutorial state on demand
-4. expose read helpers for assets, table metadata, and recent price history
+4. expose read helpers for securities, table metadata, and recent price history
 
 The central piece is reading the simulated prices table through `APIDataNode.build_from_identifier(...)`:
 
@@ -129,20 +129,20 @@ if st.button("Build or Refresh Tutorial Data"):
     status = bootstrap_tutorial_data()
 ```
 
-## 3) Prices and assets page
+## 3) Prices and securities page
 
-Create `dashboards/tutorial_fixed_income_dashboard/pages/01_prices_and_assets.py`.
+Create `dashboards/tutorial_fixed_income_dashboard/pages/01_prices_and_securities.py`.
 
 This page should:
 
 - start with `st.set_page_config(...)`
-- offer a sidebar asset selector
+- offer a sidebar security selector
 - offer a sidebar lookback window
 - load recent price history from the simulated prices table
 - render:
   - a close-price chart
   - a latest-bars table
-  - an asset summary table
+  - a security summary table
   - a raw-history table
 
 The central read path is:
@@ -176,7 +176,7 @@ source .venv/bin/activate
 streamlit run dashboards/tutorial_fixed_income_dashboard/app.py
 ```
 
-If the tutorial data does not exist yet, use the landing-page button to create the assets and simulated prices.
+If the tutorial data does not exist yet, use the landing-page button to create the mock securities and simulated prices.
 
 ## Why this chapter is structured this way
 

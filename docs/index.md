@@ -22,7 +22,7 @@ Recommended starting points:
 
 - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
 - [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
-- [Part 3.1 — Working With Simple Tables](tutorial/working_with_simple_tables.md)
+- [Part 3.1 — Working With MetaTables](tutorial/working_with_meta_tables.md)
 - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)
 - [Part 6 — Turn Your Project Into an Agent](tutorial/project_to_agent.md)
 
@@ -35,7 +35,7 @@ Key entry points:
 - [Data Nodes](knowledge/data_nodes.md)
 - [Command Center](knowledge/command_center/index.md)
 - [Command Center Widget Data Contracts](knowledge/command_center/widget_data_contracts.md)
-- [Simple Tables](knowledge/simple_tables/simple_table.md)
+- [MetaTables](knowledge/meta_tables/index.md)
 - [Constants and Secrets](knowledge/infrastructure/constants_and_secrets.md)
 - [Scheduling Jobs](knowledge/infrastructure/scheduling_jobs.md)
 - [Streamlit Dashboards](knowledge/dashboards/streamlit/index.md)
@@ -57,7 +57,7 @@ Use the generated reference when you need the API surface directly:
 The SDK is organized around a few main areas:
 
 - `mainsequence.tdag`: `DataNode`s, persistence, orchestration, and update workflows
-- `mainsequence.client`: API client models for projects, jobs, tables, assets, and sharing
+- `mainsequence.client`: API client models for projects, jobs, tables, platform resources, and sharing
 - `mainsequence.cli`: the `mainsequence` command-line interface
 
 ## If you are new here
@@ -66,7 +66,7 @@ The fastest onboarding path is usually:
 
 1. create a project
 2. build your first `DataNode`
-3. model app-facing data with `SimpleTable` when needed
+3. model app-facing relational data with backend-managed `MetaTable`s when needed
 4. add an API or another consumer surface
 5. understand RBAC and shared resources
 6. schedule jobs

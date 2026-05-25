@@ -10,7 +10,7 @@ This section focuses on:
 
 - project structure
 - route design
-- reading from `SimpleTable` and `APIDataNode`
+- reading from `MetaTable` and `APIDataNode`
 - response shaping
 - local development
 - how FastAPI resources fit the image/resource/release deployment model

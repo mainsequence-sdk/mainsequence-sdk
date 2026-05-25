@@ -44,7 +44,7 @@ This skill must not claim ownership of:
 - generic FastAPI or backend API implementation
 - Streamlit dashboard implementation
 - tabular or operational data producer design
-- SimpleTable schema design
+- MetaTable schema design
 
 ## Route Adjacent Work
 
@@ -62,8 +62,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
   `.agents/skills/mainsequence/dashboards/streamlit/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 
 ## Read First
 
@@ -411,11 +411,11 @@ Request/response source props:
 
 ```json
 {
-  "connectionRef": { "id": 123, "typeId": "mainsequence.simple-table" },
-  "queryModelId": "simple-table-sql",
+  "connectionRef": { "id": 123, "typeId": "mainsequence.metatable" },
+  "queryModelId": "metatable-sql",
   "query": {
-    "kind": "simple-table-sql",
-    "sql": "select * from {{simple_table}} limit 500"
+    "kind": "metatable-sql",
+    "sql": "select * from {{meta_table}} limit 500"
   },
   "timeRangeMode": "dashboard",
   "variables": {},
@@ -740,9 +740,9 @@ Owner widget:
   "props": {
     "graphSourceMode": "connection",
     "embeddedConnectionQuery": {
-      "connectionRef": { "id": 123, "typeId": "mainsequence.simple-table" },
-      "queryModelId": "simple-table-sql",
-      "query": { "kind": "simple-table-sql", "sql": "select * from {{simple_table}}" }
+      "connectionRef": { "id": 123, "typeId": "mainsequence.metatable" },
+      "queryModelId": "metatable-sql",
+      "query": { "kind": "metatable-sql", "sql": "select * from {{meta_table}}" }
     }
   },
   "bindings": {
@@ -762,9 +762,9 @@ Hidden source widget:
   "widgetId": "connection-query",
   "title": "Graph Source",
   "props": {
-    "connectionRef": { "id": 123, "typeId": "mainsequence.simple-table" },
-    "queryModelId": "simple-table-sql",
-    "query": { "kind": "simple-table-sql", "sql": "select * from {{simple_table}}" }
+    "connectionRef": { "id": 123, "typeId": "mainsequence.metatable" },
+    "queryModelId": "metatable-sql",
+    "query": { "kind": "metatable-sql", "sql": "select * from {{meta_table}}" }
   },
   "managedBy": {
     "ownerInstanceId": "graph-1",

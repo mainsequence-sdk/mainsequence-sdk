@@ -8,8 +8,8 @@ MetaTables use the backend route namespace:
 /orm/api/ts_manager/meta_table/
 ```
 
-Do not use `/orm/api/ts_manager/simple_table/...` for MetaTable registration or
-compiled execution.
+Use the MetaTable route namespace for registration, validation, introspection,
+and compiled execution.
 
 ## SDK Modules
 
@@ -241,6 +241,4 @@ After registration, TS Manager stores:
 - an optional `introspection_snapshot`
 - a `TableSearchIndex` document
 
-Command Center and table discovery read those MetaTable records directly. They
-do not resolve MetaTables through `SourceTableConfiguration` or legacy
-SimpleTable routes.
+Command Center and table discovery read those MetaTable records directly.

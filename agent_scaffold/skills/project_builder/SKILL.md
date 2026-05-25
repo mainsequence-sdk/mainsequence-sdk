@@ -35,7 +35,7 @@ This skill is for:
 This skill must not claim ownership of:
 
 - DataNode engineering
-- SimpleTable design
+- MetaTable design
 - FastAPI or application API design
 - Command Center workspace payloads
 - AppComponent contracts
@@ -51,8 +51,8 @@ Do not let this skill become a domain manual.
 
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - FastAPI and application-facing APIs:

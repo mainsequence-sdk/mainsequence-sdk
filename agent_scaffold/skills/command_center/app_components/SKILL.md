@@ -38,7 +38,7 @@ This skill must not claim ownership of:
 - workspace document creation or widget layout
 - generic FastAPI route architecture
 - tabular or operational data producer design
-- SimpleTable schema design
+- MetaTable schema design
 - Streamlit dashboard implementation
 - scheduling, image pinning, resources, or releases
 
@@ -54,8 +54,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/adapter_from_api/SKILL.md`
 - Connection-backed data access and query contract selection:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:

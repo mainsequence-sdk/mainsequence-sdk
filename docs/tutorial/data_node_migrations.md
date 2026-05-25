@@ -29,7 +29,7 @@ They can now use higher-dimensional identity keys, for example:
 ```
 
 The full index tuple is the uniqueness key. For account holdings, one row is
-identified by time, account, and asset.
+identified by time, account, and security.
 
 ## Method changes to make
 
@@ -43,7 +43,7 @@ Update existing call sites to use dimension-aware names:
 | update statistics | `global_index_progress`, `index_progress`, and `index_min` |
 | joins and search | full `JoinSpec.on` index vectors |
 
-For asset tables, this read:
+For two-index security tables, this read:
 
 ```python
 df = node.get_df_between_dates(
@@ -146,7 +146,7 @@ The equivalent compressed form is:
 }
 ```
 
-For a two-index asset table, progress is keyed by asset:
+For a two-index security table, progress is keyed by security:
 
 ```python
 {

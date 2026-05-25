@@ -15,7 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Made `mainsequence project set-up-locally` and `mainsequence project refresh_token` runtime-credential-aware so local project `.env` files no longer require JWT refresh tokens in runtime credential mode.
 - Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth instead of the removed legacy token path.
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
-- Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time series and simple table update payloads.
+- Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time-series update payloads.
 - Added `DataNodeStorage.delete_after_date(...)` to call the dynamic-table tail-delete endpoint using POST and return authoritative post-delete table stats.
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
@@ -26,21 +26,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added `mainsequence data-node run_query` and `mainsequence simple_table run_query` so the CLI can execute raw read-only SQL against published dynamic tables and simple tables by storage id through the SDK-backed `run_query(...)` methods.
+- Added `mainsequence data-node run_query` so the CLI can execute raw read-only SQL against published dynamic tables by storage UID through the SDK-backed `run_query(...)` method.
 
 ### Changed
 
-- Documented the new raw query CLI commands in the CLI reference plus the data-node and simple-table knowledge docs, including simple-table query limits via `--max-rows` and `--statement-timeout-ms`.
+- Documented the new raw query CLI commands in the CLI reference plus the data-node knowledge docs.
 
 ## [3.19.16] - 2026-05-17
 
 ### Added
 
-- Added `DataNodeStorage.run_query(...)` and `SimpleTableStorage.run_query(...)` so the client can execute read-only SQL against dynamic tables and simple tables using the backend `run_query/` endpoints with plain-text SQL request bodies.
+- Added `DataNodeStorage.run_query(...)` so the client can execute read-only SQL against dynamic tables using the backend `run_query/` endpoint with plain-text SQL request bodies.
 
 ### Changed
 
-- Documented the raw SQL query flow for dynamic tables and simple tables, including the plain-text request contract, optional simple-table query params, and structured backend response envelope.
+- Documented the raw SQL query flow for dynamic tables, including the plain-text request contract and structured backend response envelope.
 
 ## [3.19.14] - 2026-05-16
 
@@ -74,7 +74,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Cleaned up Ruff `B904` exception chaining in CLI and utility code so wrapped exceptions now preserve their original cause.
 - Fixed the real Ruff `B008` default-evaluation issue in the bond pricer and configured Ruff to ignore the standard Typer default-signature pattern in `mainsequence/cli/cli.py`.
 - Reworked local pod-project resolution so SDK code validates `MAIN_SEQUENCE_PROJECT_ID`, resolves projects lazily, caches successful lookups, and surfaces clearer errors when a local pod project is required but unavailable.
-- Updated job, simple-table, DataNode update, and TDAG build-signature paths to use the new local pod-project resolution helpers instead of relying on a fragile global `POD_PROJECT` snapshot.
+- Updated job, DataNode update, and TDAG build-signature paths to use the new local pod-project resolution helpers instead of relying on a fragile global `POD_PROJECT` snapshot.
 
 ### Changed
 
@@ -84,7 +84,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added first-class label mutation support for labelable SDK objects through `LabelableObjectMixin.add_label()` and `remove_label()` documentation, plus shared CLI commands on `project`, `data-node`, `simple_table`, and `cc workspace`.
+- Added first-class label mutation support for labelable SDK objects through `LabelableObjectMixin.add_label()` and `remove_label()` documentation, plus shared CLI commands on `project`, `data-node`, and `cc workspace`.
 - Added label documentation clarifying that object labels are organizational metadata only and do not affect runtime behavior or functionality.
 
 ### Fixed
@@ -94,13 +94,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Changed
 
-- Added first-class storage `namespace` support for DataNode and SimpleTable storage models while keeping `hash_namespace` inside build configuration for identity construction.
+- Added first-class storage `namespace` support for DataNode storage models while keeping `hash_namespace` inside build configuration for identity construction.
 - Added storage registration support to send top-level `namespace` metadata to the backend.
 - Added storage and updater namespace filter support in the SDK:
   `namespace`, `namespace__contains`, `namespace__in`, `namespace__isnull`,
   `related_table__namespace__contains`, `related_table__namespace__in`, and
   `related_table__namespace__isnull`.
-- Added CLI support for `namespace=...` on `mainsequence simple_table list` and `mainsequence data-node list`.
+- Added CLI support for `namespace=...` on `mainsequence data-node list`.
 - Updated CLI output and documentation to surface storage namespace information and examples.
 - Documented `mainsequence project schedule_batch_jobs` in the CLI reference.
 - Clarified that `scheduled_jobs.yaml` is the repository-managed input file for the bulk job sync/create flow.

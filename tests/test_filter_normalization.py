@@ -211,24 +211,6 @@ def test_data_node_storage_normalizes_namespace_filters():
     }
 
 
-def test_simple_table_storage_normalizes_namespace_filters():
-    from mainsequence.client.models_simple_tables import SimpleTableStorage
-
-    normalized = SimpleTableStorage._normalize_filter_kwargs(
-        {
-            "namespace": "  qa  ",
-            "namespace__in": [" alpha ", "beta"],
-            "namespace__isnull": "true",
-        }
-    )
-
-    assert normalized == {
-        "namespace": "qa",
-        "namespace__in": ["alpha", "beta"],
-        "namespace__isnull": True,
-    }
-
-
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     from mainsequence.client import models_tdag
 
@@ -236,6 +218,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
         content = b'{"ok": true}'
 
         @staticmethod
@@ -316,6 +299,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
         content = b'{"ok": true}'
 
         @staticmethod
@@ -399,6 +383,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
         content = b'{"ok": true}'
 
         @staticmethod
@@ -524,40 +509,6 @@ def test_data_node_update_accepts_internal_update_lookup_filters():
     }
 
 
-def test_simple_table_update_normalizes_related_table_namespace_filters():
-    from mainsequence.client.models_simple_tables import SimpleTableUpdate
-
-    normalized = SimpleTableUpdate._normalize_filter_kwargs(
-        {
-            "related_table__namespace__contains": "  pytest  ",
-            "related_table__namespace__in": [" alpha ", "beta"],
-            "related_table__namespace__isnull": "true",
-        }
-    )
-
-    assert normalized == {
-        "related_table__namespace__contains": "pytest",
-        "related_table__namespace__in": ["alpha", "beta"],
-        "related_table__namespace__isnull": True,
-    }
-
-
-def test_simple_table_update_accepts_internal_update_lookup_filters():
-    from mainsequence.client.models_simple_tables import SimpleTableUpdate
-
-    normalized = SimpleTableUpdate._normalize_filter_kwargs(
-        {
-            "update_hash": " order_updater_hash ",
-            "remote_table__data_source__id": {"id": 5},
-        }
-    )
-
-    assert normalized == {
-        "update_hash": "order_updater_hash",
-        "remote_table__data_source__id": 5,
-    }
-
-
 def test_normalize_filter_kwargs_rejects_unsupported_filters():
     with pytest.raises(ValueError, match="Unsupported DemoFilterModel filter"):
         DemoFilterModel._normalize_filter_kwargs({"unsupported": 1})
@@ -618,6 +569,8 @@ def test_iter_filter_merges_read_query_params(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -654,6 +607,7 @@ def test_get_by_uid_normalizes_read_query_params(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -685,6 +639,7 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -722,6 +677,7 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
 def test_patch_by_id_updates_aliased_field_on_existing_instance(monkeypatch):
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -852,6 +808,7 @@ def test_shareable_team_action_posts_team_id(monkeypatch):
 def test_shareable_can_view_parses_permission_state(monkeypatch):
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -889,6 +846,7 @@ def test_shareable_can_edit_parses_permission_state(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -950,6 +908,7 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():
@@ -991,6 +950,7 @@ def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
 
     class FakeResponse:
         status_code = 200
+        content = b'{"ok": true}'
 
         @staticmethod
         def json():

@@ -2996,7 +2996,7 @@ def _combine_index_min_max_stats_as_timestamps(index_min: dict[str, Any], index_
 
 
 def get_chunk_stats(chunk_df, time_index_name, index_names):
-    # LEGACY_COMPAT: SimpleTable and older SDK paths still import get_chunk_stats
+    # LEGACY_COMPAT: older SDK paths still import get_chunk_stats
     # and expect _PER_ASSET_ leaves with min/max timestamps. DataNodeUpdate uses
     # get_index_progress_chunk_stats() as the canonical helper.
     _warn_legacy_compat(

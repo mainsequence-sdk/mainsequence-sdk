@@ -383,7 +383,7 @@ get_index_progress_chunk_stats(chunk_df, *, time_index_name, index_names)
 ```
 
 `get_chunk_stats()` may remain temporarily only as a `LEGACY_COMPAT` wrapper if
-needed to migrate `SimpleTable` or other downstream imports in a separate step.
+needed while downstream imports migrate to the dimension-aware helper.
 It must not remain the canonical helper.
 
 ### `set_last_update_index_time_from_update_stats()`
@@ -739,15 +739,15 @@ These paths are important because tests and local runs can bypass the server's
 canonical normalization. They must not keep translating legacy aliases after the
 communication layer.
 
-### SimpleTable Coupling
+### Downstream Coupling
 
-`mainsequence/client/models_simple_tables.py` imports and uses
-`get_chunk_stats()` from `models_tdag.py`.
+Downstream callers may still import and use `get_chunk_stats()` from
+`models_tdag.py`.
 
 That means the DataNode helper rename cannot be done blindly. Either:
 
-1. migrate SimpleTable to the new helper in the same PR, or
-2. keep `get_chunk_stats()` as a `LEGACY_COMPAT` wrapper until SimpleTable is
+1. migrate downstream callers to the new helper in the same PR, or
+2. keep `get_chunk_stats()` as a `LEGACY_COMPAT` wrapper until those callers are
    migrated.
 
 ### CLI And Generated References
@@ -891,8 +891,7 @@ runtime callers are migrated around backend-bound API payloads.
 
 - [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
 - [x] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
-- [x] Audit `mainsequence/client/models_simple_tables.py` for the shared chunk
-   stats helper dependency.
+- [x] Audit downstream callers for the shared chunk stats helper dependency.
 - [x] Replace direct reads of `asset_time_statistics` with canonical helper calls
    or clearly marked `LEGACY_COMPAT` projections.
 

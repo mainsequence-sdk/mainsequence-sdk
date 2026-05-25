@@ -31,7 +31,7 @@ This skill owns:
 This skill must not claim ownership of:
 
 - DataNode semantics
-- SimpleTable semantics
+- MetaTable semantics
 - API design
 - Command Center payload design
 - job and release configuration semantics
@@ -48,8 +48,8 @@ This skill maintains project-state files. It does not own domain implementation 
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - FastAPI and application-facing APIs:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - Command Center workspaces:

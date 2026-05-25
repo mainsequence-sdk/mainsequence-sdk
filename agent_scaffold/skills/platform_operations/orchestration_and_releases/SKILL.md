@@ -1,6 +1,6 @@
 ---
 name: mainsequence-orchestration-and-releases
-description: Use this skill when the task is about operational execution in a Main Sequence project. This skill owns jobs, schedules, batch scheduling files, project images, run inspection, project resources, releases, and Artifacts as operational inputs. It does not own DataNode producer design, SimpleTable schema design, API route contracts, or RBAC policy.
+description: Use this skill when the task is about operational execution in a Main Sequence project. This skill owns jobs, schedules, batch scheduling files, project images, run inspection, project resources, releases, and Artifacts as operational inputs. It does not own DataNode producer design, MetaTable schema design, API route contracts, or RBAC policy.
 ---
 
 # Main Sequence Orchestration And Releases
@@ -37,7 +37,7 @@ This skill is for:
 This skill must not claim ownership of:
 
 - DataNode producer behavior
-- SimpleTable schema and row semantics
+- MetaTable schema and row semantics
 - FastAPI route contracts
 - RBAC or sharing policy
 - Streamlit dashboard implementation details
@@ -46,8 +46,8 @@ This skill must not claim ownership of:
 
 - DataNodes:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
 - predeployment mock API contract validation:

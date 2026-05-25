@@ -289,6 +289,7 @@ class TeamMembershipUpdateResult(BasePydanticModel):
 
 class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
     ENDPOINT: ClassVar[str] = "team"
+    PUBLIC_LOOKUP_FIELD: ClassVar[str] = "id"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
         "search": ["exact"],
         "is_active": ["exact"],

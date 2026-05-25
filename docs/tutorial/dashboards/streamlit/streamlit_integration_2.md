@@ -140,7 +140,7 @@ This version is intentionally narrower and more accurate:
 - `create_dashboard` says no matching resources exist:
   The selected image commit and the selected resource commit do not match.
 - The dashboard opens but shows no rows:
-  Use the landing-page refresh button to rebuild the tutorial assets and simulated prices.
+  Use the landing-page refresh button to rebuild the tutorial securities and simulated prices.
 
 At this point, your tutorial project has a current Streamlit dashboard and a current CLI deployment path that matches the SDK behavior in use today.
 

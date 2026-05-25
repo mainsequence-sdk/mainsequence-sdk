@@ -39,8 +39,8 @@ This skill must not claim ownership of:
   `.agents/skills/mainsequence/command_center/connections/SKILL.md`
 - APIs and FastAPI:
   `.agents/skills/mainsequence/application_surfaces/api_surfaces/SKILL.md`
-- SimpleTables:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - Jobs, images, resources, and releases:
   `.agents/skills/mainsequence/platform_operations/orchestration_and_releases/SKILL.md`
 - Streamlit dashboards:
@@ -66,7 +66,7 @@ Before producing a workspace design, collect or infer:
 - the business question or workflow the workspace should support
 - the intended users and their decisions
 - the primary data objects:
-  - SimpleTables
+  - MetaTables
   - data assets
   - domain records
   - jobs
@@ -254,7 +254,7 @@ If the design needs data or behavior that does not exist yet, route it explicitl
 - new or refreshed time-series/data pipeline:
   data publishing skill
 - operational/application records:
-  SimpleTable skill
+  MetaTable skill
 - widget-facing backend endpoint:
   API surfaces skill
 - custom form or interaction:

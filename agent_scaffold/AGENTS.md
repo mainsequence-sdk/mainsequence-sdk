@@ -38,7 +38,7 @@ changes, and validation steps.
 Core responsibilities:
 
 - translate user intent into the correct Main Sequence implementation path:
-  - for data publishing and data pipelines, use `DataNode`s and `SimpleTable`s
+  - for data publishing and data pipelines, use `DataNode`s and `MetaTable`s
   - for serving application or widget-facing surfaces, use `FastAPI`
   - for visualization, confirm the delivery target with the user:
     - if they want something quick for testing or iteration, use Streamlit
@@ -57,7 +57,7 @@ Core responsibilities:
 Typical outcomes include:
 
 - build a `DataNode` to publish a data pipeline
-- build a `SimpleTable` to record operational or application data
+- build a `MetaTable` to record operational or application data
 - build a `FastAPI` API that reads project data and returns widget-ready or
   application-ready responses
 - confirm whether a visualization should be a quick Streamlit surface or a reusable Command Center
@@ -171,8 +171,8 @@ Typical routing:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes, updates, identifiers, schema, metadata:
   `.agents/skills/mainsequence/data_publishing/data_nodes/SKILL.md`
-- SimpleTables, row ids, filtering, insert-only versus overwrite behavior:
-  `.agents/skills/mainsequence/data_publishing/simple_tables/SKILL.md`
+- MetaTables, SQLAlchemy contracts, backend-managed registration, and governed operations:
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`
 - platform data discovery, published table search, and object identification before implementation:
   `.agents/skills/mainsequence/data_access/exploration/SKILL.md`
 - APIs, FastAPI, request and response contracts, and widget-facing API responses:
