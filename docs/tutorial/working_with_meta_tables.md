@@ -45,7 +45,8 @@ In this mode:
 - table permissions and governed execution go through the platform
 
 For backend-managed tables, the physical table name must be the SDK-derived
-storage hash. Use `metatable_tablename(...)` for `__tablename__`.
+storage hash. Use `PlatformManagedMetaTable` when the table name should be
+derived from the SQLAlchemy table shape.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
 
@@ -56,28 +57,29 @@ Create a small SQLAlchemy model for customer records:
 ```python
 import uuid
 
-from sqlalchemy import Index, String, Uuid
+from sqlalchemy import Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.tdag.meta_tables import metatable_tablename
+from mainsequence.tdag.meta_tables import PlatformManagedMetaTable
 
 
-NAMESPACE = "tutorial.customer_records"
+NAMESPACE = "sdk-examples"
 SCHEMA = "public"
 
 
 class Base(DeclarativeBase):
-    pass
-
-
-class Customer(Base):
-    __tablename__ = metatable_tablename(
-        namespace=NAMESPACE,
-        identifier="Customer",
-        schema=SCHEMA,
+    metadata = MetaData(
+        naming_convention={
+            "ix": "%(table_name)s_%(column_0_name)s_idx",
+            "fk": "%(table_name)s_%(column_0_name)s_fkey",
+            "pk": "%(table_name)s_pkey",
+        }
     )
+
+
+class Customer(PlatformManagedMetaTable, Base):
     __table_args__ = (
-        Index(f"{__tablename__[:48]}_region_idx", "region"),
+        Index(None, "region"),
         {"schema": SCHEMA},
     )
 
@@ -92,79 +94,50 @@ class Customer(Base):
 
 The important pieces are:
 
-- `__tablename__` uses `metatable_tablename(...)`
+- `PlatformManagedMetaTable` derives `__tablename__` from storage-relevant configuration and table shape
 - `__table_args__` declares the physical schema
-- `__metatable_namespace__` and `__metatable_identifier__` define logical table identity
+- `NAMESPACE` is a plain logical grouping for these SDK examples
+- `__metatable_identifier__` is logical backend metadata and does not rotate the configured physical name
 - `uid` is an application-level primary key, not a backend row id
 
-## 4. Build And Inspect The Registration Request
+## 4. Register The Parent MetaTable
 
-You need a `DynamicTableDataSource` UID for the database connection that TS
-Manager should use.
+Register the table through the class API:
 
 ```python
-from mainsequence.tdag.meta_tables import (
-    platform_managed_registration_request_from_sqlalchemy_model,
-)
-
-
-DATA_SOURCE_UID = "replace-with-your-data-source-uid"
-
-request = platform_managed_registration_request_from_sqlalchemy_model(
-    Customer,
-    data_source_uid=DATA_SOURCE_UID,
+customer_meta_table = Customer.register(
     description="Tutorial backend-managed customer table.",
-    labels=["tutorial", "meta-table", "platform-managed"],
+    labels=["tutorial"],
 )
-
-assert request.management_mode == "platform_managed"
-assert request.storage_hash == Customer.__table__.name
-assert request.table_contract.physical.table_name == Customer.__table__.name
-assert request.provisioning == {"create_table": True, "if_not_exists": True}
-```
-
-The request is plain JSON-compatible metadata. The backend does not import your
-SQLAlchemy model; the SDK extracts a neutral table contract.
-
-## 5. Register The MetaTable
-
-Register the table through the SDK client:
-
-```python
-from mainsequence.client import MetaTable
-
-
-customer_meta_table = MetaTable.register(request)
 
 print(customer_meta_table.uid)
 print(customer_meta_table.physical_schema)
 print(customer_meta_table.physical_table_name)
 ```
 
+The SDK extracts a neutral table contract from SQLAlchemy metadata and sends it
+to TS Manager. The backend does not import your SQLAlchemy model.
+The data source is resolved from the active Main Sequence project/session, like
+DataNode.
+
 The returned `uid` is the public platform reference for this table. Keep it in
 configuration if another API, dashboard, or job needs to read or write the
 table later.
 
-## 6. Add A Simple Related Table
+## 5. Add A Simple Related Table
 
-Foreign keys reference a registered target `MetaTable` by UID. That means parent
-tables are registered first.
+Foreign keys reference a registered target `MetaTable` by UID in the backend
+contract. In normal platform-managed use, register parent tables first; the SDK
+then inspects the SQLAlchemy foreign key and resolves the target MetaTable from
+the same data source, schema, and physical table name.
 
 ```python
 from sqlalchemy import ForeignKey
 
 
-CUSTOMER_LIMIT_TABLE_NAME = metatable_tablename(
-    namespace=NAMESPACE,
-    identifier="CustomerLimit",
-    schema=SCHEMA,
-)
-
-
-class CustomerLimit(Base):
-    __tablename__ = CUSTOMER_LIMIT_TABLE_NAME
+class CustomerLimit(PlatformManagedMetaTable, Base):
     __table_args__ = (
-        Index(f"{CUSTOMER_LIMIT_TABLE_NAME[:44]}_customer_uid_idx", "customer_uid"),
+        Index(None, "customer_uid"),
         {"schema": SCHEMA},
     )
 
@@ -176,7 +149,6 @@ class CustomerLimit(Base):
         Uuid,
         ForeignKey(
             f"{Customer.__table__.fullname}.uid",
-            name=f"{CUSTOMER_LIMIT_TABLE_NAME[:43]}_customer_uid_fkey",
             ondelete="RESTRICT",
         ),
         nullable=False,
@@ -185,26 +157,19 @@ class CustomerLimit(Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 ```
 
-Build the child request after the parent is registered:
+Register the child after the parent is registered:
 
 ```python
-limit_request = platform_managed_registration_request_from_sqlalchemy_model(
-    CustomerLimit,
-    data_source_uid=DATA_SOURCE_UID,
+limit_meta_table = CustomerLimit.register(
     description="Tutorial backend-managed customer limit table.",
-    labels=["tutorial", "meta-table", "platform-managed"],
-    target_meta_table_uid_by_fullname={
-        Customer.__table__.fullname: customer_meta_table.uid,
-    },
+    labels=["tutorial"],
 )
-
-limit_meta_table = MetaTable.register(limit_request)
 ```
 
 The SDK extracts the foreign key source columns, target MetaTable UID, target
 columns, and `on_delete` rule into the registration contract.
 
-## 7. Insert Rows Through Governed Operations
+## 6. Insert Rows Through Governed Operations
 
 MetaTable operations are not raw unrestricted database access. The request
 declares:
@@ -220,6 +185,7 @@ Example insert:
 ```python
 import uuid
 
+from mainsequence.client import MetaTable
 from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
 
 
@@ -265,7 +231,7 @@ insert_result = MetaTable.execute_operation(operation)
 Only use physical table names returned by registered `MetaTable` objects when
 building SQL strings. User input belongs in bound parameters, not SQL text.
 
-## 8. Read Rows
+## 7. Read Rows
 
 Read operations use the same governed execution path with read scope:
 
@@ -298,7 +264,7 @@ rows = MetaTable.execute_operation(operation)
 The exact response shape is backend-defined, but the request contract is always
 the same: compiled SQL plus declared MetaTable scope.
 
-## 9. How MetaTables Fit With DataNodes
+## 8. How MetaTables Fit With DataNodes
 
 Use them together:
 
@@ -312,7 +278,7 @@ A common project shape is:
 - backend-managed `MetaTable` for customer, account, or mapping records
 - FastAPI route that combines both into a stable response
 
-## 10. Further Reading
+## 9. Further Reading
 
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Registering SQLAlchemy Tables](../knowledge/meta_tables/sqlalchemy.md)

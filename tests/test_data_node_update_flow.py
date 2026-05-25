@@ -341,6 +341,40 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     assert "last_time_index_value" not in calls["set_last"]
 
 
+def test_dynamic_table_data_source_delegates_direct_class_type_reads():
+    calls = {}
+    expected = pd.DataFrame({"value": [1.0]})
+
+    class FakeResource:
+        class_type = "direct"
+
+        def get_data_by_time_index(self, *args, **kwargs):
+            calls["args"] = args
+            calls["kwargs"] = kwargs
+            return expected
+
+    data_source = models_tdag.DynamicTableDataSource.model_construct(
+        related_resource=FakeResource(),
+        related_resource_class_type="direct",
+    )
+    update = object()
+    start_date = _dt(0)
+
+    result = data_source.get_data_by_time_index(
+        data_node_update=update,
+        start_date=start_date,
+        columns=["value"],
+    )
+
+    assert result is expected
+    assert calls["args"] == ()
+    assert calls["kwargs"] == {
+        "data_node_update": update,
+        "start_date": start_date,
+        "columns": ["value"],
+    }
+
+
 def test_upsert_data_into_table_rejects_full_index_duplicates():
     update = models_tdag.DataNodeUpdate.model_construct(
         id=77,

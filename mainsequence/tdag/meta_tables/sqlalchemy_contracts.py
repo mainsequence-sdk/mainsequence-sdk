@@ -13,12 +13,17 @@ from mainsequence.client.models_metatables import (
     MetaTableRegistrationRequest,
 )
 
-from .hashing import build_meta_table_storage_hash
+from .hashing import build_meta_table_configured_storage_hash, build_meta_table_storage_hash
 
 DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "create_table": True,
     "if_not_exists": True,
 }
+
+try:
+    from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
+except ImportError:  # pragma: no cover - SQLAlchemy is optional for the SDK.
+    _sqlalchemy_declared_attr = None
 
 
 def metatable_tablename(
@@ -36,6 +41,189 @@ def metatable_tablename(
         hash_namespace=hash_namespace,
         extra_hash_components=extra_hash_components,
     )
+
+
+def metatable_configured_tablename(
+    model_or_table: Any,
+    *,
+    namespace: str | None = None,
+    schema: str | None = None,
+    hash_namespace: str | None = None,
+    extra_hash_components: Mapping[str, Any] | None = None,
+) -> str:
+    table = _resolve_table(model_or_table)
+    resolved_schema = _resolve_schema(table, schema=schema)
+    resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    return _build_configured_storage_hash(
+        namespace=resolved_namespace,
+        schema=resolved_schema,
+        table_storage_identity=_table_storage_identity(table),
+        hash_namespace=hash_namespace,
+        extra_hash_components=extra_hash_components,
+    )
+
+
+def _metatable_declared_tablename(cls: type[Any]) -> str:
+    return f"metatable_{cls.__name__.lower()}"
+
+
+class PlatformManagedMetaTable:
+    """SQLAlchemy declarative base mixin for platform-managed MetaTables.
+
+    The class derives the final physical table name from storage-relevant
+    metadata plus the SQLAlchemy table storage shape, builds the platform
+    registration request, and registers the MetaTable through TS Manager.
+    The logical MetaTable identifier is registration metadata and does not
+    rotate this configured name.
+    """
+
+    __metatable_use_configured_table_name__ = True
+
+    if _sqlalchemy_declared_attr is not None:
+        __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
+
+    @classmethod
+    def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
+        if _sqlalchemy_declared_attr is None:
+            raise ImportError(
+                "PlatformManagedMetaTable requires SQLAlchemy. Install SQLAlchemy in the "
+                "application environment before using this mixin."
+            )
+        if len(args) < 2:
+            raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
+
+        _name, metadata, *table_items = args
+        kwargs = dict(kwargs)
+        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
+        if not kwargs.get("schema"):
+            kwargs["schema"] = schema
+        table_name = _build_configured_storage_hash(
+            namespace=_resolve_class_namespace(cls),
+            schema=schema,
+            table_storage_identity=_table_items_storage_identity(table_items),
+            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
+            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
+        )
+
+        from sqlalchemy import Table
+
+        return Table(table_name, metadata, *table_items, **kwargs)
+
+    @classmethod
+    def build_registration_request(
+        cls,
+        *,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool = False,
+        open_for_everyone: bool = False,
+        provisioning: Mapping[str, Any] | None = None,
+        introspect: bool = False,
+        target_meta_tables: Mapping[Any, Any] | None = None,
+        target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+        foreign_key_lookup_timeout: int | float | tuple[float, float] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+    ) -> MetaTableRegistrationRequest:
+        resolved_data_source_uid = _resolve_data_source_uid(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        )
+        return platform_managed_registration_request_from_sqlalchemy_model(
+            cls,
+            data_source_uid=resolved_data_source_uid,
+            identifier=identifier,
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            open_for_everyone=open_for_everyone,
+            provisioning=provisioning,
+            introspect=introspect,
+            target_meta_table_uid_by_fullname=cls.resolve_foreign_key_targets(
+                data_source_uid=resolved_data_source_uid,
+                target_meta_tables=target_meta_tables,
+                target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+                timeout=foreign_key_lookup_timeout,
+            ),
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=enforce_storage_hash_name,
+        )
+
+    @classmethod
+    def register(
+        cls,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool = False,
+        open_for_everyone: bool = False,
+        provisioning: Mapping[str, Any] | None = None,
+        introspect: bool = False,
+        target_meta_tables: Mapping[Any, Any] | None = None,
+        target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+        foreign_key_lookup_timeout: int | float | tuple[float, float] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+    ) -> MetaTable:
+        request = cls.build_registration_request(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            identifier=identifier,
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            open_for_everyone=open_for_everyone,
+            provisioning=provisioning,
+            introspect=introspect,
+            target_meta_tables=target_meta_tables,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+            foreign_key_lookup_timeout=(
+                timeout if foreign_key_lookup_timeout is None else foreign_key_lookup_timeout
+            ),
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=enforce_storage_hash_name,
+        )
+        return MetaTable.register(request, timeout=timeout)
+
+    @classmethod
+    def resolve_foreign_key_targets(
+        cls,
+        *,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        target_meta_tables: Mapping[Any, Any] | None = None,
+        target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, str]:
+        resolved_data_source_uid = _resolve_data_source_uid(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        )
+        explicit_targets = _resolve_target_meta_table_uid_by_fullname(
+            target_meta_tables=target_meta_tables,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+        )
+        return _resolve_registered_foreign_key_targets(
+            cls,
+            data_source_uid=resolved_data_source_uid,
+            resolved_targets=explicit_targets,
+            timeout=timeout,
+        )
 
 
 def table_contract_from_sqlalchemy_model(
@@ -92,7 +280,8 @@ def table_contract_from_sqlalchemy_model(
 def platform_managed_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source_uid: str,
+    data_source: Any | None = None,
+    data_source_uid: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
     description: str | None = None,
@@ -118,12 +307,24 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         hash_namespace=hash_namespace,
         extra_hash_components=extra_hash_components,
     )
+    configured_storage_hash = _build_configured_storage_hash(
+        namespace=resolved_namespace,
+        schema=resolved_schema,
+        table_storage_identity=_table_storage_identity(table),
+        hash_namespace=hash_namespace,
+        extra_hash_components=extra_hash_components,
+    )
     table_name = _table_name(table)
-    if enforce_storage_hash_name and table_name != expected_storage_hash:
+    if enforce_storage_hash_name and table_name not in {
+        expected_storage_hash,
+        configured_storage_hash,
+    }:
         raise ValueError(
             "Platform-managed SQLAlchemy tables must use the MetaTable storage hash as "
-            "their physical table name. Use metatable_tablename(...) for __tablename__. "
-            f"Expected {expected_storage_hash!r}, got {table_name!r}."
+            "their physical table name. Use PlatformManagedMetaTable or metatable_tablename(...) "
+            "for __tablename__. "
+            f"Expected {configured_storage_hash!r} or {expected_storage_hash!r}, "
+            f"got {table_name!r}."
         )
 
     table_contract = table_contract_from_sqlalchemy_model(
@@ -132,7 +333,10 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         schema=resolved_schema,
     )
     return MetaTableRegistrationRequest(
-        data_source_uid=str(data_source_uid),
+        data_source_uid=_resolve_data_source_uid(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        ),
         management_mode="platform_managed",
         storage_hash=table_name,
         identifier=resolved_identifier,
@@ -198,12 +402,14 @@ def external_registered_registration_request_from_sqlalchemy_model(
 def register_platform_managed_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source_uid: str,
+    data_source: Any | None = None,
+    data_source_uid: str | None = None,
     timeout: int | float | tuple[float, float] | None = None,
     **kwargs: Any,
 ) -> MetaTable:
     request = platform_managed_registration_request_from_sqlalchemy_model(
         model_or_table,
+        data_source=data_source,
         data_source_uid=data_source_uid,
         **kwargs,
     )
@@ -244,6 +450,189 @@ def _resolve_schema(table: Any, *, schema: str | None = None) -> str:
     if not resolved_schema:
         raise ValueError("MetaTable SQLAlchemy contracts require a physical schema.")
     return str(resolved_schema)
+
+
+def _resolve_class_namespace(cls: type[Any]) -> str:
+    resolved_namespace = getattr(cls, "__metatable_namespace__", None)
+    if not resolved_namespace:
+        raise ValueError("PlatformManagedMetaTable requires __metatable_namespace__.")
+    return str(resolved_namespace)
+
+
+def _resolve_class_schema(cls: type[Any], *, metadata: Any | None = None) -> str:
+    table_args = getattr(cls, "__table_args__", None)
+    if isinstance(table_args, Mapping):
+        schema = table_args.get("schema")
+    elif isinstance(table_args, tuple) and table_args and isinstance(table_args[-1], Mapping):
+        schema = table_args[-1].get("schema")
+    else:
+        schema = None
+    if schema is None and metadata is not None:
+        schema = getattr(metadata, "schema", None)
+    return str(schema or "public")
+
+
+def _resolve_data_source_uid(
+    *,
+    data_source: Any | None = None,
+    data_source_uid: str | None = None,
+) -> str:
+    if data_source_uid:
+        return str(data_source_uid)
+
+    resolved_data_source = data_source
+    if resolved_data_source is None:
+        try:
+            from mainsequence.client.models_tdag import SessionDataSource
+        except ImportError as exc:  # pragma: no cover - defensive import guard.
+            raise RuntimeError("Could not import the session data source resolver.") from exc
+        resolved_data_source = getattr(SessionDataSource, "data_source", None)
+
+    uid = getattr(resolved_data_source, "uid", None)
+    related_resource = getattr(resolved_data_source, "related_resource", None)
+    if not uid and related_resource is not None:
+        uid = getattr(related_resource, "data_source_uid", None) or getattr(
+            related_resource,
+            "uid",
+            None,
+        )
+
+    if not uid:
+        raise ValueError(
+            "Could not resolve a DynamicTableDataSource uid. Run inside a configured "
+            "Main Sequence project/session, or pass data_source=... / data_source_uid=... "
+            "explicitly."
+        )
+    return str(uid)
+
+
+def _resolve_target_meta_table_uid_by_fullname(
+    *,
+    target_meta_tables: Mapping[Any, Any] | None = None,
+    target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+) -> dict[str, str]:
+    resolved: dict[str, str] = {}
+
+    for target, meta_table in dict(target_meta_tables or {}).items():
+        target_fullname = _target_table_fullname(target)
+        target_uid = _target_meta_table_uid(meta_table)
+        resolved[target_fullname] = target_uid
+
+    for target_fullname, target_uid in dict(target_meta_table_uid_by_fullname or {}).items():
+        target_fullname = str(target_fullname)
+        target_uid = _target_meta_table_uid(target_uid)
+        if target_fullname in resolved and resolved[target_fullname] != target_uid:
+            raise ValueError(
+                "Conflicting target MetaTable UIDs for foreign key target " f"{target_fullname!r}."
+            )
+        resolved[target_fullname] = target_uid
+
+    return resolved
+
+
+def _resolve_registered_foreign_key_targets(
+    model_or_table: Any,
+    *,
+    data_source_uid: str,
+    resolved_targets: Mapping[str, str],
+    timeout: int | float | tuple[float, float] | None = None,
+) -> dict[str, str]:
+    resolved = dict(resolved_targets)
+    for target_fullname in sorted(_foreign_key_target_fullnames(_resolve_table(model_or_table))):
+        if target_fullname in resolved:
+            continue
+
+        schema, table_name = _split_table_fullname(target_fullname)
+        target_meta_table = _lookup_registered_platform_meta_table(
+            data_source_uid=data_source_uid,
+            physical_schema=schema,
+            physical_table_name=table_name,
+            target_fullname=target_fullname,
+            timeout=timeout,
+        )
+        resolved[target_fullname] = _target_meta_table_uid(target_meta_table)
+    return resolved
+
+
+def _foreign_key_target_fullnames(table: Any) -> set[str]:
+    target_fullnames: set[str] = set()
+    for foreign_key_constraint in _iter_foreign_key_constraints(table):
+        elements = list(getattr(foreign_key_constraint, "elements", []) or [])
+        for element in elements:
+            target_fullname = _foreign_key_element_target_table(element)
+            if target_fullname:
+                target_fullnames.add(target_fullname)
+
+    if target_fullnames:
+        return target_fullnames
+
+    for column in _iter_columns(table):
+        for foreign_key in list(getattr(column, "foreign_keys", []) or []):
+            target_table, _target_column = _foreign_key_target_parts(foreign_key)
+            if target_table:
+                target_fullnames.add(target_table)
+    return target_fullnames
+
+
+def _lookup_registered_platform_meta_table(
+    *,
+    data_source_uid: str,
+    physical_schema: str | None,
+    physical_table_name: str,
+    target_fullname: str,
+    timeout: int | float | tuple[float, float] | None,
+) -> MetaTable:
+    filters: dict[str, Any] = {
+        "data_source__uid": data_source_uid,
+        "physical_table_name": physical_table_name,
+        "management_mode": "platform_managed",
+    }
+    if physical_schema:
+        filters["physical_schema"] = physical_schema
+
+    matches = MetaTable.filter(timeout=timeout, **filters)
+    if not matches:
+        raise ValueError(
+            "Could not resolve registered platform-managed MetaTable for foreign key "
+            f"target {target_fullname!r}. Register the target table first, or pass an "
+            "explicit target_meta_tables mapping."
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            "Multiple registered platform-managed MetaTables matched foreign key target "
+            f"{target_fullname!r} with filters {filters!r}. Pass an explicit "
+            "target_meta_tables mapping."
+        )
+
+    return matches[0]
+
+
+def _split_table_fullname(table_fullname: str) -> tuple[str | None, str]:
+    if "." not in table_fullname:
+        return None, table_fullname
+    schema, table_name = table_fullname.rsplit(".", 1)
+    return schema or None, table_name
+
+
+def _target_table_fullname(target: Any) -> str:
+    if isinstance(target, str):
+        return target
+
+    table = _resolve_table(target)
+    fullname = getattr(table, "fullname", None)
+    if fullname:
+        return str(fullname)
+
+    schema = getattr(table, "schema", None)
+    name = _table_name(table)
+    return f"{schema}.{name}" if schema else name
+
+
+def _target_meta_table_uid(meta_table: Any) -> str:
+    uid = getattr(meta_table, "uid", meta_table)
+    if uid in (None, ""):
+        raise ValueError("Target MetaTable must be a uid string or an object with a non-empty uid.")
+    return str(uid)
 
 
 def _resolve_identifier(model_or_table: Any, *, identifier: str | None) -> str:
@@ -383,6 +772,205 @@ def _logical_data_type(*, type_name: str, backend_type: str) -> str:
     raise ValueError(f"Unsupported SQLAlchemy column type {backend_type!r}.")
 
 
+def _build_configured_storage_hash(
+    *,
+    namespace: str,
+    schema: str,
+    table_storage_identity: Mapping[str, Any],
+    hash_namespace: str | None = None,
+    extra_hash_components: Mapping[str, Any] | None = None,
+) -> str:
+    return build_meta_table_configured_storage_hash(
+        namespace=namespace,
+        schema=schema,
+        table_storage_identity=table_storage_identity,
+        hash_namespace=hash_namespace,
+        extra_hash_components=extra_hash_components,
+    )
+
+
+def _table_storage_identity(table: Any) -> dict[str, Any]:
+    return _storage_identity_from_parts(
+        columns=_iter_columns(table),
+        indexes=_iter_indexes(table),
+        foreign_key_constraints=_iter_foreign_key_constraints(table),
+    )
+
+
+def _table_items_storage_identity(table_items: Sequence[Any]) -> dict[str, Any]:
+    columns = [item for item in table_items if _looks_like_column(item)]
+    indexes = [item for item in table_items if _looks_like_index(item)]
+    foreign_key_constraints = [item for item in table_items if _looks_like_foreign_key(item)]
+    return _storage_identity_from_parts(
+        columns=columns,
+        indexes=indexes,
+        foreign_key_constraints=foreign_key_constraints,
+    )
+
+
+def _storage_identity_from_parts(
+    *,
+    columns: Sequence[Any],
+    indexes: Sequence[Any],
+    foreign_key_constraints: Sequence[Any],
+) -> dict[str, Any]:
+    return {
+        "columns": [
+            _column_storage_identity(column, ordinal_position=position)
+            for position, column in enumerate(columns)
+        ],
+        "indexes": sorted(
+            (_index_storage_identity(index) for index in indexes),
+            key=lambda item: repr(item),
+        ),
+        "foreign_keys": sorted(
+            _foreign_key_storage_identities(
+                columns=columns,
+                foreign_key_constraints=foreign_key_constraints,
+            ),
+            key=lambda item: repr(item),
+        ),
+    }
+
+
+def _column_storage_identity(column: Any, *, ordinal_position: int) -> dict[str, Any]:
+    type_contract = _column_type_contract(column)
+    return {
+        "ordinal_position": ordinal_position,
+        "name": str(column.name),
+        "data_type": type_contract["data_type"],
+        "backend_type": type_contract.get("backend_type"),
+        "nullable": bool(getattr(column, "nullable", True)),
+        "primary_key": bool(getattr(column, "primary_key", False)),
+        "unique": bool(getattr(column, "unique", False)),
+    }
+
+
+def _looks_like_column(value: Any) -> bool:
+    return getattr(value, "name", None) not in (None, "") and hasattr(value, "type")
+
+
+def _looks_like_index(value: Any) -> bool:
+    return hasattr(value, "columns") and hasattr(value, "unique") and not hasattr(value, "type")
+
+
+def _looks_like_foreign_key(value: Any) -> bool:
+    return hasattr(value, "elements") and not hasattr(value, "type")
+
+
+def _index_storage_identity(index: Any) -> dict[str, Any]:
+    columns = _column_names(getattr(index, "columns", []))
+    if not columns:
+        columns = _column_names(getattr(index, "expressions", []))
+    return {
+        "columns": columns,
+        "unique": bool(getattr(index, "unique", False)),
+        "method": _index_method(index),
+        "expression": None if columns else str(index),
+    }
+
+
+def _foreign_key_storage_identities(
+    *,
+    columns: Sequence[Any],
+    foreign_key_constraints: Sequence[Any],
+) -> list[dict[str, Any]]:
+    identities = [
+        _foreign_key_storage_identity(foreign_key_constraint)
+        for foreign_key_constraint in foreign_key_constraints
+    ]
+    if not identities:
+        identities = _column_foreign_key_storage_identities(columns)
+    return _deduplicate_identity_dicts(identities)
+
+
+def _foreign_key_storage_identity(foreign_key_constraint: Any) -> dict[str, Any]:
+    elements = list(getattr(foreign_key_constraint, "elements", []) or [])
+    if not elements:
+        return {
+            "source_columns": [],
+            "target_table": None,
+            "target_columns": [],
+            "on_delete": "restrict",
+        }
+    target_table = _foreign_key_element_target_table(elements[0])
+    on_delete = getattr(elements[0], "ondelete", None) or getattr(
+        foreign_key_constraint,
+        "ondelete",
+        None,
+    )
+    return {
+        "source_columns": [str(element.parent.name) for element in elements],
+        "target_table": target_table,
+        "target_columns": [str(element.column.name) for element in elements],
+        "on_delete": str(on_delete or "restrict").lower(),
+    }
+
+
+def _column_foreign_key_storage_identities(columns: Sequence[Any]) -> list[dict[str, Any]]:
+    identities: list[dict[str, Any]] = []
+    for column in columns:
+        for foreign_key in sorted(
+            list(getattr(column, "foreign_keys", []) or []),
+            key=lambda item: str(item),
+        ):
+            target_table, target_column = _foreign_key_target_parts(foreign_key)
+            identities.append(
+                {
+                    "source_columns": [str(column.name)],
+                    "target_table": target_table,
+                    "target_columns": [target_column] if target_column else [],
+                    "on_delete": str(getattr(foreign_key, "ondelete", None) or "restrict").lower(),
+                }
+            )
+    return identities
+
+
+def _foreign_key_element_target_table(element: Any) -> str | None:
+    target_column = getattr(element, "column", None)
+    target_table = getattr(target_column, "table", None)
+    fullname = getattr(target_table, "fullname", None)
+    if fullname:
+        return str(fullname)
+    target_fullname = getattr(element, "target_fullname", None)
+    if target_fullname:
+        target_table, _target_column = _split_target_fullname(str(target_fullname))
+        return target_table
+    return None
+
+
+def _foreign_key_target_parts(foreign_key: Any) -> tuple[str | None, str | None]:
+    target_fullname = getattr(foreign_key, "target_fullname", None) or getattr(
+        foreign_key,
+        "_colspec",
+        None,
+    )
+    if target_fullname:
+        return _split_target_fullname(str(target_fullname))
+    target_column = getattr(foreign_key, "column", None)
+    target_table = getattr(target_column, "table", None)
+    target_table_fullname = getattr(target_table, "fullname", None)
+    target_column_name = getattr(target_column, "name", None)
+    return (
+        str(target_table_fullname) if target_table_fullname else None,
+        str(target_column_name) if target_column_name else None,
+    )
+
+
+def _split_target_fullname(target_fullname: str) -> tuple[str | None, str | None]:
+    if "." not in target_fullname:
+        return None, target_fullname or None
+    target_table, target_column = target_fullname.rsplit(".", 1)
+    return target_table or None, target_column or None
+
+
+def _deduplicate_identity_dicts(items: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    deduplicated: dict[str, dict[str, Any]] = {}
+    for item in items:
+        deduplicated[repr(sorted(item.items()))] = item
+    return list(deduplicated.values())
+
+
 def _index_contract(index: Any) -> MetaTableIndexContract:
     if not getattr(index, "name", None):
         raise ValueError("MetaTable SQLAlchemy indexes must be explicitly named.")
@@ -459,15 +1047,17 @@ def _lookup_target_meta_table_uid(
 
 def _column_names(columns: Any) -> list[str]:
     return [
-        str(column.name)
+        str(column if isinstance(column, str) else column.name)
         for column in list(columns or [])
-        if getattr(column, "name", None) not in (None, "")
+        if isinstance(column, str) or getattr(column, "name", None) not in (None, "")
     ]
 
 
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
+    "PlatformManagedMetaTable",
     "external_registered_registration_request_from_sqlalchemy_model",
+    "metatable_configured_tablename",
     "metatable_tablename",
     "platform_managed_registration_request_from_sqlalchemy_model",
     "register_external_sqlalchemy_model",

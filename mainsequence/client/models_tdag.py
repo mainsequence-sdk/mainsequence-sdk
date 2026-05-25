@@ -28,7 +28,6 @@ from mainsequence.logconf import logger
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from .data_sources_interfaces import get_duckdb_interface_class
-from .data_sources_interfaces import timescale as TimeScaleInterface
 from .exceptions import raise_for_response
 from .utils import (
     MAINSEQUENCE_ENDPOINT,
@@ -44,7 +43,6 @@ from .utils import (
     make_request,
     serialize_to_json,
     session,
-    set_types_in_table,
 )
 
 _default_data_source = None  # Module-level cache
@@ -350,7 +348,13 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         url = cls.get_object_url() + "/get_or_create/"
         kwargs = serialize_to_json(kwargs)
         pod_project = _require_local_pod_project("DataNodeUpdate.get_or_create")
-        kwargs["current_project_id"] = pod_project.id
+        project_uid = str(getattr(pod_project, "uid", "") or "").strip()
+        if not project_uid:
+            raise RuntimeError(
+                "DataNodeUpdate.get_or_create requires a local pod project uid, "
+                "but the resolved project does not expose one."
+            )
+        kwargs["current_project_uid"] = project_uid
         payload = {"json": kwargs}
         s = cls.build_session()
         r = make_request(s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload)
@@ -3150,10 +3154,22 @@ class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, SourceTabl
 
 
 class DataSource(BasePydanticModel, BaseObjectOrm):
+    uid: str | None = Field(
+        None,
+        description="Public uid of the data source.",
+    )
+    data_source_uid: str | None = Field(
+        None,
+        description="Compatibility alias for the public data source uid.",
+    )
     id: int | None = Field(None, description="The unique identifier of the Local Disk Source Lake")
     display_name: str
     organization: int | None = Field(
         None, description="The unique identifier of the Local Disk Source Lake"
+    )
+    organization_uid: str | None = Field(
+        None,
+        description="Public uid of the owning organization.",
     )
     class_type: str
     status: str
@@ -3307,7 +3323,14 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
 
 class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
-    id: int
+    uid: str | None = Field(
+        None,
+        description="Public uid of the dynamic table data source.",
+    )
+    id: int | None = Field(
+        None,
+        description="Legacy numeric identifier of the dynamic table data source.",
+    )
     related_resource: DataSource
     related_resource_class_type: str
 
@@ -3345,23 +3368,8 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
         return cls(**r.json())
 
-    def has_direct_postgres_connection(self):
-        return self.related_resource.class_type == "direct"
-
     def get_data_by_time_index(self, *args, **kwargs):
-        if self.has_direct_postgres_connection():
-            stc = kwargs["data_node_update"].data_node_storage.sourcetableconfiguration
-
-            df = TimeScaleInterface.direct_data_from_db(
-                *args,
-                connection_uri=self.related_resource.get_connection_uri(),
-
-                **kwargs,
-            )
-            df = set_types_in_table(df, stc.column_dtypes_map)
-            return df
-        else:
-            return self.related_resource.get_data_by_time_index(*args, **kwargs)
+        return self.related_resource.get_data_by_time_index(*args, **kwargs)
 
 
 
@@ -3478,14 +3486,11 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "project_name": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
-        "id": ["in", "exact"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "str",
         "uid__in": "str",
-        "id": "id",
-        "id__in": "id",
         "project_name": "str",
         "labels": "str",
         "labels__in": "str",
@@ -3498,10 +3503,10 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         examples=["project-uid-142"],
         json_schema_extra={"label": "Project UID"},
     )
-    id: int = Field(
-        ...,
+    id: int | None = Field(
+        None,
         title="Project ID",
-        description="Unique identifier of the project.",
+        description="Legacy numeric identifier of the project.",
         examples=[142],
         json_schema_extra={"label": "Project ID"},
     )
@@ -3524,6 +3529,12 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         description="SSH repository URL used to access the project's source code repository.",
         examples=["git@github.com:mainsequence/data-pipeline.git"],
         json_schema_extra={"label": "Git SSH URL"},
+    )
+    created_by: str | int | dict[str, Any] | None = Field(
+        None,
+        title="Created By",
+        description="Backend-provided creator metadata for the project.",
+        json_schema_extra={"label": "Created By"},
     )
 
     labels: list[str] = Field(

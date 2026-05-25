@@ -15,7 +15,8 @@ This skill is for schema-driven application tables registered through TS Manager
 
 - define SQLAlchemy/Core or ORM table models for `MetaTable` registration
 - choose `platform_managed` or `external_registered` management mode
-- build registration requests from resolved SQLAlchemy metadata
+- register platform-managed tables through the model class API
+- build registration requests from resolved SQLAlchemy metadata when inspection is useful
 - define indexes and foreign keys in the table contract
 - design governed compiled SQL read and write operations
 - review table contracts for physical-name, namespace, and identifier issues
@@ -67,7 +68,7 @@ Before changing code, collect or infer:
 - expected read patterns
 - expected mutation patterns
 - whether TS Manager should create the physical table
-- the target `DynamicTableDataSource` UID
+- for `external_registered`, the target `DynamicTableDataSource` UID
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
 
@@ -92,15 +93,67 @@ Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 
 ### 2. Use storage-hash physical names for backend-managed tables
 
-For `platform_managed`, use `metatable_tablename(...)` as the SQLAlchemy `__tablename__`.
+For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
-The backend expects that deterministic physical name to match the registration storage hash.
+The mixin derives the SQLAlchemy physical table name from storage-relevant configuration and table shape. Do not hand-write `__tablename__` for normal backend-managed tables.
+
+Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"schema": "public"}` or the tuple form ending in `{"schema": ...}`. Do not add a separate MetaTable-specific schema attribute.
+
+Register through the class API:
+
+```python
+account_meta_table = Account.register(
+    description="Example account table.",
+    labels=["sdk-example"],
+)
+```
+
+For platform-managed registration, the data source is resolved from the active Main Sequence project/session, the same way DataNode does. Do not require or thread a `data_source_uid` through normal platform-managed example code.
+
+Only call `build_registration_request()` when the task explicitly needs to inspect or validate the payload before registration.
+
+For SDK examples, use a plain namespace constant:
+
+```python
+NAMESPACE = "sdk-examples"
+```
+
+Do not add an environment variable for namespace in examples.
+
+Do not add generic labels such as `"meta-table"` or `"platform-managed"` to examples. Keep labels specific to the example or domain.
+
+Do not add a `MAINSEQUENCE_META_TABLE_REGISTER` toggle in registration examples. Registration examples should register directly.
 
 ### 3. Register parent tables before child tables
 
 Foreign-key contracts reference the target `MetaTable` UID.
 
-Register parent tables first, then pass their UIDs when building child table registration requests.
+For `PlatformManagedMetaTable`, register parent tables first and then register child tables normally. The SDK inspects SQLAlchemy foreign-key constraints and resolves each target `MetaTable` by looking up the already registered table in the same data source, schema, and physical table name.
+
+Example registration order:
+
+```python
+account_meta_table = Account.register(...)
+asset_meta_table = Asset.register(...)
+```
+
+The child registration will fail if the parent table has not already been registered, because there is no target `MetaTable.uid` for the backend FK contract.
+
+Do not pass `target_meta_tables` or `target_meta_table_uid_by_fullname` in the normal platform-managed path. Use explicit FK target mappings only for edge cases where automatic lookup is ambiguous or impossible.
+
+For `external_registered`, there is no platform-managed parent lookup through the model class. Register the parent first, then build the child registration request with the parent UID mapped by target table fullname:
+
+```python
+account_meta_table = MetaTable.register(account_request)
+asset_request = external_registered_registration_request_from_sqlalchemy_model(
+    Asset,
+    data_source_uid=data_source_uid,
+    target_meta_table_uid_by_fullname={
+        Account.__table__.fullname: account_meta_table.uid,
+    },
+)
+asset_meta_table = MetaTable.register(asset_request)
+```
 
 ### 4. Governed operations declare scope
 
@@ -119,9 +172,12 @@ Do not hardcode platform-managed physical names manually.
 When reviewing an existing MetaTable workflow, look for:
 
 - missing namespace or identifier
-- backend-managed models that do not use `metatable_tablename(...)`
+- backend-managed models that do not inherit `PlatformManagedMetaTable`
+- backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
+- duplicate schema sources outside SQLAlchemy table metadata
 - external tables registered with unstable physical names
-- foreign keys that do not reference target MetaTable UIDs
+- platform-managed child tables that are registered before parent tables
+- external child registrations that do not map foreign-key targets to registered parent `MetaTable.uid` values
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
 - a table that should really be modeled as a DataNode instead
@@ -132,7 +188,7 @@ Do not claim success until you have checked:
 
 - the table contract matches the intended row contract
 - indexes are intentional
-- foreign keys point to the correct dependency targets
+- foreign keys resolve to the correct dependency targets
 - management mode is correct
 - backend-managed physical names match the storage hash
 - registration returns a `MetaTable.uid`
@@ -141,13 +197,14 @@ Do not claim success until you have checked:
 For related tables, also check:
 
 - aliases are readable
-- parent table UIDs are passed into child contracts
+- platform-managed parent tables are registered before child tables
+- external child registration requests map FK targets to the registered parent UIDs
 - query results still match the expected response contract
 
 ## This Skill Must Stop And Escalate When
 
 - physical table lifecycle ownership is unclear
-- the target data source is unknown
+- the target data source is unknown for an `external_registered` workflow
 - the task really requires a time-series published table
 - the workflow requires direct database credentials outside TS Manager governance
 - the task is actually an API or orchestration problem

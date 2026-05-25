@@ -4,7 +4,6 @@ import json
 import os
 from typing import Any
 
-DEFAULT_NAMESPACE = "examples.meta_tables"
 DEFAULT_SCHEMA = os.getenv("MAINSEQUENCE_META_TABLE_SCHEMA", "public").strip() or "public"
 DEFAULT_TIMEOUT = int(os.getenv("MAINSEQUENCE_META_TABLE_TIMEOUT", "120"))
 

@@ -12,22 +12,18 @@ There are two registration modes:
   Manager creates the physical table through the configured
   `DynamicTableDataSource` when the backend supports table DDL.
 
-The examples are dry-run by default. They print the generated contracts unless
-you explicitly enable backend mutations.
+The registration examples call TS Manager by default. The compiled query example
+prints the operation by default and executes only when explicitly requested.
 
 ## Environment
 
-Set the TS Manager data source UID:
-
-```bash
-export MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID="<dynamic-table-data-source-uid>"
-```
+The platform-managed example resolves the TS Manager data source from the
+current Main Sequence project/session, the same way DataNode does.
 
 Optional common settings:
 
 ```bash
 export MAINSEQUENCE_META_TABLE_SCHEMA="public"
-export MAINSEQUENCE_META_TABLE_NAMESPACE="examples.meta_tables.demo"
 export MAINSEQUENCE_META_TABLE_TIMEOUT="120"
 ```
 
@@ -36,39 +32,48 @@ export MAINSEQUENCE_META_TABLE_TIMEOUT="120"
 Use platform-managed mode when TS Manager should create the physical tables and
 own the table naming boundary.
 
-Dry run:
-
-```bash
-python -m examples.meta_tables.platform_managed_account_asset
-```
-
 Register and create tables through TS Manager:
 
 ```bash
-export MAINSEQUENCE_META_TABLE_REGISTER=1
 python -m examples.meta_tables.platform_managed_account_asset
 ```
 
 The model definitions use:
 
 ```python
-__tablename__ = metatable_tablename(namespace=NAMESPACE, identifier="Account")
+class Account(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = NAMESPACE
+    __metatable_identifier__ = "Account"
 ```
 
-That makes the physical table name equal to the same `storage_hash` sent during
-registration, which prevents user table-name collisions inside the platform
-data-source boundary.
+That makes the physical table name equal to the same configured `storage_hash`
+sent during registration, which prevents user table-name collisions inside the
+platform data-source boundary and rotates the name when the table shape changes.
+Changing `__metatable_identifier__` changes the backend logical name, not the
+configured physical table name.
 
-The platform-managed example also derives index and foreign-key names from the
-generated table name. That keeps database object names unique when many users
-register an `Asset` table in the same physical schema.
+The platform-managed example uses SQLAlchemy naming conventions for index and
+foreign-key names. Those names are generated after the configured table name is
+known, avoiding a circular dependency between table-name hashing and database
+object names.
+
+Foreign-key targets are resolved by registration order. The example registers
+`Account` first; `Asset.register()` then inspects the SQLAlchemy foreign key and
+looks up the registered Account MetaTable in the same platform data source.
 
 ## External Registered
 
 Use external-registered mode when your application already owns migrations, for
 example through SQLAlchemy plus Alembic.
 
-Dry run:
+External registration is not tied to the project-managed table lifecycle, so
+the example requires an explicit data source UID:
+
+```bash
+export MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID="<dynamic-table-data-source-uid>"
+```
+
+Register existing externally managed tables:
 
 ```bash
 python -m examples.meta_tables.external_registered_account_asset
@@ -80,7 +85,6 @@ directly with SQLAlchemy before registration:
 ```bash
 export MAINSEQUENCE_META_TABLE_CREATE_EXTERNAL_TABLES=1
 export MAINSEQUENCE_META_TABLE_EXTERNAL_DATABASE_URL="postgresql+psycopg://..."
-export MAINSEQUENCE_META_TABLE_REGISTER=1
 python -m examples.meta_tables.external_registered_account_asset
 ```
 

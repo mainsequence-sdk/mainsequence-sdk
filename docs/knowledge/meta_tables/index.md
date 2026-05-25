@@ -39,10 +39,9 @@ Higher-level SDK helpers live in:
 
 ```python
 from mainsequence.tdag.meta_tables import (
+    PlatformManagedMetaTable,
     metatable_tablename,
-    platform_managed_registration_request_from_sqlalchemy_model,
     external_registered_registration_request_from_sqlalchemy_model,
-    register_platform_managed_sqlalchemy_model,
     register_external_sqlalchemy_model,
     compile_sqlalchemy_statement,
 )
@@ -75,9 +74,9 @@ Use this when TS Manager should create the physical table through the selected
 
 Typical flow:
 
-1. Define SQLAlchemy models with `__tablename__ = metatable_tablename(...)`.
-2. Build a neutral registration contract from the resolved SQLAlchemy table metadata.
-3. Register the table with TS Manager.
+1. Define SQLAlchemy models with `PlatformManagedMetaTable` or `__tablename__ = metatable_tablename(...)`.
+2. Build or register through the model class.
+3. TS Manager receives a neutral registration contract extracted from SQLAlchemy metadata.
 4. TS Manager validates the contract, applies supported DDL, stores projections, and returns a MetaTable `uid`.
 
 For `platform_managed`, the backend requires:
@@ -86,8 +85,10 @@ For `platform_managed`, the backend requires:
 storage_hash == table_contract.physical.table_name
 ```
 
-That is why the SDK exposes `metatable_tablename(...)`. It computes the physical
-table name from the same storage-hash identity used during registration.
+That is why the SDK exposes `PlatformManagedMetaTable` and `metatable_tablename(...)`.
+The platform-managed class computes the physical table name from storage-relevant
+configuration, including the SQLAlchemy table shape. The logical `identifier`
+is sent to the backend but does not rotate the configured physical table name.
 
 ## Why Choose Platform-Managed
 
@@ -125,17 +126,13 @@ It contains:
 - `foreign_keys`
 - optional authoring metadata
 
-The selected data source does not belong inside `table_contract`. It is
-registration routing context and is sent as `data_source_uid` next to the
-contract.
+The selected data source does not belong inside `table_contract`. In normal
+project execution it is resolved from the active Main Sequence session, the same
+way DataNode resolves its data source.
 
 ```python
-request = platform_managed_registration_request_from_sqlalchemy_model(
-    Asset,
-    data_source_uid=DATA_SOURCE_UID,
-)
+request = Asset.build_registration_request()
 
-assert request.data_source_uid == DATA_SOURCE_UID
 assert request.table_contract.physical.table_name == request.storage_hash
 ```
 
@@ -144,11 +141,20 @@ assert request.table_contract.physical.table_name == request.storage_hash
 `storage_hash` is the platform table identity. It prevents collisions better
 than letting every app register a human table name such as `asset`.
 
-For platform-managed tables, use the SDK helper as the SQLAlchemy table name:
+For platform-managed tables, prefer the class API when the name should rotate
+with the SQLAlchemy table shape:
+
+```python
+class Asset(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "Asset"
+```
+
+For explicit low-level naming, use the helper as the SQLAlchemy table name:
 
 ```python
 __tablename__ = metatable_tablename(
-    namespace="example.assets",
+    namespace="sdk-examples",
     identifier="Asset",
 )
 ```

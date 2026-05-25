@@ -729,15 +729,17 @@ statistics object and persistence methods are the important runtime changes.
 Affected files:
 
 - `mainsequence/client/data_sources_interfaces/duckdb.py`
-- `mainsequence/client/data_sources_interfaces/timescale.py`
 
 DuckDB currently hardcodes `unique_identifier` in read filters, merge keys,
-deduplication, and range maps. Timescale direct paths hardcode
-`unique_identifier` in predicates and overwrite delete conditions.
+deduplication, and range maps.
 
 These paths are important because tests and local runs can bypass the server's
 canonical normalization. They must not keep translating legacy aliases after the
 communication layer.
+
+Timescale direct paths were previously listed here for modernization, but ADR
+0010 removed the legacy direct Timescale interface instead. Non-DuckDB
+Timescale reads and writes now remain behind the backend API contract.
 
 ### Downstream Coupling
 
@@ -882,9 +884,10 @@ runtime callers are migrated around backend-bound API payloads.
    ranges.
 - [ ] Update DuckDB merge and deduplication keys to use full `index_names`.
 - [ ] Update DuckDB row-limit constraining to understand `dimension_range_map`.
-- [ ] Update Timescale direct reads to build predicates from dimension names.
-- [ ] Update Timescale overwrite delete conditions to scope by all identity
-   dimensions.
+- [x] Remove legacy Timescale direct reads instead of modernizing their
+   dimension predicates. See ADR 0010.
+- [x] Remove legacy Timescale direct overwrite/delete handling instead of
+   modernizing its identity scoping. See ADR 0010.
 - [ ] Add focused adapter tests where feasible without requiring a live backend.
 
 ### Phase 6: Downstream Runtime Audit

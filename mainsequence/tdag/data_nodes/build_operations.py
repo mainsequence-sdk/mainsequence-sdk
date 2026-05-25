@@ -245,10 +245,10 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     local_ts_dict_to_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=False)
     remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
 
-    # Add project_id for local hash
+    # Add project_uid for local hash so local hashing follows the public project contract.
     resolution = _resolve_local_pod_project()
-    if resolution.project is not None:
-        local_ts_dict_to_hash["project_id"] = resolution.project.id
+    if resolution.project is not None and getattr(resolution.project, "uid", None):
+        local_ts_dict_to_hash["project_uid"] = resolution.project.uid
     # Encode and hash both versions
     encoded_local = json.dumps(local_ts_dict_to_hash, sort_keys=True).encode()
     encoded_remote = json.dumps(remote_ts_in_db_hash, sort_keys=True).encode()

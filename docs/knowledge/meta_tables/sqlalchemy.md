@@ -12,57 +12,59 @@ Pydantic transport objects for the backend.
 ```python
 import uuid
 
-from sqlalchemy import ForeignKey, Index, String, Uuid
+from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.tdag.meta_tables import (
-    metatable_tablename,
-    platform_managed_registration_request_from_sqlalchemy_model,
-    register_platform_managed_sqlalchemy_model,
+    PlatformManagedMetaTable,
 )
 ```
 
 ## Define A Base
 
-You can create a small project-local base or mixin. The SDK does not require a
-specific base class.
+You can create a small project-local base and use `PlatformManagedMetaTable` only on
+models that should be platform-managed.
 
 ```python
+NAMING_CONVENTION = {
+    "ix": "%(table_name)s_%(column_0_name)s_idx",
+    "fk": "%(table_name)s_%(column_0_name)s_fkey",
+    "pk": "%(table_name)s_pkey",
+}
+
+
 class Base(DeclarativeBase):
-    pass
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
 ```
 
-For platform-managed tables, make `__tablename__` the SDK-derived storage hash.
+For platform-managed tables, inherit `PlatformManagedMetaTable`. It derives the
+physical table name from storage-relevant configuration and the SQLAlchemy table
+shape, and exposes registration helpers on the model class.
 
 ```python
-ACCOUNT_TABLE_NAME = metatable_tablename(
-    namespace="example.assets",
-    identifier="Account",
-)
-
-
-class Account(Base):
-    __tablename__ = ACCOUNT_TABLE_NAME
+class Account(PlatformManagedMetaTable, Base):
     __table_args__ = {"schema": "public"}
 
-    __metatable_namespace__ = "example.assets"
+    __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Account"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 ```
 
-The `__metatable_namespace__` and `__metatable_identifier__` attributes let the
-SDK infer logical metadata later during registration.
+The `__metatable_identifier__` attribute is logical backend metadata. It is
+sent during registration but does not contribute to the configured physical
+table name. The mapped columns, indexes, and foreign keys do contribute to the
+configured table name.
 
 ## Register A Platform-Managed Table
 
 Build the request first when you want to inspect the payload:
 
 ```python
-request = platform_managed_registration_request_from_sqlalchemy_model(
-    Account,
-    data_source_uid=DATA_SOURCE_UID,
+request = Account.build_registration_request(
+    description="Example account table.",
+    labels=["sdk-example"],
 )
 
 assert request.management_mode == "platform_managed"
@@ -70,22 +72,18 @@ assert request.storage_hash == Account.__table__.name
 assert request.table_contract.physical.table_name == Account.__table__.name
 ```
 
+The data source is resolved from the active Main Sequence project/session, like
+DataNode. Pass `data_source=...` or `data_source_uid=...` only for advanced
+scripts and tests outside that context.
+
 Then send it:
 
 ```python
-from mainsequence.client import MetaTable
-
-account_meta_table = MetaTable.register(request)
-account_meta_table_uid = account_meta_table.uid
-```
-
-Or use the convenience helper:
-
-```python
-account_meta_table = register_platform_managed_sqlalchemy_model(
-    Account,
-    data_source_uid=DATA_SOURCE_UID,
+account_meta_table = Account.register(
+    description="Example account table.",
+    labels=["sdk-example"],
 )
+account_meta_table_uid = account_meta_table.uid
 ```
 
 The backend validates the table contract, creates the physical table when the
@@ -95,25 +93,18 @@ projections, and returns a platform `uid`.
 ## Foreign Keys
 
 Foreign keys must reference registered target MetaTables by platform UID in the
-contract. That means you normally register parent tables first.
+backend contract. In normal platform-managed use, register parent tables first;
+the SDK inspects the SQLAlchemy foreign key and resolves the target MetaTable
+from the same data source, schema, and physical table name.
 
 ```python
-ASSET_TABLE_NAME = metatable_tablename(
-    namespace="example.assets",
-    identifier="Asset",
-)
-ASSET_ACCOUNT_INDEX_NAME = f"{ASSET_TABLE_NAME[:47]}_account_uid_idx"
-ASSET_ACCOUNT_FK_NAME = f"{ASSET_TABLE_NAME[:46]}_account_uid_fkey"
-
-
-class Asset(Base):
-    __tablename__ = ASSET_TABLE_NAME
+class Asset(PlatformManagedMetaTable, Base):
     __table_args__ = (
-        Index(ASSET_ACCOUNT_INDEX_NAME, "account_uid"),
+        Index(None, "account_uid"),
         {"schema": "public"},
     )
 
-    __metatable_namespace__ = "example.assets"
+    __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Asset"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -121,7 +112,6 @@ class Asset(Base):
         Uuid,
         ForeignKey(
             f"{Account.__table__.fullname}.uid",
-            name=ASSET_ACCOUNT_FK_NAME,
             ondelete="RESTRICT",
         ),
         nullable=False,
@@ -129,19 +119,12 @@ class Asset(Base):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 ```
 
-After registering `Account`, pass its MetaTable UID when building the `Asset`
-contract:
+After registering `Account`, build or register `Asset` normally:
 
 ```python
-asset_request = platform_managed_registration_request_from_sqlalchemy_model(
-    Asset,
-    data_source_uid=DATA_SOURCE_UID,
-    target_meta_table_uid_by_fullname={
-        Account.__table__.fullname: account_meta_table.uid,
-    },
-)
+asset_request = Asset.build_registration_request()
 
-asset_meta_table = MetaTable.register(asset_request)
+asset_meta_table = Asset.register()
 ```
 
 The SDK contract serializer extracts:
@@ -150,8 +133,8 @@ The SDK contract serializer extracts:
 - nullable flags
 - primary-key flags
 - unique flags
-- explicitly named indexes
-- explicitly named foreign keys
+- indexes named by SQLAlchemy's naming convention
+- foreign keys named by SQLAlchemy's naming convention
 - FK source columns
 - FK target MetaTable UID
 - FK target columns
@@ -192,19 +175,18 @@ The SDK repository includes complete Account/Asset examples:
 - [external_registered_account_asset.py](../../../examples/meta_tables/external_registered_account_asset.py)
 - [compiled_sql_account_asset_query.py](../../../examples/meta_tables/compiled_sql_account_asset_query.py)
 
-The examples are dry-run by default. They print the generated contracts unless
-you set `MAINSEQUENCE_META_TABLE_REGISTER=1` or
-`MAINSEQUENCE_META_TABLE_EXECUTE=1`.
+The registration examples call TS Manager by default. The compiled query example
+prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1`.
 
 ## Validation Rules
 
 The SDK intentionally fails early for ambiguous metadata:
 
-- platform-managed tables must use `metatable_tablename(...)` as the physical table name
-- SQLAlchemy models must expose a schema, either on `__table_args__` or via the helper's `schema=...`
-- indexes must be explicitly named
-- foreign keys must be explicitly named
-- foreign-key targets must be supplied through `target_meta_table_uid_by_fullname`
+- platform-managed tables must use `PlatformManagedMetaTable` or `metatable_tablename(...)` as the physical table name
+- SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
+- indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
+- foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions
+- foreign-key targets must be registered first, or supplied explicitly through `target_meta_tables` or `target_meta_table_uid_by_fullname` for edge cases
 - unsupported SQLAlchemy column types raise before registration
 
 This is deliberate. TS Manager should receive a deterministic table contract,
@@ -216,9 +198,7 @@ Registration requests accept the same organizational metadata as backend
 MetaTables:
 
 ```python
-request = platform_managed_registration_request_from_sqlalchemy_model(
-    Asset,
-    data_source_uid=DATA_SOURCE_UID,
+request = Asset.build_registration_request(
     labels=["assets", "reference"],
     description="Tradable asset master table.",
     protect_from_deletion=True,
@@ -241,11 +221,9 @@ class Asset(Base):
 Use:
 
 ```python
-class Asset(Base):
-    __tablename__ = metatable_tablename(
-        namespace="example.assets",
-        identifier="Asset",
-    )
+class Asset(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "Asset"
 ```
 
 Do not put `data_source_uid` inside `table_contract`. It belongs to the

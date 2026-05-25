@@ -7,16 +7,25 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
+    "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "build_compiled_sql_v1_operation": (
         ".compiled_sql",
         "build_compiled_sql_v1_operation",
+    ),
+    "build_meta_table_configured_storage_hash": (
+        ".hashing",
+        "build_meta_table_configured_storage_hash",
     ),
     "build_meta_table_storage_hash": (".hashing", "build_meta_table_storage_hash"),
     "compile_sqlalchemy_statement": (".compiled_sql", "compile_sqlalchemy_statement"),
     "external_registered_registration_request_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "external_registered_registration_request_from_sqlalchemy_model",
+    ),
+    "metatable_configured_tablename": (
+        ".sqlalchemy_contracts",
+        "metatable_configured_tablename",
     ),
     "metatable_tablename": (".sqlalchemy_contracts", "metatable_tablename"),
     "platform_managed_registration_request_from_sqlalchemy_model": (

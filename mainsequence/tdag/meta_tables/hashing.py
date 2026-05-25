@@ -76,6 +76,59 @@ def build_meta_table_storage_hash(
     return storage_hash
 
 
+def build_meta_table_configured_storage_hash(
+    *,
+    namespace: str,
+    schema: str = "public",
+    table_storage_identity: Mapping[str, Any],
+    hash_namespace: str | None = None,
+    extra_hash_components: Mapping[str, Any] | None = None,
+    max_length: int = POSTGRES_IDENTIFIER_MAX_LENGTH,
+) -> str:
+    """
+    Build a PostgreSQL-safe storage hash for a configured MetaTable.
+
+    This path intentionally excludes the logical MetaTable identifier. The
+    physical table is identified by storage-relevant configuration, while the
+    identifier remains backend/display metadata.
+    """
+
+    if max_length <= _HASH_SUFFIX_LENGTH:
+        raise ValueError("max_length must leave room for the DataNode hash suffix.")
+
+    namespace = namespace.strip()
+    schema = schema.strip()
+    if not namespace:
+        raise ValueError("namespace is required to build a configured MetaTable storage hash.")
+    if not schema:
+        raise ValueError("schema is required to build a configured MetaTable storage hash.")
+
+    prefix_base = slugify_identifier(f"mt_{namespace}")
+    max_prefix_length = max_length - _HASH_SUFFIX_LENGTH
+    prefix = prefix_base[:max_prefix_length].rstrip("_") or "mt"
+
+    hash_payload: dict[str, Any] = {
+        "namespace": namespace,
+        "schema": schema,
+        "table_storage_identity": dict(table_storage_identity),
+    }
+    if hash_namespace:
+        hash_payload["hash_namespace"] = hash_namespace.strip()
+    if extra_hash_components:
+        hash_payload.update(dict(extra_hash_components))
+
+    storage_hash = _build_storage_hash_with_data_node_machinery(
+        prefix=prefix,
+        hash_payload=hash_payload,
+    )
+    if len(storage_hash) > max_length:
+        raise ValueError(
+            f"Generated MetaTable storage hash exceeds {max_length} characters: "
+            f"{storage_hash!r}."
+        )
+    return storage_hash
+
+
 def _build_storage_hash_with_data_node_machinery(
     *,
     prefix: str,
@@ -113,6 +166,7 @@ def _build_storage_hash_without_tdag_config(
 
 __all__ = [
     "POSTGRES_IDENTIFIER_MAX_LENGTH",
+    "build_meta_table_configured_storage_hash",
     "build_meta_table_storage_hash",
     "slugify_identifier",
 ]

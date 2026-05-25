@@ -29,18 +29,19 @@ SQLAlchemy helpers:
 
 ```python
 from mainsequence.tdag.meta_tables import (
+    PlatformManagedMetaTable,
     compile_sqlalchemy_statement,
     external_registered_registration_request_from_sqlalchemy_model,
+    metatable_configured_tablename,
     metatable_tablename,
-    platform_managed_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
-    register_platform_managed_sqlalchemy_model,
 )
 ```
 
 The SQLAlchemy helpers are lazy. Importing `mainsequence.tdag.meta_tables` does
-not require SQLAlchemy to be installed. SQLAlchemy is imported only when a
-helper needs to compile or inspect SQLAlchemy objects.
+not require SQLAlchemy to be installed. SQLAlchemy-specific behavior is used
+only when a helper or platform-managed class needs to compile, inspect, or
+construct SQLAlchemy objects.
 
 ## Registration
 
@@ -64,7 +65,7 @@ Request fields:
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `storage_hash` | Collision-resistant platform table identifier. |
 | `identifier` | Human logical table name, such as `Asset`. |
-| `namespace` | Logical namespace, such as `example.assets`. |
+| `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |
 | `protect_from_deletion` | Prevent accidental deletion through the platform. |
@@ -79,8 +80,11 @@ For `platform_managed`, the backend requires:
 storage_hash == table_contract.physical.table_name
 ```
 
-The SDK helper `metatable_tablename(...)` exists so SQLAlchemy `__tablename__`
-and registration `storage_hash` are derived from the same identity.
+`PlatformManagedMetaTable` exists so SQLAlchemy table construction and
+registration derive the same configured `storage_hash` from storage-relevant configuration.
+The logical `identifier` is sent to the backend but does not rotate the
+configured physical table name. The lower-level `metatable_tablename(...)`
+helper remains available when callers need to set `__tablename__` explicitly.
 
 ## Contract Validation
 

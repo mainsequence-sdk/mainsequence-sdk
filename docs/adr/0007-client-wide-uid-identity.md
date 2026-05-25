@@ -120,7 +120,6 @@ Base audit findings that remain for model-group migration:
 
 - `mainsequence/client/models_helpers.py` still has job and job-run direct URLs built from `self.id`.
 - `mainsequence/client/models_tdag.py` still has project and data-source helper paths that use project or data-source IDs.
-- `mainsequence/client/data_sources_interfaces/timescale.py` still has a data-node-storage helper URL built from `data_node_storage.id`.
 - `mainsequence/client/agent_runtime_models.py` still has runtime/session helper routes that require classification before renaming.
 - `mainsequence/client/models_user.py` still has user detail paths and permission subject identifiers that require separate user/team contract confirmation.
 
