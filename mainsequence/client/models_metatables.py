@@ -62,8 +62,7 @@ class MetaTablePhysicalContract(BasePydanticModel):
         serialization_alias="schema",
         exclude=True,
         description=(
-            "Deprecated input-only schema alias. MetaTable uses the data source "
-            "default schema."
+            "Deprecated input-only schema alias. MetaTable uses the data source " "default schema."
         ),
     )
     table_name: str = Field(..., description="Physical database table name.")
@@ -72,15 +71,47 @@ class MetaTablePhysicalContract(BasePydanticModel):
 
 
 class MetaTableColumnContract(BasePydanticModel):
-    name: str
-    data_type: str
-    backend_type: str | None = None
-    nullable: bool = True
-    primary_key: bool = False
-    unique: bool = False
-    description: str | None = None
-    label: str | None = None
-    logical_name: str | None = None
+    name: str = Field(..., description="Physical column name in the MetaTable.")
+    data_type: str = Field(..., description="Portable logical column type.")
+    backend_type: str | None = Field(
+        default=None,
+        description=(
+            "Optional backend-specific type hint. Logical UUID columns are emitted "
+            "as UUID for platform-managed PostgreSQL tables."
+        ),
+    )
+    nullable: bool = Field(
+        default=True,
+        description="Whether the column allows database NULL values.",
+    )
+    primary_key: bool = Field(
+        default=False,
+        description="Whether the column participates in the physical primary key.",
+    )
+    unique: bool = Field(
+        default=False,
+        description="Whether the column has a single-column unique constraint.",
+    )
+    server_default: str | None = Field(
+        default=None,
+        description=(
+            "Portable database default expression for server-generated values. "
+            "For platform-managed PostgreSQL UUID primary keys this is "
+            "gen_random_uuid()."
+        ),
+    )
+    description: str | None = Field(
+        default=None,
+        description="Optional human-readable column description.",
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional display label for UI surfaces.",
+    )
+    logical_name: str | None = Field(
+        default=None,
+        description="Optional logical or semantic column name.",
+    )
 
 
 class MetaTableIndexContract(BasePydanticModel):
@@ -115,17 +146,52 @@ class MetaTableContract(BasePydanticModel):
 
 
 class MetaTableColumnPayload(BasePydanticModel):
-    name: str
-    logical_name: str | None = None
-    data_type: str
-    backend_type: str | None = None
-    nullable: bool = True
-    primary_key: bool = False
-    unique: bool = False
-    ordinal_position: int = 0
-    description: str | None = None
-    label: str | None = None
-    contract_fragment: dict[str, Any] = Field(default_factory=dict)
+    name: str = Field(..., description="Physical column name in the MetaTable.")
+    logical_name: str | None = Field(
+        default=None,
+        description="Optional logical or semantic column name.",
+    )
+    data_type: str = Field(..., description="Portable logical column type.")
+    backend_type: str | None = Field(
+        default=None,
+        description="Optional backend-specific type hint.",
+    )
+    nullable: bool = Field(
+        default=True,
+        description="Whether the column allows database NULL values.",
+    )
+    primary_key: bool = Field(
+        default=False,
+        description="Whether the column participates in the physical primary key.",
+    )
+    unique: bool = Field(
+        default=False,
+        description="Whether the column has a single-column unique constraint.",
+    )
+    server_default: str | None = Field(
+        default=None,
+        description=(
+            "Portable database default expression for server-generated values. "
+            "For platform-managed PostgreSQL UUID primary keys this is "
+            "gen_random_uuid()."
+        ),
+    )
+    ordinal_position: int = Field(
+        default=0,
+        description="Zero-based column position from the normalized contract.",
+    )
+    description: str | None = Field(
+        default=None,
+        description="Optional human-readable column description.",
+    )
+    label: str | None = Field(
+        default=None,
+        description="Optional display label for UI surfaces.",
+    )
+    contract_fragment: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw normalized contract fragment for this projected column.",
+    )
 
 
 class MetaTableIndexPayload(BasePydanticModel):

@@ -19,6 +19,7 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "create_table": True,
     "if_not_exists": True,
 }
+SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
 
 try:
     from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
@@ -695,6 +696,14 @@ def _column_contract(column: Any, *, ordinal_position: int) -> MetaTableColumnCo
     type_contract = _column_type_contract(column)
     info = getattr(column, "info", None)
     info = info if isinstance(info, Mapping) else {}
+    server_default = (
+        SERVER_GENERATED_UUID_DEFAULT
+        if _is_server_generated_uuid_primary_key(
+            column,
+            data_type=type_contract["data_type"],
+        )
+        else None
+    )
     return MetaTableColumnContract(
         name=str(column.name),
         data_type=type_contract["data_type"],
@@ -702,6 +711,7 @@ def _column_contract(column: Any, *, ordinal_position: int) -> MetaTableColumnCo
         nullable=bool(getattr(column, "nullable", True)),
         primary_key=bool(getattr(column, "primary_key", False)),
         unique=bool(getattr(column, "unique", False)),
+        server_default=server_default,
         description=info.get("description"),
         label=info.get("label"),
         logical_name=info.get("logical_name"),
@@ -716,10 +726,16 @@ def _column_type_contract(column: Any) -> dict[str, str]:
     type_name = type(column_type).__name__.lower()
     backend_type = str(column_type).upper()
     data_type = _logical_data_type(type_name=type_name, backend_type=backend_type)
+    if data_type == "uuid":
+        backend_type = "UUID"
     return {
         "data_type": data_type,
         "backend_type": backend_type or data_type,
     }
+
+
+def _is_server_generated_uuid_primary_key(column: Any, *, data_type: str) -> bool:
+    return bool(getattr(column, "primary_key", False)) and data_type == "uuid"
 
 
 def _logical_data_type(*, type_name: str, backend_type: str) -> str:
@@ -822,7 +838,7 @@ def _storage_identity_from_parts(
 
 def _column_storage_identity(column: Any, *, ordinal_position: int) -> dict[str, Any]:
     type_contract = _column_type_contract(column)
-    return {
+    identity = {
         "ordinal_position": ordinal_position,
         "name": str(column.name),
         "data_type": type_contract["data_type"],
@@ -831,6 +847,12 @@ def _column_storage_identity(column: Any, *, ordinal_position: int) -> dict[str,
         "primary_key": bool(getattr(column, "primary_key", False)),
         "unique": bool(getattr(column, "unique", False)),
     }
+    if _is_server_generated_uuid_primary_key(
+        column,
+        data_type=type_contract["data_type"],
+    ):
+        identity["server_default"] = SERVER_GENERATED_UUID_DEFAULT
+    return identity
 
 
 def _looks_like_column(value: Any) -> bool:

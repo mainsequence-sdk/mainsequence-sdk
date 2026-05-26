@@ -18,7 +18,7 @@ from mainsequence.tdag.meta_tables import (
 
 class Uuid:
     def __str__(self):
-        return "UUID"
+        return "CHAR(32)"
 
 
 class String:
@@ -141,10 +141,32 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
     assert request.provisioning == {"create_table": True, "if_not_exists": True}
     assert request.table_contract.physical.table_name == table_name
     assert request.table_contract.columns[0].data_type == "uuid"
+    assert request.table_contract.columns[0].backend_type == "UUID"
     assert request.table_contract.columns[0].primary_key is True
+    assert request.table_contract.columns[0].server_default == "gen_random_uuid()"
     assert request.table_contract.columns[1].data_type == "str"
     assert request.table_contract.columns[1].backend_type == "VARCHAR(255)"
     assert request.table_contract.columns[1].description == "Display name"
+
+
+def test_sqlalchemy_contract_marks_id_uuid_primary_key_with_server_default():
+    table_name = metatable_tablename(namespace="example.assets", identifier="Asset")
+    asset_table = FakeTable(
+        table_name,
+        columns=[
+            FakeColumn("id", Uuid(), nullable=False, primary_key=True),
+            FakeColumn("symbol", String(64), nullable=False),
+        ],
+    )
+    Asset = _model_class("Asset", asset_table)
+
+    contract = table_contract_from_sqlalchemy_model(Asset)
+
+    id_column = contract.columns[0]
+    assert id_column.name == "id"
+    assert id_column.data_type == "uuid"
+    assert id_column.backend_type == "UUID"
+    assert id_column.server_default == "gen_random_uuid()"
 
 
 def test_sqlalchemy_contract_includes_indexes_and_foreign_keys():

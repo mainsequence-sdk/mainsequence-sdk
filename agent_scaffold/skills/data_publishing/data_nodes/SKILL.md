@@ -17,12 +17,13 @@ This skill is for producer-side table engineering.
 - modify an existing `DataNode`
 - review whether a DataNode change is breaking or non-breaking
 - define or refactor `DataNodeConfiguration`
-- classify config fields into dataset meaning, updater scope, and runtime-only concerns
+- classify config fields into dataset meaning, updater scope, and hash-excluded metadata
 - implement or review:
   - `dependencies()`
   - `update()`
   - `get_asset_list()`
-  - metadata and record definitions
+  - `RecordDefinition` declarations and metadata
+  - DataNode source-table foreign key declarations to MetaTables
 - design single-index or `(time_index, unique_identifier)` MultiIndex outputs
 - define namespace-first validation strategy
 - write or review DataNode smoke tests
@@ -71,7 +72,8 @@ Before changing code, collect or infer:
 - dataset meaning
 - intended published identifier
 - expected index shape
-- expected columns and dtypes
+- expected columns and dtypes, declared as `RecordDefinition`
+- whether declared columns should reference registered MetaTables through foreign keys
 - upstream dependencies
 - whether the node is asset-indexed
 - first-run or backfill bounds
@@ -106,7 +108,8 @@ Do not change them casually.
 
 - dataset meaning belongs in table identity
 - updater scope belongs in updater identity
-- runtime-only knobs belong outside hashed identity
+- descriptive metadata belongs in `hash_excluded` fields
+- runtime knobs belong outside hashed identity
 
 Do not mix these.
 
@@ -140,12 +143,127 @@ If the node emits `(time_index, unique_identifier)`:
 - `get_asset_list()` must reflect the effective updater asset scope
 - missing assets should be resolved or registered when required by the workflow
 
-### 7. Metadata is not optional for production-quality nodes
+### 7. `RecordDefinition` is the canonical schema surface
 
-When the node is not a throwaway example, provide:
+Every new or materially edited `DataNodeConfiguration` must declare output
+records with `RecordDefinition` unless there is a documented compatibility
+reason not to. Treat `records` as the canonical table schema declaration, not
+as optional UI metadata.
 
-- table metadata
-- column metadata or record definitions
+The canonical pattern is:
+
+```python
+from pydantic import Field
+
+from mainsequence.tdag import DataNodeConfiguration, RecordDefinition
+
+
+class PricesConfig(DataNodeConfiguration):
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="price",
+                dtype="float64",
+                label="Price",
+                description="Observed price.",
+            )
+        ]
+    )
+```
+
+Rules:
+
+- `column_name` and `dtype` are structural and define the persisted record contract.
+- `label` and `description` are descriptive discovery metadata and must not be treated as runtime controls.
+- The DataFrame returned by `update()` must match declared `records`.
+- Do not invent another schema object or parallel record declaration.
+- Prefer `DataNodeConfiguration.records` over overriding `get_column_metadata()` for normal nodes.
+
+### 8. Use `SourceTableForeignKey` when a DataNode references a MetaTable
+
+When a DataNode source table has a column that should reference a registered
+MetaTable, declare that relationship in `DataNodeConfiguration.foreign_keys`.
+Do this only for DataNode source-table to MetaTable relationships. Do not
+invent DataNode-to-DataNode or MetaTable-to-DataNode foreign keys.
+
+The canonical pattern is:
+
+```python
+from pydantic import Field
+
+from mainsequence.tdag import (
+    DataNodeConfiguration,
+    RecordDefinition,
+    SourceTableForeignKey,
+)
+
+
+ASSET_UID = RecordDefinition(
+    column_name="asset_uid",
+    dtype="uuid",
+    label="Asset",
+    description="Asset UID.",
+)
+
+
+class PricesConfig(DataNodeConfiguration):
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="time_index",
+                dtype="datetime64[ns, UTC]",
+                label="Time",
+                description="UTC observation timestamp.",
+            ),
+            ASSET_UID,
+            RecordDefinition(
+                column_name="price",
+                dtype="float64",
+                label="Price",
+                description="Observed price.",
+            ),
+        ]
+    )
+    foreign_keys: list[SourceTableForeignKey] = Field(
+        default_factory=lambda: [
+            SourceTableForeignKey(
+                target=Asset,
+                source_columns=[ASSET_UID],
+                target_columns=[Asset.uid],
+                on_delete="restrict",
+            )
+        ]
+    )
+```
+
+Rules:
+
+- `SourceTableForeignKey` is the authoring model; do not hand-author
+  `SourceTableForeignKeyContract` in DataNode configs.
+- `source_columns` should reference the same `RecordDefinition` objects listed
+  in `records`.
+- `target_columns` should use MetaTable/SQLAlchemy column references such as
+  `Asset.uid`, not backend UID strings.
+- Do not ask users to provide FK names.
+- Do not ask users to provide `target_meta_table_uid`; the SDK resolves the
+  target MetaTable public `uid`.
+- FK hash material is source column names, target MetaTable public `uid`,
+  target column names, and `on_delete`.
+- FK hash material must not include generated names, backend database primary
+  keys, source-table FK row UIDs, backend projection/enforcement fields, target
+  storage hashes, or Python object/class repr values.
+- If FK target registration or MetaTable ownership is unclear, route to
+  `.agents/skills/mainsequence/data_publishing/meta_tables/SKILL.md`.
+
+### 9. Metadata is still required for production-quality nodes
+
+When the node is not a throwaway example, also provide table metadata through
+`DataNodeConfiguration.node_metadata` when a stable published identifier or
+description is needed.
+
+Use `json_schema_extra={"hash_excluded": True}` for descriptive metadata that
+must not rotate `update_hash` or `storage_hash`. Keep the older `runtime_only`
+marker only for legacy compatibility.
 
 ## Review Rules
 
@@ -153,7 +271,10 @@ When reviewing an existing DataNode, look for:
 
 - identifier collisions
 - accidental schema breaks
-- wrong meaning/scope/runtime-only split
+- wrong meaning/scope/hash-excluded split
+- missing `RecordDefinition` declarations
+- missing or incorrectly authored `SourceTableForeignKey` declarations when a
+  DataNode column references a MetaTable
 - misuse of `hash_namespace`
 - non-incremental `update()` behavior
 - hidden dependency creation inside `update()`
@@ -167,6 +288,10 @@ Do not claim success until you have checked:
 - the relevant docs were read first
 - the identifier choice is intentional
 - config fields are classified correctly
+- `DataNodeConfiguration.records` is present for new or materially edited nodes
+- declared `RecordDefinition` names and dtypes match the DataFrame returned by `update()`
+- any DataNode-to-MetaTable relationships use `SourceTableForeignKey` with
+  source record references and target column references
 - `dependencies()` is deterministic
 - `update()` is incremental
 - the DataFrame shape is valid

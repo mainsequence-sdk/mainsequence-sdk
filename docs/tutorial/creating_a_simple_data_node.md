@@ -5,6 +5,7 @@
 In this part, you will:
 
 - create your first DataNode and run it locally
+- declare its output records as the stable table schema contract
 - add a second DataNode that depends on the first one
 - run launcher scripts from the terminal and inspect persisted tables from the CLI
 - learn the difference between `update_hash` and `storage_hash`
@@ -13,7 +14,7 @@ DataNodes created in this part: **`DailyRandomNumber`** and **`DailyRandomAdditi
 
 ## 1. Create Your First DataNode
 
-**Key concepts:** data DAGs, `DataNode`, dependencies, `update_hash`, and `storage_hash`.
+**Key concepts:** data DAGs, `DataNode`, records, dependencies, `update_hash`, and `storage_hash`.
 
 Main Sequence encourages you to model workflows as data DAGs (directed acyclic graphs), composing your work into small steps called **data nodes**, each performing a single transformation.
 
@@ -83,7 +84,7 @@ class RandomDataNodeConfig(DataNodeConfiguration):
             identifier=f"example_random_number_{PROJECT_ID}",
             description="Example Data Node",
         ),
-        json_schema_extra={"runtime_only": True},
+        json_schema_extra={"hash_excluded": True},
     )
 
 
@@ -133,12 +134,23 @@ under `node_metadata`. When you do that, the base `DataNode.get_table_metadata()
 builds `msc.TableMetaData` for you, so you do not need to override
 `get_table_metadata()` unless you need custom logic.
 
+The `records` block is the first-class schema declaration for the DataNode
+output table. `RecordDefinition.column_name` and `RecordDefinition.dtype`
+define the persisted record contract and participate in storage hashing.
+`label` and `description` are descriptive discovery metadata and do not rotate
+either hash. The DataFrame returned by `update()` should match these declared
+column names and dtypes.
+
+DataNode foreign keys require a registered MetaTable target, so this first
+tutorial keeps the runnable example focused on records. For the FK authoring
+surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
+
 !!! important
     `TableMetaData.identifier` must be unique across your organization. In tutorial code, generic names like `example_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
 
     That is why this example includes `MAIN_SEQUENCE_PROJECT_ID` from the generated `.env` file. It gives each project a stable table name while still keeping the identifier readable.
 
-    `identifier` is published runtime metadata, not hash identity. That means you can
+    `identifier` is published metadata, not hash identity. That means you can
     later repoint a published identifier to a different backing table during a migration
     without rotating `storage_hash` or `update_hash`.
 
@@ -155,7 +167,7 @@ builds `msc.TableMetaData` for you, so you do not need to override
 In Pydantic v2, mark updater-scope fields with `json_schema_extra={"update_only": True}` when they should affect `update_hash` but not `storage_hash`.
 
 If a field should be kept only for UI or descriptive purposes and must affect
-neither hash, mark it with `json_schema_extra={"runtime_only": True}`.
+neither hash, mark it with `json_schema_extra={"hash_excluded": True}`.
 
 Typical examples are labels and descriptions attached to config-driven column
 definitions. `RecordDefinition` is already provided by the SDK:
@@ -176,11 +188,11 @@ records: list[RecordDefinition] = Field(
 )
 ```
 
-Use `runtime_only` only for descriptive metadata. If changing the field would
-change output values, dependencies, or schema, it should not be `runtime_only`.
+Use `hash_excluded` only for descriptive metadata. If changing the field would
+change output values, dependencies, or schema, it should not be `hash_excluded`.
 
-The other important runtime-only case is config-driven table metadata. `DataNodeMetaData`
-is also provided by the SDK:
+The other important hash-excluded case is config-driven table metadata.
+`DataNodeMetaData` is also provided by the SDK:
 
 ```python
 from mainsequence.tdag import DataNodeMetaData
@@ -191,12 +203,12 @@ node_metadata: DataNodeMetaData = Field(
         identifier=f"example_random_number_{PROJECT_ID}",
         description="Example Data Node",
     ),
-    json_schema_extra={"runtime_only": True},
+    json_schema_extra={"hash_excluded": True},
 )
 ```
 
 In `DataNodeConfiguration`, this lives under `node_metadata`. The whole block is
-runtime-only so published metadata can evolve independently from the underlying
+hash-excluded so published metadata can evolve independently from the underlying
 hashed table identity.
 
 There is no separate `portable_identifier` flag. In the current SDK,
@@ -343,6 +355,16 @@ Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the
 class DailyRandomAdditionConfig(DataNodeConfiguration):
     mean: float
     std: float
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="random_number",
+                dtype="float64",
+                label="Random Addition",
+                description="Daily random number after adding dependency noise.",
+            )
+        ]
+    )
 
 
 class DailyRandomAddition(DataNode):
