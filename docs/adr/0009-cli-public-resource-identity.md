@@ -115,7 +115,7 @@ The CLI should align to this pattern:
 - `DataNodeStorage`: `uid`
 - `DataNodeUpdate`: `uid`
 - `Scheduler`: `uid`
-- `Workspace`: `id` for now; current client contract is still numeric
+- `Workspace`: `uid`
 - `ConnectionType`: `type_id`
 - `RegisteredWidgetType`: `widget_id`
 - `ConnectionInstance`: public identity to be confirmed from client/backend
@@ -272,17 +272,17 @@ The next required slice under this ADR is:
    `MAIN_SEQUENCE_PROJECT_UID`
 3. keep legacy numeric project id support only as an internal compatibility
    adapter when older client filters still require backend row ids
-4. audit workspace and agent-session surfaces and explicitly leave them
-   numeric until the client contract changes
+4. audit workspace and agent-session surfaces and migrate only after the
+   backend/client contract is explicit
 
-Audit result at the time of this ADR:
+Audit result after the workspace contract update:
 
-- `Workspace` remains `id`-based in the client contract and should not be
-  force-migrated in the CLI yet
-- `AgentSession` remains `id`-based in the client contract and should not be
-  force-migrated in the CLI yet
-- `Project` is the first family that must complete the public UID migration in
-  the CLI
+- `Workspace` is UID-based in the client contract and CLI resource arguments use
+  `workspace_uid`.
+- Workspace widget mutations still use `widget_instance_id` because that is the
+  mounted widget id inside the workspace JSON, not a backend row id.
+- `AgentSession` remains tracked in the agent-runtime section of the UID ADR.
+- `Project` was the first family to complete the public UID migration in the CLI.
 
 ## Testing requirements
 

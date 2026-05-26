@@ -1,3 +1,5 @@
+import pytest
+
 import mainsequence.client.base as base_mod
 import mainsequence.client.utils as client_utils
 from mainsequence.client.command_center import (
@@ -24,7 +26,7 @@ def test_workspace_strips_orm_api_from_base_root(monkeypatch):
 def test_workspace_parses_backend_alias_fields():
     workspace = Workspace.model_validate(
         {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": "Rates Desk",
             "description": "Shared workspace for rates monitoring",
             "labels": ["rates", "monitoring"],
@@ -43,11 +45,89 @@ def test_workspace_parses_backend_alias_fields():
         }
     )
 
-    assert workspace.id == 7
+    assert workspace.uid == "11111111-1111-4111-8111-111111111111"
+    assert not hasattr(workspace, "id")
     assert workspace.schema_version == 1
     assert workspace.required_permissions == ["dashboard:view"]
     assert workspace.layout_kind == WorkspaceLayoutKind.CUSTOM
     assert workspace.model_dump(by_alias=True)["layoutKind"] == "custom"
+
+
+def test_workspace_filter_uses_uid_query_names(monkeypatch):
+    captured = {}
+    workspace_uid = "11111111-1111-4111-8111-111111111111"
+    other_workspace_uid = "22222222-2222-4222-8222-222222222222"
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {
+                "results": [
+                    {
+                        "uid": workspace_uid,
+                        "title": "Rates Desk",
+                        "description": "",
+                        "labels": [],
+                        "category": "Custom",
+                        "source": "user",
+                        "schemaVersion": 1,
+                        "requiredPermissions": None,
+                        "grid": {},
+                        "layoutKind": "custom",
+                        "autoGrid": {},
+                        "companions": [],
+                        "controls": {},
+                        "widgets": [],
+                        "createdAt": "2026-04-04T10:00:00Z",
+                        "updatedAt": "2026-04-04T10:30:00Z",
+                    }
+                ],
+                "next": None,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    results = Workspace.filter(
+        uid=workspace_uid,
+        uid__in=[workspace_uid, other_workspace_uid],
+        exclude_uids=[other_workspace_uid],
+        type="workspace",
+        type__in=["workspace"],
+        source__in=["user"],
+        timeout=15,
+    )
+
+    assert len(results) == 1
+    assert results[0].uid == workspace_uid
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{Workspace.get_object_url()}/",
+        "payload": {
+            "params": {
+                "uid": workspace_uid,
+                "uid__in": f"{workspace_uid},{other_workspace_uid}",
+                "exclude_uids": other_workspace_uid,
+                "type": "workspace",
+                "type__in": "workspace",
+                "source__in": "user",
+            }
+        },
+        "timeout": 15,
+    }
+
+
+def test_workspace_filter_rejects_legacy_id_filter():
+    with pytest.raises(ValueError, match="Unsupported Workspace filter"):
+        Workspace._normalize_filter_kwargs({"id": 7})
 
 
 def test_registered_widget_type_uses_command_center_endpoint():
@@ -379,14 +459,13 @@ def test_connection_instance_uses_command_center_endpoint():
 def test_connection_instance_parses_backend_fields():
     connection = ConnectionInstance.model_validate(
         {
-            "id": "42",
             "uid": "postgresql-database-primary",
             "typeId": "postgresql.database",
             "typeVersion": 2,
             "name": "Primary warehouse",
             "description": "Main analytics database.",
-            "organizationId": "7",
-            "workspaceId": "workspace-1",
+            "organizationUid": "organization-uid-7",
+            "workspaceUid": "11111111-1111-4111-8111-111111111111",
             "publicConfig": {"host": "db.example.com"},
             "secureFields": {"password": True},
             "status": "ok",
@@ -395,7 +474,7 @@ def test_connection_instance_parses_backend_fields():
             "isDefault": True,
             "isSystem": False,
             "tags": ["warehouse"],
-            "createdBy": "9",
+            "createdByUserUid": "user-uid-9",
             "createdAt": "2026-04-04T10:00:00Z",
             "updatedAt": "2026-04-04T10:30:00Z",
         }
@@ -404,6 +483,10 @@ def test_connection_instance_parses_backend_fields():
     assert connection.uid == "postgresql-database-primary"
     assert connection.type_id == "postgresql.database"
     assert connection.type_version == 2
+    assert connection.organization_uid == "organization-uid-7"
+    assert connection.workspace_uid == "11111111-1111-4111-8111-111111111111"
+    assert connection.created_by_user_uid == "user-uid-9"
+    assert not hasattr(connection, "id")
     assert connection.status == ConnectionInstanceStatus.OK
     assert connection.public_config == {"host": "db.example.com"}
     assert connection.secure_fields == {"password": True}
@@ -423,14 +506,13 @@ def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
             return {
                 "results": [
                     {
-                        "id": "42",
                         "uid": "postgresql-database-primary",
                         "typeId": "postgresql.database",
                         "typeVersion": 2,
                         "name": "Primary warehouse",
                         "description": "",
-                        "organizationId": "7",
-                        "workspaceId": None,
+                        "organizationUid": "organization-uid-7",
+                        "workspaceUid": None,
                         "publicConfig": {},
                         "secureFields": {},
                         "status": "ok",
@@ -439,7 +521,7 @@ def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
                         "isDefault": True,
                         "isSystem": False,
                         "tags": [],
-                        "createdBy": "9",
+                        "createdByUserUid": "user-uid-9",
                         "createdAt": "2026-04-04T10:00:00Z",
                         "updatedAt": "2026-04-04T10:30:00Z",
                     }
@@ -459,7 +541,7 @@ def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
     results = ConnectionInstance.filter(
         type_id="postgresql.database",
         status="ok",
-        workspace_id="workspace-1",
+        workspace_uid="11111111-1111-4111-8111-111111111111",
         is_default=True,
         is_active=True,
         timeout=16,
@@ -474,13 +556,20 @@ def test_connection_instance_filter_uses_backend_query_names(monkeypatch):
             "params": {
                 "type_id": "postgresql.database",
                 "status": "ok",
-                "workspace_id": "workspace-1",
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
                 "isDefault": True,
                 "isActive": True,
             }
         },
         "timeout": 16,
     }
+
+
+def test_connection_instance_filter_rejects_legacy_id_filters():
+    with pytest.raises(ValueError, match="Unsupported ConnectionInstance filter"):
+        ConnectionInstance._normalize_filter_kwargs({"id": 42})
+    with pytest.raises(ValueError, match="Unsupported ConnectionInstance filter"):
+        ConnectionInstance._normalize_filter_kwargs({"workspace_id": "legacy-workspace"})
 
 
 def test_connection_instance_get_uses_uid_detail_lookup(monkeypatch):
@@ -492,14 +581,13 @@ def test_connection_instance_get_uses_uid_detail_lookup(monkeypatch):
         @staticmethod
         def json():
             return {
-                "id": "42",
                 "uid": "postgresql-database-primary",
                 "typeId": "postgresql.database",
                 "typeVersion": 2,
                 "name": "Primary warehouse",
                 "description": "",
-                "organizationId": "7",
-                "workspaceId": None,
+                "organizationUid": "organization-uid-7",
+                "workspaceUid": None,
                 "publicConfig": {},
                 "secureFields": {},
                 "status": "ok",
@@ -508,7 +596,7 @@ def test_connection_instance_get_uses_uid_detail_lookup(monkeypatch):
                 "isDefault": True,
                 "isSystem": False,
                 "tags": [],
-                "createdBy": "9",
+                "createdByUserUid": "user-uid-9",
                 "createdAt": "2026-04-04T10:00:00Z",
                 "updatedAt": "2026-04-04T10:30:00Z",
             }
@@ -538,7 +626,7 @@ def test_workspace_patch_widget_uses_widget_detail_endpoint(monkeypatch):
 
     workspace = Workspace.model_validate(
         {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": "Rates Desk",
             "description": "",
             "labels": [],
@@ -559,12 +647,12 @@ def test_workspace_patch_widget_uses_widget_detail_endpoint(monkeypatch):
 
     class FakeResponse:
         status_code = 200
-        content = b'{"workspaceId":7}'
+        content = b'{"workspaceUid":"11111111-1111-4111-8111-111111111111"}'
 
         @staticmethod
         def json():
             return {
-                "workspaceId": 7,
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
                 "widgetInstanceId": "widget-existing",
                 "parentWidgetId": "row-1",
                 "widget": {
@@ -597,13 +685,13 @@ def test_workspace_patch_widget_uses_widget_detail_endpoint(monkeypatch):
     )
 
     assert isinstance(result, WorkspaceWidgetMutationResult)
-    assert result.workspace_id == 7
+    assert result.workspace_uid == "11111111-1111-4111-8111-111111111111"
     assert result.widget_instance_id == "widget-existing"
     assert result.parent_widget_id == "row-1"
     assert result.widget["widgetId"] == "main-sequence-data-node"
     assert captured == {
         "r_type": "PATCH",
-        "url": f"{Workspace.get_object_url()}/7/widgets/widget-existing/",
+        "url": f"{Workspace.get_object_url()}/11111111-1111-4111-8111-111111111111/widgets/widget-existing/",
         "payload": {
             "json": {
                 "widget": {
@@ -622,7 +710,7 @@ def test_workspace_move_widget_uses_move_action(monkeypatch):
 
     workspace = Workspace.model_validate(
         {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": "Rates Desk",
             "description": "",
             "labels": [],
@@ -643,12 +731,12 @@ def test_workspace_move_widget_uses_move_action(monkeypatch):
 
     class FakeResponse:
         status_code = 200
-        content = b'{"workspaceId":7}'
+        content = b'{"workspaceUid":"11111111-1111-4111-8111-111111111111"}'
 
         @staticmethod
         def json():
             return {
-                "workspaceId": 7,
+                "workspaceUid": "11111111-1111-4111-8111-111111111111",
                 "widgetInstanceId": "widget-existing",
                 "parentWidgetId": None,
                 "widget": {
@@ -678,7 +766,7 @@ def test_workspace_move_widget_uses_move_action(monkeypatch):
     assert result.parent_widget_id is None
     assert captured == {
         "r_type": "POST",
-        "url": f"{Workspace.get_object_url()}/7/widgets/widget-existing/move/",
+        "url": f"{Workspace.get_object_url()}/11111111-1111-4111-8111-111111111111/widgets/widget-existing/move/",
         "payload": {"json": {"parentWidgetId": "row-1", "index": 0}},
         "timeout": 13,
     }
@@ -689,7 +777,7 @@ def test_workspace_delete_widget_supports_recursive_param(monkeypatch):
 
     workspace = Workspace.model_validate(
         {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": "Rates Desk",
             "description": "",
             "labels": [],
@@ -725,7 +813,7 @@ def test_workspace_delete_widget_supports_recursive_param(monkeypatch):
 
     assert captured == {
         "r_type": "DELETE",
-        "url": f"{Workspace.get_object_url()}/7/widgets/row-1/",
+        "url": f"{Workspace.get_object_url()}/11111111-1111-4111-8111-111111111111/widgets/row-1/",
         "payload": {"params": {"recursive": "true"}},
         "timeout": 7,
     }

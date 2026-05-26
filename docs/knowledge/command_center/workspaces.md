@@ -7,7 +7,7 @@ Command Center workspaces store shared application structure:
 - layout data
 - mounted widget instances
 
-Workspace `labels` are organizational helpers only. They do not change widget runtime behavior or functionality.
+Workspace public detail routes use `Workspace.uid`. Workspace `labels` are organizational helpers only. They do not change widget runtime behavior or functionality.
 
 The important operational detail is that you do not always need to fetch and rewrite the full workspace document when the user wants to change one widget.
 
@@ -54,7 +54,7 @@ Use this to partially update one mounted widget instance in place.
 ```python
 from mainsequence.client.command_center import Workspace
 
-workspace = Workspace.get(7)
+workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 result = workspace.patch_workspace_widget(
     "widget-existing",
     widget={
@@ -78,7 +78,7 @@ Important behavior:
 
 Success response fields:
 
-- `workspaceId`
+- `workspaceUid`
 - `widgetInstanceId`
 - `parentWidgetId`
 - `widget`
@@ -91,7 +91,7 @@ Use this to remove one mounted widget instance.
 ```python
 from mainsequence.client.command_center import Workspace
 
-workspace = Workspace.get(7)
+workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 workspace.delete_workspace_widget("widget-existing")
 ```
 
@@ -114,7 +114,7 @@ Use this to reorder or relocate an existing widget instance inside the same work
 ```python
 from mainsequence.client.command_center import Workspace
 
-workspace = Workspace.get(7)
+workspace = Workspace.get_by_uid("11111111-1111-4111-8111-111111111111")
 result = workspace.move_workspace_widget(
     "widget-existing",
     parent_widget_id="row-1",
@@ -134,7 +134,7 @@ Important behavior:
 
 When a user asks to mutate a specific widget:
 
-1. identify the exact workspace id
+1. identify the exact workspace UID
 2. identify the exact widget instance id
 3. use the widget-scoped endpoint instead of rewriting the full workspace
 

@@ -139,9 +139,13 @@ def test_user_show_json(cli_mod, runner, monkeypatch):
 def test_skills_list(cli_mod, runner, monkeypatch, tmp_path):
     bundle_dir = tmp_path / "agent_scaffold"
     (bundle_dir / "skills" / "project_builder").mkdir(parents=True)
-    (bundle_dir / "skills" / "project_builder" / "SKILL.md").write_text("project builder", encoding="utf-8")
+    (bundle_dir / "skills" / "project_builder" / "SKILL.md").write_text(
+        "project builder", encoding="utf-8"
+    )
     (bundle_dir / "skills" / "command_center" / "workspace_builder").mkdir(parents=True)
-    (bundle_dir / "skills" / "command_center" / "workspace_builder" / "SKILL.md").write_text("workspace builder", encoding="utf-8")
+    (bundle_dir / "skills" / "command_center" / "workspace_builder" / "SKILL.md").write_text(
+        "workspace builder", encoding="utf-8"
+    )
 
     monkeypatch.setattr(cli_mod, "_installed_agent_scaffold_bundle_dir", lambda: bundle_dir)
 
@@ -194,8 +198,18 @@ def test_project_search(cli_mod, runner, monkeypatch):
         cli_mod,
         "search_projects",
         lambda q, limit=20, timeout=None: [
-            {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-            {"uid": "project-uid-12", "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
+            {
+                "uid": "project-uid-11",
+                "project_name": "alpha-research",
+                "repository_branch": "main",
+                "cluster_id": 7,
+            },
+            {
+                "uid": "project-uid-12",
+                "project_name": "data-live",
+                "repository_branch": "release",
+                "cluster_id": 9,
+            },
         ],
     )
 
@@ -219,7 +233,9 @@ def test_project_search_rejects_short_query(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "search_projects",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("search_projects should not be called")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("search_projects should not be called")
+        ),
     )
 
     result = runner.invoke(cli_mod.app, ["project", "search", ".."])
@@ -233,14 +249,26 @@ def test_project_search_json(cli_mod, runner, monkeypatch):
         cli_mod,
         "search_projects",
         lambda q, limit=20, timeout=None: [
-            {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
+            {
+                "uid": "project-uid-11",
+                "project_name": "alpha-research",
+                "repository_branch": "main",
+                "cluster_id": 7,
+            },
         ],
     )
 
     result = runner.invoke(cli_mod.app, ["project", "search", "alpha", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload == [{"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7}]
+    assert payload == [
+        {
+            "uid": "project-uid-11",
+            "project_name": "alpha-research",
+            "repository_branch": "main",
+            "cluster_id": 7,
+        }
+    ]
 
 
 def test_organization_github_organizations(cli_mod, runner, monkeypatch):
@@ -263,22 +291,31 @@ def test_cc_workspace_snapshot_prints_resolved_output_path(cli_mod, runner, monk
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     snapshot_module = types.ModuleType("mainsequence.client.command_center.workspace_snapshot")
-    extracted_dir = pathlib.Path("/tmp/workspace-15-20260429T120000Z-snapshot")
+    extracted_dir = pathlib.Path(
+        "/tmp/workspace-11111111-1111-4111-8111-111111111111-20260429T120000Z-snapshot"
+    )
 
     snapshot_module._WorkspaceSnapshotError = RuntimeError
     snapshot_module._resolve_command_center_url = lambda: "http://localhost:5173"
     snapshot_module._build_snapshot_url = (
-        lambda base_url, workspace_id: f"{base_url}/app/workspace-studio/workspaces?workspace={workspace_id}&snapshot=true&snapshotProfile=full-data"
+        lambda base_url,
+        workspace_uid: f"{base_url}/app/workspace-studio/workspaces?workspace={workspace_uid}&snapshot=true&snapshotProfile=full-data"
     )
-    snapshot_module._capture_workspace_snapshot = (
-        lambda workspace_id, output_path=None: (b"zip-bytes", extracted_dir)
+    snapshot_module._capture_workspace_snapshot = lambda workspace_uid, output_path=None: (
+        b"zip-bytes",
+        extracted_dir,
     )
 
-    monkeypatch.setitem(sys.modules, "mainsequence.client.command_center.workspace_snapshot", snapshot_module)
+    monkeypatch.setitem(
+        sys.modules, "mainsequence.client.command_center.workspace_snapshot", snapshot_module
+    )
 
-    result = runner.invoke(cli_mod.app, ["cc", "workspace", "snapshot", "15"])
+    result = runner.invoke(
+        cli_mod.app, ["cc", "workspace", "snapshot", "11111111-1111-4111-8111-111111111111"]
+    )
     assert result.exit_code == 0
-    assert str(extracted_dir) in result.output
+    assert "Output Directory" in result.output
+    assert "workspace-11111111-1111-4111-8111-111111111111" in result.output
     assert "<timestamp>" not in result.output
 
 
@@ -293,7 +330,9 @@ def test_organization_github_organizations_json(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["organization", "github-organizations", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload == [{"id": 33, "name": "Main Sequence Projects", "login": "mainsequence-projects"}]
+    assert payload == [
+        {"id": 33, "name": "Main Sequence Projects", "login": "mainsequence-projects"}
+    ]
 
 
 def test_organization_teams_list(cli_mod, runner, monkeypatch):
@@ -328,7 +367,13 @@ def test_organization_teams_create(cli_mod, runner, monkeypatch):
         captured["name"] = name
         captured["description"] = description
         captured["timeout"] = timeout
-        return {"id": 9, "name": name, "description": description, "member_count": 0, "is_active": True}
+        return {
+            "id": 9,
+            "name": name,
+            "description": description,
+            "member_count": 0,
+            "is_active": True,
+        }
 
     monkeypatch.setattr(cli_mod, "create_organization_team", _create)
 
@@ -464,12 +509,12 @@ def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
     captured = {}
 
     class FakeWorkspace:
-        def __init__(self, workspace_id, title):
-            self.id = workspace_id
+        def __init__(self, workspace_uid, title):
+            self.uid = workspace_uid
             self.title = title
 
         def model_dump(self, mode="json"):
-            return {"id": self.id, "title": self.title}
+            return {"uid": self.uid, "title": self.title}
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
@@ -480,7 +525,7 @@ def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
             def filter(cls, timeout=None, **kwargs):
                 captured["timeout"] = timeout
                 captured["filters"] = kwargs
-                return [FakeWorkspace(7, "Rates Desk")]
+                return [FakeWorkspace("11111111-1111-4111-8111-111111111111", "Rates Desk")]
 
         return operation(_ClientWorkspace)
 
@@ -493,7 +538,7 @@ def test_list_workspaces_uses_client_model(cli_mod, monkeypatch):
         "timeout": 8,
         "filters": {"title__contains": "Rates"},
     }
-    assert out == [{"id": 7, "title": "Rates Desk"}]
+    assert out == [{"uid": "11111111-1111-4111-8111-111111111111", "title": "Rates Desk"}]
 
 
 def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
@@ -501,19 +546,19 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
     captured = {}
 
     class FakeWorkspace:
-        def __init__(self, workspace_id):
-            self.id = workspace_id
+        def __init__(self, workspace_uid):
+            self.uid = workspace_uid
 
         def patch(self, **kwargs):
             captured["patch_kwargs"] = kwargs
 
             class _UpdatedWorkspace:
-                id = 7
+                uid = "11111111-1111-4111-8111-111111111111"
 
                 @staticmethod
                 def model_dump(mode="json"):
                     return {
-                        "id": 7,
+                        "uid": "11111111-1111-4111-8111-111111111111",
                         "title": kwargs.get("title", "Rates Desk"),
                         "layoutKind": kwargs.get("layoutKind", "custom"),
                     }
@@ -526,17 +571,17 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientWorkspace:
             @classmethod
-            def get(cls, pk=None, timeout=None):
-                captured["pk"] = pk
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
-                return FakeWorkspace(pk)
+                return FakeWorkspace(uid)
 
         return operation(_ClientWorkspace)
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
     out = api_mod.update_workspace(
-        7,
+        "11111111-1111-4111-8111-111111111111",
         title="Updated Rates Desk",
         layout_kind="auto-grid",
         widgets=[{"id": "widget-1", "widgetId": "markdown-note"}],
@@ -545,7 +590,7 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
     assert captured == {
         "module_name": "mainsequence.client.command_center",
         "class_name": "Workspace",
-        "pk": 7,
+        "uid": "11111111-1111-4111-8111-111111111111",
         "timeout": 11,
         "patch_kwargs": {
             "title": "Updated Rates Desk",
@@ -553,7 +598,11 @@ def test_update_workspace_uses_client_model(cli_mod, monkeypatch):
             "widgets": [{"id": "widget-1", "widgetId": "markdown-note"}],
         },
     }
-    assert out == {"id": 7, "title": "Updated Rates Desk", "layoutKind": "auto-grid"}
+    assert out == {
+        "uid": "11111111-1111-4111-8111-111111111111",
+        "title": "Updated Rates Desk",
+        "layoutKind": "auto-grid",
+    }
 
 
 def test_add_workspace_labels_uses_client_model(cli_mod, monkeypatch):
@@ -578,8 +627,8 @@ def test_add_workspace_labels_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientWorkspace:
             @classmethod
-            def get(cls, pk=None, timeout=None):
-                captured["pk"] = pk
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["get_timeout"] = timeout
                 return FakeWorkspace()
 
@@ -587,11 +636,13 @@ def test_add_workspace_labels_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.add_workspace_labels(7, ["rates", "desk"], timeout=12)
+    out = api_mod.add_workspace_labels(
+        "11111111-1111-4111-8111-111111111111", ["rates", "desk"], timeout=12
+    )
     assert captured == {
         "module_name": "mainsequence.client.command_center",
         "class_name": "Workspace",
-        "pk": 7,
+        "uid": "11111111-1111-4111-8111-111111111111",
         "get_timeout": 12,
         "labels": ["rates", "desk"],
         "add_timeout": 12,
@@ -606,7 +657,7 @@ def test_workspace_list(cli_mod, runner, monkeypatch):
         "list_workspaces",
         lambda timeout=None, filters=None: [
             {
-                "id": 7,
+                "uid": "11111111-1111-4111-8111-111111111111",
                 "title": "Rates Desk",
                 "category": "Trading",
                 "source": "user",
@@ -629,8 +680,8 @@ def test_workspace_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_workspace",
-        lambda workspace_id, timeout=None: {
-            "id": workspace_id,
+        lambda workspace_uid, timeout=None: {
+            "uid": workspace_uid,
             "title": "Rates Desk",
             "description": "Shared workspace",
             "category": "Trading",
@@ -647,7 +698,9 @@ def test_workspace_detail(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["cc", "workspace", "detail", "7"])
+    result = runner.invoke(
+        cli_mod.app, ["cc", "workspace", "detail", "11111111-1111-4111-8111-111111111111"]
+    )
     assert result.exit_code == 0
     assert "Workspace Details" in result.output
     assert "markdown-note" in result.output
@@ -661,7 +714,7 @@ def test_workspace_create(cli_mod, runner, monkeypatch):
     def _create(**kwargs):
         captured.update(kwargs)
         return {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": kwargs["title"],
             "description": kwargs["description"],
             "category": kwargs["category"],
@@ -725,7 +778,7 @@ def test_workspace_create_from_file(cli_mod, runner, monkeypatch, tmp_path):
     def _create(**kwargs):
         captured.update(kwargs)
         return {
-            "id": 7,
+            "uid": "11111111-1111-4111-8111-111111111111",
             "title": kwargs["title"],
             "description": kwargs["description"],
             "category": kwargs["category"],
@@ -766,11 +819,11 @@ def test_workspace_update_from_file(cli_mod, runner, monkeypatch, tmp_path):
     )
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _update(workspace_id, **kwargs):
-        captured["workspace_id"] = workspace_id
+    def _update(workspace_uid, **kwargs):
+        captured["workspace_uid"] = workspace_uid
         captured.update(kwargs)
         return {
-            "id": workspace_id,
+            "uid": workspace_uid,
             "title": "Rates Desk",
             "description": "Updated workspace",
             "category": "Trading",
@@ -786,14 +839,21 @@ def test_workspace_update_from_file(cli_mod, runner, monkeypatch, tmp_path):
 
     result = runner.invoke(
         cli_mod.app,
-        ["cc", "workspace", "update", "7", "--file", str(workspace_file)],
+        [
+            "cc",
+            "workspace",
+            "update",
+            "11111111-1111-4111-8111-111111111111",
+            "--file",
+            str(workspace_file),
+        ],
     )
     assert result.exit_code == 0
-    assert captured["workspace_id"] == 7
+    assert captured["workspace_uid"] == "11111111-1111-4111-8111-111111111111"
     assert captured["layout_kind"] == "auto-grid"
     assert captured["controls"] == {"refresh": {"selectedIntervalMs": 60000}}
     assert captured["widgets"] == [{"id": "widget-1", "widgetId": "markdown-note"}]
-    assert "Workspace updated: id=7" in result.output
+    assert "Workspace updated: uid=11111111-1111-4111-8111-111111111111" in result.output
 
 
 def test_workspace_delete(cli_mod, runner, monkeypatch):
@@ -802,8 +862,8 @@ def test_workspace_delete(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_workspace",
-        lambda workspace_id, timeout=None: {
-            "id": workspace_id,
+        lambda workspace_uid, timeout=None: {
+            "uid": workspace_uid,
             "title": "Rates Desk",
             "description": "Shared workspace",
             "category": "Trading",
@@ -815,11 +875,11 @@ def test_workspace_delete(cli_mod, runner, monkeypatch):
     )
     monkeypatch.setattr(cli_mod, "_require_delete_verification", lambda **kwargs: None)
 
-    def _delete(workspace_id, *, timeout=None):
-        captured["workspace_id"] = workspace_id
+    def _delete(workspace_uid, *, timeout=None):
+        captured["workspace_uid"] = workspace_uid
         captured["timeout"] = timeout
         return {
-            "id": workspace_id,
+            "uid": workspace_uid,
             "title": "Rates Desk",
             "description": "Shared workspace",
             "category": "Trading",
@@ -831,18 +891,20 @@ def test_workspace_delete(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "delete_workspace", _delete)
 
-    result = runner.invoke(cli_mod.app, ["cc", "workspace", "delete", "7"])
+    result = runner.invoke(
+        cli_mod.app, ["cc", "workspace", "delete", "11111111-1111-4111-8111-111111111111"]
+    )
     assert result.exit_code == 0
-    assert captured == {"workspace_id": 7, "timeout": None}
-    assert "Workspace deleted: id=7" in result.output
+    assert captured == {"workspace_uid": "11111111-1111-4111-8111-111111111111", "timeout": None}
+    assert "Workspace deleted: uid=11111111-1111-4111-8111-111111111111" in result.output
 
 
 def test_workspace_add_label(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(workspace_id, labels, timeout=None):
-        captured["workspace_id"] = workspace_id
+    def _add(workspace_uid, labels, timeout=None):
+        captured["workspace_uid"] = workspace_uid
         captured["labels"] = labels
         captured["timeout"] = timeout
         return {"labels": [{"name": "trading"}, {"name": "desk"}]}
@@ -851,10 +913,21 @@ def test_workspace_add_label(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["cc", "workspace", "add-label", "7", "--label", "trading,desk"],
+        [
+            "cc",
+            "workspace",
+            "add-label",
+            "11111111-1111-4111-8111-111111111111",
+            "--label",
+            "trading,desk",
+        ],
     )
     assert result.exit_code == 0
-    assert captured == {"workspace_id": 7, "labels": ["trading", "desk"], "timeout": None}
+    assert captured == {
+        "workspace_uid": "11111111-1111-4111-8111-111111111111",
+        "labels": ["trading", "desk"],
+        "timeout": None,
+    }
     assert "Workspace add-label completed." in result.output
     assert "trading, desk" in result.output
 
@@ -980,7 +1053,10 @@ def test_connection_type_detail(cli_mod, runner, monkeypatch):
             "capabilities": ["query", "healthcheck"],
             "access_mode": "proxy",
             "public_config_schema": {"type": "object", "properties": {"host": {"type": "string"}}},
-            "secure_config_schema": {"type": "object", "properties": {"password": {"type": "string"}}},
+            "secure_config_schema": {
+                "type": "object",
+                "properties": {"password": {"type": "string"}},
+            },
             "query_models": [{"id": "sql"}],
             "required_permissions": ["connections:view"],
             "usage_guidance": "Use for warehouse-backed SQL access.",
@@ -1005,12 +1081,11 @@ def test_connection_list(cli_mod, runner, monkeypatch):
         "list_connection_instances",
         lambda timeout=None, filters=None: [
             {
-                "id": "conn-17",
                 "uid": "warehouse-primary",
                 "name": "Warehouse Primary",
                 "type_id": "postgres",
                 "status": "ok",
-                "workspace_id": "7",
+                "workspace_uid": "11111111-1111-4111-8111-111111111111",
                 "is_default": True,
                 "is_system": False,
             }
@@ -1033,14 +1108,13 @@ def test_connection_detail(cli_mod, runner, monkeypatch):
         cli_mod,
         "get_connection_instance",
         lambda connection_uid, timeout=None: {
-            "id": "conn-17",
             "uid": connection_uid,
             "type_id": "postgres",
             "type_version": 3,
             "name": "Warehouse Primary",
             "description": "Primary warehouse connection.",
-            "organization_id": "2",
-            "workspace_id": "7",
+            "organization_uid": "organization-uid-2",
+            "workspace_uid": "11111111-1111-4111-8111-111111111111",
             "public_config": {"host": "db.internal", "database": "analytics"},
             "secure_fields": {"password": True},
             "status": "ok",
@@ -1049,7 +1123,7 @@ def test_connection_detail(cli_mod, runner, monkeypatch):
             "is_default": True,
             "is_system": False,
             "tags": ["warehouse"],
-            "created_by": "7",
+            "created_by_user_uid": "user-uid-7",
             "created_at": "2026-04-26T09:00:00Z",
             "updated_at": "2026-04-26T10:05:00Z",
         },
@@ -1070,12 +1144,13 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
     captured = {}
 
     class FakeAgent:
-        def __init__(self, agent_id, name):
-            self.id = agent_id
+        def __init__(self, uid, name):
+            self.uid = uid
             self.name = name
+            self.agent_unique_id = "research-copilot"
 
         def model_dump(self, mode="json"):
-            return {"id": self.id, "name": self.name, "status": "draft"}
+            return {"uid": self.uid, "name": self.name, "agent_unique_id": self.agent_unique_id}
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
@@ -1086,20 +1161,26 @@ def test_list_agents_uses_client_model(cli_mod, monkeypatch):
             def filter(cls, timeout=None, **kwargs):
                 captured["timeout"] = timeout
                 captured["filters"] = kwargs
-                return [FakeAgent(12, "Research Copilot")]
+                return [FakeAgent("e0e75693-4110-464c-93e0-82c7fd9c9a23", "Research Copilot")]
 
         return operation(_ClientAgent)
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.list_agents(timeout=9, filters={"status": "active"})
+    out = api_mod.list_agents(timeout=9, filters={"agent_type": "custom"})
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
         "timeout": 9,
-        "filters": {"status": "active"},
+        "filters": {"agent_type": "custom"},
     }
-    assert out == [{"id": 12, "name": "Research Copilot", "status": "draft"}]
+    assert out == [
+        {
+            "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+            "name": "Research Copilot",
+            "agent_unique_id": "research-copilot",
+        }
+    ]
 
 
 def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
@@ -1108,7 +1189,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
 
     class FakeSearchResult:
         def __init__(self):
-            self.id = 12
+            self.uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
             self.name = "Research Copilot"
             self.agent_unique_id = "research-copilot"
             self.description = "Searchable data research agent."
@@ -1118,7 +1199,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
 
         def model_dump(self, mode="json"):
             return {
-                "id": self.id,
+                "uid": self.uid,
                 "name": self.name,
                 "agent_unique_id": self.agent_unique_id,
                 "description": self.description,
@@ -1157,7 +1238,7 @@ def test_semantic_search_agents_uses_client_model(cli_mod, monkeypatch):
     }
     assert out == [
         {
-            "id": 12,
+            "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
             "name": "Research Copilot",
             "agent_unique_id": "research-copilot",
             "description": "Searchable data research agent.",
@@ -1175,7 +1256,11 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
     class FakeAgent:
         @staticmethod
         def model_dump(mode="json"):
-            return {"id": 12, "name": "Research Copilot", "status": "active"}
+            return {
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+                "name": "Research Copilot",
+                "agent_unique_id": "research-copilot",
+            }
 
     def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
         captured["module_name"] = module_name
@@ -1224,7 +1309,46 @@ def test_create_agent_uses_client_model(cli_mod, monkeypatch):
             "metadata": {"owner": "quant"},
         },
     }
-    assert out["id"] == 12
+    assert out["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+
+
+def test_get_agent_uses_agent_uid_detail_route(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+
+    class FakeAgent:
+        @staticmethod
+        def model_dump(mode="json"):
+            return {
+                "uid": agent_uid,
+                "name": "Research Copilot",
+                "agent_unique_id": "research-copilot",
+            }
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientAgent:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["timeout"] = timeout
+                return FakeAgent()
+
+        return operation(_ClientAgent)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_agent(agent_uid, timeout=12)
+    assert captured == {
+        "module_name": "mainsequence.client.agent_runtime_models",
+        "class_name": "Agent",
+        "uid": agent_uid,
+        "timeout": 12,
+    }
+    assert out["uid"] == agent_uid
 
 
 def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
@@ -1235,7 +1359,7 @@ def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
         @staticmethod
         def model_dump(mode="json"):
             return {
-                "id": 12,
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
                 "agent_unique_id": "research-copilot",
                 "status": "active",
@@ -1288,19 +1412,21 @@ def test_get_or_create_agent_uses_client_model(cli_mod, monkeypatch):
             "metadata": {"owner": "quant"},
         },
     }
-    assert out["id"] == 12
+    assert out["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 
 
 def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    target_session_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
 
     class FakeAgentSession:
         @staticmethod
         def model_dump(mode="json"):
             return {
-                "id": 801,
-                "agent": {"id": 12, "name": "Research Copilot"},
+                "uid": target_session_uid,
+                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "status": "pending",
                 "llm_provider": "openai",
                 "llm_model": "gpt-5.4",
@@ -1313,24 +1439,24 @@ def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatc
 
         class _ClientAgent:
             @classmethod
-            def get(cls, pk=None, timeout=None):
-                captured["pk"] = pk
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
 
                 class _Agent:
                     def allocate_a2a_target_session(
                         self,
                         *,
-                        caller_agent_session_id,
+                        caller_agent_session_uid,
                         handle_unique_id=None,
                         timeout=None,
                     ):
-                        captured["caller_agent_session_id"] = caller_agent_session_id
+                        captured["caller_agent_session_uid"] = caller_agent_session_uid
                         captured["handle_unique_id"] = handle_unique_id
                         captured["allocate_timeout"] = timeout
                         return {
                             "handle_unique_id": "delegated-handle-1",
-                            "agent_session_id": 801,
+                            "agent_session_uid": target_session_uid,
                             "allocation_state": "created_new",
                             "session": FakeAgentSession().model_dump(),
                         }
@@ -1342,21 +1468,21 @@ def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatc
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
     out = api_mod.allocate_agent_a2a_target_session(
-        12,
-        caller_agent_session_id=700,
+        "e0e75693-4110-464c-93e0-82c7fd9c9a23",
+        caller_agent_session_uid=caller_session_uid,
         handle_unique_id="delegated-handle-1",
         timeout=16,
     )
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
-        "pk": 12,
+        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
         "timeout": 16,
-        "caller_agent_session_id": 700,
+        "caller_agent_session_uid": caller_session_uid,
         "handle_unique_id": "delegated-handle-1",
         "allocate_timeout": 16,
     }
-    assert out["agent_session_id"] == 801
+    assert out["agent_session_uid"] == target_session_uid
     assert out["allocation_state"] == "created_new"
     assert out["handle_unique_id"] == "delegated-handle-1"
 
@@ -1364,13 +1490,14 @@ def test_allocate_agent_a2a_target_session_uses_client_model(cli_mod, monkeypatc
 def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
     class FakeAgentSession:
         @staticmethod
         def model_dump(mode="json"):
             return {
-                "id": 802,
-                "agent": {"id": 12, "name": "Research Copilot"},
+                "uid": session_uid,
+                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "status": "completed",
                 "llm_provider": "openai",
                 "llm_model": "gpt-5.4",
@@ -1383,8 +1510,8 @@ def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientAgent:
             @classmethod
-            def get(cls, pk=None, timeout=None):
-                captured["pk"] = pk
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
 
                 class _Agent:
@@ -1398,27 +1525,28 @@ def test_get_agent_latest_session_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.get_agent_latest_session(12, timeout=17)
+    out = api_mod.get_agent_latest_session("e0e75693-4110-464c-93e0-82c7fd9c9a23", timeout=17)
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
-        "pk": 12,
+        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
         "timeout": 17,
         "get_latest_session_timeout": 17,
     }
-    assert out["id"] == 802
+    assert out["uid"] == session_uid
 
 
 def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
     class FakeAgentSession:
         @staticmethod
         def model_dump(mode="json"):
             return {
-                "id": 803,
-                "agent": {"id": 12, "name": "Research Copilot"},
+                "uid": session_uid,
+                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "status": "completed",
                 "llm_provider": "openai",
                 "llm_model": "gpt-5.4",
@@ -1440,19 +1568,20 @@ def test_get_agent_session_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.get_agent_session(803, timeout=18)
+    out = api_mod.get_agent_session(session_uid, timeout=18)
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "AgentSession",
-        "pk": 803,
+        "pk": session_uid,
         "timeout": 18,
     }
-    assert out["id"] == 803
+    assert out["uid"] == session_uid
 
 
 def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
 
     class FakeRuntimeAccess:
         @staticmethod
@@ -1480,11 +1609,11 @@ def test_resolve_agent_session_runtime_access_uses_client_model(cli_mod, monkeyp
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.resolve_agent_session_runtime_access(803, timeout=19)
+    out = api_mod.resolve_agent_session_runtime_access(session_uid, timeout=19)
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "AgentSession",
-        "agent_session": 803,
+        "agent_session": session_uid,
         "timeout": 19,
     }
     assert out["coding_agent_service_id"] == "svc-12"
@@ -1501,8 +1630,8 @@ def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
 
         class _ClientAgent:
             @classmethod
-            def get(cls, pk=None, timeout=None):
-                captured["pk"] = pk
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
                 captured["timeout"] = timeout
 
                 class _Agent:
@@ -1522,11 +1651,11 @@ def test_list_agent_users_can_view_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.list_agent_users_can_view(12, timeout=16)
+    out = api_mod.list_agent_users_can_view("e0e75693-4110-464c-93e0-82c7fd9c9a23", timeout=16)
     assert captured == {
         "module_name": "mainsequence.client.agent_runtime_models",
         "class_name": "Agent",
-        "pk": 12,
+        "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
         "timeout": 16,
         "can_view_timeout": 16,
     }
@@ -1563,7 +1692,9 @@ def test_list_agent_runs_uses_client_model(cli_mod, monkeypatch):
         "timeout": 10,
         "filters": {"status": "running"},
     }
-    assert out == [{"id": 501, "status": "running", "agent": {"id": 12, "name": "Research Copilot"}}]
+    assert out == [
+        {"id": 501, "status": "running", "agent": {"id": 12, "name": "Research Copilot"}}
+    ]
 
 
 def test_pydantic_cli_metadata_from_source():
@@ -1728,7 +1859,9 @@ def test_settings_set_backend_json(cli_mod, runner, monkeypatch):
         "set_backend_url",
         lambda url: {"backend_url": url},
     )
-    result = runner.invoke(cli_mod.app, ["settings", "set-backend", "https://example.test", "--json"])
+    result = runner.invoke(
+        cli_mod.app, ["settings", "set-backend", "https://example.test", "--json"]
+    )
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["backend_url"] == "https://example.test"
@@ -1739,14 +1872,21 @@ def test_settings_reset(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
         "DEFAULTS",
-        {"backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/", "mainsequence_path": "/tmp/mainsequence", "version": 1},
+        {
+            "backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/",
+            "mainsequence_path": "/tmp/mainsequence",
+            "version": 1,
+        },
     )
     monkeypatch.setattr(
         cli_mod.cfg,
         "set_config",
-        lambda updates: captured.update(updates) or updates | {"updated_at": "2026-04-20T00:00:00Z"},
+        lambda updates: captured.update(updates)
+        or updates | {"updated_at": "2026-04-20T00:00:00Z"},
     )
-    monkeypatch.setattr(cli_mod.cfg, "clear_session_overrides", lambda: captured.update(cleared=True))
+    monkeypatch.setattr(
+        cli_mod.cfg, "clear_session_overrides", lambda: captured.update(cleared=True)
+    )
 
     result = runner.invoke(cli_mod.app, ["settings", "reset"])
     assert result.exit_code == 0
@@ -1760,7 +1900,11 @@ def test_settings_refresh_alias(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod.cfg,
         "DEFAULTS",
-        {"backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/", "mainsequence_path": "/tmp/mainsequence", "version": 1},
+        {
+            "backend_url": f"{cli_mod.cfg.STANDARD_BACKEND_URL}/",
+            "mainsequence_path": "/tmp/mainsequence",
+            "version": 1,
+        },
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1783,7 +1927,9 @@ def test_config_normalize_backend_url(cli_mod):
 
 def test_config_normalize_mainsequence_path(cli_mod):
     assert cli_mod.cfg.normalize_mainsequence_path("mainsequence-dev").endswith("/mainsequence-dev")
-    assert cli_mod.cfg.normalize_mainsequence_path("~/mainsequence-dev").endswith("/mainsequence-dev")
+    assert cli_mod.cfg.normalize_mainsequence_path("~/mainsequence-dev").endswith(
+        "/mainsequence-dev"
+    )
 
 
 def test_config_session_overrides_do_not_persist(cli_mod, monkeypatch, tmp_path):
@@ -1826,7 +1972,9 @@ def test_login_mocked(cli_mod, runner, monkeypatch):
             "refresh": "ref-456",
         },
     )
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1875,12 +2023,17 @@ def test_login_with_backend_override(cli_mod, runner, monkeypatch):
         }
 
     monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -1920,7 +2073,10 @@ def test_login_with_different_backend_requires_projects_base(cli_mod, runner, mo
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
@@ -1941,12 +2097,17 @@ def test_login_with_different_backend_allows_current_projects_base(cli_mod, runn
         return {"backend": "http://127.0.0.1:8000", "access": "acc-123", "refresh": "ref-456"}
 
     monkeypatch.setattr(cli_mod, "login_via_browser", _browser_login)
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
@@ -1971,7 +2132,9 @@ def test_login_export_env(cli_mod, runner, monkeypatch):
             "refresh": "ref-456",
         },
     )
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2004,7 +2167,8 @@ def test_login_with_jwt_tokens(cli_mod, runner, monkeypatch):
         "save_tokens",
         lambda username, access, refresh: saved.update(
             {"username": username, "access": access, "refresh": refresh}
-        ) or True,
+        )
+        or True,
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2062,11 +2226,16 @@ def test_login_runtime_credential_exchanges_token(cli_mod, runner, monkeypatch):
         "_exchange_runtime_credential_for_cli_login",
         _exchange_runtime_credential_for_cli_login,
     )
-    monkeypatch.setattr(cli_mod, "login_via_browser", lambda **kwargs: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(
+        cli_mod, "login_via_browser", lambda **kwargs: (_ for _ in ()).throw(AssertionError)
+    )
     monkeypatch.setattr(
         cli_mod.cfg,
         "save_tokens",
-        lambda username, access, refresh: saved.update(username=username, access=access, refresh=refresh) or True,
+        lambda username, access, refresh: saved.update(
+            username=username, access=access, refresh=refresh
+        )
+        or True,
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2131,7 +2300,10 @@ def test_login_runtime_credential_uses_backend_override(cli_mod, runner, monkeyp
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2177,7 +2349,9 @@ def test_api_refresh_access_runtime_credential_reexchange(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "", "refresh": ""})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"username": "", "access": "", "refresh": ""}
+    )
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
 
     saved = {}
@@ -2231,7 +2405,9 @@ def test_api_logout_cli_session_revokes_tracked_cli_refresh(cli_mod, monkeypatch
             return _Response()
 
     monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"}
+    )
     monkeypatch.setattr(api_mod, "S", _Session())
 
     out = api_mod.logout_cli_session()
@@ -2262,7 +2438,9 @@ def test_api_logout_cli_session_falls_back_to_jwt_logout_on_404(cli_mod, monkeyp
             return _Response()
 
     monkeypatch.setattr(api_mod, "backend_url", lambda: "http://127.0.0.1:8000")
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": "ref-123"}
+    )
     monkeypatch.setattr(api_mod, "logout_jwt_session", lambda: True)
     monkeypatch.setattr(api_mod, "S", _Session())
 
@@ -2277,7 +2455,9 @@ def test_api_logout_cli_session_falls_back_to_jwt_logout_on_404(cli_mod, monkeyp
 
 def test_api_logout_cli_session_skips_backend_revoke_without_refresh(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": ""})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"username": "", "access": "acc-123", "refresh": ""}
+    )
 
     out = api_mod.logout_cli_session()
     assert out == {
@@ -2294,7 +2474,10 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2333,7 +2516,9 @@ def test_login_with_jwt_tokens_and_backend_override(cli_mod, runner, monkeypatch
     assert "MAINSEQUENCE_ENDPOINT" not in os.environ
 
 
-def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_mod, runner, monkeypatch):
+def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(
+    cli_mod, runner, monkeypatch
+):
     called = {"save_tokens": False}
 
     def _save_tokens(username, access, refresh):
@@ -2344,7 +2529,10 @@ def test_login_with_jwt_tokens_and_different_backend_requires_projects_base(cli_
     monkeypatch.setattr(
         cli_mod.cfg,
         "get_config",
-        lambda: {"mainsequence_path": "/tmp/mainsequence", "backend_url": "https://main-sequence.app"},
+        lambda: {
+            "mainsequence_path": "/tmp/mainsequence",
+            "backend_url": "https://main-sequence.app",
+        },
     )
     monkeypatch.delenv("MAINSEQUENCE_ENDPOINT", raising=False)
 
@@ -2436,7 +2624,9 @@ def test_login_does_not_fetch_projects_after_success(cli_mod, runner, monkeypatc
             "refresh": "ref-456",
         },
     )
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
     monkeypatch.setattr(
         cli_mod.cfg,
@@ -2567,7 +2757,9 @@ def test_login_no_open_prints_authorize_url(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod.cfg, "auth_persistence_label", lambda: "local CLI auth storage")
     monkeypatch.setattr(cli_mod.cfg, "set_session_overrides", lambda **kwargs: kwargs)
     monkeypatch.setattr(cli_mod.cfg, "save_tokens", lambda username, access, refresh: True)
-    monkeypatch.setattr(cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"})
+    monkeypatch.setattr(
+        cli_mod, "get_current_user_profile", lambda: {"username": "user@example.com"}
+    )
 
     def _browser_login(no_open=False, on_authorize_url=None):
         assert no_open is True
@@ -2662,7 +2854,9 @@ def test_config_get_tokens_fallback_backend_scoped_local_store(cli_mod, monkeypa
     assert out["refresh"] == "dev-ref"
 
 
-def test_config_get_tokens_runtime_mode_allows_access_without_refresh(cli_mod, monkeypatch, tmp_path):
+def test_config_get_tokens_runtime_mode_allows_access_without_refresh(
+    cli_mod, monkeypatch, tmp_path
+):
     auth_json = tmp_path / "auth.json"
     cli_mod.cfg.write_json(
         auth_json,
@@ -2779,7 +2973,9 @@ def test_config_save_tokens_writes_secure_store(cli_mod, monkeypatch):
     assert captured == {"username": "u@example.com", "access": "acc", "refresh": "ref"}
 
 
-def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(cli_mod, monkeypatch, tmp_path):
+def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(
+    cli_mod, monkeypatch, tmp_path
+):
     auth_json = tmp_path / "auth.json"
     monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
     monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: False)
@@ -2800,7 +2996,9 @@ def test_config_save_tokens_writes_local_store_when_secure_store_unavailable(cli
     }
 
 
-def test_config_save_tokens_falls_back_to_local_store_when_secure_readback_fails(cli_mod, monkeypatch, tmp_path):
+def test_config_save_tokens_falls_back_to_local_store_when_secure_readback_fails(
+    cli_mod, monkeypatch, tmp_path
+):
     auth_json = tmp_path / "auth.json"
     monkeypatch.setattr(cli_mod.cfg, "AUTH_JSON", auth_json)
     monkeypatch.setattr(cli_mod.cfg, "_macos_security_exists", lambda: True)
@@ -3121,7 +3319,9 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -3206,7 +3406,9 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3287,7 +3489,9 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3334,7 +3538,11 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "detail": "User now has explicit edit access.",
                         "object_id": pk,
                         "object_type": "tdag.project",
-                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "user": {
+                            "id": user_id,
+                            "username": "editor",
+                            "email": "editor@example.com",
+                        },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
                         "explicit_can_view_user_ids": [user_id],
@@ -3363,7 +3571,9 @@ def test_list_constants_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3419,7 +3629,9 @@ def test_create_constant_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3477,7 +3689,9 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3540,7 +3754,9 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3611,7 +3827,9 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3648,7 +3866,11 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "detail": "User now has explicit edit access.",
                         "object_id": pk,
                         "object_type": "tdag.constant",
-                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "user": {
+                            "id": user_id,
+                            "username": "editor",
+                            "email": "editor@example.com",
+                        },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
                         "explicit_can_view_user_ids": [user_id],
@@ -3677,7 +3899,9 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3732,7 +3956,9 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3777,7 +4003,9 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
                                     "last_name": "User",
                                 }
                             ],
-                            "teams": [{"id": 4, "name": "Ops", "description": "", "member_count": 2}],
+                            "teams": [
+                                {"id": 4, "name": "Ops", "description": "", "member_count": 2}
+                            ],
                         }
                     )
 
@@ -3805,7 +4033,9 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3842,7 +4072,11 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
                         "detail": "User now has explicit edit access.",
                         "object_id": pk,
                         "object_type": "tdag.secret",
-                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "user": {
+                            "id": user_id,
+                            "username": "editor",
+                            "email": "editor@example.com",
+                        },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
                         "explicit_can_view_user_ids": [user_id],
@@ -3871,7 +4105,9 @@ def test_create_secret_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3928,7 +4164,9 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -3990,7 +4228,9 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -4016,7 +4256,9 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
         ROOT_URL = "https://old.test/orm/api/pods/project-image"
 
         @classmethod
-        def create(cls, *, project_repo_hash, related_project_id=None, base_image_id=None, timeout=None):
+        def create(
+            cls, *, project_repo_hash, related_project_id=None, base_image_id=None, timeout=None
+        ):
             captured["project_repo_hash"] = project_repo_hash
             captured["related_project_id"] = related_project_id
             captured["base_image_id"] = base_image_id
@@ -4040,7 +4282,9 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.create_project_image(project_repo_hash="abc123", related_project_id=123, base_image_id=22)
+    out = api_mod.create_project_image(
+        project_repo_hash="abc123", related_project_id=123, base_image_id=22
+    )
     assert captured["project_repo_hash"] == "abc123"
     assert captured["related_project_id"] == 123
     assert captured["base_image_id"] == 22
@@ -4054,7 +4298,9 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -4132,7 +4378,9 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4197,13 +4445,16 @@ def test_list_project_jobs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
+
     class FakeLoaders:
         provider = "orig"
 
@@ -4280,7 +4531,9 @@ def test_list_project_resources_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -4354,7 +4607,9 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4385,15 +4640,33 @@ def test_create_project_resource_release_uses_client_model(cli_mod, monkeypatch)
             class _Resource:
                 def create_dashboard(self, **kwargs):
                     captured["create_dashboard"] = kwargs
-                    return types.SimpleNamespace(model_dump=lambda: {"id": 501, "resource": pk, "related_image": kwargs["related_image_id"]})
+                    return types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 501,
+                            "resource": pk,
+                            "related_image": kwargs["related_image_id"],
+                        }
+                    )
 
                 def create_agent(self, **kwargs):
                     captured["create_agent"] = kwargs
-                    return types.SimpleNamespace(model_dump=lambda: {"id": 502, "resource": pk, "related_image": kwargs["related_image_id"]})
+                    return types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 502,
+                            "resource": pk,
+                            "related_image": kwargs["related_image_id"],
+                        }
+                    )
 
                 def create_fastapi(self, **kwargs):
                     captured["create_fastapi"] = kwargs
-                    return types.SimpleNamespace(model_dump=lambda: {"id": 503, "resource": pk, "related_image": kwargs["related_image_id"]})
+                    return types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 503,
+                            "resource": pk,
+                            "related_image": kwargs["related_image_id"],
+                        }
+                    )
 
             return _Resource()
 
@@ -4429,7 +4702,9 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4460,7 +4735,13 @@ def test_create_project_resource_release_uses_client_model_for_fastapi(cli_mod, 
             class _Resource:
                 def create_fastapi(self, **kwargs):
                     captured["create_fastapi"] = kwargs
-                    return types.SimpleNamespace(model_dump=lambda: {"id": 503, "resource": pk, "related_image": kwargs["related_image_id"]})
+                    return types.SimpleNamespace(
+                        model_dump=lambda: {
+                            "id": 503,
+                            "resource": pk,
+                            "related_image": kwargs["related_image_id"],
+                        }
+                    )
 
             return _Resource()
 
@@ -4496,7 +4777,9 @@ def test_delete_resource_release_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4565,7 +4848,9 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4591,15 +4876,15 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
 
         @classmethod
         def filter(cls, timeout=None, **kwargs):
-                captured["filters"].append(kwargs)
-                return [
-                    types.SimpleNamespace(
-                        model_dump=lambda *args, **kwargs: {
-                            "uid": "data-node-storage-42",
-                            "storage_hash": "weights_daily",
-                            "source_class_name": "NodeWeights",
-                            "identifier": "weights_daily",
-                            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            captured["filters"].append(kwargs)
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda *args, **kwargs: {
+                        "uid": "data-node-storage-42",
+                        "storage_hash": "weights_daily",
+                        "source_class_name": "NodeWeights",
+                        "identifier": "weights_daily",
+                        "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
                         "data_frequency_id": "1d",
                     }
                 )
@@ -4652,7 +4937,9 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4715,7 +5002,9 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4826,7 +5115,9 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4872,7 +5163,9 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
 
-    out = api_mod.data_node_storage_column_search("close", filters={"storage_hash__contains": "prices"})
+    out = api_mod.data_node_storage_column_search(
+        "close", filters={"storage_hash__contains": "prices"}
+    )
 
     assert captured["jwt"] == ("acc", "ref")
     assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "prices"}}
@@ -4889,7 +5182,9 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -4945,7 +5240,9 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5026,14 +5323,20 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
         "timeout": 30,
     }
     assert captured["jwt"] == ("acc", "ref")
-    assert out == {"uid": "data-node-storage-42", "storage_hash": "weights_daily", "identifier": "weights_daily"}
+    assert out == {
+        "uid": "data-node-storage-42",
+        "storage_hash": "weights_daily",
+        "identifier": "weights_daily",
+    }
 
 
 def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5104,7 +5407,9 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5141,7 +5446,11 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
                         "detail": "User now has explicit edit access.",
                         "object_id": uid,
                         "object_type": "tdag.datanodestorage",
-                        "user": {"id": user_id, "username": "editor", "email": "editor@example.com"},
+                        "user": {
+                            "id": user_id,
+                            "username": "editor",
+                            "email": "editor@example.com",
+                        },
                         "explicit_can_view": True,
                         "explicit_can_edit": True,
                         "explicit_can_view_user_ids": [user_id],
@@ -5170,7 +5479,9 @@ def test_get_logged_user_details_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.setattr(
         api_mod,
@@ -5264,7 +5575,9 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5328,8 +5641,18 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     assert captured["limit"] == 10
     assert captured["timeout"] == 12
     assert out == [
-        {"uid": "project-uid-11", "project_name": "alpha-research", "repository_branch": "main", "cluster_id": 7},
-        {"uid": "project-uid-12", "project_name": "data-live", "repository_branch": "release", "cluster_id": 9},
+        {
+            "uid": "project-uid-11",
+            "project_name": "alpha-research",
+            "repository_branch": "main",
+            "cluster_id": 7,
+        },
+        {
+            "uid": "project-uid-12",
+            "project_name": "data-live",
+            "repository_branch": "release",
+            "cluster_id": 9,
+        },
     ]
 
 
@@ -5337,7 +5660,9 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -5367,7 +5692,9 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
             captured["project_id"] = project_id
             captured["timeout"] = timeout
             captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
-            return types.SimpleNamespace(model_dump=lambda: {"id": project_id, "project_name": "Demo"})
+            return types.SimpleNamespace(
+                model_dump=lambda: {"id": project_id, "project_name": "Demo"}
+            )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_models.Project = FakeProject
@@ -5391,7 +5718,9 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -5450,7 +5779,9 @@ def test_create_project_job_uses_client_model_task_schedule(cli_mod, monkeypatch
                 "timeout": timeout,
             }
             captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
-            return types.SimpleNamespace(model_dump=lambda: {"id": 91, "task_schedule": task_schedule})
+            return types.SimpleNamespace(
+                model_dump=lambda: {"id": 91, "task_schedule": task_schedule}
+            )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_helpers.Job = FakeJob
@@ -5488,7 +5819,9 @@ def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp
     jobs_file = tmp_path / "scheduled_jobs.yaml"
     jobs_file.write_text("jobs: []\n", encoding="utf-8")
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
 
@@ -5522,7 +5855,9 @@ def test_schedule_batch_project_jobs_uses_client_model(cli_mod, monkeypatch, tmp
                 "timeout": timeout,
             }
             captured["env_project_id"] = os.environ.get("MAIN_SEQUENCE_PROJECT_ID")
-            return [types.SimpleNamespace(model_dump=lambda: {"id": 91, "name": "Simulated Prices"})]
+            return [
+                types.SimpleNamespace(model_dump=lambda: {"id": 91, "name": "Simulated Prices"})
+            ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
     fake_helpers.Job = FakeJob
@@ -5598,7 +5933,9 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5636,7 +5973,7 @@ def test_run_project_job_uses_client_model(cli_mod, monkeypatch):
                         "status": "QUEUED",
                         "unique_identifier": "jobrun_abc123",
                     }
-                )
+                ),
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
@@ -5666,7 +6003,9 @@ def test_list_project_job_runs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {"filters": []}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5730,7 +6069,9 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     api_mod = importlib.import_module("mainsequence.cli.api")
     captured = {}
 
-    monkeypatch.setattr(api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"})
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
     monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
 
     fake_client_pkg = types.ModuleType("mainsequence.client")
@@ -5784,7 +6125,9 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     }
 
 
-def test_project_get_data_node_updates_defaults_to_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_get_data_node_updates_defaults_to_env_project_id(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -5966,7 +6309,9 @@ def test_project_jobs_list_show_filters_mentions_project_scope(cli_mod, runner, 
     assert "project" in result.output
 
 
-def test_project_project_resource_list_defaults_to_remote_branch_head(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_project_resource_list_defaults_to_remote_branch_head(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -5980,7 +6325,9 @@ def test_project_project_resource_list_defaults_to_remote_branch_head(cli_mod, r
         lambda project_dir: ("origin/main", "abc123"),
     )
 
-    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None):
+    def _list_project_resources(
+        project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None
+    ):
         captured["project_id"] = project_id
         captured["repo_commit_sha"] = repo_commit_sha
         captured["resource_type"] = resource_type
@@ -6015,13 +6362,17 @@ def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, mon
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
-    monkeypatch.setattr(cli_mod, "_get_remote_branch_head_commit", lambda project_dir: ("origin/main", "abc123"))
+    monkeypatch.setattr(
+        cli_mod, "_get_remote_branch_head_commit", lambda project_dir: ("origin/main", "abc123")
+    )
 
     def _parse(model_ref, entries):
         captured["entries"] = list(entries or [])
         return {"id__in": ["301"]}
 
-    def _list_project_resources(project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None):
+    def _list_project_resources(
+        project_id, repo_commit_sha, resource_type=None, filters=None, timeout=None
+    ):
         captured["filters"] = filters
         return []
 
@@ -6037,7 +6388,9 @@ def test_project_project_resource_list_passes_extra_filters(cli_mod, runner, mon
     assert captured["filters"] == {"id__in": ["301"]}
 
 
-def test_project_project_resource_create_dashboard_filters_resources_by_selected_image(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_project_resource_create_dashboard_filters_resources_by_selected_image(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -6103,7 +6456,9 @@ def test_project_project_resource_create_dashboard_filters_resources_by_selected
     assert "Project resource release created: id=501" in result.output
 
 
-def test_project_project_resource_create_fastapi_filters_resources_by_selected_image(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_project_resource_create_fastapi_filters_resources_by_selected_image(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -6169,7 +6524,9 @@ def test_project_project_resource_create_fastapi_filters_resources_by_selected_i
     assert "Project resource release created: id=503" in result.output
 
 
-def test_project_project_resource_delete_dashboard_requires_confirmation(cli_mod, runner, monkeypatch):
+def test_project_project_resource_delete_dashboard_requires_confirmation(
+    cli_mod, runner, monkeypatch
+):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -6211,7 +6568,9 @@ def test_project_project_resource_delete_dashboard_requires_confirmation(cli_mod
     assert "Project resource release deleted: id=501" in result.output
 
 
-def test_project_project_resource_delete_fastapi_requires_confirmation(cli_mod, runner, monkeypatch):
+def test_project_project_resource_delete_fastapi_requires_confirmation(
+    cli_mod, runner, monkeypatch
+):
     captured = {}
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
@@ -6259,7 +6618,7 @@ def test_agent_list(cli_mod, runner, monkeypatch):
         "list_agents",
         lambda timeout=None, filters=None: [
             {
-                "id": 12,
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "agent_unique_id": "research-copilot",
                 "name": "Research Copilot",
                 "status": "active",
@@ -6276,10 +6635,11 @@ def test_agent_list(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Agents" in result.output
     assert "Unique" in result.output
-    assert "researc" in result.output
-    assert "h-copil" in result.output
-    assert "Researc" in result.output
-    assert "Copilot" in result.output
+    assert "resear" in result.output
+    assert "ch-cop" in result.output
+    assert "ilot" in result.output
+    assert "Resear" in result.output
+    assert "Copilo" in result.output
     assert "Total agents: 1" in result.output
 
 
@@ -6290,7 +6650,7 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
         "list_agents",
         lambda timeout=None, filters=None: [
             {
-                "id": 12,
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "agent_unique_id": "research-copilot",
                 "name": "Research Copilot",
                 "status": "active",
@@ -6306,7 +6666,7 @@ def test_agent_list_json(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["agent", "list", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload[0]["id"] == 12
+    assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     assert payload[0]["agent_unique_id"] == "research-copilot"
     assert payload[0]["llm_model"] == "gpt-5.4"
 
@@ -6325,7 +6685,7 @@ def test_agent_search(cli_mod, runner, monkeypatch):
         )
         return [
             {
-                "id": 12,
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
                 "agent_unique_id": "research-copilot",
                 "description": "Searchable data research agent.",
@@ -6372,7 +6732,7 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
         "semantic_search_agents",
         lambda q, **kwargs: [
             {
-                "id": 12,
+                "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "name": "Research Copilot",
                 "agent_unique_id": "research-copilot",
                 "description": "Searchable data research agent.",
@@ -6386,7 +6746,7 @@ def test_agent_search_json(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["agent", "search", "data research", "--json"])
     assert result.exit_code == 0
     payload = json.loads(result.output)
-    assert payload[0]["id"] == 12
+    assert payload[0]["uid"] == "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     assert payload[0]["agent_unique_id"] == "research-copilot"
     assert payload[0]["combined_score"] == 0.85
 
@@ -6455,7 +6815,7 @@ def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
     def _get_or_create(**kwargs):
         captured.update(kwargs)
         return {
-            "id": 12,
+            "uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
             "name": kwargs["name"],
             "agent_unique_id": kwargs["agent_unique_id"],
             "status": kwargs.get("status") or "draft",
@@ -6506,18 +6866,48 @@ def test_agent_get_or_create_parses_json_fields(cli_mod, runner, monkeypatch):
     assert "Agent resolved via get_or_create: Research Copilot" in result.output
 
 
+def test_agent_detail_uses_agent_uid(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    captured = {}
+
+    def _get(agent_uid_arg, timeout=None):
+        captured["agent_uid"] = agent_uid_arg
+        captured["timeout"] = timeout
+        return {
+            "uid": agent_uid,
+            "agent_unique_id": "research-copilot",
+            "name": "Research Copilot",
+            "status": "active",
+            "labels": ["research"],
+            "runtime_config": {"temperature": 0},
+            "configuration": {"mode": "analysis"},
+            "metadata": {"owner": "quant"},
+        }
+
+    monkeypatch.setattr(cli_mod, "get_agent", _get)
+
+    result = runner.invoke(cli_mod.app, ["agent", "detail", agent_uid, "--timeout", "11"])
+    assert result.exit_code == 0
+    assert captured == {"agent_uid": agent_uid, "timeout": 11}
+    assert "Agent" in result.output
+    assert agent_uid[:8] in result.output
+    assert "research-copilot" in result.output
+
+
 def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     monkeypatch.setattr(
         cli_mod,
         "allocate_agent_a2a_target_session",
-        lambda agent_id, caller_agent_session_id, handle_unique_id=None, timeout=None: {
+        lambda agent_uid, caller_agent_session_uid, handle_unique_id=None, timeout=None: {
             "handle_unique_id": handle_unique_id or "delegated-handle-1",
-            "agent_session_id": 801,
+            "agent_session_uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
             "allocation_state": "created_new",
             "session": {
-                "id": 801,
-                "agent": {"id": agent_id, "name": "Research Copilot"},
+                "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+                "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
                 "status": "pending",
                 "started_at": "2026-04-11T09:15:00Z",
                 "llm_provider": "openai",
@@ -6527,7 +6917,7 @@ def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
                 "runtime_config_snapshot": {"temperature": 0},
                 "session_metadata": {
                     "origin": "cli",
-                    "caller_agent_session_id": caller_agent_session_id,
+                    "caller_agent_session_uid": caller_agent_session_uid,
                     "handle_unique_id": handle_unique_id or "delegated-handle-1",
                 },
             },
@@ -6536,10 +6926,10 @@ def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["agent", "allocate_a2a_target_session", "12", "700"],
+        ["agent", "allocate_a2a_target_session", agent_uid, "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
     )
     assert result.exit_code == 0
-    assert "Agent A2A target session allocated: agent_id=12" in result.output
+    assert f"Agent A2A target session allocated: agent_uid={agent_uid}" in result.output
     assert "A2A Target Session Allocation" in result.output
     assert "delegated-handle-1" in result.output
     assert "created_new" in result.output
@@ -6550,12 +6940,13 @@ def test_agent_allocate_a2a_target_session(cli_mod, runner, monkeypatch):
 
 def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     monkeypatch.setattr(
         cli_mod,
         "get_agent_latest_session",
-        lambda agent_id, timeout=None: {
-            "id": 802,
-            "agent": {"id": agent_id, "name": "Research Copilot"},
+        lambda agent_uid, timeout=None: {
+            "uid": "3f1cc452-43ec-49cb-b2ba-87dbac164d29",
+            "agent_uid": agent_uid,
             "status": "completed",
             "started_at": "2026-04-11T09:15:00Z",
             "ended_at": "2026-04-11T09:16:00Z",
@@ -6569,7 +6960,7 @@ def test_agent_get_latest_session(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "get_latest_session", "12"])
+    result = runner.invoke(cli_mod.app, ["agent", "get_latest_session", agent_uid])
     assert result.exit_code == 0
     assert "Agent Session Details" in result.output
     assert "Summarize rates moves" in result.output
@@ -6582,16 +6973,16 @@ def test_agent_session_detail(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_agent_session",
-        lambda agent_session_id, timeout=None: {
-            "id": agent_session_id,
-            "agent": {"id": 12, "name": "Research Copilot"},
+        lambda agent_session_uid, timeout=None: {
+            "uid": agent_session_uid,
+            "agent_uid": "e0e75693-4110-464c-93e0-82c7fd9c9a23",
             "status": "completed",
             "started_at": "2026-04-11T09:15:00Z",
             "ended_at": "2026-04-11T09:16:00Z",
             "llm_provider": "openai",
             "llm_model": "gpt-5.4",
             "engine_name": "codex",
-            "triggered_by_user": {"id": 7, "username": "jose"},
+            "created_by_user_uid": "fdf409f7-d16f-4f71-986b-9057db6c7eca",
             "input_text": "Summarize rates moves",
             "output_text": "Bunds rallied 4bp.",
             "usage_summary": {"prompt_tokens": 100},
@@ -6599,7 +6990,9 @@ def test_agent_session_detail(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "session", "detail", "803"])
+    result = runner.invoke(
+        cli_mod.app, ["agent", "session", "detail", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"]
+    )
     assert result.exit_code == 0
     assert "Agent Session Details" in result.output
     assert "Summarize rates moves" in result.output
@@ -6612,7 +7005,7 @@ def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "resolve_agent_session_runtime_access",
-        lambda agent_session_id, timeout=None: {
+        lambda agent_session_uid, timeout=None: {
             "coding_agent_service_id": "svc-12",
             "coding_agent_id": "agent-rt-77",
             "mode": "token",
@@ -6621,9 +7014,15 @@ def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "session", "resolve_runtime_access", "803"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["agent", "session", "resolve_runtime_access", "3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
+    )
     assert result.exit_code == 0
-    assert "Agent session runtime access resolved: session_id=803" in result.output
+    assert (
+        "Agent session runtime access resolved: session_uid=3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+        in result.output
+    )
     assert "Agent Session Runtime Access" in result.output
     assert "svc-12" in result.output
     assert "agent-rt-77" in result.output
@@ -6634,11 +7033,12 @@ def test_agent_session_resolve_runtime_access(cli_mod, runner, monkeypatch):
 def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     monkeypatch.setattr(
         cli_mod,
         "get_agent",
-        lambda agent_id, timeout=None: {
-            "id": agent_id,
+        lambda agent_uid, timeout=None: {
+            "uid": agent_uid,
             "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
@@ -6646,11 +7046,11 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
         },
     )
 
-    def _delete(agent_id, timeout=None):
-        captured["agent_id"] = agent_id
+    def _delete(agent_uid_arg, timeout=None):
+        captured["agent_uid"] = agent_uid_arg
         captured["timeout"] = timeout
         return {
-            "id": agent_id,
+            "uid": agent_uid,
             "agent_unique_id": "research-copilot",
             "name": "Research Copilot",
             "status": "active",
@@ -6661,22 +7061,23 @@ def test_agent_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(
         cli_mod.app,
-        ["agent", "delete", "12"],
+        ["agent", "delete", agent_uid],
         input="Research Copilot\n",
     )
     assert result.exit_code == 0
     assert "Agent Delete Preview" in result.output
     assert "Type agent name 'Research Copilot' to confirm deletion" in result.output
-    assert captured["agent_id"] == 12
-    assert "Agent deleted: agent_unique_id=research-copilot" in result.output
+    assert captured["agent_uid"] == agent_uid
+    assert f"Agent deleted: agent_uid={agent_uid}" in result.output
 
 
 def test_agent_can_edit(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
     monkeypatch.setattr(
         cli_mod,
         "list_agent_users_can_edit",
-        lambda agent_id, timeout=None: {
+        lambda agent_uid, timeout=None: {
             "access_level": "edit",
             "users": [
                 {
@@ -6691,7 +7092,7 @@ def test_agent_can_edit(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["agent", "can_edit", "12"])
+    result = runner.invoke(cli_mod.app, ["agent", "can_edit", agent_uid])
     assert result.exit_code == 0
     assert "Agent Users Who Can Edit" in result.output
     assert "Agent Teams Who Can Edit" in result.output
@@ -6703,16 +7104,17 @@ def test_agent_can_edit(cli_mod, runner, monkeypatch):
 def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
     captured = {}
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
 
-    def _add(agent_id, team_id, timeout=None):
-        captured["agent_id"] = agent_id
+    def _add(agent_uid_arg, team_id, timeout=None):
+        captured["agent_uid"] = agent_uid_arg
         captured["team_id"] = team_id
         captured["timeout"] = timeout
         return {
             "ok": True,
             "action": "add_team_to_edit",
             "detail": "Team now has explicit edit access.",
-            "object_id": agent_id,
+            "object_id": agent_uid_arg,
             "object_type": "agent.agent",
             "team": {
                 "id": team_id,
@@ -6727,9 +7129,9 @@ def test_agent_add_team_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_agent_team_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["agent", "add_team_to_edit", "12", "3"])
+    result = runner.invoke(cli_mod.app, ["agent", "add_team_to_edit", agent_uid, "3"])
     assert result.exit_code == 0
-    assert captured == {"agent_id": 12, "team_id": 3, "timeout": None}
+    assert captured == {"agent_uid": agent_uid, "team_id": 3, "timeout": None}
     assert "Agent add_team_to_edit completed." in result.output
 
 
@@ -6798,7 +7200,7 @@ def test_constants_list(cli_mod, runner, monkeypatch):
         "list_constants",
         lambda filters=None, timeout=None: [
             {
-                "id": 7,
+                "uid": "11111111-1111-4111-8111-111111111111",
                 "name": "ASSETS__MASTER",
                 "value": {"source": "bbg"},
             }
@@ -6847,7 +7249,7 @@ def test_constants_create_parses_json_value(cli_mod, runner, monkeypatch):
         captured["name"] = name
         captured["value"] = value
         captured["timeout"] = timeout
-        return {"id": 7, "name": name, "value": value}
+        return {"uid": "11111111-1111-4111-8111-111111111111", "name": name, "value": value}
 
     monkeypatch.setattr(cli_mod, "create_constant", _create)
 
@@ -6865,23 +7267,24 @@ def test_constants_create_parses_json_value(cli_mod, runner, monkeypatch):
 
 def test_constants_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     captured = {}
+    constant_uid = "11111111-1111-4111-8111-111111111111"
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
         "get_constant",
-        lambda constant_id, timeout=None: {
-            "id": constant_id,
+        lambda constant_uid, timeout=None: {
+            "uid": constant_uid,
             "name": "ASSETS__MASTER",
             "value": {"source": "bbg"},
         },
     )
 
-    def _delete(constant_id, timeout=None):
-        captured["constant_id"] = constant_id
+    def _delete(constant_uid, timeout=None):
+        captured["constant_uid"] = constant_uid
         captured["timeout"] = timeout
         return {
-            "id": constant_id,
+            "uid": constant_uid,
             "name": "ASSETS__MASTER",
             "value": {"source": "bbg"},
         }
@@ -6890,14 +7293,14 @@ def test_constants_delete_requires_typed_verification(cli_mod, runner, monkeypat
 
     result = runner.invoke(
         cli_mod.app,
-        ["constants", "delete", "7"],
+        ["constants", "delete", constant_uid],
         input="ASSETS__MASTER\n",
     )
     assert result.exit_code == 0
     assert "Constant Delete Preview" in result.output
     assert "Type constant name 'ASSETS__MASTER' to confirm deletion" in result.output
-    assert captured["constant_id"] == 7
-    assert "Constant deleted: id=7" in result.output
+    assert captured["constant_uid"] == constant_uid
+    assert f"Constant deleted: uid={constant_uid}" in result.output
 
 
 def test_constants_can_edit(cli_mod, runner, monkeypatch):
@@ -6905,8 +7308,8 @@ def test_constants_can_edit(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_constant_users_can_edit",
-        lambda constant_id, timeout=None: {
-            "object_id": constant_id,
+        lambda constant_uid, timeout=None: {
+            "object_uid": constant_uid,
             "object_type": "tdag.constant",
             "access_level": "edit",
             "users": [
@@ -6922,7 +7325,10 @@ def test_constants_can_edit(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["constants", "can_edit", "7"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["constants", "can_edit", "11111111-1111-4111-8111-111111111111"],
+    )
     assert result.exit_code == 0
     assert "Constant Users Who Can Edit" in result.output
     assert "Constant Teams Who Can Edit" in result.output
@@ -6937,15 +7343,15 @@ def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(constant_id, user_id, timeout=None):
-        captured["constant_id"] = constant_id
+    def _add(constant_uid, user_id, timeout=None):
+        captured["constant_uid"] = constant_uid
         captured["user_id"] = user_id
         captured["timeout"] = timeout
         return {
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": constant_id,
+            "object_uid": constant_uid,
             "object_type": "tdag.constant",
             "user": {
                 "id": user_id,
@@ -6962,9 +7368,10 @@ def test_constants_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_constant_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["constants", "add_to_edit", "7", "9"])
+    constant_uid = "11111111-1111-4111-8111-111111111111"
+    result = runner.invoke(cli_mod.app, ["constants", "add_to_edit", constant_uid, "9"])
     assert result.exit_code == 0
-    assert captured == {"constant_id": 7, "user_id": 9, "timeout": None}
+    assert captured == {"constant_uid": constant_uid, "user_id": 9, "timeout": None}
     assert "Constant add_to_edit completed." in result.output
     assert "Constant Sharing Update" in result.output
     assert "editor@example.com" in result.output
@@ -7243,7 +7650,10 @@ def test_data_node_storage_list_passes_cli_filters(cli_mod, runner, monkeypatch)
     monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
     monkeypatch.setattr(cli_mod, "list_data_node_storages", _list)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "list", "--filter", "uid__in=data-node-storage-42,data-node-storage-43"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "list", "--filter", "uid__in=data-node-storage-42,data-node-storage-43"],
+    )
     assert result.exit_code == 0
     assert captured["entries"] == ["uid__in=data-node-storage-42,data-node-storage-43"]
     assert captured["filters"] == {"uid__in": ["data-node-storage-42", "data-node-storage-43"]}
@@ -7280,7 +7690,9 @@ def test_data_node_storage_search_supports_data_source_id_option(cli_mod, runner
     assert captured["filters"] == {"data_source__id": "2"}
 
 
-def test_data_node_storage_search_rejects_conflicting_data_source_filters(cli_mod, runner, monkeypatch):
+def test_data_node_storage_search_rejects_conflicting_data_source_filters(
+    cli_mod, runner, monkeypatch
+):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
     def _parse(model_ref, entries):
@@ -7301,7 +7713,9 @@ def test_data_node_storage_search_rejects_conflicting_data_source_filters(cli_mo
         ],
     )
     assert result.exit_code == 1
-    assert "Do not pass both `--data-source-id` and `--filter data_source__id=...`." in result.output
+    assert (
+        "Do not pass both `--data-source-id` and `--filter data_source__id=...`." in result.output
+    )
 
 
 def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
@@ -7524,7 +7938,9 @@ def test_data_node_storage_search_column_mode_only(cli_mod, runner, monkeypatch)
     monkeypatch.setattr(
         cli_mod,
         "data_node_storage_description_search",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("description search should not run")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("description search should not run")
+        ),
     )
 
     def _column(q, *, filters=None):
@@ -7564,9 +7980,7 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
                     "identity_dimensions": ["account_uid", "unique_identifier"],
                 },
                 "physical_index_plan": {
-                    "uniqueness": {
-                        "columns": ["time_index", "account_uid", "unique_identifier"]
-                    }
+                    "uniqueness": {"columns": ["time_index", "account_uid", "unique_identifier"]}
                 },
             },
             "table_index_names": {"0": "time_index"},
@@ -7624,7 +8038,9 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
 
     monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
 
-    out = api_mod.run_data_node_storage_query("data-node-storage-42", "SELECT 1 AS value", timeout=14)
+    out = api_mod.run_data_node_storage_query(
+        "data-node-storage-42", "SELECT 1 AS value", timeout=14
+    )
     assert captured == {
         "module_name": "mainsequence.client.models_tdag",
         "class_name": "DataNodeStorage",
@@ -7691,7 +8107,10 @@ def test_data_node_storage_refresh_search_index(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "refresh_data_node_storage_search_index", _refresh)
 
-    result = runner.invoke(cli_mod.app, ["data-node", "refresh-search-index", "data-node-storage-42", "--timeout", "15"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["data-node", "refresh-search-index", "data-node-storage-42", "--timeout", "15"],
+    )
     assert result.exit_code == 0
     assert captured == {"storage_uid": "data-node-storage-42", "timeout": 15}
     assert "Data node search index refresh requested: uid=data-node-storage-42" in result.output
@@ -7744,7 +8163,11 @@ def test_data_node_storage_add_label(cli_mod, runner, monkeypatch):
         ["data-node", "add-label", "data-node-storage-42", "--label", "curated"],
     )
     assert result.exit_code == 0
-    assert captured == {"storage_uid": "data-node-storage-42", "labels": ["curated"], "timeout": None}
+    assert captured == {
+        "storage_uid": "data-node-storage-42",
+        "labels": ["curated"],
+        "timeout": None,
+    }
     assert "Data Node add-label completed." in result.output
     assert "curated" in result.output
 
@@ -7884,7 +8307,8 @@ def test_project_jobs_run(cli_mod, runner, monkeypatch):
             job_id=job_id,
             command_args=command_args,
             timeout=timeout,
-        ) or {
+        )
+        or {
             "id": 501,
             "job": job_id,
             "status": "QUEUED",
@@ -7929,7 +8353,8 @@ def test_project_jobs_run_with_arg_option(cli_mod, runner, monkeypatch):
             job_id=job_id,
             command_args=command_args,
             timeout=timeout,
-        ) or {
+        )
+        or {
             "id": 501,
             "job": job_id,
             "status": "QUEUED",
@@ -8033,15 +8458,23 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
         [
             {"job_run_id": 501, "status": "PENDING", "rows": ["first line"]},
             {"job_run_id": 501, "status": "RUNNING", "rows": ["first line", "second line"]},
-            {"job_run_id": 501, "status": "COMPLETED", "rows": ["first line", "second line", "third line"]},
+            {
+                "job_run_id": 501,
+                "status": "COMPLETED",
+                "rows": ["first line", "second line", "third line"],
+            },
         ]
     )
     sleeps = []
 
-    monkeypatch.setattr(cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses))
+    monkeypatch.setattr(
+        cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses)
+    )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "runs", "logs", "501", "--poll-interval", "3"])
+    result = runner.invoke(
+        cli_mod.app, ["project", "jobs", "runs", "logs", "501", "--poll-interval", "3"]
+    )
     assert result.exit_code == 0
     assert result.output.count("first line") == 1
     assert result.output.count("second line") == 1
@@ -8061,13 +8494,25 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     sleeps = []
     monotonic_values = iter([100.0, 100.0, 106.0])
 
-    monkeypatch.setattr(cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses))
+    monkeypatch.setattr(
+        cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses)
+    )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(cli_mod.time, "monotonic", lambda: next(monotonic_values))
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "jobs", "runs", "logs", "742", "--poll-interval", "3", "--max-wait-seconds", "5"],
+        [
+            "project",
+            "jobs",
+            "runs",
+            "logs",
+            "742",
+            "--poll-interval",
+            "3",
+            "--max-wait-seconds",
+            "5",
+        ],
     )
     assert result.exit_code == 0
     assert result.output.count("first line") == 1
@@ -8109,7 +8554,9 @@ def test_project_jobs_create_interactive_defaults(cli_mod, runner, monkeypatch, 
 
     monkeypatch.setattr(cli_mod, "create_project_job", _create_project_job)
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "create"], input="demo-job\n\nscripts/test.py\n\n")
+    result = runner.invoke(
+        cli_mod.app, ["project", "jobs", "create"], input="demo-job\n\nscripts/test.py\n\n"
+    )
     assert result.exit_code == 0
     assert captured["project_id"] == 123
     assert captured["name"] == "demo-job"
@@ -8182,7 +8629,9 @@ def test_project_jobs_create_derives_memory_from_cpu(cli_mod, runner, monkeypatc
     assert captured["spot"] is False
     assert captured["max_runtime_seconds"] == 86400
     assert captured["task_schedule"] is None
-    assert "Using defaults: memory_request=1, spot=false, max_runtime_seconds=86400." in result.output
+    assert (
+        "Using defaults: memory_request=1, spot=false, max_runtime_seconds=86400." in result.output
+    )
 
 
 def test_project_jobs_create_interactive_interval_schedule(cli_mod, runner, monkeypatch, tmp_path):
@@ -8246,14 +8695,20 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
     monkeypatch.setattr(
         cli_mod,
         "list_project_images",
-        lambda related_project_id, timeout=None: [{"id": 66, "project_repo_hash": "1111111111111111111111111111111111111111"}],
+        lambda related_project_id, timeout=None: [
+            {"id": 66, "project_repo_hash": "1111111111111111111111111111111111111111"}
+        ],
     )
 
     def _git_run(cmd, capture_output=None, text=None):
         args = cmd[3:]
         if args == ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]:
             return types.SimpleNamespace(returncode=0, stdout="origin/main\n", stderr="")
-        if args[:3] == ["rev-parse", "--verify", "1111111111111111111111111111111111111111^{commit}"]:
+        if args[:3] == [
+            "rev-parse",
+            "--verify",
+            "1111111111111111111111111111111111111111^{commit}",
+        ]:
             return types.SimpleNamespace(
                 returncode=0,
                 stdout="1111111111111111111111111111111111111111\n",
@@ -8281,7 +8736,11 @@ def test_project_create_image_interactive_defaults(cli_mod, runner, monkeypatch,
 
     def _create_project_image(**kwargs):
         captured.update(kwargs)
-        return {"id": 77, "project_repo_hash": kwargs["project_repo_hash"], "base_image": kwargs["base_image_id"]}
+        return {
+            "id": 77,
+            "project_repo_hash": kwargs["project_repo_hash"],
+            "base_image": kwargs["base_image_id"],
+        }
 
     monkeypatch.setattr(cli_mod, "create_project_image", _create_project_image)
 
@@ -8349,14 +8808,33 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
         if list_calls["count"] == 1:
             return []
         if list_calls["count"] == 2:
-            return [{"id": 77, "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd", "base_image": 22, "is_ready": False}]
-        return [{"id": 77, "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd", "base_image": 22, "is_ready": True}]
+            return [
+                {
+                    "id": 77,
+                    "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
+                    "base_image": 22,
+                    "is_ready": False,
+                }
+            ]
+        return [
+            {
+                "id": 77,
+                "project_repo_hash": "abc123abc123abc123abc123abc123abc123abcd",
+                "base_image": 22,
+                "is_ready": True,
+            }
+        ]
 
     monkeypatch.setattr(cli_mod, "list_project_images", _list_project_images)
     monkeypatch.setattr(
         cli_mod,
         "create_project_image",
-        lambda **kwargs: {"id": 77, "project_repo_hash": kwargs["project_repo_hash"], "base_image": 22, "is_ready": False},
+        lambda **kwargs: {
+            "id": 77,
+            "project_repo_hash": kwargs["project_repo_hash"],
+            "base_image": 22,
+            "is_ready": False,
+        },
     )
 
     sleep_calls = []
@@ -8364,7 +8842,17 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "images", "create", "123", "abc123", "--path", str(target), "--base-image-id", "22"],
+        [
+            "project",
+            "images",
+            "create",
+            "123",
+            "abc123",
+            "--path",
+            str(target),
+            "--base-image-id",
+            "22",
+        ],
     )
     assert result.exit_code == 0
     assert sleep_calls == [30, 30]
@@ -8374,7 +8862,9 @@ def test_project_create_image_polls_until_ready(cli_mod, runner, monkeypatch, tm
     assert "True" in result.output
 
 
-def test_project_create_image_normalizes_short_hash_to_full_sha(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_create_image_normalizes_short_hash_to_full_sha(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
     full_hash = "adb3fbb" + ("0" * 33)
@@ -8413,7 +8903,17 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(cli_mod, runner,
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "images", "create", "123", "adb3fbb", "--path", str(target), "--base-image-id", "22"],
+        [
+            "project",
+            "images",
+            "create",
+            "123",
+            "adb3fbb",
+            "--path",
+            str(target),
+            "--base-image-id",
+            "22",
+        ],
     )
 
     assert result.exit_code == 0
@@ -8421,7 +8921,9 @@ def test_project_create_image_normalizes_short_hash_to_full_sha(cli_mod, runner,
     assert full_hash in result.output
 
 
-def test_project_create_image_rejects_unresolvable_short_hash(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_create_image_rejects_unresolvable_short_hash(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-123"
     target.mkdir(parents=True, exist_ok=True)
 
@@ -8443,7 +8945,17 @@ def test_project_create_image_rejects_unresolvable_short_hash(cli_mod, runner, m
 
     result = runner.invoke(
         cli_mod.app,
-        ["project", "images", "create", "123", "adb3fbb", "--path", str(target), "--base-image-id", "22"],
+        [
+            "project",
+            "images",
+            "create",
+            "123",
+            "adb3fbb",
+            "--path",
+            str(target),
+            "--base-image-id",
+            "22",
+        ],
     )
 
     assert result.exit_code == 1
@@ -8681,7 +9193,9 @@ def test_project_set_up_locally(cli_mod, runner, monkeypatch, tmp_path):
             "is_initialized": True,
         },
     )
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
+    )
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
     monkeypatch.setattr(cli_mod, "add_deploy_key", lambda *a, **k: None)
     monkeypatch.setattr(cli_mod, "start_agent_and_add_key", lambda *_: {})
@@ -8742,7 +9256,9 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
             "is_initialized": True,
         },
     )
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda repo: (key, pub, "ssh-ed25519 AAA test")
+    )
     monkeypatch.setattr(cli_mod, "_copy_clipboard", lambda txt: True)
     monkeypatch.setattr(cli_mod, "add_deploy_key", lambda *a, **k: None)
     monkeypatch.setattr(cli_mod, "start_agent_and_add_key", lambda *_: {})
@@ -8783,7 +9299,9 @@ def test_project_set_up_locally_runtime_credential(cli_mod, runner, monkeypatch,
     assert "old-refresh" not in env_text
 
 
-def test_project_set_up_locally_rejects_uninitialized_project(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_set_up_locally_rejects_uninitialized_project(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     base = tmp_path / "base"
     base.mkdir(parents=True, exist_ok=True)
 
@@ -8975,7 +9493,9 @@ def test_project_open_signed_terminal(cli_mod, runner, monkeypatch, tmp_path):
     called = {"args": None}
 
     monkeypatch.setattr(cli_mod, "git_origin", lambda _: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda repo: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda repo: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(
         cli_mod,
         "open_signed_terminal",
@@ -9021,7 +9541,9 @@ def test_project_build_local_venv(cli_mod, runner, monkeypatch, tmp_path):
     assert "Local .venv built with Python 3.11." in result.output
 
 
-def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_build_local_venv_defaults_to_cwd_with_env_project_id(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "demo-project-uid-123"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_UID=project-uid-123\n", encoding="utf-8")
@@ -9104,7 +9626,9 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
 
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(
         cli_mod,
@@ -9121,7 +9645,9 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
         "run_cmd",
         lambda cmd, cwd, env=None: git_calls.append(cmd),
     )
-    monkeypatch.setattr(cli_mod, "sync_project_after_commit", lambda project_id: post_sync.update(called=True))
+    monkeypatch.setattr(
+        cli_mod, "sync_project_after_commit", lambda project_id: post_sync.update(called=True)
+    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -9137,7 +9663,9 @@ def test_project_sync(cli_mod, runner, monkeypatch, tmp_path):
     assert post_sync["called"] is False
 
 
-def test_project_sync_defaults_to_cwd_with_positional_message(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_sync_defaults_to_cwd_with_positional_message(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -9148,7 +9676,9 @@ def test_project_sync_defaults_to_cwd_with_positional_message(cli_mod, runner, m
     monkeypatch.chdir(target)
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: None)
     monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: None)
@@ -9180,7 +9710,8 @@ def test_project_schedule_batch_jobs_defaults_to_cwd(cli_mod, runner, monkeypatc
     monkeypatch.setattr(
         cli_mod,
         "schedule_batch_project_jobs",
-        lambda **kwargs: captured.update(kwargs) or [
+        lambda **kwargs: captured.update(kwargs)
+        or [
             {
                 "id": 91,
                 "name": "Simulated Prices",
@@ -9250,7 +9781,9 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
 
     def _fake_schedule_batch_project_jobs(**kwargs):
         captured.update(kwargs)
-        captured["yaml"] = yaml.safe_load(pathlib.Path(kwargs["file_path"]).read_text(encoding="utf-8"))
+        captured["yaml"] = yaml.safe_load(
+            pathlib.Path(kwargs["file_path"]).read_text(encoding="utf-8")
+        )
         return [
             {
                 "id": 91,
@@ -9278,7 +9811,9 @@ def test_project_schedule_batch_jobs_prompts_for_project_image_and_applies_it_to
     assert "Using project image 77 for all 1 job(s) in this batch." in result.output
 
 
-def test_project_schedule_batch_jobs_cancelled_on_confirmation(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_schedule_batch_jobs_cancelled_on_confirmation(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     batch_file = target / "scheduled_jobs.yaml"
@@ -9289,7 +9824,7 @@ def test_project_schedule_batch_jobs_cancelled_on_confirmation(cli_mod, runner, 
                 "jobs:",
                 '  - name: "Simulated Prices"',
                 '    execution_path: "scripts/simulated_prices_launcher.py"',
-                '    related_image_id: 77',
+                "    related_image_id: 77",
             ]
         ),
         encoding="utf-8",
@@ -9320,7 +9855,9 @@ def test_project_schedule_batch_jobs_cancelled_on_confirmation(cli_mod, runner, 
     assert "Cancelled." in result.output
 
 
-def test_project_schedule_batch_jobs_renders_summary_response(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_schedule_batch_jobs_renders_summary_response(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -9366,7 +9903,9 @@ def test_project_schedule_batch_jobs_renders_summary_response(cli_mod, runner, m
                         "name": "new-job",
                         "execution_path": "scripts/new.py",
                         "app_name": None,
-                        "task_schedule": {"schedule": {"type": "crontab", "expression": "0 0 * * *"}},
+                        "task_schedule": {
+                            "schedule": {"type": "crontab", "expression": "0 0 * * *"}
+                        },
                     },
                 },
                 {
@@ -9397,7 +9936,10 @@ def test_project_schedule_batch_jobs_renders_summary_response(cli_mod, runner, m
     assert "new-job" in result.output
     assert "existing" in result.output
     assert "linked to dashboard" in result.output
-    assert "Strict mode will not delete jobs that are still linked to dashboards or resource releases." in result.output
+    assert (
+        "Strict mode will not delete jobs that are still linked to dashboards or resource releases."
+        in result.output
+    )
 
 
 def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypatch, tmp_path):
@@ -9413,20 +9955,30 @@ def test_project_sync_triggers_backend_sync_after_push(cli_mod, runner, monkeypa
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(
         cli_mod,
         "prime_sync_project_after_commit_sdk",
         lambda: call_order.append("prime"),
     )
-    monkeypatch.setattr(cli_mod, "run_uv", lambda uv, args, cwd, env=None: call_order.append(f"uv:{args[0]}"))
-    monkeypatch.setattr(cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: call_order.append("uv:export"))
-    monkeypatch.setattr(cli_mod, "run_cmd", lambda cmd, cwd, env=None: call_order.append(f"cmd:{cmd[0]}"))
+    monkeypatch.setattr(
+        cli_mod, "run_uv", lambda uv, args, cwd, env=None: call_order.append(f"uv:{args[0]}")
+    )
+    monkeypatch.setattr(
+        cli_mod, "uv_export_requirements", lambda uv, cwd, **kwargs: call_order.append("uv:export")
+    )
+    monkeypatch.setattr(
+        cli_mod, "run_cmd", lambda cmd, cwd, env=None: call_order.append(f"cmd:{cmd[0]}")
+    )
     monkeypatch.setattr(
         cli_mod,
         "sync_project_after_commit",
-        lambda project_id: call_order.append("post_sync") or post_sync.update(project_id=project_id) or {"id": project_id},
+        lambda project_id: call_order.append("post_sync")
+        or post_sync.update(project_id=project_id)
+        or {"id": project_id},
     )
 
     result = runner.invoke(cli_mod.app, ["project", "sync", "Update deps"])
@@ -9451,7 +10003,9 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(
         cli_mod,
@@ -9493,7 +10047,9 @@ def test_project_sync_project(cli_mod, runner, monkeypatch, tmp_path):
     assert post_sync["project_id"] == "project-uid-123"
 
 
-def test_project_sync_project_defaults_to_current_project_dir(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_sync_project_defaults_to_current_project_dir(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     target = tmp_path / "project"
     target.mkdir(parents=True, exist_ok=True)
     (target / ".env").write_text("MAIN_SEQUENCE_PROJECT_ID=123\n", encoding="utf-8")
@@ -9505,7 +10061,9 @@ def test_project_sync_project_defaults_to_current_project_dir(cli_mod, runner, m
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(cli_mod, "ensure_venv", lambda *_: None)
     monkeypatch.setattr(cli_mod, "git_origin", lambda *_: "git@github.com:org/repo.git")
-    monkeypatch.setattr(cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub"))
+    monkeypatch.setattr(
+        cli_mod, "ensure_key_for_repo", lambda *_: (key, key.with_suffix(".pub"), "pub")
+    )
     monkeypatch.setattr(cli_mod, "ensure_uv_installed", lambda *_: uv_path)
     monkeypatch.setattr(
         cli_mod,
@@ -9573,7 +10131,9 @@ def test_project_current(cli_mod, runner, monkeypatch, tmp_path):
         "get_config",
         lambda: {"mainsequence_path": str(tmp_path)},
     )
-    monkeypatch.setattr(cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug))
+    monkeypatch.setattr(
+        cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug)
+    )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
 
@@ -9601,7 +10161,9 @@ def test_project_current_json(cli_mod, runner, monkeypatch, tmp_path):
         "get_config",
         lambda: {"mainsequence_path": str(tmp_path)},
     )
-    monkeypatch.setattr(cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug))
+    monkeypatch.setattr(
+        cli_mod, "detect_current_project", lambda workspaces, base: (project_info, debug)
+    )
     monkeypatch.setattr(cli_mod, "read_local_sdk_version", lambda req: "1.2.3")
     monkeypatch.setattr(cli_mod, "fetch_latest_sdk_version", lambda: "1.2.3")
 
@@ -9754,8 +10316,7 @@ def test_project_update_agents_md_replaces_existing_managed_block(
     target.mkdir()
     old_block = "\n".join(
         [
-            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} "
-            "schema=old source=old -->",
+            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=old source=old -->",
             "old managed content",
             cli_mod.AGENTS_MD_MANAGED_BLOCK_END,
         ]
@@ -9822,7 +10383,9 @@ def test_project_update_agents_md_keeps_existing_scaffold_shaped_file_current(
         ["project", "update", "AGENTS.md", "--path", str(target)],
     )
     assert result.exit_code == 0
-    assert (target / "AGENTS.md").read_text(encoding="utf-8") == agents_md.read_text(encoding="utf-8")
+    assert (target / "AGENTS.md").read_text(encoding="utf-8") == agents_md.read_text(
+        encoding="utf-8"
+    )
     assert "already current" in result.output
 
 
@@ -9836,8 +10399,7 @@ def test_project_update_agents_md_rejects_malformed_managed_block(
     target = tmp_path / "project"
     target.mkdir()
     start_marker = (
-        f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} "
-        "schema=1 source=agent_scaffold -->"
+        f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->"
     )
     (target / "AGENTS.md").write_text(
         f"# Project Agents\n\n{start_marker}\n",
@@ -9864,8 +10426,7 @@ def test_project_update_agents_md_rejects_duplicate_managed_blocks(
     target.mkdir()
     block = "\n".join(
         [
-            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} "
-            "schema=1 source=agent_scaffold -->",
+            f"{cli_mod.AGENTS_MD_MANAGED_BLOCK_START_PREFIX} schema=1 source=agent_scaffold -->",
             "managed content",
             cli_mod.AGENTS_MD_MANAGED_BLOCK_END,
         ]
@@ -9916,16 +10477,24 @@ def test_installed_agent_scaffold_bundle_dir_falls_back_to_sibling_package(cli_m
     assert resolved == expected.resolve()
 
 
-def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner, monkeypatch, tmp_path):
+def test_project_update_agent_skills_overwrites_matching_folders(
+    cli_mod, runner, monkeypatch, tmp_path
+):
     bundle_dir = tmp_path / "bundle"
     bundle_dir.mkdir()
     (bundle_dir / "AGENTS.md").write_text("bundle agents", encoding="utf-8")
     (bundle_dir / "skills" / "data_publishing").mkdir(parents=True)
-    (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text("new data skill", encoding="utf-8")
+    (bundle_dir / "skills" / "data_publishing" / "SKILL.md").write_text(
+        "new data skill", encoding="utf-8"
+    )
     (bundle_dir / "skills" / "maintenance").mkdir(parents=True)
-    (bundle_dir / "skills" / "maintenance" / "SKILL.md").write_text("new maintenance skill", encoding="utf-8")
+    (bundle_dir / "skills" / "maintenance" / "SKILL.md").write_text(
+        "new maintenance skill", encoding="utf-8"
+    )
     (bundle_dir / "skills" / "__pycache__").mkdir()
-    (bundle_dir / "skills" / "__pycache__" / "ignored.txt").write_text("ignore me", encoding="utf-8")
+    (bundle_dir / "skills" / "__pycache__" / "ignored.txt").write_text(
+        "ignore me", encoding="utf-8"
+    )
 
     target = tmp_path / "project"
     stale_top_level = target / ".agents" / "skills" / "data_publishing"
@@ -9935,18 +10504,22 @@ def test_project_update_agent_skills_overwrites_matching_folders(cli_mod, runner
     existing_mainsequence.mkdir(parents=True)
     (existing_mainsequence / "old.txt").write_text("stale mainsequence skill", encoding="utf-8")
 
-    monkeypatch.setattr(cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir)
+    monkeypatch.setattr(
+        cli_mod, "_project_agent_scaffold_bundle_dir", lambda project_dir: bundle_dir
+    )
 
     result = runner.invoke(cli_mod.app, ["project", "update_agent_skills", "--path", str(target)])
     assert result.exit_code == 0
     assert (
         target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "SKILL.md"
     ).read_text(encoding="utf-8") == "new data skill"
-    assert not (target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "old.txt").exists()
+    assert not (
+        target / ".agents" / "skills" / "mainsequence" / "data_publishing" / "old.txt"
+    ).exists()
     assert (target / ".agents" / "skills" / "data_publishing" / "old.txt").exists()
-    assert (
-        target / ".agents" / "skills" / "mainsequence" / "maintenance" / "SKILL.md"
-    ).read_text(encoding="utf-8") == "new maintenance skill"
+    assert (target / ".agents" / "skills" / "mainsequence" / "maintenance" / "SKILL.md").read_text(
+        encoding="utf-8"
+    ) == "new maintenance skill"
     assert not (target / ".agents" / "skills" / "mainsequence" / "__pycache__").exists()
     assert "Updated Agent Skills" in result.output
 

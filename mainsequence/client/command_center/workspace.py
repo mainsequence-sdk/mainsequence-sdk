@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from datetime import datetime
 from enum import Enum
 from typing import Any, ClassVar, Literal
@@ -11,6 +12,14 @@ from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, Share
 from ..exceptions import ApiError
 
 RegisteredWidgetKind = Literal["kpi", "chart", "table", "feed", "custom"]
+
+
+def _normalize_uid_csv(value: Any, *, field_name: str) -> str:
+    if isinstance(value, Iterable) and not isinstance(value, (str, bytes, dict)):
+        return ",".join(
+            BaseObjectOrm._coerce_filter_uid(item, field_name=field_name) for item in value
+        )
+    return BaseObjectOrm._coerce_filter_uid(value, field_name=field_name)
 
 
 class WorkspaceLayoutKind(str, Enum):
@@ -48,7 +57,9 @@ class WorkspaceType(str, Enum):
     SLIDE_STUDIO = "slide-studio"
 
 
-class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticModel):
+class Workspace(
+    LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObjectOrm, BasePydanticModel
+):
     """Command Center shared workspace payload.
 
     A workspace stores shared dashboard structure such as mounted widgets, layout,
@@ -67,16 +78,22 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
 
     ENDPOINT: ClassVar[str] = "workspaces"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "id": ["exact", "in"],
+        "uid": ["exact", "in"],
+        "exclude_uids": ["exact"],
         "title": ["exact", "contains"],
+        "type": ["exact", "in"],
         "source": ["exact", "in"],
         "labels": ["exact", "in", "contains"],
     }
-    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "id": "id",
-        "id__in": "id",
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, Any]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "exclude_uids": _normalize_uid_csv,
         "title": "str",
+        "type": "str",
+        "type__in": "str",
         "source": "str",
+        "source__in": "str",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",
@@ -87,13 +104,13 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
         extra="ignore",
     )
 
-    id: int = Field(
-        description="Workspace primary key.",
+    uid: str = Field(
+        description="Workspace public UID used for detail routes and workspace-scoped actions.",
     )
     title: str = Field(
         description="Human-readable workspace title.",
     )
-    type:str=Field(
+    type: str = Field(
         description="Type of workspace ",
     )
     description: str = Field(
@@ -101,8 +118,10 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
         description="Free-form workspace description.",
     )
     type: WorkspaceType = Field(default=WorkspaceType.WORKSPACE)
-    public_url:str| None =Field(description="Public URL for workspace endpoint if exists.", default=None)
-    created_at:datetime=Field()
+    public_url: str | None = Field(
+        description="Public URL for workspace endpoint if exists.", default=None
+    )
+    created_at: datetime = Field()
     labels: list[str] = Field(
         default_factory=list,
         description=(
@@ -220,7 +239,7 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
           `row`, that whole top-level value replaces the previous value.
         - `runtimeState` is write-only convenience. It is persisted into the
           current user's workspace user-state, not the shared workspace JSON.
-        - If `widget.id` is present, it must match `widget_instance_id`.
+        - If `widget.id` is present, it must match `widget_instance_id`; this is the mounted widget instance id inside the workspace JSON.
         - This endpoint does not allow replacing `widget.row.children`.
         - `widget.widgetId` may be changed, but it must remain a valid registered
           widget type.
@@ -236,10 +255,7 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
             expected_statuses=(200,),
         )
         if not isinstance(data, dict):
-            raise ApiError(
-                "Unexpected workspace widget patch response: "
-                f"{type(data)!r}"
-            )
+            raise ApiError(f"Unexpected workspace widget patch response: {type(data)!r}")
         return WorkspaceWidgetMutationResult.model_validate(data)
 
     def delete_workspace_widget(
@@ -304,10 +320,7 @@ class Workspace(LabelableObjectMixin, ShareableObjectMixin, CommandCenterBaseObj
             expected_statuses=(200,),
         )
         if not isinstance(data, dict):
-            raise ApiError(
-                "Unexpected workspace widget move response: "
-                f"{type(data)!r}"
-            )
+            raise ApiError(f"Unexpected workspace widget move response: {type(data)!r}")
         return WorkspaceWidgetMutationResult.model_validate(data)
 
 
@@ -316,8 +329,8 @@ class WorkspaceWidgetMutationResult(BasePydanticModel):
 
     Shared success response used by:
 
-    - `PATCH /api/v1/command_center/workspaces/{id}/widgets/{widget_instance_id}/`
-    - `POST /api/v1/command_center/workspaces/{id}/widgets/{widget_instance_id}/move/`
+    - `PATCH /api/v1/command_center/workspaces/{workspace_uid}/widgets/{widget_instance_id}/`
+    - `POST /api/v1/command_center/workspaces/{workspace_uid}/widgets/{widget_instance_id}/move/`
 
     It contains the mutated widget instance, its current parent placement, and
     the workspace update timestamp after the mutation.
@@ -328,9 +341,9 @@ class WorkspaceWidgetMutationResult(BasePydanticModel):
         extra="ignore",
     )
 
-    workspace_id: int = Field(
-        alias="workspaceId",
-        description="Workspace primary key.",
+    workspace_uid: str = Field(
+        alias="workspaceUid",
+        description="Workspace public UID.",
     )
     widget_instance_id: str = Field(
         alias="widgetInstanceId",
@@ -362,7 +375,7 @@ class RegisteredWidgetType(CommandCenterBaseObjectOrm, BasePydanticModel):
         "is_active": ["exact"],
         "include_inactive": ["exact"],
     }
-    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, Any]] = {
         "widget_id": "str",
         "category": "str",
         "kind": "str",

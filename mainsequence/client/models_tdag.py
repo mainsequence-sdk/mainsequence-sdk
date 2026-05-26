@@ -511,11 +511,13 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return hu
 
     def set_end_of_execution(
-        self, historical_update_id: int, timeout=None, threaded_request=True, **kwargs
+        self, historical_update_uid: str, timeout=None, threaded_request=True, **kwargs
     ):
         s = self.build_session()
         url = self.get_object_url() + f"/{self._public_uid()}/set_end_of_execution/"
-        kwargs.update(dict(historical_update_id=historical_update_id))
+        if historical_update_uid in (None, ""):
+            raise ValueError("Historical update uid is required to end execution.")
+        kwargs.update(dict(historical_update_uid=str(historical_update_uid)))
         payload = {"json": kwargs}
 
         def _do_request():
@@ -1042,11 +1044,13 @@ class BaseUpdateDetails:
     active_update_status: str = Field(
         default="Q", max_length=20, description="Current update status"
     )
-    active_update_scheduler: int | Scheduler | None = Field(
-        None, description="Scheduler  for active update"
+    active_update_scheduler_uid: str | None = Field(
+        None, description="UID reference to the scheduler for active update"
     )
     update_priority: int = Field(default=0, description="Priority level of the update")
-    last_updated_by_user: int | None = Field(None, description="Foreign key reference to User")
+    last_updated_by_user_uid: str | None = Field(
+        None, description="UID reference to the user that last updated this record"
+    )
 
 
 class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
@@ -1145,8 +1149,8 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         ),
     )
     creation_date: datetime.datetime = Field(..., description="Creation timestamp")
-    created_by_user: int | None = Field(None, description="Foreign key reference to User")
-    organization_owner: int = Field(None, description="Foreign key reference to Organization")
+    created_by_user_uid: str | None = Field(None, description="UID reference to User")
+    organization_owner_uid: str | None = Field(None, description="UID reference to Organization")
     open_for_everyone: bool = Field(
         default=False, description="Whether the table is open for everyone"
     )
@@ -3246,12 +3250,14 @@ def build_last_update_index_time_payload(
 
 
 class HistoricalUpdateRecord:
-    id: int | None = None
+    uid: str | None = Field(None, description="Public uid of this historical update")
     update_time_start: datetime.datetime
     update_time_end: datetime.datetime | None = None
     error_on_update: bool = False
     trace_id: str | None = Field(default=None, max_length=255)
-    updated_by_user: int | None = None  # Assuming you're using the ID of the user
+    updated_by_user_uid: str | None = Field(
+        None, description="UID reference to the user that updated this record"
+    )
     # extra fields for local control
     update_statistics: BaseUpdateStatistics | None = None
     must_update: bool | None = None

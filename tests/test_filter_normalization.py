@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ConfigDict, Field
 
+import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_helpers as models_helpers_mod
 import mainsequence.client.models_user as models_user_mod
@@ -16,6 +17,11 @@ from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, Shareable
 class _IdRef:
     def __init__(self, value: int):
         self.id = value
+
+
+class _UidRef:
+    def __init__(self, value: str):
+        self.uid = value
 
 
 class DemoFilterModel(BaseObjectOrm):
@@ -1004,8 +1010,47 @@ def test_team_uses_user_api_team_endpoint():
     assert models_user_mod.Team.get_object_url().endswith("/user/api/team")
 
 
+def test_user_team_and_organization_filters_use_uid_references():
+    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    org_uid = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+
+    team_filters = models_user_mod.Team._normalize_filter_kwargs(
+        {
+            "uid": {"uid": team_uid},
+            "uid__in": [_UidRef(team_uid)],
+            "organization_uid": {"uid": org_uid},
+            "is_active": "true",
+        }
+    )
+    assert team_filters == {
+        "uid": team_uid,
+        "uid__in": [team_uid],
+        "organization_uid": org_uid,
+        "is_active": True,
+    }
+
+    user_filters = models_user_mod.User._normalize_filter_kwargs(
+        {
+            "uid": {"uid": user_uid},
+            "uid__in": [_UidRef(user_uid)],
+            "email__contains": "main-sequence.io",
+        }
+    )
+    assert user_filters == {
+        "uid": user_uid,
+        "uid__in": [user_uid],
+        "email__contains": "main-sequence.io",
+    }
+
+    with pytest.raises(ValueError, match="Unsupported Team filter"):
+        models_user_mod.Team._normalize_filter_kwargs({"id": 11})
+
+
 def test_team_list_members_uses_team_members_endpoint(monkeypatch):
     captured = {}
+    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
 
     class FakeResponse:
         status_code = 200
@@ -1016,6 +1061,7 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
             return [
                 {
                     "id": 21,
+                    "uid": user_uid,
                     "first_name": "Ana",
                     "last_name": "Smith",
                     "username": "ana@example.com",
@@ -1032,15 +1078,16 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    team = models_user_mod.Team(id=11, name="Platform")
+    team = models_user_mod.Team(id=11, uid=team_uid, name="Platform")
     members = team.list_members(timeout=12)
 
     assert len(members) == 1
     assert members[0].id == 21
+    assert members[0].uid == user_uid
     assert members[0].phone_number is None
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_user_mod.Team.get_object_url()}/11/members/",
+        "url": f"{models_user_mod.Team.get_object_url()}/{team_uid}/members/",
         "payload": {},
         "timeout": 12,
     }
@@ -1048,6 +1095,9 @@ def test_team_list_members_uses_team_members_endpoint(monkeypatch):
 
 def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
     captured = {}
+    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    user_uid_1 = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+    user_uid_2 = "ac9e221d-1cd6-464c-a253-e302754872c1"
 
     class FakeResponse:
         status_code = 200
@@ -1057,6 +1107,7 @@ def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
         def json():
             return {
                 "team_id": 11,
+                "team_uid": team_uid,
                 "member_count": 4,
                 "selected": 2,
                 "added": 2,
@@ -1073,17 +1124,416 @@ def test_team_manage_members_posts_bulk_membership_payload(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    team = models_user_mod.Team(id=11, name="Platform")
-    result = team.add_members([_IdRef(21), 22], timeout=18)
+    team = models_user_mod.Team(id=11, uid=team_uid, name="Platform")
+    result = team.add_members([_UidRef(user_uid_1), {"uid": user_uid_2}], timeout=18)
 
     assert result.team_id == 11
+    assert result.team_uid == team_uid
     assert result.member_count == 4
     assert result.added == 2
     assert captured == {
         "r_type": "POST",
-        "url": f"{models_user_mod.Team.get_object_url()}/11/manage-members/",
-        "payload": {"json": {"action": "add", "user_ids": [21, 22]}},
+        "url": f"{models_user_mod.Team.get_object_url()}/{team_uid}/manage-members/",
+        "payload": {"json": {"action": "add", "user_uids": [user_uid_1, user_uid_2]}},
         "timeout": 18,
+    }
+
+
+def test_user_org_team_models_deserialize_current_backend_uid_payloads():
+    org_uid = "8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+    team_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    organization_payload = {
+        "uid": org_uid,
+        "name": "Main Sequence",
+        "url": "https://backend.test",
+        "organization_domain": "main-sequence.io",
+        "identity_platform_tenant_id": None,
+        "has_pending_invoices": False,
+    }
+
+    organization = models_user_mod.Organization.model_validate(organization_payload)
+    assert organization.uid == org_uid
+    assert "id" not in organization.model_dump()
+
+    current_user = models_user_mod.User.model_validate(
+        {
+            "id": 4,
+            "uid": user_uid,
+            "username": "jose",
+            "email": "jose@main-sequence.io",
+            "profile_picture": None,
+            "last_login": None,
+            "api_request_limit": 10000,
+            "mfa_enabled": False,
+            "organization": organization_payload,
+            "plan": None,
+            "groups": [],
+            "phone_number": None,
+            "organization_teams": [],
+            "is_active": True,
+            "date_joined": "2026-01-01T00:00:00Z",
+        }
+    )
+    assert current_user.uid == user_uid
+    assert current_user.user_permissions == []
+
+    user = models_user_mod.User.model_validate(
+        {
+            "id": 4,
+            "uid": user_uid,
+            "username": "jose",
+            "email": "jose@main-sequence.io",
+            "first_name": "Jose",
+            "last_name": "Ambrosino",
+            "profile_picture": None,
+            "phone_number": None,
+            "organization": organization_payload,
+            "is_verified": True,
+            "blocked_access": False,
+            "api_request_limit": 10000,
+            "mfa_enabled": False,
+            "requires_password_change": False,
+            "identity_platform_uid": None,
+            "active_plan_type": None,
+            "is_active": True,
+            "date_joined": "2026-01-01T00:00:00Z",
+            "last_login": None,
+            "groups": [],
+            "user_permissions": [],
+            "organization_teams": [],
+        }
+    )
+    assert user.uid == user_uid
+    assert user.id == 4
+    assert "id" not in user.model_dump()
+
+    team = models_user_mod.Team.model_validate(
+        {
+            "id": 11,
+            "uid": team_uid,
+            "name": "Platform",
+            "description": "Platform team",
+            "is_active": True,
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+            "organization": organization_payload,
+            "created_by": {
+                "id": 4,
+                "uid": user_uid,
+                "username": "jose",
+                "email": "jose@main-sequence.io",
+                "first_name": "Jose",
+                "last_name": "Ambrosino",
+            },
+            "member_count": 1,
+            "members": [
+                {
+                    "id": 4,
+                    "uid": user_uid,
+                    "username": "jose",
+                    "email": "jose@main-sequence.io",
+                    "first_name": "Jose",
+                    "last_name": "Ambrosino",
+                }
+            ],
+        }
+    )
+    assert team.uid == team_uid
+    assert team.created_by.uid == user_uid
+    assert team.members[0].uid == user_uid
+
+
+def test_user_get_by_uid_uses_user_uid_detail_route(monkeypatch):
+    captured = {}
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "id": 4,
+                "uid": user_uid,
+                "username": "jose",
+                "email": "jose@main-sequence.io",
+                "date_joined": "2026-01-01T00:00:00Z",
+                "is_active": True,
+                "api_request_limit": 10000,
+                "mfa_enabled": False,
+                "groups": [],
+                "user_permissions": [],
+                "organization_teams": [],
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    user = models_user_mod.User.get_by_uid(user_uid, timeout=9)
+
+    assert user.uid == user_uid
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{models_user_mod.User.get_object_url()}/{user_uid}/",
+        "payload": {"params": {}},
+        "timeout": 9,
+    }
+
+
+def test_agent_runtime_models_deserialize_backend_uid_payloads():
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    user_uid = "fdf409f7-d16f-4f71-986b-9057db6c7eca"
+    service_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
+
+    agent = agent_models_mod.Agent.model_validate(
+        {
+            "uid": agent_uid,
+            "name": "Research Copilot",
+            "agent_type": "custom",
+            "agent_unique_id": "research-copilot",
+            "description": "Research assistant.",
+            "agent_card": {"name": "Research Copilot"},
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "llm_thinking": "medium",
+            "runtime_config": {"temperature": 0},
+            "configuration": {"mode": "analysis"},
+            "metadata": {"owner": "quant"},
+            "last_session_at": "2026-01-01T00:00:00Z",
+        }
+    )
+    assert agent.uid == agent_uid
+    assert agent.agent_unique_id == "research-copilot"
+
+    search_result = agent_models_mod.AgentSemanticSearchResult.model_validate(
+        {
+            "uid": agent_uid,
+            "name": "Research Copilot",
+            "agent_type": "custom",
+            "agent_unique_id": "research-copilot",
+            "description": "Research assistant.",
+            "semantic_score": 0.91,
+            "text_score": 0.74,
+            "combined_score": 0.85,
+        }
+    )
+    assert search_result.uid == agent_uid
+
+    session = agent_models_mod.AgentSession.model_validate(
+        {
+            "uid": session_uid,
+            "agent_uid": agent_uid,
+            "agent_name": "Research Copilot",
+            "agent_type": "custom",
+            "created_by_user_uid": user_uid,
+            "parent_session_uid": None,
+            "status": "running",
+            "runtime_state": "running",
+            "working": True,
+            "started_at": "2026-01-01T00:00:00Z",
+            "ended_at": None,
+            "llm_provider": "openai",
+            "llm_model": "gpt-5.4",
+            "llm_thinking": "medium",
+            "engine_name": "codex",
+            "runtime_config_snapshot": {"temperature": 0},
+            "error_detail": "",
+            "thread_id": "thread-123",
+            "session_metadata": {"origin": "test"},
+            "bound_handles": [
+                {
+                    "handle_unique_id": "delegated-handle-1",
+                    "owner_user_uid": user_uid,
+                    "is_locked": False,
+                }
+            ],
+        }
+    )
+    assert session.uid == session_uid
+    assert session.agent_uid == agent_uid
+
+    orchestrator = agent_models_mod.UserOrchestratorAgentService.model_validate(
+        {
+            "uid": service_uid,
+            "agent_uid": agent_uid,
+            "is_ready": True,
+            "orchestrator_image_has_drift": False,
+            "user_uid": user_uid,
+            "related_job": {"uid": "job-uid"},
+            "knative_service_runtime": {"uid": "runtime-uid"},
+            "subdomain": "astro-jose",
+        }
+    )
+    assert orchestrator.uid == service_uid
+    assert orchestrator.agent_uid == agent_uid
+
+    executor = agent_models_mod.UserProjectExecutorAgentService.model_validate(
+        {
+            "uid": service_uid,
+            "agent_uid": agent_uid,
+            "is_ready": True,
+            "image_drift": {"has_drift": False, "checks": []},
+            "project": {"uid": "project-uid"},
+            "related_job": {"uid": "job-uid"},
+            "knative_service_runtime": {"uid": "runtime-uid"},
+            "subdomain": "executor-project",
+        }
+    )
+    assert executor.uid == service_uid
+    assert executor.agent_uid == agent_uid
+
+
+def test_agent_get_by_agent_unique_id_filters_by_deterministic_key(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return [
+                {
+                    "uid": agent_uid,
+                    "name": "Research Copilot",
+                    "agent_type": "custom",
+                    "agent_unique_id": "research-copilot",
+                    "description": "Research assistant.",
+                    "agent_card": None,
+                    "llm_provider": "openai",
+                    "llm_model": "gpt-5.4",
+                    "llm_thinking": "medium",
+                    "runtime_config": {},
+                    "configuration": {},
+                    "metadata": {},
+                    "last_session_at": None,
+                }
+            ]
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
+
+    agent = agent_models_mod.Agent.get_by_agent_unique_id("research-copilot", timeout=10)
+
+    assert agent.uid == agent_uid
+    assert captured == {
+        "r_type": "GET",
+        "url": f"{agent_models_mod.Agent.get_object_url()}/",
+        "payload": {"params": {"agent_unique_id": "research-copilot"}},
+        "timeout": 10,
+    }
+
+
+def test_agent_session_runtime_access_uses_session_uid_route(monkeypatch):
+    captured = {}
+    session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+
+    class FakeResponse:
+        status_code = 200
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "coding_agent_service_id": "svc-12",
+                "coding_agent_id": "agent-rt-77",
+                "mode": "token",
+                "rpc_url": "https://runtime.main-sequence.app/rpc",
+                "token": "tok-secret",
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    access = agent_models_mod.AgentSession.resolve_runtime_access(session_uid, timeout=11)
+
+    assert access.coding_agent_service_id == "svc-12"
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{agent_models_mod.AgentSession.get_object_url()}/{session_uid}/resolve_runtime_access/",
+        "payload": {},
+        "timeout": 11,
+    }
+
+
+def test_agent_a2a_allocation_sends_caller_session_uid(monkeypatch):
+    captured = {}
+    agent_uid = "e0e75693-4110-464c-93e0-82c7fd9c9a23"
+    caller_session_uid = "3f1cc452-43ec-49cb-b2ba-87dbac164d29"
+    target_session_uid = "ac9e221d-1cd6-464c-a253-e302754872c1"
+    agent = agent_models_mod.Agent(
+        uid=agent_uid,
+        name="Research Copilot",
+        agent_type="custom",
+        agent_unique_id="research-copilot",
+        description="Research assistant.",
+        agent_card=None,
+        llm_provider="openai",
+        llm_model="gpt-5.4",
+        llm_thinking="medium",
+    )
+
+    class FakeResponse:
+        status_code = 201
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {
+                "handle_unique_id": "delegated-handle-1",
+                "agent_session_uid": target_session_uid,
+                "allocation_state": "created_new",
+                "session": {"uid": target_session_uid},
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(agent_models_mod, "make_request", _fake_make_request)
+
+    allocation = agent.allocate_a2a_target_session(
+        caller_agent_session_uid=caller_session_uid,
+        handle_unique_id="delegated-handle-1",
+        timeout=12,
+    )
+
+    assert allocation["agent_session_uid"] == target_session_uid
+    assert captured == {
+        "r_type": "POST",
+        "url": f"{agent_models_mod.Agent.get_object_url()}/{agent_uid}/allocate-a2a-target-session/",
+        "payload": {
+            "json": {
+                "caller_agent_session_uid": caller_session_uid,
+                "handle_unique_id": "delegated-handle-1",
+            }
+        },
+        "timeout": 12,
     }
 
 
@@ -1121,6 +1571,32 @@ def test_shareable_models_keep_shareable_object_mixin():
         assert "ShareableObjectMixin" in source_bases[class_name], (
             f"{class_name} must inherit ShareableObjectMixin"
         )
+
+
+def test_secret_constant_bucket_artifact_accept_uid_identity_payloads():
+    secret = models_tdag_mod.Secret(uid="11111111-1111-4111-8111-111111111111", name="API_KEY")
+    constant = models_tdag_mod.Constant(
+        uid="22222222-2222-4222-8222-222222222222",
+        name="APP__MODE",
+        value="production",
+    )
+    bucket = models_tdag_mod.Bucket(
+        uid="33333333-3333-4333-8333-333333333333",
+        name="default_bucket",
+    )
+    artifact = models_tdag_mod.Artifact(
+        uid="44444444-4444-4444-8444-444444444444",
+        name="report.pdf",
+        bucket_name="default_bucket",
+        bucket_uid="33333333-3333-4333-8333-333333333333",
+        content="https://signed.example/report.pdf",
+        creation_date=datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+    )
+
+    assert secret.uid == "11111111-1111-4111-8111-111111111111"
+    assert constant.uid == "22222222-2222-4222-8222-222222222222"
+    assert bucket.uid == "33333333-3333-4333-8333-333333333333"
+    assert artifact.uid == "44444444-4444-4444-8444-444444444444"
 
 
 def test_team_uses_permission_managed_object_mixin():

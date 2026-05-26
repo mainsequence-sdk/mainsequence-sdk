@@ -55,7 +55,7 @@ The flag is global and can be placed after the command you are running, for exam
 mainsequence user --json
 mainsequence agent list --json
 mainsequence project images list --json
-mainsequence cc workspace detail 7 --json
+mainsequence cc workspace detail 11111111-1111-4111-8111-111111111111 --json
 mainsequence sdk latest --json
 mainsequence project current --json
 mainsequence project sdk-status --path . --json
@@ -95,13 +95,13 @@ mainsequence project --help
 ```bash
 mainsequence cc --help
 mainsequence cc workspace list
-mainsequence cc workspace detail 7
+mainsequence cc workspace detail 11111111-1111-4111-8111-111111111111
 mainsequence cc workspace create "Rates Desk" --description "Shared workspace"
 mainsequence cc workspace create --file workspace.json
-mainsequence cc workspace update 7 --file workspace.json
-mainsequence cc workspace delete 7
-mainsequence cc workspace add-label 7 --label trading --label desk
-mainsequence cc workspace remove-label 7 --label old-layout
+mainsequence cc workspace update 11111111-1111-4111-8111-111111111111 --file workspace.json
+mainsequence cc workspace delete 11111111-1111-4111-8111-111111111111
+mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
+mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout
 mainsequence cc registered_widget_type list
 mainsequence cc registered_widget_type detail main-sequence-data-node
 mainsequence cc registered_widget_type list --filter widget_id=markdown-note
@@ -270,8 +270,8 @@ mainsequence project project_resource create_fastapi 123
 mainsequence project project_resource delete_fastapi 701
 mainsequence project project_resource delete_fastapi 701 --yes
 mainsequence project validate-name "Rates Platform"
-mainsequence cc workspace add-label 7 --label trading --label desk
-mainsequence cc workspace remove-label 7 --label old-layout
+mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
+mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout
 
 # 2) Set up locally
 mainsequence project set-up-locally 123

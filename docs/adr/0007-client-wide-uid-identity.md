@@ -91,8 +91,8 @@ Out of scope:
 - [x] Generic instance `delete()` uses the public detail reference helper.
 - [x] `DetailActionObjectMixin.get_detail_url()` uses the public detail reference helper.
 - [x] Base UID-named wrappers exist for `get_by_uid()`, `patch_by_uid()`, and `destroy_by_uid()`.
-- [x] Deprecated id-named base aliases remain only as transition shims and emit `DeprecationWarning`.
-- [x] Id-only migrated resource instances fail before making patch, delete, label, or share requests.
+- [x] Public id-named base aliases are removed; internal-only `_patch_by_id_compat()` and `_destroy_by_id_compat()` shims emit `DeprecationWarning`.
+- [x] Id-only migrated resource instances fail before making patch, delete, and generic detail-action requests.
 - [x] UID filter normalization exists for resource-reference filters.
 - [x] CLI share output prefers `object_uid` over `object_id`.
 - [x] Project data-node update list rendering prefers nested storage `uid`.
@@ -104,18 +104,20 @@ Out of scope:
 
 ### 1. Base client contract
 
-- [x] Audit every direct URL builder for `.id`, `id`, `pk`, `instance_id`, or `object_id` resource lookup.
-- [x] Replace public wording that says primary key or ID lookup with UID lookup.
+- [x] Audit direct URL builders in the base helpers and currently migrated model groups for `.id`, `id`, `pk`, `instance_id`, or `object_id` resource lookup.
+- [ ] Audit remaining direct URL builders in CLI, user/team, command-center, and agent/runtime models.
+- [x] Replace public wording in the base helper docstrings that says primary key or ID lookup with UID lookup.
+- [ ] Replace remaining public CLI/docs wording that still teaches ID lookup for resource references.
 - [x] Remove public documentation for `patch_by_id()` and `destroy_by_id()` as resource APIs.
 - [x] Decide whether id-named methods remain temporarily as UID-taking aliases or are removed.
-- [x] Add deprecation notices for any id-named method that remains only as an alias.
+- [x] Add deprecation notices for internal id-compatibility shims that remain during transition.
 - [x] Add a failure path for migrated resource models that have no `uid`.
 - [x] Add tests proving id-only migrated resource objects do not silently route by integer ID.
 
 Base decision:
 
-- `patch_by_id()` and `destroy_by_id()` remain temporarily as deprecated aliases.
-- Deprecated aliases route through public-reference internals and emit `DeprecationWarning`.
+- Public `patch_by_id()` and `destroy_by_id()` are not retained as public base APIs.
+- Internal `_patch_by_id_compat()` and `_destroy_by_id_compat()` route through public-reference internals and emit `DeprecationWarning`.
 - Normal instance methods use UID helpers and do not call deprecated aliases.
 - Remaining model-specific direct URL builders are not accepted as final state; they are tracked in the relevant model-group sections below.
 
@@ -147,9 +149,11 @@ Base audit findings that remain for model-group migration:
 - [ ] Confirm UID detail lookup for scheduler and run-configuration resources before changing their public arguments.
 - [x] Remove public TS Manager storage/update data-source filters named `*_id` where they are resource references.
 - [x] Update `DataNodeUpdate.get_or_create()` transport to send `current_project_uid` and `data_source_uid`.
-- [ ] Replace TDAG request keys ending in `_id` only when payload analysis proves they are public resource identity.
-- [ ] Keep TDAG logical names and hashes separate from backend UID identity.
-- [ ] Add tests proving DataNode update methods work with `uid` and no `.id`.
+- [x] Replace verified TS Manager public request/filter keys ending in `_id` with UID keys (`current_project_uid`, `data_source_uid`, `remote_table__data_source__uid`).
+- [ ] Continue auditing unrelated TDAG runtime/local cache `_id` keys before changing them.
+- [x] Keep TDAG logical names and hashes separate from backend UID identity.
+- [x] Add a focused test proving `DataNodeUpdate.get_or_create()` uses `current_project_uid` and does not send `current_project_id`.
+- [ ] Add tests proving the remaining DataNode update detail/action methods work with `uid` and no `.id`.
 - [ ] Add tests proving DataNode patch, delete, label, and share URLs use UID.
 
 ### 4. MetaTable migration
@@ -177,60 +181,88 @@ Base audit findings that remain for model-group migration:
 - [x] Confirm UID detail lookup for `Artifact`.
 - [x] Confirm UID detail lookup for `Secret`.
 - [x] Confirm UID detail lookup for `Constant`.
+- [x] Ensure `Secret`, `Constant`, `Bucket`, and `Artifact` SDK models accept UID identity payloads.
+- [x] Replace Constant API wrappers so public fetch, delete, share, and label paths use UID lookup instead of integer ID coercion.
+- [x] Replace Constant CLI resource arguments and rendering with UID-based identity.
 - [x] Replace SDK model fields and create payloads for `Project`, `ProjectImage`, `ProjectResource`, `ResourceRelease`, `Job`, and `JobRun` with UID-based resource references.
 - [x] Remove `MAIN_SEQUENCE_PROJECT_ID` fallback from the local project resolver.
+- [x] Add SDK tests proving project/job model payloads and UID-only response shapes for the migrated model subset.
 - [ ] Replace public CLI resource parameters such as `project_id`, `resource_id`, `job_id`, and `artifact_id` where they are resource references.
 - [ ] Add tests proving project and job commands accept UUID-like values without integer coercion.
 
 ### 6. Command-center migration
 
-- [ ] Confirm UID detail lookup for `Workspace`.
-- [ ] Confirm UID detail lookup for `ConnectionInstance`.
-- [ ] Confirm UID detail lookup for command-center models that inherit generic detail actions.
-- [ ] Replace public `workspace_id` and `connection_id` arguments where they are resource references.
+- [x] Confirm backend UID detail lookup for `Workspace`.
+- [x] Confirm backend UID detail lookup for `ConnectionInstance`.
+- [ ] Confirm UID detail lookup for every remaining command-center model that inherits generic detail actions.
+- [x] Replace public workspace resource arguments with `workspace_uid`; connection resource arguments remain separately tracked.
+- [x] Confirm `ConnectionType.type_id` remains a non-UID public type identifier.
 - [ ] Keep provider connection IDs unchanged where they are external identifiers.
-- [ ] Add tests for UID-only command-center response payloads.
+- [x] Add tests for UID-only workspace response payloads; remaining command-center models stay separately tracked.
 
 ### 7. Agent and runtime migration
 
-- [ ] Inventory agent and runtime models before changing field names.
-- [ ] Confirm UID detail lookup for `Agent`.
-- [ ] Confirm UID detail lookup for `AgentSession`.
-- [ ] Confirm UID detail lookup for `UserOrchestratorAgentService`.
-- [ ] Confirm UID detail lookup for `UserProjectExecutorAgentService`.
-- [ ] Replace public id-named arguments only where they are SDK resource references.
-- [ ] Keep runtime execution IDs and provider IDs unchanged where they are domain identifiers.
-- [ ] Add tests for UID-only agent and runtime responses.
+- [x] Inventory agent and runtime models before changing field names.
+- [x] Confirm backend UID detail lookup for `Agent`.
+- [x] Confirm backend UID detail lookup for `AgentSession`.
+- [x] Confirm backend UID detail lookup for `UserOrchestratorAgentService`.
+- [x] Confirm backend UID detail lookup for `UserProjectExecutorAgentService`.
+- [x] Replace public id-named arguments only where they are SDK resource references.
+- [x] Keep runtime execution IDs and provider IDs unchanged where they are domain identifiers.
+- [x] Add tests for UID-only agent and runtime responses.
+
+Agent/runtime decisions:
+
+- `Agent.uid` is the backend detail-route public UID and the generic SDK/CLI resource identifier.
+- `Agent.agent_unique_id` is the deterministic organization-scoped key used by create/get_or_create and the explicit `Agent.get_by_agent_unique_id(...)` helper. It is not the same field as `uid` and must not replace generic resource UID lookup.
+- `AgentSession.uid` is the public session lookup key.
+- `UserOrchestratorAgentService.uid` and `UserProjectExecutorAgentService.uid` are the public service lookup keys; related agents are exposed as `agent_uid`.
+- A2A allocation uses `caller_agent_session_uid` in requests and `agent_session_uid` in responses.
+- Runtime identifiers such as `coding_agent_id` are not SDK resource identities and are not renamed.
+- Permission subject ids in share/access commands remain as-is until the backend permission subject contract changes explicitly.
 
 ### 8. User, team, organization, and permission subjects
 
-- [ ] Inventory user and organization models separately from resource models.
-- [ ] Confirm whether `User`, `Team`, and `OrganizationTeam` expose UID detail routes.
+- [x] Inventory user and organization models separately from resource models.
+- [x] Confirm backend `User`, `OrganizationTeam`/`Team`, and `Organization` expose UID detail routes.
+- [x] Migrate SDK `Organization`, `User`, and `Team` public lookup/filter contracts to UID.
+- [x] Migrate SDK team membership management to send `user_uids`.
+- [x] Keep request-bound auth status/header handling on `X-User-ID`; this is not a public resource lookup contract.
 - [ ] Do not change permission subject payloads until backend subject identity is confirmed.
 - [ ] If permission subjects migrate, replace subject `id` with subject `uid` in share payloads and docs.
 - [ ] If permission subjects do not migrate, document them as non-resource subject identifiers.
-- [ ] Add tests that distinguish resource UID from permission subject identifiers.
+- [x] Add focused tests for UID user/team/org resource lookups and payload deserialization.
+- [ ] Add broader tests that distinguish resource UID from permission subject identifiers.
 
 ### 9. CLI migration
 
 - [ ] Replace public CLI resource option names ending in `_id` with `_uid`.
+- [x] Replace Constant CLI resource argument names from `constant_id` to `constant_uid`.
 - [ ] Stop coercing resource lookup options with `int(...)`.
+- [x] Stop coercing Constant resource lookup arguments with `int(...)`.
+- [x] Stop coercing generic share/label resource object references with `int(...)` by default.
 - [ ] Print `uid` as the primary resource identity in resource tables.
+- [x] Print `uid` as the primary resource identity in Constant tables.
 - [ ] Print `uid` as the primary resource identity in resource detail views.
 - [ ] Remove integer resource IDs from public CLI examples.
+- [x] Remove integer Constant resource IDs from Constant CLI examples.
 - [ ] Keep non-resource subject IDs only where backend permission contracts require them.
 - [ ] Add CLI tests proving UUID-like resource values are accepted.
+- [x] Add Constant CLI tests proving UUID-like resource values are accepted.
 - [ ] Add CLI tests proving migrated commands do not prefer `object_id` over `object_uid`.
+- [x] Add Constant CLI tests proving migrated commands use `object_uid`.
 
 ### 10. Request and response typing
 
 - [ ] Audit response models that expose `object_id`.
 - [ ] Replace resource identity response fields with `object_uid` or typed `object_reference`.
+- [x] Replace Constant share test payloads with `object_uid`.
 - [ ] Audit request models that expose `dynamic_table_id`, `storage_id`, `update_id`, or similar keys.
-- [ ] Replace resource request keys with UID keys only after confirming backend contract migration.
-- [ ] Remove code that assumes UID and ID keys both exist.
-- [ ] Remove code that prefers `id` over `uid` for migrated resources.
-- [ ] Add tests for UID-only response shapes.
+- [x] Replace verified TS Manager/project/job resource request keys with UID keys after backend contract verification.
+- [ ] Continue auditing unverified resource request keys before changing them.
+- [x] Remove code that assumes UID and ID keys both exist for migrated project/job/TS Manager resource paths.
+- [x] Remove code that prefers `id` over `uid` for migrated SDK models and the local project resolver.
+- [x] Add tests for UID-only response shapes in the migrated project/job subset.
 
 ### 11. Documentation and tutorials
 
@@ -244,14 +276,15 @@ Base audit findings that remain for model-group migration:
 
 ### 13. Tests and acceptance criteria
 
-- [ ] Add base tests for `PUBLIC_LOOKUP_FIELD = "uid"`.
+- [x] Add base tests for `PUBLIC_LOOKUP_FIELD = "uid"`.
 - [x] Add base tests for missing UID errors.
-- [ ] Add base tests proving patch, delete, label, and share URLs use UID.
+- [x] Add base tests proving patch, delete, and generic share/detail-action URLs use UID.
+- [ ] Add explicit base tests proving label action URLs use UID.
 - [x] Add tests proving id-only migrated resource objects fail.
 - [ ] Add model inventory tests for UID coverage.
-- [ ] Add endpoint URL tests for each migrated model group.
+- [x] Add endpoint URL tests for the migrated Job/JobRun and TS Manager get-or-create paths.
 - [ ] Add CLI tests for UUID-like resource arguments.
-- [ ] Add response-shape tests for UID-only payloads.
+- [x] Add response-shape tests for UID-only payloads in the migrated subset.
 
 ## Migration sequence
 

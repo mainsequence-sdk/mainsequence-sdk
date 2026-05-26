@@ -84,9 +84,7 @@ def _infer_command_center_url_from_endpoint(endpoint: str) -> str:
 
 def _resolve_command_center_url() -> str:
     explicit_url = (
-        os.getenv("MAINSEQUENCE_COMMAND_CENTER_URL")
-        or os.getenv("COMMAND_CENTER_URL")
-        or ""
+        os.getenv("MAINSEQUENCE_COMMAND_CENTER_URL") or os.getenv("COMMAND_CENTER_URL") or ""
     ).strip()
     if explicit_url:
         return explicit_url.rstrip("/")
@@ -99,7 +97,9 @@ def _resolve_browser_auth_mode(auth_mode: str | None) -> str:
     if auth_mode is not None:
         browser_auth_mode = auth_mode.strip() if isinstance(auth_mode, str) else ""
         if not browser_auth_mode:
-            raise _WorkspaceSnapshotError("auth_mode is required for Command Center workspace snapshots.")
+            raise _WorkspaceSnapshotError(
+                "auth_mode is required for Command Center workspace snapshots."
+            )
         return browser_auth_mode
 
     provider_kind = _default_auth_provider_kind()
@@ -118,15 +118,15 @@ def _build_storage_payload(auth_mode: str | None, tokens: dict[str, Any]) -> dic
     return {"authMode": browser_auth_mode, "tokens": tokens}
 
 
-def _build_workspace_url(base_url: str, workspace_id: int | str, *, snapshot: bool = False) -> str:
-    url = f"{base_url.rstrip('/')}/app/workspace-studio/workspaces?workspace={workspace_id}"
+def _build_workspace_url(base_url: str, workspace_uid: str, *, snapshot: bool = False) -> str:
+    url = f"{base_url.rstrip('/')}/app/workspace-studio/workspaces?workspace={workspace_uid}"
     if snapshot:
         url = f"{url}&snapshot=true&snapshotProfile={_DEFAULT_PROFILE}"
     return url
 
 
-def _build_snapshot_url(base_url: str, workspace_id: int | str) -> str:
-    return _build_workspace_url(base_url, workspace_id, snapshot=True)
+def _build_snapshot_url(base_url: str, workspace_uid: str) -> str:
+    return _build_workspace_url(base_url, workspace_uid, snapshot=True)
 
 
 def _default_snapshot_output_dir() -> Path:
@@ -145,18 +145,18 @@ def _snapshot_timestamp() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
-def _default_snapshot_output_path(workspace_id: int | str) -> Path:
-    workspace_fragment = _safe_path_fragment(workspace_id)
+def _default_snapshot_output_path(workspace_uid: str) -> Path:
+    workspace_fragment = _safe_path_fragment(workspace_uid)
     snapshot_dir = f"workspace-{workspace_fragment}-{_snapshot_timestamp()}"
     return _default_snapshot_output_dir() / snapshot_dir
 
 
 def _resolve_snapshot_output_dir(
     output_path: str | os.PathLike[str] | None,
-    workspace_id: int | str,
+    workspace_uid: str,
 ) -> Path:
     if output_path is None:
-        return _default_snapshot_output_path(workspace_id)
+        return _default_snapshot_output_path(workspace_uid)
 
     raw_output_path = os.fspath(output_path)
     destination = Path(raw_output_path).expanduser()
@@ -246,8 +246,7 @@ def _wait_for_snapshot_ready(page: Any, timeout_ms: int) -> dict[str, Any]:
 
     if state.get("status") != "ready":
         raise _WorkspaceSnapshotError(
-            "Command Center snapshot finished in an unexpected state: "
-            f"{state.get('status')!r}"
+            f"Command Center snapshot finished in an unexpected state: {state.get('status')!r}"
         )
 
     return state
@@ -449,7 +448,7 @@ def _extract_archive_to_directory(
 
 
 def _capture_workspace_snapshot(
-    workspace_id: int | str,
+    workspace_uid: str,
     output_path: str | os.PathLike[str] | None = None,
     *,
     auth_mode: str | None = None,
@@ -463,14 +462,14 @@ def _capture_workspace_snapshot(
     to finish capture, and returns the resulting ZIP bytes plus the resolved extracted directory
     path. The ZIP is only used as an internal transport artifact; the filesystem output is the
     expanded snapshot directory. When `output_path` is not provided, the snapshot is extracted to
-    `~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/`.
+    `~/mainsequence/workspaces/workspace-<workspace_uid>-<timestamp>/`.
     """
 
     tokens = _refresh_and_collect_tokens()
     command_center_url = _resolve_command_center_url()
     storage_payload = _build_storage_payload(auth_mode=auth_mode, tokens=tokens)
-    snapshot_url = _build_snapshot_url(command_center_url, workspace_id)
-    workspace_url = _build_workspace_url(command_center_url, workspace_id)
+    snapshot_url = _build_snapshot_url(command_center_url, workspace_uid)
+    workspace_url = _build_workspace_url(command_center_url, workspace_uid)
 
     try:
         from playwright.sync_api import sync_playwright
@@ -518,14 +517,14 @@ def _capture_workspace_snapshot(
             f"Snapshot URL: {snapshot_url}. Underlying error: {type(exc).__name__}: {exc}"
         ) from exc
 
-    extracted_dir = _resolve_snapshot_output_dir(output_path, workspace_id)
+    extracted_dir = _resolve_snapshot_output_dir(output_path, workspace_uid)
     _extract_archive_to_directory(archive_bytes, extracted_dir)
 
     return archive_bytes, extracted_dir
 
 
 def get_workspace_snapshot(
-    workspace_id: int | str,
+    workspace_uid: str,
     output_path: str | os.PathLike[str] | None = None,
     *,
     auth_mode: str | None = None,
@@ -538,11 +537,11 @@ def get_workspace_snapshot(
     environment tokens, navigates to the existing `snapshot=true` route, waits for the client
     to finish capture, and returns the resulting ZIP bytes. The ZIP is not persisted to disk.
     Instead, the archive is extracted into `output_path` when provided, or into
-    `~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/` by default.
+    `~/mainsequence/workspaces/workspace-<workspace_uid>-<timestamp>/` by default.
     """
 
     archive_bytes, _ = _capture_workspace_snapshot(
-        workspace_id,
+        workspace_uid,
         output_path=output_path,
         auth_mode=auth_mode,
     )

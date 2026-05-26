@@ -7,7 +7,7 @@ from typing import Any, ClassVar, Literal
 from pydantic import Field
 
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
-from .exceptions import raise_for_response
+from .exceptions import ApiError, raise_for_response
 from .utils import make_request, serialize_to_json
 
 
@@ -20,7 +20,7 @@ class AgentSessionStatus(str, Enum):
 
 
 class AgentSemanticSearchResult(BasePydanticModel):
-    id: int = Field(..., description="Primary key of the matched agent.")
+    uid: str = Field(..., description="Public UID of the matched agent.")
     name: str = Field(..., description="Human-readable display name of the matched agent.")
     agent_type: str = Field(
         "",
@@ -73,8 +73,21 @@ class AgentSessionRuntimeAccess(BasePydanticModel):
 
 class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/agents"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "uid": ["exact", "in"],
+        "agent_unique_id": ["exact"],
+        "agent_type": ["exact"],
+        "search": ["exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "agent_unique_id": "str",
+        "agent_type": "str",
+        "search": "str",
+    }
 
-    id: int | None = Field(None, description="Primary key of the agent.")
+    uid: str | None = Field(None, description="Public UID of the agent resource.")
     name: str = Field(..., description="Human-readable display name for the agent inside the organization.")
     agent_type: str = Field(
         "custom",
@@ -90,7 +103,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         description="Optional structured agent card payload.",
     )
 
-    llm_thinking:str
+    llm_thinking: str
     llm_provider: str = Field(
         "",
         description="Optional default model provider for new sessions, for example openai, anthropic, or google. This is only a default on the Agent.",
@@ -116,6 +129,34 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         None,
         description="Timestamp of the most recent session recorded for this agent.",
     )
+
+    @classmethod
+    def get_by_agent_unique_id(cls, agent_unique_id: str, *, timeout=None) -> Agent:
+        """
+        Resolve an Agent by its deterministic organization-scoped key.
+
+        The backend detail route is UID-based, but `agent_unique_id` is the
+        user-controlled key used for idempotent agent creation and CLI lookup.
+        """
+        normalized_agent_unique_id = str(agent_unique_id or "").strip()
+        if not normalized_agent_unique_id:
+            raise ValueError("agent_unique_id is required")
+
+        candidates = cls.filter(
+            timeout=timeout,
+            agent_unique_id=normalized_agent_unique_id,
+        )
+        if not candidates:
+            from .utils import DoesNotExist
+
+            raise DoesNotExist(
+                f"No {cls.class_name()} found matching agent_unique_id={normalized_agent_unique_id!r}"
+            )
+        if len(candidates) > 1:
+            raise ApiError(
+                f"Multiple agents returned for agent_unique_id={normalized_agent_unique_id!r}"
+            )
+        return candidates[0]
 
     @classmethod
     def get_or_create(cls, timeout=None, **kwargs):
@@ -189,7 +230,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     def allocate_a2a_target_session(
         self,
         *,
-        caller_agent_session_id: int | AgentSession,
+        caller_agent_session_uid: str | AgentSession,
         handle_unique_id: str | None = None,
         timeout=None,
     ) -> dict[str, Any]:
@@ -200,7 +241,7 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
             POST <detail_url>allocate-a2a-target-session/
 
         Request contract:
-        - `caller_agent_session_id` is required and identifies the session that is
+        - `caller_agent_session_uid` is required and identifies the session that is
           delegating work to this target agent.
         - `handle_unique_id` is optional on the first call.
         - when `handle_unique_id` is omitted, the backend creates a delegated
@@ -219,31 +260,35 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 
         Response contract:
         - `handle_unique_id`: stable delegated-session reuse key.
-        - `agent_session_id`: allocated target session primary key.
+        - `agent_session_uid`: allocated target session public UID.
         - `allocation_state`: `created_new` or `reused_existing`.
         - `session`: full canonical backend `AgentSession` payload for the target side.
 
         Typical usage:
-        1. first call: send only `caller_agent_session_id`
+        1. first call: send only `caller_agent_session_uid`
         2. persist the returned `handle_unique_id`
         3. later retries for the same delegated task: resend that `handle_unique_id`
         4. intentionally fresh delegated conversation: omit the old handle and let the
            backend allocate a new one
         """
-        if isinstance(caller_agent_session_id, AgentSession):
-            resolved_caller_session_id = getattr(caller_agent_session_id, 'id', None)
+        if isinstance(caller_agent_session_uid, AgentSession):
+            resolved_caller_session_uid = getattr(caller_agent_session_uid, "uid", None)
         else:
-            resolved_caller_session_id = caller_agent_session_id
+            resolved_caller_session_uid = caller_agent_session_uid
 
-        if resolved_caller_session_id is None:
+        if resolved_caller_session_uid is None:
             raise ValueError(
-                'caller_agent_session_id must be an AgentSession or a session id'
+                "caller_agent_session_uid must be an AgentSession or a session uid"
             )
+        resolved_caller_session_uid = type(self)._coerce_filter_uid(
+            resolved_caller_session_uid,
+            field_name="caller_agent_session_uid",
+        )
 
         resolved_handle_unique_id = str(handle_unique_id or '').strip()
 
         body = {
-            'caller_agent_session_id': int(resolved_caller_session_id),
+            "caller_agent_session_uid": resolved_caller_session_uid,
         }
         if resolved_handle_unique_id:
             body['handle_unique_id'] = resolved_handle_unique_id
@@ -291,51 +336,71 @@ class Agent(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
 class UserOrchestratorAgentService(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/user-orchestrator-agent-services"
 
-    id: int | None = Field(None, description="Primary key of the orchestrator agent service.")
-    user: int | None = Field(None, description="Owning user id.")
-    related_job: int | None = Field(None, description="Backing job id.")
+    uid: str | None = Field(None, description="Public UID of the orchestrator agent service.")
+    agent_uid: str | None = Field(None, description="Public UID of the resolved astro Agent.")
+    user_uid: str | None = Field(None, description="Public UID of the owning user.")
+    is_ready: bool = Field(False, description="Whether the service runtime is routable.")
+    orchestrator_image_has_drift: bool = Field(False, description="Whether the orchestrator image is stale.")
+    related_job: Any | None = Field(None, description="Backing job payload or UID when returned by the backend.")
+    knative_service_runtime: Any | None = Field(None, description="Backing Knative service runtime payload.")
     subdomain: str = Field("", description="Public subdomain for the service.")
 
 
 class UserProjectExecutorAgentService(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/project-executor-agent-services"
 
-    id: int | None = Field(None, description="Primary key of the project executor agent service.")
-    agent_id: int | None = Field(None, description="Resolved Agent id for the executor service.")
+    uid: str | None = Field(None, description="Public UID of the project executor service.")
+    agent_uid: str | None = Field(None, description="Public UID of the resolved executor Agent.")
     is_ready: bool = Field(False, description="Whether the executor runtime is currently ready.")
-    project: int | None = Field(None, description="Owning project id.")
-    related_job: int | None = Field(None, description="Backing job id.")
+    image_drift: dict[str, Any] | None = Field(None, description="Executor image drift status payload.")
+    project: Any | None = Field(None, description="Owning project payload or UID when returned by the backend.")
+    related_job: Any | None = Field(None, description="Backing job payload or UID when returned by the backend.")
+    knative_service_runtime: Any | None = Field(None, description="Backing Knative service runtime payload.")
     subdomain: str = Field("", description="Public subdomain for the service.")
 
 
 class AgentSession(BaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "agents/v1/sessions"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "uid": ["exact", "in"],
+        "status": ["exact"],
+        "search": ["exact"],
+        "q": ["exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "status": "str",
+        "search": "str",
+        "q": "str",
+    }
 
     @classmethod
     def resolve_runtime_access(
         cls,
-        agent_session: int | AgentSession,
+        agent_session: str | AgentSession,
         *,
         timeout=None,
     ) -> AgentSessionRuntimeAccess:
         """
         Hits:
-            POST <object_url>/<session_id>/resolve_runtime_access/
+            POST <object_url>/<session_uid>/resolve_runtime_access/
 
         Server behavior:
         - resolves the coding-agent runtime that owns the session
         - returns the gateway RPC URL plus a bearer token for A2A calls
         """
-        if isinstance(agent_session, int):
-            session_id = agent_session
+        if isinstance(agent_session, AgentSession):
+            session_uid = getattr(agent_session, "uid", None)
         else:
-            session_id = getattr(agent_session, "id", None)
+            session_uid = agent_session
 
-        if session_id is None:
-            raise ValueError("agent_session must be an AgentSession or a session id")
+        if session_uid is None:
+            raise ValueError("agent_session must be an AgentSession or a session uid")
+        session_uid = cls._coerce_filter_uid(session_uid, field_name="agent_session")
 
         payload: dict[str, Any] = {}
-        url = f"{cls.get_object_url()}/{int(session_id)}/resolve_runtime_access/"
+        url = f"{cls.get_object_url()}/{session_uid}/resolve_runtime_access/"
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
@@ -348,13 +413,18 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
             raise_for_response(response, payload=payload)
         return AgentSessionRuntimeAccess(**response.json())
 
-    id: int | None = Field(None, description="Primary key of the agent session.")
+    uid: str | None = Field(None, description="Public UID of the agent session.")
+    agent_uid: str | None = Field(None, description="Public UID of the agent definition used for this session.")
+    created_by_user_uid: str | None = Field(None, description="Public UID of the actor who created the session.")
+    parent_session_uid: str | None = Field(None, description="Public UID of the parent session, if any.")
     created_by_user: int | None = Field(
         None,
-        description="User id of the actor who created the session record in MainSequence.",
+        exclude=True,
+        description="Legacy internal user id of the actor who created the session record.",
     )
     agent: int | Agent | None = Field(
         None,
+        exclude=True,
         description="Agent definition used for this session.",
     )
     agent_name: str = Field(
@@ -367,10 +437,12 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     )
     parent_session: int | AgentSession | None = Field(
         None,
+        exclude=True,
         description="Optional parent session when this session was spawned as a subagent execution by another session.",
     )
     root_session: int | AgentSession | None = Field(
         None,
+        exclude=True,
         description="Root session of the session tree. Child and descendant sessions point back to the same root for visualization and querying.",
     )
     spawned_by_step: int | None = Field(
@@ -381,6 +453,8 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         AgentSessionStatus.PENDING,
         description="Lifecycle status of the session.",
     )
+    runtime_state: str = Field("", description="Computed runtime state of the session.")
+    working: bool | None = Field(None, description="Whether the backend considers the session actively working.")
     started_at: datetime.datetime | None = Field(
         None,
         description="Timestamp when the session started.",
@@ -397,6 +471,7 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
         ...,
         description="Resolved LLM model actually used for this session. Unlike Agent defaults, this is intended to be the authoritative runtime record.",
     )
+    llm_thinking: str = Field("", description="Resolved thinking/reasoning setting used for this session.")
     engine_name: str = Field(
         ...,
         description="Resolved higher-level runtime or engine actually used for this session. This records the wrapper above the raw model, such as the agent runtime, workflow engine, router, or orchestration layer.",
@@ -428,6 +503,10 @@ class AgentSession(BaseObjectOrm, BasePydanticModel):
     session_metadata: dict[str, Any] = Field(
         default_factory=dict,
         description="Additional session metadata.",
+    )
+    bound_handles: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Agent session handles currently bound to this session.",
     )
 
 __all__ = [

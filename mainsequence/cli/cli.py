@@ -387,6 +387,7 @@ def root_callback(
         typer.echo(f"mainsequence {_package_version()}")
         raise typer.Exit()
 
+
 JOB_DEFAULT_CPU_REQUEST = Decimal("0.25")
 JOB_DEFAULT_MEMORY_REQUEST = Decimal("0.5")
 JOB_MEMORY_PER_CPU_MAX = Decimal("6.5")
@@ -569,7 +570,10 @@ def _copy_clipboard(txt: str) -> bool:
         x11 = os.environ.get("DISPLAY")
 
         if wayland and shutil.which("wl-copy"):
-            ok1 = subprocess.run(["wl-copy"], input=txt, text=True, capture_output=True).returncode == 0
+            ok1 = (
+                subprocess.run(["wl-copy"], input=txt, text=True, capture_output=True).returncode
+                == 0
+            )
             subprocess.run(["wl-copy", "--primary"], input=txt, text=True, capture_output=True)
             return ok1
 
@@ -621,9 +625,15 @@ def copy_instructions_to_clipboard(
     Returns:
         True if clipboard copy succeeded; False otherwise (bundle still written to disk).
     """
-    base = pathlib.Path(instructions_dir).expanduser().resolve() if instructions_dir else _find_instructions_dir()
+    base = (
+        pathlib.Path(instructions_dir).expanduser().resolve()
+        if instructions_dir
+        else _find_instructions_dir()
+    )
     if not base or not base.is_dir():
-        raise RuntimeError("Instructions folder not found. Pass --dir PATH or run from inside your repo.")
+        raise RuntimeError(
+            "Instructions folder not found. Pass --dir PATH or run from inside your repo."
+        )
 
     files = _collect_markdown_files(base, recursive=recursive)
     if not files:
@@ -664,7 +674,11 @@ def _determine_repo_url(p: dict) -> str:
         repo = ""
     if not repo:
         extra = (p.get("data_source") or {}).get("related_resource", {}) or {}
-        extra = extra.get("extra_arguments") or (p.get("data_source") or {}).get("extra_arguments") or {}
+        extra = (
+            extra.get("extra_arguments")
+            or (p.get("data_source") or {}).get("extra_arguments")
+            or {}
+        )
         repo = deep_find_repo_url(extra) or ""
     return repo
 
@@ -702,7 +716,9 @@ def _project_ref_matches_env(project_dir: pathlib.Path, project_ref: str) -> boo
     return False
 
 
-def _find_local_project_dir(base_dir: str, org_slug: str, project_ref: int | str, project_name: str | None = None) -> str | None:
+def _find_local_project_dir(
+    base_dir: str, org_slug: str, project_ref: int | str, project_name: str | None = None
+) -> str | None:
     """
     Find local folder for a project reference.
 
@@ -860,7 +876,9 @@ def _resolve_project_dir(project_id: str | None, path: str | None) -> pathlib.Pa
 
     found = _find_local_project_dir(base, org_slug, project_id, None)
     if not found:
-        error("No local folder mapped for this project. Run `mainsequence project set-up-locally <project_uid>` first.")
+        error(
+            "No local folder mapped for this project. Run `mainsequence project set-up-locally <project_uid>` first."
+        )
         raise typer.Exit(1)
 
     p = pathlib.Path(found)
@@ -1045,7 +1063,9 @@ def _resolve_installed_agent_scaffold_skill(skill_name: str) -> dict[str, pathli
     if len(exact_candidates) == 1:
         return exact_candidates[0]
 
-    leaf_candidates = [row for row in skills if pathlib.PurePosixPath(str(row["name"])).name == query]
+    leaf_candidates = [
+        row for row in skills if pathlib.PurePosixPath(str(row["name"])).name == query
+    ]
     if len(leaf_candidates) == 1:
         return leaf_candidates[0]
     if len(leaf_candidates) > 1:
@@ -1093,7 +1113,9 @@ def _installed_agent_scaffold_agents_md_file() -> pathlib.Path:
     return source
 
 
-def _agents_md_managed_block_line_matches(source_content: str) -> tuple[list[re.Match[str]], list[re.Match[str]]]:
+def _agents_md_managed_block_line_matches(
+    source_content: str,
+) -> tuple[list[re.Match[str]], list[re.Match[str]]]:
     start_matches = list(AGENTS_MD_MANAGED_BLOCK_START_LINE_RE.finditer(source_content))
     end_matches = list(AGENTS_MD_MANAGED_BLOCK_END_LINE_RE.finditer(source_content))
     return start_matches, end_matches
@@ -1134,13 +1156,11 @@ def _apply_agents_md_managed_block(
 
     if len(start_matches) > 1 or len(end_matches) > 1:
         raise ValueError(
-            "AGENTS.md contains multiple Main Sequence managed block markers; "
-            "resolve it manually."
+            "AGENTS.md contains multiple Main Sequence managed block markers; resolve it manually."
         )
     if len(start_matches) != len(end_matches):
         raise ValueError(
-            "AGENTS.md contains malformed Main Sequence managed block markers; "
-            "resolve it manually."
+            "AGENTS.md contains malformed Main Sequence managed block markers; resolve it manually."
         )
 
     if not start_matches:
@@ -1150,11 +1170,12 @@ def _apply_agents_md_managed_block(
     end_match = end_matches[0]
     if end_match.start() < start_match.start():
         raise ValueError(
-            "AGENTS.md contains malformed Main Sequence managed block markers; "
-            "resolve it manually."
+            "AGENTS.md contains malformed Main Sequence managed block markers; resolve it manually."
         )
 
-    updated = f"{content[:start_match.start()]}{managed_block.rstrip()}{content[end_match.end():]}"
+    updated = (
+        f"{content[: start_match.start()]}{managed_block.rstrip()}{content[end_match.end() :]}"
+    )
     action = "unchanged" if updated == content else "updated"
     return updated, action
 
@@ -1268,10 +1289,7 @@ def _merge_cli_filter_alias(
         return filters
 
     if filter_key in filters:
-        error(
-            f"Do not pass both `--{option_name}` and `--filter {filter_key}=...`. "
-            f"Use only one."
-        )
+        error(f"Do not pass both `--{option_name}` and `--filter {filter_key}=...`. Use only one.")
         raise typer.Exit(1)
 
     merged = dict(filters)
@@ -1354,7 +1372,9 @@ def _prepare_batch_jobs_file_with_selected_related_image(
         existing_image_ref = job_copy.get("related_image_id")
         if existing_image_ref in (None, ""):
             existing_image_ref = job_copy.get("related_image")
-        if existing_image_ref not in (None, "") and str(existing_image_ref) != str(related_image_id):
+        if existing_image_ref not in (None, "") and str(existing_image_ref) != str(
+            related_image_id
+        ):
             overwritten_count += 1
         job_copy.pop("related_image", None)
         job_copy["related_image_id"] = related_image_id
@@ -1375,9 +1395,7 @@ def _prepare_batch_jobs_file_with_selected_related_image(
         warn(
             f"Overriding related_image_id for {overwritten_count} job(s) so the entire batch uses image {related_image_id}."
         )
-    info(
-        f"Using project image {related_image_id} for all {len(jobs_config)} job(s) in this batch."
-    )
+    info(f"Using project image {related_image_id} for all {len(jobs_config)} job(s) in this batch.")
     return temp_path
 
 
@@ -1486,7 +1504,9 @@ def _git_run(project_dir: pathlib.Path, args: list[str]) -> subprocess.Completed
 
 
 def _git_upstream_ref(project_dir: pathlib.Path) -> str | None:
-    result = _git_run(project_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
+    result = _git_run(
+        project_dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]
+    )
     if result.returncode != 0:
         return None
     upstream = (result.stdout or "").strip()
@@ -1544,7 +1564,9 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
     if upstream:
         refs = [upstream]
     else:
-        refs_result = _git_run(project_dir, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"])
+        refs_result = _git_run(
+            project_dir, ["for-each-ref", "--format=%(refname:short)", "refs/remotes"]
+        )
         if refs_result.returncode == 0:
             refs = [
                 line.strip()
@@ -1553,7 +1575,9 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
             ]
 
     if not refs:
-        raise RuntimeError("No pushed commits found. Configure a remote and push at least one commit first.")
+        raise RuntimeError(
+            "No pushed commits found. Configure a remote and push at least one commit first."
+        )
 
     result = _git_run(
         project_dir,
@@ -1571,7 +1595,9 @@ def _list_pushed_commits(project_dir: pathlib.Path, limit: int = 20) -> list[dic
 
     commits = _parse_git_log_rows(result.stdout or "")
     if not commits:
-        raise RuntimeError("No pushed commits found. Push at least one commit before creating an image.")
+        raise RuntimeError(
+            "No pushed commits found. Push at least one commit before creating an image."
+        )
     return commits
 
 
@@ -1862,18 +1888,24 @@ def _build_job_task_schedule_payload(
 
     if inferred_type is None and prompt_for_missing:
         if not typer.confirm(
-            pydantic_prompt_text(JOB_MODEL_REF, "task_schedule", optional=True, extra_hint="create now?"),
+            pydantic_prompt_text(
+                JOB_MODEL_REF, "task_schedule", optional=True, extra_hint="create now?"
+            ),
             default=False,
         ):
             return None
-        inferred_type = typer.prompt(
-            pydantic_prompt_text(
-                INTERVAL_SCHEDULE_MODEL_REF,
-                "type",
-                extra_hint="interval/crontab",
-            ),
-            default="interval",
-        ).strip().lower()
+        inferred_type = (
+            typer.prompt(
+                pydantic_prompt_text(
+                    INTERVAL_SCHEDULE_MODEL_REF,
+                    "type",
+                    extra_hint="interval/crontab",
+                ),
+                default="interval",
+            )
+            .strip()
+            .lower()
+        )
 
     if inferred_type is None:
         return None
@@ -1916,7 +1948,9 @@ def _build_job_task_schedule_payload(
         }
     else:
         if schedule_every is not None or schedule_period:
-            raise ValueError("schedule_every and schedule_period are only valid for interval schedules.")
+            raise ValueError(
+                "schedule_every and schedule_period are only valid for interval schedules."
+            )
         if schedule_expression is None and prompt_for_missing:
             schedule_expression = typer.prompt(
                 pydantic_prompt_text(
@@ -1938,10 +1972,13 @@ def _build_job_task_schedule_payload(
         }
 
     if schedule_start_time is None and prompt_for_missing:
-        schedule_start_time = typer.prompt(
-            pydantic_prompt_text(CRONTAB_SCHEDULE_MODEL_REF, "start_time", optional=True),
-            default="",
-        ).strip() or None
+        schedule_start_time = (
+            typer.prompt(
+                pydantic_prompt_text(CRONTAB_SCHEDULE_MODEL_REF, "start_time", optional=True),
+                default="",
+            ).strip()
+            or None
+        )
 
     if schedule_one_off is None and prompt_for_missing:
         schedule_one_off = typer.confirm("Make this a one-off schedule?", default=False)
@@ -2015,9 +2052,15 @@ def _extract_python_version_from_pyproject_text(pyproject_text: str) -> str | No
         if parsed:
             return parsed
 
-    poetry_section = re.search(r"(?is)^\s*\[tool\.poetry\.dependencies\]\s*(.*?)(?:^\s*\[|\Z)", pyproject_text, re.MULTILINE)
+    poetry_section = re.search(
+        r"(?is)^\s*\[tool\.poetry\.dependencies\]\s*(.*?)(?:^\s*\[|\Z)",
+        pyproject_text,
+        re.MULTILINE,
+    )
     if poetry_section:
-        py_match = re.search(r'(?im)^\s*python\s*=\s*["\']([^"\']+)["\']\s*$', poetry_section.group(1))
+        py_match = re.search(
+            r'(?im)^\s*python\s*=\s*["\']([^"\']+)["\']\s*$', poetry_section.group(1)
+        )
         if py_match:
             return _extract_python_version_from_spec(py_match.group(1))
 
@@ -2139,7 +2182,11 @@ def _render_project_runtime_env_text(
         + [
             f"MAINSEQUENCE_ENDPOINT={backend_url}",
         ]
-        + ([f"MAIN_SEQUENCE_PROJECT_UID={project_runtime_uid}"] if project_runtime_uid is not None else [])
+        + (
+            [f"MAIN_SEQUENCE_PROJECT_UID={project_runtime_uid}"]
+            if project_runtime_uid is not None
+            else []
+        )
     )
 
     final_env = "\n".join(lines).replace("\r", "")
@@ -2240,10 +2287,7 @@ def login(
     using_runtime_credential = _runtime_credential_mode_enabled()
 
     if using_runtime_credential and using_jwt:
-        error(
-            "Runtime credential login cannot be combined with "
-            "--access-token/--refresh-token."
-        )
+        error("Runtime credential login cannot be combined with --access-token/--refresh-token.")
         raise typer.Exit(1)
 
     if using_runtime_credential and no_open:
@@ -2261,11 +2305,17 @@ def login(
             error("Pass backend either positionally or with --backend, not both.")
             raise typer.Exit(1)
     explicit_backend_input = backend_option if backend_option is not None else backend
-    effective_backend_input = explicit_backend_input if explicit_backend_input is not None else cfg.STANDARD_BACKEND_URL
+    effective_backend_input = (
+        explicit_backend_input if explicit_backend_input is not None else cfg.STANDARD_BACKEND_URL
+    )
 
     if projects_base and projects_base_option:
-        if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(projects_base_option):
-            error("Pass projects base either positionally or with --projects-base/--base-folder, not both.")
+        if cfg.normalize_mainsequence_path(projects_base) != cfg.normalize_mainsequence_path(
+            projects_base_option
+        ):
+            error(
+                "Pass projects base either positionally or with --projects-base/--base-folder, not both."
+            )
             raise typer.Exit(1)
     effective_projects_base_input = (
         projects_base_option if projects_base_option is not None else projects_base
@@ -2305,7 +2355,9 @@ def login(
         elif using_jwt:
             os.environ.pop(cfg.ENV_USERNAME, None)
             os.environ.pop(cfg.LEGACY_ENV_USERNAME, None)
-            persisted = cfg.save_tokens("", (access_token or "").strip(), (refresh_token or "").strip())
+            persisted = cfg.save_tokens(
+                "", (access_token or "").strip(), (refresh_token or "").strip()
+            )
             res = {
                 "username": "",
                 "backend": normalized_backend,
@@ -2315,6 +2367,7 @@ def login(
                 "auth_mode": "jwt",
             }
         else:
+
             def _emit_auth_url(url: str) -> None:
                 info(f"Open this URL to authenticate: {url}")
 
@@ -2387,12 +2440,18 @@ def login(
     info(f"Projects base folder: {base}")
     auth_store_label = cfg.auth_persistence_label()
     if res.get("auth_mode") == "runtime_credential":
-        info(f"Runtime credential access token is persisted in {auth_store_label}; no CLI JWT refresh token exists.")
-        info("When the access token expires, CLI will re-exchange the runtime credential automatically.")
+        info(
+            f"Runtime credential access token is persisted in {auth_store_label}; no CLI JWT refresh token exists."
+        )
+        info(
+            "When the access token expires, CLI will re-exchange the runtime credential automatically."
+        )
     elif res.get("persisted", True):
         info(f"Auth tokens are persisted in {auth_store_label} for subsequent CLI commands.")
     else:
-        warn(f"Could not persist auth tokens in {auth_store_label}. Use --export for shell-based auth.")
+        warn(
+            f"Could not persist auth tokens in {auth_store_label}. Use --export for shell-based auth."
+        )
 
 
 @app.command("logout")
@@ -2520,8 +2579,14 @@ def user_show():
             ("Email", str(user.get("email") or "-")),
             ("Organization", organization_name),
             ("Active", str(user.get("is_active") if user.get("is_active") is not None else "-")),
-            ("Verified", str(user.get("is_verified") if user.get("is_verified") is not None else "-")),
-            ("MFA Enabled", str(user.get("mfa_enabled") if user.get("mfa_enabled") is not None else "-")),
+            (
+                "Verified",
+                str(user.get("is_verified") if user.get("is_verified") is not None else "-"),
+            ),
+            (
+                "MFA Enabled",
+                str(user.get("mfa_enabled") if user.get("mfa_enabled") is not None else "-"),
+            ),
             ("Date Joined", str(user.get("date_joined") or "-")),
             ("Last Login", str(user.get("last_login") or "-")),
         ],
@@ -2670,13 +2735,17 @@ def _organization_teams_edit_impl(
     next_active = is_active
 
     if next_name is None and next_description is None and next_active is None:
-        next_name = typer.prompt("Team name", default=str(current.get("name") or ""), show_default=True).strip()
+        next_name = typer.prompt(
+            "Team name", default=str(current.get("name") or ""), show_default=True
+        ).strip()
         next_description = typer.prompt(
             "Team description",
             default=str(current.get("description") or ""),
             show_default=True,
         )
-        current_active = bool(current.get("is_active")) if current.get("is_active") is not None else True
+        current_active = (
+            bool(current.get("is_active")) if current.get("is_active") is not None else True
+        )
         next_active = typer.confirm("Team is active?", default=current_active)
 
     try:
@@ -2736,7 +2805,9 @@ def _organization_teams_delete_impl(
 def organization_teams_list_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show supported list filters and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show supported list filters and exit."
+    ),
 ):
     """
     List organization teams visible to the authenticated user.
@@ -2751,7 +2822,9 @@ def organization_teams_list_cmd(
 @organization_teams_group.command("create")
 def organization_teams_create_cmd(
     name: str | None = typer.Argument(None, help="Team name."),
-    description: str | None = typer.Option(None, "--description", help="Optional team description."),
+    description: str | None = typer.Option(
+        None, "--description", help="Optional team description."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -2893,7 +2966,9 @@ def copy_llm_instructions(
     ),
     recursive: bool = typer.Option(False, "--recursive", "-r", help="Include nested subfolders."),
     out: str | None = typer.Option(None, "--out", "-o", help="Also write the bundle to this file."),
-    print_: bool = typer.Option(False, "--print", help="Print the bundle to stdout instead of copying."),
+    print_: bool = typer.Option(
+        False, "--print", help="Print the bundle to stdout instead of copying."
+    ),
 ):
     """
     Bundle markdown instructions and copy them to clipboard or print them.
@@ -2923,7 +2998,9 @@ def copy_llm_instructions(
         if print_:
             found = base or _find_instructions_dir()
             if not found:
-                error("Instructions folder not found. Pass --dir PATH or run from inside your repo.")
+                error(
+                    "Instructions folder not found. Pass --dir PATH or run from inside your repo."
+                )
                 raise typer.Exit(1)
             files = _collect_markdown_files(found, recursive=recursive)
             if not files:
@@ -3024,7 +3101,7 @@ def settings_set_base(path: str = typer.Argument(..., help="New projects base fo
 
 @settings.command("set-backend")
 def settings_set_backend(
-    url: str = typer.Argument(..., help=f"Backend base URL, e.g. {cfg.STANDARD_BACKEND_URL}")
+    url: str = typer.Argument(..., help=f"Backend base URL, e.g. {cfg.STANDARD_BACKEND_URL}"),
 ):
     """
     Set backend base URL used by CLI API calls.
@@ -3138,7 +3215,7 @@ def _constant_category(name: object) -> str:
 
 def _format_constant_delete_preview(constant: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("ID", str(constant.get("id") or "-")),
+        ("UID", str(constant.get("uid") or "-")),
         ("Category", _constant_category(constant.get("name"))),
         ("Name", str(constant.get("name") or "-")),
         ("Value", _format_json_value(constant.get("value"))),
@@ -3208,11 +3285,15 @@ def _format_shareable_permission_change(payload: dict[str, object]) -> list[tupl
         ("Explicit Can Edit", str(payload.get("explicit_can_edit"))),
         (
             "Explicit View User IDs",
-            ", ".join(str(item) for item in explicit_view_ids) if isinstance(explicit_view_ids, list) else "-",
+            ", ".join(str(item) for item in explicit_view_ids)
+            if isinstance(explicit_view_ids, list)
+            else "-",
         ),
         (
             "Explicit Edit User IDs",
-            ", ".join(str(item) for item in explicit_edit_ids) if isinstance(explicit_edit_ids, list) else "-",
+            ", ".join(str(item) for item in explicit_edit_ids)
+            if isinstance(explicit_edit_ids, list)
+            else "-",
         ),
         (
             "Explicit View Team IDs",
@@ -3255,11 +3336,15 @@ def _parse_json_dict_option(raw_value: str, *, field_label: str) -> dict[str, ob
 def _format_agent_preview(agent_payload: dict[str, object]) -> list[tuple[str, str]]:
     labels = agent_payload.get("labels")
     return [
+        ("UID", str(agent_payload.get("uid") or "-")),
         ("Unique ID", str(agent_payload.get("agent_unique_id") or "-")),
         ("Name", str(agent_payload.get("name") or "-")),
         ("Description", str(agent_payload.get("description") or "-")),
         ("Status", str(agent_payload.get("status") or "-")),
-        ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
+        (
+            "Labels",
+            ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
+        ),
         ("LLM Provider", str(agent_payload.get("llm_provider") or "-")),
         ("LLM Model", str(agent_payload.get("llm_model") or "-")),
         ("Engine", str(agent_payload.get("engine_name") or "-")),
@@ -3277,7 +3362,9 @@ def _format_agent_details(agent_payload: dict[str, object]) -> list[tuple[str, s
 
 def _format_agent_ref_label(agent_ref: object) -> str:
     if isinstance(agent_ref, dict):
-        return str(agent_ref.get("name") or agent_ref.get("id") or "-")
+        return str(
+            agent_ref.get("name") or agent_ref.get("agent_unique_id") or agent_ref.get("uid") or "-"
+        )
     return str(agent_ref or "-")
 
 
@@ -3312,7 +3399,10 @@ def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tupl
         ("Input Text", str(agent_run_payload.get("input_text") or "-")),
         ("Output Text", str(agent_run_payload.get("output_text") or "-")),
         ("Error Detail", str(agent_run_payload.get("error_detail") or "-")),
-        ("Runtime Config Snapshot", _format_json_value(agent_run_payload.get("runtime_config_snapshot"))),
+        (
+            "Runtime Config Snapshot",
+            _format_json_value(agent_run_payload.get("runtime_config_snapshot")),
+        ),
         ("Usage Summary", _format_json_value(agent_run_payload.get("usage_summary"))),
         ("Run Metadata", _format_json_value(agent_run_payload.get("run_metadata"))),
     ]
@@ -3320,14 +3410,16 @@ def _format_agent_run_details(agent_run_payload: dict[str, object]) -> list[tupl
 
 def _format_agent_session_ref_label(session_ref: object) -> str:
     if isinstance(session_ref, dict):
-        return str(session_ref.get("id") or "-")
+        return str(session_ref.get("uid") or "-")
     return str(session_ref or "-")
 
 
-def _format_agent_session_preview(agent_session_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_agent_session_preview(
+    agent_session_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     return [
-        ("ID", str(agent_session_payload.get("id") or "-")),
-        ("Agent", _format_agent_ref_label(agent_session_payload.get("agent"))),
+        ("UID", str(agent_session_payload.get("uid") or "-")),
+        ("Agent UID", str(agent_session_payload.get("agent_uid") or "-")),
         ("Status", str(agent_session_payload.get("status") or "-")),
         ("Started At", str(agent_session_payload.get("started_at") or "-")),
         ("Ended At", str(agent_session_payload.get("ended_at") or "-")),
@@ -3337,11 +3429,12 @@ def _format_agent_session_preview(agent_session_payload: dict[str, object]) -> l
     ]
 
 
-def _format_agent_session_details(agent_session_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_agent_session_details(
+    agent_session_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     return [
-        ("Triggered By", _format_user_summary_label(agent_session_payload.get("triggered_by_user"))),
-        ("Parent Session", _format_agent_session_ref_label(agent_session_payload.get("parent_session"))),
-        ("Root Session", _format_agent_session_ref_label(agent_session_payload.get("root_session"))),
+        ("Created By User UID", str(agent_session_payload.get("created_by_user_uid") or "-")),
+        ("Parent Session UID", str(agent_session_payload.get("parent_session_uid") or "-")),
         ("Spawned By Step", str(agent_session_payload.get("spawned_by_step") or "-")),
         ("External Session ID", str(agent_session_payload.get("external_session_id") or "-")),
         ("Runtime Session ID", str(agent_session_payload.get("runtime_session_id") or "-")),
@@ -3358,11 +3451,13 @@ def _format_agent_session_details(agent_session_payload: dict[str, object]) -> l
     ]
 
 
-def _format_agent_a2a_allocation_preview(allocation_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_agent_a2a_allocation_preview(
+    allocation_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     session_payload = allocation_payload.get("session")
     return [
         ("Handle Unique ID", str(allocation_payload.get("handle_unique_id") or "-")),
-        ("Agent Session ID", str(allocation_payload.get("agent_session_id") or "-")),
+        ("Agent Session UID", str(allocation_payload.get("agent_session_uid") or "-")),
         ("Allocation State", str(allocation_payload.get("allocation_state") or "-")),
         ("Session", _format_agent_session_ref_label(session_payload)),
     ]
@@ -3395,10 +3490,13 @@ def _agent_list_impl(
         labels = agent_payload.get("labels")
         rows.append(
             [
+                str(agent_payload.get("uid") or "-"),
                 str(agent_payload.get("agent_unique_id") or "-"),
                 str(agent_payload.get("name") or "-"),
                 str(agent_payload.get("status") or "-"),
-                ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
+                ", ".join(str(item) for item in labels)
+                if isinstance(labels, list) and labels
+                else "-",
                 str(agent_payload.get("llm_provider") or "-"),
                 str(agent_payload.get("llm_model") or "-"),
                 str(agent_payload.get("engine_name") or "-"),
@@ -3407,7 +3505,21 @@ def _agent_list_impl(
         )
 
     if rows:
-        print_table("Agents", ["Unique ID", "Name", "Status", "Labels", "Provider", "Model", "Engine", "Last Run"], rows)
+        print_table(
+            "Agents",
+            [
+                "UID",
+                "Unique ID",
+                "Name",
+                "Status",
+                "Labels",
+                "Provider",
+                "Model",
+                "Engine",
+                "Last Run",
+            ],
+            rows,
+        )
     else:
         info("No agents.")
     info(f"Total agents: {len(agents)}")
@@ -3415,13 +3527,13 @@ def _agent_list_impl(
 
 def _agent_detail_impl(
     *,
-    agent_id: int,
+    agent_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        agent_payload = get_agent(agent_id, timeout=timeout)
+        agent_payload = get_agent(agent_uid, timeout=timeout)
     except ApiError as e:
         error(f"Agent fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -3460,8 +3572,16 @@ def _agent_search_impl(
             [
                 str(result.get("agent_unique_id") or "-"),
                 str(result.get("name") or "-"),
-                str(result.get("combined_score") if result.get("combined_score") is not None else "-"),
-                str(result.get("semantic_score") if result.get("semantic_score") is not None else "-"),
+                str(
+                    result.get("combined_score")
+                    if result.get("combined_score") is not None
+                    else "-"
+                ),
+                str(
+                    result.get("semantic_score")
+                    if result.get("semantic_score") is not None
+                    else "-"
+                ),
                 str(result.get("text_score") if result.get("text_score") is not None else "-"),
                 str(result.get("description") or "-"),
             ]
@@ -3495,7 +3615,9 @@ def _agent_create_impl(
 ) -> None:
     _require_login()
 
-    agent_name = (name or "").strip() or typer.prompt(pydantic_prompt_text(AGENT_MODEL_REF, "name")).strip()
+    agent_name = (name or "").strip() or typer.prompt(
+        pydantic_prompt_text(AGENT_MODEL_REF, "name")
+    ).strip()
     if not agent_name:
         error("Agent name is required.")
         raise typer.Exit(1)
@@ -3569,7 +3691,9 @@ def _agent_get_or_create_impl(
 ) -> None:
     _require_login()
 
-    agent_name = (name or "").strip() or typer.prompt(pydantic_prompt_text(AGENT_MODEL_REF, "name")).strip()
+    agent_name = (name or "").strip() or typer.prompt(
+        pydantic_prompt_text(AGENT_MODEL_REF, "name")
+    ).strip()
     if not agent_name:
         error("Agent name is required.")
         raise typer.Exit(1)
@@ -3628,27 +3752,27 @@ def _agent_get_or_create_impl(
 
 def _agent_delete_impl(
     *,
-    agent_id: int,
+    agent_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        agent_payload = get_agent(agent_id, timeout=timeout)
+        agent_payload = get_agent(agent_uid, timeout=timeout)
     except ApiError as e:
         error(f"Agent fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(agent_payload.get("name") or agent_payload.get("id") or agent_id)
+    verification_value = str(agent_payload.get("name") or agent_payload.get("uid") or agent_uid)
     _require_delete_verification(
         preview_title="Agent Delete Preview",
         preview_items=_format_agent_preview(agent_payload),
         verification_value=verification_value,
-        verification_label="agent name" if agent_payload.get("name") else "agent id",
+        verification_label="agent name" if agent_payload.get("name") else "agent uid",
     )
 
     try:
-        deleted = delete_agent(agent_id, timeout=timeout)
+        deleted = delete_agent(agent_uid, timeout=timeout)
     except ApiError as e:
         error(f"Agent deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -3656,14 +3780,14 @@ def _agent_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Agent deleted: agent_unique_id={agent_payload.get('agent_unique_id') or '-'}")
+    success(f"Agent deleted: agent_uid={agent_payload.get('uid') or agent_uid}")
     print_kv("Deleted Agent", _format_agent_preview(deleted))
 
 
 def _agent_allocate_a2a_target_session_impl(
     *,
-    agent_id: int,
-    caller_agent_session_id: int,
+    agent_uid: str,
+    caller_agent_session_uid: str,
     handle_unique_id: str | None,
     timeout: int | None,
 ) -> None:
@@ -3671,8 +3795,8 @@ def _agent_allocate_a2a_target_session_impl(
 
     try:
         allocation_payload = allocate_agent_a2a_target_session(
-            agent_id,
-            caller_agent_session_id=caller_agent_session_id,
+            agent_uid,
+            caller_agent_session_uid=caller_agent_session_uid,
             handle_unique_id=handle_unique_id,
             timeout=timeout,
         )
@@ -3683,8 +3807,10 @@ def _agent_allocate_a2a_target_session_impl(
     if _emit_json(allocation_payload):
         return
 
-    success(f"Agent A2A target session allocated: agent_id={agent_id}")
-    print_kv("A2A Target Session Allocation", _format_agent_a2a_allocation_preview(allocation_payload))
+    success(f"Agent A2A target session allocated: agent_uid={agent_uid}")
+    print_kv(
+        "A2A Target Session Allocation", _format_agent_a2a_allocation_preview(allocation_payload)
+    )
     session_payload = allocation_payload.get("session")
     if isinstance(session_payload, dict):
         print_kv("Agent Session", _format_agent_session_preview(session_payload))
@@ -3693,13 +3819,13 @@ def _agent_allocate_a2a_target_session_impl(
 
 def _agent_get_latest_session_impl(
     *,
-    agent_id: int,
+    agent_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        agent_session_payload = get_agent_latest_session(agent_id, timeout=timeout)
+        agent_session_payload = get_agent_latest_session(agent_uid, timeout=timeout)
     except ApiError as e:
         error(f"Agent latest session fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -3713,13 +3839,13 @@ def _agent_get_latest_session_impl(
 
 def _agent_session_detail_impl(
     *,
-    agent_session_id: int,
+    agent_session_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        agent_session_payload = get_agent_session(agent_session_id, timeout=timeout)
+        agent_session_payload = get_agent_session(agent_session_uid, timeout=timeout)
     except ApiError as e:
         error(f"Agent session fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -3733,13 +3859,15 @@ def _agent_session_detail_impl(
 
 def _agent_session_resolve_runtime_access_impl(
     *,
-    agent_session_id: int,
+    agent_session_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        runtime_access_payload = resolve_agent_session_runtime_access(agent_session_id, timeout=timeout)
+        runtime_access_payload = resolve_agent_session_runtime_access(
+            agent_session_uid, timeout=timeout
+        )
     except ApiError as e:
         error(f"Agent session runtime access resolve failed: {e}")
         raise typer.Exit(1) from e
@@ -3747,11 +3875,14 @@ def _agent_session_resolve_runtime_access_impl(
     if _emit_json(runtime_access_payload):
         return
 
-    success(f"Agent session runtime access resolved: session_id={agent_session_id}")
+    success(f"Agent session runtime access resolved: session_uid={agent_session_uid}")
     print_kv(
         "Agent Session Runtime Access",
         [
-            ("Coding Agent Service ID", str(runtime_access_payload.get("coding_agent_service_id") or "-")),
+            (
+                "Coding Agent Service ID",
+                str(runtime_access_payload.get("coding_agent_service_id") or "-"),
+            ),
             ("Coding Agent ID", str(runtime_access_payload.get("coding_agent_id") or "-")),
             ("Mode", str(runtime_access_payload.get("mode") or "-")),
             ("RPC URL", str(runtime_access_payload.get("rpc_url") or "-")),
@@ -3854,7 +3985,7 @@ def _constants_list_impl(
     for constant in constants_payload:
         rows.append(
             [
-                str(constant.get("id") or "-"),
+                str(constant.get("uid") or "-"),
                 _constant_category(constant.get("name")),
                 str(constant.get("name") or "-"),
                 _format_json_value(constant.get("value")),
@@ -3862,7 +3993,7 @@ def _constants_list_impl(
         )
 
     if rows:
-        print_table("Constants", ["ID", "Category", "Name", "Value"], rows)
+        print_table("Constants", ["UID", "Category", "Name", "Value"], rows)
     else:
         info("No constants.")
     info(f"Total constants: {len(constants_payload)}")
@@ -3907,27 +4038,27 @@ def _constants_create_impl(
 
 def _constants_delete_impl(
     *,
-    constant_id: int,
+    constant_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        constant = get_constant(constant_id, timeout=timeout)
+        constant = get_constant(constant_uid, timeout=timeout)
     except ApiError as e:
         error(f"Constant fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(constant.get("name") or constant.get("id") or constant_id)
+    verification_value = str(constant.get("name") or constant.get("uid") or constant_uid)
     _require_delete_verification(
         preview_title="Constant Delete Preview",
         preview_items=_format_constant_delete_preview(constant),
         verification_value=verification_value,
-        verification_label="constant name" if constant.get("name") else "constant id",
+        verification_label="constant name" if constant.get("name") else "constant uid",
     )
 
     try:
-        deleted = delete_constant(constant_id, timeout=timeout)
+        deleted = delete_constant(constant_uid, timeout=timeout)
     except ApiError as e:
         error(f"Constant deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -3935,7 +4066,7 @@ def _constants_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Constant deleted: id={constant_id}")
+    success(f"Constant deleted: uid={constant_uid}")
     print_kv("Deleted Constant", _format_constant_delete_preview(deleted))
 
 
@@ -4251,14 +4382,23 @@ def _parse_cli_csv_list(values: list[str] | None) -> list[str]:
 def _format_workspace_preview(workspace_payload: dict[str, object]) -> list[tuple[str, str]]:
     labels = workspace_payload.get("labels")
     return [
-        ("ID", str(workspace_payload.get("id") or "-")),
+        ("UID", str(workspace_payload.get("uid") or "-")),
         ("Title", str(workspace_payload.get("title") or "-")),
         ("Description", str(workspace_payload.get("description") or "-")),
         ("Category", str(workspace_payload.get("category") or "-")),
         ("Source", str(workspace_payload.get("source") or "-")),
-        ("Layout Kind", str(workspace_payload.get("layoutKind") or workspace_payload.get("layout_kind") or "-")),
-        ("Labels", ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-"),
-        ("Updated At", str(workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-")),
+        (
+            "Layout Kind",
+            str(workspace_payload.get("layoutKind") or workspace_payload.get("layout_kind") or "-"),
+        ),
+        (
+            "Labels",
+            ", ".join(str(item) for item in labels) if isinstance(labels, list) and labels else "-",
+        ),
+        (
+            "Updated At",
+            str(workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-"),
+        ),
     ]
 
 
@@ -4334,11 +4474,32 @@ def _format_workspace_details(workspace_payload: dict[str, object]) -> list[tupl
     widgets = workspace_payload.get("widgets")
     companions = workspace_payload.get("companions")
     return [
-        ("Schema Version", str(workspace_payload.get("schemaVersion") or workspace_payload.get("schema_version") or "-")),
-        ("Required Permissions", _format_json_value(workspace_payload.get("requiredPermissions") or workspace_payload.get("required_permissions"))),
-        ("Created At", str(workspace_payload.get("createdAt") or workspace_payload.get("created_at") or "-")),
+        (
+            "Schema Version",
+            str(
+                workspace_payload.get("schemaVersion")
+                or workspace_payload.get("schema_version")
+                or "-"
+            ),
+        ),
+        (
+            "Required Permissions",
+            _format_json_value(
+                workspace_payload.get("requiredPermissions")
+                or workspace_payload.get("required_permissions")
+            ),
+        ),
+        (
+            "Created At",
+            str(workspace_payload.get("createdAt") or workspace_payload.get("created_at") or "-"),
+        ),
         ("Grid", _format_json_value(workspace_payload.get("grid"))),
-        ("Auto Grid", _format_json_value(workspace_payload.get("autoGrid") or workspace_payload.get("auto_grid"))),
+        (
+            "Auto Grid",
+            _format_json_value(
+                workspace_payload.get("autoGrid") or workspace_payload.get("auto_grid")
+            ),
+        ),
         ("Controls", _format_json_value(workspace_payload.get("controls"))),
         ("Widgets", _format_json_value(widgets)),
         ("Widget Count", str(len(widgets)) if isinstance(widgets, list) else "-"),
@@ -4347,19 +4508,40 @@ def _format_workspace_details(workspace_payload: dict[str, object]) -> list[tupl
     ]
 
 
-def _format_registered_widget_type_preview(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_registered_widget_type_preview(
+    widget_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     return [
-        ("Widget ID", str(widget_payload.get("widget_id") or widget_payload.get("widgetId") or "-")),
+        (
+            "Widget ID",
+            str(widget_payload.get("widget_id") or widget_payload.get("widgetId") or "-"),
+        ),
         ("Title", str(widget_payload.get("title") or "-")),
         ("Category", str(widget_payload.get("category") or "-")),
         ("Kind", str(widget_payload.get("kind") or "-")),
         ("Source", str(widget_payload.get("source") or "-")),
-        ("Active", str(widget_payload.get("is_active") if "is_active" in widget_payload else widget_payload.get("isActive"))),
-        ("Registry Version", str(widget_payload.get("registry_version") or widget_payload.get("registryVersion") or "-")),
+        (
+            "Active",
+            str(
+                widget_payload.get("is_active")
+                if "is_active" in widget_payload
+                else widget_payload.get("isActive")
+            ),
+        ),
+        (
+            "Registry Version",
+            str(
+                widget_payload.get("registry_version")
+                or widget_payload.get("registryVersion")
+                or "-"
+            ),
+        ),
     ]
 
 
-def _format_registered_widget_type_details(widget_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_registered_widget_type_details(
+    widget_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     known_keys = {
         "id",
         "widget_id",
@@ -4398,49 +4580,96 @@ def _format_registered_widget_type_details(widget_payload: dict[str, object]) ->
         "updated_at",
         "updatedAt",
     }
-    extra_fields = {
-        key: value
-        for key, value in widget_payload.items()
-        if key not in known_keys
-    }
+    extra_fields = {key: value for key, value in widget_payload.items() if key not in known_keys}
     return [
         ("Description", str(widget_payload.get("description") or "-")),
         ("Tags", _format_json_value(widget_payload.get("tags"))),
         (
             "Required Permissions",
-            _format_json_value(widget_payload.get("required_permissions") or widget_payload.get("requiredPermissions")),
+            _format_json_value(
+                widget_payload.get("required_permissions")
+                or widget_payload.get("requiredPermissions")
+            ),
         ),
-        ("Schema", _format_json_value(widget_payload.get("schema_payload") or widget_payload.get("schema"))),
+        (
+            "Schema",
+            _format_json_value(
+                widget_payload.get("schema_payload") or widget_payload.get("schema")
+            ),
+        ),
         ("IO", _format_json_value(widget_payload.get("io"))),
         (
             "Default Presentation",
-            _format_json_value(widget_payload.get("default_presentation") or widget_payload.get("defaultPresentation")),
+            _format_json_value(
+                widget_payload.get("default_presentation")
+                or widget_payload.get("defaultPresentation")
+            ),
         ),
-        ("Default Size", _format_json_value(widget_payload.get("default_size") or widget_payload.get("defaultSize"))),
+        (
+            "Default Size",
+            _format_json_value(
+                widget_payload.get("default_size") or widget_payload.get("defaultSize")
+            ),
+        ),
         ("Responsive", _format_json_value(widget_payload.get("responsive"))),
-        ("Usage Guidance", _format_json_value(widget_payload.get("usage_guidance") or widget_payload.get("usageGuidance"))),
+        (
+            "Usage Guidance",
+            _format_json_value(
+                widget_payload.get("usage_guidance") or widget_payload.get("usageGuidance")
+            ),
+        ),
         ("Capabilities", _format_json_value(widget_payload.get("capabilities"))),
         ("Examples", _format_json_value(widget_payload.get("examples"))),
         ("Extra Fields", _format_json_value(extra_fields) if extra_fields else "-"),
         ("Checksum", str(widget_payload.get("checksum") or "-")),
-        ("Last Synced At", str(widget_payload.get("last_synced_at") or widget_payload.get("lastSyncedAt") or "-")),
-        ("Created At", str(widget_payload.get("created_at") or widget_payload.get("createdAt") or "-")),
-        ("Updated At", str(widget_payload.get("updated_at") or widget_payload.get("updatedAt") or "-")),
+        (
+            "Last Synced At",
+            str(widget_payload.get("last_synced_at") or widget_payload.get("lastSyncedAt") or "-"),
+        ),
+        (
+            "Created At",
+            str(widget_payload.get("created_at") or widget_payload.get("createdAt") or "-"),
+        ),
+        (
+            "Updated At",
+            str(widget_payload.get("updated_at") or widget_payload.get("updatedAt") or "-"),
+        ),
     ]
 
 
-def _format_connection_type_preview(connection_type_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_connection_type_preview(
+    connection_type_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     return [
-        ("Type ID", str(connection_type_payload.get("type_id") or connection_type_payload.get("id") or "-")),
-        ("Version", str(connection_type_payload.get("type_version") or connection_type_payload.get("version") or "-")),
+        (
+            "Type ID",
+            str(connection_type_payload.get("type_id") or connection_type_payload.get("id") or "-"),
+        ),
+        (
+            "Version",
+            str(
+                connection_type_payload.get("type_version")
+                or connection_type_payload.get("version")
+                or "-"
+            ),
+        ),
         ("Title", str(connection_type_payload.get("title") or "-")),
         ("Category", str(connection_type_payload.get("category") or "-")),
         ("Source", str(connection_type_payload.get("source") or "-")),
-        ("Access Mode", str(connection_type_payload.get("access_mode") or connection_type_payload.get("accessMode") or "-")),
+        (
+            "Access Mode",
+            str(
+                connection_type_payload.get("access_mode")
+                or connection_type_payload.get("accessMode")
+                or "-"
+            ),
+        ),
     ]
 
 
-def _format_connection_type_details(connection_type_payload: dict[str, object]) -> list[tuple[str, str]]:
+def _format_connection_type_details(
+    connection_type_payload: dict[str, object],
+) -> list[tuple[str, str]]:
     return [
         ("Description", str(connection_type_payload.get("description") or "-")),
         ("Tags", _format_json_value(connection_type_payload.get("tags"))),
@@ -4459,7 +4688,13 @@ def _format_connection_type_details(connection_type_payload: dict[str, object]) 
                 or connection_type_payload.get("secureConfigSchema")
             ),
         ),
-        ("Query Models", _format_json_value(connection_type_payload.get("query_models") or connection_type_payload.get("queryModels"))),
+        (
+            "Query Models",
+            _format_json_value(
+                connection_type_payload.get("query_models")
+                or connection_type_payload.get("queryModels")
+            ),
+        ),
         (
             "Required Permissions",
             _format_json_value(
@@ -4467,36 +4702,118 @@ def _format_connection_type_details(connection_type_payload: dict[str, object]) 
                 or connection_type_payload.get("requiredPermissions")
             ),
         ),
-        ("Usage Guidance", str(connection_type_payload.get("usage_guidance") or connection_type_payload.get("usageGuidance") or "-")),
+        (
+            "Usage Guidance",
+            str(
+                connection_type_payload.get("usage_guidance")
+                or connection_type_payload.get("usageGuidance")
+                or "-"
+            ),
+        ),
         ("Examples", _format_json_value(connection_type_payload.get("examples"))),
     ]
 
 
 def _format_connection_preview(connection_payload: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("UID", str(connection_payload.get("uid") or connection_payload.get("id") or "-")),
+        ("UID", str(connection_payload.get("uid") or "-")),
         ("Name", str(connection_payload.get("name") or "-")),
-        ("Type ID", str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-")),
-        ("Type Version", str(connection_payload.get("type_version") or connection_payload.get("typeVersion") or "-")),
+        (
+            "Type ID",
+            str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-"),
+        ),
+        (
+            "Type Version",
+            str(
+                connection_payload.get("type_version")
+                or connection_payload.get("typeVersion")
+                or "-"
+            ),
+        ),
         ("Status", str(connection_payload.get("status") or "-")),
-        ("Workspace ID", str(connection_payload.get("workspace_id") or connection_payload.get("workspaceId") or "-")),
-        ("Default", str(connection_payload.get("is_default") if "is_default" in connection_payload else connection_payload.get("isDefault"))),
-        ("System", str(connection_payload.get("is_system") if "is_system" in connection_payload else connection_payload.get("isSystem"))),
+        (
+            "Workspace UID",
+            str(
+                connection_payload.get("workspace_uid")
+                or connection_payload.get("workspaceUid")
+                or "-"
+            ),
+        ),
+        (
+            "Default",
+            str(
+                connection_payload.get("is_default")
+                if "is_default" in connection_payload
+                else connection_payload.get("isDefault")
+            ),
+        ),
+        (
+            "System",
+            str(
+                connection_payload.get("is_system")
+                if "is_system" in connection_payload
+                else connection_payload.get("isSystem")
+            ),
+        ),
     ]
 
 
 def _format_connection_details(connection_payload: dict[str, object]) -> list[tuple[str, str]]:
     return [
         ("Description", str(connection_payload.get("description") or "-")),
-        ("Organization ID", str(connection_payload.get("organization_id") or connection_payload.get("organizationId") or "-")),
-        ("Public Config", _format_json_value(connection_payload.get("public_config") or connection_payload.get("publicConfig"))),
-        ("Secure Fields", _format_json_value(connection_payload.get("secure_fields") or connection_payload.get("secureFields"))),
-        ("Status Message", str(connection_payload.get("status_message") or connection_payload.get("statusMessage") or "-")),
-        ("Last Health Check At", str(connection_payload.get("last_health_check_at") or connection_payload.get("lastHealthCheckAt") or "-")),
+        (
+            "Organization UID",
+            str(
+                connection_payload.get("organization_uid")
+                or connection_payload.get("organizationUid")
+                or "-"
+            ),
+        ),
+        (
+            "Public Config",
+            _format_json_value(
+                connection_payload.get("public_config") or connection_payload.get("publicConfig")
+            ),
+        ),
+        (
+            "Secure Fields",
+            _format_json_value(
+                connection_payload.get("secure_fields") or connection_payload.get("secureFields")
+            ),
+        ),
+        (
+            "Status Message",
+            str(
+                connection_payload.get("status_message")
+                or connection_payload.get("statusMessage")
+                or "-"
+            ),
+        ),
+        (
+            "Last Health Check At",
+            str(
+                connection_payload.get("last_health_check_at")
+                or connection_payload.get("lastHealthCheckAt")
+                or "-"
+            ),
+        ),
         ("Tags", _format_json_value(connection_payload.get("tags"))),
-        ("Created By", str(connection_payload.get("created_by") or connection_payload.get("createdBy") or "-")),
-        ("Created At", str(connection_payload.get("created_at") or connection_payload.get("createdAt") or "-")),
-        ("Updated At", str(connection_payload.get("updated_at") or connection_payload.get("updatedAt") or "-")),
+        (
+            "Created By User UID",
+            str(
+                connection_payload.get("created_by_user_uid")
+                or connection_payload.get("createdByUserUid")
+                or "-"
+            ),
+        ),
+        (
+            "Created At",
+            str(connection_payload.get("created_at") or connection_payload.get("createdAt") or "-"),
+        ),
+        (
+            "Updated At",
+            str(connection_payload.get("updated_at") or connection_payload.get("updatedAt") or "-"),
+        ),
     ]
 
 
@@ -4527,20 +4844,26 @@ def _workspace_list_impl(
         labels = workspace_payload.get("labels")
         rows.append(
             [
-                str(workspace_payload.get("id") or "-"),
+                str(workspace_payload.get("uid") or "-"),
                 str(workspace_payload.get("title") or "-"),
                 str(workspace_payload.get("category") or "-"),
                 str(workspace_payload.get("source") or "-"),
-                str(workspace_payload.get("layoutKind") or workspace_payload.get("layout_kind") or "-"),
+                str(
+                    workspace_payload.get("layoutKind")
+                    or workspace_payload.get("layout_kind")
+                    or "-"
+                ),
                 str(len(labels)) if isinstance(labels, list) else "-",
-                str(workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-"),
+                str(
+                    workspace_payload.get("updatedAt") or workspace_payload.get("updated_at") or "-"
+                ),
             ]
         )
 
     if rows:
         print_table(
             "Workspaces",
-            ["ID", "Title", "Category", "Source", "Layout", "Labels", "Updated At"],
+            ["UID", "Title", "Category", "Source", "Layout", "Labels", "Updated At"],
             rows,
         )
     else:
@@ -4564,7 +4887,9 @@ def _workspace_create_impl(
     workspace_kwargs: dict[str, object]
     if file_path is not None:
         try:
-            workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
+            workspace_kwargs = _workspace_write_kwargs_from_payload(
+                _load_workspace_payload_file(file_path)
+            )
         except ValueError as e:
             error(str(e))
             raise typer.Exit(1) from e
@@ -4576,7 +4901,9 @@ def _workspace_create_impl(
 
         workspace_description = description
         if workspace_description is None:
-            workspace_description = typer.prompt("Workspace description", default="", show_default=False)
+            workspace_description = typer.prompt(
+                "Workspace description", default="", show_default=False
+            )
 
         workspace_kwargs = {
             "title": workspace_title,
@@ -4617,13 +4944,13 @@ def _workspace_create_impl(
 
 def _workspace_detail_impl(
     *,
-    workspace_id: int,
+    workspace_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        workspace_payload = get_workspace(workspace_id, timeout=timeout)
+        workspace_payload = get_workspace(workspace_uid, timeout=timeout)
     except ApiError as e:
         error(f"Workspace fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -4637,7 +4964,7 @@ def _workspace_detail_impl(
 
 def _workspace_snapshot_impl(
     *,
-    workspace_id: int,
+    workspace_uid: str,
     output_path: pathlib.Path | None,
 ) -> None:
     _require_login()
@@ -4650,10 +4977,10 @@ def _workspace_snapshot_impl(
             _WorkspaceSnapshotError,
         )
 
-        snapshot_url = _build_snapshot_url(_resolve_command_center_url(), workspace_id)
+        snapshot_url = _build_snapshot_url(_resolve_command_center_url(), workspace_uid)
         typer.echo(f"Snapshot URL: {snapshot_url}")
         archive_bytes, extracted_dir = _capture_workspace_snapshot(
-            workspace_id,
+            workspace_uid,
             output_path=output_path,
         )
     except _WorkspaceSnapshotError as e:
@@ -4662,7 +4989,7 @@ def _workspace_snapshot_impl(
 
     extracted_dir_text = str(extracted_dir.expanduser())
     result = {
-        "workspace_id": workspace_id,
+        "workspace_uid": workspace_uid,
         "archive_size_bytes": len(archive_bytes),
         "output_path": extracted_dir_text,
         "extracted_dir": extracted_dir_text,
@@ -4670,11 +4997,11 @@ def _workspace_snapshot_impl(
     if _emit_json(result):
         return
 
-    success(f"Workspace snapshot captured: id={workspace_id}")
+    success(f"Workspace snapshot captured: uid={workspace_uid}")
     print_kv(
         "Workspace Snapshot",
         [
-            ("Workspace ID", str(workspace_id)),
+            ("Workspace UID", str(workspace_uid)),
             ("Archive Size Bytes", str(len(archive_bytes))),
             ("Output Directory", extracted_dir_text),
         ],
@@ -4683,14 +5010,16 @@ def _workspace_snapshot_impl(
 
 def _workspace_update_impl(
     *,
-    workspace_id: int,
+    workspace_uid: str,
     file_path: pathlib.Path,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        workspace_kwargs = _workspace_write_kwargs_from_payload(_load_workspace_payload_file(file_path))
+        workspace_kwargs = _workspace_write_kwargs_from_payload(
+            _load_workspace_payload_file(file_path)
+        )
     except ValueError as e:
         error(str(e))
         raise typer.Exit(1) from e
@@ -4700,7 +5029,7 @@ def _workspace_update_impl(
         raise typer.Exit(1)
 
     try:
-        updated = update_workspace(workspace_id, timeout=timeout, **workspace_kwargs)
+        updated = update_workspace(workspace_uid, timeout=timeout, **workspace_kwargs)
     except ApiError as e:
         error(f"Workspace update failed: {e}")
         raise typer.Exit(1) from e
@@ -4708,34 +5037,36 @@ def _workspace_update_impl(
     if _emit_json(updated):
         return
 
-    success(f"Workspace updated: id={workspace_id}")
+    success(f"Workspace updated: uid={workspace_uid}")
     print_kv("Updated Workspace", _format_workspace_preview(updated))
     print_kv("Workspace Details", _format_workspace_details(updated))
 
 
 def _workspace_delete_impl(
     *,
-    workspace_id: int,
+    workspace_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        workspace_payload = get_workspace(workspace_id, timeout=timeout)
+        workspace_payload = get_workspace(workspace_uid, timeout=timeout)
     except ApiError as e:
         error(f"Workspace fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(workspace_payload.get("title") or workspace_payload.get("id") or workspace_id)
+    verification_value = str(
+        workspace_payload.get("title") or workspace_payload.get("uid") or workspace_uid
+    )
     _require_delete_verification(
         preview_title="Workspace Delete Preview",
         preview_items=_format_workspace_preview(workspace_payload),
         verification_value=verification_value,
-        verification_label="workspace title" if workspace_payload.get("title") else "workspace id",
+        verification_label="workspace title" if workspace_payload.get("title") else "workspace uid",
     )
 
     try:
-        deleted = delete_workspace(workspace_id, timeout=timeout)
+        deleted = delete_workspace(workspace_uid, timeout=timeout)
     except ApiError as e:
         error(f"Workspace deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -4743,7 +5074,7 @@ def _workspace_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Workspace deleted: id={workspace_id}")
+    success(f"Workspace deleted: uid={workspace_uid}")
     print_kv("Deleted Workspace", _format_workspace_preview(deleted))
 
 
@@ -4811,7 +5142,9 @@ def _registered_widget_type_detail_impl(
         return
 
     print_kv("Registered Widget Type", _format_registered_widget_type_preview(widget_payload))
-    print_kv("Registered Widget Type Details", _format_registered_widget_type_details(widget_payload))
+    print_kv(
+        "Registered Widget Type Details", _format_registered_widget_type_details(widget_payload)
+    )
 
 
 def _connection_type_list_impl(
@@ -4840,12 +5173,24 @@ def _connection_type_list_impl(
     for connection_type_payload in connection_types:
         rows.append(
             [
-                str(connection_type_payload.get("type_id") or connection_type_payload.get("id") or "-"),
-                str(connection_type_payload.get("type_version") or connection_type_payload.get("version") or "-"),
+                str(
+                    connection_type_payload.get("type_id")
+                    or connection_type_payload.get("id")
+                    or "-"
+                ),
+                str(
+                    connection_type_payload.get("type_version")
+                    or connection_type_payload.get("version")
+                    or "-"
+                ),
                 str(connection_type_payload.get("title") or "-"),
                 str(connection_type_payload.get("category") or "-"),
                 str(connection_type_payload.get("source") or "-"),
-                str(connection_type_payload.get("access_mode") or connection_type_payload.get("accessMode") or "-"),
+                str(
+                    connection_type_payload.get("access_mode")
+                    or connection_type_payload.get("accessMode")
+                    or "-"
+                ),
             ]
         )
 
@@ -4906,20 +5251,32 @@ def _connection_list_impl(
     for connection_payload in connections_payload:
         rows.append(
             [
-                str(connection_payload.get("uid") or connection_payload.get("id") or "-"),
+                str(connection_payload.get("uid") or "-"),
                 str(connection_payload.get("name") or "-"),
                 str(connection_payload.get("type_id") or connection_payload.get("typeId") or "-"),
                 str(connection_payload.get("status") or "-"),
-                str(connection_payload.get("workspace_id") or connection_payload.get("workspaceId") or "-"),
-                str(connection_payload.get("is_default") if "is_default" in connection_payload else connection_payload.get("isDefault")),
-                str(connection_payload.get("is_system") if "is_system" in connection_payload else connection_payload.get("isSystem")),
+                str(
+                    connection_payload.get("workspace_uid")
+                    or connection_payload.get("workspaceUid")
+                    or "-"
+                ),
+                str(
+                    connection_payload.get("is_default")
+                    if "is_default" in connection_payload
+                    else connection_payload.get("isDefault")
+                ),
+                str(
+                    connection_payload.get("is_system")
+                    if "is_system" in connection_payload
+                    else connection_payload.get("isSystem")
+                ),
             ]
         )
 
     if rows:
         print_table(
             "Connections",
-            ["UID", "Name", "Type ID", "Status", "Workspace ID", "Default", "System"],
+            ["UID", "Name", "Type ID", "Status", "Workspace UID", "Default", "System"],
             rows,
         )
     else:
@@ -4979,7 +5336,15 @@ def _data_node_storage_list_impl(
     if storages:
         print_table(
             "Data Node Storages",
-            ["UID", "Storage Hash", "Source Class", "Identifier", "Namespace", "Data Source", "Frequency"],
+            [
+                "UID",
+                "Storage Hash",
+                "Source Class",
+                "Identifier",
+                "Namespace",
+                "Data Source",
+                "Frequency",
+            ],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -5127,7 +5492,9 @@ def _print_data_node_storage_search_section(
 @workspace.command("list")
 def workspace_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5153,8 +5520,12 @@ def workspace_create_cmd(
         resolve_path=True,
         help=WORKSPACE_FILE_OPTION_HELP,
     ),
-    description: str | None = typer.Option(None, "--description", help="Optional workspace description."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated workspace label."),
+    description: str | None = typer.Option(
+        None, "--description", help="Optional workspace description."
+    ),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Repeatable or comma-separated workspace label."
+    ),
     category: str | None = typer.Option(None, "--category", help="Workspace category."),
     source: str | None = typer.Option(None, "--source", help="Workspace source."),
     layout_kind: str | None = typer.Option(None, "--layout-kind", help="Workspace layout kind."),
@@ -5177,34 +5548,34 @@ def workspace_create_cmd(
 
 @workspace.command("detail")
 def workspace_detail_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Show one command-center workspace in detail.
     """
-    _workspace_detail_impl(workspace_id=workspace_id, timeout=timeout)
+    _workspace_detail_impl(workspace_uid=workspace_uid, timeout=timeout)
 
 
 @workspace.command("snapshot")
 def workspace_snapshot_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     output_path: pathlib.Path | None = typer.Option(
         None,
         "--output-path",
         "-o",
-        help="Optional output directory path. If you pass a file-like path such as snapshot.zip, its stem is used as the output directory. Defaults to ~/mainsequence/workspaces/workspace-<workspace_id>-<timestamp>/.",
+        help="Optional output directory path. If you pass a file-like path such as snapshot.zip, its stem is used as the output directory. Defaults to ~/mainsequence/workspaces/workspace-<workspace_uid>-<timestamp>/.",
     ),
 ):
     """
     Capture one command-center workspace snapshot and expand it into a directory.
     """
-    _workspace_snapshot_impl(workspace_id=workspace_id, output_path=output_path)
+    _workspace_snapshot_impl(workspace_uid=workspace_uid, output_path=output_path)
 
 
 @workspace.command("update")
 def workspace_update_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     file_path: pathlib.Path = typer.Option(
         ...,
         "--file",
@@ -5221,7 +5592,7 @@ def workspace_update_cmd(
     Update one command-center workspace from a JSON or YAML document.
     """
     _workspace_update_impl(
-        workspace_id=workspace_id,
+        workspace_uid=workspace_uid,
         file_path=file_path,
         timeout=timeout,
     )
@@ -5229,18 +5600,18 @@ def workspace_update_cmd(
 
 @workspace.command("delete")
 def workspace_delete_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Delete one command-center workspace.
     """
-    _workspace_delete_impl(workspace_id=workspace_id, timeout=timeout)
+    _workspace_delete_impl(workspace_uid=workspace_uid, timeout=timeout)
 
 
 @workspace.command("add-label")
 def workspace_add_label_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -5257,7 +5628,7 @@ def workspace_add_label_cmd(
         action_fn=add_workspace_labels,
         object_label="Workspace",
         action_label="add-label",
-        object_id=workspace_id,
+        object_id=workspace_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -5265,17 +5636,17 @@ def workspace_add_label_cmd(
 
 @workspace.command("add_label", hidden=True)
 def workspace_add_label_alias_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence cc workspace add-label`."""
-    workspace_add_label_cmd(workspace_id=workspace_id, labels=labels, timeout=timeout)
+    workspace_add_label_cmd(workspace_uid=workspace_uid, labels=labels, timeout=timeout)
 
 
 @workspace.command("remove-label")
 def workspace_remove_label_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
     labels: list[str] | None = typer.Option(
         None,
         "--label",
@@ -5292,7 +5663,7 @@ def workspace_remove_label_cmd(
         action_fn=remove_workspace_labels,
         object_label="Workspace",
         action_label="remove-label",
-        object_id=workspace_id,
+        object_id=workspace_uid,
         labels=labels,
         timeout=timeout,
     )
@@ -5300,18 +5671,22 @@ def workspace_remove_label_cmd(
 
 @workspace.command("remove_label", hidden=True)
 def workspace_remove_label_alias_cmd(
-    workspace_id: int = typer.Argument(..., help="Workspace ID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    workspace_uid: str = typer.Argument(..., help="Workspace UID."),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Organizational label to remove."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence cc workspace remove-label`."""
-    workspace_remove_label_cmd(workspace_id=workspace_id, labels=labels, timeout=timeout)
+    workspace_remove_label_cmd(workspace_uid=workspace_uid, labels=labels, timeout=timeout)
 
 
 @registered_widget_type.command("list")
 def registered_widget_type_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5326,7 +5701,9 @@ def registered_widget_type_list_cmd(
 
 @registered_widget_type.command("detail")
 def registered_widget_type_detail_cmd(
-    widget_id: str = typer.Argument(..., help="Registered widget type unique identifier (`widget_id`)."),
+    widget_id: str = typer.Argument(
+        ..., help="Registered widget type unique identifier (`widget_id`)."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5338,7 +5715,9 @@ def registered_widget_type_detail_cmd(
 @connection_type.command("list")
 def connection_type_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5365,7 +5744,9 @@ def connection_type_detail_cmd(
 @connection.command("list")
 def connection_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5380,7 +5761,9 @@ def connection_list_cmd(
 
 @connection.command("detail")
 def connection_detail_cmd(
-    connection_uid: str = typer.Argument(..., help="Connection instance stable unique identifier (`uid`)."),
+    connection_uid: str = typer.Argument(
+        ..., help="Connection instance stable unique identifier (`uid`)."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5392,7 +5775,9 @@ def connection_detail_cmd(
 @agent.command("list")
 def agent_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5407,19 +5792,26 @@ def agent_list_cmd(
 
 @agent.command("detail")
 def agent_detail_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent UID.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Show one agent in detail.
     """
-    _agent_detail_impl(agent_id=agent_id, timeout=timeout)
+    _agent_detail_impl(agent_uid=agent_uid, timeout=timeout)
 
 
 @agent.command("search")
 def agent_search_cmd(
     q: str = typer.Argument(..., help="Natural-language query to match against agents."),
-    limit: int = typer.Option(20, "--limit", min=1, max=100, help="Maximum number of ranked agent matches to return."),
+    limit: int = typer.Option(
+        20, "--limit", min=1, max=100, help="Maximum number of ranked agent matches to return."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5447,14 +5839,20 @@ def agent_create_cmd(
     agent_unique_id: str | None = pydantic_option(
         AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
     ),
-    description: str | None = pydantic_option(AGENT_MODEL_REF, "description", None, "--description"),
+    description: str | None = pydantic_option(
+        AGENT_MODEL_REF, "description", None, "--description"
+    ),
     status_value: str | None = typer.Option(
         None,
         "--status",
         help="Lifecycle status for the agent. One of: draft, active, archived.",
     ),
-    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
-    llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Repeatable or comma-separated agent label."
+    ),
+    llm_provider: str | None = pydantic_option(
+        AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"
+    ),
     llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
     engine_name: str | None = typer.Option(
         None,
@@ -5503,14 +5901,20 @@ def agent_get_or_create_cmd(
     agent_unique_id: str | None = pydantic_option(
         AGENT_MODEL_REF, "agent_unique_id", None, "--agent-unique-id"
     ),
-    description: str | None = pydantic_option(AGENT_MODEL_REF, "description", None, "--description"),
+    description: str | None = pydantic_option(
+        AGENT_MODEL_REF, "description", None, "--description"
+    ),
     status_value: str | None = typer.Option(
         None,
         "--status",
         help="Lifecycle status for the agent. One of: draft, active, archived.",
     ),
-    labels: list[str] | None = typer.Option(None, "--label", help="Repeatable or comma-separated agent label."),
-    llm_provider: str | None = pydantic_option(AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Repeatable or comma-separated agent label."
+    ),
+    llm_provider: str | None = pydantic_option(
+        AGENT_MODEL_REF, "llm_provider", None, "--llm-provider"
+    ),
     llm_model: str | None = pydantic_option(AGENT_MODEL_REF, "llm_model", None, "--llm-model"),
     engine_name: str | None = typer.Option(
         None,
@@ -5555,23 +5959,33 @@ def agent_get_or_create_cmd(
 
 @agent.command("delete")
 def agent_delete_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent UID.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
     Delete one agent.
     """
-    _agent_delete_impl(agent_id=agent_id, timeout=timeout)
+    _agent_delete_impl(agent_uid=agent_uid, timeout=timeout)
 
 
 @agent.command("allocate_a2a_target_session")
 def agent_allocate_a2a_target_session_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
-    caller_agent_session_id: int = pydantic_argument(
-        AGENT_SESSION_MODEL_REF,
-        "id",
+    agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
         ...,
-        help="Caller agent session ID.",
+        help="Agent UID.",
+    ),
+    caller_agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF,
+        "uid",
+        ...,
+        help="Caller agent session UID.",
     ),
     handle_unique_id: str | None = typer.Option(
         None,
@@ -5588,13 +6002,13 @@ def agent_allocate_a2a_target_session_cmd(
     Examples
     --------
     ```bash
-    mainsequence agent allocate_a2a_target_session 12 801
-    mainsequence agent allocate_a2a_target_session 12 801 --handle-unique-id delegated-handle-1 --timeout 60
+    mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29
+    mainsequence agent allocate_a2a_target_session e0e75693-4110-464c-93e0-82c7fd9c9a23 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --handle-unique-id delegated-handle-1 --timeout 60
     ```
     """
     _agent_allocate_a2a_target_session_impl(
-        agent_id=agent_id,
-        caller_agent_session_id=caller_agent_session_id,
+        agent_uid=agent_uid,
+        caller_agent_session_uid=caller_agent_session_uid,
         handle_unique_id=handle_unique_id,
         timeout=timeout,
     )
@@ -5602,7 +6016,12 @@ def agent_allocate_a2a_target_session_cmd(
 
 @agent.command("get_latest_session")
 def agent_get_latest_session_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(
+        AGENT_MODEL_REF,
+        "uid",
+        ...,
+        help="Agent UID.",
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5613,39 +6032,39 @@ def agent_get_latest_session_cmd(
     Examples
     --------
     ```bash
-    mainsequence agent get_latest_session 12
-    mainsequence agent get_latest_session 12 --timeout 60
+    mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23
+    mainsequence agent get_latest_session e0e75693-4110-464c-93e0-82c7fd9c9a23 --timeout 60
     ```
     """
-    _agent_get_latest_session_impl(agent_id=agent_id, timeout=timeout)
+    _agent_get_latest_session_impl(agent_uid=agent_uid, timeout=timeout)
 
 
 @agent_session_group.command("detail")
 def agent_session_detail_cmd(
-    agent_session_id: int = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "id", ..., help="Agent session ID."
+    agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Show one agent session in detail by agent session id.
+    Show one agent session in detail by agent session UID.
 
     Uses SDK client `AgentSession.get()` as the single source of truth.
 
     Examples
     --------
     ```bash
-    mainsequence agent session detail 801
-    mainsequence agent session detail 801 --timeout 60
+    mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29
+    mainsequence agent session detail 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --timeout 60
     ```
     """
-    _agent_session_detail_impl(agent_session_id=agent_session_id, timeout=timeout)
+    _agent_session_detail_impl(agent_session_uid=agent_session_uid, timeout=timeout)
 
 
 @agent_session_group.command("resolve_runtime_access")
 def agent_session_resolve_runtime_access_cmd(
-    agent_session_id: int = pydantic_argument(
-        AGENT_SESSION_MODEL_REF, "id", ..., help="Agent session ID."
+    agent_session_uid: str = pydantic_argument(
+        AGENT_SESSION_MODEL_REF, "uid", ..., help="Agent session UID."
     ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5657,44 +6076,44 @@ def agent_session_resolve_runtime_access_cmd(
     Examples
     --------
     ```bash
-    mainsequence agent session resolve_runtime_access 801
-    mainsequence agent session resolve_runtime_access 801 --timeout 60
+    mainsequence agent session resolve_runtime_access 3f1cc452-43ec-49cb-b2ba-87dbac164d29
+    mainsequence agent session resolve_runtime_access 3f1cc452-43ec-49cb-b2ba-87dbac164d29 --timeout 60
     ```
     """
-    _agent_session_resolve_runtime_access_impl(agent_session_id=agent_session_id, timeout=timeout)
+    _agent_session_resolve_runtime_access_impl(agent_session_uid=agent_session_uid, timeout=timeout)
 
 
 @agent.command("can_view")
 def agent_can_view_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_list_impl(
         fetch_fn=list_agent_users_can_view,
         object_label="Agent",
         access_label="view",
-        object_id=agent_id,
+        object_id=agent_uid,
         timeout=timeout,
     )
 
 
 @agent.command("can_edit")
 def agent_can_edit_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     _shareable_user_list_impl(
         fetch_fn=list_agent_users_can_edit,
         object_label="Agent",
         access_label="edit",
-        object_id=agent_id,
+        object_id=agent_uid,
         timeout=timeout,
     )
 
 
 @agent.command("add_to_view")
 def agent_add_to_view_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5702,7 +6121,7 @@ def agent_add_to_view_cmd(
         action_fn=add_agent_user_to_view,
         object_label="Agent",
         action_label="add_to_view",
-        object_id=agent_id,
+        object_id=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5710,7 +6129,7 @@ def agent_add_to_view_cmd(
 
 @agent.command("add_to_edit")
 def agent_add_to_edit_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5718,7 +6137,7 @@ def agent_add_to_edit_cmd(
         action_fn=add_agent_user_to_edit,
         object_label="Agent",
         action_label="add_to_edit",
-        object_id=agent_id,
+        object_id=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5726,7 +6145,7 @@ def agent_add_to_edit_cmd(
 
 @agent.command("remove_from_view")
 def agent_remove_from_view_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5734,7 +6153,7 @@ def agent_remove_from_view_cmd(
         action_fn=remove_agent_user_from_view,
         object_label="Agent",
         action_label="remove_from_view",
-        object_id=agent_id,
+        object_id=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5742,7 +6161,7 @@ def agent_remove_from_view_cmd(
 
 @agent.command("remove_from_edit")
 def agent_remove_from_edit_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5750,7 +6169,7 @@ def agent_remove_from_edit_cmd(
         action_fn=remove_agent_user_from_edit,
         object_label="Agent",
         action_label="remove_from_edit",
-        object_id=agent_id,
+        object_id=agent_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5758,7 +6177,7 @@ def agent_remove_from_edit_cmd(
 
 @agent.command("add_team_to_view")
 def agent_add_team_to_view_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5766,7 +6185,7 @@ def agent_add_team_to_view_cmd(
         action_fn=add_agent_team_to_view,
         object_label="Agent",
         action_label="add_team_to_view",
-        object_id=agent_id,
+        object_id=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5774,7 +6193,7 @@ def agent_add_team_to_view_cmd(
 
 @agent.command("add_team_to_edit")
 def agent_add_team_to_edit_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5782,7 +6201,7 @@ def agent_add_team_to_edit_cmd(
         action_fn=add_agent_team_to_edit,
         object_label="Agent",
         action_label="add_team_to_edit",
-        object_id=agent_id,
+        object_id=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5790,7 +6209,7 @@ def agent_add_team_to_edit_cmd(
 
 @agent.command("remove_team_from_view")
 def agent_remove_team_from_view_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5798,7 +6217,7 @@ def agent_remove_team_from_view_cmd(
         action_fn=remove_agent_team_from_view,
         object_label="Agent",
         action_label="remove_team_from_view",
-        object_id=agent_id,
+        object_id=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5806,7 +6225,7 @@ def agent_remove_team_from_view_cmd(
 
 @agent.command("remove_team_from_edit")
 def agent_remove_team_from_edit_cmd(
-    agent_id: int = pydantic_argument(AGENT_MODEL_REF, "id", ..., help="Agent ID."),
+    agent_uid: str = pydantic_argument(AGENT_MODEL_REF, "uid", ..., help="Agent UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5814,7 +6233,7 @@ def agent_remove_team_from_edit_cmd(
         action_fn=remove_agent_team_from_edit,
         object_label="Agent",
         action_label="remove_team_from_edit",
-        object_id=agent_id,
+        object_id=agent_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -5823,7 +6242,9 @@ def agent_remove_team_from_edit_cmd(
 @agent_run_group.command("list")
 def agent_run_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5850,7 +6271,9 @@ def agent_run_detail_cmd(
 @constants.command("list")
 def constants_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5903,7 +6326,7 @@ def constants_create_cmd(
 
 @constants.command("delete")
 def constants_delete_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5914,15 +6337,15 @@ def constants_delete_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants delete 42
+    mainsequence constants delete 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
-    _constants_delete_impl(constant_id=constant_id, timeout=timeout)
+    _constants_delete_impl(constant_uid=constant_uid, timeout=timeout)
 
 
 @constants.command("can_view")
 def constants_can_view_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5933,21 +6356,21 @@ def constants_can_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants can_view 42
+    mainsequence constants can_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_constant_users_can_view,
         object_label="Constant",
         access_label="view",
-        object_id=constant_id,
+        object_id=constant_uid,
         timeout=timeout,
     )
 
 
 @constants.command("can_edit")
 def constants_can_edit_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -5958,21 +6381,21 @@ def constants_can_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants can_edit 42
+    mainsequence constants can_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_constant_users_can_edit,
         object_label="Constant",
         access_label="edit",
-        object_id=constant_id,
+        object_id=constant_uid,
         timeout=timeout,
     )
 
 
 @constants.command("add_to_view")
 def constants_add_to_view_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -5982,14 +6405,14 @@ def constants_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants add_to_view 42 7
+    mainsequence constants add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_constant_user_to_view,
         object_label="Constant",
         action_label="add_to_view",
-        object_id=constant_id,
+        object_id=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -5997,7 +6420,7 @@ def constants_add_to_view_cmd(
 
 @constants.command("add_to_edit")
 def constants_add_to_edit_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6007,14 +6430,14 @@ def constants_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants add_to_edit 42 7
+    mainsequence constants add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_constant_user_to_edit,
         object_label="Constant",
         action_label="add_to_edit",
-        object_id=constant_id,
+        object_id=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6022,7 +6445,7 @@ def constants_add_to_edit_cmd(
 
 @constants.command("remove_from_view")
 def constants_remove_from_view_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6032,14 +6455,14 @@ def constants_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants remove_from_view 42 7
+    mainsequence constants remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_constant_user_from_view,
         object_label="Constant",
         action_label="remove_from_view",
-        object_id=constant_id,
+        object_id=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6047,7 +6470,7 @@ def constants_remove_from_view_cmd(
 
 @constants.command("remove_from_edit")
 def constants_remove_from_edit_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6057,14 +6480,14 @@ def constants_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence constants remove_from_edit 42 7
+    mainsequence constants remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_constant_user_from_edit,
         object_label="Constant",
         action_label="remove_from_edit",
-        object_id=constant_id,
+        object_id=constant_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6072,7 +6495,7 @@ def constants_remove_from_edit_cmd(
 
 @constants.command("add_team_to_view")
 def constants_add_team_to_view_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6080,7 +6503,7 @@ def constants_add_team_to_view_cmd(
         action_fn=add_constant_team_to_view,
         object_label="Constant",
         action_label="add_team_to_view",
-        object_id=constant_id,
+        object_id=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6088,7 +6511,7 @@ def constants_add_team_to_view_cmd(
 
 @constants.command("add_team_to_edit")
 def constants_add_team_to_edit_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6096,7 +6519,7 @@ def constants_add_team_to_edit_cmd(
         action_fn=add_constant_team_to_edit,
         object_label="Constant",
         action_label="add_team_to_edit",
-        object_id=constant_id,
+        object_id=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6104,7 +6527,7 @@ def constants_add_team_to_edit_cmd(
 
 @constants.command("remove_team_from_view")
 def constants_remove_team_from_view_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6112,7 +6535,7 @@ def constants_remove_team_from_view_cmd(
         action_fn=remove_constant_team_from_view,
         object_label="Constant",
         action_label="remove_team_from_view",
-        object_id=constant_id,
+        object_id=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6120,7 +6543,7 @@ def constants_remove_team_from_view_cmd(
 
 @constants.command("remove_team_from_edit")
 def constants_remove_team_from_edit_cmd(
-    constant_id: int = typer.Argument(..., help="Constant ID."),
+    constant_uid: str = typer.Argument(..., help="Constant UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6128,7 +6551,7 @@ def constants_remove_team_from_edit_cmd(
         action_fn=remove_constant_team_from_edit,
         object_label="Constant",
         action_label="remove_team_from_edit",
-        object_id=constant_id,
+        object_id=constant_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6137,7 +6560,9 @@ def constants_remove_team_from_edit_cmd(
 @secrets.command("list")
 def secrets_list_cmd(
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6547,9 +6972,13 @@ def _data_node_storage_delete_impl(
 
 @data_node_storage_group.command("list")
 def data_node_storage_list_cmd(
-    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    data_source_id: int | None = typer.Option(
+        None, "--data-source-id", help="Filter by data source ID."
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6578,6 +7007,7 @@ def data_node_storage_list_cmd(
         show_filters=show_filters,
         data_source_id=data_source_id,
     )
+
 
 @data_node_storage_group.command("detail")
 def data_node_storage_detail_cmd(
@@ -6672,13 +7102,17 @@ def data_node_storage_refresh_search_index_alias_cmd(
 
 @data_node_storage_group.command("search")
 def data_node_storage_search_cmd(
-    q: str = typer.Argument(..., help="Natural-language query to match against data node descriptions."),
+    q: str = typer.Argument(
+        ..., help="Natural-language query to match against data node descriptions."
+    ),
     mode: str = typer.Option(
         "both",
         "--mode",
         help="Search scope: description, column, or both.",
     ),
-    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    data_source_id: int | None = typer.Option(
+        None, "--data-source-id", help="Filter by data source ID."
+    ),
     q_embedding: str | None = typer.Option(
         None,
         "--q-embedding",
@@ -6694,7 +7128,9 @@ def data_node_storage_search_cmd(
         help="Embedding model to use when the server generates the query embedding.",
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this search command and exit."
+    ),
 ):
     """
     Search data node storages by description metadata, column metadata, or both.
@@ -6765,7 +7201,9 @@ def data_node_storage_search_cmd(
         {
             "query": q,
             "mode": normalized_mode,
-            "description": description_payload if normalized_mode in {"both", "description"} else None,
+            "description": description_payload
+            if normalized_mode in {"both", "description"}
+            else None,
             "column": column_payload if normalized_mode in {"both", "column"} else None,
             "total_matches": total_matches,
         }
@@ -6791,8 +7229,12 @@ def data_node_storage_search_cmd(
 
 @data_node_storage_group.command("description-search", hidden=True)
 def data_node_storage_description_search_cmd(
-    q: str = typer.Argument(..., help="Natural-language query to match against data node descriptions."),
-    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    q: str = typer.Argument(
+        ..., help="Natural-language query to match against data node descriptions."
+    ),
+    data_source_id: int | None = typer.Option(
+        None, "--data-source-id", help="Filter by data source ID."
+    ),
     q_embedding: str | None = typer.Option(
         None,
         "--q-embedding",
@@ -6808,7 +7250,9 @@ def data_node_storage_description_search_cmd(
         help="Embedding model to use when the server generates the query embedding.",
     ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this search command and exit."
+    ),
 ):
     """
     Backward-compatible alias for `mainsequence data-node search --mode description`.
@@ -6853,9 +7297,13 @@ def data_node_storage_description_search_cmd(
 @data_node_storage_group.command("column-search", hidden=True)
 def data_node_storage_column_search_cmd(
     q: str = typer.Argument(..., help="Column name or term to search in data node columns."),
-    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Filter by data source ID."),
+    data_source_id: int | None = typer.Option(
+        None, "--data-source-id", help="Filter by data source ID."
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this search command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this search command and exit."
+    ),
 ):
     """
     Search data node storages by column metadata.
@@ -7059,7 +7507,9 @@ def data_node_storage_remove_label_cmd(
 @data_node_storage_group.command("remove_label", hidden=True)
 def data_node_storage_remove_label_alias_cmd(
     storage_uid: str = typer.Argument(..., help="Data node storage UID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Organizational label to remove."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence data-node remove-label`."""
@@ -7241,7 +7691,9 @@ def data_node_storage_remove_team_from_edit_cmd(
 def project_list(
     ctx: typer.Context,
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
 ):
     """
     List projects visible to the authenticated user.
@@ -7333,7 +7785,9 @@ def _print_project_data_node_updates(
     for u in updates:
         storage = u.get("data_node_storage")
         if isinstance(storage, dict):
-            storage_value = storage.get("storage_hash") or storage.get("uid") or storage.get("id") or "-"
+            storage_value = (
+                storage.get("storage_hash") or storage.get("uid") or storage.get("id") or "-"
+            )
         else:
             storage_value = storage if storage is not None else "-"
 
@@ -7364,7 +7818,9 @@ def _print_project_data_node_updates(
 def project_data_node_updates_list_cmd(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7390,7 +7846,9 @@ def project_data_node_updates_list_cmd(
 def project_list_data_nodes_updates_cmd(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7408,7 +7866,9 @@ def project_list_data_nodes_updates_cmd(
 def project_get_data_node_updates_cmd(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7480,7 +7940,9 @@ def project_validate_name_cmd(
 @project.command("search")
 def project_search_cmd(
     q: str = typer.Argument(..., help="Project search query. Minimum 3 characters."),
-    limit: int = typer.Option(20, "--limit", min=1, max=100, help="Maximum number of matches to return."),
+    limit: int = typer.Option(
+        20, "--limit", min=1, max=100, help="Maximum number of matches to return."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -7545,7 +8007,9 @@ def project_validate_name_alias_cmd(
 @project.command("create")
 def project_create_cmd(
     project_name: str | None = typer.Argument(None, help="Project name"),
-    data_source_id: int | None = typer.Option(None, "--data-source-id", help="Dynamic table data source ID"),
+    data_source_id: int | None = typer.Option(
+        None, "--data-source-id", help="Dynamic table data source ID"
+    ),
     default_base_image_id: int | None = typer.Option(
         None, "--default-base-image-id", help="Default base image ID"
     ),
@@ -7609,15 +8073,22 @@ def project_create_cmd(
                     ("Project Name", str(name_validation.get("project_name") or project_name)),
                     ("Available", "no"),
                     ("Reason", reason),
-                    ("Slugified Project Name", str(normalized.get("slugified_project_name") or "-")),
+                    (
+                        "Slugified Project Name",
+                        str(normalized.get("slugified_project_name") or "-"),
+                    ),
                     ("Project Library Name", str(normalized.get("project_library_name") or "-")),
                 ],
             )
             suggestions = [
-                str(item) for item in list(name_validation.get("suggestions") or []) if item is not None
+                str(item)
+                for item in list(name_validation.get("suggestions") or [])
+                if item is not None
             ]
             if suggestions:
-                print_table("Suggested Project Names", ["Project Name"], [[item] for item in suggestions])
+                print_table(
+                    "Suggested Project Names", ["Project Name"], [[item] for item in suggestions]
+                )
             raise typer.Exit(1)
 
         if data_source_id is None:
@@ -7631,7 +8102,9 @@ def project_create_cmd(
                     or rr.get("class_type")
                     or f"data-source-{item.get('id')}"
                 )
-                ds_details = f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
+                ds_details = (
+                    f"class={rr.get('class_type') or '-'}, status={rr.get('status') or '-'}"
+                )
                 ds_rows.append([str(item.get("id", "")), str(ds_name), str(ds_details)])
             data_source_id = _prompt_select_id(
                 title="Available Data Sources",
@@ -7669,9 +8142,15 @@ def project_create_cmd(
                     rows=org_rows,
                 )
             else:
-                warn("No GitHub organizations available. Project will be created without github_org_id.")
+                warn(
+                    "No GitHub organizations available. Project will be created without github_org_id."
+                )
 
-        branch = (branch or "").strip() or typer.prompt("Repository branch", default="main").strip() or "main"
+        branch = (
+            (branch or "").strip()
+            or typer.prompt("Repository branch", default="main").strip()
+            or "main"
+        )
 
         env_entries = list(env or [])
         if not env_entries:
@@ -7711,7 +8190,9 @@ def project_create_cmd(
     if _emit_json(created):
         return
 
-    success(f"Project created: {created.get('project_name') or project_name} (uid={project_uid or '-'})")
+    success(
+        f"Project created: {created.get('project_name') or project_name} (uid={project_uid or '-'})"
+    )
 
     # A freshly created project can take several minutes to initialize on backend.
     # Keep polling until API reports is_initialized=True.
@@ -7939,7 +8420,9 @@ def project_remove_label_cmd(
 @project.command("remove_label", hidden=True)
 def project_remove_label_alias_cmd(
     project_id: str = typer.Argument(..., help="Project UID."),
-    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to remove."),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Organizational label to remove."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """Backward-compatible alias for `mainsequence project remove-label`."""
@@ -8182,10 +8665,16 @@ def _project_resources_list_impl(
 
 @project_project_resource_group.command("list")
 def project_project_resource_list_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -8318,7 +8807,9 @@ def _project_resource_release_create_impl(
             rows=resource_rows,
         )
 
-    resource_ids = {str(resource.get("id")) for resource in resources if resource.get("id") is not None}
+    resource_ids = {
+        str(resource.get("id")) for resource in resources if resource.get("id") is not None
+    }
     if str(resource_id) not in resource_ids:
         error("Selected resource does not match the selected image commit and release type.")
         raise typer.Exit(1)
@@ -8370,7 +8861,10 @@ def _project_resource_release_create_impl(
             ("ID", str(created.get("id") or "-")),
             ("Release Kind", release_kind),
             ("Resource", str(created.get("resource") or resource_id)),
-            ("Related Image", _format_related_image_label(created.get("related_image") or related_image_id)),
+            (
+                "Related Image",
+                _format_related_image_label(created.get("related_image") or related_image_id),
+            ),
             ("CPU Request", str(created.get("cpu_request") or cpu_request)),
             ("Memory Request", str(created.get("memory_request") or memory_request)),
             ("GPU Request", str(created.get("gpu_request") or gpu_request or "-")),
@@ -8382,16 +8876,30 @@ def _project_resource_release_create_impl(
 
 @project_project_resource_group.command("create_dashboard")
 def project_project_resource_create_dashboard_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
     resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
-    related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
-    readme_resource_id: int | None = typer.Option(None, "--readme-resource-id", help="Optional README resource ID."),
-    cpu_request: str | None = typer.Option(None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."),
-    memory_request: str | None = typer.Option(None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
+    related_image_id: int | None = typer.Option(
+        None, "--related-image-id", help="Project image ID."
+    ),
+    readme_resource_id: int | None = typer.Option(
+        None, "--readme-resource-id", help="Optional README resource ID."
+    ),
+    cpu_request: str | None = typer.Option(
+        None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
+    ),
+    memory_request: str | None = typer.Option(
+        None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."
+    ),
     gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
     gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
-    spot: bool | None = typer.Option(None, "--spot/--no-spot", help="Whether to prefer spot capacity."),
+    spot: bool | None = typer.Option(
+        None, "--spot/--no-spot", help="Whether to prefer spot capacity."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -8418,16 +8926,30 @@ def project_project_resource_create_dashboard_cmd(
 
 @project_project_resource_group.command("create_fastapi")
 def project_project_resource_create_fastapi_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
     resource_id: int | None = typer.Option(None, "--resource-id", help="Project resource ID."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
-    related_image_id: int | None = typer.Option(None, "--related-image-id", help="Project image ID."),
-    readme_resource_id: int | None = typer.Option(None, "--readme-resource-id", help="Optional README resource ID."),
-    cpu_request: str | None = typer.Option(None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."),
-    memory_request: str | None = typer.Option(None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
+    related_image_id: int | None = typer.Option(
+        None, "--related-image-id", help="Project image ID."
+    ),
+    readme_resource_id: int | None = typer.Option(
+        None, "--readme-resource-id", help="Optional README resource ID."
+    ),
+    cpu_request: str | None = typer.Option(
+        None, "--cpu-request", help="CPU request (accepts 0.5 or 500m; default: 0.25)."
+    ),
+    memory_request: str | None = typer.Option(
+        None, "--memory-request", help="Memory request (accepts 1 or 1Gi; default: 0.5)."
+    ),
     gpu_request: str | None = typer.Option(None, "--gpu-request", help="GPU request count."),
     gpu_type: str | None = typer.Option(None, "--gpu-type", help="GPU accelerator type."),
-    spot: bool | None = typer.Option(None, "--spot/--no-spot", help="Whether to prefer spot capacity."),
+    spot: bool | None = typer.Option(
+        None, "--spot/--no-spot", help="Whether to prefer spot capacity."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -8570,7 +9092,9 @@ def _project_images_list_impl(
         project_id = _resolve_project_id_from_local_env(path)
 
     try:
-        images = list_project_images(related_project_id=project_id, filters=filters, timeout=timeout)
+        images = list_project_images(
+            related_project_id=project_id, filters=filters, timeout=timeout
+        )
     except ApiError as e:
         error(f"Project images fetch failed: {e}")
         raise typer.Exit(1) from e
@@ -8597,10 +9121,16 @@ def _project_images_list_impl(
 
 @project_images_group.command("list")
 def project_images_list_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -8697,7 +9227,11 @@ def _project_images_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
+    project_dir = (
+        _resolve_project_dir(project_id, path)
+        if (project_id is not None or path)
+        else _resolve_current_project_dir_from_env()
+    )
     if project_id is None:
         project_id = _resolve_project_id_from_local_env(str(project_dir))
 
@@ -8712,7 +9246,9 @@ def _project_images_create_impl(
 
     pending_commits = _list_unpushed_commits(project_dir)
     if pending_commits:
-        pending_hashes = ", ".join(c["short_hash"] for c in pending_commits[:3] if c.get("short_hash"))
+        pending_hashes = ", ".join(
+            c["short_hash"] for c in pending_commits[:3] if c.get("short_hash")
+        )
         suffix = f" Pending: {pending_hashes}." if pending_hashes else ""
         warn(
             f"{len(pending_commits)} local commit(s) have not been pushed yet. "
@@ -8751,15 +9287,14 @@ def _project_images_create_impl(
         raise typer.Exit(1) from e
 
     if not _is_pushed_commit(project_dir, project_repo_hash):
-        error("project_repo_hash must reference a commit that has already been pushed to the remote.")
+        error(
+            "project_repo_hash must reference a commit that has already been pushed to the remote."
+        )
         raise typer.Exit(1)
 
     existing_for_hash = images_by_hash.get(project_repo_hash, [])
     if existing_for_hash:
-        warn(
-            "This commit already has project image(s): "
-            + _format_image_ids(existing_for_hash)
-        )
+        warn("This commit already has project image(s): " + _format_image_ids(existing_for_hash))
 
     try:
         if base_image_id is None:
@@ -8805,7 +9340,9 @@ def _project_images_create_impl(
             remaining = max(wait_deadline - time.monotonic(), 0.0)
             sleep_for = min(max(int(poll_interval), 1), remaining)
             if sleep_for > 0:
-                with status(f"Project image not ready yet (attempt {attempt}). Next check in {int(sleep_for)}s..."):
+                with status(
+                    f"Project image not ready yet (attempt {attempt}). Next check in {int(sleep_for)}s..."
+                ):
                     time.sleep(sleep_for)
 
             try:
@@ -8814,7 +9351,9 @@ def _project_images_create_impl(
                 warn(f"Project image status poll failed (attempt {attempt}): {e}")
                 continue
 
-            latest = next((img for img in polled_images if str(img.get("id")) == str(image_id)), None)
+            latest = next(
+                (img for img in polled_images if str(img.get("id")) == str(image_id)), None
+            )
             if latest is None:
                 warn(f"Project image {image_id} was not visible yet on poll attempt {attempt}.")
                 continue
@@ -8847,22 +9386,33 @@ def _project_images_create_impl(
             ("Project UID", str(project_id)),
             ("Project Repo Hash", project_repo_hash),
             ("Base Image", str(base_image_value or base_image_id or "-")),
-            ("Is Ready", str(created.get("is_ready")) if created.get("is_ready") is not None else "-"),
+            (
+                "Is Ready",
+                str(created.get("is_ready")) if created.get("is_ready") is not None else "-",
+            ),
         ],
     )
 
 
 @project_images_group.command("create")
 def project_images_create_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
     project_repo_hash: str | None = typer.Argument(
         None,
         help="Git commit hash for the image build. Must already be pushed to the remote.",
     ),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
-    timeout: int = typer.Option(300, "--timeout", help="Maximum wait time in seconds for the image to become ready."),
-    poll_interval: int = typer.Option(30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."),
+    timeout: int = typer.Option(
+        300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
+    ),
+    poll_interval: int = typer.Option(
+        30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."
+    ),
 ):
     """
     Create a project image from a pushed git commit.
@@ -8908,15 +9458,23 @@ def project_images_create_cmd(
 
 @project.command("create_image", hidden=True)
 def project_create_image_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
     project_repo_hash: str | None = typer.Argument(
         None,
         help="Git commit hash for the image build. Must already be pushed to the remote.",
     ),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     base_image_id: int | None = typer.Option(None, "--base-image-id", help="Project base image ID"),
-    timeout: int = typer.Option(300, "--timeout", help="Maximum wait time in seconds for the image to become ready."),
-    poll_interval: int = typer.Option(30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."),
+    timeout: int = typer.Option(
+        300, "--timeout", help="Maximum wait time in seconds for the image to become ready."
+    ),
+    poll_interval: int = typer.Option(
+        30, "--poll-interval", help="Polling interval in seconds while waiting for is_ready=true."
+    ),
 ):
     """
     Backward-compatible alias for `mainsequence project images create`.
@@ -9030,7 +9588,15 @@ def _project_job_runs_list_impl(
     if rows:
         print_table(
             "Project Job Runs",
-            ["ID", "Name", "Status", "Execution Start", "Execution End", "Unique Identifier", "Commit Hash"],
+            [
+                "ID",
+                "Name",
+                "Status",
+                "Execution Start",
+                "Execution End",
+                "Unique Identifier",
+                "Commit Hash",
+            ],
             rows,
         )
     else:
@@ -9065,10 +9631,16 @@ def _print_job_run_logs_rows(rows, *, start_index: int = 0) -> int:
 
 @project_jobs_group.command("list")
 def project_jobs_list_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -9170,17 +9742,32 @@ def project_jobs_run_cmd(
         rows = [(label, value) for label, value in preferred_keys if value != "-"]
         remaining = []
         for key, value in payload.items():
-            if key in {"job", "job_id", "id", "job_run_id", "name", "job_name", "unique_identifier", "status"}:
+            if key in {
+                "job",
+                "job_id",
+                "id",
+                "job_run_id",
+                "name",
+                "job_name",
+                "unique_identifier",
+                "status",
+            }:
                 continue
-            remaining.append((str(key), json.dumps(value) if isinstance(value, (dict, list)) else str(value)))
+            remaining.append(
+                (str(key), json.dumps(value) if isinstance(value, (dict, list)) else str(value))
+            )
         print_kv("Job Run", rows + remaining)
 
 
 @project_job_runs_group.command("list")
 def project_job_runs_list_cmd(
-    job_id: int = pydantic_argument(JOB_MODEL_REF, "id", ..., help="Job ID whose runs will be listed."),
+    job_id: int = pydantic_argument(
+        JOB_MODEL_REF, "id", ..., help="Job ID whose runs will be listed."
+    ),
     filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
-    show_filters: bool = typer.Option(False, "--show-filters", help="Show the filters supported by this list command and exit."),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -9205,7 +9792,9 @@ def project_job_runs_list_cmd(
 
 @project_job_runs_group.command("logs")
 def project_job_runs_logs_cmd(
-    job_run_id: int = pydantic_argument(JOB_RUN_MODEL_REF, "id", ..., help="Job run ID whose logs will be shown."),
+    job_run_id: int = pydantic_argument(
+        JOB_RUN_MODEL_REF, "id", ..., help="Job run ID whose logs will be shown."
+    ),
     poll_interval: int = typer.Option(
         30,
         "--poll-interval",
@@ -9320,7 +9909,11 @@ def _project_jobs_create_impl(
 ) -> None:
     _require_login()
 
-    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
+    project_dir = (
+        _resolve_project_dir(project_id, path)
+        if (project_id is not None or path)
+        else _resolve_current_project_dir_from_env()
+    )
     if project_id is None:
         project_id = _resolve_project_id_from_local_env(str(project_dir))
 
@@ -9364,10 +9957,13 @@ def _project_jobs_create_impl(
             or None
         )
         if execution_path is None:
-            app_name = typer.prompt(
-                pydantic_prompt_text(JOB_MODEL_REF, "app_name", optional=True),
-                default="",
-            ).strip() or None
+            app_name = (
+                typer.prompt(
+                    pydantic_prompt_text(JOB_MODEL_REF, "app_name", optional=True),
+                    default="",
+                ).strip()
+                or None
+            )
 
     if execution_path is None and app_name is None:
         error("One of execution_path or app_name is required.")
@@ -9388,11 +9984,13 @@ def _project_jobs_create_impl(
         raise typer.Exit(1) from e
 
     try:
-        cpu_request, memory_request, spot, max_runtime_seconds, used_defaults = _resolve_job_create_defaults(
-            cpu_request=cpu_request,
-            memory_request=memory_request,
-            spot=spot,
-            max_runtime_seconds=max_runtime_seconds,
+        cpu_request, memory_request, spot, max_runtime_seconds, used_defaults = (
+            _resolve_job_create_defaults(
+                cpu_request=cpu_request,
+                memory_request=memory_request,
+                spot=spot,
+                max_runtime_seconds=max_runtime_seconds,
+            )
         )
     except ValueError as e:
         error(str(e))
@@ -9408,11 +10006,7 @@ def _project_jobs_create_impl(
             default_parts.append(f"spot={'true' if spot else 'false'}")
         if "max_runtime_seconds" in used_defaults:
             default_parts.append(f"max_runtime_seconds={max_runtime_seconds}")
-        info(
-            "Using defaults: "
-            + ", ".join(default_parts)
-            + "."
-        )
+        info("Using defaults: " + ", ".join(default_parts) + ".")
 
     try:
         created = create_project_job(
@@ -9449,7 +10043,10 @@ def _project_jobs_create_impl(
             ("Project UID", str(project_id)),
             ("Execution Path", str(created.get("execution_path") or execution_path or "-")),
             ("App Name", str(created.get("app_name") or app_name or "-")),
-            ("Related Image", _format_related_image_label(created.get("related_image") or related_image_id)),
+            (
+                "Related Image",
+                _format_related_image_label(created.get("related_image") or related_image_id),
+            ),
             (
                 "Schedule",
                 _format_job_schedule_summary(created.get("task_schedule") or task_schedule),
@@ -9467,9 +10064,13 @@ def _project_jobs_create_impl(
 
 @project_jobs_group.command("create")
 def project_jobs_create_cmd(
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
     name: str | None = pydantic_option(JOB_MODEL_REF, "name", None, "--name"),
-    path: str | None = typer.Option(None, "--path", help="Project repository path (default: current project)"),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path (default: current project)"
+    ),
     execution_path: str | None = pydantic_option(
         JOB_MODEL_REF,
         "execution_path",
@@ -9479,7 +10080,7 @@ def project_jobs_create_cmd(
     app_name: str | None = pydantic_option(JOB_MODEL_REF, "app_name", None, "--app-name"),
     related_image_id: int | None = pydantic_option(
         JOB_MODEL_REF,
-        "related_image",
+        "related_image_uid",
         None,
         "--related-image-id",
         extra_help="Use the numeric project image ID.",
@@ -9600,8 +10201,12 @@ def project_jobs_create_cmd(
 @project.command("schedule_batch_jobs")
 def project_schedule_batch_jobs_cmd(
     file_path: str = typer.Argument(..., help="Path to the scheduled jobs YAML file."),
-    project_id: str | None = typer.Argument(None, help="Project UID. Defaults to local .env when omitted."),
-    path: str | None = typer.Option(None, "--path", help="Project repository path used to resolve project uid."),
+    project_id: str | None = typer.Argument(
+        None, help="Project UID. Defaults to local .env when omitted."
+    ),
+    path: str | None = typer.Option(
+        None, "--path", help="Project repository path used to resolve project uid."
+    ),
     strict: bool = typer.Option(
         False,
         "--strict/--no-strict",
@@ -9760,7 +10365,9 @@ def project_schedule_batch_jobs_cmd(
 @project.command("set-up-locally")
 def project_set_up_locally(
     project_id: str = typer.Argument(..., help="Project UID from the platform"),
-    base_dir: str | None = typer.Option(None, "--base-dir", help="Override base dir (default from settings)"),
+    base_dir: str | None = typer.Option(
+        None, "--base-dir", help="Override base dir (default from settings)"
+    ),
     scaffold_docker: bool = typer.Option(
         True,
         "--scaffold-docker/--no-scaffold-docker",
@@ -9854,7 +10461,9 @@ def project_set_up_locally(
     env["GIT_SSH_COMMAND"] = f'ssh -i "{str(key_path)}" -o IdentitiesOnly=yes'
 
     with status(f"Cloning repo into {target_dir}..."):
-        rc = subprocess.call(["git", "clone", repo, str(target_dir)], env=env, cwd=str(projects_root))
+        rc = subprocess.call(
+            ["git", "clone", repo, str(target_dir)], env=env, cwd=str(projects_root)
+        )
     if rc != 0:
         try:
             import shutil
@@ -9895,7 +10504,9 @@ def project_set_up_locally(
 @project.command("open")
 def project_open(
     project_id: str | None = typer.Argument(None, help="Project UID"),
-    path: str | None = typer.Option(None, "--path", help="Open an explicit path instead of resolving by id"),
+    path: str | None = typer.Option(
+        None, "--path", help="Open an explicit path instead of resolving by id"
+    ),
 ):
     """
     Open a mapped project folder in the OS file manager.
@@ -9922,7 +10533,9 @@ def project_open(
 @project.command("delete-local")
 def project_delete_local(
     project_id: str | None = typer.Argument(None, help="Project UID"),
-    path: str | None = typer.Option(None, "--path", help="Delete an explicit path instead of resolving by id"),
+    path: str | None = typer.Option(
+        None, "--path", help="Delete an explicit path instead of resolving by id"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="Do not prompt for confirmation"),
 ):
     """
@@ -10037,7 +10650,11 @@ def project_build_local_venv(
     mainsequence project build_local_venv --path .
     ```
     """
-    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else _resolve_current_project_dir_from_env()
+    project_dir = (
+        _resolve_project_dir(project_id, path)
+        if (project_id is not None or path)
+        else _resolve_current_project_dir_from_env()
+    )
     venv_path = project_dir / ".venv"
     if venv_path.exists():
         info(f"Skipped: {venv_path} already exists.")
@@ -10056,7 +10673,9 @@ def project_build_local_venv(
 
     python_version = _extract_python_version_from_pyproject_text(pyproject_text)
     if not python_version:
-        error("Could not determine Python version from pyproject.toml (requires-python or Poetry python spec).")
+        error(
+            "Could not determine Python version from pyproject.toml (requires-python or Poetry python spec)."
+        )
         raise typer.Exit(1)
 
     with status("Building local .venv..."):
@@ -10066,12 +10685,16 @@ def project_build_local_venv(
             ok, reason = _install_uv()
             if not ok:
                 details = f": {reason}" if reason else ""
-                error(f"uv is not installed and automatic install failed{details}. Install manually with: pip install uv")
+                error(
+                    f"uv is not installed and automatic install failed{details}. Install manually with: pip install uv"
+                )
                 raise typer.Exit(1)
 
             uv_runner = _resolve_uv_runner()
             if not uv_runner:
-                error("uv install completed but uv is still not available. Restart your shell and try again.")
+                error(
+                    "uv install completed but uv is still not available. Restart your shell and try again."
+                )
                 raise typer.Exit(1)
 
         uv_cmd, uv_display = uv_runner
@@ -10086,7 +10709,9 @@ def project_build_local_venv(
         )
         if venv_result.returncode != 0:
             reason = (venv_result.stderr or venv_result.stdout or "").strip()
-            error(f"Failed to create local .venv via {uv_display}: {reason or f'exit {venv_result.returncode}'}")
+            error(
+                f"Failed to create local .venv via {uv_display}: {reason or f'exit {venv_result.returncode}'}"
+            )
             raise typer.Exit(1)
 
         info("Running uv sync with .venv...")
@@ -10101,7 +10726,9 @@ def project_build_local_venv(
         )
         if sync_result.returncode != 0:
             reason = (sync_result.stderr or sync_result.stdout or "").strip()
-            error(f"Failed to run uv sync for local .venv via {uv_display}: {reason or f'exit {sync_result.returncode}'}")
+            error(
+                f"Failed to run uv sync for local .venv via {uv_display}: {reason or f'exit {sync_result.returncode}'}"
+            )
             raise typer.Exit(1)
 
     success(f"Local .venv built with Python {python_version}.")
@@ -10135,11 +10762,17 @@ def project_refresh_token(
     ```
     """
     _require_login()
-    project_dir = _resolve_project_dir(project_id, path) if (project_id is not None or path) else pathlib.Path.cwd()
+    project_dir = (
+        _resolve_project_dir(project_id, path)
+        if (project_id is not None or path)
+        else pathlib.Path.cwd()
+    )
     env_path = project_dir / ".env"
     if not env_path.is_file():
         error(f".env not found in project root: {env_path}")
-        info("Run: mainsequence project set-up-locally <project_uid> to provision the local runtime first.")
+        info(
+            "Run: mainsequence project set-up-locally <project_uid> to provision the local runtime first."
+        )
         raise typer.Exit(1)
 
     backend_url = cfg.backend_url()
@@ -10158,7 +10791,9 @@ def project_refresh_token(
         error(f"Could not read .env: {e}")
         raise typer.Exit(1) from e
 
-    inferred_project_id = str(project_id) if project_id is not None else _read_project_ref_from_env_file(project_dir)
+    inferred_project_id = (
+        str(project_id) if project_id is not None else _read_project_ref_from_env_file(project_dir)
+    )
 
     final_env = _render_project_runtime_env_text(
         env_text,
@@ -10174,7 +10809,11 @@ def project_refresh_token(
 def project_freeze_env(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
-    ensure_uv: bool = typer.Option(True, "--ensure-uv/--no-ensure-uv", help="Allow resolving uv from PATH when it is not present inside .venv."),
+    ensure_uv: bool = typer.Option(
+        True,
+        "--ensure-uv/--no-ensure-uv",
+        help="Allow resolving uv from PATH when it is not present inside .venv.",
+    ),
 ):
     """
     Export pinned dependencies into `requirements.txt` using `uv`.
@@ -10205,7 +10844,9 @@ def project_freeze_env(
         raise typer.Exit(1)
 
     with status("Exporting requirements.txt via uv..."):
-        uv_export_requirements(uv, cwd=project_dir, locked=False, no_dev=False, output_file="requirements.txt")
+        uv_export_requirements(
+            uv, cwd=project_dir, locked=False, no_dev=False, output_file="requirements.txt"
+        )
 
     success(f"Wrote: {project_dir / 'requirements.txt'}")
 
@@ -10216,7 +10857,9 @@ def project_sync(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
     message_opt: str | None = typer.Option(None, "--message", "-m", help="Git commit message"),
-    bump: str = typer.Option("patch", "--bump", help="uv version bump: patch|minor|major (default: patch)"),
+    bump: str = typer.Option(
+        "patch", "--bump", help="uv version bump: patch|minor|major (default: patch)"
+    ),
     no_push: bool = typer.Option(False, "--no-push", help="Do not git push"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps but do not execute"),
 ):
@@ -10259,7 +10902,9 @@ def project_sync(
 
     message = message if message is not None else message_opt
     project_dir = _resolve_project_dir(project_id, path)
-    resolved_project_id = project_id if project_id is not None else _read_project_ref_from_env_file(project_dir)
+    resolved_project_id = (
+        project_id if project_id is not None else _read_project_ref_from_env_file(project_dir)
+    )
     if not dry_run and not no_push:
         _require_login()
         if resolved_project_id is None:
@@ -10279,7 +10924,9 @@ def project_sync(
     repo_name = repo_name_from_git_url(origin) or project_dir.name
     key_path, _, _ = ensure_key_for_repo(origin)
 
-    safe_message = str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
+    safe_message = (
+        str(message or "").replace("\r", " ").replace("\n", " ").replace('"', "'").strip()
+    )
     if not safe_message:
         error("Commit message is required.")
         raise typer.Exit(1)
@@ -10362,7 +11009,9 @@ def project_sync_project(
 def project_build_docker_env(
     project_id: str | None = typer.Argument(None, help="Project UID"),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
-    image_ref: str | None = typer.Option(None, "--image-ref", help="Docker image ref to build (default: computed)"),
+    image_ref: str | None = typer.Option(
+        None, "--image-ref", help="Docker image ref to build (default: computed)"
+    ),
     devcontainer: bool = typer.Option(
         True,
         "--devcontainer/--no-devcontainer",
@@ -10415,7 +11064,9 @@ def project_build_docker_env(
 
 
 @project.command("current")
-def project_current(debug: bool = typer.Option(False, "--debug", help="Show detection debug details")):
+def project_current(
+    debug: bool = typer.Option(False, "--debug", help="Show detection debug details"),
+):
     """
     Detect and display current project context from current directory.
 
@@ -10467,7 +11118,9 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
     if latest or local is not None:
         status_label = "checking"
         if latest and local and local != "unversioned":
-            status_label = "match" if normalize_version(local) == normalize_version(latest) else "differs"
+            status_label = (
+                "match" if normalize_version(local) == normalize_version(latest) else "differs"
+            )
         sdk_status_payload = {
             "latest_github": latest or "unavailable",
             "local_requirements_txt": local if local is not None else "not found",
@@ -10509,7 +11162,9 @@ def project_current(debug: bool = typer.Option(False, "--debug", help="Show dete
         )
 
     if debug and dbg.checks:
-        print_kv("Detection Debug", [("details", json.dumps([c.__dict__ for c in dbg.checks], indent=2))])
+        print_kv(
+            "Detection Debug", [("details", json.dumps([c.__dict__ for c in dbg.checks], indent=2))]
+        )
 
 
 @project.command("sdk-status")
@@ -10542,7 +11197,9 @@ def project_sdk_status(
 
     status_label = "unknown"
     if latest and local and local != "unversioned":
-        status_label = "match" if normalize_version(local) == normalize_version(latest) else "differs"
+        status_label = (
+            "match" if normalize_version(local) == normalize_version(latest) else "differs"
+        )
 
     payload = {
         "project": str(project_dir),
@@ -10615,8 +11272,12 @@ def project_update_sdk(
 
 @project.command("update")
 def project_update_scaffold_target(
-    target: str = typer.Argument(..., help="Scaffold target to update. Currently supported: AGENTS.md"),
-    project_id: str | None = typer.Option(None, "--project-uid", "--project-id", help="Project UID to resolve local folder"),
+    target: str = typer.Argument(
+        ..., help="Scaffold target to update. Currently supported: AGENTS.md"
+    ),
+    project_id: str | None = typer.Option(
+        None, "--project-uid", "--project-id", help="Project UID to resolve local folder"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10688,7 +11349,9 @@ def project_update_scaffold_target(
 @project.command("update_agent_skills")
 @project.command("update-agent-skills", hidden=True)
 def project_update_agent_skills(
-    project_id: str | None = typer.Option(None, "--project-uid", "--project-id", help="Project UID to resolve local folder"),
+    project_id: str | None = typer.Option(
+        None, "--project-uid", "--project-id", help="Project UID to resolve local folder"
+    ),
     path: str | None = typer.Option(None, "--path", help="Project directory"),
 ):
     """
@@ -10823,4 +11486,6 @@ def skills_path_cmd(
         return
 
     typer.echo(str(row["skill_file"]))
+
+
 organization.add_typer(organization_teams_group, name="teams")

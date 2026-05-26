@@ -146,18 +146,16 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
 
     ENDPOINT: ClassVar[str] = "connections"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "connection_type": ["exact"],
         "type_id": ["exact"],
         "status": ["exact"],
-        "workspace_id": ["exact"],
+        "workspace_uid": ["exact"],
         "is_default": ["exact"],
         "is_active": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "connection_type": "id",
         "type_id": "str",
         "status": "str",
-        "workspace_id": "str",
+        "workspace_uid": "uid",
         "is_default": "bool",
         "is_active": "bool",
     }
@@ -167,8 +165,8 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
         extra="ignore",
     )
 
-    id: int = Field(
-        description="Connection instance primary key.",
+    uid: str = Field(
+        description="Connection instance public UID used for detail routes and actions.",
     )
     type_id: str = Field(
         alias="typeId",
@@ -185,15 +183,15 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
         default="",
         description="Connection description.",
     )
-    organization_id: str | None = Field(
+    organization_uid: str | None = Field(
         default=None,
-        alias="organizationId",
-        description="Owning organization id.",
+        alias="organizationUid",
+        description="Owning organization UID.",
     )
-    workspace_id: str | None = Field(
+    workspace_uid: str | None = Field(
         default=None,
-        alias="workspaceId",
-        description="Optional workspace scope id.",
+        alias="workspaceUid",
+        description="Optional workspace scope UID.",
     )
     public_config: dict[str, Any] = Field(
         default_factory=dict,
@@ -233,10 +231,10 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
         default_factory=list,
         description="Connection tags.",
     )
-    created_by: str | None = Field(
+    created_by_user_uid: str | None = Field(
         default=None,
-        alias="createdBy",
-        description="User id that created the connection.",
+        alias="createdByUserUid",
+        description="UID of the user that created the connection.",
     )
     created_at: datetime = Field(
         alias="createdAt",
@@ -253,6 +251,7 @@ class ConnectionInstance(CommandCenterBaseObjectOrm, BasePydanticModel):
         return _rename_query_params(
             params,
             {
+                "workspace_uid": "workspaceUid",
                 "is_default": "isDefault",
                 "is_active": "isActive",
             },

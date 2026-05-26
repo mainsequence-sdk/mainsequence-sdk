@@ -74,7 +74,7 @@ def test_data_node_update_accepts_labels():
 
 def test_label_fields_exist_on_workspace_project_and_storage_models():
     workspace = Workspace(
-        id=1,
+        uid="11111111-1111-4111-8111-111111111111",
         title="Workspace",
         schemaVersion=1,
         layoutKind="custom",
@@ -83,7 +83,7 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         labels=["desk"],
     )
     project = Project(
-        id=1,
+        uid="project-uid-1",
         project_name="Project",
         is_initialized=True,
         labels=["research"],

@@ -226,7 +226,7 @@ class UpdateRunner:
             raise e
         finally:
             self.ts.local_persist_manager.data_node_update.set_end_of_execution(
-                historical_update_id=historical_update.id, error_on_update=error_on_last_update
+                historical_update_uid=historical_update.uid, error_on_update=error_on_last_update
             )
 
             # Always set last relations details after the run completes.

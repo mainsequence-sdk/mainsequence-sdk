@@ -19,7 +19,7 @@ def _data_node_update_without_uid() -> models_tdag.DataNodeUpdate:
     [
         ("add_tags", (["curated"],), {}),
         ("set_start_of_execution", (), {}),
-        ("set_end_of_execution", (), {"historical_update_id": 1}),
+        ("set_end_of_execution", (), {"historical_update_uid": "historical-update-uid"}),
         ("set_last_update_index_time_from_update_stats", (), {}),
         ("get_all_dependencies_update_priority", (), {}),
         ("verify_if_direct_dependencies_are_updated", (), {}),

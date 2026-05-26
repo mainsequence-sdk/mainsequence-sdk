@@ -42,12 +42,12 @@ This document is an implementation task list. It is not a design note for keepin
 
 ## Recommended order
 
-- [x] Foundation in `mainsequence/client/base.py`
+- [ ] Foundation in `mainsequence/client/base.py` (partial: UID detail routing and UID coercion are done; base `id` fallback and remaining family audits are not)
 - [x] Shared helper layer in `mainsequence/client/models_helpers.py`
-- [x] Project and data-source family in `mainsequence/client/models_tdag.py`
+- [ ] Project and data-source family in `mainsequence/client/models_tdag.py` (partial: Project, ProjectImage, TS Manager storage/update, Job-adjacent payloads, and selected infra models are migrated; DynamicResource, remaining runtime internals, CLI, and full tests are not)
 - [x] Meta tables in `mainsequence/client/models_metatables.py`
-- [ ] User/org/team family in `mainsequence/client/models_user.py`
-- [ ] Agent runtime family in `mainsequence/client/agent_runtime_models.py`
+- [x] User/org/team family in `mainsequence/client/models_user.py`
+- [x] Agent runtime family in `mainsequence/client/agent_runtime_models.py`
 - [ ] Command Center models in `mainsequence/client/command_center/`
 - [ ] CLI cleanup after model contracts are explicit
 
@@ -67,10 +67,11 @@ Problems:
 
 Tasks:
 
-- [ ] Replace generic numeric-id fallback with UID-first identity resolution.
-- [ ] Introduce a generic UID coercer for public object references.
+- [x] Route public detail, patch, delete, label, and share actions through UID-first public reference helpers.
+- [ ] Replace generic numeric-id fallback with UID-first identity resolution everywhere, including repr/hash helpers.
+- [x] Introduce a generic UID coercer for public object references.
 - [ ] Remove or isolate the base `id` field so it is not treated as part of the public contract.
-- [ ] Audit deprecated helpers like `destroy_by_id` / `patch_by_id` and remove them or move them behind explicit internal-only compatibility shims.
+- [x] Audit deprecated helpers like `destroy_by_id` / `patch_by_id` and remove them or move them behind explicit internal-only compatibility shims.
 
 Suggested migration:
 
@@ -80,6 +81,7 @@ Suggested migration:
   - object with `.uid`
   - dict with `"uid"`
 - Stop teaching the base layer that a public object is identified by `.id`.
+- Base repr/hash still allow an `id` fallback for non-migrated models; public detail routing uses `uid` by default.
 
 Validation:
 
@@ -98,7 +100,7 @@ Problems:
 
 Tasks:
 
-- [x] Replace all public SDK project references with `project_uid`.
+- [x] Replace public SDK project references in `models_helpers.py` with `project_uid`.
 - [x] Replace `project__id` filters with `project__uid`.
 - [x] Audit whether backend job-run endpoints already accept UID paths.
 - [x] Change JobRun URL construction from `/{self.id}/...` to `/{self.uid}/...`.
@@ -140,15 +142,16 @@ Suggested migration:
 - Split the file by object family and migrate one serializer contract at a time:
   - [x] project
   - [x] project images
-  - [x] data sources / data node updates
-  - [x] buckets / artifacts / constants
+  - [x] public data-source / data-node-update API paths
+  - [x] buckets / artifacts / secrets / constants client model fields
+  - [ ] buckets / artifacts / constants serializer-shape tests and CLI cleanup
   - [ ] dynamic resources
 - For each family, update:
-  - [x] model fields
-  - [x] filter sets
-  - [x] payload builders
-  - [x] docstrings
-  - [x] tests
+  - [x] migrated model fields for project, project images, TS Manager storage/update, Job/JobRun, ProjectResource, ResourceRelease, Bucket, Artifact, Secret, and Constant.
+  - [x] migrated filter sets for verified project/job/TS Manager storage/update paths.
+  - [x] migrated payload builders for verified project/job/TS Manager storage/update paths.
+  - [ ] finish docs/docstrings for every project/data-source-family model.
+  - [ ] finish tests for every project/data-source-family model.
 
 Validation:
 
@@ -186,27 +189,29 @@ Files:
 
 - `mainsequence/client/models_user.py`
 
-Problems:
+Resolved:
 
-- `Organization` still exposes both `id` and `uid`.
-- Main user models still carry numeric ids.
-- `PUBLIC_LOOKUP_FIELD` is still `"id"` for the main user model.
+- `Organization`, `User`, `UserSummary`, `ShareableTeamSummary`, and `Team` now expose UID as the public identity; numeric row ids are accepted only as hidden/internal fields where the backend still echoes them.
+- `Team` no longer overrides `PUBLIC_LOOKUP_FIELD = "id"`; detail actions route by UID.
+- `Team` membership management posts `user_uids` to the backend contract.
+- Request-bound auth remains on `X-User-ID`; the backend auth status/header contract is not part of this public resource UID migration.
 
 Tasks:
 
-- [ ] Migrate public user, organization, and team models to UID-based lookups.
-- [ ] Remove `PUBLIC_LOOKUP_FIELD = "id"` where backend public routes now require UID.
-- [ ] Replace any numeric-id filters with UID filters.
+- [x] Migrate public user, organization, and team models to UID-based lookups.
+- [x] Remove `PUBLIC_LOOKUP_FIELD = "id"` where backend public routes now require UID.
+- [x] Replace any numeric-id filters with UID filters.
 
 Suggested migration:
 
-- Use `/user/api/user/get_user_details/` and `/user/api/user/{user_uid}/` as the source of truth.
+- Use `/user/api/user/get_user_details/` and `/user/api/user/{user_uid}/` as the source of truth for public user resources.
 - Treat numeric user ids only as temporary internal compatibility if backend still emits them somewhere.
+- Keep request-bound auth status/header handling on `X-User-ID` until the backend auth contract changes explicitly.
 
 Validation:
 
-- [ ] Add deserialization tests for the backend’s current user and full user profile payloads.
-- [ ] Add UID-based detail lookup tests.
+- [x] Add deserialization tests for the backend’s current user and full user profile payloads.
+- [x] Add UID-based detail lookup tests.
 
 ### 6. Agent runtime family: `mainsequence/client/agent_runtime_models.py`
 
@@ -216,32 +221,37 @@ Files:
 
 Problems:
 
-- `AgentSemanticSearchResult.id`
-- `Agent.id`
-- `AgentSession.id`
-- `UserOrchestratorAgentService.id`
-- `UserProjectExecutorAgentService.id`
+- Done: `AgentSemanticSearchResult` uses `uid`, not numeric `id`.
+- Done: `Agent` exposes no numeric `id`; generic SDK resource lookup, mutation, and detail actions use `uid`.
+- Done: `AgentSession` uses `uid` for public routing and `agent_uid` for the related agent.
+- Done: `UserOrchestratorAgentService` and `UserProjectExecutorAgentService` use service `uid` and related `agent_uid`.
+- Done: `agent_unique_id` remains a separate deterministic agent key and is not confused with `uid`.
 
 Tasks:
 
-- [ ] Replace public numeric ids with the backend’s canonical public identifiers.
-- [ ] For agents, migrate toward `agent_unique_id` if that is the confirmed public contract.
-- [ ] For sessions and services, confirm the backend public serializer and migrate to UID-based routing if available.
+- [x] Replace public numeric ids with the backend’s canonical public identifiers.
+- [x] For agents, keep `agent_unique_id` only for deterministic create/get_or_create and the explicit `get_by_agent_unique_id(...)` helper.
+- [x] For sessions and services, confirm the backend public serializer and migrate to UID-based routing where the client exposes resource lookup.
 
 Suggested migration:
 
-- Do not guess.
-- First confirm the canonical public identifier for:
-  - [ ] agent
-  - [ ] agent session
-  - [ ] orchestrator service
-  - [ ] executor service
-- Then align model fields, detail routes, and CLI output to those identifiers.
+- Confirmed backend contracts:
+  - [x] agent
+  - [x] agent session
+  - [x] orchestrator service
+  - [x] executor service
+- Agent list/search/detail payloads include `uid`; detail, delete, sharing, latest-session, and A2A CLI resource flows use `agent_uid`.
+- Deterministic `agent_unique_id` remains available for create/get_or_create and `Agent.get_by_agent_unique_id(...)` only.
+- Agent sessions and runtime-access actions use `AgentSession.uid`.
+- A2A allocation sends `caller_agent_session_uid` and reads `agent_session_uid` from the response.
+- Orchestrator and project-executor services deserialize `uid` and `agent_uid` payloads.
+- Runtime/provider identifiers such as `coding_agent_id` remain unchanged.
+- Permission subject ids in share commands remain unchanged until the backend permission subject contract migrates.
 
 Validation:
 
-- [ ] Add deserialization tests for search/list/detail payloads.
-- [ ] Add CLI command tests for the updated identifiers once the client contract is explicit.
+- [x] Add deserialization tests for search/list/detail payloads.
+- [x] Add CLI command tests for the updated identifiers once the client contract is explicit.
 
 ### 7. Command Center family: `mainsequence/client/command_center/workspace.py`
 
@@ -251,25 +261,26 @@ Files:
 
 Problems:
 
-- `Workspace` still filters and models on `id`.
-- Widget comments still assume widget `id` semantics.
+- [x] `Workspace` no longer models the backend row `id`; the SDK uses `uid`.
+- [x] Widget-scoped comments now describe `widget.id` as the mounted widget instance id, not a workspace/resource id.
 
 Tasks:
 
-- [ ] Confirm whether workspace public routes are still numeric or already UID-based.
-- [ ] If UID-based, migrate `Workspace.id`.
-- [ ] If UID-based, migrate workspace filters.
-- [ ] If UID-based, migrate widget reference handling.
+- [x] Confirm backend workspace public routes are UID-based.
+- [x] If UID-based, migrate `Workspace.id`.
+- [x] If UID-based, migrate workspace filters.
+- [x] If UID-based, migrate widget reference handling.
 
-Suggested migration:
+Migration result:
 
-- Keep workspace migration separate from agent-session migration.
-- Change only after backend contract is explicit.
+- Workspace detail, update, delete, label, and snapshot CLI paths accept `workspace_uid`.
+- Workspace filters use `uid`, `uid__in`, and `exclude_uids`; legacy `id` filters are rejected.
+- Mounted widgets still use `widget.id` / `widget_instance_id` because that is the backend workspace-document instance key.
 
 Validation:
 
-- [ ] Add workspace list/detail deserialization tests with public payloads.
-- [ ] Add filter tests for UID-based workspace references.
+- [x] Add workspace list/detail deserialization tests with public payloads.
+- [x] Add filter tests for UID-based workspace references.
 
 ### 8. Command Center connections: `mainsequence/client/command_center/connections.py`
 
@@ -284,15 +295,16 @@ Problems:
 
 Tasks:
 
-- [ ] Confirm the public connection-instance identifier.
+- [x] Confirm the backend public connection-instance identifier is `uid`.
 - [ ] Replace numeric `id` with the canonical UID-style identifier.
-- [ ] Keep `ConnectionType.type_id` if that remains the actual public contract.
+- [x] Keep `ConnectionType.type_id` because that remains the actual public contract.
 
 Suggested migration:
 
 - Treat connection types and connection instances separately:
-  - [ ] type contract may remain `type_id`
-  - [ ] instance contract should move to `uid` if backend already exposes it
+  - [x] type contract remains `type_id`
+  - [x] backend instance contract is `uid`
+  - [ ] client instance contract should move to `uid`
 
 Validation:
 
@@ -314,15 +326,15 @@ Current state:
 
 Tasks:
 
-- [ ] Confirm backend serializers for `Constant`.
-- [ ] Confirm backend serializers for `Artifact`.
-- [ ] Confirm backend serializers for `Bucket`.
+- [x] Confirm backend serializers/routes for `Constant`.
+- [x] Confirm backend serializers/routes for `Artifact`.
+- [x] Confirm backend serializers/routes for `Bucket`.
 - [ ] Replace public `id` fields and CLI rendering with UID-based identity if backend is already UID-only there too.
 
 Suggested migration:
 
 - Reuse the `Secret` migration shape:
-  - [ ] model accepts `uid`
+  - [x] model accepts `uid`
   - [ ] API wrappers stop coercing to `int`
   - [ ] CLI renders `UID`
 
@@ -359,7 +371,8 @@ Suggested migration:
 
 Validation:
 
-- [ ] Add local runtime smoke tests using only UID-based env variables and UID-based payload assertions.
+- [x] Add local runtime smoke tests using only UID-based env variables and UID-based payload assertions for the TS Manager get-or-create path.
+- [ ] Add broader local runtime smoke tests for the remaining runtime payload builders after their audit is complete.
 
 ### 11. CLI alignment after client migrations
 
@@ -382,14 +395,7 @@ Tasks:
 - [ ] After each client-family migration, align JSON output labels.
 - [ ] After each client-family migration, align table headers.
 
-Suggested migration:
 
-- Do not blindly rename everything to `UID`.
-- Use the canonical public identifier for each object family:
-  - [ ] `uid`
-  - [ ] `agent_unique_id`
-  - [ ] `type_id`
-  - [ ] other confirmed public identifiers where applicable
 
 Validation:
 

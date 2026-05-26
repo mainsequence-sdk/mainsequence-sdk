@@ -154,13 +154,17 @@ class BasePersistManager:
         namespace: str | None = None,
         **extra_kwargs: Any,
     ) -> dict[str, Any]:
+        data_source_uid = getattr(data_source, "uid", None)
+        if data_source_uid in (None, ""):
+            raise ValueError("DataNode storage creation requires data_source.uid.")
+
         kwargs = dict(
             storage_hash=storage_hash,
             namespace=namespace,
             time_serie_source_code_git_hash=time_serie_source_code_git_hash,
             time_serie_source_code=time_serie_source_code,
             build_configuration=remote_configuration,
-            data_source=data_source.model_dump(),
+            data_source_uid=str(data_source_uid),
             build_configuration_json_schema=build_configuration_json_schema,
             open_to_public=open_to_public,
         )

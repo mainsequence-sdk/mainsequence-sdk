@@ -50,7 +50,7 @@ mainsequence project open-signed-terminal 123
 # Project operations
 mainsequence project add-label 123 --label rates --label research
 mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
-mainsequence cc workspace add-label 7 --label trading
+mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading
 
 # Compile environment
 mainsequence project freeze-env --path .

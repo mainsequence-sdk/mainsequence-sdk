@@ -119,11 +119,14 @@ def _build_request_bound_outbound_headers(headers: Mapping[str, Any]) -> dict[st
         outbound[key_str] = str(value)
     return outbound
 
-class Organization(BasePydanticModel):
-    id: int = Field(
-        ...,
+class Organization(UserApiBaseObjectOrm, BasePydanticModel):
+    ENDPOINT: ClassVar[str] = "organization"
+
+    id: int | None = Field(
+        None,
+        exclude=True,
         title="Organization ID",
-        description="Unique identifier of the organization.",
+        description="Internal backend row id accepted only for legacy payloads; not a public lookup key.",
         examples=[12],
     )
     uid: str = Field(
@@ -183,11 +186,18 @@ class Group(BasePydanticModel):
 
 
 class UserSummary(BasePydanticModel):
-    id: int = Field(
-        ...,
+    id: int | None = Field(
+        None,
+        exclude=True,
         title="User ID",
-        description="Unique identifier of the user.",
+        description="Internal backend row id accepted only for legacy payloads; not a public lookup key.",
         examples=[42],
+    )
+    uid: str | None = Field(
+        None,
+        title="User UID",
+        description="Stable public unique identifier of the user.",
+        examples=["8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"],
     )
     first_name: str = Field(
         ...,
@@ -222,11 +232,18 @@ class UserSummary(BasePydanticModel):
 
 
 class ShareableTeamSummary(BasePydanticModel):
-    id: int = Field(
-        ...,
+    id: int | None = Field(
+        None,
+        exclude=True,
         title="Team ID",
-        description="Unique identifier of the team in shareable-access responses.",
+        description="Internal backend row id accepted only for legacy payloads; not a public lookup key.",
         examples=[9],
+    )
+    uid: str | None = Field(
+        None,
+        title="Team UID",
+        description="Stable public unique identifier of the team in shareable-access responses.",
+        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
     )
     name: str = Field(
         ...,
@@ -249,11 +266,18 @@ class ShareableTeamSummary(BasePydanticModel):
 
 
 class TeamMembershipUpdateResult(BasePydanticModel):
-    team_id: int = Field(
-        ...,
+    team_id: int | None = Field(
+        None,
+        exclude=True,
         title="Team ID",
-        description="Unique identifier of the team whose membership was updated.",
+        description="Internal backend row id for the team whose membership was updated.",
         examples=[11],
+    )
+    team_uid: str | None = Field(
+        None,
+        title="Team UID",
+        description="Stable public unique identifier of the team whose membership was updated.",
+        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
     )
     member_count: int = Field(
         ...,
@@ -264,7 +288,7 @@ class TeamMembershipUpdateResult(BasePydanticModel):
     selected: int = Field(
         ...,
         title="Selected Users",
-        description="Number of user ids submitted in the membership update request.",
+        description="Number of user UIDs submitted in the membership update request.",
         examples=[2],
     )
     added: int = Field(
@@ -289,23 +313,34 @@ class TeamMembershipUpdateResult(BasePydanticModel):
 
 class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm):
     ENDPOINT: ClassVar[str] = "team"
-    PUBLIC_LOOKUP_FIELD: ClassVar[str] = "id"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "uid": ["exact", "in"],
+        "organization_uid": ["exact"],
         "search": ["exact"],
         "is_active": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "organization_uid": "uid",
         "search": "str",
         "is_active": "bool",
     }
 
     id: int | None = Field(
         None,
+        exclude=True,
         title="Organization Team ID",
-        description="Unique identifier of the organization team.",
+        description="Internal backend row id for the organization team.",
         examples=[9],
     )
-    organization: Organization | int | None = Field(
+    uid: str | None = Field(
+        None,
+        title="Organization Team UID",
+        description="Stable public unique identifier of the organization team.",
+        examples=["3f1cc452-43ec-49cb-b2ba-87dbac164d29"],
+    )
+    organization: Organization | str | None = Field(
         None,
         title="Organization",
         description="Organization that owns this team.",
@@ -322,12 +357,12 @@ class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
         description="Optional textual description of the team.",
         examples=["Team responsible for model research and validation."],
     )
-    created_by: UserSummary | int | None = Field(
+    created_by: UserSummary | str | None = Field(
         None,
         title="Created By",
         description="User who created the team, when available.",
     )
-    members: list[UserSummary | int | dict[str, Any]] = Field(
+    members: list[UserSummary | str] = Field(
         default_factory=list,
         title="Members",
         description="Users who belong to the team.",
@@ -364,12 +399,21 @@ class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
         name: str,
         description: str = "",
         is_active: bool = True,
+        organization_uid: Any | None = None,
         timeout: int | None = None,
     ) -> Team:
+        payload: dict[str, Any] = {
+            "name": name,
+            "description": description,
+            "is_active": is_active,
+        }
+        if organization_uid is not None:
+            payload["organization_uid"] = cls._coerce_filter_uid(
+                organization_uid,
+                field_name="organization_uid",
+            )
         return super().create(
-            name=name,
-            description=description,
-            is_active=is_active,
+            **payload,
             timeout=timeout,
         )
 
@@ -414,20 +458,20 @@ class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
         self,
         *,
         action: Literal["add", "remove"],
-        user_ids: list[Any],
+        user_uids: list[Any],
         timeout: int | float | tuple[float, float] | None = None,
     ) -> TeamMembershipUpdateResult:
-        normalized_user_ids = [
-            type(self)._coerce_filter_id(user_id, field_name="user_ids")
-            for user_id in list(user_ids or [])
+        normalized_user_uids = [
+            type(self)._coerce_filter_uid(user_uid, field_name="user_uids")
+            for user_uid in list(user_uids or [])
         ]
-        if not normalized_user_ids:
-            raise ValueError("user_ids must contain at least one user id.")
+        if not normalized_user_uids:
+            raise ValueError("user_uids must contain at least one user uid.")
 
         payload = self._request_detail_action(
             r_type="POST",
             action_name="manage-members",
-            payload={"json": {"action": action, "user_ids": normalized_user_ids}},
+            payload={"json": {"action": action, "user_uids": normalized_user_uids}},
             timeout=timeout,
             expected_statuses=(200,),
         )
@@ -439,19 +483,19 @@ class Team(PermissionManagedObjectMixin, BasePydanticModel, UserApiBaseObjectOrm
 
     def add_members(
         self,
-        user_ids: list[Any],
+        user_uids: list[Any],
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> TeamMembershipUpdateResult:
-        return self.manage_members(action="add", user_ids=user_ids, timeout=timeout)
+        return self.manage_members(action="add", user_uids=user_uids, timeout=timeout)
 
     def remove_members(
         self,
-        user_ids: list[Any],
+        user_uids: list[Any],
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> TeamMembershipUpdateResult:
-        return self.manage_members(action="remove", user_ids=user_ids, timeout=timeout)
+        return self.manage_members(action="remove", user_uids=user_uids, timeout=timeout)
 
 
 class OrganizationTeam(Team):
@@ -857,12 +901,30 @@ class ShareableAccessState(BasePydanticModel):
 
 class User(UserApiBaseObjectOrm, BasePydanticModel):
     ENDPOINT: ClassVar[str] = "user"
-    # present on UserSerializer
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]] | None] = {
+        "uid": ["exact", "in"],
+        "email": ["exact", "contains", "in"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "email": "str",
+        "email__contains": "str",
+        "email__in": "str",
+    }
+
     id: int | None = Field(
         None,
+        exclude=True,
         title="User ID",
-        description="Unique identifier of the user.",
+        description="Internal backend row id accepted only for legacy/auth payloads; not a public lookup key.",
         examples=[42],
+    )
+    uid: str | None = Field(
+        None,
+        title="User UID",
+        description="Stable public unique identifier of the user.",
+        examples=["8f5d6b54-2f5e-4a8b-bb10-0b17f3f4c123"],
     )
     profile_picture: str | None = Field(
         None,
@@ -925,6 +987,18 @@ class User(UserApiBaseObjectOrm, BasePydanticModel):
         title="Email",
         description="Primary email address of the user.",
         examples=["jose@main-sequence.io"],
+    )
+    first_name: str | None = Field(
+        None,
+        title="First Name",
+        description="User's given name when returned by the backend user serializer.",
+        examples=["Jose"],
+    )
+    last_name: str | None = Field(
+        None,
+        title="Last Name",
+        description="User's family name when returned by the backend user serializer.",
+        examples=["Ambrosino"],
     )
     last_login: datetime.datetime | None = Field(
         None,

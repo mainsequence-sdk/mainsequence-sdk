@@ -278,7 +278,9 @@ def refresh_access() -> str:
         NotLoggedIn: if refresh is missing or refresh fails
     """
     refresh = _refresh_token()
-    runtime_mode = (os.environ.get("MAINSEQUENCE_AUTH_MODE") or "").strip().lower() == "runtime_credential"
+    runtime_mode = (
+        os.environ.get("MAINSEQUENCE_AUTH_MODE") or ""
+    ).strip().lower() == "runtime_credential"
 
     if not refresh and runtime_mode:
         try:
@@ -294,7 +296,9 @@ def refresh_access() -> str:
 
         access = (os.environ.get("MAINSEQUENCE_ACCESS_TOKEN") or "").strip()
         if not access:
-            raise NotLoggedIn("Runtime credential exchange did not produce MAINSEQUENCE_ACCESS_TOKEN.")
+            raise NotLoggedIn(
+                "Runtime credential exchange did not produce MAINSEQUENCE_ACCESS_TOKEN."
+            )
 
         tokens = get_tokens()
         save_tokens(tokens.get("username") or "", access, "")
@@ -552,7 +556,10 @@ def get_current_user_profile() -> dict:
         or payload.get("organization")
         or ""
     )
-    return {"username": user.get("username") or payload.get("username") or "", "organization": org_name}
+    return {
+        "username": user.get("username") or payload.get("username") or "",
+        "organization": org_name,
+    }
 
 
 def get_logged_user_details() -> dict[str, Any]:
@@ -591,7 +598,12 @@ def get_logged_user_details() -> dict[str, Any]:
     try:
         who = authed("GET", AUTH_PATHS["ping"])
         data = who.json() if who.ok else {}
-        user_id = data.get("id") or data.get("pk") or (data.get("user") or {}).get("id") or data.get("user_id")
+        user_id = (
+            data.get("id")
+            or data.get("pk")
+            or (data.get("user") or {}).get("id")
+            or data.get("user_id")
+        )
         if user_id in (None, ""):
             raise ApiError("Could not determine the authenticated user id.")
 
@@ -719,7 +731,9 @@ def resolve_project(project_ref: int | str) -> dict[str, Any]:
         pass
 
     for project_payload in get_projects():
-        if isinstance(project_payload, dict) and _project_matches_reference(project_payload, normalized_ref):
+        if isinstance(project_payload, dict) and _project_matches_reference(
+            project_payload, normalized_ref
+        ):
             return project_payload
 
     raise ApiError(f"Project not found: {normalized_ref}")
@@ -910,7 +924,9 @@ def update_organization_team(
         team = _run_sdk_model_operation(
             module_name="mainsequence.client.models_user",
             class_name="Team",
-            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout).patch(**updates),
+            operation=lambda ClientTeam: ClientTeam.get(pk=int(team_id), timeout=timeout).patch(
+                **updates
+            ),
         )
         return _sdk_object_to_dict(team)
     except Exception as e:
@@ -931,6 +947,7 @@ def delete_organization_team(
     Delete one organization team via SDK client model.
     """
     try:
+
         def _delete(ClientTeam):
             team = ClientTeam.get(pk=int(team_id), timeout=timeout)
             payload = _sdk_object_to_dict(team)
@@ -973,24 +990,24 @@ def list_agents(
 
 
 def get_agent(
-    agent_id: int | str,
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Retrieve one agent via SDK client model.
+    Retrieve one agent via SDK client model using its public UID.
     """
     try:
         agent = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="Agent",
-            operation=lambda ClientAgent: ClientAgent.get(pk=int(agent_id), timeout=timeout),
+            operation=lambda ClientAgent: ClientAgent.get_by_uid(str(agent_uid), timeout=timeout),
         )
         return _sdk_object_to_dict(agent)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}") from e
+            raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent fetch failed: {e}") from e
@@ -1121,16 +1138,17 @@ def get_or_create_agent(
 
 
 def delete_agent(
-    agent_id: int | str,
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
     """
-    Delete one agent via SDK client model.
+    Delete one agent via SDK client model using its public UID.
     """
     try:
+
         def _delete(ClientAgent):
-            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            agent = ClientAgent.get_by_uid(str(agent_uid), timeout=timeout)
             payload = _sdk_object_to_dict(agent)
             agent.delete(timeout=timeout)
             return payload
@@ -1143,16 +1161,16 @@ def delete_agent(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}") from e
+            raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent deletion failed: {e}") from e
 
 
 def allocate_agent_a2a_target_session(
-    agent_id: int | str,
+    agent_uid: str,
     *,
-    caller_agent_session_id: int | str,
+    caller_agent_session_uid: str,
     handle_unique_id: str | None = None,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1160,10 +1178,11 @@ def allocate_agent_a2a_target_session(
     Allocate or reuse the delegated A2A target session for one agent via SDK client model.
     """
     try:
+
         def _allocate(ClientAgent):
-            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            agent = ClientAgent.get_by_uid(str(agent_uid), timeout=timeout)
             return agent.allocate_a2a_target_session(
-                caller_agent_session_id=int(caller_agent_session_id),
+                caller_agent_session_uid=str(caller_agent_session_uid),
                 handle_unique_id=handle_unique_id,
                 timeout=timeout,
             )
@@ -1177,14 +1196,14 @@ def allocate_agent_a2a_target_session(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}") from e
+            raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent A2A target session allocation failed: {e}") from e
 
 
 def get_agent_latest_session(
-    agent_id: int | str,
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1192,8 +1211,9 @@ def get_agent_latest_session(
     Retrieve the latest session for one agent via SDK client model.
     """
     try:
+
         def _get_latest(ClientAgent):
-            agent = ClientAgent.get(pk=int(agent_id), timeout=timeout)
+            agent = ClientAgent.get_by_uid(str(agent_uid), timeout=timeout)
             return agent.get_latest_session(timeout=timeout)
 
         session = _run_sdk_model_operation(
@@ -1205,14 +1225,14 @@ def get_agent_latest_session(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent not found: {agent_id}") from e
+            raise ApiError(f"Agent not found: {agent_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent latest session fetch failed: {e}") from e
 
 
 def get_agent_session(
-    agent_session_id: int | str,
+    agent_session_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1224,21 +1244,21 @@ def get_agent_session(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentSession",
             operation=lambda ClientAgentSession: ClientAgentSession.get(
-                pk=int(agent_session_id), timeout=timeout
+                pk=str(agent_session_uid), timeout=timeout
             ),
         )
         return _sdk_object_to_dict(agent_session)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent session not found: {agent_session_id}") from e
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session fetch failed: {e}") from e
 
 
 def resolve_agent_session_runtime_access(
-    agent_session_id: int | str,
+    agent_session_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1250,21 +1270,21 @@ def resolve_agent_session_runtime_access(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentSession",
             operation=lambda ClientAgentSession: ClientAgentSession.resolve_runtime_access(
-                int(agent_session_id), timeout=timeout
+                str(agent_session_uid), timeout=timeout
             ),
         )
         return _sdk_object_to_dict(runtime_access)
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Agent session not found: {agent_session_id}") from e
+            raise ApiError(f"Agent session not found: {agent_session_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Agent session runtime access resolve failed: {e}") from e
 
 
 def list_agent_users_can_view(
-    agent_id: int | str,
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1274,14 +1294,15 @@ def list_agent_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         accessor_name="can_view",
+        object_lookup_field="uid",
         timeout=timeout,
     )
 
 
 def list_agent_users_can_edit(
-    agent_id: int | str,
+    agent_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -1291,14 +1312,15 @@ def list_agent_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         accessor_name="can_edit",
+        object_lookup_field="uid",
         timeout=timeout,
     )
 
 
 def add_agent_user_to_view(
-    agent_id: int | str,
+    agent_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -1306,15 +1328,16 @@ def add_agent_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="add_to_view",
+        object_lookup_field="uid",
         user_id=user_id,
         timeout=timeout,
     )
 
 
 def add_agent_user_to_edit(
-    agent_id: int | str,
+    agent_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -1322,15 +1345,16 @@ def add_agent_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="add_to_edit",
+        object_lookup_field="uid",
         user_id=user_id,
         timeout=timeout,
     )
 
 
 def remove_agent_user_from_view(
-    agent_id: int | str,
+    agent_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -1338,15 +1362,16 @@ def remove_agent_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="remove_from_view",
+        object_lookup_field="uid",
         user_id=user_id,
         timeout=timeout,
     )
 
 
 def remove_agent_user_from_edit(
-    agent_id: int | str,
+    agent_uid: str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -1354,15 +1379,16 @@ def remove_agent_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="remove_from_edit",
+        object_lookup_field="uid",
         user_id=user_id,
         timeout=timeout,
     )
 
 
 def add_agent_team_to_view(
-    agent_id: int | str,
+    agent_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -1370,15 +1396,16 @@ def add_agent_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="add_team_to_view",
+        object_lookup_field="uid",
         team_id=team_id,
         timeout=timeout,
     )
 
 
 def add_agent_team_to_edit(
-    agent_id: int | str,
+    agent_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -1386,15 +1413,16 @@ def add_agent_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="add_team_to_edit",
+        object_lookup_field="uid",
         team_id=team_id,
         timeout=timeout,
     )
 
 
 def remove_agent_team_from_view(
-    agent_id: int | str,
+    agent_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -1402,15 +1430,16 @@ def remove_agent_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="remove_team_from_view",
+        object_lookup_field="uid",
         team_id=team_id,
         timeout=timeout,
     )
 
 
 def remove_agent_team_from_edit(
-    agent_id: int | str,
+    agent_uid: str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -1418,8 +1447,9 @@ def remove_agent_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.agent_runtime_models",
         class_name="Agent",
-        object_id=agent_id,
+        object_id=agent_uid,
         action_name="remove_team_from_edit",
+        object_lookup_field="uid",
         team_id=team_id,
         timeout=timeout,
     )
@@ -1437,7 +1467,9 @@ def list_agent_runs(
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentRun",
-            operation=lambda ClientAgentRun: ClientAgentRun.filter(timeout=timeout, **(filters or {})),
+            operation=lambda ClientAgentRun: ClientAgentRun.filter(
+                timeout=timeout, **(filters or {})
+            ),
         )
         return [_sdk_object_to_dict(item) for item in list(payload or [])]
     except Exception as e:
@@ -1458,7 +1490,9 @@ def get_agent_run(
         agent_run = _run_sdk_model_operation(
             module_name="mainsequence.client.agent_runtime_models",
             class_name="AgentRun",
-            operation=lambda ClientAgentRun: ClientAgentRun.get(pk=int(agent_run_id), timeout=timeout),
+            operation=lambda ClientAgentRun: ClientAgentRun.get(
+                pk=int(agent_run_id), timeout=timeout
+            ),
         )
         return _sdk_object_to_dict(agent_run)
     except Exception as e:
@@ -1803,7 +1837,9 @@ def remove_project_labels(
     )
 
 
-def get_project_data_node_updates(project_id: int | str, *, timeout: int | None = None) -> list[dict[str, Any]]:
+def get_project_data_node_updates(
+    project_id: int | str, *, timeout: int | None = None
+) -> list[dict[str, Any]]:
     """
     Fetch project data node updates via SDK client model.
 
@@ -1912,7 +1948,9 @@ def get_project_data_node_updates(project_id: int | str, *, timeout: int | None 
                 os.environ[k] = v
 
 
-def sync_project_after_commit(project_id: int | str, *, timeout: int | None = None) -> dict[str, Any] | None:
+def sync_project_after_commit(
+    project_id: int | str, *, timeout: int | None = None
+) -> dict[str, Any] | None:
     """
     Notify the backend that a project commit has been pushed.
 
@@ -2221,6 +2259,7 @@ def delete_project_image(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
+
         def _delete(ClientProjectImage):
             image = ClientProjectImage.get(pk=int(image_id), timeout=timeout)
             payload = _sdk_object_to_dict(image)
@@ -2285,6 +2324,7 @@ def delete_resource_release(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
+
         def _delete(ClientResourceRelease):
             release = ClientResourceRelease.get(pk=int(release_id), timeout=timeout)
             payload = _sdk_object_to_dict(release)
@@ -2490,8 +2530,8 @@ def list_project_resources(
         merged_filters: dict[str, Any] = dict(filters or {})
         merged_filters.update(
             {
-            "project__id": project_row_id,
-            "repo_commit_sha": str(repo_commit_sha).strip(),
+                "project__id": project_row_id,
+                "repo_commit_sha": str(repo_commit_sha).strip(),
             }
         )
         normalized_resource_type = str(resource_type).strip() if resource_type is not None else ""
@@ -2630,15 +2670,11 @@ def create_project_resource_release(
             "fastapi": "create_fastapi",
         }.get(str(release_kind).strip())
         if not create_method_name:
-            raise ApiError(
-                "release_kind must be one of: 'streamlit_dashboard', 'fastapi'."
-            )
+            raise ApiError("release_kind must be one of: 'streamlit_dashboard', 'fastapi'.")
 
         create_method = getattr(resource, create_method_name, None)
         if not callable(create_method):
-            raise ApiError(
-                f"ProjectResource does not implement {create_method_name}()."
-            )
+            raise ApiError(f"ProjectResource does not implement {create_method_name}().")
         created = create_method(**create_kwargs)
 
         if isinstance(created, dict):
@@ -2739,7 +2775,7 @@ def list_workspaces(
 
 
 def get_workspace(
-    workspace_id: int | str,
+    workspace_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -2750,8 +2786,8 @@ def get_workspace(
         workspace = _run_sdk_model_operation(
             module_name="mainsequence.client.command_center",
             class_name="Workspace",
-            operation=lambda ClientWorkspace: ClientWorkspace.get(
-                pk=int(workspace_id),
+            operation=lambda ClientWorkspace: ClientWorkspace.get_by_uid(
+                str(workspace_uid),
                 timeout=timeout,
             ),
         )
@@ -2759,7 +2795,7 @@ def get_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}") from e
+            raise ApiError(f"Workspace not found: {workspace_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Workspace fetch failed: {e}") from e
@@ -2814,7 +2850,7 @@ def create_workspace(
 
 
 def update_workspace(
-    workspace_id: int | str,
+    workspace_uid: str,
     *,
     title: Any = _UNSET,
     description: Any = _UNSET,
@@ -2869,8 +2905,8 @@ def update_workspace(
         workspace = _run_sdk_model_operation(
             module_name="mainsequence.client.command_center",
             class_name="Workspace",
-            operation=lambda ClientWorkspace: ClientWorkspace.get(
-                pk=int(workspace_id),
+            operation=lambda ClientWorkspace: ClientWorkspace.get_by_uid(
+                str(workspace_uid),
                 timeout=timeout,
             ).patch(**patch_kwargs),
         )
@@ -2878,14 +2914,14 @@ def update_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}") from e
+            raise ApiError(f"Workspace not found: {workspace_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Workspace update failed: {e}") from e
 
 
 def delete_workspace(
-    workspace_id: int | str,
+    workspace_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -2893,8 +2929,9 @@ def delete_workspace(
     Delete one workspace via SDK client model.
     """
     try:
+
         def _delete(ClientWorkspace):
-            workspace = ClientWorkspace.get(pk=int(workspace_id), timeout=timeout)
+            workspace = ClientWorkspace.get_by_uid(str(workspace_uid), timeout=timeout)
             payload = _sdk_object_to_dict(workspace)
             workspace.delete(timeout=timeout)
             return payload
@@ -2907,14 +2944,14 @@ def delete_workspace(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Workspace not found: {workspace_id}") from e
+            raise ApiError(f"Workspace not found: {workspace_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Workspace deletion failed: {e}") from e
 
 
 def add_workspace_labels(
-    workspace_id: int | str,
+    workspace_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -2924,15 +2961,16 @@ def add_workspace_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.command_center",
         class_name="Workspace",
-        object_id=workspace_id,
+        object_id=workspace_uid,
         action_name="add_label",
+        object_lookup_field="uid",
         labels=labels,
         timeout=timeout,
     )
 
 
 def remove_workspace_labels(
-    workspace_id: int | str,
+    workspace_uid: str,
     labels: list[str],
     *,
     timeout: int | None = None,
@@ -2942,8 +2980,9 @@ def remove_workspace_labels(
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.command_center",
         class_name="Workspace",
-        object_id=workspace_id,
+        object_id=workspace_uid,
         action_name="remove_label",
+        object_lookup_field="uid",
         labels=labels,
         timeout=timeout,
     )
@@ -3087,8 +3126,8 @@ def get_connection_instance(
         connection = _run_sdk_model_operation(
             module_name="mainsequence.client.command_center.connections",
             class_name="ConnectionInstance",
-            operation=lambda ClientConnectionInstance: ClientConnectionInstance.get(
-                uid=str(connection_uid),
+            operation=lambda ClientConnectionInstance: ClientConnectionInstance.get_by_uid(
+                str(connection_uid),
                 timeout=timeout,
             ),
         )
@@ -3309,6 +3348,7 @@ def delete_secret(
       - delegates deletion to `Secret.delete()`
     """
     try:
+
         def _delete(ClientSecret):
             secret = ClientSecret.get(pk=secret_uid, timeout=timeout)
             payload = _sdk_object_to_dict(secret)
@@ -3504,7 +3544,7 @@ def remove_secret_team_from_edit(
 
 
 def get_constant(
-    constant_id: int | str,
+    constant_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3518,8 +3558,8 @@ def get_constant(
         constant = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
             class_name="Constant",
-            operation=lambda ClientConstant: ClientConstant.get(
-                pk=int(constant_id),
+            operation=lambda ClientConstant: ClientConstant.get_by_uid(
+                str(constant_uid),
                 timeout=timeout,
             ),
         )
@@ -3527,7 +3567,7 @@ def get_constant(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Constant not found: {constant_id}") from e
+            raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Constant fetch failed: {e}") from e
@@ -3563,7 +3603,7 @@ def create_constant(
 
 
 def delete_constant(
-    constant_id: int | str,
+    constant_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3574,8 +3614,9 @@ def delete_constant(
       - delegates deletion to `Constant.delete()`
     """
     try:
+
         def _delete(ClientConstant):
-            constant = ClientConstant.get(pk=int(constant_id), timeout=timeout)
+            constant = ClientConstant.get_by_uid(str(constant_uid), timeout=timeout)
             payload = _sdk_object_to_dict(constant)
             constant.delete(timeout=timeout)
             return payload
@@ -3588,7 +3629,7 @@ def delete_constant(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Constant not found: {constant_id}") from e
+            raise ApiError(f"Constant not found: {constant_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Constant deletion failed: {e}") from e
@@ -3602,7 +3643,7 @@ def _get_client_object_by_lookup(
     timeout: int | None = None,
 ):
     if lookup_field == "uid":
-        return ClientObject.get(uid=str(object_id), timeout=timeout)
+        return ClientObject.get_by_uid(str(object_id), timeout=timeout)
     return ClientObject.get(pk=int(object_id), timeout=timeout)
 
 
@@ -3612,7 +3653,7 @@ def _get_shareable_object_access_state(
     class_name: str,
     object_id: int | str,
     accessor_name: str,
-    object_lookup_field: str = "pk",
+    object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3646,7 +3687,7 @@ def _mutate_shareable_object_access(
     object_id: int | str,
     action_name: str,
     user_id: int | str,
-    object_lookup_field: str = "pk",
+    object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3680,7 +3721,7 @@ def _mutate_shareable_object_team_access(
     object_id: int | str,
     action_name: str,
     team_id: int | str,
-    object_lookup_field: str = "pk",
+    object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3714,7 +3755,7 @@ def _mutate_labelable_object_labels(
     object_id: int | str,
     action_name: str,
     labels: list[str],
-    object_lookup_field: str = "pk",
+    object_lookup_field: str = "uid",
     timeout: int | None = None,
 ) -> dict[str, Any]:
     try:
@@ -3957,6 +3998,7 @@ def refresh_data_node_storage_search_index(
       - delegates the refresh call to `DataNodeStorage.refresh_table_search_index()`
     """
     try:
+
         def _refresh(ClientDataNodeStorage):
             storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = storage.refresh_table_search_index(timeout=timeout)
@@ -3990,6 +4032,7 @@ def run_data_node_storage_query(
     Run a raw SQL query against one data node storage via SDK client model.
     """
     try:
+
         def _run_query(ClientDataNodeStorage):
             storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = storage.run_query(sql, timeout=timeout)
@@ -4025,6 +4068,7 @@ def delete_data_node_storage(
       - delegates deletion and destroy query params to `DataNodeStorage.delete()`
     """
     try:
+
         def _delete(ClientDataNodeStorage):
             storage = ClientDataNodeStorage.get(uid=str(storage_uid), timeout=timeout)
             payload = _sdk_object_to_dict(storage)
@@ -4971,7 +5015,9 @@ def create_project(
     return data
 
 
-def delete_project(project_id: int | str, *, delete_repositories: bool = False) -> dict[str, Any] | None:
+def delete_project(
+    project_id: int | str, *, delete_repositories: bool = False
+) -> dict[str, Any] | None:
     """
     Delete a project by public reference.
 
