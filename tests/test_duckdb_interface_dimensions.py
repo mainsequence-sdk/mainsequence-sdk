@@ -54,6 +54,40 @@ def test_duckdb_upsert_preserves_n_dimensional_identity(tmp_path):
     }
 
 
+def test_duckdb_local_backend_stores_data_without_physical_fk_constraints(tmp_path):
+    interface = _interface(tmp_path)
+    _seed_n_dimensional_table(interface)
+
+    interface.upsert(
+        pd.DataFrame(
+            {
+                "time_index": [_dt(2)],
+                "account_uid": ["acct-a"],
+                "asset_uid": ["missing-target-asset"],
+                "value": [40.0],
+            }
+        ),
+        table="node",
+        index_names=INDEX_NAMES,
+        time_index_name="time_index",
+    )
+
+    df = interface.read(
+        table="node",
+        index_names=INDEX_NAMES,
+        time_index_name="time_index",
+        index_coordinates=[
+            {"account_uid": "acct-a", "asset_uid": "missing-target-asset"}
+        ],
+    )
+    constraints = interface.con.execute(
+        "SELECT * FROM duckdb_constraints() WHERE table_name = 'node'"
+    ).fetchall()
+
+    assert df["value"].tolist() == [40.0]
+    assert constraints == []
+
+
 def test_duckdb_upsert_rewrites_only_matching_full_index_tuple(tmp_path):
     interface = _interface(tmp_path)
     _seed_n_dimensional_table(interface)

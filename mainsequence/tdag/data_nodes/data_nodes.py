@@ -78,7 +78,7 @@ class DataAccessMixin:
 
     def get_pickle_path_from_time_serie(self) -> str:
         path = build_operations.get_pickle_path(
-            update_hash=self.update_hash, data_source_id=self.data_source_id, is_api=self.is_api
+            update_hash=self.update_hash, data_source_uid=self.data_source_uid, is_api=self.is_api
         )
         return path
 
@@ -108,8 +108,8 @@ class DataAccessMixin:
             self._local_persist_manager = None
 
         # 3. Common Logic: Persist the data source if needed
-        data_source_id = getattr(self.data_source, "id", self.data_source_id)
-        data_source_path = build_operations.data_source_pickle_path(data_source_id)
+        data_source_uid = getattr(self.data_source, "uid", self.data_source_uid)
+        data_source_path = build_operations.data_source_pickle_path(data_source_uid)
         if not os.path.isfile(data_source_path) or overwrite:
             self.data_source.persist_to_pickle(data_source_path)
 
@@ -152,7 +152,7 @@ class DataAccessMixin:
     def get_logger_context_variables(self) -> dict[str, Any]:
         return dict(
             update_hash=self.update_hash,
-            local_hash_id_data_source=self.data_source_id,
+            local_hash_uid_data_source=self.data_source_uid,
             api_time_series=self.__class__.__name__ == "APIDataNode",
         )
 
@@ -765,6 +765,10 @@ class DataNode(DataAccessMixin, ABC):
         return self.data_source.id
 
     @property
+    def data_source_uid(self) -> str:
+        return self.data_source.uid
+
+    @property
     def data_node_update(self) -> DataNodeUpdate:
         """The local time series metadata object."""
         return self.local_persist_manager.data_node_update
@@ -828,7 +832,7 @@ class DataNode(DataAccessMixin, ABC):
         deserializer = build_operations.DeserializerManager()
         state = deserializer.deserialize_pickle_state(
             state=state,
-            data_source_id=self.data_source.id,
+            data_source_uid=self.data_source.uid,
             include_client_objects=include_client_objects,
             graph_depth_limit=graph_depth_limit,
             graph_depth=graph_depth + 1,
@@ -1093,6 +1097,89 @@ class DataNode(DataAccessMixin, ABC):
             data_frequency_id=node_metadata.data_frequency_id,
         )
 
+    def get_record_definitions(self) -> list[Any] | None:
+        config = self._get_data_node_configuration()
+        records = getattr(config, "records", None) if config is not None else None
+        return list(records) if records else None
+
+    def get_source_table_initialization_schema(
+        self,
+        *,
+        require_index_names: bool = True,
+    ) -> dict[str, Any] | None:
+        """
+        Build the source-table schema contract from declared records and index config.
+
+        This helper is intentionally conservative: records define the table columns,
+        while ``time_index_name`` and ``index_names`` must come from an explicit
+        config field or an existing SourceTableConfiguration. It does not infer
+        identity dimensions from foreign keys or column naming conventions.
+        """
+        records = self.get_record_definitions()
+        if not records:
+            return None
+
+        config = self._get_data_node_configuration()
+        time_index_name = getattr(config, "time_index_name", None) if config is not None else None
+        if time_index_name in (None, ""):
+            time_index_name = "time_index"
+        time_index_name = str(time_index_name)
+
+        index_names = getattr(config, "index_names", None) if config is not None else None
+        if index_names is None:
+            try:
+                source_table_configuration = (
+                    self.local_persist_manager.data_node_storage.sourcetableconfiguration
+                )
+            except Exception:
+                source_table_configuration = None
+            if source_table_configuration is not None:
+                index_names = source_table_configuration.index_names
+
+        if index_names is None:
+            if require_index_names:
+                raise ValueError(
+                    "Cannot build source table initialization schema from DataNode records "
+                    "without explicit index_names. Add index_names to the node config."
+                )
+            return None
+
+        index_names = [str(index_name) for index_name in index_names]
+        if time_index_name not in index_names:
+            raise ValueError(
+                f"time_index_name {time_index_name!r} must be present in index_names "
+                f"{index_names!r}."
+            )
+
+        column_dtypes_map: dict[str, str] = {}
+        duplicate_record_names: set[str] = set()
+        for record in records:
+            column_name = str(record.column_name)
+            if column_name in column_dtypes_map:
+                duplicate_record_names.add(column_name)
+            column_dtypes_map[column_name] = str(record.dtype)
+
+        if duplicate_record_names:
+            raise ValueError(
+                f"Duplicate DataNode record column names: {sorted(duplicate_record_names)}"
+            )
+
+        missing_index_records = [
+            index_name for index_name in index_names if index_name not in column_dtypes_map
+        ]
+        if missing_index_records:
+            raise ValueError(
+                "DataNode index_names must be declared in records. "
+                f"Missing: {missing_index_records}"
+            )
+
+        return {
+            "time_index_name": time_index_name,
+            "index_names": index_names,
+            "column_dtypes_map": column_dtypes_map,
+            "columns_metadata": self.get_column_metadata(),
+        }
+
     def get_column_metadata(self) -> list[ColumnMetaData] | None:
         """
         Return metadata for output columns.
@@ -1107,8 +1194,7 @@ class DataNode(DataAccessMixin, ABC):
         Returns:
             A list of ColumnMetaData objects, or None.
         """
-        config = self._get_data_node_configuration()
-        records = getattr(config, "records", None) if config is not None else None
+        records = self.get_record_definitions()
         if not records:
             return None
 
@@ -1189,6 +1275,7 @@ class DataNode(DataAccessMixin, ABC):
         run_operations.UpdateRunner.validate_data_frame(
             temp_df,
             self.data_source.related_resource.class_type,
+            records=self.get_record_definitions(),
         )
 
     def _execute_local_update(
@@ -1225,6 +1312,10 @@ class DataNode(DataAccessMixin, ABC):
             overwrite=(latest_persisted_time_index is not None),
             columns_metadata=self.get_column_metadata(),
             foreign_keys=self.get_source_table_foreign_keys(),
+            records=self.get_record_definitions(),
+            source_table_schema=self.get_source_table_initialization_schema(
+                require_index_names=False,
+            ),
         )
         self.logger.info(f"Successfully updated {self}.")
         return temp_df

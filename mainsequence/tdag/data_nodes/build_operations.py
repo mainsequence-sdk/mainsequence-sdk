@@ -61,7 +61,7 @@ def _serialize_timeserie(value: DataNode, pickle_ts: bool = False) -> dict[str, 
         return {
             "is_time_serie_pickled": True,
             "update_hash": value.update_hash,
-            "data_source_id": value.data_source_id,
+            "data_source_uid": value.data_source_uid,
         }
     return {"is_time_serie_instance": True, "update_hash": value.update_hash}
 
@@ -71,7 +71,7 @@ def _serialize_api_timeserie(value, pickle_ts: bool):
         new_value = {"is_api_time_serie_pickled": True}
         value.persist_to_pickle()
         new_value["update_hash"] = value.update_hash
-        new_value["data_source_id"] = value.data_source_id
+        new_value["data_source_uid"] = value.data_source_uid
         return new_value
     return value
 
@@ -175,13 +175,13 @@ def _(value, pickle_ts: bool):
     return value.value
 
 
-def data_source_dir_path(data_source_id: int) -> str:
+def data_source_dir_path(data_source_uid: str) -> str:
     path = ogm.pickle_storage_path
-    return f"{path}/{data_source_id}"
+    return f"{path}/{data_source_uid}"
 
 
-def data_source_pickle_path(data_source_id: int) -> str:
-    return f"{data_source_dir_path(data_source_id)}/data_source.pickle"
+def data_source_pickle_path(data_source_uid: str) -> str:
+    return f"{data_source_dir_path(data_source_uid)}/data_source.pickle"
 
 
 def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any]:
@@ -237,7 +237,7 @@ def verify_backend_git_hash_with_pickle(
             )
             pickle_path = get_pickle_path(
                 update_hash=local_persist_manager.update_hash,
-                data_source_id=local_persist_manager.data_source.id,
+                data_source_uid=local_persist_manager.data_source.uid,
             )
             flush_pickle(pickle_path)
 
@@ -390,13 +390,14 @@ class PickleRebuilder(BaseRebuilder):
         import cloudpickle
 
         # Note: You need to make DataNode available here
+        data_source_uid = value.get("data_source_uid") or value.get("data_source_id")
         full_path = get_pickle_path(
-            update_hash=value["update_hash"], data_source_id=value["data_source_id"]
+            update_hash=value["update_hash"], data_source_uid=data_source_uid
         )
         with open(full_path, "rb") as handle:
             ts = cloudpickle.load(handle)
 
-        ds_pickle_path = data_source_pickle_path(value["data_source_id"])
+        ds_pickle_path = data_source_pickle_path(data_source_uid)
         data_source = load_data_source_from_pickle(ds_pickle_path)
         ts.set_data_source(data_source=data_source)
 
@@ -419,7 +420,7 @@ class PickleRebuilder(BaseRebuilder):
         # Note: You need to make APIDataNode available here
         full_path = get_pickle_path(
             update_hash=value["update_hash"],
-            data_source_id=value["data_source_id"],
+            data_source_uid=value.get("data_source_uid") or value.get("data_source_id"),
             is_api=True,
         )
         with open(full_path, "rb") as handle:
@@ -630,14 +631,14 @@ def load_from_pickle(pickle_path: str) -> DataNode:
     return time_serie
 
 
-def get_pickle_path(update_hash: str, data_source_id: int, is_api=False) -> str:
+def get_pickle_path(update_hash: str, data_source_uid: str, is_api=False) -> str:
     if is_api:
         return os.path.join(
             ogm.pickle_storage_path,
-            str(data_source_id),
+            str(data_source_uid),
             f"{API_TS_PICKLE_PREFIFX}{update_hash}.pickle",
         )
-    return os.path.join(ogm.pickle_storage_path, str(data_source_id), f"{update_hash}.pickle")
+    return os.path.join(ogm.pickle_storage_path, str(data_source_uid), f"{update_hash}.pickle")
 
 
 def load_data_source_from_pickle(pickle_path: str) -> Any:
@@ -649,7 +650,7 @@ def load_data_source_from_pickle(pickle_path: str) -> Any:
 
 def rebuild_and_set_from_update_hash(
     update_hash: int,
-    data_source_id: int,
+    data_source_uid: str,
     set_dependencies_df: bool = False,
     graph_depth_limit: int = 1,
 ) -> tuple[DataNode, str]:
@@ -658,7 +659,7 @@ def rebuild_and_set_from_update_hash(
 
     Args:
         update_hash: The local hash ID of the DataNode.
-        data_source_id: The data source ID.
+        data_source_uid: The data source UID.
         set_dependencies_df: Whether to set the dependencies DataFrame.
         graph_depth_limit: The depth limit for graph traversal.
 
@@ -667,13 +668,13 @@ def rebuild_and_set_from_update_hash(
     """
     pickle_path = get_pickle_path(
         update_hash=update_hash,
-        data_source_id=data_source_id,
+        data_source_uid=data_source_uid,
     )
     if not os.path.isfile(pickle_path) or os.stat(pickle_path).st_size == 0:
         # rebuild time serie and pickle
         ts = rebuild_from_configuration(
             update_hash=update_hash,
-            data_source=data_source_id,
+            data_source=data_source_uid,
         )
         if set_dependencies_df:
             ts.set_relation_tree()
@@ -708,13 +709,13 @@ def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> Da
 
 
 @tracer.start_as_current_span("TS: Rebuild From Configuration")
-def rebuild_from_configuration(update_hash: str, data_source: int | object) -> DataNode:
+def rebuild_from_configuration(update_hash: str, data_source: str | object) -> DataNode:
     """
     Rebuilds a DataNode instance from its configuration.
 
     Args:
         update_hash: The local hash ID of the DataNode.
-        data_source: The data source ID or object.
+        data_source: The data source UID or object.
 
     Returns:
         The rebuilt DataNode instance.
@@ -723,11 +724,11 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> D
 
     tracer_instrumentator.append_attribute_to_current_span("update_hash", update_hash)
 
-    if isinstance(data_source, int):
-        pickle_path = get_pickle_path(data_source_id=data_source, update_hash=update_hash)
+    if isinstance(data_source, str):
+        pickle_path = get_pickle_path(data_source_uid=data_source, update_hash=update_hash)
         if not os.path.isfile(pickle_path):
-            data_source = ms_client.DynamicTableDataSource.get(pk=data_source)
-            data_source.persist_to_pickle(data_source_pickle_path(data_source.id))
+            data_source = ms_client.DynamicTableDataSource.get_by_uid(data_source)
+            data_source.persist_to_pickle(data_source_pickle_path(data_source.uid))
 
         data_source = load_data_source_from_pickle(pickle_path=pickle_path)
 
@@ -764,7 +765,7 @@ def rebuild_from_configuration(update_hash: str, data_source: int | object) -> D
     return re_build_ts
 
 
-def load_and_set_from_hash_id(update_hash: int, data_source_id: int) -> DataNode:
-    path = get_pickle_path(update_hash=update_hash, data_source_id=data_source_id)
+def load_and_set_from_hash_id(update_hash: int, data_source_uid: str) -> DataNode:
+    path = get_pickle_path(update_hash=update_hash, data_source_uid=data_source_uid)
     ts = load_and_set_from_pickle(pickle_path=path)
     return ts

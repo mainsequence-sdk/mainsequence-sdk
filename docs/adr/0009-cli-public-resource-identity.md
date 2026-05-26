@@ -118,8 +118,7 @@ The CLI should align to this pattern:
 - `Workspace`: `uid`
 - `ConnectionType`: `type_id`
 - `RegisteredWidgetType`: `widget_id`
-- `ConnectionInstance`: public identity to be confirmed from client/backend
-  contract
+- `ConnectionInstance`: `uid`
 - `Agent`: public identity to be confirmed between `uid` and
   `agent_unique_id`; until confirmed, treat the current numeric `id` surface as
   not final

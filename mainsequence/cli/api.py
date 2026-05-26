@@ -3370,7 +3370,7 @@ def delete_secret(
 
 
 def list_secret_users_can_view(
-    secret_id: int | str,
+    secret_uid: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3380,14 +3380,14 @@ def list_secret_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         accessor_name="can_view",
         timeout=timeout,
     )
 
 
 def list_secret_users_can_edit(
-    secret_id: int | str,
+    secret_uid: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3397,14 +3397,14 @@ def list_secret_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         accessor_name="can_edit",
         timeout=timeout,
     )
 
 
 def add_secret_user_to_view(
-    secret_id: int | str,
+    secret_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3415,7 +3415,7 @@ def add_secret_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -3423,7 +3423,7 @@ def add_secret_user_to_view(
 
 
 def add_secret_user_to_edit(
-    secret_id: int | str,
+    secret_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3434,7 +3434,7 @@ def add_secret_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3442,7 +3442,7 @@ def add_secret_user_to_edit(
 
 
 def remove_secret_user_from_view(
-    secret_id: int | str,
+    secret_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3453,7 +3453,7 @@ def remove_secret_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -3461,7 +3461,7 @@ def remove_secret_user_from_view(
 
 
 def remove_secret_user_from_edit(
-    secret_id: int | str,
+    secret_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3472,7 +3472,7 @@ def remove_secret_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3480,7 +3480,7 @@ def remove_secret_user_from_edit(
 
 
 def add_secret_team_to_view(
-    secret_id: int | str,
+    secret_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3488,7 +3488,7 @@ def add_secret_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -3496,7 +3496,7 @@ def add_secret_team_to_view(
 
 
 def add_secret_team_to_edit(
-    secret_id: int | str,
+    secret_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3504,7 +3504,7 @@ def add_secret_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3512,7 +3512,7 @@ def add_secret_team_to_edit(
 
 
 def remove_secret_team_from_view(
-    secret_id: int | str,
+    secret_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3520,7 +3520,7 @@ def remove_secret_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -3528,7 +3528,7 @@ def remove_secret_team_from_view(
 
 
 def remove_secret_team_from_edit(
-    secret_id: int | str,
+    secret_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3536,7 +3536,7 @@ def remove_secret_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Secret",
-        object_id=secret_id,
+        object_id=secret_uid,
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3783,7 +3783,7 @@ def _mutate_labelable_object_labels(
 
 
 def list_constant_users_can_view(
-    constant_id: int | str,
+    constant_uid: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3793,14 +3793,14 @@ def list_constant_users_can_view(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         accessor_name="can_view",
         timeout=timeout,
     )
 
 
 def list_constant_users_can_edit(
-    constant_id: int | str,
+    constant_uid: int | str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3810,14 +3810,14 @@ def list_constant_users_can_edit(
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         accessor_name="can_edit",
         timeout=timeout,
     )
 
 
 def add_constant_user_to_view(
-    constant_id: int | str,
+    constant_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3828,7 +3828,7 @@ def add_constant_user_to_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="add_to_view",
         user_id=user_id,
         timeout=timeout,
@@ -3836,7 +3836,7 @@ def add_constant_user_to_view(
 
 
 def add_constant_user_to_edit(
-    constant_id: int | str,
+    constant_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3847,7 +3847,7 @@ def add_constant_user_to_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="add_to_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3855,7 +3855,7 @@ def add_constant_user_to_edit(
 
 
 def remove_constant_user_from_view(
-    constant_id: int | str,
+    constant_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3866,7 +3866,7 @@ def remove_constant_user_from_view(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="remove_from_view",
         user_id=user_id,
         timeout=timeout,
@@ -3874,7 +3874,7 @@ def remove_constant_user_from_view(
 
 
 def remove_constant_user_from_edit(
-    constant_id: int | str,
+    constant_uid: int | str,
     user_id: int | str,
     *,
     timeout: int | None = None,
@@ -3885,7 +3885,7 @@ def remove_constant_user_from_edit(
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="remove_from_edit",
         user_id=user_id,
         timeout=timeout,
@@ -3893,7 +3893,7 @@ def remove_constant_user_from_edit(
 
 
 def add_constant_team_to_view(
-    constant_id: int | str,
+    constant_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3901,7 +3901,7 @@ def add_constant_team_to_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="add_team_to_view",
         team_id=team_id,
         timeout=timeout,
@@ -3909,7 +3909,7 @@ def add_constant_team_to_view(
 
 
 def add_constant_team_to_edit(
-    constant_id: int | str,
+    constant_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3917,7 +3917,7 @@ def add_constant_team_to_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="add_team_to_edit",
         team_id=team_id,
         timeout=timeout,
@@ -3925,7 +3925,7 @@ def add_constant_team_to_edit(
 
 
 def remove_constant_team_from_view(
-    constant_id: int | str,
+    constant_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3933,7 +3933,7 @@ def remove_constant_team_from_view(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="remove_team_from_view",
         team_id=team_id,
         timeout=timeout,
@@ -3941,7 +3941,7 @@ def remove_constant_team_from_view(
 
 
 def remove_constant_team_from_edit(
-    constant_id: int | str,
+    constant_uid: int | str,
     team_id: int | str,
     *,
     timeout: int | None = None,
@@ -3949,7 +3949,7 @@ def remove_constant_team_from_edit(
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
         class_name="Constant",
-        object_id=constant_id,
+        object_id=constant_uid,
         action_name="remove_team_from_edit",
         team_id=team_id,
         timeout=timeout,

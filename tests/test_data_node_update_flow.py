@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client import models_tdag
+from mainsequence.tdag.data_nodes.models import RecordDefinition
 
 
 def _dt(hour: int) -> datetime.datetime:
@@ -339,6 +340,56 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     }
     assert "max_per_asset_symbol" not in calls["set_last"]
     assert "last_time_index_value" not in calls["set_last"]
+
+
+def test_upsert_data_into_table_uses_declared_record_dtype_for_jsonb():
+    calls = {}
+
+    class FakeStorage:
+        def handle_source_table_configuration_creation(self, **kwargs):
+            calls["source_config"] = kwargs
+
+    class FakeResource:
+        def insert_data_into_table(self, **kwargs):
+            calls["insert"] = kwargs
+
+    update = models_tdag.DataNodeUpdate.model_construct(
+        id=77,
+        update_hash="update-hash",
+        build_configuration={},
+        ogm_dependencies_linked=False,
+        data_node_storage=FakeStorage(),
+    )
+
+    object.__setattr__(
+        update,
+        "set_last_update_index_time_from_update_stats",
+        lambda **kwargs: kwargs,
+    )
+
+    df = pd.DataFrame(
+        {"venue_specific_properties": [{"tick_size": "0.01"}]},
+        index=pd.DatetimeIndex([_dt(0)], name="time_index"),
+    )
+
+    update.upsert_data_into_table(
+        df,
+        data_source=SimpleNamespace(related_resource=FakeResource()),
+        overwrite=True,
+        records=[
+            RecordDefinition(
+                column_name="venue_specific_properties",
+                dtype="jsonb",
+                label="Venue Specific Properties",
+                description="JSON payload for exchange-specific metadata.",
+            )
+        ],
+    )
+
+    assert calls["source_config"]["column_dtypes_map"] == {
+        "time_index": "datetime64[ns, UTC]",
+        "venue_specific_properties": "jsonb",
+    }
 
 
 def test_dynamic_table_data_source_delegates_direct_class_type_reads():

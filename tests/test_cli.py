@@ -1074,6 +1074,85 @@ def test_connection_type_detail(cli_mod, runner, monkeypatch):
     assert "connections:view" in result.output
 
 
+def test_list_connection_instances_uses_uid_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeConnectionInstance:
+        uid = "warehouse-primary"
+        name = "Warehouse Primary"
+
+        @staticmethod
+        def model_dump(mode="json"):
+            return {"uid": "warehouse-primary", "name": "Warehouse Primary"}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientConnectionInstance:
+            @classmethod
+            def filter(cls, timeout=None, **kwargs):
+                captured["timeout"] = timeout
+                captured["filters"] = kwargs
+                return [FakeConnectionInstance()]
+
+        return operation(_ClientConnectionInstance)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.list_connection_instances(
+        timeout=9,
+        filters={"workspace_uid": "11111111-1111-4111-8111-111111111111"},
+    )
+
+    assert captured == {
+        "module_name": "mainsequence.client.command_center.connections",
+        "class_name": "ConnectionInstance",
+        "timeout": 9,
+        "filters": {"workspace_uid": "11111111-1111-4111-8111-111111111111"},
+    }
+    assert out == [{"uid": "warehouse-primary", "name": "Warehouse Primary"}]
+
+
+def test_get_connection_instance_uses_uid_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {}
+
+    class FakeConnectionInstance:
+        uid = "warehouse-primary"
+        name = "Warehouse Primary"
+
+        @staticmethod
+        def model_dump(mode="json"):
+            return {"uid": "warehouse-primary", "name": "Warehouse Primary"}
+
+    def _run_sdk_model_operation(*, module_name, class_name, operation, project_id_env=None):
+        captured["module_name"] = module_name
+        captured["class_name"] = class_name
+
+        class _ClientConnectionInstance:
+            @classmethod
+            def get_by_uid(cls, uid, timeout=None):
+                captured["uid"] = uid
+                captured["timeout"] = timeout
+                return FakeConnectionInstance()
+
+        return operation(_ClientConnectionInstance)
+
+    monkeypatch.setattr(api_mod, "_run_sdk_model_operation", _run_sdk_model_operation)
+
+    out = api_mod.get_connection_instance("warehouse-primary", timeout=10)
+
+    assert captured == {
+        "module_name": "mainsequence.client.command_center.connections",
+        "class_name": "ConnectionInstance",
+        "uid": "warehouse-primary",
+        "timeout": 10,
+    }
+    assert out == {"uid": "warehouse-primary", "name": "Warehouse Primary"}
+
+
 def test_connection_list(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
@@ -7456,17 +7535,17 @@ def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch
     monkeypatch.setattr(
         cli_mod,
         "get_secret",
-        lambda secret_id, timeout=None: {
-            "uid": secret_id,
+        lambda secret_uid, timeout=None: {
+            "uid": secret_uid,
             "name": "API_KEY",
         },
     )
 
-    def _delete(secret_id, timeout=None):
-        captured["secret_id"] = secret_id
+    def _delete(secret_uid, timeout=None):
+        captured["secret_uid"] = secret_uid
         captured["timeout"] = timeout
         return {
-            "uid": secret_id,
+            "uid": secret_uid,
             "name": "API_KEY",
         }
 
@@ -7480,7 +7559,7 @@ def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch
     assert result.exit_code == 0
     assert "Secret Delete Preview" in result.output
     assert "Type secret name 'API_KEY' to confirm deletion" in result.output
-    assert captured["secret_id"] == secret_uid
+    assert captured["secret_uid"] == secret_uid
     assert f"Secret deleted: uid={secret_uid}" in result.output
 
 
@@ -7489,8 +7568,8 @@ def test_secrets_can_view(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "list_secret_users_can_view",
-        lambda secret_id, timeout=None: {
-            "object_id": secret_id,
+        lambda secret_uid, timeout=None: {
+            "object_id": secret_uid,
             "object_type": "tdag.secret",
             "access_level": "view",
             "users": [
@@ -7523,15 +7602,15 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
-    def _add(secret_id, user_id, timeout=None):
-        captured["secret_id"] = secret_id
+    def _add(secret_uid, user_id, timeout=None):
+        captured["secret_uid"] = secret_uid
         captured["user_id"] = user_id
         captured["timeout"] = timeout
         return {
             "ok": True,
             "action": "add_to_edit",
             "detail": "User now has explicit edit access.",
-            "object_id": secret_id,
+            "object_id": secret_uid,
             "object_type": "tdag.secret",
             "user": {
                 "id": user_id,
@@ -7550,7 +7629,7 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
 
     result = runner.invoke(cli_mod.app, ["secrets", "add_to_edit", secret_uid, "11"])
     assert result.exit_code == 0
-    assert captured == {"secret_id": secret_uid, "user_id": 11, "timeout": None}
+    assert captured == {"secret_uid": secret_uid, "user_id": 11, "timeout": None}
     assert "Secret add_to_edit completed." in result.output
     assert "Secret Sharing Update" in result.output
     assert "editor@example.com" in result.output

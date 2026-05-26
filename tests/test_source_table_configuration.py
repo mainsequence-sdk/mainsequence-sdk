@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client import models_tdag
+from mainsequence.client.exceptions import ConflictError
 
 
 def _source_config_payload():
@@ -71,6 +72,32 @@ def test_source_table_configuration_rejects_table_partition_typed_surface():
 
     with pytest.raises(ValidationError, match="table_partition"):
         models_tdag.SourceTableConfiguration(**payload)
+
+
+def test_source_table_configuration_parses_generated_fk_projection_name():
+    payload = _source_config_payload()
+    payload["foreign_key_projections"] = [
+        {
+            "name": "fk_prices_asset_uid_4f3a2b1c",
+            "source_columns": ["account_uid"],
+            "target_meta_table_uid": "asset-meta-table-uid",
+            "target_columns": ["uid"],
+            "on_delete": "restrict",
+            "target_meta_table_storage_hash": "asset_storage_hash",
+        }
+    ]
+
+    config = models_tdag.SourceTableConfiguration(**payload)
+    projection = config.foreign_key_projections[0]
+
+    assert projection.name == "fk_prices_asset_uid_4f3a2b1c"
+    assert projection.target_meta_table_storage_hash == "asset_storage_hash"
+    assert models_tdag._serialize_source_table_foreign_key_contract(projection) == {
+        "source_columns": ["account_uid"],
+        "target_meta_table_uid": "asset-meta-table-uid",
+        "target_columns": ["uid"],
+        "on_delete": "restrict",
+    }
 
 
 def test_source_table_configuration_get_data_updates_prefers_canonical_stats(monkeypatch):
@@ -238,6 +265,47 @@ def test_source_table_configuration_column_metadata_route_uses_related_table_uid
             "description": "Metric value",
         }
     ]
+
+
+def test_initialize_source_table_conflict_surfaces_existing_schema_or_fk_metadata(monkeypatch):
+    class FakeResponse:
+        status_code = 409
+        text = "conflict"
+
+        @staticmethod
+        def json():
+            return {
+                "detail": (
+                    "Existing SourceTableConfiguration conflicts with requested "
+                    "foreign key metadata."
+                )
+            }
+
+    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = models_tdag.DataNodeStorage.model_construct(uid="storage-uid-44")
+
+    with pytest.raises(ConflictError, match="conflicts with requested foreign key metadata"):
+        storage.initialize_source_table(
+            time_index_name="time_index",
+            index_names=["time_index", "asset_uid"],
+            column_dtypes_map={
+                "time_index": "datetime64[ns, UTC]",
+                "asset_uid": "uuid",
+            },
+            foreign_keys=[
+                models_tdag.SourceTableForeignKeyContract(
+                    source_columns=["asset_uid"],
+                    target_meta_table_uid="asset-meta-table-uid",
+                    target_columns=["uid"],
+                )
+            ],
+        )
 
 
 def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypatch):

@@ -195,10 +195,11 @@ Base audit findings that remain for model-group migration:
 - [x] Confirm backend UID detail lookup for `Workspace`.
 - [x] Confirm backend UID detail lookup for `ConnectionInstance`.
 - [ ] Confirm UID detail lookup for every remaining command-center model that inherits generic detail actions.
-- [x] Replace public workspace resource arguments with `workspace_uid`; connection resource arguments remain separately tracked.
+- [x] Replace public workspace resource arguments with `workspace_uid`.
 - [x] Confirm `ConnectionType.type_id` remains a non-UID public type identifier.
-- [ ] Keep provider connection IDs unchanged where they are external identifiers.
-- [x] Add tests for UID-only workspace response payloads; remaining command-center models stay separately tracked.
+- [x] Replace public connection-instance identity with `uid`; `ConnectionType.type_id` and provider/external connection IDs remain separate domain identifiers.
+- [ ] Keep remaining provider connection IDs unchanged where they are external identifiers.
+- [x] Add tests for UID-only workspace and connection-instance response payloads; remaining command-center models stay separately tracked.
 
 ### 7. Agent and runtime migration
 

@@ -284,7 +284,7 @@ class BasePersistManager:
                 )
                 if result is None:
                     self.logger.warning(
-                        f"TimeSeries {self.update_hash} with data source {self.data_source.id} not found in backend"
+                        f"TimeSeries {self.update_hash} with data source {self.data_source.uid} not found in backend"
                     )
                 new_future.set_result(result)
             except Exception as exc:
@@ -545,6 +545,8 @@ class BasePersistManager:
         *,
         columns_metadata: list[ColumnMetaData] | None = None,
         foreign_keys: list[Any] | None = None,
+        records: list[Any] | None = None,
+        source_table_schema: dict[str, Any] | None = None,
     ) -> bool:
         persisted = False
         if not temp_df.empty:
@@ -557,6 +559,8 @@ class BasePersistManager:
                 overwrite=overwrite,
                 columns_metadata=columns_metadata,
                 foreign_keys=foreign_keys,
+                records=records,
+                source_table_schema=source_table_schema,
             )
 
             persisted = True

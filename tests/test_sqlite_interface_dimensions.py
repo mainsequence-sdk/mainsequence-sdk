@@ -54,6 +54,25 @@ def test_sqlite_upsert_preserves_n_dimensional_identity(tmp_path):
     }
 
 
+def test_sqlite_local_backend_has_physical_unique_index_but_no_fk_constraints(tmp_path):
+    interface = _interface(tmp_path)
+    _seed_n_dimensional_table(interface)
+
+    indexes = interface.con.execute('PRAGMA index_list("node")').fetchall()
+    unique_index_names = [row["name"] for row in indexes if row["unique"]]
+
+    assert unique_index_names
+    assert any(
+        [
+            row["name"]
+            for row in interface.con.execute(f'PRAGMA index_info("{index_name}")').fetchall()
+        ]
+        == INDEX_NAMES
+        for index_name in unique_index_names
+    )
+    assert interface.con.execute('PRAGMA foreign_key_list("node")').fetchall() == []
+
+
 def test_sqlite_upsert_rewrites_only_matching_full_index_tuple(tmp_path):
     interface = _interface(tmp_path)
     _seed_n_dimensional_table(interface)

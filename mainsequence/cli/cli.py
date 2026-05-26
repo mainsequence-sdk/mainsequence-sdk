@@ -6626,7 +6626,7 @@ def secrets_delete_cmd(
 
 @secrets.command("can_view")
 def secrets_can_view_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6637,21 +6637,21 @@ def secrets_can_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets can_view 42
+    mainsequence secrets can_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_secret_users_can_view,
         object_label="Secret",
         access_label="view",
-        object_id=secret_id,
+        object_id=secret_uid,
         timeout=timeout,
     )
 
 
 @secrets.command("can_edit")
 def secrets_can_edit_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6662,21 +6662,21 @@ def secrets_can_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets can_edit 42
+    mainsequence secrets can_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
     _shareable_user_list_impl(
         fetch_fn=list_secret_users_can_edit,
         object_label="Secret",
         access_label="edit",
-        object_id=secret_id,
+        object_id=secret_uid,
         timeout=timeout,
     )
 
 
 @secrets.command("add_to_view")
 def secrets_add_to_view_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6686,14 +6686,14 @@ def secrets_add_to_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_view 42 7
+    mainsequence secrets add_to_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_secret_user_to_view,
         object_label="Secret",
         action_label="add_to_view",
-        object_id=secret_id,
+        object_id=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6701,7 +6701,7 @@ def secrets_add_to_view_cmd(
 
 @secrets.command("add_to_edit")
 def secrets_add_to_edit_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6711,14 +6711,14 @@ def secrets_add_to_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets add_to_edit 42 7
+    mainsequence secrets add_to_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=add_secret_user_to_edit,
         object_label="Secret",
         action_label="add_to_edit",
-        object_id=secret_id,
+        object_id=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6726,7 +6726,7 @@ def secrets_add_to_edit_cmd(
 
 @secrets.command("remove_from_view")
 def secrets_remove_from_view_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6736,14 +6736,14 @@ def secrets_remove_from_view_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_view 42 7
+    mainsequence secrets remove_from_view 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_secret_user_from_view,
         object_label="Secret",
         action_label="remove_from_view",
-        object_id=secret_id,
+        object_id=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6751,7 +6751,7 @@ def secrets_remove_from_view_cmd(
 
 @secrets.command("remove_from_edit")
 def secrets_remove_from_edit_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6761,14 +6761,14 @@ def secrets_remove_from_edit_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets remove_from_edit 42 7
+    mainsequence secrets remove_from_edit 498d499f-b74c-43f7-acf1-2e2955ad0e6b 7
     ```
     """
     _shareable_user_access_update_impl(
         action_fn=remove_secret_user_from_edit,
         object_label="Secret",
         action_label="remove_from_edit",
-        object_id=secret_id,
+        object_id=secret_uid,
         user_id=user_id,
         timeout=timeout,
     )
@@ -6776,7 +6776,7 @@ def secrets_remove_from_edit_cmd(
 
 @secrets.command("add_team_to_view")
 def secrets_add_team_to_view_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6784,7 +6784,7 @@ def secrets_add_team_to_view_cmd(
         action_fn=add_secret_team_to_view,
         object_label="Secret",
         action_label="add_team_to_view",
-        object_id=secret_id,
+        object_id=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6792,7 +6792,7 @@ def secrets_add_team_to_view_cmd(
 
 @secrets.command("add_team_to_edit")
 def secrets_add_team_to_edit_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6800,7 +6800,7 @@ def secrets_add_team_to_edit_cmd(
         action_fn=add_secret_team_to_edit,
         object_label="Secret",
         action_label="add_team_to_edit",
-        object_id=secret_id,
+        object_id=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6808,7 +6808,7 @@ def secrets_add_team_to_edit_cmd(
 
 @secrets.command("remove_team_from_view")
 def secrets_remove_team_from_view_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6816,7 +6816,7 @@ def secrets_remove_team_from_view_cmd(
         action_fn=remove_secret_team_from_view,
         object_label="Secret",
         action_label="remove_team_from_view",
-        object_id=secret_id,
+        object_id=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )
@@ -6824,7 +6824,7 @@ def secrets_remove_team_from_view_cmd(
 
 @secrets.command("remove_team_from_edit")
 def secrets_remove_team_from_edit_cmd(
-    secret_id: str = typer.Argument(..., help="Secret UID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6832,7 +6832,7 @@ def secrets_remove_team_from_edit_cmd(
         action_fn=remove_secret_team_from_edit,
         object_label="Secret",
         action_label="remove_team_from_edit",
-        object_id=secret_id,
+        object_id=secret_uid,
         team_id=team_id,
         timeout=timeout,
     )

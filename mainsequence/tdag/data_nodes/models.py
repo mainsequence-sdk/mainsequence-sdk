@@ -248,6 +248,13 @@ class SourceTableForeignKey(BaseModel):
             raise ValueError(f"Duplicate DataNode record column names: {duplicate_record_names}")
 
         source_column_names = self.source_column_names()
+        target_column_names = self.target_column_names()
+        if len(source_column_names) != len(target_column_names):
+            raise ValueError(
+                "SourceTableForeignKey source_columns and target_columns must have "
+                "the same number of columns."
+            )
+
         missing_source_columns = [
             column_name for column_name in source_column_names if column_name not in record_names
         ]
@@ -265,7 +272,7 @@ class SourceTableForeignKey(BaseModel):
                 data_source_uid=data_source_uid,
                 timeout=timeout,
             ),
-            target_columns=self.target_column_names(),
+            target_columns=target_column_names,
             on_delete=self.on_delete.lower(),
         )
 

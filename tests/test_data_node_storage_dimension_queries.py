@@ -117,7 +117,7 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
     ]
 
 
-def test_initialize_source_table_posts_column_metadata_and_foreign_keys(monkeypatch):
+def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -176,14 +176,6 @@ def test_initialize_source_table_posts_column_metadata_and_foreign_keys(monkeypa
             "asset_uid": "uuid",
             "value": "float64",
         },
-        columns_metadata=[
-            models_tdag.ColumnMetaData(
-                column_name="asset_uid",
-                dtype="uuid",
-                label="Asset",
-                description="Asset UID.",
-            )
-        ],
         foreign_keys=[
             models_tdag.SourceTableForeignKeyContract(
                 source_columns=["asset_uid"],
@@ -193,14 +185,7 @@ def test_initialize_source_table_posts_column_metadata_and_foreign_keys(monkeypa
         ],
     )
 
-    assert captured["payload"]["json"]["columns_metadata"] == [
-        {
-            "column_name": "asset_uid",
-            "dtype": "uuid",
-            "label": "Asset",
-            "description": "Asset UID.",
-        }
-    ]
+    assert "columns_metadata" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["foreign_keys"] == [
         {
             "source_columns": ["asset_uid"],
@@ -213,6 +198,7 @@ def test_initialize_source_table_posts_column_metadata_and_foreign_keys(monkeypa
 
 def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch):
     captured = {}
+    captured_metadata = {}
 
     def _fake_initialize_source_table(self, **kwargs):
         captured.update(kwargs)
@@ -233,6 +219,14 @@ def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch
         models_tdag.DataNodeStorage,
         "initialize_source_table",
         _fake_initialize_source_table,
+    )
+    monkeypatch.setattr(
+        models_tdag.SourceTableConfiguration,
+        "set_or_update_columns_metadata",
+        lambda self, columns_metadata, timeout=None: captured_metadata.update(
+            columns_metadata=columns_metadata,
+            timeout=timeout,
+        ) or {"ok": True},
     )
 
     storage = _storage(["time_index"])
@@ -266,7 +260,8 @@ def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch
     assert captured["time_index_name"] == "time_index"
     assert captured["index_names"] == ["time_index", "asset_uid"]
     assert captured["foreign_keys"] == [foreign_key]
-    assert captured["columns_metadata"][0].column_name == "asset_uid"
+    assert "columns_metadata" not in captured
+    assert captured_metadata["columns_metadata"][0].column_name == "asset_uid"
     assert storage.sourcetableconfiguration.index_names == ["time_index", "asset_uid"]
 
 

@@ -3,9 +3,11 @@ from __future__ import annotations
 
 import datetime
 import gc
+import json
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 # Third-Party Library Imports
 import numpy as np
@@ -32,6 +34,118 @@ class DependencyUpdateError(Exception):
 
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
+
+
+def _record_definition_field(record: Any, field_name: str) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(field_name)
+    return getattr(record, field_name, None)
+
+
+def _records_to_column_dtypes_map(records: Sequence[Any] | None) -> dict[str, str]:
+    if not records:
+        return {}
+
+    column_dtypes_map: dict[str, str] = {}
+    duplicate_columns: set[str] = set()
+    for record in records:
+        column_name = _record_definition_field(record, "column_name")
+        dtype = _record_definition_field(record, "dtype")
+        if not column_name or not dtype:
+            raise ValueError(
+                "Record definitions must include non-empty 'column_name' and 'dtype' fields."
+            )
+        column_name = str(column_name)
+        if column_name in column_dtypes_map:
+            duplicate_columns.add(column_name)
+        column_dtypes_map[column_name] = str(dtype)
+
+    if duplicate_columns:
+        raise ValueError(
+            f"Duplicate DataNode record column names: {sorted(duplicate_columns)}"
+        )
+
+    return column_dtypes_map
+
+
+def _is_nullish(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        is_na = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    if isinstance(is_na, (bool, np.bool_)):
+        return bool(is_na)
+    return False
+
+
+def _validate_json_compatible_values(column_name: str, values: Sequence[Any]) -> None:
+    for value in values:
+        if _is_nullish(value):
+            continue
+        try:
+            json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError) as exc:
+            raise TypeError(
+                f"Column '{column_name}' is declared as json/jsonb but contains "
+                f"a non-JSON-serializable value: {value!r}"
+            ) from exc
+
+
+def _validate_uuid_compatible_values(column_name: str, values: Sequence[Any]) -> None:
+    for value in values:
+        if _is_nullish(value) or isinstance(value, UUID):
+            continue
+        try:
+            UUID(str(value))
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise TypeError(
+                f"Column '{column_name}' is declared as uuid but contains "
+                f"a non-UUID value: {value!r}"
+            ) from exc
+
+
+def _validate_string_compatible_values(column_name: str, values: Sequence[Any]) -> None:
+    for value in values:
+        if _is_nullish(value):
+            continue
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Column '{column_name}' is declared as string but contains "
+                f"a non-string value: {value!r}"
+            )
+
+
+def _validate_declared_record_dtype(
+    *,
+    column_name: str,
+    declared_dtype: str,
+    actual_dtype: Any,
+    values: Sequence[Any],
+) -> None:
+    normalized_declared_dtype = declared_dtype.strip().lower()
+    normalized_actual_dtype = str(actual_dtype).strip().lower()
+    if normalized_declared_dtype in {"json", "jsonb"}:
+        _validate_json_compatible_values(column_name, values)
+        return
+    if normalized_declared_dtype == "uuid":
+        _validate_uuid_compatible_values(column_name, values)
+        return
+    if normalized_declared_dtype in {"string", "str"}:
+        if normalized_actual_dtype not in {"object", "string", "str"}:
+            raise TypeError(
+                f"Column '{column_name}' is declared as {declared_dtype} "
+                f"but DataFrame dtype is {actual_dtype}"
+            )
+        _validate_string_compatible_values(column_name, values)
+        return
+
+    if str(actual_dtype) != declared_dtype:
+        raise TypeError(
+            f"Column '{column_name}' is declared as {declared_dtype} "
+            f"but DataFrame dtype is {actual_dtype}"
+        )
 
 
 def _require_uid(obj: Any, object_name: str) -> str:
@@ -247,7 +361,11 @@ class UpdateRunner:
         return error_on_last_update, update_result
 
     @staticmethod
-    def validate_data_frame(df:pd.DataFrame,storage_class_type)->None:
+    def validate_data_frame(
+        df: pd.DataFrame,
+        storage_class_type,
+        records: Sequence[Any] | None = None,
+    ) -> None:
         """
                Performs a series of critical checks on the DataFrame before persistence.
 
@@ -279,6 +397,41 @@ class UpdateRunner:
                     )
                 if "datetime64" in str(dtype):
                     raise TypeError(f"Column '{col}' has a forbidden datetime64 dtype. dates should be stored as timestamps to avoid  client side error conversions")
+
+        record_column_dtypes_map = _records_to_column_dtypes_map(records)
+        if not record_column_dtypes_map:
+            return
+
+        frame_columns = {str(column_name) for column_name in df.columns}
+        frame_column_lookup = {str(column_name): column_name for column_name in df.columns}
+        index_names = {str(index_name) for index_name in df.index.names if index_name is not None}
+        missing_record_columns = [
+            column_name
+            for column_name in record_column_dtypes_map
+            if column_name not in frame_columns and column_name not in index_names
+        ]
+        if missing_record_columns:
+            raise ValueError(
+                "DataNode records declare columns not present in the DataFrame: "
+                f"{missing_record_columns}"
+            )
+
+        for column_name, declared_dtype in record_column_dtypes_map.items():
+            if column_name in frame_columns:
+                frame_column_name = frame_column_lookup[column_name]
+                values = df[frame_column_name].tolist()
+                actual_dtype = df[frame_column_name].dtype
+            else:
+                index_values = df.index.get_level_values(column_name)
+                values = index_values.tolist()
+                actual_dtype = index_values.dtype
+
+            _validate_declared_record_dtype(
+                column_name=column_name,
+                declared_dtype=declared_dtype,
+                actual_dtype=actual_dtype,
+                values=values,
+            )
 
 
 
@@ -425,7 +578,7 @@ class UpdateRunner:
             dependecy_map: An optional dictionary to store the dependency map, used for recursion.
 
         Returns:
-            A dictionary mapping (update_hash, data_source_id) to DataNode info.
+            A dictionary mapping (update_hash, data_source_uid) to DataNode info.
         """
         # Initialize the map on the first call
         if dependecy_map is None:
@@ -434,7 +587,7 @@ class UpdateRunner:
         # Get the explicitly declared dependencies, just like set_relation_tree
 
         for name, dependency_ts in declared_dependencies.items():
-            key = (dependency_ts.update_hash, dependency_ts.data_source_id)
+            key = (dependency_ts.update_hash, dependency_ts.data_source_uid)
 
             # If we have already processed this node, skip it to prevent infinite loops
             if key in dependecy_map:
@@ -460,7 +613,7 @@ class UpdateRunner:
     def _execute_sequential_debug_update(
         self,
         dependencies_df: pd.DataFrame,
-        update_map: dict[tuple[str, int], dict],
+        update_map: dict[tuple[str, str], dict],
     ) -> None:
         """Runs dependency updates sequentially in the same process for debugging."""
         self.logger.info("Executing dependency updates in sequential debug mode.")
@@ -481,7 +634,7 @@ class UpdateRunner:
             sorted_deps = priority_df.sort_values("number_of_upstreams", ascending=False)
 
             for _, ts_row in sorted_deps.iterrows():
-                key = (ts_row["update_hash"], ts_row["data_source_id"])
+                key = (ts_row["update_hash"], ts_row["data_source_uid"])
                 ts_to_update = None
                 try:
                     if key in update_map:
@@ -493,7 +646,7 @@ class UpdateRunner:
                     else:
                         # If not in the map, it must be rebuilt from storage
                         ts_to_update, _ = build_operations.rebuild_and_set_from_update_hash(
-                            update_hash=key[0], data_source_id=key[1]
+                            update_hash=key[0], data_source_uid=key[1]
                         )
 
                     if ts_to_update:

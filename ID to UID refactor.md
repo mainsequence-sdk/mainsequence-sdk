@@ -288,28 +288,27 @@ Files:
 
 - `mainsequence/client/command_center/connections.py`
 
-Problems:
+Resolved:
 
-- `ConnectionInstance.id` is still numeric.
-- Connection filters still reflect mixed contracts.
+- [x] `ConnectionInstance` now exposes `uid` as the public resource identity and no longer models backend row `id`.
+- [x] Connection filters use the backend public query contract: `type_id`, `status`, `workspace_uid`, `is_default`, and `is_active`.
 
 Tasks:
 
 - [x] Confirm the backend public connection-instance identifier is `uid`.
-- [ ] Replace numeric `id` with the canonical UID-style identifier.
+- [x] Replace numeric `id` with the canonical UID-style identifier.
 - [x] Keep `ConnectionType.type_id` because that remains the actual public contract.
 
-Suggested migration:
+Migration result:
 
-- Treat connection types and connection instances separately:
-  - [x] type contract remains `type_id`
-  - [x] backend instance contract is `uid`
-  - [ ] client instance contract should move to `uid`
+- Connection instance detail lookup uses `uid`.
+- Connection instance list filters send `workspaceUid`, not `workspace_id`.
+- `ConnectionType.type_id` remains unchanged because it is a catalog type key, not a backend row id.
 
 Validation:
 
-- [ ] Add deserialization tests for connection-type and connection-instance detail payloads.
-- [ ] Add CLI alignment tests after the client model is updated.
+- [x] Add deserialization tests for connection-type and connection-instance detail payloads.
+- [x] Add CLI alignment tests after the client model is updated.
 
 ### 9. Secrets / constants / artifacts / buckets cleanup
 
@@ -321,27 +320,29 @@ Files:
 
 Current state:
 
-- `Secret` has already been migrated to `uid` in the source tree.
-- `Constant`, `Artifact`, and `Bucket` are still numeric-id based in the client.
+- `Secret`, `Constant`, `Artifact`, and `Bucket` expose `uid` as the public resource identity in the client models.
+- Constant CLI/API resource lookup has been migrated from `constant_id` to `constant_uid`.
+- Secret CLI/API resource lookup has been normalized from `secret_id` naming to `secret_uid` naming where the value is a resource UID.
+- `Artifact` and `Bucket` have UID model identity; there are no dedicated artifact/bucket CLI command families in this section to migrate.
 
 Tasks:
 
 - [x] Confirm backend serializers/routes for `Constant`.
 - [x] Confirm backend serializers/routes for `Artifact`.
 - [x] Confirm backend serializers/routes for `Bucket`.
-- [ ] Replace public `id` fields and CLI rendering with UID-based identity if backend is already UID-only there too.
+- [x] Replace public `id` fields and CLI rendering with UID-based identity if backend is already UID-only there too.
 
 Suggested migration:
 
 - Reuse the `Secret` migration shape:
   - [x] model accepts `uid`
-  - [ ] API wrappers stop coercing to `int`
-  - [ ] CLI renders `UID`
+  - [x] API wrappers stop coercing resource references to `int`
+  - [x] CLI renders `UID`
 
 Validation:
 
-- [ ] Add one test per model for UID-based deserialization.
-- [ ] Add one CLI test per command family after migration.
+- [x] Add one test per model for UID-based deserialization.
+- [x] Add one CLI test per command family after migration.
 
 ### 10. Local runtime and persistence payloads
 
@@ -356,23 +357,34 @@ Current state:
 - project runtime env uses `MAIN_SEQUENCE_PROJECT_UID`; `MAIN_SEQUENCE_PROJECT_ID` is not used as a fallback
 - TS Manager local update creation sends `current_project_uid` and `data_source_uid`
 - backend `LocalTimeSerie.get_or_create` resolves project scope by `current_project_uid`
-- there are still lingering `data_source_id`, `object_id`, and internal numeric payload names elsewhere
+- local pickle markers and pickle directory paths now use `data_source_uid`
+- local runtime logger context now uses `local_hash_uid_data_source`
+- old serialized pickle markers with `data_source_id` are read only as backwards compatibility
 
 Tasks:
 
-- [ ] Audit all runtime payload builders and hashing helpers for leaked numeric identifiers.
+- [x] Audit all runtime payload builders and hashing helpers for leaked numeric identifiers.
 - [x] Replace leaked public project/data-source object ids in the TS Manager update creation path with UID-based keys.
+- [x] Replace local DataNode pickle markers from `data_source_id` to `data_source_uid`.
+- [x] Replace local DataNode pickle paths from data-source numeric id directories to data-source UID directories.
+- [x] Replace dependency update-map runtime keys from `(update_hash, data_source_id)` to `(update_hash, data_source_uid)`.
+- [x] Replace `get_upstream_nodes` query parameter from `data_source_id` to `data_source_uid`.
 
 Suggested migration:
 
 - For every runtime payload, decide whether the field is:
-  - [ ] public object reference -> must be UID
-  - [ ] internal database row reference -> isolate it behind an internal-only adapter layer
+  - [x] public object reference -> must be UID
+  - [x] internal database row reference -> isolate it behind an internal-only adapter layer
+
+Remaining compatibility notes:
+
+- Legacy pickled markers containing `data_source_id` are still read as a fallback so old local pickles can be deserialized.
+- Constructor-level compatibility arguments such as `data_source_id` remain only where they are part of older local/API initialization paths and require a separate compatibility-removal pass.
 
 Validation:
 
 - [x] Add local runtime smoke tests using only UID-based env variables and UID-based payload assertions for the TS Manager get-or-create path.
-- [ ] Add broader local runtime smoke tests for the remaining runtime payload builders after their audit is complete.
+- [x] Add broader local runtime smoke tests for the migrated pickle marker/path builders.
 
 ### 11. CLI alignment after client migrations
 
@@ -385,21 +397,25 @@ Problems:
 
 - Several CLI command families still render `ID`, accept `int` args, or cast references with `int(...)`.
 - Some CLI commands are already partly migrated and now sit on mixed client contracts.
+- CLI alignment must follow the completed client-family migration. Do not rename unrelated command families until their client models and API wrappers are UID-based.
 
-Tasks:
+Implemented for completed UID-migrated families:
 
-- [ ] After each client-family migration, align command arguments.
-- [ ] After each client-family migration, align help text.
-- [ ] After each client-family migration, align examples.
-- [ ] After each client-family migration, align delete confirmation text.
-- [ ] After each client-family migration, align JSON output labels.
-- [ ] After each client-family migration, align table headers.
+- [x] Aligned command arguments for migrated families: `Constant`, `Secret`, UID-fetched TDAG resources, `Workspace`, and `Agent` resource references.
+- [x] Aligned help text for migrated families so public resource references are described as UID references.
+- [x] Aligned examples for migrated families, including Secret permission commands that still showed numeric secret examples.
+- [x] Aligned delete confirmation text for migrated families so deleted public resources report `uid` instead of public `id`.
+- [x] Aligned JSON output labels for migrated families so public resource references use `uid` / `object_uid`.
+- [x] Aligned table headers for migrated families so public resource columns render `UID`.
 
+Remaining explicit CLI migration work:
 
+- [ ] Continue CLI alignment after the corresponding client-family migration for families that still intentionally use numeric backend references today, including project images, project resources, resource releases, jobs, job runs, organization teams, and agent runs.
+- [ ] Re-audit generic CLI helpers after the remaining client families migrate so `int(...)` coercion is limited to non-resource permission subjects or explicitly internal backend fields.
 
 Validation:
 
-- [ ] Add CLI tests for list/detail/create/delete per object family.
+- [ ] Add CLI tests for list/detail/create/delete per object family after each remaining family migration.
 
 ### 12. Tests and docs cleanup
 

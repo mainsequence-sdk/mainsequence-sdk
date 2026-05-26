@@ -52,6 +52,38 @@ JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 LOGICAL_COLUMN_DTYPES_ATTR = "mainsequence_column_dtypes_map"
 
 
+def _record_definition_field(record: Any, field_name: str) -> Any:
+    if isinstance(record, Mapping):
+        return record.get(field_name)
+    return getattr(record, field_name, None)
+
+
+def _records_to_column_dtypes_map(records: Sequence[Any] | None) -> dict[str, str]:
+    if not records:
+        return {}
+
+    column_dtypes_map: dict[str, str] = {}
+    duplicate_columns: set[str] = set()
+    for record in records:
+        column_name = _record_definition_field(record, "column_name")
+        dtype = _record_definition_field(record, "dtype")
+        if not column_name or not dtype:
+            raise ValueError(
+                "Record definitions must include non-empty 'column_name' and 'dtype' fields."
+            )
+        column_name = str(column_name)
+        if column_name in column_dtypes_map:
+            duplicate_columns.add(column_name)
+        column_dtypes_map[column_name] = str(dtype)
+
+    if duplicate_columns:
+        raise ValueError(
+            f"Duplicate DataNode record column names: {sorted(duplicate_columns)}"
+        )
+
+    return column_dtypes_map
+
+
 def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
     warnings.warn(
         f"Deprecated TDAG compatibility path: {message}",
@@ -668,11 +700,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return depth_df
 
     @classmethod
-    def get_upstream_nodes(cls, storage_hash, data_source_id, timeout=None):
+    def get_upstream_nodes(cls, storage_hash, data_source_uid, timeout=None):
         s = cls.build_session()
         url = (
             cls.get_object_url("DataNode")
-            + f"/{storage_hash}/get_upstream_nodes?data_source_id={data_source_id}"
+            + f"/{storage_hash}/get_upstream_nodes?data_source_uid={data_source_uid}"
         )
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
         if r.status_code != 200:
@@ -899,8 +931,14 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
 
     @classmethod
-    def _break_pandas_dataframe(cls, data_frame: pd.DataFrame, time_index_name: str | None = None):
+    def _break_pandas_dataframe(
+        cls,
+        data_frame: pd.DataFrame,
+        time_index_name: str | None = None,
+        records: Sequence[Any] | None = None,
+    ):
         logical_column_dtypes_map = data_frame.attrs.get(LOGICAL_COLUMN_DTYPES_ATTR)
+        record_column_dtypes_map = _records_to_column_dtypes_map(records)
         if time_index_name is  None:
             time_index_name = data_frame.index.names[0]
             if time_index_name is None:
@@ -916,6 +954,16 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_frame.columns = [str(c) for c in data_frame.columns]
         data_frame = data_frame.rename(columns={data_frame.columns[time_col_loc]: time_index_name})
         column_dtypes_map = {key: str(value) for key, value in data_frame.dtypes.to_dict().items()}
+        missing_record_columns = [
+            column_name
+            for column_name in record_column_dtypes_map
+            if column_name not in data_frame.columns
+        ]
+        if missing_record_columns:
+            raise ValueError(
+                "DataNode records declare columns not present in the DataFrame: "
+                f"{missing_record_columns}"
+            )
         if logical_column_dtypes_map is not None:
             logical_column_dtypes_map = {
                 str(key): str(value) for key, value in logical_column_dtypes_map.items()
@@ -930,7 +978,25 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                     "Logical column dtype contract contains columns not present "
                     f"in the DataFrame: {missing_logical_columns}"
                 )
+            conflicting_declared_dtypes = {
+                column_name: {
+                    "record_dtype": record_column_dtypes_map[column_name],
+                    "logical_dtype": logical_column_dtypes_map[column_name],
+                }
+                for column_name in logical_column_dtypes_map
+                if (
+                    column_name in record_column_dtypes_map
+                    and logical_column_dtypes_map[column_name]
+                    != record_column_dtypes_map[column_name]
+                )
+            }
+            if conflicting_declared_dtypes:
+                raise ValueError(
+                    "Logical column dtype contract conflicts with DataNode records: "
+                    f"{conflicting_declared_dtypes}"
+                )
             column_dtypes_map.update(logical_column_dtypes_map)
+        column_dtypes_map.update(record_column_dtypes_map)
 
         data_frame = data_frame.replace({np.nan: None})
 
@@ -943,12 +1009,42 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         overwrite: bool,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
+        records: Sequence[Any] | None = None,
+        source_table_schema: Mapping[str, Any] | None = None,
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
         metadata = self.data_node_storage
 
-        data, index_names, column_dtypes_map, time_index_name = self._break_pandas_dataframe(data)
+        schema_time_index_name = (
+            str(source_table_schema["time_index_name"])
+            if source_table_schema and source_table_schema.get("time_index_name") is not None
+            else None
+        )
+        data, index_names, column_dtypes_map, time_index_name = self._break_pandas_dataframe(
+            data,
+            time_index_name=schema_time_index_name,
+            records=records,
+        )
+        inferred_index_names = list(index_names)
+        if source_table_schema:
+            schema_index_names = source_table_schema.get("index_names")
+            if schema_index_names is not None:
+                index_names = [str(name) for name in schema_index_names]
+                if index_names != inferred_index_names:
+                    raise ValueError(
+                        "DataFrame index names do not match declared source table "
+                        f"index_names. DataFrame: {inferred_index_names}; "
+                        f"declared: {index_names}"
+                    )
+            schema_column_dtypes_map = source_table_schema.get("column_dtypes_map")
+            if schema_column_dtypes_map is not None:
+                column_dtypes_map = {
+                    str(column_name): str(dtype)
+                    for column_name, dtype in schema_column_dtypes_map.items()
+                }
+            if columns_metadata is None:
+                columns_metadata = source_table_schema.get("columns_metadata")
         index_names = list(index_names)
         missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
         if missing_index_dtypes:
@@ -1370,7 +1466,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
-        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
@@ -1394,7 +1489,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
             storage_layout=storage_layout,
-            columns_metadata=columns_metadata,
             foreign_keys=foreign_keys,
             open_for_everyone=open_for_everyone,
             timeout=timeout,
@@ -1408,7 +1502,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
-        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
@@ -1423,11 +1516,6 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         }
         if storage_layout is not None:
             payload_body["storage_layout"] = storage_layout
-        if columns_metadata is not None:
-            payload_body["columns_metadata"] = [
-                _serialize_source_table_column_metadata(column_metadata)
-                for column_metadata in columns_metadata
-            ]
         if foreign_keys is not None:
             payload_body["foreign_keys"] = [
                 _serialize_source_table_foreign_key_contract(foreign_key)
@@ -1633,13 +1721,12 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         """
         stc = self.sourcetableconfiguration
 
-        if stc is None or columns_metadata is not None or foreign_keys is not None:
+        if stc is None or foreign_keys is not None:
             try:
                 response_data = self.initialize_source_table(
                     column_dtypes_map=column_dtypes_map,
                     index_names=index_names,
                     time_index_name=time_index_name,
-                    columns_metadata=columns_metadata,
                     foreign_keys=foreign_keys,
                     open_for_everyone=self.open_for_everyone,
                 )
@@ -1654,6 +1741,14 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                         "Removing values per asset when overwrite=False is not implemented yet."
                     ) from err
                     # Filter the data based on time_index_name and last_time_index_value
+
+        stc = self.sourcetableconfiguration
+        if columns_metadata is not None:
+            if stc is None:
+                raise ValueError(
+                    "Cannot update columns metadata before SourceTableConfiguration exists."
+                )
+            stc.set_or_update_columns_metadata(columns_metadata=columns_metadata)
 
 
     @staticmethod

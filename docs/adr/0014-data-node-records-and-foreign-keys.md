@@ -285,14 +285,17 @@ by the time `verify_and_build_remote_objects()` runs.
 ## Resolution
 
 For a FK-enabled DataNode, the SDK resolves existing records and configured
-foreign keys into the `initialize-source-table/` payload.
+foreign keys into the source-table physical schema contract. Enforcement is
+always physical: the backend creates and validates the storage table from
+`column_dtypes_map`. `columns_metadata` is descriptive metadata for discovery
+and UI surfaces; it must not be treated as the storage schema authority.
 
 Resolution must produce:
 
 - `time_index_name`;
 - `index_names`;
 - `column_dtypes_map`;
-- `columns_metadata`;
+- `columns_metadata` for post-creation metadata synchronization;
 - `foreign_keys`.
 
 Resolution rules:
@@ -301,8 +304,10 @@ Resolution rules:
 - every configured `index_names` entry must exist in `records`;
 - every FK `source_columns` entry must resolve to a record in `records`;
 - each `RecordDefinition.column_name` must be unique;
-- `column_dtypes_map` is built from each record's `column_name` and `dtype`;
-- `columns_metadata` is built by the existing `get_column_metadata()` bridge;
+- `column_dtypes_map` is the physical schema contract and is built from each
+  record's `column_name` and `dtype`;
+- `columns_metadata` is built by the existing `get_column_metadata()` bridge
+  and synchronized after the physical source table configuration exists;
 - each FK `target` must resolve to exactly one registered MetaTable;
 - `target_meta_table_uid` is resolved by the SDK from the target MetaTable;
 - every FK `target_columns` entry must resolve to a column on the target
@@ -359,7 +364,7 @@ At the existing initialization point, the flow is:
 2. Build the existing source table fields:
    `time_index_name`, `index_names`, and `column_dtypes_map`.
 3. If `records` are present, derive `columns_metadata` through the existing
-   `get_column_metadata()` bridge.
+   `get_column_metadata()` bridge for post-creation synchronization.
 4. If `foreign_keys` are present, resolve them into
    `SourceTableForeignKeyContract` serializer payloads.
 5. Call the existing endpoint:
@@ -368,8 +373,10 @@ At the existing initialization point, the flow is:
    POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/initialize-source-table/
    ```
 
-6. The payload is the same existing payload plus optional `columns_metadata`
-   and optional `foreign_keys`.
+6. The payload is the same existing physical schema payload plus optional
+   `foreign_keys`. It does not include `columns_metadata`.
+7. After the source table configuration exists, synchronize descriptive
+   `columns_metadata` through the existing column metadata endpoint.
 
 Runtime writes still go through `DataNodeUpdate.upsert_data_into_table(...)`.
 This ADR enriches source table initialization; it does not redefine when source
@@ -380,7 +387,6 @@ table initialization happens.
 The backend `initialize-source-table/` endpoint should:
 
 - continue accepting the existing payload;
-- accept optional `columns_metadata`;
 - accept optional `foreign_keys`;
 - validate every FK `source_columns` entry against `column_dtypes_map`;
 - resolve and validate FK targets;
@@ -414,7 +420,7 @@ Existing behavior remains valid:
 - existing `DataNodeConfiguration.records` behavior remains valid;
 - existing `get_column_metadata()` behavior remains valid;
 - the existing `initialize_source_table(...)` payload remains valid without
-  `columns_metadata` or `foreign_keys`;
+  `foreign_keys`;
 - existing `SourceTableConfiguration.create(...)` behavior remains valid for
   inferred schemas;
 - existing DataNode pickles and serialized configurations remain readable.
@@ -508,28 +514,28 @@ foreign_keys = [
 - [x] Add FK resolution helpers that produce the resolved backend
       `SourceTableForeignKeyContract` payload from existing records and
       configured FK intent.
-- [ ] Add source table initialization helpers that produce `time_index_name`,
-      `index_names`, `column_dtypes_map`, and `columns_metadata` from existing
-      records and table/index configuration.
-- [x] Add an optional `columns_metadata` parameter to
-      `DataNodeStorage.initialize_source_table(...)` if the backend endpoint
-      needs it.
+- [x] Add source table initialization helpers that produce the physical schema
+      fields (`time_index_name`, `index_names`, `column_dtypes_map`) from
+      existing records and table/index configuration, plus `columns_metadata`
+      for separate post-creation synchronization.
+- [x] Keep physical enforcement in `column_dtypes_map`; synchronize
+      `columns_metadata` only after `SourceTableConfiguration` exists.
 - [x] Add an optional `foreign_keys` parameter to
       `DataNodeStorage.initialize_source_table(...)`.
-- [x] Include optional `columns_metadata` and `foreign_keys` in
+- [x] Include optional `foreign_keys` in
       `_initialize_source_table_at_url(...)` payload serialization.
-- [ ] Extend the backend `initialize-source-table/` endpoint to accept
-      `columns_metadata` and `foreign_keys`.
-- [ ] Derive deterministic FK names on the backend and return them through
+- [x] Extend the backend `initialize-source-table/` endpoint to accept
+      `foreign_keys`.
+- [x] Derive deterministic FK names on the backend and return them through
       source table FK projections.
 - [ ] Persist declared DataNode FK metadata on or next to
       `SourceTableConfiguration`.
 - [ ] Return declared FK metadata and enforcement status from the endpoint.
-- [ ] Add backend conflict checks for incompatible existing source table schema
+- [x] Add backend conflict checks for incompatible existing source table schema
       and FK definitions.
 - [x] Preserve the existing call site for source table initialization and
-      enrich that existing payload with optional `columns_metadata` and
-      `foreign_keys`.
+      enrich that existing physical schema payload with optional `foreign_keys`;
+      synchronize `columns_metadata` separately.
 - [x] Keep the same existing behavior when `foreign_keys` is absent.
 - [x] Add tests proving the current no-FK behavior is unchanged.
 - [x] Add tests proving FK payloads are posted to
@@ -542,11 +548,11 @@ foreign_keys = [
       references such as `Asset.uid`.
 - [x] Add tests proving source columns can be declared as `RecordDefinition`
       object references.
-- [ ] Add tests for missing records, missing index columns, duplicate records,
+- [x] Add tests for missing records, missing index columns, duplicate records,
       missing FK source columns, missing FK target columns, unresolved targets,
       incompatible target columns, generated FK names, and conflicting existing
       FK metadata.
-- [ ] Add local backend tests documenting physical enforcement versus
+- [x] Add local backend tests documenting physical enforcement versus
       metadata-only behavior.
 - [x] Document DataNode FK declarations and backend FK enforcement
       capabilities.

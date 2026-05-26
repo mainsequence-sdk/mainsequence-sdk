@@ -3,6 +3,7 @@ import types
 import pytest
 
 import mainsequence.client.models_tdag as models_tdag
+from mainsequence.tdag.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"
@@ -444,3 +445,32 @@ def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
     message = str(exc_info.value)
     assert "DataNodeUpdate.get_or_create requires a local pod project." in message
     assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in message
+
+
+def test_build_operations_pickled_data_node_marker_uses_data_source_uid():
+    data_node = types.SimpleNamespace(
+        update_hash="update-hash-1",
+        data_source_uid=DATA_SOURCE_UID,
+    )
+
+    payload = build_operations._serialize_timeserie(data_node, pickle_ts=True)
+
+    assert payload == {
+        "is_time_serie_pickled": True,
+        "update_hash": "update-hash-1",
+        "data_source_uid": DATA_SOURCE_UID,
+    }
+    assert "data_source_id" not in payload
+
+
+def test_build_operations_pickle_paths_use_data_source_uid(monkeypatch, tmp_path):
+    monkeypatch.setattr(build_operations.ogm, "pickle_storage_path", str(tmp_path))
+
+    path = build_operations.get_pickle_path(
+        update_hash="update-hash-1",
+        data_source_uid=DATA_SOURCE_UID,
+    )
+    data_source_path = build_operations.data_source_pickle_path(DATA_SOURCE_UID)
+
+    assert path == str(tmp_path / DATA_SOURCE_UID / "update-hash-1.pickle")
+    assert data_source_path == str(tmp_path / DATA_SOURCE_UID / "data_source.pickle")
