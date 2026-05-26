@@ -117,6 +117,159 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
     ]
 
 
+def test_initialize_source_table_posts_column_metadata_and_foreign_keys(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 201
+        text = ""
+
+        @staticmethod
+        def json():
+            return {
+                "source_table_configuration": {
+                    "related_table_uid": "714",
+                    "time_index_name": "time_index",
+                    "index_names": ["time_index", "asset_uid"],
+                    "column_dtypes_map": {
+                        "time_index": "datetime64[ns, UTC]",
+                        "asset_uid": "uuid",
+                        "value": "float64",
+                    },
+                    "storage_layout": {},
+                    "physical_index_plan": {},
+                    "open_for_everyone": False,
+                    "columns_metadata": [],
+                    "foreign_keys": [
+                        {
+                            "source_columns": ["asset_uid"],
+                            "target_meta_table_uid": "asset-meta-table-uid",
+                            "target_columns": ["uid"],
+                            "on_delete": "restrict",
+                        }
+                    ],
+                },
+                "created_source_table_configuration": True,
+                "created_physical_table": True,
+            }
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    storage = _storage(["time_index"])
+    storage.initialize_source_table(
+        time_index_name="time_index",
+        index_names=["time_index", "asset_uid"],
+        column_dtypes_map={
+            "time_index": "datetime64[ns, UTC]",
+            "asset_uid": "uuid",
+            "value": "float64",
+        },
+        columns_metadata=[
+            models_tdag.ColumnMetaData(
+                column_name="asset_uid",
+                dtype="uuid",
+                label="Asset",
+                description="Asset UID.",
+            )
+        ],
+        foreign_keys=[
+            models_tdag.SourceTableForeignKeyContract(
+                source_columns=["asset_uid"],
+                target_meta_table_uid="asset-meta-table-uid",
+                target_columns=["uid"],
+            )
+        ],
+    )
+
+    assert captured["payload"]["json"]["columns_metadata"] == [
+        {
+            "column_name": "asset_uid",
+            "dtype": "uuid",
+            "label": "Asset",
+            "description": "Asset UID.",
+        }
+    ]
+    assert captured["payload"]["json"]["foreign_keys"] == [
+        {
+            "source_columns": ["asset_uid"],
+            "target_meta_table_uid": "asset-meta-table-uid",
+            "target_columns": ["uid"],
+            "on_delete": "restrict",
+        }
+    ]
+
+
+def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch):
+    captured = {}
+
+    def _fake_initialize_source_table(self, **kwargs):
+        captured.update(kwargs)
+        return {
+            "source_table_configuration": {
+                "related_table_uid": "714",
+                "time_index_name": kwargs["time_index_name"],
+                "index_names": kwargs["index_names"],
+                "column_dtypes_map": kwargs["column_dtypes_map"],
+                "storage_layout": {},
+                "physical_index_plan": {},
+                "open_for_everyone": kwargs["open_for_everyone"],
+                "columns_metadata": [],
+            }
+        }
+
+    monkeypatch.setattr(
+        models_tdag.DataNodeStorage,
+        "initialize_source_table",
+        _fake_initialize_source_table,
+    )
+
+    storage = _storage(["time_index"])
+    storage.sourcetableconfiguration = None
+    foreign_key = models_tdag.SourceTableForeignKeyContract(
+        source_columns=["asset_uid"],
+        target_meta_table_uid="asset-meta-table-uid",
+        target_columns=["uid"],
+    )
+
+    storage.handle_source_table_configuration_creation(
+        column_dtypes_map={
+            "time_index": "datetime64[ns, UTC]",
+            "asset_uid": "uuid",
+            "value": "float64",
+        },
+        index_names=["time_index", "asset_uid"],
+        time_index_name="time_index",
+        data=pd.DataFrame(),
+        columns_metadata=[
+            models_tdag.BaseColumnMetaData(
+                column_name="asset_uid",
+                dtype="uuid",
+                label="Asset",
+                description="Asset UID.",
+            )
+        ],
+        foreign_keys=[foreign_key],
+    )
+
+    assert captured["time_index_name"] == "time_index"
+    assert captured["index_names"] == ["time_index", "asset_uid"]
+    assert captured["foreign_keys"] == [foreign_key]
+    assert captured["columns_metadata"][0].column_name == "asset_uid"
+    assert storage.sourcetableconfiguration.index_names == ["time_index", "asset_uid"]
+
+
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):
     captured = {}
 

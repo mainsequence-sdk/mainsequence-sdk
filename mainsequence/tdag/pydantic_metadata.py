@@ -29,6 +29,7 @@ def serialize_pydantic_model(
 
         is_update_only = extra.get("update_only", False)
         is_runtime_only = extra.get("runtime_only", False)
+        is_hash_excluded = extra.get("hash_excluded", False)
         if not isinstance(is_update_only, bool):
             raise ValueError(
                 f"{value.__class__.__name__}.{field_name} metadata 'update_only' must be bool"
@@ -37,11 +38,16 @@ def serialize_pydantic_model(
             raise ValueError(
                 f"{value.__class__.__name__}.{field_name} metadata 'runtime_only' must be bool"
             )
-        if is_update_only and is_runtime_only:
+        if not isinstance(is_hash_excluded, bool):
             raise ValueError(
-                f"{value.__class__.__name__}.{field_name} cannot be both update_only and runtime_only."
+                f"{value.__class__.__name__}.{field_name} metadata 'hash_excluded' must be bool"
             )
-        if is_runtime_only:
+        if is_update_only and (is_runtime_only or is_hash_excluded):
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} cannot be both update_only "
+                "and hash-excluded metadata."
+            )
+        if is_runtime_only or is_hash_excluded:
             runtime_only_fields.append(field_name)
         elif is_update_only:
             update_only_fields.append(field_name)

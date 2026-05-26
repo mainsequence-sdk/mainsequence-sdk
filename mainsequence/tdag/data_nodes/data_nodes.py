@@ -27,6 +27,7 @@ from mainsequence.client.models_tdag import (
     DynamicTableDataSource,
     Scheduler,
     SessionDataSource,
+    SourceTableForeignKeyContract,
     TableMetaData,
     UpdateStatistics,
     get_session_data_source,
@@ -1119,6 +1120,35 @@ class DataNode(DataAccessMixin, ABC):
             for record in records
         ]
 
+    def get_source_table_foreign_keys(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[SourceTableForeignKeyContract] | None:
+        """
+        Return resolved source-table foreign key contracts for backend initialization.
+
+        Base behavior:
+        - if the node configuration declares ``foreign_keys``, resolve them
+          against ``records`` and the target MetaTables;
+        - otherwise return ``None``.
+        """
+        config = self._get_data_node_configuration()
+        foreign_keys = getattr(config, "foreign_keys", None) if config is not None else None
+        if not foreign_keys:
+            return None
+
+        records = getattr(config, "records", None)
+        data_source_uid = getattr(getattr(self, "data_source", None), "uid", None)
+        return [
+            foreign_key.to_contract(
+                records=records,
+                data_source_uid=data_source_uid,
+                timeout=timeout,
+            )
+            for foreign_key in foreign_keys
+        ]
+
     def run_post_update_routines(
         self,
         error_on_last_update: bool,
@@ -1191,6 +1221,8 @@ class DataNode(DataAccessMixin, ABC):
         self.local_persist_manager.persist_updated_data(
             temp_df=temp_df,
             overwrite=(latest_persisted_time_index is not None),
+            columns_metadata=self.get_column_metadata(),
+            foreign_keys=self.get_source_table_foreign_keys(),
         )
         self.logger.info(f"Successfully updated {self}.")
         return temp_df

@@ -193,6 +193,18 @@ def _serialize_source_table_foreign_key_contract(
     }
 
 
+def _serialize_source_table_column_metadata(
+    column_metadata: BaseColumnMetaData | dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(column_metadata, BaseModel):
+        raw = column_metadata.model_dump(mode="json", exclude_none=True)
+    else:
+        raw = dict(column_metadata)
+    raw.pop("orm_class", None)
+    raw.pop("source_config_id", None)
+    return raw
+
+
 class SourceTableConfigurationBase:
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
@@ -919,7 +931,10 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     def upsert_data_into_table(
         self,
         data: pd.DataFrame,
-        data_source: DynamicTableDataSource,overwrite:bool
+        data_source: DynamicTableDataSource,
+        overwrite: bool,
+        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
+        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
@@ -944,6 +959,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             time_index_name=time_index_name,
             data=data,
             overwrite=overwrite,
+            columns_metadata=columns_metadata,
+            foreign_keys=foreign_keys,
         )
 
         duplicates_exist = data.duplicated(subset=index_names).any()
@@ -1342,6 +1359,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
+        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
@@ -1353,7 +1371,9 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             POST /orm/api/ts_manager/dynamic_table/{uid}/initialize-source-table/
 
         It creates or validates the SourceTableConfiguration and creates the
-        physical backing table without inserting a bootstrap row.
+        physical backing table without inserting a bootstrap row. Optional
+        column metadata and foreign keys are resolved by the caller and sent as
+        source-table schema metadata.
         """
         cls = type(self)
         url = f"{cls.get_object_url()}/{self._public_uid()}/initialize-source-table/"
@@ -1363,6 +1383,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
             storage_layout=storage_layout,
+            columns_metadata=columns_metadata,
             foreign_keys=foreign_keys,
             open_for_everyone=open_for_everyone,
             timeout=timeout,
@@ -1376,6 +1397,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
+        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
@@ -1390,6 +1412,11 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         }
         if storage_layout is not None:
             payload_body["storage_layout"] = storage_layout
+        if columns_metadata is not None:
+            payload_body["columns_metadata"] = [
+                _serialize_source_table_column_metadata(column_metadata)
+                for column_metadata in columns_metadata
+            ]
         if foreign_keys is not None:
             payload_body["foreign_keys"] = [
                 _serialize_source_table_foreign_key_contract(foreign_key)
@@ -1566,6 +1593,8 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         time_index_name,
         data,
         overwrite=False,
+        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
+        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
     ):
         """
         Handles the creation or retrieval of the source table configuration.
@@ -1593,15 +1622,20 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         """
         stc = self.sourcetableconfiguration
 
-        if stc is None:
+        if stc is None or columns_metadata is not None or foreign_keys is not None:
             try:
-                stc = SourceTableConfiguration.create(
+                response_data = self.initialize_source_table(
                     column_dtypes_map=column_dtypes_map,
                     index_names=index_names,
                     time_index_name=time_index_name,
-                    metadata_uid=self._public_uid(),
+                    columns_metadata=columns_metadata,
+                    foreign_keys=foreign_keys,
+                    open_for_everyone=self.open_for_everyone,
                 )
-                self.sourcetableconfiguration = stc
+                stc_data = response_data.get("source_table_configuration")
+                if isinstance(stc_data, dict):
+                    stc = SourceTableConfiguration(**stc_data)
+                    self.sourcetableconfiguration = stc
             except AlreadyExist as err:
                 if not overwrite:
                     # Feature not implemented yet → make the causal link explicit

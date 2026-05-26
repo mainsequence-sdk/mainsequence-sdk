@@ -530,7 +530,14 @@ class BasePersistManager:
         self.data_node_storage.delete()
 
     @tracer.start_as_current_span("TS: Persist Data")
-    def persist_updated_data(self, temp_df: pd.DataFrame, overwrite: bool = False) -> bool:
+    def persist_updated_data(
+        self,
+        temp_df: pd.DataFrame,
+        overwrite: bool = False,
+        *,
+        columns_metadata: list[ColumnMetaData] | None = None,
+        foreign_keys: list[Any] | None = None,
+    ) -> bool:
         persisted = False
         if not temp_df.empty:
             if overwrite is True:
@@ -540,6 +547,8 @@ class BasePersistManager:
                 data=temp_df,
                 data_source=self.data_source,
                 overwrite=overwrite,
+                columns_metadata=columns_metadata,
+                foreign_keys=foreign_keys,
             )
 
             persisted = True

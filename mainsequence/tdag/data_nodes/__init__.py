@@ -9,6 +9,7 @@ _LAZY_IMPORTS = {
     "DataNodeConfiguration": (".models", "DataNodeConfiguration"),
     "DataNodeMetaData": (".models", "DataNodeMetaData"),
     "RecordDefinition": (".models", "RecordDefinition"),
+    "SourceTableForeignKey": (".models", "SourceTableForeignKey"),
     "hash_namespace": (".namespacing", "hash_namespace"),
 }
 

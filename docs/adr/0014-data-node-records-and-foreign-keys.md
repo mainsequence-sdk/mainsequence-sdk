@@ -470,53 +470,53 @@ foreign_keys = [
 
 ## Implementation Tasks
 
-- [ ] Add `SourceTableForeignKey`.
-- [ ] Reuse or extend the existing `SourceTableForeignKeyContract` as the
+- [x] Add `SourceTableForeignKey`.
+- [x] Reuse or extend the existing `SourceTableForeignKeyContract` as the
       serializer request contract.
-- [ ] Add optional `foreign_keys: list[SourceTableForeignKey] | None` to
+- [x] Add optional `foreign_keys: list[SourceTableForeignKey] | None` to
       `DataNodeConfiguration`.
-- [ ] Model `SourceTableForeignKey` as hashable authoring intent: target
+- [x] Model `SourceTableForeignKey` as hashable authoring intent: target
       MetaTable reference plus explicit source record references, target table
       column references, and delete behavior.
-- [ ] Ensure `SourceTableForeignKey` hash material includes resolved source
+- [x] Ensure `SourceTableForeignKey` hash material includes resolved source
       column names, target MetaTable public `uid`, resolved target column
       names, and `on_delete`.
-- [ ] Ensure `SourceTableForeignKey` hash material excludes generated FK names,
+- [x] Ensure `SourceTableForeignKey` hash material excludes generated FK names,
       backend database primary keys, source-table FK row UIDs, backend
       enforcement/projection fields, target storage hashes, and object/class
       repr values.
-- [ ] Model `SourceTableForeignKeyContract` as the resolved serializer request
+- [x] Model `SourceTableForeignKeyContract` as the resolved serializer request
       contract with source column names, resolved target MetaTable UID, target
       column names, and delete behavior.
-- [ ] Reuse existing `DataNodeConfiguration.records` as the record declaration
+- [x] Reuse existing `DataNodeConfiguration.records` as the record declaration
       for FK-enabled DataNodes.
-- [ ] Replace or alias the misleading `runtime_only` marker for descriptive
+- [x] Replace or alias the misleading `runtime_only` marker for descriptive
       metadata fields with a metadata-specific hash exclusion concept.
-- [ ] Confirm `RecordDefinition.label` and `RecordDefinition.description` do
+- [x] Confirm `RecordDefinition.label` and `RecordDefinition.description` do
       not affect `update_hash` or `storage_hash`.
-- [ ] Confirm `DataNodeMetaData.identifier`,
+- [x] Confirm `DataNodeMetaData.identifier`,
       `DataNodeMetaData.description`, and
       `DataNodeMetaData.data_frequency_id` do not affect `update_hash` or
       `storage_hash`.
-- [ ] Identify the existing source for `time_index_name` and `index_names`, or
+- [x] Identify the existing source for `time_index_name` and `index_names`, or
       add the smallest compatible fields to `DataNodeConfiguration`.
-- [ ] Add FK target resolution helpers for MetaTable class/object/storage-hash
+- [x] Add FK target resolution helpers for MetaTable uid/object/model-class
       references.
-- [ ] Validate source column references against `DataNodeConfiguration.records`.
+- [x] Validate source column references against `DataNodeConfiguration.records`.
 - [ ] Validate target column references against the resolved MetaTable
       contract.
-- [ ] Add FK resolution helpers that produce the resolved backend
+- [x] Add FK resolution helpers that produce the resolved backend
       `SourceTableForeignKeyContract` payload from existing records and
       configured FK intent.
 - [ ] Add source table initialization helpers that produce `time_index_name`,
       `index_names`, `column_dtypes_map`, and `columns_metadata` from existing
       records and table/index configuration.
-- [ ] Add an optional `columns_metadata` parameter to
+- [x] Add an optional `columns_metadata` parameter to
       `DataNodeStorage.initialize_source_table(...)` if the backend endpoint
       needs it.
-- [ ] Add an optional `foreign_keys` parameter to
+- [x] Add an optional `foreign_keys` parameter to
       `DataNodeStorage.initialize_source_table(...)`.
-- [ ] Include optional `columns_metadata` and `foreign_keys` in
+- [x] Include optional `columns_metadata` and `foreign_keys` in
       `_initialize_source_table_at_url(...)` payload serialization.
 - [ ] Extend the backend `initialize-source-table/` endpoint to accept
       `columns_metadata` and `foreign_keys`.
@@ -527,20 +527,20 @@ foreign_keys = [
 - [ ] Return declared FK metadata and enforcement status from the endpoint.
 - [ ] Add backend conflict checks for incompatible existing source table schema
       and FK definitions.
-- [ ] Preserve the existing call site for source table initialization and
+- [x] Preserve the existing call site for source table initialization and
       enrich that existing payload with optional `columns_metadata` and
       `foreign_keys`.
-- [ ] Keep the same existing behavior when `foreign_keys` is absent.
-- [ ] Add tests proving the current no-FK behavior is unchanged.
-- [ ] Add tests proving FK payloads are posted to
+- [x] Keep the same existing behavior when `foreign_keys` is absent.
+- [x] Add tests proving the current no-FK behavior is unchanged.
+- [x] Add tests proving FK payloads are posted to
       `/initialize-source-table/`.
-- [ ] Add tests proving users do not need to provide FK names or
+- [x] Add tests proving users do not need to provide FK names or
       `target_meta_table_uid`.
-- [ ] Add tests proving FK names are absent from the client request contract
+- [x] Add tests proving FK names are absent from the client request contract
       and returned only by backend projections.
 - [ ] Add tests proving target columns can be declared as MetaTable column
       references such as `Asset.uid`.
-- [ ] Add tests proving source columns can be declared as `RecordDefinition`
+- [x] Add tests proving source columns can be declared as `RecordDefinition`
       object references.
 - [ ] Add tests for missing records, missing index columns, duplicate records,
       missing FK source columns, missing FK target columns, unresolved targets,
@@ -548,9 +548,9 @@ foreign_keys = [
       FK metadata.
 - [ ] Add local backend tests documenting physical enforcement versus
       metadata-only behavior.
-- [ ] Document DataNode FK declarations and backend FK enforcement
+- [x] Document DataNode FK declarations and backend FK enforcement
       capabilities.
-- [ ] Document explicitly that only DynamicTableMetaData/DataNode-to-MetaTable
+- [x] Document explicitly that only DynamicTableMetaData/DataNode-to-MetaTable
       foreign keys are supported in this ADR.
 
 ## Open Questions

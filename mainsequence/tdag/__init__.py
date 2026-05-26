@@ -15,6 +15,7 @@ _LAZY_IMPORTS = {
     "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
     "DataNodeMetaData": (".data_nodes", "DataNodeMetaData"),
     "RecordDefinition": (".data_nodes", "RecordDefinition"),
+    "SourceTableForeignKey": (".data_nodes", "SourceTableForeignKey"),
 }
 
 __all__ = ["TracerInstrumentator", *_LAZY_IMPORTS.keys()]

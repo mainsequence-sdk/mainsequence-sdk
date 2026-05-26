@@ -54,7 +54,7 @@ That means:
 Important architectural point:
 
 - `identifier` is published metadata, not hash identity,
-- it is intentionally runtime-only,
+- it is intentionally hash-excluded,
 - you can repoint an identifier from one backing table to another during a migration without rotating `storage_hash` or `update_hash`.
 
 There is no separate `portable_identifier` flag in the current SDK. Portability is
@@ -139,7 +139,7 @@ Field(..., json_schema_extra={"update_only": True})
 
 Legacy `ignore_from_storage_hash` field metadata and the older
 `_ARGS_IGNORE_IN_STORAGE_HASH` class attribute are removed. New code should use
-`DataNodeConfiguration` fields plus `update_only` / `runtime_only` explicitly.
+`DataNodeConfiguration` fields plus `update_only` / `hash_excluded` explicitly.
 
 ### 4.3 Operational knobs (affect neither hash)
 
@@ -158,13 +158,15 @@ If you absolutely must keep a Pydantic field on a config/helper model for
 display-only metadata, mark it with:
 
 ```python
-Field(..., json_schema_extra={"runtime_only": True})
+Field(..., json_schema_extra={"hash_excluded": True})
 ```
 
-`runtime_only` fields are excluded from both `update_hash` and `storage_hash`.
+`hash_excluded` fields are excluded from both `update_hash` and `storage_hash`.
+The older `runtime_only` marker is still accepted for compatibility, but new
+descriptive metadata should use `hash_excluded`.
 
 Use this only for descriptive fields such as labels or long-form documentation.
-Do not use `runtime_only` for anything that changes:
+Do not use `hash_excluded` for anything that changes:
 
 - output values
 - dependencies
@@ -172,10 +174,11 @@ Do not use `runtime_only` for anything that changes:
 - table meaning
 - table schema
 
-One explicit exception in this SDK is `DataNodeMetaData`, which is also runtime-only.
-That is intentional: table metadata is treated as published/discovery information,
-not as build identity. In particular, `identifier` is runtime-only so it can serve
-as a portable alias across backing tables.
+One explicit exception in this SDK is `DataNodeMetaData`, which is also
+hash-excluded. That is intentional: table metadata is treated as
+published/discovery information, not as build identity. In particular,
+`identifier` is hash-excluded so it can serve as a portable alias across backing
+tables.
 
 ## 5) Hashing rules in plain English
 
@@ -355,7 +358,7 @@ Do not:
 - create dependencies inside `update()`
 - make dependency construction depend on current time or hidden env state
 
-## 9) Metadata and observability
+## 9) Records, foreign keys, and metadata
 
 For production nodes, implement:
 
@@ -371,6 +374,103 @@ Those config blocks use the SDK models `DataNodeMetaData` and `RecordDefinition`
 
 The base `DataNode` will build `TableMetaData` and `ColumnMetaData` from those
 config blocks when present.
+
+Use `DataNodeConfiguration.records` when a node has a stable output contract:
+
+```python
+from pydantic import Field
+
+from mainsequence.tdag import DataNodeConfiguration, RecordDefinition
+
+
+ASSET_UID = RecordDefinition(
+    column_name="asset_uid",
+    dtype="uuid",
+    label="Asset",
+    description="Asset UID.",
+)
+
+
+class PricesConfig(DataNodeConfiguration):
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="time_index",
+                dtype="datetime64[ns, UTC]",
+                label="Time",
+                description="UTC observation timestamp.",
+            ),
+            ASSET_UID,
+            RecordDefinition(
+                column_name="price",
+                dtype="float64",
+                label="Price",
+                description="Observed price.",
+            ),
+        ]
+    )
+```
+
+When a DataNode source table should reference a registered MetaTable, add
+`SourceTableForeignKey` declarations beside `records`. In this example,
+`Asset` is a registered MetaTable or `PlatformManagedMetaTable` SQLAlchemy
+model:
+
+```python
+from mainsequence.tdag import SourceTableForeignKey
+
+
+class PricesConfig(DataNodeConfiguration):
+    records: list[RecordDefinition] = Field(
+        default_factory=lambda: [
+            RecordDefinition(
+                column_name="time_index",
+                dtype="datetime64[ns, UTC]",
+                label="Time",
+                description="UTC observation timestamp.",
+            ),
+            ASSET_UID,
+            RecordDefinition(
+                column_name="price",
+                dtype="float64",
+                label="Price",
+                description="Observed price.",
+            ),
+        ]
+    )
+    foreign_keys: list[SourceTableForeignKey] = Field(
+        default_factory=lambda: [
+            SourceTableForeignKey(
+                target=Asset,
+                source_columns=[ASSET_UID],
+                target_columns=[Asset.uid],
+                on_delete="restrict",
+            )
+        ]
+    )
+```
+
+`SourceTableForeignKey` is the authoring model. The SDK resolves it to the
+backend `SourceTableForeignKeyContract` when the source table is initialized at:
+
+```http
+POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/initialize-source-table/
+```
+
+The first version supports only DataNode source-table foreign keys that target
+MetaTables. It does not support DataNode-to-DataNode or MetaTable-to-DataNode
+foreign keys.
+
+Foreign keys participate in the DataNode storage hash. The FK hash material is:
+
+- source column names resolved from `RecordDefinition` entries
+- target MetaTable public `uid`
+- target column names resolved from MetaTable column references such as `Asset.uid`
+- `on_delete`
+
+The hash does not include generated FK names, backend database primary keys,
+source-table FK row UIDs, backend enforcement/projection fields, target storage
+hashes, or Python object/class repr values.
 
 Log useful operational facts:
 

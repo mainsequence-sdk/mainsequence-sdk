@@ -32,6 +32,7 @@ from mainsequence.tdag.pydantic_metadata import (
 )
 
 from ..base_persist_managers import get_data_node_source_code_git_hash
+from .models import SourceTableForeignKey
 from .namespacing import disable_hash_namespace
 from .persist_managers import PersistManager
 
@@ -87,6 +88,23 @@ def _(value: BaseModel, pickle_ts: bool = False) -> dict[str, Any]:
         value,
         serialize_field=lambda field_value: serialize_argument(field_value, pickle_ts),
     )
+
+
+@serialize_argument.register(SourceTableForeignKey)
+def _(value: SourceTableForeignKey, pickle_ts: bool = False) -> dict[str, Any]:
+    """Serialize FK authoring references to their hashable structural identity."""
+    import_path = {"module": value.__class__.__module__, "qualname": value.__class__.__qualname__}
+    return {
+        "pydantic_model_import_path": import_path,
+        "serialized_model": {
+            "target": value.target_meta_table_uid(),
+            "source_columns": value.source_column_names(),
+            "target_columns": value.target_column_names(),
+            "on_delete": value.on_delete.lower(),
+        },
+        "update_only": [],
+        "runtime_only": [],
+    }
 
 
 def _is_serialized_pydantic_model(value: Any) -> bool:
