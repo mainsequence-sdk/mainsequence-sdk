@@ -4691,7 +4691,7 @@ class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         "name__in": "str",
     }
 
-    id: int | None = None
+    uid: str | None = Field(None, description="Public uid of the secret.")
     name: str = Field(..., description="Secret name")
     value: SecretStr | None = Field(
         None,
@@ -4716,8 +4716,8 @@ class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
             Secret name.
         value:
             Secret value. Stored as a string by the backend. The backend create
-            response may return only the secret name, so the returned model can
-            have `id=None` and `value=None`.
+            response may omit the secret uid and value, so the returned model can
+            have `uid=None` and `value=None`.
         timeout:
             Optional request timeout in seconds.
         """

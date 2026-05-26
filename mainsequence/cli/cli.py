@@ -3147,7 +3147,7 @@ def _format_constant_delete_preview(constant: dict[str, object]) -> list[tuple[s
 
 def _format_secret_preview(secret: dict[str, object]) -> list[tuple[str, str]]:
     return [
-        ("ID", str(secret.get("id") or "-")),
+        ("UID", str(secret.get("uid") or "-")),
         ("Name", str(secret.get("name") or "-")),
     ]
 
@@ -4133,13 +4133,13 @@ def _secrets_list_impl(
     for secret in secrets_payload:
         rows.append(
             [
-                str(secret.get("id") or "-"),
+                str(secret.get("uid") or "-"),
                 str(secret.get("name") or "-"),
             ]
         )
 
     if rows:
-        print_table("Secrets", ["ID", "Name"], rows)
+        print_table("Secrets", ["UID", "Name"], rows)
     else:
         info("No secrets.")
     info(f"Total secrets: {len(secrets_payload)}")
@@ -4185,27 +4185,27 @@ def _secrets_create_impl(
 
 def _secrets_delete_impl(
     *,
-    secret_id: int,
+    secret_uid: str,
     timeout: int | None,
 ) -> None:
     _require_login()
 
     try:
-        secret = get_secret(secret_id, timeout=timeout)
+        secret = get_secret(secret_uid, timeout=timeout)
     except ApiError as e:
         error(f"Secret fetch failed: {e}")
         raise typer.Exit(1) from e
 
-    verification_value = str(secret.get("name") or secret.get("id") or secret_id)
+    verification_value = str(secret.get("name") or secret.get("uid") or secret_uid)
     _require_delete_verification(
         preview_title="Secret Delete Preview",
         preview_items=_format_secret_preview(secret),
         verification_value=verification_value,
-        verification_label="secret name" if secret.get("name") else "secret id",
+        verification_label="secret name" if secret.get("name") else "secret uid",
     )
 
     try:
-        deleted = delete_secret(secret_id, timeout=timeout)
+        deleted = delete_secret(secret_uid, timeout=timeout)
     except ApiError as e:
         error(f"Secret deletion failed: {e}")
         raise typer.Exit(1) from e
@@ -4213,7 +4213,7 @@ def _secrets_delete_impl(
     if _emit_json(deleted):
         return
 
-    success(f"Secret deleted: id={secret_id}")
+    success(f"Secret deleted: uid={secret_uid}")
     print_kv("Deleted Secret", _format_secret_preview(deleted))
 
 
@@ -6182,7 +6182,7 @@ def secrets_create_cmd(
 
 @secrets.command("delete")
 def secrets_delete_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_uid: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6193,15 +6193,15 @@ def secrets_delete_cmd(
     Examples
     --------
     ```bash
-    mainsequence secrets delete 42
+    mainsequence secrets delete 498d499f-b74c-43f7-acf1-2e2955ad0e6b
     ```
     """
-    _secrets_delete_impl(secret_id=secret_id, timeout=timeout)
+    _secrets_delete_impl(secret_uid=secret_uid, timeout=timeout)
 
 
 @secrets.command("can_view")
 def secrets_can_view_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6226,7 +6226,7 @@ def secrets_can_view_cmd(
 
 @secrets.command("can_edit")
 def secrets_can_edit_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
@@ -6251,7 +6251,7 @@ def secrets_can_edit_cmd(
 
 @secrets.command("add_to_view")
 def secrets_add_to_view_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6276,7 +6276,7 @@ def secrets_add_to_view_cmd(
 
 @secrets.command("add_to_edit")
 def secrets_add_to_edit_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6301,7 +6301,7 @@ def secrets_add_to_edit_cmd(
 
 @secrets.command("remove_from_view")
 def secrets_remove_from_view_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6326,7 +6326,7 @@ def secrets_remove_from_view_cmd(
 
 @secrets.command("remove_from_edit")
 def secrets_remove_from_edit_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6351,7 +6351,7 @@ def secrets_remove_from_edit_cmd(
 
 @secrets.command("add_team_to_view")
 def secrets_add_team_to_view_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant view access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6367,7 +6367,7 @@ def secrets_add_team_to_view_cmd(
 
 @secrets.command("add_team_to_edit")
 def secrets_add_team_to_edit_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6383,7 +6383,7 @@ def secrets_add_team_to_edit_cmd(
 
 @secrets.command("remove_team_from_view")
 def secrets_remove_team_from_view_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
@@ -6399,7 +6399,7 @@ def secrets_remove_team_from_view_cmd(
 
 @secrets.command("remove_team_from_edit")
 def secrets_remove_team_from_edit_cmd(
-    secret_id: int = typer.Argument(..., help="Secret ID."),
+    secret_id: str = typer.Argument(..., help="Secret UID."),
     team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):

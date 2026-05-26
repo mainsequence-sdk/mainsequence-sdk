@@ -6977,7 +6977,7 @@ def test_secrets_list(cli_mod, runner, monkeypatch):
         "list_secrets",
         lambda filters=None, timeout=None: [
             {
-                "id": 8,
+                "uid": "498d499f-b74c-43f7-acf1-2e2955ad0e6b",
                 "name": "API_KEY",
             }
         ],
@@ -6986,6 +6986,7 @@ def test_secrets_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["secrets", "list"])
     assert result.exit_code == 0
     assert "Secrets" in result.output
+    assert "UID" in result.output
     assert "API_KEY" in result.output
     assert "Total secrets: 1" in result.output
 
@@ -7024,7 +7025,7 @@ def test_secrets_create_hides_value_in_output(cli_mod, runner, monkeypatch):
         captured["name"] = name
         captured["value"] = value
         captured["timeout"] = timeout
-        return {"id": 8, "name": name}
+        return {"uid": "498d499f-b74c-43f7-acf1-2e2955ad0e6b", "name": name}
 
     monkeypatch.setattr(cli_mod, "create_secret", _create)
 
@@ -7042,13 +7043,14 @@ def test_secrets_create_hides_value_in_output(cli_mod, runner, monkeypatch):
 
 def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch):
     captured = {}
+    secret_uid = "498d499f-b74c-43f7-acf1-2e2955ad0e6b"
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     monkeypatch.setattr(
         cli_mod,
         "get_secret",
         lambda secret_id, timeout=None: {
-            "id": secret_id,
+            "uid": secret_id,
             "name": "API_KEY",
         },
     )
@@ -7057,7 +7059,7 @@ def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch
         captured["secret_id"] = secret_id
         captured["timeout"] = timeout
         return {
-            "id": secret_id,
+            "uid": secret_id,
             "name": "API_KEY",
         }
 
@@ -7065,14 +7067,14 @@ def test_secrets_delete_requires_typed_verification(cli_mod, runner, monkeypatch
 
     result = runner.invoke(
         cli_mod.app,
-        ["secrets", "delete", "8"],
+        ["secrets", "delete", secret_uid],
         input="API_KEY\n",
     )
     assert result.exit_code == 0
     assert "Secret Delete Preview" in result.output
     assert "Type secret name 'API_KEY' to confirm deletion" in result.output
-    assert captured["secret_id"] == 8
-    assert "Secret deleted: id=8" in result.output
+    assert captured["secret_id"] == secret_uid
+    assert f"Secret deleted: uid={secret_uid}" in result.output
 
 
 def test_secrets_can_view(cli_mod, runner, monkeypatch):
@@ -7097,7 +7099,10 @@ def test_secrets_can_view(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["secrets", "can_view", "8"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["secrets", "can_view", "498d499f-b74c-43f7-acf1-2e2955ad0e6b"],
+    )
     assert result.exit_code == 0
     assert "Secret Users Who Can View" in result.output
     assert "viewer@example.com" in result.output
@@ -7107,6 +7112,7 @@ def test_secrets_can_view(cli_mod, runner, monkeypatch):
 
 def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
     captured = {}
+    secret_uid = "498d499f-b74c-43f7-acf1-2e2955ad0e6b"
 
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
 
@@ -7135,9 +7141,9 @@ def test_secrets_add_to_edit(cli_mod, runner, monkeypatch):
 
     monkeypatch.setattr(cli_mod, "add_secret_user_to_edit", _add)
 
-    result = runner.invoke(cli_mod.app, ["secrets", "add_to_edit", "8", "11"])
+    result = runner.invoke(cli_mod.app, ["secrets", "add_to_edit", secret_uid, "11"])
     assert result.exit_code == 0
-    assert captured == {"secret_id": 8, "user_id": 11, "timeout": None}
+    assert captured == {"secret_id": secret_uid, "user_id": 11, "timeout": None}
     assert "Secret add_to_edit completed." in result.output
     assert "Secret Sharing Update" in result.output
     assert "editor@example.com" in result.output

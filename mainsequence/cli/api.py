@@ -3239,7 +3239,7 @@ def list_secrets(
 
 
 def get_secret(
-    secret_id: int | str,
+    secret_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3254,7 +3254,7 @@ def get_secret(
             module_name="mainsequence.client.models_tdag",
             class_name="Secret",
             operation=lambda ClientSecret: ClientSecret.get(
-                pk=int(secret_id),
+                pk=secret_uid,
                 timeout=timeout,
             ),
         )
@@ -3262,7 +3262,7 @@ def get_secret(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Secret not found: {secret_id}") from e
+            raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Secret fetch failed: {e}") from e
@@ -3298,7 +3298,7 @@ def create_secret(
 
 
 def delete_secret(
-    secret_id: int | str,
+    secret_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -3310,7 +3310,7 @@ def delete_secret(
     """
     try:
         def _delete(ClientSecret):
-            secret = ClientSecret.get(pk=int(secret_id), timeout=timeout)
+            secret = ClientSecret.get(pk=secret_uid, timeout=timeout)
             payload = _sdk_object_to_dict(secret)
             secret.delete(timeout=timeout)
             return payload
@@ -3323,7 +3323,7 @@ def delete_secret(
     except Exception as e:
         err_name = type(e).__name__
         if err_name == "NotFoundError":
-            raise ApiError(f"Secret not found: {secret_id}") from e
+            raise ApiError(f"Secret not found: {secret_uid}") from e
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Secret deletion failed: {e}") from e
