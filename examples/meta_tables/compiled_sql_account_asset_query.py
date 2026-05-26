@@ -16,17 +16,16 @@ from mainsequence.tdag.meta_tables import compile_sqlalchemy_statement
 
 
 def load_models(*, mode: str):
-    if mode == "external_registered":
-        from examples.meta_tables.external_registered_account_asset import Account, Asset
+    if mode in {"external_managed", "external_registered"}:
+        from examples.meta_tables.external_managed.account_asset import Account, Asset
 
         return Account, Asset
     if mode == "platform_managed":
-        from examples.meta_tables.platform_managed_account_asset import Account, Asset
+        from examples.meta_tables.platform_managed.account_asset import Account, Asset
 
         return Account, Asset
     raise ValueError(
-        "MAINSEQUENCE_META_TABLE_EXAMPLE_MODE must be platform_managed or "
-        "external_registered."
+        "MAINSEQUENCE_META_TABLE_EXAMPLE_MODE must be platform_managed or external_managed."
     )
 
 

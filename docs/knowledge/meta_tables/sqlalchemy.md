@@ -171,8 +171,8 @@ In this mode:
 
 The SDK repository includes complete Account/Asset examples:
 
-- [platform_managed_account_asset.py](../../../examples/meta_tables/platform_managed_account_asset.py)
-- [external_registered_account_asset.py](../../../examples/meta_tables/external_registered_account_asset.py)
+- [platform_managed/account_asset.py](../../../examples/meta_tables/platform_managed/account_asset.py)
+- [external_managed/account_asset.py](../../../examples/meta_tables/external_managed/account_asset.py)
 - [compiled_sql_account_asset_query.py](../../../examples/meta_tables/compiled_sql_account_asset_query.py)
 
 The registration examples call TS Manager by default. The compiled query example

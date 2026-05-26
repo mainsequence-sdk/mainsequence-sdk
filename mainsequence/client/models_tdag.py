@@ -147,9 +147,56 @@ class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     )
 
 
+class SourceTableForeignKeyContract(BasePydanticModel):
+    source_columns: list[str] = Field(
+        default_factory=list,
+        description="Ordered DynamicTable source columns",
+    )
+    target_meta_table_uid: str = Field(
+        ...,
+        description="Public uid of the target MetaTable",
+    )
+    target_columns: list[str] = Field(
+        default_factory=list,
+        description="Ordered target MetaTable columns",
+    )
+    on_delete: str = Field(
+        default="restrict",
+        description="Foreign-key delete action",
+    )
+
+
+class SourceTableForeignKeyProjection(SourceTableForeignKeyContract):
+    name: str = Field(..., description="Server-derived foreign-key constraint name")
+    target_meta_table_storage_hash: str | None = Field(
+        None,
+        description="Storage hash of the target MetaTable projection",
+    )
+
+
+def _serialize_source_table_foreign_key_contract(
+    foreign_key: SourceTableForeignKeyContract | dict[str, Any],
+) -> dict[str, Any]:
+    if isinstance(foreign_key, BaseModel):
+        raw = foreign_key.model_dump(mode="json", exclude_none=True)
+    else:
+        raw = dict(foreign_key)
+    return {
+        key: raw[key]
+        for key in (
+            "source_columns",
+            "target_meta_table_uid",
+            "target_columns",
+            "on_delete",
+        )
+        if key in raw
+    }
+
+
 class SourceTableConfigurationBase:
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
+    foreign_keys: list[SourceTableForeignKeyContract] = Field(default_factory=list)
 
     def get_data_updates(self) -> BaseUpdateStatistics:
         raise NotImplementedError
@@ -175,6 +222,10 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     )
     physical_index_plan: dict[str, Any] | None = Field(
         None, description="Server-rendered physical index plan"
+    )
+    foreign_key_projections: list[SourceTableForeignKeyProjection] = Field(
+        default_factory=list,
+        description="Server-resolved DynamicTable-to-MetaTable FK projections",
     )
     multi_index_stats: dict[str, Any] | None = Field(
         None, description="Canonical multi-index progress statistics"
@@ -1291,6 +1342,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
+        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
@@ -1311,6 +1363,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
             storage_layout=storage_layout,
+            foreign_keys=foreign_keys,
             open_for_everyone=open_for_everyone,
             timeout=timeout,
         )
@@ -1323,6 +1376,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         index_names: list[str],
         column_dtypes_map: dict[str, Any],
         storage_layout: dict[str, Any] | None = None,
+        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
         open_for_everyone: bool | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
@@ -1336,6 +1390,11 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         }
         if storage_layout is not None:
             payload_body["storage_layout"] = storage_layout
+        if foreign_keys is not None:
+            payload_body["foreign_keys"] = [
+                _serialize_source_table_foreign_key_contract(foreign_key)
+                for foreign_key in foreign_keys
+            ]
         if open_for_everyone is not None:
             payload_body["open_for_everyone"] = open_for_everyone
 

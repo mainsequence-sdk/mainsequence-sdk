@@ -35,7 +35,7 @@ own the table naming boundary.
 Register and create tables through TS Manager:
 
 ```bash
-python -m examples.meta_tables.platform_managed_account_asset
+python -m examples.meta_tables.platform_managed.account_asset
 ```
 
 The model definitions use:
@@ -61,35 +61,29 @@ Foreign-key targets are resolved by registration order. The example registers
 `Account` first; `Asset.register()` then inspects the SQLAlchemy foreign key and
 looks up the registered Account MetaTable in the same platform data source.
 
-## External Registered
+## External Managed
 
-Use external-registered mode when your application already owns migrations, for
-example through SQLAlchemy plus Alembic.
-
-External registration is not tied to the project-managed table lifecycle, so
-the example requires an explicit data source UID:
-
-```bash
-export MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID="<dynamic-table-data-source-uid>"
-```
+Use external-registered mode when your application already owns the physical
+tables. This example creates a local SQLite `DataSource`, resolves its
+`DynamicTableDataSource`, creates the Account/Asset tables locally with
+SQLAlchemy, and registers those tables with TS Manager.
 
 Register existing externally managed tables:
 
 ```bash
-python -m examples.meta_tables.external_registered_account_asset
+python -m examples.meta_tables.external_managed.account_asset
 ```
 
-For a local demo only, you can ask the example to create the physical tables
-directly with SQLAlchemy before registration:
+By default, the SQLite database file is the SDK local SQLite file. Override it
+only when you need a different local file:
 
 ```bash
-export MAINSEQUENCE_META_TABLE_CREATE_EXTERNAL_TABLES=1
-export MAINSEQUENCE_META_TABLE_EXTERNAL_DATABASE_URL="postgresql+psycopg://..."
-python -m examples.meta_tables.external_registered_account_asset
+export SQLITE_PATH="/tmp/mainsequence-meta-table-example.sqlite"
+python -m examples.meta_tables.external_managed.account_asset
 ```
 
-In a production application, replace that demo `create_all(...)` step with your
-normal migration workflow.
+In a production application, replace the example `create_all(...)` step with
+your normal migration workflow.
 
 ## Compiled Query
 
@@ -107,7 +101,7 @@ The query example uses platform-managed model definitions by default. To compile
 against the external-registered physical names instead:
 
 ```bash
-export MAINSEQUENCE_META_TABLE_EXAMPLE_MODE="external_registered"
+export MAINSEQUENCE_META_TABLE_EXAMPLE_MODE="external_managed"
 python -m examples.meta_tables.compiled_sql_account_asset_query
 ```
 
