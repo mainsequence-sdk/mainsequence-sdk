@@ -286,6 +286,33 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     assert request.storage_hash == table.name
 
 
+def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkeypatch):
+    import mainsequence.client.models_tdag as models_tdag
+
+    table = FakeTable(
+        "placeholder",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    Account = _platform_model_class("Account", table)
+    table.name = metatable_configured_tablename(Account)
+
+    monkeypatch.setattr(
+        models_tdag.SessionDataSource,
+        "data_source",
+        SimpleNamespace(
+            uid=None,
+            related_resource=SimpleNamespace(
+                uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+                status="AVAILABLE",
+            ),
+        ),
+    )
+
+    with pytest.raises(ValueError, match="DynamicTableDataSource uid"):
+        Account.build_registration_request()
+
+
 def test_platform_managed_metatable_resolves_target_meta_tables():
     account_table = FakeTable(
         "placeholder",
@@ -359,7 +386,6 @@ def test_platform_managed_metatable_introspects_and_resolves_fk_targets(monkeypa
         return [
             SimpleNamespace(
                 uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                physical_schema="public",
                 physical_table_name=account_table.name,
             )
         ]
@@ -380,7 +406,6 @@ def test_platform_managed_metatable_introspects_and_resolves_fk_targets(monkeypa
             "timeout": 12,
             "filters": {
                 "data_source__uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                "physical_schema": "public",
                 "physical_table_name": account_table.name,
                 "management_mode": "platform_managed",
             },

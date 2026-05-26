@@ -95,7 +95,7 @@ class Customer(PlatformManagedMetaTable, Base):
 The important pieces are:
 
 - `PlatformManagedMetaTable` derives `__tablename__` from storage-relevant configuration and table shape
-- `__table_args__` declares the physical schema
+- `__table_args__` declares the SQLAlchemy table schema used for table-name derivation
 - `NAMESPACE` is a plain logical grouping for these SDK examples
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured physical name
 - `uid` is an application-level primary key, not a backend row id
@@ -111,7 +111,6 @@ customer_meta_table = Customer.register(
 )
 
 print(customer_meta_table.uid)
-print(customer_meta_table.physical_schema)
 print(customer_meta_table.physical_table_name)
 ```
 
@@ -129,7 +128,7 @@ table later.
 Foreign keys reference a registered target `MetaTable` by UID in the backend
 contract. In normal platform-managed use, register parent tables first; the SDK
 then inspects the SQLAlchemy foreign key and resolves the target MetaTable from
-the same data source, schema, and physical table name.
+the same data source and physical table name.
 
 ```python
 from sqlalchemy import ForeignKey
@@ -190,7 +189,7 @@ from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
 
 
 def qualified_name(meta_table: MetaTable) -> str:
-    return f"{meta_table.physical_schema}.{meta_table.physical_table_name}"
+    return meta_table.physical_table_name
 
 
 customer_uid = str(uuid.uuid4())

@@ -235,7 +235,7 @@ def table_contract_from_sqlalchemy_model(
     schema: str | None = None,
 ) -> MetaTableContract:
     table = _resolve_table(model_or_table)
-    resolved_schema = _resolve_schema(table, schema=schema)
+    _resolve_schema(table, schema=schema)
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=table_model_module,
@@ -252,7 +252,6 @@ def table_contract_from_sqlalchemy_model(
             }
         },
         physical=MetaTablePhysicalContract(
-            schema=resolved_schema,
             table_name=_table_name(table),
         ),
         columns=[
@@ -448,7 +447,7 @@ def _table_name(table: Any) -> str:
 def _resolve_schema(table: Any, *, schema: str | None = None) -> str:
     resolved_schema = schema or getattr(table, "schema", None)
     if not resolved_schema:
-        raise ValueError("MetaTable SQLAlchemy contracts require a physical schema.")
+        raise ValueError("MetaTable SQLAlchemy contracts require a SQLAlchemy table schema.")
     return str(resolved_schema)
 
 
@@ -483,20 +482,12 @@ def _resolve_data_source_uid(
     resolved_data_source = data_source
     if resolved_data_source is None:
         try:
-            from mainsequence.client.models_tdag import SessionDataSource
+            from mainsequence.client.models_tdag import get_session_data_source
         except ImportError as exc:  # pragma: no cover - defensive import guard.
             raise RuntimeError("Could not import the session data source resolver.") from exc
-        resolved_data_source = getattr(SessionDataSource, "data_source", None)
+        resolved_data_source = get_session_data_source()
 
     uid = getattr(resolved_data_source, "uid", None)
-    related_resource = getattr(resolved_data_source, "related_resource", None)
-    if not uid and related_resource is not None:
-        uid = getattr(related_resource, "data_source_uid", None) or getattr(
-            related_resource,
-            "uid",
-            None,
-        )
-
     if not uid:
         raise ValueError(
             "Could not resolve a DynamicTableDataSource uid. Run inside a configured "
@@ -542,10 +533,9 @@ def _resolve_registered_foreign_key_targets(
         if target_fullname in resolved:
             continue
 
-        schema, table_name = _split_table_fullname(target_fullname)
+        _schema, table_name = _split_table_fullname(target_fullname)
         target_meta_table = _lookup_registered_platform_meta_table(
             data_source_uid=data_source_uid,
-            physical_schema=schema,
             physical_table_name=table_name,
             target_fullname=target_fullname,
             timeout=timeout,
@@ -577,7 +567,6 @@ def _foreign_key_target_fullnames(table: Any) -> set[str]:
 def _lookup_registered_platform_meta_table(
     *,
     data_source_uid: str,
-    physical_schema: str | None,
     physical_table_name: str,
     target_fullname: str,
     timeout: int | float | tuple[float, float] | None,
@@ -587,8 +576,6 @@ def _lookup_registered_platform_meta_table(
         "physical_table_name": physical_table_name,
         "management_mode": "platform_managed",
     }
-    if physical_schema:
-        filters["physical_schema"] = physical_schema
 
     matches = MetaTable.filter(timeout=timeout, **filters)
     if not matches:

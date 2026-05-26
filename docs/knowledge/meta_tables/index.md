@@ -17,7 +17,7 @@ A `MetaTable` record binds these things together:
 - a collision-resistant `storage_hash`
 - a registered TS Manager `DynamicTableDataSource`
 - a logical `identifier` and `namespace`
-- a physical schema and table name
+- a physical table name
 - a neutral table contract with columns, indexes, and foreign keys
 - labels, ownership, and shareable access
 - the latest backend introspection snapshot when available
@@ -119,7 +119,6 @@ The table contract is neutral JSON. It is not a SQLAlchemy object.
 It contains:
 
 - `version`: currently `relational-table.v1`
-- `physical.schema`
 - `physical.table_name`
 - `columns`
 - `indexes`

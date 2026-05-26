@@ -29,6 +29,7 @@ from mainsequence.client.models_tdag import (
     SessionDataSource,
     TableMetaData,
     UpdateStatistics,
+    get_session_data_source,
 )
 from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
@@ -43,9 +44,7 @@ from .namespacing import hash_namespace as _hash_namespace_cm
 
 
 def get_data_source_from_orm() -> Any:
-    if SessionDataSource.data_source.related_resource is None:
-        raise Exception("This Pod does not have a default data source")
-    return SessionDataSource.data_source
+    return get_session_data_source()
 
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]

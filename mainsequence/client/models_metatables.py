@@ -56,11 +56,15 @@ def _payload_json(payload: Mapping[str, Any] | BasePydanticModel) -> dict[str, A
 
 
 class MetaTablePhysicalContract(BasePydanticModel):
-    schema_: str = Field(
-        ...,
+    schema_: str | None = Field(
+        default=None,
         alias="schema",
         serialization_alias="schema",
-        description="Physical database schema name.",
+        exclude=True,
+        description=(
+            "Deprecated input-only schema alias. MetaTable uses the data source "
+            "default schema."
+        ),
     )
     table_name: str = Field(..., description="Physical database table name.")
 
@@ -209,7 +213,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "data_source__uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "management_mode": ["exact", "in"],
-        "physical_schema": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
@@ -233,7 +236,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     description: str | None = None
     labels: list[str] = Field(default_factory=list)
     management_mode: MetaTableManagementMode
-    physical_schema: str
     physical_table_name: str
     table_contract: dict[str, Any] = Field(default_factory=dict)
     contract_version: str = "relational-table.v1"

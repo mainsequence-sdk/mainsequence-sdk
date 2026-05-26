@@ -63,10 +63,10 @@ It is not a separate API surface and must call the same implementation functions
 
 List output must print `uid` as the first column. The default table should include
 UID, storage hash, identifier, namespace, management mode, data source UID,
-physical schema, physical table name, and open/shared status.
+physical table name, and open/shared status.
 
 Detail output must include UID, storage hash, identifier, namespace, description,
-management mode, data source, physical schema/table, contract version, labels,
+management mode, data source, physical table name, contract version, labels,
 protection state, open/shared state, columns, indexes, foreign keys, incoming
 foreign keys, and creation metadata when present.
 
@@ -145,7 +145,7 @@ until the backend permission contract migrates.
 
 Deletion must retrieve the MetaTable by UID, print a preview, require typed
 verification, and then call the model's `delete(...)` path. The preview must show
-UID, storage hash, identifier, namespace, management mode, physical schema/table,
+UID, storage hash, identifier, namespace, management mode, physical table name,
 protection state, and data source. The command must not expose direct database
 drop behavior unless the backend adds a typed MetaTable delete contract for that
 specific behavior.

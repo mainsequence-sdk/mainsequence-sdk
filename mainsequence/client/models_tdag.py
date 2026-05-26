@@ -4553,6 +4553,13 @@ class PodDataSource:
         return f"{self.data_source.related_resource}"
 
 
+def get_session_data_source() -> Any:
+    data_source = getattr(SessionDataSource, "data_source", None)
+    if getattr(data_source, "related_resource", None) is None:
+        raise Exception("This Pod does not have a default data source")
+    return data_source
+
+
 def _norm_value(v: Any) -> Any:
     """Normalize values into hashable, deterministic forms for the cache key."""
     # Project objects → their integer IDs (project scoped vs global)

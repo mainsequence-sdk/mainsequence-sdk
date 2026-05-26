@@ -163,7 +163,7 @@ Do not execute unrestricted SQL outside the MetaTable operation contract.
 
 ### 5. Physical names come from registered resources
 
-Only use physical schema and table names returned by registered `MetaTable` objects when composing SQL strings.
+Only use physical table names returned by registered `MetaTable` objects when composing SQL strings.
 
 Do not hardcode platform-managed physical names manually.
 

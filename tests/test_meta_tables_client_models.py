@@ -29,12 +29,10 @@ def _meta_table_response(**overrides):
         "description": None,
         "labels": [],
         "management_mode": "platform_managed",
-        "physical_schema": "public",
         "physical_table_name": "mt_example_assets_asset_80390fee13",
         "table_contract": {
             "version": "relational-table.v1",
             "physical": {
-                "schema": "public",
                 "table_name": "mt_example_assets_asset_80390fee13",
             },
             "columns": [
@@ -100,7 +98,6 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
         namespace="example.assets",
         table_contract=meta_table_models.MetaTableContract(
             physical=meta_table_models.MetaTablePhysicalContract(
-                schema="public",
                 table_name="mt_example_assets_asset_80390fee13",
             ),
             columns=[
@@ -121,7 +118,6 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/register/")
     assert captured["payload"]["json"]["table_contract"]["physical"] == {
-        "schema": "public",
         "table_name": "mt_example_assets_asset_80390fee13",
     }
     assert captured["payload"]["json"]["provisioning"] == {
