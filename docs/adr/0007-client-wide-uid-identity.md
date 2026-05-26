@@ -93,9 +93,12 @@ Out of scope:
 - [x] Base UID-named wrappers exist for `get_by_uid()`, `patch_by_uid()`, and `destroy_by_uid()`.
 - [x] Deprecated id-named base aliases remain only as transition shims and emit `DeprecationWarning`.
 - [x] Id-only migrated resource instances fail before making patch, delete, label, or share requests.
+- [x] UID filter normalization exists for resource-reference filters.
 - [x] CLI share output prefers `object_uid` over `object_id`.
 - [x] Project data-node update list rendering prefers nested storage `uid`.
 - [x] MetaTable documentation uses `MetaTable.uid` for registered table references.
+- [x] Backend-verified TS Manager storage/update filters use `data_source__uid` and `remote_table__data_source__uid`.
+- [x] Local TS Manager update creation uses `current_project_uid` and `data_source_uid`.
 
 ## Required implementation tasks
 
@@ -118,8 +121,8 @@ Base decision:
 
 Base audit findings that remain for model-group migration:
 
-- `mainsequence/client/models_helpers.py` still has job and job-run direct URLs built from `self.id`.
-- `mainsequence/client/models_tdag.py` still has project and data-source helper paths that use project or data-source IDs.
+- `mainsequence/client/models_helpers.py` no longer builds Job or JobRun detail URLs from `.id`; CLI wrappers still need separate cleanup where their arguments are named `job_id` / `job_run_id`.
+- `mainsequence/client/models_tdag.py` still has some local runtime/file-cache paths named `data_source_id`; backend API lookups for migrated TS Manager storage/update resources now use data-source UID.
 - `mainsequence/client/agent_runtime_models.py` still has runtime/session helper routes that require classification before renaming.
 - `mainsequence/client/models_user.py` still has user detail paths and permission subject identifiers that require separate user/team contract confirmation.
 
@@ -137,12 +140,13 @@ Base audit findings that remain for model-group migration:
 
 ### 3. TDAG migration
 
-- [ ] Confirm UID detail lookup for `DataNodeStorage`.
-- [ ] Confirm UID detail lookup for `DataNodeUpdate`.
-- [ ] Confirm UID detail lookup for `DataNodeUpdateDetails`.
-- [ ] Confirm UID detail lookup for `SourceTableConfiguration`.
+- [x] Confirm UID detail lookup for `DataNodeStorage`.
+- [x] Confirm UID detail lookup for `DataNodeUpdate`.
+- [x] Confirm UID detail lookup for `DataNodeUpdateDetails`.
+- [x] Confirm UID-scoped lookup for `SourceTableConfiguration`.
 - [ ] Confirm UID detail lookup for scheduler and run-configuration resources before changing their public arguments.
-- [ ] Remove public TDAG resource arguments named `*_id` where they are resource references.
+- [x] Remove public TS Manager storage/update data-source filters named `*_id` where they are resource references.
+- [x] Update `DataNodeUpdate.get_or_create()` transport to send `current_project_uid` and `data_source_uid`.
 - [ ] Replace TDAG request keys ending in `_id` only when payload analysis proves they are public resource identity.
 - [ ] Keep TDAG logical names and hashes separate from backend UID identity.
 - [ ] Add tests proving DataNode update methods work with `uid` and no `.id`.
@@ -152,6 +156,10 @@ Base audit findings that remain for model-group migration:
 
 - [x] Add `MetaTable` client models and registration contracts.
 - [x] Confirm `MetaTable` uses `uid` for registered table references.
+- [x] Confirm backend `MetaTableViewSet` uses UID detail lookup.
+- [x] Remove `data_source__id` from the client MetaTable filter contract.
+- [x] Keep `data_source__uid` as the only public data-source filter for MetaTable.
+- [x] Add tests proving `data_source__uid` normalizes and `data_source__id` is rejected.
 - [x] Add SQLAlchemy helpers that produce `MetaTableRegistrationRequest` payloads.
 - [x] Add governed compiled SQL operation helpers with declared table scope.
 - [x] Add tests proving registration and operation payloads use `meta_table_uid`.
@@ -159,17 +167,19 @@ Base audit findings that remain for model-group migration:
 
 ### 5. Project and infrastructure migration
 
-- [ ] Confirm UID detail lookup for `Project`.
-- [ ] Confirm UID detail lookup for `ProjectImage`.
-- [ ] Confirm UID detail lookup for `ProjectResource`.
-- [ ] Confirm UID detail lookup for `ResourceRelease`.
-- [ ] Confirm UID detail lookup for `Job`.
-- [ ] Confirm UID detail lookup for `JobRun`.
-- [ ] Confirm UID detail lookup for `Bucket`.
-- [ ] Confirm UID detail lookup for `Artifact`.
-- [ ] Confirm UID detail lookup for `Secret`.
-- [ ] Confirm UID detail lookup for `Constant`.
-- [ ] Replace public CLI and SDK resource parameters such as `project_id`, `resource_id`, `job_id`, and `artifact_id` where they are resource references.
+- [x] Confirm UID detail lookup for `Project`.
+- [x] Confirm UID detail lookup for `ProjectImage`.
+- [x] Confirm UID detail lookup for `ProjectResource`.
+- [x] Confirm UID detail lookup for `ResourceRelease`.
+- [x] Confirm UID detail lookup for `Job`.
+- [x] Confirm UID detail lookup for `JobRun`.
+- [x] Confirm UID detail lookup for `Bucket`.
+- [x] Confirm UID detail lookup for `Artifact`.
+- [x] Confirm UID detail lookup for `Secret`.
+- [x] Confirm UID detail lookup for `Constant`.
+- [x] Replace SDK model fields and create payloads for `Project`, `ProjectImage`, `ProjectResource`, `ResourceRelease`, `Job`, and `JobRun` with UID-based resource references.
+- [x] Remove `MAIN_SEQUENCE_PROJECT_ID` fallback from the local project resolver.
+- [ ] Replace public CLI resource parameters such as `project_id`, `resource_id`, `job_id`, and `artifact_id` where they are resource references.
 - [ ] Add tests proving project and job commands accept UUID-like values without integer coercion.
 
 ### 6. Command-center migration

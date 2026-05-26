@@ -328,7 +328,9 @@ class APIDataNode(DataAccessMixin):
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
         self._local_persist_manager = APIPersistManager(
-            storage_hash=self.storage_hash, data_source_id=self.data_source_id
+            storage_hash=self.storage_hash,
+            data_source_id=self.data_source_id,
+            data_source_uid=getattr(self.data_source, "uid", None),
         )
         data_node_storage = self._local_persist_manager.data_node_storage
 

@@ -14,6 +14,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
 from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypedDict, TypeVar
+from uuid import UUID
 
 import numpy as np
 import pandas as pd
@@ -376,11 +377,14 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "update_hash": ["exact"],
-        "remote_table__data_source__id": ["exact"],
+        "remote_table__data_source__uid": ["exact", "in"],
         "related_table__namespace": ["contains", "in", "isnull"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "remote_table__data_source__id": "id",
+        "uid": "uid",
+        "uid__in": "uid",
+        "remote_table__data_source__uid": "uid",
+        "remote_table__data_source__uid__in": "uid",
     }
     READ_QUERY_PARAMS: ClassVar[dict[str, str]] = {
         "include_relations_detail": "bool",
@@ -411,13 +415,15 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     )
 
     @property
-    def data_source_id(self):
+    def data_source_uid(self):
         if isinstance(self.data_node_storage, str):
             return None
-        if isinstance(self.data_node_storage.data_source, int):
-            return self.data_node_storage.data_source
-        else:
-            return self.data_node_storage.data_source.id
+        data_source = self.data_node_storage.data_source
+        if isinstance(data_source, str):
+            return data_source
+        if isinstance(data_source, dict):
+            return data_source.get("uid")
+        return getattr(data_source, "uid", None)
 
     @classmethod
     def get_or_create(cls, **kwargs):
@@ -1090,14 +1096,15 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
         "uid": ["in", "exact"],
-        "data_source__id": ["in", "exact"],
+        "data_source__uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "uid": "str",
-        "uid__in": "str",
-        "data_source__id": "id",
+        "uid": "uid",
+        "uid__in": "uid",
+        "data_source__uid": "uid",
+        "data_source__uid__in": "uid",
         "labels": "str",
         "labels__in": "str",
         "labels__contains": "str",
@@ -2235,7 +2242,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             GET <object_url>/column-search/?q=...
 
         Extra kwargs are passed through as query params so your DRF filters still work
-        (e.g. storage_hash=..., identifier=..., data_source__id=..., page=...).
+        (e.g. storage_hash=..., identifier=..., data_source__uid=..., page=...).
         """
         q = (q or "").strip()
         if not q:
@@ -3631,7 +3638,7 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
 
 
 class GithubOrganization(BasePydanticModel, BaseObjectOrm):
-    id: int
+    uid: str
     login: str
     display_name: str | None = None
 
@@ -3640,10 +3647,11 @@ class GithubOrganization(BasePydanticModel, BaseObjectOrm):
 
 
 class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
-    id: int
+    uid: str
     latest_digest: str | None = None
     description: str
     title: str
+    tags: list[str] | None = None
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
@@ -3712,12 +3720,6 @@ class ProjectQuickSearchResult(BasePydanticModel):
         description="Public uid of the matching project.",
         json_schema_extra={"label": "UID"},
     )
-    id: int | None = Field(
-        None,
-        title="ID",
-        description="Optional backend row id of the matching project.",
-        json_schema_extra={"label": "ID"},
-    )
     project_name: str = Field(
         ...,
         title="Project Name",
@@ -3730,11 +3732,11 @@ class ProjectQuickSearchResult(BasePydanticModel):
         description="Configured repository branch for the matching project.",
         json_schema_extra={"label": "Repository Branch"},
     )
-    cluster_id: int | None = Field(
+    cluster_uid: str | None = Field(
         None,
-        title="Cluster ID",
-        description="Cluster identifier associated with the matching project, when present.",
-        json_schema_extra={"label": "Cluster ID"},
+        title="Cluster UID",
+        description="Public UID of the cluster associated with the matching project, when present.",
+        json_schema_extra={"label": "Cluster UID"},
     )
 
 
@@ -3758,13 +3760,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         description="Public uid of the project.",
         examples=["project-uid-142"],
         json_schema_extra={"label": "Project UID"},
-    )
-    id: int | None = Field(
-        None,
-        title="Project ID",
-        description="Legacy numeric identifier of the project.",
-        examples=[142],
-        json_schema_extra={"label": "Project ID"},
     )
     project_name: str = Field(
         ...,
@@ -3827,24 +3822,29 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         # assume already list-of-dicts shape
         return env_vars
     @staticmethod
-    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
+    def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
         """
         Accept:
           - None
-          - int
-          - any object with attribute `.id`
-          - dict-like with key "id"
+          - uid string
+          - any object with attribute `.uid`
+          - dict-like with key "uid"
         """
         if obj is None:
             return None
-        if isinstance(obj, int):
-            return obj
-        if hasattr(obj, "id") and obj.id is not None:
-            return int(obj.id)
-        if isinstance(obj, dict) and obj.get("id") is not None:
-            return int(obj["id"])
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, str):
+            normalized = obj.strip()
+            if normalized:
+                return normalized
+        if hasattr(obj, "uid") and obj.uid not in (None, ""):
+            return str(obj.uid).strip()
+        if isinstance(obj, dict) and obj.get("uid") not in (None, ""):
+            return str(obj["uid"]).strip()
         raise TypeError(
-            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
+            f"{field_name} must be a uid string, an object with .uid, a dict with 'uid', or None. "
+            f"Got: {type(obj)!r}"
         )
 
     @classmethod
@@ -3852,9 +3852,9 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         cls,
         *,
         project_name: str,
-        data_source: int | DynamicTableDataSource | None = None,
-        default_base_image: int | ProjectBaseImage | None = None,
-        github_org: int | GithubOrganization | None = None,
+        data_source_uid: str | DynamicTableDataSource | dict[str, Any] | None = None,
+        default_base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
+        github_org_uid: str | GithubOrganization | dict[str, Any] | None = None,
         repository_branch: str | None = None,
         env_vars: dict[str, str] | list[dict[str, str]] | None = None,
             timeout:int | None = None,
@@ -3865,10 +3865,9 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         Sends:
           - project_name
           - repository_branch (optional)
-          - data_source_id (optional; server may auto-pick for individual orgs)
-          - default_base_image_id (optional)
-          - git_repository_id (optional)
-          - github_org_id (optional)
+          - data_source_uid (optional; server may auto-pick for individual orgs)
+          - default_base_image_uid (optional)
+          - github_org_uid (optional)
           - env_vars (optional list of {name,value})
         """
         url = cls.get_object_url() + "/"
@@ -3880,18 +3879,17 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         if repository_branch:
             payload["repository_branch"] = repository_branch
 
-        ds_id = cls._coerce_id(data_source, field_name="data_source")
-        if ds_id is not None:
-            payload["data_source_id"] = ds_id
+        ds_uid = cls._coerce_uid(data_source_uid, field_name="data_source_uid")
+        if ds_uid is not None:
+            payload["data_source_uid"] = ds_uid
 
-        img_id = cls._coerce_id(default_base_image, field_name="default_base_image")
-        if img_id is not None:
-            payload["default_base_image_id"] = img_id
+        img_uid = cls._coerce_uid(default_base_image_uid, field_name="default_base_image_uid")
+        if img_uid is not None:
+            payload["default_base_image_uid"] = img_uid
 
-
-        org_id = cls._coerce_id(github_org, field_name="github_org")
-        if org_id is not None:
-            payload["github_org_id"] = org_id
+        org_uid = cls._coerce_uid(github_org_uid, field_name="github_org_uid")
+        if org_uid is not None:
+            payload["github_org_uid"] = org_uid
 
         env_list = cls._normalize_env_vars(env_vars)
         if env_list is not None:
@@ -4146,43 +4144,44 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "search": ["exact"],
-        "related_project__id": ["in"],
+        "related_project__uid": ["in", "exact"],
+        "related_project_uid": ["in", "exact"],
         "project_repo_hash": ["exact", "in"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "related_project__id": "id",
+        "related_project__uid": "uid",
+        "related_project_uid": "uid",
     }
 
-    id: int = Field(..., description="Primary key of the project image row")
+    uid: str = Field(..., description="Public UID of the project image")
     title: str | None = Field(None, description="Human-readable image title")
     key: str | None = Field(None, description="Stable image key")
     description: str | None = Field(None, description="Image description")
     project_repo_hash: str = Field(..., description="Canonical full commit SHA for the built image")
-    related_project: int | Project = Field(None, description="Owning project id or object")
-    base_image: int | ProjectBaseImage | None = Field(None, description="Persisted parent base image identity") #backward compatiblity old Images iwth None
+    related_project_uid: str | None = Field(None, description="Public UID of the owning project")
+    base_image: ProjectBaseImage | None = Field(None, description="Persisted parent base image")
     tags: list[str] | None = Field(default=[], description="Observed registry tags for the project image")
+    build_error: str | None = Field(None, description="Backend build error, when present")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
 
     @staticmethod
-    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
-        """
-        Accept:
-          - None
-          - int
-          - any object with attribute `.id`
-          - dict-like with key "id"
-        """
+    def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
         if obj is None:
             return None
-        if isinstance(obj, int):
-            return obj
-        if hasattr(obj, "id") and obj.id is not None:
-            return int(obj.id)
-        if isinstance(obj, dict) and obj.get("id") is not None:
-            return int(obj["id"])
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, str):
+            normalized = obj.strip()
+            if normalized:
+                return normalized
+        if hasattr(obj, "uid") and obj.uid not in (None, ""):
+            return str(obj.uid).strip()
+        if isinstance(obj, dict) and obj.get("uid") not in (None, ""):
+            return str(obj["uid"]).strip()
         raise TypeError(
-            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
+            f"{field_name} must be a uid string, an object with .uid, a dict with 'uid', or None. "
+            f"Got: {type(obj)!r}"
         )
 
     @classmethod
@@ -4190,10 +4189,8 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         cls,
         *,
         project_repo_hash: str,
-        related_project: int | Project | None = None,
-        related_project_id: int | Project | None = None,
-        base_image: int | ProjectBaseImage | None = None,
-        base_image_id: int | ProjectBaseImage | None = None,
+        related_project_uid: str | Project | dict[str, Any] | None = None,
+        base_image_uid: str | ProjectBaseImage | dict[str, Any] | None = None,
         timeout=None,
         files=None,
         **kwargs,
@@ -4203,15 +4200,13 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
         """
         payload: dict[str, Any] = {"project_repo_hash": project_repo_hash}
 
-        project_ref = related_project_id if related_project_id is not None else related_project
-        project_id = cls._coerce_id(project_ref, field_name="related_project")
-        if project_id is not None:
-            payload["related_project_id"] = project_id
+        project_uid = cls._coerce_uid(related_project_uid, field_name="related_project_uid")
+        if project_uid is not None:
+            payload["related_project_uid"] = project_uid
 
-        base_image_ref = base_image_id if base_image_id is not None else base_image
-        image_id = cls._coerce_id(base_image_ref, field_name="base_image")
-        if image_id is not None:
-            payload["base_image_id"] = image_id
+        image_uid = cls._coerce_uid(base_image_uid, field_name="base_image_uid")
+        if image_uid is not None:
+            payload["base_image_uid"] = image_uid
 
         payload.update(kwargs)
         data = cls.serialize_for_json(payload)
@@ -4371,15 +4366,21 @@ def add_created_object_to_jobrun(
 
 class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
         "name": ["in", "exact"],
     }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "name": "str",
+        "name__in": "str",
+    }
 
-    id:  int | None = Field(
+    uid: str | None = Field(
         None,
-        title="Artifact ID",
-        description="Unique identifier of the artifact record.",
-        examples=[128],
-        json_schema_extra={"label": "Artifact ID"},
+        title="Bucket UID",
+        description="Public UID of the bucket.",
+        examples=["47b8eac1-7630-44f4-bb42-7b4055ec4afe"],
+        json_schema_extra={"label": "Bucket UID"},
     )
     name:str= Field(
         ...,
@@ -4393,12 +4394,12 @@ class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
 
 
 class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
-    id: int | None = Field(
+    uid: str | None = Field(
         None,
-        title="Artifact ID",
-        description="Unique identifier of the artifact record.",
-        examples=[128],
-        json_schema_extra={"label": "Artifact ID"},
+        title="Artifact UID",
+        description="Public UID of the artifact record.",
+        examples=["d28c87b6-a784-4f9f-bc2c-f47b43a04274"],
+        json_schema_extra={"label": "Artifact UID"},
     )
     name: str = Field(
         ...,
@@ -4414,6 +4415,13 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         description="Storage bucket where the artifact content is persisted.",
         examples=["default_bucket"],
         json_schema_extra={"label": "Bucket Name"},
+    )
+    bucket_uid: str | None = Field(
+        None,
+        title="Bucket UID",
+        description="Public UID of the storage bucket where the artifact content is persisted.",
+        examples=["47b8eac1-7630-44f4-bb42-7b4055ec4afe"],
+        json_schema_extra={"label": "Bucket UID"},
     )
     content: Any = Field(
         ...,
@@ -4474,21 +4482,19 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 def _build_local_pod_project_resolution() -> _PodProjectResolution:
     running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
-    running_project_id = (os.environ.get("MAIN_SEQUENCE_PROJECT_ID") or "").strip()
-    project_reference = running_project_uid or running_project_id
-    if not project_reference:
+    if not running_project_uid:
         return _PodProjectResolution(
             project=None,
             status="missing",
             detail="MAIN_SEQUENCE_PROJECT_UID is not configured.",
         )
     try:
-        project = Project.get(pk=project_reference)
+        project = Project.get(pk=running_project_uid)
     except DoesNotExist:
         return _PodProjectResolution(
             project=None,
             status="not_found",
-            detail=f"Project reference {project_reference!r} from local runtime env was not found.",
+            detail=f"Project reference {running_project_uid!r} from local runtime env was not found.",
         )
     except Exception as exc:
         return _PodProjectResolution(
@@ -4496,7 +4502,7 @@ def _build_local_pod_project_resolution() -> _PodProjectResolution:
             status="lookup_failed",
             detail=(
                 "Could not resolve project reference "
-                f"{project_reference!r} from local runtime env: {exc}"
+                f"{running_project_uid!r} from local runtime env: {exc}"
             ),
         )
 
@@ -4601,7 +4607,8 @@ class PodDataSource:
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
         remote_node_storages = DataNodeStorage.filter(
-            data_source__id=local_dynamic_data_source.id, list_tables=True
+            data_source__uid=local_dynamic_data_source.uid,
+            list_tables=True,
         )
         remote_table_names = [t.storage_hash for t in remote_node_storages]
         db_interface = _local_data_interface(class_type)
@@ -4684,9 +4691,11 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
 
 class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
         "name": ["in", "exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
         "name": "str",
         "name__in": "str",
     }
@@ -4730,14 +4739,16 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     """
 
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
         "name": ["in", "exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
         "name": "str",
         "name__in": "str",
     }
 
-    id: int | None
+    uid: str | None = Field(None, description="Public UID of the constant.")
 
     name: str = Field(
         ...,

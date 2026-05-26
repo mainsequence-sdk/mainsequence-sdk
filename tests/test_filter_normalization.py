@@ -1,6 +1,7 @@
 import ast
 import datetime
 import pathlib
+import uuid
 from types import SimpleNamespace
 
 import pytest
@@ -124,7 +125,7 @@ class DemoAliasedPatchModel(BasePydanticModel, BaseObjectOrm):
 
 def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
     job_run = models_helpers_mod.JobRun(
-        id=501,
+        uid="4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         name="demo-run",
         unique_identifier="jobrun_501",
     )
@@ -150,7 +151,50 @@ def test_job_run_status_uses_status_detail_endpoint(monkeypatch):
     assert payload == {"message": "Job status updated to RUNNING."}
     assert captured["r_type"] == "POST"
     assert captured["payload"] == {"status": "RUNNING", "git_hash": "abc123"}
-    assert str(captured["url"]).endswith("/orm/api/pods/job-run/501/status/")
+    assert str(captured["url"]).endswith(
+        "/orm/api/pods/job-run/4c1d77c8-8a42-42b8-a9c1-06be9a336e5d/status/"
+    )
+
+
+def test_job_run_filters_are_uid_based():
+    normalized = models_helpers_mod.JobRun._normalize_filter_kwargs(
+        {
+            "uid": " 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d ",
+            "job__uid__in": [
+                " ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e ",
+            ],
+        }
+    )
+
+    assert normalized == {
+        "uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+        "job__uid__in": ["ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"],
+    }
+    with pytest.raises(ValueError, match="job__id"):
+        models_helpers_mod.JobRun._normalize_filter_kwargs({"job__id": [501]})
+
+
+def test_job_run_deserializes_uid_payload_without_id():
+    job_run = models_helpers_mod.JobRun(
+        uid="4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+        name="demo-run",
+        unique_identifier="jobrun_501",
+        job_uid="ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e",
+        job_name="daily-training-job",
+        status="RUNNING",
+        cpu_request="1",
+        cpu_limit="2",
+        memory_request="4Gi",
+        memory_limit="8Gi",
+        gpu_request="1",
+        gpu_type="nvidia-l4",
+        command_args=["sync"],
+    )
+
+    dumped = job_run.model_dump()
+    assert dumped["uid"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
+    assert dumped["job_uid"] == "ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"
+    assert "id" not in dumped
 
 
 def test_normalize_filter_kwargs_coerces_supported_values():
@@ -175,9 +219,9 @@ def test_project_image_accepts_creation_date():
     from mainsequence.client.models_tdag import ProjectImage
 
     image = ProjectImage(
-        id=77,
+        uid="f3cb8477-df47-49cb-a151-80b746fb1243",
         project_repo_hash="abc123",
-        related_project=123,
+        related_project_uid="5a28020a-0f1b-47ee-aab8-334286234bea",
         base_image=None,
         is_ready=False,
         creation_date="2026-04-07T09:00:00Z",
@@ -209,6 +253,31 @@ def test_data_node_storage_normalizes_namespace_filters():
         "namespace__in": ["alpha", "beta"],
         "namespace__isnull": False,
     }
+
+
+def test_data_node_storage_normalizes_data_source_uid_filters():
+    from mainsequence.client.models_tdag import DataNodeStorage
+
+    uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+
+    normalized = DataNodeStorage._normalize_filter_kwargs(
+        {
+            "data_source__uid": {"uid": uid},
+            "data_source__uid__in": [{"uid": uid}],
+        }
+    )
+
+    assert normalized == {
+        "data_source__uid": str(uid),
+        "data_source__uid__in": [str(uid)],
+    }
+
+
+def test_data_node_storage_rejects_data_source_id_filter():
+    from mainsequence.client.models_tdag import DataNodeStorage
+
+    with pytest.raises(ValueError, match="Unsupported DataNodeStorage filter"):
+        DataNodeStorage._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
@@ -493,20 +562,54 @@ def test_data_node_update_normalizes_related_table_namespace_filters():
     }
 
 
-def test_data_node_update_accepts_internal_update_lookup_filters():
+def test_data_node_update_accepts_uid_update_lookup_filters():
     from mainsequence.client.models_tdag import DataNodeUpdate
+
+    uid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
     normalized = DataNodeUpdate._normalize_filter_kwargs(
         {
             "update_hash": " weights_daily ",
-            "remote_table__data_source__id": {"id": 7},
+            "remote_table__data_source__uid": {"uid": uid},
         }
     )
 
     assert normalized == {
         "update_hash": "weights_daily",
-        "remote_table__data_source__id": 7,
+        "remote_table__data_source__uid": uid,
     }
+
+
+def test_data_node_update_rejects_data_source_id_filter():
+    from mainsequence.client.models_tdag import DataNodeUpdate
+
+    with pytest.raises(ValueError, match="Unsupported DataNodeUpdate filter"):
+        DataNodeUpdate._normalize_filter_kwargs({"remote_table__data_source__id": {"id": 7}})
+
+
+def test_meta_table_normalizes_data_source_uid_filters():
+    from mainsequence.client.models_metatables import MetaTable
+
+    uid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+
+    normalized = MetaTable._normalize_filter_kwargs(
+        {
+            "data_source__uid": {"uid": uid},
+            "data_source__uid__in": [{"uid": uid}],
+        }
+    )
+
+    assert normalized == {
+        "data_source__uid": uid,
+        "data_source__uid__in": [uid],
+    }
+
+
+def test_meta_table_rejects_data_source_id_filter():
+    from mainsequence.client.models_metatables import MetaTable
+
+    with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
+        MetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_normalize_filter_kwargs_rejects_unsupported_filters():
@@ -528,7 +631,7 @@ def test_normalize_destroy_kwargs_coerces_supported_values():
     }
 
 
-def test_destroy_by_id_uses_query_params(monkeypatch):
+def test_destroy_by_uid_uses_query_params(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -543,17 +646,16 @@ def test_destroy_by_id_uses_query_params(monkeypatch):
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    with pytest.warns(DeprecationWarning, match="destroy_by_id"):
-        DemoDestroyModel.destroy_by_id(
-            7,
-            full_delete_selected=True,
-            override_protection="false",
-            timeout=30,
-        )
+    DemoDestroyModel.destroy_by_uid(
+        "uid-7",
+        full_delete_selected=True,
+        override_protection="false",
+        timeout=30,
+    )
 
     assert captured == {
         "r_type": "DELETE",
-        "url": "https://backend.test/demo/7/",
+        "url": "https://backend.test/demo/uid-7/",
         "payload": {
             "params": {
                 "full_delete_selected": "true",
@@ -634,7 +736,7 @@ def test_get_by_uid_normalizes_read_query_params(monkeypatch):
     }
 
 
-def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatch):
+def test_patch_by_uid_raises_with_context_for_unmapped_response_fields(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -657,9 +759,8 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
 
     monkeypatch.setattr(base_mod, "make_request", _fake_make_request)
 
-    with pytest.warns(DeprecationWarning, match="patch_by_id"):
-        with pytest.raises(ValueError) as exc_info:
-            DemoPatchModel.patch_by_id(9, _into=DemoPatchModel(id=9), label="patched")
+    with pytest.raises(ValueError) as exc_info:
+        DemoPatchModel.patch_by_uid("uid-9", _into=DemoPatchModel(id=9), label="patched")
 
     assert str(exc_info.value) == (
         "Failed to apply PATCH response to DemoPatchModel at field 'schema'. "
@@ -668,13 +769,13 @@ def test_patch_by_id_raises_with_context_for_unmapped_response_fields(monkeypatc
     )
     assert captured == {
         "r_type": "PATCH",
-        "url": "https://backend.test/demo-patch/9/",
+        "url": "https://backend.test/demo-patch/uid-9/",
         "payload": {"json": {"label": "patched"}},
         "timeout": None,
     }
 
 
-def test_patch_by_id_updates_aliased_field_on_existing_instance(monkeypatch):
+def test_patch_by_uid_updates_aliased_field_on_existing_instance(monkeypatch):
     class FakeResponse:
         status_code = 200
         content = b'{"ok": true}'

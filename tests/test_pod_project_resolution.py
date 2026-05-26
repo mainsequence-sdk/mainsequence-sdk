@@ -269,7 +269,7 @@ def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkey
     assert pod_data_source.data_source is dynamic_data_source
     assert captured["dynamic_data_source"] is physical_data_source
     assert captured["dynamic_kwargs"] == {}
-    assert captured["filter_kwargs"] == {"data_source__id": 42, "list_tables": True}
+    assert captured["filter_kwargs"] == {"data_source__uid": "dynamic-duckdb", "list_tables": True}
 
 
 def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(monkeypatch):
@@ -332,7 +332,7 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
     assert pod_data_source.data_source is dynamic_data_source
     assert captured["dynamic_data_source"] is physical_data_source
     assert captured["dynamic_kwargs"] == {}
-    assert captured["filter_kwargs"] == {"data_source__id": 43, "list_tables": True}
+    assert captured["filter_kwargs"] == {"data_source__uid": "dynamic-sqlite", "list_tables": True}
 
 
 def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
@@ -402,6 +402,21 @@ def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
 
     assert drops == ["node-storage"]
     assert deletes == ["node-storage"]
+
+
+def test_resolve_local_pod_project_does_not_fall_back_to_project_id(monkeypatch):
+    monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
+    monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "123")
+
+    def _project_get(*args, **kwargs):
+        raise AssertionError("MAIN_SEQUENCE_PROJECT_ID must not be used for project lookup.")
+
+    monkeypatch.setattr(models_tdag.Project, "get", _project_get)
+
+    resolution = models_tdag._resolve_local_pod_project()
+
+    assert resolution.status == "missing"
+    assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in resolution.detail
 
 
 def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):

@@ -23,8 +23,14 @@ class APIPersistManager:
     It handles asynchronous fetching of data_node_storage to avoid blocking operations.
     """
 
-    def __init__(self, data_source_id: int, storage_hash: str):
-        self.data_source_id: int = data_source_id
+    def __init__(
+        self,
+        data_source_id: int | None = None,
+        storage_hash: str | None = None,
+        data_source_uid: str | None = None,
+    ):
+        self.data_source_id: int | None = data_source_id
+        self.data_source_uid: str | None = str(data_source_uid) if data_source_uid else None
         self.storage_hash: str = storage_hash
 
         logger.debug(f"Initializing Time Serie {self.storage_hash}  as APIDataNode")
@@ -46,9 +52,11 @@ class APIPersistManager:
 
     def _init_data_node_storage(self) -> None:
         try:
+            if self.data_source_uid in (None, ""):
+                raise ValueError("APIPersistManager requires data_source_uid.")
             result = DataNodeStorage.get_or_none(
                 storage_hash=self.storage_hash,
-                data_source__id=self.data_source_id,
+                data_source__uid=self.data_source_uid,
                 include_relations_detail=True,
             )
             self._data_node_storage_future.set_result(result)
@@ -96,7 +104,7 @@ class PersistManager(BasePersistManager):
     STORAGE_CLASS = DataNodeStorage
     UPDATE_CLASS = DataNodeUpdate
     UPDATE_DETAILS_CLASS = DataNodeUpdateDetails
-    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "remote_table__data_source__id"
+    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "remote_table__data_source__uid"
     UPDATE_CREATE_STORAGE_LOOKUP = "remote_table__hash_id"
 
     @classmethod

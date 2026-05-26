@@ -8,6 +8,7 @@ from decimal import Decimal
 from enum import Enum
 from pathlib import PurePosixPath
 from typing import Any, ClassVar, Literal, Union
+from uuid import UUID
 
 import yaml
 from pydantic import BaseModel, Field, PositiveInt
@@ -100,6 +101,21 @@ class PeriodicTask(BasePydanticModel):
 
 
 class Job(BaseObjectOrm, BasePydanticModel):
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "uid": ["in", "exact"],
+        "project__uid": ["in", "exact"],
+        "name": ["in", "exact", "contains"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "uid": "uid",
+        "uid__in": "uid",
+        "project__uid": "uid",
+        "project__uid__in": "uid",
+        "name": "str",
+        "name__in": "str",
+        "name__contains": "str",
+    }
+
     CPU_MIN: ClassVar[Decimal] = Decimal("0.25")
     CPU_MAX: ClassVar[Decimal] = Decimal("30")
     MEMORY_MIN: ClassVar[Decimal] = Decimal("0.5")
@@ -112,10 +128,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
         {".py", ".ipynb", ".yaml"}
     )
 
-    id: int | None = Field(
+    uid: str | None = Field(
         default=None,
-        description="Unique job identifier.",
-        examples=[123],
+        description="Public UID of the job.",
+        examples=["7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"],
     )
 
     name: str = Field(
@@ -125,10 +141,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
         examples=["Daily feature build"],
     )
 
-    project: int | Project | None = Field(
+    project_uid: str | None = Field(
         default=None,
-        description="Owning project, either as a project id or a Project object.",
-        examples=[42],
+        description="Public UID of the owning project.",
+        examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
 
     project_repo_hash: str | None = Field(
@@ -217,24 +233,29 @@ class Job(BaseObjectOrm, BasePydanticModel):
         examples=[3600, 14400],
     )
 
-    related_image: int | ProjectImage | None = Field(
+    related_image_uid: str | None = Field(
         default=None,
-        description="Execution image, either as an image id or a ProjectImage object.",
-        examples=[77],
+        description="Public UID of the execution image.",
+        examples=["f3cb8477-df47-49cb-a151-80b746fb1243"],
     )
 
     @staticmethod
-    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
+    def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
         if obj is None:
             return None
-        if isinstance(obj, int):
-            return obj
-        if hasattr(obj, "id") and obj.id is not None:
-            return int(obj.id)
-        if isinstance(obj, dict) and obj.get("id") is not None:
-            return int(obj["id"])
+        if isinstance(obj, UUID):
+            return str(obj)
+        if isinstance(obj, str):
+            normalized = obj.strip()
+            if normalized:
+                return normalized
+        if hasattr(obj, "uid") and obj.uid not in (None, ""):
+            return str(obj.uid).strip()
+        if isinstance(obj, dict) and obj.get("uid") not in (None, ""):
+            return str(obj["uid"]).strip()
         raise TypeError(
-            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
+            f"{field_name} must be a uid string, an object with .uid, a dict with 'uid', or None. "
+            f"Got: {type(obj)!r}"
         )
 
     @staticmethod
@@ -246,22 +267,20 @@ class Job(BaseObjectOrm, BasePydanticModel):
         return decimal_to_storage(value)
 
     @classmethod
-    def _resolve_project_id(
+    def _resolve_project_uid(
         cls,
-        *,
-        project: int | Project | None = None,
-        project_id: int | Project | None = None,
-    ) -> int:
-        ref = project_id if project_id is not None else project
+        project_uid: str | Project | dict[str, Any] | None = None,
+    ) -> str:
+        ref = project_uid
         if ref is None:
             resolution = _resolve_local_pod_project()
             if resolution.project is not None:
                 ref = resolution.project
 
-        resolved = cls._coerce_id(ref, field_name="project")
+        resolved = cls._coerce_uid(ref, field_name="project_uid")
         if resolved is None:
             raise ValueError(
-                "project is required. Pass project/project_id or configure a local pod project."
+                "project_uid is required. Pass project_uid or configure a local pod project."
             )
         return resolved
 
@@ -458,8 +477,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         name: str,
-        project: int | Project | None = None,
-        project_id: int | Project | None = None,
+        project_uid: str | Project | dict[str, Any] | None = None,
         project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
@@ -471,8 +489,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         gpu_type: str | None = None,
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
-        related_image: int | ProjectImage | None = None,
-        related_image_id: int | ProjectImage | None = None,
+        related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
     ) -> dict[str, Any]:
         normalized_name = cls._normalize_str(name)
@@ -481,7 +498,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
         payload: dict[str, Any] = {
             "name": normalized_name,
-            "project": cls._resolve_project_id(project=project, project_id=project_id),
+            "project_uid": cls._resolve_project_uid(project_uid=project_uid),
         }
 
         normalized_project_repo_hash = cls._normalize_str(project_repo_hash)
@@ -528,11 +545,10 @@ class Job(BaseObjectOrm, BasePydanticModel):
                 raise ValueError("max_runtime_seconds must be a positive integer.")
             payload["max_runtime_seconds"] = max_runtime_seconds
 
-        image_ref = related_image_id if related_image_id is not None else related_image
-        image_id = cls._coerce_id(image_ref, field_name="related_image")
-        if image_id is None:
-            raise ValueError("related_image_id is required.")
-        payload["related_image"] = image_id
+        image_uid = cls._coerce_uid(related_image_uid, field_name="related_image_uid")
+        if image_uid is None:
+            raise ValueError("related_image_uid is required.")
+        payload["related_image_uid"] = image_uid
 
         return payload
 
@@ -541,8 +557,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         name: str,
-        project: int | Project | None = None,
-        project_id: int | Project | None = None,
+        project_uid: str | Project | dict[str, Any] | None = None,
         project_repo_hash: str | None = None,
         execution_path: str | None = None,
         app_name: str | None = None,
@@ -554,15 +569,13 @@ class Job(BaseObjectOrm, BasePydanticModel):
         gpu_type: str | None = None,
         spot: bool | None = None,
         max_runtime_seconds: int | None = None,
-        related_image: int | ProjectImage | None = None,
-        related_image_id: int | ProjectImage | None = None,
+        related_image_uid: str | ProjectImage | dict[str, Any] | None = None,
         allowed_execution_extensions: Collection[str] | str | None = None,
         timeout: int | None = None,
     ) -> Job:
         payload = cls._build_create_payload(
             name=name,
-            project=project,
-            project_id=project_id,
+            project_uid=project_uid,
             project_repo_hash=project_repo_hash,
             execution_path=execution_path,
             app_name=app_name,
@@ -574,8 +587,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
             gpu_type=gpu_type,
             spot=spot,
             max_runtime_seconds=max_runtime_seconds,
-            related_image=related_image,
-            related_image_id=related_image_id,
+            related_image_uid=related_image_uid,
             allowed_execution_extensions=allowed_execution_extensions,
         )
 
@@ -600,7 +612,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         cls,
         *,
         yaml_file: str | pathlib.Path,
-        project_id: int | Project,
+        project_uid: str | Project | dict[str, Any],
         strict: bool = False,
         timeout: int | None = None,
     ) -> list[Job] | dict[str, Any]:
@@ -608,7 +620,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         Validate a batch YAML file and synchronize its jobs with the backend.
 
         Request body:
-          - project_id
+          - project_uid
           - jobs
           - strict
 
@@ -617,9 +629,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
           - jobs linked to dashboards or resource releases are protected and may be returned
             in the response under `not_deleted`
         """
-        resolved_project_id = cls._coerce_id(project_id, field_name="project_id")
-        if resolved_project_id is None:
-            raise ValueError("project_id is required.")
+        resolved_project_uid = cls._coerce_uid(project_uid, field_name="project_uid")
+        if resolved_project_uid is None:
+            raise ValueError("project_uid is required.")
 
         yaml_path = pathlib.Path(yaml_file).expanduser()
         if not yaml_path.is_file():
@@ -642,26 +654,24 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
             job_data = dict(raw_job)
 
-            if "project" in job_data or "project_id" in job_data:
+            if {"project", "project_id", "project_uid"} & set(job_data):
                 raise ValueError(
-                    f"jobs[{index}] must not define project or project_id. "
-                    "Pass the target project_id to Job.bulk_get_or_create()."
+                    f"jobs[{index}] must not define project/project_id/project_uid. "
+                    "Pass the target project_uid to Job.bulk_get_or_create()."
                 )
             if "timeout" in job_data:
                 raise ValueError(f"jobs[{index}] must not define timeout.")
-            if "related_image" in job_data and "related_image_id" in job_data:
+            if {"related_image", "related_image_id"} & set(job_data):
                 raise ValueError(
-                    f"jobs[{index}] must not define both related_image and related_image_id."
+                    f"jobs[{index}] must use related_image_uid, not related_image or related_image_id."
                 )
-            if "related_image_id" in job_data:
-                job_data["related_image"] = job_data.pop("related_image_id")
 
             try:
                 normalized_job = cls._build_create_payload(
-                    project_id=resolved_project_id,
+                    project_uid=resolved_project_uid,
                     **job_data,
                 )
-                normalized_job.pop("project", None)
+                normalized_job.pop("project_uid", None)
                 normalized_jobs.append(normalized_job)
             except TypeError as exc:
                 raise ValueError(f"jobs[{index}] has unsupported or missing fields: {exc}") from exc
@@ -671,7 +681,7 @@ class Job(BaseObjectOrm, BasePydanticModel):
         request_payload = {
             "json": cls.serialize_for_json(
                 {
-                    "project_id": resolved_project_id,
+                    "project_uid": resolved_project_uid,
                     "jobs": normalized_jobs,
                     "strict": bool(strict),
                 }
@@ -708,9 +718,9 @@ class Job(BaseObjectOrm, BasePydanticModel):
         url = cls.get_object_url() + "/create_from_configuration/"
         s = cls.build_session()
         payload = dict(job_configuration)
-        payload["project_id"] = _require_local_pod_project(
+        payload["project_uid"] = _require_local_pod_project(
             f"{cls.__name__}.create_from_configuration"
-        ).id
+        ).uid
 
         r = make_request(
             s=s,
@@ -730,12 +740,11 @@ class Job(BaseObjectOrm, BasePydanticModel):
         timeout: int | None = None,
         command_args: list[str] | None = None,
     ) -> dict[str, Any]:
-        if self.id is None:
-            raise ValueError("Job must have an id before it can be run.")
+        job_uid = self._public_detail_reference()
         if command_args is not None and not all(isinstance(arg, str) for arg in command_args):
             raise TypeError("command_args must be a list of strings.")
 
-        url = f"{self.get_object_url()}/{self.id}/run_job/"
+        url = f"{self.get_object_url()}/{job_uid}/run_job/"
         s = self.build_session()
 
         payload: dict[str, Any] = {}
@@ -758,10 +767,20 @@ class Job(BaseObjectOrm, BasePydanticModel):
 
 
 class JobRun(BaseObjectOrm, BasePydanticModel):
-    id: int | None = Field(
+    PUBLIC_LOOKUP_FIELD: ClassVar[str] = "uid"
+    FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
+        "job__uid": ["in", "exact"],
+        "uid": ["in", "exact"],
+    }
+    FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
+        "job__uid": "str",
+        "uid": "str",
+    }
+
+    uid: str | None = Field(
         default=None,
-        description="The unique ID of the job run.",
-        examples=[123],
+        description="Public UID of the job run. This is the identifier used by JobRun detail endpoints.",
+        examples=["4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"],
     )
     name: str = Field(
         ...,
@@ -772,14 +791,14 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
     unique_identifier: str = Field(
         ...,
         min_length=1,
-        description="A unique identifier for this specific job run.",
+        description="Runtime workload identifier for this specific job run. This is not the public API identifier.",
         examples=["jobrun_2026_03_14_abc123"],
     )
 
-    job: int | Job | None = Field(
+    job_uid: str | None = Field(
         default=None,
-        description="The associated job ID or Job object.",
-        examples=[42],
+        description="Public UID of the associated job.",
+        examples=["ab6a5d50-8a3e-4f0d-a9bb-7e84180bd50e"],
     )
     job_name: str | None = Field(
         default=None,
@@ -803,6 +822,11 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         description="The response status returned by the backend or execution system.",
         examples=["success"],
     )
+    response_error: str | None = Field(
+        default=None,
+        description="Error text captured by the backend or execution system, when available.",
+        examples=["Container exited with code 1"],
+    )
     status: str | None = Field(
         default=None,
         description="The current lifecycle status of the job run.",
@@ -820,15 +844,35 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         examples=[2.84],
     )
 
+    cpu_request: str | None = Field(
+        default=None,
+        description="The CPU request applied to this job run.",
+        examples=["1"],
+    )
     cpu_limit: str | None = Field(
         default=None,
         description="The CPU limit applied to this job run.",
         examples=["2"],
     )
+    memory_request: str | None = Field(
+        default=None,
+        description="The memory request applied to this job run.",
+        examples=["4Gi"],
+    )
     memory_limit: str | None = Field(
         default=None,
         description="The memory limit applied to this job run.",
         examples=["8Gi"],
+    )
+    gpu_request: str | None = Field(
+        default=None,
+        description="Number of GPUs requested for this job run.",
+        examples=["1"],
+    )
+    gpu_type: str | None = Field(
+        default=None,
+        description="GPU type requested for this job run.",
+        examples=["nvidia-l4"],
     )
 
     triggered_by: str | None = Field(
@@ -854,25 +898,9 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         examples=[["sync", "--from", "2026-04-01"]],
     )
 
-    @staticmethod
-    def _coerce_id(obj: Any, *, field_name: str) -> int | None:
-        if obj is None:
-            return None
-        if isinstance(obj, int):
-            return obj
-        if hasattr(obj, "id") and obj.id is not None:
-            return int(obj.id)
-        if isinstance(obj, dict) and obj.get("id") is not None:
-            return int(obj["id"])
-        raise TypeError(
-            f"{field_name} must be an int id, an object with .id, or None. Got: {type(obj)!r}"
-        )
-
     def get_logs(self, *, timeout: int | None = None) -> dict[str, Any]:
-        if self.id is None:
-            raise ValueError("JobRun must have an id before logs can be fetched.")
-
-        url = f"{self.get_object_url()}/{self.id}/get_logs/"
+        job_run_uid = self._public_detail_reference()
+        url = f"{self.get_object_url()}/{job_run_uid}/get_logs/"
         s = self.build_session()
 
         r = make_request(
@@ -900,12 +928,10 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
         Update the backend job-run status detail action for this run.
 
         This hits:
-            POST /pods/job-run/{id}/status/
+            POST /pods/job-run/{uid}/status/
         """
-        if self.id is None:
-            raise ValueError("JobRun must have an id before job run status can be updated.")
-
-        url = f"{self.get_object_url()}/{self.id}/status/"
+        job_run_uid = self._public_detail_reference()
+        url = f"{self.get_object_url()}/{job_run_uid}/status/"
         s = self.build_session()
         payload: dict[str, Any] = {}
         if status is not None:
@@ -930,34 +956,33 @@ class JobRun(BaseObjectOrm, BasePydanticModel):
 
 class ProjectResource(BaseObjectOrm, BasePydanticModel):
     SEARCH_FIELDS: ClassVar[list[str]] = [
-        "project__id",
-        "id",
+        "project__uid",
+        "uid",
         "repo_commit_sha",
         "resource_type",
     ]
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
-        "project__id": ["exact"],
-        "id": ["in", "exact"],
+        "project__uid": ["exact"],
+        "uid": ["in", "exact"],
         "repo_commit_sha": ["exact"],
         "resource_type": ["exact"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
-        "project__id": "id",
-        "id": "id",
+        "project__uid": "uid",
+        "uid": "uid",
     }
 
-    # present on ProjectResourceSerializer
-    id: int | None = Field(
+    uid: str | None = Field(
         None,
-        title="Project Resource ID",
-        description="Unique identifier of the project resource.",
-        examples=[101],
+        title="Project Resource UID",
+        description="Public UID of the project resource.",
+        examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
-    project: int | Project | None = Field(
+    project_uid: str | None = Field(
         None,
-        title="Project",
-        description="Project this resource belongs to. Can be either the project ID or the expanded Project object.",
-        examples=[12],
+        title="Project UID",
+        description="Public UID of the project this resource belongs to.",
+        examples=["5a28020a-0f1b-47ee-aab8-334286234bea"],
     )
     name: str | None = Field(
         None,
@@ -1022,10 +1047,8 @@ class ProjectResource(BaseObjectOrm, BasePydanticModel):
         *args,
         **kwargs,
     ) -> ResourceRelease:
-        if self.id is None:
-            raise ValueError("ProjectResource must have an id before creating a release.")
-
-        kwargs["resource"] = self.id
+        resource_uid = self._public_detail_reference()
+        kwargs["resource_uid"] = resource_uid
         kwargs["release_kind"] = release_kind.value
         return ResourceRelease.create(timeout=timeout, files=files, *args, **kwargs)
 
@@ -1054,46 +1077,40 @@ class ResourceReleaseKind(str, Enum):
 
 
 class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
-    # present on ResourceReleaseSerializer
-    id: int | None = Field(
+    uid: str | None = Field(
         None,
-        title="Resource Release ID",
-        description="Unique identifier of the resource release.",
-        examples=[123],
+        title="Resource Release UID",
+        description="Public UID of the resource release.",
+        examples=["0ce33c15-e3b1-4677-a66e-70460b89198f"],
     )
     subdomain: str = Field(
         title="Subdomain",
         description="DNS-safe label used as the subdomain for this release.",
         examples=["analytics-123"],
     )
-    resource: int | ProjectResource | None = Field(
+    resource_uid: str | None = Field(
         None,
-        title="Resource",
-        description="Primary project resource for this release. Can be either the resource ID or the expanded ProjectResource object.",
-        examples=[42],
+        title="Resource UID",
+        description="Public UID of the primary project resource for this release.",
+        examples=["857bec7b-dd77-4272-aecd-13fc2138eacc"],
     )
-    readme_resource: int | ProjectResource | None = Field(
+    readme_resource_uid: str | None = Field(
         None,
-        title="README Resource",
-        description="Optional project resource containing README or supporting documentation for this release. Can be either the resource ID or the expanded ProjectResource object.",
-        examples=[84],
+        title="README Resource UID",
+        description="Public UID of the optional README/supporting project resource.",
+        examples=["b50b17b4-9a47-4b0e-b75a-b65fbdf81b0d"],
     )
-    related_job: int | Job = Field(
-        title="Related Job",
-        description="Job associated with this resource release. Can be either the job ID or the expanded Job object.",
-        examples=[7],
+    related_job_uid: str | None = Field(
+        None,
+        title="Related Job UID",
+        description="Public UID of the job associated with this resource release.",
+        examples=["7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da"],
     )
     release_kind: ResourceReleaseKind | None = Field(
         None,
         title="Release Kind",
         description="Type of resource release.",
         examples=["streamlit_dashboard"],
-    )
-    related_image: int | ProjectImage | None = Field(
-        None,
-        title="Related Image",
-        description="Execution image, either as an image id or the expanded ProjectImage object.",
-        examples=[94],
     )
     cpu_request: str | None = Field(
         None,
@@ -1130,12 +1147,9 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
     def create(
         cls,
         *,
-        resource: int | ProjectResource,
+        resource_uid: str | ProjectResource | dict[str, Any],
         release_kind: ResourceReleaseKind | str,
-        readme_resource: int | ProjectResource | None = None,
-        readme_resource_id: int | ProjectResource | None = None,
-        related_image: int | ProjectImage | None = None,
-        related_image_id: int | ProjectImage | None = None,
+        related_image_uid: str | ProjectImage | dict[str, Any],
         cpu_request: str | int | float | Decimal | None = None,
         memory_request: str | int | float | Decimal | None = None,
         gpu_request: str | int | None = None,
@@ -1144,9 +1158,13 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         timeout: int | None = None,
         files=None,
     ) -> ResourceRelease:
-        resource_id = Job._coerce_id(resource, field_name="resource")
-        if resource_id is None:
-            raise ValueError("resource is required.")
+        resolved_resource_uid = Job._coerce_uid(resource_uid, field_name="resource_uid")
+        if resolved_resource_uid is None:
+            raise ValueError("resource_uid is required.")
+
+        resolved_image_uid = Job._coerce_uid(related_image_uid, field_name="related_image_uid")
+        if resolved_image_uid is None:
+            raise ValueError("related_image_uid is required.")
 
         if isinstance(release_kind, ResourceReleaseKind):
             normalized_release_kind = release_kind.value
@@ -1168,21 +1186,12 @@ class ResourceRelease(ShareableObjectMixin, BaseObjectOrm, BasePydanticModel):
         )
 
         payload: dict[str, Any] = {
-            "resource": resource_id,
+            "resource_uid": resolved_resource_uid,
+            "related_image_uid": resolved_image_uid,
             "release_kind": normalized_release_kind,
             "cpu_request": normalized_compute["cpu_request"],
             "memory_request": normalized_compute["memory_request"],
         }
-
-        readme_ref = readme_resource_id if readme_resource_id is not None else readme_resource
-        readme_id = Job._coerce_id(readme_ref, field_name="readme_resource")
-        if readme_id is not None:
-            payload["readme_resource"] = readme_id
-
-        image_ref = related_image_id if related_image_id is not None else related_image
-        image_id = Job._coerce_id(image_ref, field_name="related_image")
-        if image_id is not None:
-            payload["related_image"] = image_id
 
         if normalized_compute["gpu_request"] is not None:
             payload["gpu_request"] = normalized_compute["gpu_request"]

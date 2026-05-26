@@ -4,6 +4,7 @@ import warnings
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any, ClassVar
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -210,6 +211,23 @@ class BaseObjectOrm:
         )
 
     @staticmethod
+    def _coerce_filter_uid(value: Any, *, field_name: str) -> str:
+        if isinstance(value, UUID):
+            return str(value)
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized:
+                return normalized
+        if hasattr(value, "uid") and value.uid not in (None, ""):
+            return str(value.uid).strip()
+        if isinstance(value, dict) and value.get("uid") not in (None, ""):
+            return str(value["uid"]).strip()
+        raise TypeError(
+            f"{field_name} must be a uid string, an object with .uid, or a dict with 'uid'. "
+            f"Got: {type(value)!r}"
+        )
+
+    @staticmethod
     def _coerce_filter_bool(value: Any, *, field_name: str) -> bool:
         if isinstance(value, bool):
             return value
@@ -284,6 +302,8 @@ class BaseObjectOrm:
     ) -> Any:
         if normalizer == "id":
             return cls._coerce_filter_id(value, field_name=field_name)
+        if normalizer == "uid":
+            return cls._coerce_filter_uid(value, field_name=field_name)
         if normalizer == "bool":
             normalized_bool = cls._coerce_filter_bool(value, field_name=field_name)
             if bool_as_query_string:
@@ -580,9 +600,9 @@ class BaseObjectOrm:
         return cls(**r.json())
 
     @classmethod
-    def _warn_deprecated_id_alias(cls, method_name: str, replacement_name: str) -> None:
+    def _warn_internal_id_compatibility(cls, method_name: str, replacement_name: str) -> None:
         warnings.warn(
-            f"{cls.__name__}.{method_name}() is deprecated for public resource lookup; "
+            f"{cls.__name__}.{method_name}() is an internal-only compatibility shim; "
             f"use {cls.__name__}.{replacement_name}() with uid instead.",
             DeprecationWarning,
             stacklevel=3,
@@ -614,8 +634,8 @@ class BaseObjectOrm:
             raise_for_response(r)
 
     @classmethod
-    def destroy_by_id(cls, instance_id, *args, timeout=None, **kwargs):
-        cls._warn_deprecated_id_alias("destroy_by_id", "destroy_by_uid")
+    def _destroy_by_id_compat(cls, instance_id, *args, timeout=None, **kwargs):
+        cls._warn_internal_id_compatibility("_destroy_by_id_compat", "destroy_by_uid")
         return cls._destroy_by_reference(instance_id, *args, timeout=timeout, **kwargs)
 
     @classmethod
@@ -716,8 +736,8 @@ class BaseObjectOrm:
         return cls(**body)
 
     @classmethod
-    def patch_by_id(cls, instance_id, *args, _into=None, **kwargs):
-        cls._warn_deprecated_id_alias("patch_by_id", "patch_by_uid")
+    def _patch_by_id_compat(cls, instance_id, *args, _into=None, **kwargs):
+        cls._warn_internal_id_compatibility("_patch_by_id_compat", "patch_by_uid")
         return cls._patch_by_reference(instance_id, *args, _into=_into, **kwargs)
 
     @classmethod

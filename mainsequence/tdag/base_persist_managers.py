@@ -76,7 +76,7 @@ class BasePersistManager:
     UPDATE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_DETAILS_CLASS: ClassVar[type[Any] | None] = None
 
-    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP: ClassVar[str] = "remote_table__data_source__id"
+    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP: ClassVar[str] = "remote_table__data_source__uid"
     UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "remote_table__hash_id"
     SOURCE_TABLE_CONFIGURATION_ATTR: ClassVar[str] = "sourcetableconfiguration"
 
@@ -135,9 +135,10 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        data_source_id = getattr(self.data_source, "id", None)
-        if data_source_id is not None:
-            kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = data_source_id
+        data_source_uid = getattr(self.data_source, "uid", None)
+        if data_source_uid in (None, ""):
+            raise ValueError("DataNode update lookup requires data_source.uid.")
+        kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = str(data_source_uid)
         return kwargs
 
     @staticmethod
@@ -176,10 +177,13 @@ class BasePersistManager:
         local_configuration: dict | None = None,
         open_to_public: bool = False,
     ) -> dict[str, Any]:
+        data_source_uid = getattr(self.data_source, "uid", None)
+        if data_source_uid in (None, ""):
+            raise ValueError("DataNode update creation requires data_source.uid.")
         kwargs = dict(
             update_hash=self.update_hash,
             build_configuration=local_configuration,
-            data_source_id=self.data_source.id,
+            data_source_uid=str(data_source_uid),
         )
         kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = storage_hash
         return kwargs
