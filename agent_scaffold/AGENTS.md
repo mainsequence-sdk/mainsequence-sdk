@@ -164,9 +164,6 @@ Typical routing:
   `.agents/skills/mainsequence/project_builder/SKILL.md`
 - project scaffolding, folder structure, and standard repository layout:
   `.agents/skills/mainsequence/project_builder/SKILL.md`
-- project-state reconciliation, milestone logging, blocker recording, and next-step updates under
-  `.agents/`:
-  `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md`
 - project status audits, blocker analysis, failure classification, and upstream SDK assessment:
   `.agents/skills/mainsequence/maintenance/bug_auditor/SKILL.md`
 - DataNodes, updates, identifiers, schema, metadata:
