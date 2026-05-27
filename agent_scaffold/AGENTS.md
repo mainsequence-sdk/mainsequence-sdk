@@ -198,11 +198,9 @@ For any non-trivial Main Sequence task:
 
 1. Read the latest relevant Main Sequence documentation.
 2. Compare the implementation against the latest documented behavior.
-3. Check `.agents/status.md` for the latest verified state.
+
 4. Check `.agents/tasks.md` for current priorities.
-5. Check `.agents/record.md` for project identifiers, checkout path, and orchestration notes.
-6. If an error appears, check `.agents/journal.md` for the same or related error and any prior
-   fix.
+
 7. Confirm you are in the correct project checkout, or use `--path` explicitly.
 8. Confirm platform context with:
    `mainsequence project current --debug`
@@ -225,8 +223,6 @@ Default pattern:
 
 1. `.agents/skills/mainsequence/project_builder/SKILL.md`
 2. the relevant domain skill
-3. `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md` after material work if verified state,
-   blockers, scope, next actions, stable references, or historical notes changed
 
 Before the final response:
 
@@ -312,9 +308,7 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 - record what failed
 - explain why it may be a Main Sequence issue
 - suggest a concrete improvement
-- append the issue to `.agents/journal.md`
-- add actionable follow-up to `.agents/tasks.md` if still open
-- reflect the latest blocker in `.agents/status.md`
+
 
 ## Output Style
 
@@ -325,22 +319,6 @@ If something may be a Main Sequence SDK, documentation, or platform issue:
 
 ## Project-State Files Under `.agents/`
 
-The repository keeps project-state files under `.agents/`:
-
-- `.agents/brief.md`
-- `.agents/tasks.md`
-- `.agents/record.md`
-- `.agents/status.md`
-- `.agents/journal.md`
-
-These files are owned by:
-
-- `.agents/skills/mainsequence/maintenance/local_journal/SKILL.md` for:
-  - `.agents/brief.md`
-  - `.agents/tasks.md`
-  - `.agents/record.md`
-  - `.agents/status.md`
-  - `.agents/journal.md`
 
 Do not improvise their meaning in domain skills. Use the maintenance skill to reconcile them after
 material work.
