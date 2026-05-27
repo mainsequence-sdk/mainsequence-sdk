@@ -17,6 +17,7 @@ from mainsequence.tdag.data_nodes import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
+    DataNodeMetaData,
     hash_namespace,
 )
 
@@ -37,6 +38,13 @@ class VolatilityConfig(BaseModel):
 
 
 class RandomDataNodeConfig(DataNodeConfiguration):
+    node_metadata: DataNodeMetaData = Field(
+        default_factory=lambda: DataNodeMetaData(
+            identifier=f"example_random_number_{PROJECT_ID}",
+            description="Example Data Node",
+        ),
+        json_schema_extra={"hash_excluded": True},
+    )
     mean: float = Field(
         ...,
         title="Mean",
@@ -78,10 +86,12 @@ class DailyRandomNumber(DataNode):
         super().__init__(config=node_configuration, *args, **kwargs)
 
     def get_table_metadata(self) -> msc.TableMetaData:
-        TS_ID = f"example_random_number_{PROJECT_ID}_{self.mean}"
-
-        meta = msc.TableMetaData(identifier=TS_ID, description="Example Data Node")
-        return meta
+        node_metadata = self.node_configuration.node_metadata
+        return msc.TableMetaData(
+            identifier=node_metadata.identifier,
+            description=node_metadata.description,
+            data_frequency_id=node_metadata.data_frequency_id,
+        )
 
     def update(self) -> pd.DataFrame:
         """Draw daily samples from N(mean, std) since last run (UTC days)."""

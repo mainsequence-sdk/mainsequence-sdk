@@ -179,6 +179,26 @@ Rules:
 - Do not invent another schema object or parallel record declaration.
 - Prefer `DataNodeConfiguration.records` over overriding `get_column_metadata()` for normal nodes.
 
+### DataNode table metadata is discovery-critical
+
+Every production `DataNodeConfiguration` should set `node_metadata` with
+`DataNodeMetaData`. This is not decorative metadata. The `description` is used
+for embedding-based data discovery, so it must be written as a useful dataset
+description rather than a vague one-line label.
+
+Good `DataNodeMetaData.description` values should describe:
+
+- what real-world entity or process the dataset represents
+- the row grain and identity dimensions
+- the important measures or columns
+- the time coverage and expected update cadence when known
+- the source, assumptions, caveats, and intended analytical use
+- common search terms a user might use to find this dataset
+
+Keep `identifier` short and stable. Make `description` rich enough that a user
+searching semantically for the dataset can find it through the embedding model.
+Do not use the description for runtime controls or configuration.
+
 ### 8. Use `SourceTableForeignKey` when a DataNode references a MetaTable
 
 When a DataNode source table has a column that should reference a registered
