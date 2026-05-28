@@ -209,6 +209,24 @@ def test_data_node_update_output_accepts_declared_string_for_python_string_colum
     )
 
 
+def test_data_node_update_output_accepts_declared_object_for_pandas_str_dtype():
+    with pd.option_context("future.infer_string", True):
+        frame = pd.DataFrame(
+            {"unique_identifier": ["asset-1", None]},
+            index=pd.DatetimeIndex(
+                [pd.Timestamp("2026-04-13T00:00:00Z")] * 2,
+                name="time_index",
+            ),
+        )
+
+    assert str(frame["unique_identifier"].dtype) == "str"
+    UpdateRunner.validate_data_frame(
+        frame,
+        storage_class_type="timescale",
+        records=[RecordDefinition(column_name="unique_identifier", dtype="object")],
+    )
+
+
 def test_data_node_update_output_rejects_non_string_values_for_declared_string():
     frame = pd.DataFrame(
         {"name": ["Asset A", 123]},
@@ -247,6 +265,12 @@ def test_source_table_initialization_schema_uses_records_and_index_config():
                 label="Venue Specific Properties",
                 description="JSON payload for exchange-specific metadata.",
             ),
+            RecordDefinition(
+                column_name="venue_event_time",
+                dtype="datetime64[ns, UTC]",
+                label="Venue Event Time",
+                description="Timezone-aware event timestamp from the venue payload.",
+            ),
         ],
     )
 
@@ -258,9 +282,12 @@ def test_source_table_initialization_schema_uses_records_and_index_config():
         "time_index": "timestamp with time zone",
         "asset_uid": "uuid",
         "venue_specific_properties": "jsonb",
+        "venue_event_time": "timestamp with time zone",
     }
     assert schema["columns_metadata"][2].column_name == "venue_specific_properties"
     assert schema["columns_metadata"][2].dtype == "jsonb"
+    assert schema["columns_metadata"][3].column_name == "venue_event_time"
+    assert schema["columns_metadata"][3].dtype == "timestamp with time zone"
 
 
 def test_source_table_initialization_schema_requires_index_config():

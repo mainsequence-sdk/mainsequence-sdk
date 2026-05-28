@@ -397,7 +397,7 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     assert "last_time_index_value" not in calls["set_last"]
 
 
-def test_upsert_data_into_table_uses_declared_record_dtype_for_jsonb():
+def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns():
     calls = {}
 
     class FakeStorage:
@@ -423,7 +423,10 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_jsonb():
     )
 
     df = pd.DataFrame(
-        {"venue_specific_properties": [{"tick_size": "0.01"}]},
+        {
+            "venue_specific_properties": [{"tick_size": "0.01"}],
+            "venue_event_time": [pd.Timestamp("2026-05-01T12:30:00Z")],
+        },
         index=pd.DatetimeIndex([_dt(0)], name="time_index"),
     )
 
@@ -437,13 +440,20 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_jsonb():
                 dtype="jsonb",
                 label="Venue Specific Properties",
                 description="JSON payload for exchange-specific metadata.",
-            )
+            ),
+            RecordDefinition(
+                column_name="venue_event_time",
+                dtype="datetime64[ns, UTC]",
+                label="Venue Event Time",
+                description="Timezone-aware event timestamp from the venue payload.",
+            ),
         ],
     )
 
     assert calls["source_config"]["column_dtypes_map"] == {
         "time_index": "timestamp with time zone",
         "venue_specific_properties": "jsonb",
+        "venue_event_time": "timestamp with time zone",
     }
 
 

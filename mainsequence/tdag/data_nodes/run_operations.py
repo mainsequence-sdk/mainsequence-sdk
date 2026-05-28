@@ -138,11 +138,6 @@ def _validate_declared_record_dtype(
         ) from exc
 
     if normalized_declared_dtype == "string":
-        if normalized_actual_dtype != "string":
-            raise TypeError(
-                f"Column '{column_name}' is declared as {declared_dtype} "
-                f"but DataFrame dtype is {actual_dtype}"
-            )
         _validate_string_compatible_values(column_name, values)
         return
     if normalized_declared_dtype == LOCAL_DATETIME_NAIVE:

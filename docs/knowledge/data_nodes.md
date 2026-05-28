@@ -334,7 +334,7 @@ Must-have rules:
 - rows aligned on the same `time_index` should be comparable across series in the dataset
 - for bar datasets, `time_index` should usually be the right edge of the bar, so the timestamp represents the completed observation window
 - output columns are lowercase and stable
-- no datetime columns in value columns (time goes in index)
+- payload columns may be `date` or timezone-aware datetime when declared in records; `time_index` remains the row observation timestamp
 - no duplicate rows for same index keys
 - consistent dtypes across runs
 

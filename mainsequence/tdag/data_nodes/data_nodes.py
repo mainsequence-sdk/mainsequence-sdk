@@ -1380,7 +1380,8 @@ class DataNode(DataAccessMixin, ABC):
         - index starts with ``time_index`` (UTC-aware datetimes),
         - column names are lowercase and schema-stable,
         - no duplicate index keys,
-        - no datetime payload columns (time should live in the index).
+        - temporal payload columns are allowed when declared with an explicit
+          dtype such as ``date`` or ``datetime64[ns, UTC]``.
 
         MultiIndex tables should use the configured time-first index vector.
         Any identity dimensions after ``time_index`` must match the table's
