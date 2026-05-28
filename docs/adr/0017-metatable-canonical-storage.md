@@ -73,7 +73,7 @@ The relevant client models are:
 - `build_operations.create_config(...)` in
   `mainsequence/tdag/data_nodes/build_operations.py`
 
-The current write path is:
+The pre-migration write path was:
 
 1. A concrete `DataNode` subclass is constructed with a `DataNodeConfiguration`.
 2. `DataNode.__init_subclass__` captures constructor arguments and calls
@@ -108,7 +108,7 @@ The current write path is:
    `SourceTableConfiguration` on `DataNodeStorage`, uploads data, and updates
    progress statistics.
 
-This means the storage row is a side effect of constructing an updater.
+In that old flow, the storage row was a side effect of constructing an updater.
 
 ## Problem
 
@@ -164,16 +164,16 @@ The DataNode runtime no longer computes the storage table identity. It accepts
 the target storage table as a first-class constructor argument:
 
 ```python
-storage_table = MetaTable.get(uid=storage_table_uid)
-data_node_update = DataNodeUpdate(
+storage_table = MetaTable.get(uid=meta_table_uid)
+data_node = PricesUpdate(
     config=PricesUpdateConfiguration(...),
     storage_table=storage_table,
 )
 ```
 
-This is the final public direction. The implementation must rename the current
-client resource model called `DataNodeUpdate` to a record/resource name so the
-runtime authoring class can take the `DataNodeUpdate` name.
+This is the long-term public direction. It is not part of the current
+implementation sequence. For now, the runtime authoring class remains
+`DataNode`; the immediate change is to pass storage explicitly.
 
 ## Final Model Boundaries
 
@@ -225,10 +225,10 @@ Fields that should move away from `DataNodeStorage` over time:
 
 The backend update record currently named
 `mainsequence.client.models_tdag.DataNodeUpdate` remains the persisted update
-process record during the first migration phases.
+process record in this ADR.
 
-It should eventually be renamed or aliased to avoid conflict with the runtime
-authoring class. Candidate final names:
+A future naming ADR may rename or alias it if runtime naming is revisited.
+Candidate names, if needed:
 
 - `DataNodeUpdateRecord`
 - `DataNodeUpdateModel`
@@ -237,7 +237,7 @@ authoring class. Candidate final names:
 The final persisted update record should reference storage by MetaTable UID:
 
 ```python
-storage_table: str | MetaTable
+meta_table_uid: str
 ```
 
 Compatibility aliases may continue to expose:
@@ -246,16 +246,15 @@ Compatibility aliases may continue to expose:
 data_node_storage: str | DataNodeStorage
 ```
 
-but new request payloads should send `storage_table_uid` or
-`meta_table_uid`, not `remote_table__hash_id`.
+but new request payloads should send `meta_table_uid`, not
+`remote_table__hash_id`.
 
-### DataNodeUpdate Runtime Class
+### Runtime Naming
 
-The runtime update-process class should be refactored from `DataNode` to
-`DataNodeUpdate`. Do not introduce a third public runtime class name.
+The runtime update-process class remains `DataNode` for now.
 
 ```python
-class DataNodeUpdate(DataAccessMixin, ABC):
+class DataNode(DataAccessMixin, ABC):
     def __init__(
         self,
         config: DataNodeUpdateConfiguration,
@@ -267,22 +266,9 @@ class DataNodeUpdate(DataAccessMixin, ABC):
         ...
 ```
 
-`DataNode` should remain as a deprecated compatibility alias or subclass:
-
-```python
-class DataNode(DataNodeUpdate):
-    ...
-```
-
-The final public import is:
-
-```python
-from mainsequence.tdag import DataNodeUpdate
-```
-
-The existing `mainsequence.client.DataNodeUpdate` backend resource must be
-renamed first, for example to `DataNodeUpdateRecord`, so the runtime name is not
-ambiguous.
+Do not introduce a third public runtime class name. A later ADR or implementation
+phase may revisit naming, but no runtime or client-resource rename is required
+in this ADR.
 
 ## Authoring Surface
 
@@ -324,14 +310,14 @@ storage_table = MetaTable.register(
 Update authoring:
 
 ```python
-from mainsequence.tdag import DataNodeUpdate, DataNodeUpdateConfiguration
+from mainsequence.tdag import DataNode, DataNodeUpdateConfiguration
 
 
 class PricesUpdateConfiguration(DataNodeUpdateConfiguration):
     shard_id: str
 
 
-class PricesUpdate(DataNodeUpdate):
+class PricesUpdate(DataNode):
     def __init__(self, config: PricesUpdateConfiguration, storage_table: MetaTable):
         super().__init__(config=config, storage_table=storage_table)
 
@@ -359,47 +345,26 @@ The final identity rules are:
 - `storage_hash` is produced by MetaTable registration or MetaTable authoring
   helpers.
 - The DataNode update runtime must not compute `storage_hash`.
-- The update process may expose `self.storage_hash` as a compatibility property
-  that returns `self.storage_table.storage_hash`.
+- The DataNode update runtime should not expose `storage_hash` as a derived
+  compatibility property; code that needs storage identity must read the
+  first-class `storage_table`.
 - `update_hash` is still computed by the update runtime because it identifies
   the updater process.
-- `update_hash` must include the first-class storage table identity to avoid
-  collisions when the same updater code/config writes to different tables.
-
-The storage identity used in `update_hash` should be deterministic and portable.
-Prefer:
-
-```python
-{
-    "storage_table": {
-        "storage_hash": storage_table.storage_hash,
-    }
-}
-```
-
-Do not require backend integer IDs in any hash.
-
-`data_source_uid` can remain part of update lookup and backend payloads without
-being embedded in `update_hash`, matching the current pattern where update
-resolution is scoped by data source. Embedding `data_source_uid` or
-`MetaTable.uid` in the hash should be avoided unless the implementation
-intentionally decides that update hashes are backend-environment-specific. Those
-UIDs should still be sent in backend request payloads because they are the
-public resource references.
+- `update_hash` is not changed by this migration. It remains scoped to the
+  update process configuration until a separate hashing ADR says otherwise.
 
 `hash_namespace` changes meaning:
 
 - It may continue to isolate update process hashes.
 - It must not silently create a different storage table.
 - If a caller wants namespaced storage, they must pass a namespaced MetaTable.
-- Legacy `test_node=True` may keep an auto-storage compatibility path during
-  migration, but new code should pass the storage table explicitly.
+- `test_node=True` must not auto-create storage; tests that need isolated
+  storage must pass an isolated MetaTable explicitly.
 
 ## Configuration Split
 
-`DataNodeConfiguration` currently mixes storage and update concerns.
-
-Storage concerns should move to MetaTable:
+`DataNodeConfiguration` currently mixes storage and update concerns. In the
+canonical model, storage concerns belong only to MetaTable:
 
 - `records`
 - `foreign_keys`
@@ -457,13 +422,12 @@ The write path should become:
 2. User constructs a DataNode update process with:
 
    ```python
-   DataNodeUpdate(config=..., storage_table=storage_table)
+   PricesUpdate(config=..., storage_table=storage_table)
    ```
 
 3. The runtime computes only `update_hash`.
-4. `PersistManager` validates that `storage_table.uid`,
-   `storage_table.storage_hash`, and `storage_table.data_source_uid` are
-   present.
+4. `PersistManager` validates that `storage_table.uid` and
+   `storage_table.data_source_uid` are present.
 5. `PersistManager` creates or resolves the backend update record with:
 
    ```python
@@ -471,7 +435,7 @@ The write path should become:
        update_hash=update_hash,
        build_configuration=local_configuration,
        data_source_uid=storage_table.data_source_uid,
-       storage_table_uid=storage_table.uid,
+       meta_table_uid=storage_table.uid,
    )
    ```
 
@@ -482,8 +446,7 @@ The write path should become:
    not on generic table metadata.
 
 `PersistManager.local_persist_exist_set_config(...)` should no longer create
-storage as part of update registration. Any storage creation compatibility path
-must be isolated and marked deprecated.
+storage as part of update registration.
 
 ## Read And APIDataNode Flow
 
@@ -502,7 +465,6 @@ backend exposes equivalent MetaTable routes for timestamped table reads.
 
 Compatibility fields:
 
-- `storage_hash` can remain a convenience projection from `storage_table`.
 - `data_source_uid` remains required.
 - integer `data_source_id` remains removed per ADR 0015.
 
@@ -540,9 +502,7 @@ Required backend capabilities:
   superclass: `uid`, `storage_hash`, `data_source_uid`, `identifier`,
   `namespace`, `management_mode`, `physical_table_name`, `table_contract`,
   labels, permissions, and open/protection state.
-- DataNode update records can be created with `storage_table_uid` or
-  `meta_table_uid`.
-- Legacy `remote_table__hash_id` creation remains temporarily but is deprecated.
+- DataNode update records are created with `meta_table_uid`.
 - Timestamped table write/read endpoints accept MetaTable UID, or dynamic-table
   UID remains identical to MetaTable UID during transition.
 - Source-table initialization validates against MetaTable contract rather than
@@ -561,7 +521,6 @@ Required backend capabilities:
   be emitted as MetaTable-compatible payload.
 - Confirm whether DataNode-produced table UID and MetaTable UID are the same
   resource UID or whether a mapping layer is required.
-- Decide the final request key: `storage_table_uid` or `meta_table_uid`.
 
 ### Phase 1: Break Client Model Cycles
 
@@ -582,43 +541,30 @@ Required backend capabilities:
 - Prevent MetaTable registration class methods from accidentally becoming a
   public `DataNodeStorage.register(...)` surface unless that behavior is
   intentionally supported.
-- Add Pydantic tests proving existing DataNodeStorage payloads still parse.
-- Add Pydantic tests proving MetaTable fields are available on DataNodeStorage.
+### Phase 3: Introduce Explicit Storage Table Runtime Argument
 
-### Phase 3: Refactor DataNode Runtime To DataNodeUpdate
-
-- Rename/refactor the runtime `DataNode` class to `DataNodeUpdate` with:
+- Update the runtime `DataNode` constructor to accept:
 
   ```python
   __init__(config: DataNodeUpdateConfiguration, storage_table: MetaTable, ...)
   ```
 
-- Keep `DataNode` as a compatibility subclass/alias.
-- Make `storage_hash` a derived compatibility property from
-  `storage_table.storage_hash`.
-- Compute `update_hash` from update config plus storage table identity.
-- Keep old DataNode constructors working with warnings when possible.
-- Add tests proving two update processes with the same config but different
-  storage tables get different `update_hash` values.
-- Add tests proving changing storage metadata labels/descriptions does not
-  change `update_hash`.
+- Do not add a derived runtime `storage_hash` property; storage identity stays
+  on `MetaTable`.
+- Fail explicitly when a DataNode update is run without a resolved
+  `storage_table`.
 
 ### Phase 4: Move Storage Creation Out Of PersistManager
 
 - Change `PersistManager` to require a resolved storage table.
 - Replace storage creation with storage validation.
-- Create update records with storage table UID.
-- Keep a deprecated compatibility path that can create legacy DataNodeStorage
-  from old DataNode configuration only for existing users.
-- Mark every compatibility path with a searchable `LEGACY_COMPAT` comment.
+- Create update records with `meta_table_uid`.
 
-### Phase 5: Move Schema To MetaTable Contract
+### Phase 5: Validate Against MetaTable Contract
 
-- Add helpers to build DataNode-compatible MetaTable contracts from existing
-  `RecordDefinition`, FK declarations, `time_index_name`, and `index_names`.
-- Update output validation to validate against `MetaTable.table_contract`.
-- Keep `DataNodeConfiguration.records` and `foreign_keys` as compatibility
-  inputs that build a MetaTable contract when old constructors are used.
+- Update output validation to validate against `storage_table.table_contract`.
+- Remove DataNode runtime helpers that derive table metadata, column metadata,
+  source-table schemas, or FK contracts from DataNode configuration.
 - Stop treating `SourceTableConfiguration` as the source of structural column
   truth.
 
@@ -632,14 +578,14 @@ Required backend capabilities:
 - Keep `DataNodeStorage` methods as compatibility wrappers until backend routes
   converge.
 
-### Phase 7: Resolve Naming
+### Phase 7: Keep Runtime Naming Stable
 
-- Rename the client resource currently named `DataNodeUpdate` to a clearer
-  record name such as `DataNodeUpdateRecord`.
-- Export compatibility alias `DataNodeUpdate = DataNodeUpdateRecord` from
-  `mainsequence.client` with deprecation warnings if feasible.
-- Refactor/export the runtime class as `mainsequence.tdag.DataNodeUpdate`.
-- Update tutorials and examples to use the new runtime name.
+- Keep runtime `DataNode` unchanged in this migration. Runtime renaming is
+  deferred.
+- Keep the client resource currently named `DataNodeUpdate` unchanged unless a
+  separate naming ADR is accepted.
+- Update docs to distinguish `mainsequence.tdag.DataNode` as the runtime class
+  from `mainsequence.client.DataNodeUpdate` as the backend update record.
 
 ### Phase 8: CLI And Docs
 
@@ -650,19 +596,17 @@ Required backend capabilities:
 
   ```python
   storage_table = MetaTable(...)
-  data_node_update = DataNodeUpdate(config, storage_table)
+  data_node = PricesUpdate(config, storage_table)
   ```
 
 - Replace `update_hash vs storage_hash` explanations with:
-  "MetaTable is storage; DataNodeUpdate is the update process."
+  "MetaTable is storage; DataNode is the update process."
 - Regenerate reference docs after public signatures stabilize.
 
 ### Phase 9: Removal
 
 - Remove automatic storage creation from the DataNode runtime.
 - Remove old storage-hash generation from `DataNode` construction.
-- Remove `remote_table__hash_id` from update creation payloads after backend
-  compatibility ends.
 - Remove deprecated DataNode authoring docs that put table schema in update
   configuration.
 
@@ -674,24 +618,12 @@ Required backend capabilities:
 - [x] Move data-source client models from `models_tdag.py` into
       `models_metatables.py` to avoid import cycles.
 - [x] Make `DataNodeStorage` inherit from `MetaTable`.
-- [ ] Add compatibility defaults or backend serializer fields for
-      `management_mode`, `physical_table_name`, `table_contract`, and
-      `contract_version`.
-- [ ] Refactor runtime `DataNode` to `DataNodeUpdate`.
-- [ ] Add first-class `storage_table: MetaTable` runtime argument.
-- [ ] Make runtime `storage_hash` a derived compatibility property.
-- [ ] Change update hashing to include storage table identity but not compute
-      storage identity.
-- [ ] Add tests for update hash behavior with different storage tables.
-- [ ] Change `PersistManager` to validate existing storage instead of creating
+- [x] Add first-class `storage_table: MetaTable` runtime argument.
+- [x] Change `PersistManager` to validate existing storage instead of creating
       storage.
-- [ ] Change update record creation to send storage table UID.
-- [ ] Keep and test legacy storage creation only as a deprecated compatibility
-      path.
-- [ ] Move table records, FKs, identifiers, and descriptions into MetaTable
-      contract helpers.
-- [ ] Validate update output DataFrames against MetaTable contract.
-- [ ] Update `APIDataNode` factories to resolve MetaTable-backed storage.
+- [x] Change update record creation to send `meta_table_uid`.
+- [x] Validate update output DataFrames against MetaTable contract.
+- [x] Update `APIDataNode` factories to resolve MetaTable-backed storage.
 - [ ] Update CLI data-node and meta-table command ownership.
 - [ ] Update DataNode and MetaTable tutorials.
 - [ ] Regenerate reference docs.
@@ -704,14 +636,7 @@ the documented path.
 Allowed temporary compatibility:
 
 - `DataNode` remains importable.
-- `DataNodeConfiguration.records`, `foreign_keys`, and `node_metadata` may build
-  a MetaTable contract for old-style nodes.
 - `DataNodeStorage` remains importable and can keep dynamic-table read helpers.
-- `storage_hash` remains readable on update runtime objects as a derived
-  property.
-- `remote_table__hash_id` may remain in backend payloads until the server
-  accepts storage table UID everywhere.
-
 Not allowed as final behavior:
 
 - DataNode runtime computes storage identity.
@@ -735,7 +660,7 @@ DataNode update code becomes easier to reason about:
 
 This is a breaking conceptual migration. Existing code that relies on DataNode
 constructors to implicitly create storage must migrate to explicit storage table
-creation or use a deprecated compatibility path.
+creation before this ADR lands.
 
 ## Risks
 
@@ -747,9 +672,8 @@ creation or use a deprecated compatibility path.
   surfaces unless they are moved, guarded, or overridden.
 - Existing docs and CLI commands heavily use `DataNodeStorage`; they must be
   migrated carefully to avoid confusing users.
-- Using `MetaTable.uid` in update hashing would make update hashes less portable
-  across environments. Prefer storage hash plus data-source UID unless an
-  environment-specific hash is explicitly desired.
+- Changing update hashing would affect runtime identity compatibility; keep it
+  outside this migration unless a separate hashing ADR is accepted.
 - Backend routes may continue to distinguish MetaTable and DynamicTableMetaData
   longer than the client model does, requiring compatibility wrappers.
 
@@ -768,13 +692,13 @@ The migration is complete when:
 - Update records link to storage by MetaTable UID.
 - DataFrame output validation uses the MetaTable table contract.
 - SourceTableConfiguration no longer owns structural schema.
-- `mainsequence.tdag.DataNodeUpdate` is the documented runtime authoring class,
-  or the remaining naming blocker is explicitly tracked.
+- Runtime naming remains `DataNode`; any future rename to `DataNodeUpdate` is
+  tracked outside the current implementation sequence.
 - DataNode tutorials show:
 
   ```python
   storage_table = MetaTable(...)
-  data_node_update = DataNodeUpdate(config, storage_table)
+  data_node = PricesUpdate(config, storage_table)
   ```
 
 - Compatibility aliases are covered by tests and emit deprecation warnings where

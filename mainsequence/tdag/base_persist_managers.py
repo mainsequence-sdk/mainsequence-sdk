@@ -6,6 +6,7 @@ import json
 import threading
 from concurrent.futures import Future
 from typing import Any, ClassVar
+from uuid import UUID
 
 import pandas as pd
 
@@ -13,9 +14,7 @@ from mainsequence.client.models_tdag import (
     DUCK_DB,
     LOCAL_DATA_SOURCE_CLASS_TYPES,
     SQLITE,
-    ColumnMetaData,
     DynamicTableDataSource,
-    TableMetaData,
     UpdateStatistics,
 )
 from mainsequence.instrumentation import tracer
@@ -72,12 +71,11 @@ def get_data_node_source_code_git_hash(DataNodeClass: type[Any]) -> str:
 
 
 class BasePersistManager:
-    STORAGE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_DETAILS_CLASS: ClassVar[type[Any] | None] = None
 
     UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP: ClassVar[str] = "remote_table__data_source__uid"
-    UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "remote_table__hash_id"
+    UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "meta_table_uid"
     SOURCE_TABLE_CONFIGURATION_ATTR: ClassVar[str] = "sourcetableconfiguration"
 
     def __init__(
@@ -86,7 +84,7 @@ class BasePersistManager:
         update_hash: str,
         description: str | None = None,
         class_name: str | None = None,
-        data_node_storage: dict | None = None,
+        data_node_storage: Any | None = None,
         data_node_update: Any | None = None,
     ):
         self.data_source: DynamicTableDataSource = data_source
@@ -103,6 +101,7 @@ class BasePersistManager:
         self._data_node_update_cached: Any | None = None
         self._data_node_update_lock = threading.Lock()
         self._data_node_storage_cached: Any | None = data_node_storage
+        self._explicit_data_node_storage = data_node_storage is not None
 
         if self.update_hash is not None:
             self.synchronize_data_node_update(data_node_update=data_node_update)
@@ -142,49 +141,82 @@ class BasePersistManager:
         return kwargs
 
     @staticmethod
-    def _build_storage_get_or_create_kwargs(
-        *,
-        storage_hash: str,
-        remote_configuration: dict,
-        data_source: DynamicTableDataSource,
-        build_configuration_json_schema: dict,
-        open_to_public: bool,
-        namespace: str | None = None,
-        **extra_kwargs: Any,
-    ) -> dict[str, Any]:
-        data_source_uid = getattr(data_source, "uid", None)
+    def _storage_uid(storage: Any) -> str | None:
+        if isinstance(storage, dict):
+            uid = storage.get("uid")
+        else:
+            uid = getattr(storage, "uid", None)
+        if isinstance(uid, UUID):
+            return str(uid)
+        return str(uid) if uid not in (None, "") else None
+
+    @staticmethod
+    def _storage_data_source_uid(storage: Any) -> str | None:
+        if isinstance(storage, dict):
+            data_source_uid = storage.get("data_source_uid")
+            data_source = storage.get("data_source")
+        else:
+            data_source_uid = getattr(storage, "data_source_uid", None)
+            data_source = getattr(storage, "data_source", None)
+
+        if data_source_uid not in (None, ""):
+            return str(data_source_uid)
+        if isinstance(data_source, dict):
+            nested_uid = data_source.get("uid")
+        else:
+            nested_uid = getattr(data_source, "uid", None)
+        return str(nested_uid) if nested_uid not in (None, "") else None
+
+    def _require_existing_storage_table(self) -> Any:
+        storage = self.data_node_storage
+        if storage is None:
+            raise ValueError(
+                "PersistManager requires an explicit storage_table. Create or "
+                "register the MetaTable before constructing the DataNode."
+            )
+        if isinstance(storage, int | str | UUID):
+            raise ValueError(
+                "PersistManager requires a resolved storage_table object, not "
+                "only a storage uid."
+            )
+
+        storage_uid = self._storage_uid(storage)
+        if storage_uid in (None, ""):
+            raise ValueError("PersistManager requires storage_table.uid.")
+
+        storage_data_source_uid = self._storage_data_source_uid(storage)
+        if storage_data_source_uid in (None, ""):
+            raise ValueError("PersistManager requires storage_table.data_source_uid.")
+
+        data_source_uid = getattr(self.data_source, "uid", None)
         if data_source_uid in (None, ""):
-            raise ValueError("DataNode storage creation requires data_source.uid.")
-
-        kwargs = dict(
-            storage_hash=storage_hash,
-            namespace=namespace,
-            data_source_uid=str(data_source_uid),
-            build_configuration_json_schema=build_configuration_json_schema,
-            open_to_public=open_to_public,
-        )
-        kwargs.update(extra_kwargs)
-        return kwargs
-
-    def _get_storage_get_or_create_extra_kwargs(self) -> dict[str, Any]:
-        return {}
+            raise ValueError("PersistManager requires data_source.uid.")
+        if str(storage_data_source_uid) != str(data_source_uid):
+            raise ValueError(
+                "PersistManager storage_table.data_source_uid must match "
+                "data_source.uid."
+            )
+        return storage
 
     def _build_update_get_or_create_kwargs(
         self,
         *,
-        storage_hash: str,
+        storage: Any,
         local_configuration: dict | None = None,
         open_to_public: bool = False,
     ) -> dict[str, Any]:
         data_source_uid = getattr(self.data_source, "uid", None)
         if data_source_uid in (None, ""):
             raise ValueError("DataNode update creation requires data_source.uid.")
+        storage_uid = self._storage_uid(storage)
+        if storage_uid in (None, ""):
+            raise ValueError("DataNode update creation requires storage_table.uid.")
         kwargs = dict(
             update_hash=self.update_hash,
             build_configuration=local_configuration,
             data_source_uid=str(data_source_uid),
         )
-        kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = storage_hash
+        kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = storage_uid
         return kwargs
 
     def _should_refresh_update_when_remote_exists(self) -> bool:
@@ -219,7 +251,7 @@ class BasePersistManager:
 
         if extracted_storage is None:
             self._data_node_storage_cached = previous_storage
-        elif previous_storage is not None and isinstance(extracted_storage, int):
+        elif previous_storage is not None and isinstance(extracted_storage, int | str | UUID):
             self._data_node_storage_cached = previous_storage
         else:
             self._data_node_storage_cached = extracted_storage
@@ -265,7 +297,8 @@ class BasePersistManager:
         with self._data_node_update_lock:
             if force_registry:
                 self._data_node_update_cached = None
-                self._data_node_storage_cached = None
+                if not self._explicit_data_node_storage:
+                    self._data_node_storage_cached = None
             new_future = Future()
             self._data_node_update_future = new_future
             future_registry.add_future(new_future)
@@ -346,52 +379,22 @@ class BasePersistManager:
 
     def local_persist_exist_set_config(
         self,
-        storage_hash: str,
         local_configuration: dict,
-        remote_configuration: dict,
-        data_source: DynamicTableDataSource,
-        build_configuration_json_schema: dict,
         open_to_public: bool,
-        namespace: str | None = None,
     ) -> None:
-        remote_storage = self.data_node_storage
-
-        if remote_storage is None:
-            logger.debug(f"remote table {storage_hash} does not exist creating")
-
-            try:
-                kwargs = self._build_storage_get_or_create_kwargs(
-                    storage_hash=storage_hash,
-                    remote_configuration=remote_configuration,
-                    data_source=data_source,
-                    build_configuration_json_schema=build_configuration_json_schema,
-                    open_to_public=open_to_public,
-                    namespace=namespace,
-                    **self._get_storage_get_or_create_extra_kwargs(),
-                )
-
-                dtd_metadata = self.STORAGE_CLASS.get_or_create(**kwargs)
-                self.data_node_storage = dtd_metadata
-                storage_hash = dtd_metadata.storage_hash
-            except Exception as e:
-                self.logger.exception(f"{storage_hash} Could not set meta data in DB for P")
-                raise e
-        else:
-            if self._should_refresh_update_when_remote_exists():
-                self.set_data_node_update_lazy(
-                    force_registry=True, include_relations_detail=True
-                )
-            storage_hash = self._get_storage_hash() or storage_hash
+        storage = self._require_existing_storage_table()
+        if self._should_refresh_update_when_remote_exists():
+            self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
         self._verify_local_ts_exists(
-            storage_hash=storage_hash,
+            storage=storage,
             local_configuration=local_configuration,
             open_to_public=open_to_public,
         )
 
     def _verify_local_ts_exists(
         self,
-        storage_hash: str,
+        storage: Any,
         local_configuration: dict | None = None,
         open_to_public: bool = False,
     ) -> None:
@@ -406,7 +409,7 @@ class BasePersistManager:
             if local_update is None:
                 data_node_update = self.UPDATE_CLASS.get_or_create(
                     **self._build_update_get_or_create_kwargs(
-                        storage_hash=storage_hash,
+                        storage=storage,
                         local_configuration=local_configuration,
                         open_to_public=open_to_public,
                     ),
@@ -485,31 +488,6 @@ class BasePersistManager:
             dimension_range_map=dimension_range_map,
         )
 
-    def set_column_metadata(self, columns_metadata: list[ColumnMetaData] | None) -> None:
-        source_table_configuration = self._get_source_table_configuration()
-        if source_table_configuration is not None:
-            if source_table_configuration.columns_metadata is not None:
-                if columns_metadata is None:
-                    self.logger.info("get_column_metadata method not implemented")
-                    return
-
-                source_table_configuration.set_or_update_columns_metadata(
-                    columns_metadata=columns_metadata
-                )
-
-    def set_table_metadata(
-        self,
-        table_metadata: TableMetaData,
-    ):
-        if not self.data_node_storage:
-            self.logger.warning("metadata not set")
-            return
-
-        if table_metadata is None:
-            return
-
-        self.data_node_storage.patch(**table_metadata.model_dump())
-
     def delete_table(self) -> None:
         class_type = self.data_source.related_resource.class_type
         if class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
@@ -533,11 +511,6 @@ class BasePersistManager:
         self,
         temp_df: pd.DataFrame,
         overwrite: bool = False,
-        *,
-        columns_metadata: list[ColumnMetaData] | None = None,
-        foreign_keys: list[Any] | None = None,
-        records: list[Any] | None = None,
-        source_table_schema: dict[str, Any] | None = None,
     ) -> bool:
         persisted = False
         if not temp_df.empty:
@@ -548,10 +521,6 @@ class BasePersistManager:
                 data=temp_df,
                 data_source=self.data_source,
                 overwrite=overwrite,
-                columns_metadata=columns_metadata,
-                foreign_keys=foreign_keys,
-                records=records,
-                source_table_schema=source_table_schema,
             )
 
             persisted = True

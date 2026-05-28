@@ -105,11 +105,10 @@ class APIPersistManager:
 
 
 class PersistManager(BasePersistManager):
-    STORAGE_CLASS = DataNodeStorage
     UPDATE_CLASS = DataNodeUpdate
     UPDATE_DETAILS_CLASS = DataNodeUpdateDetails
     UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "remote_table__data_source__uid"
-    UPDATE_CREATE_STORAGE_LOOKUP = "remote_table__hash_id"
+    UPDATE_CREATE_STORAGE_LOOKUP = "meta_table_uid"
 
     @classmethod
     def get_from_data_type(

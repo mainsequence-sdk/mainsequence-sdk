@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+import mainsequence.tdag.data_nodes.data_nodes as data_nodes_mod
 from mainsequence.client.command_center import Workspace
 from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
@@ -20,6 +21,27 @@ from mainsequence.tdag import DataNode, DataNodeConfiguration, SourceTableForeig
 from mainsequence.tdag.base_persist_managers import BasePersistManager
 from mainsequence.tdag.data_nodes.models import RecordDefinition
 from mainsequence.tdag.data_nodes.run_operations import UpdateRunner
+
+
+def _meta_table(
+    storage_hash: str = "prices_storage_hash",
+    *,
+    uid: str = "meta-table-uid",
+    data_source_uid: str = "data-source-uid",
+    columns: list[dict] | None = None,
+) -> MetaTable:
+    return MetaTable(
+        uid=uid,
+        data_source_uid=data_source_uid,
+        storage_hash=storage_hash,
+        management_mode="platform_managed",
+        physical_table_name=storage_hash,
+        table_contract={
+            "version": "relational-table.v1",
+            "physical": {"table_name": storage_hash},
+            "columns": columns or [],
+        },
+    )
 
 
 def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint():
@@ -114,23 +136,190 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
         DataNodeStorage(**payload)
 
 
-def test_storage_creation_payload_excludes_removed_storage_fields():
-    payload = BasePersistManager._build_storage_get_or_create_kwargs(
-        storage_hash="hash",
-        remote_configuration={"window": 30},
+def test_persist_manager_requires_explicit_storage_table():
+    class UpdateResource:
+        @staticmethod
+        def get_or_none(**kwargs):
+            return None
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = UpdateResource
+
+    manager = ExplicitStoragePersistManager(
         data_source=SimpleNamespace(uid="data-source-uid"),
-        build_configuration_json_schema={"config": {}},
-        open_to_public=False,
-        namespace="pytest",
+        update_hash="prices-update-hash",
     )
 
-    assert payload == {
-        "storage_hash": "hash",
-        "namespace": "pytest",
-        "data_source_uid": "data-source-uid",
-        "build_configuration_json_schema": {"config": {}},
-        "open_to_public": False,
-    }
+    with pytest.raises(ValueError, match="explicit storage_table"):
+        manager.local_persist_exist_set_config(
+            local_configuration={},
+            open_to_public=False,
+        )
+
+
+def test_persist_manager_validates_storage_table_without_creating_storage():
+    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    created_update_payloads = []
+
+    class UpdateResource:
+        @staticmethod
+        def get_or_none(**kwargs):
+            return None
+
+        @staticmethod
+        def get_or_create(**kwargs):
+            created_update_payloads.append(kwargs)
+            return SimpleNamespace(
+                build_configuration=kwargs["build_configuration"],
+                data_node_storage=storage_table,
+            )
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = UpdateResource
+
+    manager = ExplicitStoragePersistManager(
+        data_source=SimpleNamespace(uid="data-source-uid"),
+        update_hash="prices-update-hash",
+        data_node_storage=storage_table,
+    )
+
+    manager.local_persist_exist_set_config(
+        local_configuration={"config": {"identifier": "prices"}},
+        open_to_public=False,
+    )
+
+    assert created_update_payloads == [
+        {
+            "update_hash": "prices-update-hash",
+            "build_configuration": {"config": {"identifier": "prices"}},
+            "data_source_uid": "data-source-uid",
+            "meta_table_uid": "meta-table-uid",
+        }
+    ]
+    assert manager.data_node_storage is storage_table
+
+
+def test_persist_manager_preserves_explicit_storage_table_during_update_lookup():
+    class UpdateResource:
+        @staticmethod
+        def get_or_none(**kwargs):
+            return None
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = UpdateResource
+
+    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    manager = ExplicitStoragePersistManager(
+        data_source=SimpleNamespace(uid="data-source-uid"),
+        update_hash="prices-update-hash",
+        data_node_storage=storage_table,
+    )
+
+    assert manager.data_node_update is None
+    assert manager.data_node_storage is storage_table
+
+
+def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
+    monkeypatch.setattr(
+        data_nodes_mod,
+        "get_data_source_from_orm",
+        lambda: SimpleNamespace(uid="data-source-uid", related_resource_class_type=None),
+    )
+
+    class Config(DataNodeConfiguration):
+        identifier: str
+
+    class StorageTableNode(DataNode):
+        def __init__(
+            self,
+            config: Config,
+            storage_table: MetaTable | None = None,
+        ):
+            super().__init__(config=config, storage_table=storage_table)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
+
+    assert node.storage_table is storage_table
+    assert node.storage_table.storage_hash == "canonical_prices_table"
+    assert "storage_hash" not in node.__dict__
+    assert "storage_table" not in node.build_configuration
+    assert "storage_table" not in node.local_initial_configuration
+    assert "storage_table" not in node.remote_initial_configuration
+
+
+def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
+    monkeypatch.setattr(
+        data_nodes_mod,
+        "get_data_source_from_orm",
+        lambda: SimpleNamespace(uid="data-source-uid", related_resource_class_type=None),
+    )
+
+    captured = {}
+
+    def fake_get_from_data_type(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            data_node_update=None,
+            data_node_storage=kwargs.get("data_node_storage"),
+        )
+
+    monkeypatch.setattr(
+        data_nodes_mod.PersistManager,
+        "get_from_data_type",
+        staticmethod(fake_get_from_data_type),
+    )
+
+    class Config(DataNodeConfiguration):
+        identifier: str
+
+    class StorageTableNode(DataNode):
+        def __init__(self, config: Config, storage_table: MetaTable | None = None):
+            super().__init__(config=config, storage_table=storage_table)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
+
+    assert node.local_persist_manager.data_node_storage is storage_table
+    assert captured["data_node_storage"] is storage_table
+
+
+def test_data_node_rejects_storage_table_from_different_data_source(monkeypatch):
+    monkeypatch.setattr(
+        data_nodes_mod,
+        "get_data_source_from_orm",
+        lambda: SimpleNamespace(uid="active-data-source", related_resource_class_type=None),
+    )
+
+    class Config(DataNodeConfiguration):
+        identifier: str
+
+    class StorageTableNode(DataNode):
+        def __init__(self, config: Config, storage_table: MetaTable | None = None):
+            super().__init__(config=config, storage_table=storage_table)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    storage_table = _meta_table(data_source_uid="other-data-source")
+
+    with pytest.raises(ValueError, match="storage_table.data_source_uid"):
+        StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
 
 def test_data_node_update_accepts_labels():
@@ -214,10 +403,12 @@ def test_data_node_update_output_accepts_declared_temporal_payload_columns():
     UpdateRunner.validate_data_frame(
         frame,
         storage_class_type="timescale",
-        records=[
-            RecordDefinition(column_name="event_date", dtype="date"),
-            RecordDefinition(column_name="event_time", dtype="datetime64[ns, UTC]"),
-        ],
+        meta_table=_meta_table(
+            columns=[
+                {"name": "event_date", "data_type": "date"},
+                {"name": "event_time", "data_type": "datetime64[ns, UTC]"},
+            ],
+        ),
     )
 
 
@@ -231,7 +422,9 @@ def test_data_node_update_output_rejects_remote_naive_datetime_payload_columns()
         UpdateRunner.validate_data_frame(
             frame,
             storage_class_type="timescale",
-            records=[RecordDefinition(column_name="event_time", dtype="datetime64[ns]")],
+            meta_table=_meta_table(
+                columns=[{"name": "event_time", "data_type": "datetime64[ns]"}],
+            ),
         )
 
 
@@ -245,7 +438,7 @@ def test_data_node_update_output_rejects_declared_dtype_mismatch():
         UpdateRunner.validate_data_frame(
             frame,
             storage_class_type="timescale",
-            records=[RecordDefinition(column_name="value", dtype="float64")],
+            meta_table=_meta_table(columns=[{"name": "value", "data_type": "float64"}]),
         )
 
 
@@ -259,12 +452,9 @@ def test_data_node_update_output_rejects_non_jsonb_record_values():
         UpdateRunner.validate_data_frame(
             frame,
             storage_class_type="timescale",
-            records=[
-                RecordDefinition(
-                    column_name="venue_specific_properties",
-                    dtype="jsonb",
-                )
-            ],
+            meta_table=_meta_table(
+                columns=[{"name": "venue_specific_properties", "data_type": "jsonb"}],
+            ),
         )
 
 
@@ -277,7 +467,7 @@ def test_data_node_update_output_accepts_declared_string_for_python_string_colum
     UpdateRunner.validate_data_frame(
         frame,
         storage_class_type="timescale",
-        records=[RecordDefinition(column_name="name", dtype="string")],
+        meta_table=_meta_table(columns=[{"name": "name", "data_type": "string"}]),
     )
 
 
@@ -295,7 +485,9 @@ def test_data_node_update_output_accepts_declared_object_for_pandas_str_dtype():
     UpdateRunner.validate_data_frame(
         frame,
         storage_class_type="timescale",
-        records=[RecordDefinition(column_name="unique_identifier", dtype="object")],
+        meta_table=_meta_table(
+            columns=[{"name": "unique_identifier", "data_type": "object"}],
+        ),
     )
 
 
@@ -309,15 +501,11 @@ def test_data_node_update_output_rejects_non_string_values_for_declared_string()
         UpdateRunner.validate_data_frame(
             frame,
             storage_class_type="timescale",
-            records=[RecordDefinition(column_name="name", dtype="string")],
+            meta_table=_meta_table(columns=[{"name": "name", "data_type": "string"}]),
         )
 
 
-def test_source_table_initialization_schema_uses_records_and_index_config():
-    class Config(DataNodeConfiguration):
-        index_names: list[str]
-        time_index_name: str = "time_index"
-
+def test_data_node_update_output_validates_against_storage_table_contract():
     class SchemaNode(DataNode):
         def dependencies(self):
             return {}
@@ -325,109 +513,18 @@ def test_source_table_initialization_schema_uses_records_and_index_config():
         def update(self):
             return pd.DataFrame()
 
-    node = SchemaNode.__new__(SchemaNode)
-    node.config = Config(
-        index_names=["time_index", "asset_uid"],
-        records=[
-            RecordDefinition(column_name="time_index", dtype="datetime64[ns, UTC]"),
-            RecordDefinition(column_name="asset_uid", dtype="uuid"),
-            RecordDefinition(
-                column_name="venue_specific_properties",
-                dtype="jsonb",
-                label="Venue Specific Properties",
-                description="JSON payload for exchange-specific metadata.",
-            ),
-            RecordDefinition(
-                column_name="venue_event_time",
-                dtype="datetime64[ns, UTC]",
-                label="Venue Event Time",
-                description="Timezone-aware event timestamp from the venue payload.",
-            ),
-        ],
+    frame = pd.DataFrame(
+        {"value": ["1.0"]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
     )
-
-    schema = node.get_source_table_initialization_schema()
-
-    assert schema["time_index_name"] == "time_index"
-    assert schema["index_names"] == ["time_index", "asset_uid"]
-    assert schema["column_dtypes_map"] == {
-        "time_index": "timestamp with time zone",
-        "asset_uid": "uuid",
-        "venue_specific_properties": "jsonb",
-        "venue_event_time": "timestamp with time zone",
-    }
-    assert schema["columns_metadata"][2].column_name == "venue_specific_properties"
-    assert schema["columns_metadata"][2].dtype == "jsonb"
-    assert schema["columns_metadata"][3].column_name == "venue_event_time"
-    assert schema["columns_metadata"][3].dtype == "timestamp with time zone"
-
-
-def test_source_table_initialization_schema_requires_index_config():
-    class SchemaNode(DataNode):
-        def dependencies(self):
-            return {}
-
-        def update(self):
-            return pd.DataFrame()
-
     node = SchemaNode.__new__(SchemaNode)
-    node.config = DataNodeConfiguration(
-        records=[
-            RecordDefinition(column_name="time_index", dtype="datetime64[ns, UTC]"),
-            RecordDefinition(column_name="value", dtype="float64"),
-        ],
+    node._data_source = SimpleNamespace(
+        related_resource=SimpleNamespace(class_type="timescale"),
     )
+    node.storage_table = _meta_table(columns=[{"name": "value", "data_type": "float64"}])
 
-    with pytest.raises(ValueError, match="without explicit index_names"):
-        node.get_source_table_initialization_schema()
-
-
-def test_source_table_initialization_schema_rejects_missing_index_records():
-    class Config(DataNodeConfiguration):
-        index_names: list[str]
-
-    class SchemaNode(DataNode):
-        def dependencies(self):
-            return {}
-
-        def update(self):
-            return pd.DataFrame()
-
-    node = SchemaNode.__new__(SchemaNode)
-    node.config = Config(
-        index_names=["time_index", "asset_uid"],
-        records=[
-            RecordDefinition(column_name="time_index", dtype="datetime64[ns, UTC]"),
-            RecordDefinition(column_name="value", dtype="float64"),
-        ],
-    )
-
-    with pytest.raises(ValueError, match="index_names must be declared in records"):
-        node.get_source_table_initialization_schema()
-
-
-def test_source_table_initialization_schema_rejects_duplicate_records():
-    class Config(DataNodeConfiguration):
-        index_names: list[str]
-
-    class SchemaNode(DataNode):
-        def dependencies(self):
-            return {}
-
-        def update(self):
-            return pd.DataFrame()
-
-    node = SchemaNode.__new__(SchemaNode)
-    node.config = Config(
-        index_names=["time_index"],
-        records=[
-            RecordDefinition(column_name="time_index", dtype="datetime64[ns, UTC]"),
-            RecordDefinition(column_name="time_index", dtype="datetime64[ns, UTC]"),
-        ],
-    )
-
-    with pytest.raises(ValueError, match="Duplicate DataNode record column names"):
-        node.get_source_table_initialization_schema()
+    with pytest.raises(TypeError, match="declared as float64"):
+        node._validate_update_output(frame)
 
 
 def test_source_table_foreign_key_requires_records_for_contract():

@@ -5,7 +5,7 @@ import datetime
 import gc
 import json
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -24,7 +24,6 @@ from mainsequence.client.dtype_codec import (
     TIMESTAMP_TZ,
     normalize_dtype_token,
     pandas_dtype_to_token,
-    record_definitions_to_column_dtypes_map,
     serialize_remote_value,
 )
 
@@ -158,6 +157,40 @@ def _validate_declared_record_dtype(
             f"Column '{column_name}' is declared as {declared_dtype} "
             f"but DataFrame dtype is {actual_dtype}"
         )
+
+
+def _column_attr(column: Any, *names: str) -> Any:
+    for name in names:
+        if isinstance(column, Mapping):
+            value = column.get(name)
+        else:
+            value = getattr(column, name, None)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+def _metatable_contract_column_dtypes_map(meta_table: Any) -> dict[str, str]:
+    if meta_table is None:
+        return {}
+
+    table_contract = getattr(meta_table, "table_contract", None)
+    if isinstance(table_contract, Mapping):
+        contract_columns = table_contract.get("columns") or []
+    else:
+        contract_columns = getattr(table_contract, "columns", []) or []
+
+    if not contract_columns:
+        contract_columns = getattr(meta_table, "columns", []) or []
+
+    column_dtypes: dict[str, str] = {}
+    for column in contract_columns:
+        column_name = _column_attr(column, "name", "column_name")
+        data_type = _column_attr(column, "data_type", "dtype")
+        if column_name in (None, "") or data_type in (None, ""):
+            continue
+        column_dtypes[str(column_name)] = str(data_type)
+    return column_dtypes
 
 
 def _require_uid(obj: Any, object_name: str) -> str:
@@ -359,16 +392,6 @@ class UpdateRunner:
             self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
             self.ts.run_post_update_routines(error_on_last_update=error_on_last_update)
-            self.ts.local_persist_manager.set_column_metadata(
-                columns_metadata=self.ts.get_column_metadata()
-            )
-            table_metadata = self.ts.get_table_metadata()
-
-            if (
-                self.ts.data_source.related_resource.class_type
-                not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES
-            ):
-                self.ts.local_persist_manager.set_table_metadata(table_metadata=table_metadata)
 
         return error_on_last_update, update_result
 
@@ -376,7 +399,7 @@ class UpdateRunner:
     def validate_data_frame(
         df: pd.DataFrame,
         storage_class_type,
-        records: Sequence[Any] | None = None,
+        meta_table: Any | None = None,
     ) -> None:
         """
                Performs a series of critical checks on the DataFrame before persistence.
@@ -408,12 +431,20 @@ class UpdateRunner:
                         f"Column name '{col}' must be 63 characters or fewer."
                     )
         is_local_storage = storage_class_type in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES
-        record_column_dtypes_map = record_definitions_to_column_dtypes_map(
-            records,
-            remote=not is_local_storage,
-            allow_naive_datetime=is_local_storage,
-        )
-        if not record_column_dtypes_map:
+        contract_column_dtypes_map = _metatable_contract_column_dtypes_map(meta_table)
+        if contract_column_dtypes_map:
+            column_dtypes_map = {
+                column_name: normalize_dtype_token(
+                    dtype,
+                    remote=not is_local_storage,
+                    allow_naive_datetime=is_local_storage,
+                )
+                for column_name, dtype in contract_column_dtypes_map.items()
+            }
+        else:
+            column_dtypes_map = {}
+
+        if not column_dtypes_map:
             return
 
         frame_columns = {str(column_name) for column_name in df.columns}
@@ -421,16 +452,16 @@ class UpdateRunner:
         index_names = {str(index_name) for index_name in df.index.names if index_name is not None}
         missing_record_columns = [
             column_name
-            for column_name in record_column_dtypes_map
+            for column_name in column_dtypes_map
             if column_name not in frame_columns and column_name not in index_names
         ]
         if missing_record_columns:
             raise ValueError(
-                "DataNode records declare columns not present in the DataFrame: "
+                "MetaTable contract declares columns not present in the DataFrame: "
                 f"{missing_record_columns}"
             )
 
-        for column_name, declared_dtype in record_column_dtypes_map.items():
+        for column_name, declared_dtype in column_dtypes_map.items():
             if column_name in frame_columns:
                 frame_column_name = frame_column_lookup[column_name]
                 values = df[frame_column_name].tolist()

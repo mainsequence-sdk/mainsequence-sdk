@@ -18,21 +18,15 @@ import structlog.contextvars as cvars
 
 import mainsequence.tdag.data_nodes.build_operations as build_operations
 import mainsequence.tdag.data_nodes.run_operations as run_operations
-from mainsequence.client.dtype_codec import (
-    normalize_dtype_token,
-    record_definitions_to_column_dtypes_map,
-)
+from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
     BaseUpdateStatistics,
-    ColumnMetaData,
     DataNodeStorage,
     DataNodeUpdate,
     DataSource,
     DynamicTableDataSource,
     Scheduler,
     SessionDataSource,
-    SourceTableForeignKeyContract,
-    TableMetaData,
     UpdateStatistics,
     get_session_data_source,
 )
@@ -103,7 +97,7 @@ class DataAccessMixin:
 
         # 2. Type-Specific Logic: Run pre-dump actions only for standard DataNode
         if not self.is_api:
-            self.logger.debug(f"Patching source code and git hash for {self.storage_hash}")
+            self.logger.debug(f"Patching source code and git hash for {self.update_hash}")
             self.local_persist_manager.update_git_and_code_in_backend(
                 time_serie_class=self.__class__
             )
@@ -233,6 +227,34 @@ class APIDataNode(DataAccessMixin):
         return str(data_source_uid)
 
     @classmethod
+    def _require_storage_table_data_source_uid(
+        cls,
+        storage_table: Any,
+        *,
+        context: str,
+    ) -> str:
+        if isinstance(storage_table, dict):
+            data_source_uid = storage_table.get("data_source_uid")
+            data_source = storage_table.get("data_source")
+        else:
+            data_source_uid = getattr(storage_table, "data_source_uid", None)
+            data_source = getattr(storage_table, "data_source", None)
+
+        if data_source_uid not in (None, ""):
+            return str(data_source_uid)
+        return cls._require_data_source_uid(data_source, context=context)
+
+    @staticmethod
+    def _require_storage_hash(storage_table: Any, *, context: str) -> str:
+        if isinstance(storage_table, dict):
+            storage_hash = storage_table.get("storage_hash")
+        else:
+            storage_hash = getattr(storage_table, "storage_hash", None)
+        if storage_hash in (None, ""):
+            raise ValueError(f"{context} requires storage_table.storage_hash.")
+        return str(storage_hash)
+
+    @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
         return cls(
             data_source_uid=cls._require_data_source_uid(
@@ -243,36 +265,33 @@ class APIDataNode(DataAccessMixin):
         )
 
     @classmethod
-    def build_from_table_uid(cls, table_uid: str) -> "APIDataNode":
-        table = DataNodeStorage.get(uid=table_uid)
-        ts = cls(
-            data_source_uid=cls._require_data_source_uid(
-                table.data_source,
-                context="APIDataNode.build_from_table_uid",
-            ),
-            storage_hash=table.storage_hash,
-        )
-        return ts
+    def build_from_table_uid(cls, meta_table_uid: str) -> "APIDataNode":
+        storage_table = MetaTable.get(uid=meta_table_uid)
+        return cls.build_from_meta_table(storage_table)
 
+    @classmethod
+    def build_from_meta_table(cls, storage_table: MetaTable) -> "APIDataNode":
+        context = "APIDataNode.build_from_meta_table"
+        return cls(
+            data_source_uid=cls._require_storage_table_data_source_uid(
+                storage_table,
+                context=context,
+            ),
+            storage_hash=cls._require_storage_hash(storage_table, context=context),
+            storage_table=storage_table,
+        )
 
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
-
-        table = DataNodeStorage.get(identifier=identifier)
-        ts = cls(
-            data_source_uid=cls._require_data_source_uid(
-                table.data_source,
-                context="APIDataNode.build_from_identifier",
-            ),
-            storage_hash=table.storage_hash,
-        )
-        return ts
+        storage_table = MetaTable.get(identifier=identifier)
+        return cls.build_from_meta_table(storage_table)
 
     def __init__(
         self,
         data_source_uid: str,
         storage_hash: str,
         data_source_local_lake: DataSource | None = None,
+        storage_table: MetaTable | None = None,
     ):
         """
         Initializes an APIDataNode.
@@ -281,6 +300,7 @@ class APIDataNode(DataAccessMixin):
             data_source_uid: The UID of the data source.
             storage_hash: The storage hash of the data node table.
             data_source_local_lake: Optional local data source for the lake.
+            storage_table: Optional resolved MetaTable backing this read wrapper.
         """
         if data_source_local_lake is not None:
             assert (
@@ -291,6 +311,7 @@ class APIDataNode(DataAccessMixin):
             raise ValueError("APIDataNode requires data_source_uid.")
         self.data_source_uid = str(data_source_uid)
         self.storage_hash = storage_hash
+        self.storage_table = storage_table
         self.data_source = data_source_local_lake
         self._local_persist_manager: APIPersistManager = None
         self.update_statistics = None
@@ -388,14 +409,15 @@ class DataNode(DataAccessMixin, ABC):
     """
     Base class for building and maintaining datasets in Main Sequence.
 
-    A ``DataNode`` is both:
+    A ``DataNode`` is the update process recipe:
 
-    - the recipe to produce data (config + dependencies + update logic), and
-    - the data product contract used by downstream users (identifier + schema + metadata).
+    - configuration for update behavior,
+    - dependencies,
+    - update logic.
 
     Two identities matter:
 
-    - ``storage_hash``: identifies the table/dataset contract.
+    - ``storage_table``: the first-class MetaTable storage contract.
     - ``update_hash``: identifies the updater job writing to that table.
 
     This separation lets you run different updater jobs (for example, asset shards)
@@ -414,7 +436,7 @@ class DataNode(DataAccessMixin, ABC):
     5. otherwise, no namespace.
 
     A non-empty namespace is injected into the build configuration, which changes
-    both ``storage_hash`` and ``update_hash``. An empty namespace changes nothing.
+    ``update_hash``. Storage identity stays on the explicit ``storage_table``.
 
     During ``run()``, the active namespace is re-applied around the full run so
     dependencies created inside ``dependencies()`` inherit the same isolation.
@@ -449,6 +471,7 @@ class DataNode(DataAccessMixin, ABC):
     def __init__(
         self,
         config: BaseConfiguration,
+        storage_table: MetaTable | None = None,
         *,
         hash_namespace: str | None = None,
         test_node: bool = False,
@@ -466,6 +489,9 @@ class DataNode(DataAccessMixin, ABC):
         ----------
         config : BaseConfiguration
             Canonical node configuration for this node.
+        storage_table : MetaTable | None
+            Explicit canonical storage table where this update process writes.
+            This is runtime state, not part of the build configuration payload.
         hash_namespace : str | None
             Optional hash isolation namespace.
         test_node : bool
@@ -480,6 +506,7 @@ class DataNode(DataAccessMixin, ABC):
         self.pre_load_routines_run = False
         self._data_source: DynamicTableDataSource | None = None  # is set later
         self._local_persist_manager: PersistManager | None = None
+        self.storage_table = storage_table
 
         self._scheduler_tree_connected = False
         self.update_statistics = None
@@ -686,6 +713,9 @@ class DataNode(DataAccessMixin, ABC):
             final_kwargs.pop("args", None)
             for namespace_alias in namespace_aliases:
                 final_kwargs.pop(namespace_alias, None)
+            storage_table = final_kwargs.pop("storage_table", None)
+            if storage_table is not None and self.storage_table is None:
+                self.storage_table = storage_table
             if final_kwargs.get("config") is None:
                 final_kwargs.pop("config", None)
             if not final_kwargs:
@@ -721,6 +751,22 @@ class DataNode(DataAccessMixin, ABC):
         # Replace the subclass's __init__ with our new wrapped version
         cls.__init__ = wrapped_init
 
+    @property
+    def storage_table(self) -> MetaTable | None:
+        return getattr(self, "_storage_table", None)
+
+    @storage_table.setter
+    def storage_table(self, value: MetaTable | None) -> None:
+        if value is None:
+            self._storage_table = None
+            return
+        if not isinstance(value, MetaTable):
+            raise TypeError(
+                "DataNode storage_table must be a MetaTable instance; "
+                f"got {type(value).__name__}."
+            )
+        self._storage_table = value
+
     def _initialize_configuration(self, init_kwargs: dict) -> None:
         """Creates config from init args and sets them as instance attributes."""
         logger.debug(f"Creating configuration for {self.__class__.__name__}")
@@ -736,7 +782,26 @@ class DataNode(DataAccessMixin, ABC):
         )
 
         for field_name, value in asdict(config).items():
+            if field_name == "storage_hash":
+                continue
             setattr(self, field_name, value)
+
+    def _validate_storage_table_data_source(self) -> None:
+        storage_table = self.storage_table
+        if storage_table is None:
+            return
+
+        storage_data_source_uid = getattr(storage_table, "data_source_uid", None)
+        data_source = getattr(self, "_data_source", None)
+        data_source_uid = getattr(data_source, "uid", None)
+
+        if storage_data_source_uid in (None, "") or data_source_uid in (None, ""):
+            return
+        if str(storage_data_source_uid) != str(data_source_uid):
+            raise ValueError(
+                "DataNode storage_table.data_source_uid must match the active "
+                "data_source.uid."
+            )
 
     def _get_data_node_configuration(self) -> BaseConfiguration | None:
         config = getattr(self, "config", None)
@@ -811,7 +876,7 @@ class DataNode(DataAccessMixin, ABC):
     @property
     def local_persist_manager(self) -> PersistManager:
         if self._local_persist_manager is None:
-            self.logger.debug(f"Setting local persist manager for {self.storage_hash}")
+            self.logger.debug(f"Setting local persist manager for {self.update_hash}")
             self._set_local_persist_manager(update_hash=self.update_hash)
         return self._local_persist_manager
 
@@ -923,8 +988,6 @@ class DataNode(DataAccessMixin, ABC):
         Args:
            update_hash : str
                The local hash ID for the time series.
-           storage_hash : str
-               The remote table hash name for the time series.
            data_node_update : Union[None, dict], optional
                Local metadata for the time series, if available.
         """
@@ -932,6 +995,7 @@ class DataNode(DataAccessMixin, ABC):
             update_hash=update_hash,
             class_name=self.__class__.__name__,
             data_node_update=data_node_update,
+            data_node_storage=self.storage_table,
             data_source=self.data_source,
         )
 
@@ -946,21 +1010,16 @@ class DataNode(DataAccessMixin, ABC):
             self._data_source = get_data_source_from_orm()
         else:
             self._data_source = data_source
+        self._validate_storage_table_data_source()
 
     def verify_and_build_remote_objects(self) -> None:
         """
         Verifies and builds remote objects by calling the persistence layer.
         This logic is now correctly located within the BuildManager.
         """
-        # The call to the low-level persist manager is encapsulated here
         self.local_persist_manager.local_persist_exist_set_config(
-            storage_hash=self.storage_hash,
             local_configuration=self.local_initial_configuration,
-            remote_configuration=self.remote_initial_configuration,
-            data_source=self.data_source,
-            build_configuration_json_schema=self.build_configuration_json_schema,
             open_to_public=self.get_open_to_public(),
-            namespace=self.hash_namespace or None,
         )
 
     def set_relation_tree(self):
@@ -1095,163 +1154,6 @@ class DataNode(DataAccessMixin, ABC):
         """
         return 0
 
-    def get_table_metadata(
-        self,
-    ) -> TableMetaData | None:
-        """
-        Return metadata that describes the table as a dataset.
-
-        Base behavior:
-        - if the node instance carries a ``DataNodeConfiguration`` with
-          ``node_metadata``, build ``TableMetaData`` from it.
-        - otherwise return ``None``.
-
-        Subclasses can still override this for custom behavior.
-
-        Returns
-        -------
-        TableMetaData | None
-            Table metadata, or ``None`` when not provided.
-        """
-        config = self._get_data_node_configuration()
-        node_metadata = getattr(config, "node_metadata", None) if config is not None else None
-        if node_metadata is None:
-            return None
-
-        return TableMetaData(
-            identifier=node_metadata.identifier,
-            description=node_metadata.description,
-        )
-
-    def get_record_definitions(self) -> list[Any] | None:
-        config = self._get_data_node_configuration()
-        records = getattr(config, "records", None) if config is not None else None
-        return list(records) if records else None
-
-    def get_source_table_initialization_schema(
-        self,
-        *,
-        require_index_names: bool = True,
-    ) -> dict[str, Any] | None:
-        """
-        Build the source-table schema contract from declared records and index config.
-
-        This helper is intentionally conservative: records define the table columns,
-        while ``time_index_name`` and ``index_names`` must come from an explicit
-        config field or an existing SourceTableConfiguration. It does not infer
-        identity dimensions from foreign keys or column naming conventions.
-        """
-        records = self.get_record_definitions()
-        if not records:
-            return None
-
-        config = self._get_data_node_configuration()
-        time_index_name = getattr(config, "time_index_name", None) if config is not None else None
-        if time_index_name in (None, ""):
-            time_index_name = "time_index"
-        time_index_name = str(time_index_name)
-
-        index_names = getattr(config, "index_names", None) if config is not None else None
-        if index_names is None:
-            try:
-                source_table_configuration = (
-                    self.local_persist_manager.data_node_storage.sourcetableconfiguration
-                )
-            except Exception:
-                source_table_configuration = None
-            if source_table_configuration is not None:
-                index_names = source_table_configuration.index_names
-
-        if index_names is None:
-            if require_index_names:
-                raise ValueError(
-                    "Cannot build source table initialization schema from DataNode records "
-                    "without explicit index_names. Add index_names to the node config."
-                )
-            return None
-
-        index_names = [str(index_name) for index_name in index_names]
-        if time_index_name not in index_names:
-            raise ValueError(
-                f"time_index_name {time_index_name!r} must be present in index_names "
-                f"{index_names!r}."
-            )
-
-        column_dtypes_map = record_definitions_to_column_dtypes_map(records, remote=True)
-
-        missing_index_records = [
-            index_name for index_name in index_names if index_name not in column_dtypes_map
-        ]
-        if missing_index_records:
-            raise ValueError(
-                "DataNode index_names must be declared in records. "
-                f"Missing: {missing_index_records}"
-            )
-
-        return {
-            "time_index_name": time_index_name,
-            "index_names": index_names,
-            "column_dtypes_map": column_dtypes_map,
-            "columns_metadata": self.get_column_metadata(),
-        }
-
-    def get_column_metadata(self) -> list[ColumnMetaData] | None:
-        """
-        Return metadata for output columns.
-
-        Base behavior:
-        - if the node instance carries a ``DataNodeConfiguration`` with
-          ``records``, build ``ColumnMetaData`` from those definitions.
-        - otherwise return ``None``.
-
-        Subclasses can still override this for custom behavior.
-
-        Returns:
-            A list of ColumnMetaData objects, or None.
-        """
-        records = self.get_record_definitions()
-        if not records:
-            return None
-
-        return [
-            ColumnMetaData(
-                column_name=record.column_name,
-                dtype=normalize_dtype_token(record.dtype, remote=True),
-                label=record.label or record.column_name,
-                description=record.description or "",
-            )
-            for record in records
-        ]
-
-    def get_source_table_foreign_keys(
-        self,
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> list[SourceTableForeignKeyContract] | None:
-        """
-        Return resolved source-table foreign key contracts for backend initialization.
-
-        Base behavior:
-        - if the node configuration declares ``foreign_keys``, resolve them
-          against ``records`` and the target MetaTables;
-        - otherwise return ``None``.
-        """
-        config = self._get_data_node_configuration()
-        foreign_keys = getattr(config, "foreign_keys", None) if config is not None else None
-        if not foreign_keys:
-            return None
-
-        records = getattr(config, "records", None)
-        data_source_uid = getattr(getattr(self, "data_source", None), "uid", None)
-        return [
-            foreign_key.to_contract(
-                records=records,
-                data_source_uid=data_source_uid,
-                timeout=timeout,
-            )
-            for foreign_key in foreign_keys
-        ]
-
     def run_post_update_routines(
         self,
         error_on_last_update: bool,
@@ -1290,7 +1192,7 @@ class DataNode(DataAccessMixin, ABC):
         run_operations.UpdateRunner.validate_data_frame(
             temp_df,
             self.data_source.related_resource.class_type,
-            records=self.get_record_definitions(),
+            meta_table=self.storage_table,
         )
 
     def _execute_local_update(
@@ -1325,12 +1227,6 @@ class DataNode(DataAccessMixin, ABC):
         self.local_persist_manager.persist_updated_data(
             temp_df=temp_df,
             overwrite=(latest_persisted_time_index is not None),
-            columns_metadata=self.get_column_metadata(),
-            foreign_keys=self.get_source_table_foreign_keys(),
-            records=self.get_record_definitions(),
-            source_table_schema=self.get_source_table_initialization_schema(
-                require_index_names=False,
-            ),
         )
         self.logger.info(f"Successfully updated {self}.")
         return temp_df

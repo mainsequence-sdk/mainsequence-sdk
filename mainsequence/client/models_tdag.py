@@ -435,7 +435,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     NODE_TYPE: ClassVar[str] = "local_time_serie"
 
-    data_node_storage: str | DataNodeStorage
+    data_node_storage: str | UUID | DataNodeStorage
     tags: list[str] | None = Field(default=[], description="List of tags")
     labels: list[str] = Field(
         default_factory=list,
@@ -453,7 +453,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     @property
     def data_source_uid(self):
-        if isinstance(self.data_node_storage, str):
+        if isinstance(self.data_node_storage, str | UUID):
             return None
         data_source = self.data_node_storage.data_source
         if isinstance(data_source, str):
