@@ -20,7 +20,7 @@ from mainsequence.tdag import (
 
 
 def _hashes(payload):
-    serialized_payload = build_operations.serialize_argument(payload, pickle_ts=False)
+    serialized_payload = build_operations.serialize_argument(payload)
     return build_operations.hash_signature({"config": serialized_payload})
 
 
@@ -281,7 +281,7 @@ def test_legacy_ignore_from_storage_hash_metadata_is_rejected():
         shard_id: str = Field(..., json_schema_extra={"ignore_from_storage_hash": True})
 
     with pytest.raises(ValueError, match="ignore_from_storage_hash"):
-        build_operations.serialize_argument(LegacyConfig(shard_id="desk_a"), pickle_ts=False)
+        build_operations.serialize_argument(LegacyConfig(shard_id="desk_a"))
 
 
 def test_legacy_args_ignore_in_storage_hash_class_attribute_is_rejected():
@@ -310,7 +310,7 @@ def test_data_node_configuration_overrides_offset_start():
 
         def __init__(self, node_config: NodeConfig, *args, **kwargs):
             self.node_config = node_config
-            super().__init__(config=node_config, *args, **kwargs)
+            super().__init__(node_config, *args, **kwargs)
 
         def dependencies(self):
             return {}

@@ -3,7 +3,6 @@ import inspect
 import json
 import logging
 import os
-import tempfile
 import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
@@ -12,7 +11,6 @@ from functools import wraps
 from types import SimpleNamespace
 from typing import Any, Union
 
-import cloudpickle
 import pandas as pd
 import pytz
 import structlog.contextvars as cvars
@@ -33,7 +31,6 @@ from mainsequence.client.models_tdag import (
 from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
 from ..configuration_models import BaseConfiguration
@@ -71,84 +68,6 @@ class DataAccessMixin:
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
         )
-
-
-    def get_pickle_path_from_time_serie(self) -> str:
-        path = build_operations.get_pickle_path(
-            update_hash=self.update_hash, data_source_uid=self.data_source_uid, is_api=self.is_api
-        )
-        return path
-
-    def persist_to_pickle(self, overwrite: bool = False) -> tuple[str, str]:
-        """
-        Persists the DataNode object to a pickle file using an atomic write.
-
-        Uses a single method to determine the pickle path and dispatches to
-        type-specific logic only where necessary.
-
-        Args:
-            overwrite: If True, overwrites any existing pickle file.
-
-        Returns:
-            A tuple containing the full path and the relative path of the pickle file.
-        """
-        # 1. Common Logic: Determine the pickle path for both types
-        path = self.get_pickle_path_from_time_serie()
-
-        # 2. Type-Specific Logic: Run pre-dump actions only for standard DataNode
-        if not self.is_api:
-            self.logger.debug(f"Patching source code and git hash for {self.update_hash}")
-            self.local_persist_manager.update_git_and_code_in_backend(
-                time_serie_class=self.__class__
-            )
-            # Prepare for pickling by removing the unpicklable ThreadLock
-            self._local_persist_manager = None
-
-        # 3. Common Logic: Persist the data source if needed
-        data_source = getattr(self, "data_source", None)
-        data_source_uid = getattr(data_source, "uid", None) or self.data_source_uid
-        data_source_path = build_operations.data_source_pickle_path(data_source_uid)
-        if data_source is None:
-            if not self.is_api:
-                raise ValueError("DataNode pickle persistence requires a data source.")
-        elif not os.path.isfile(data_source_path) or overwrite:
-            data_source.persist_to_pickle(data_source_path)
-
-        # 4. Common Logic: Atomically write the main pickle file
-        if os.path.isfile(path) and not overwrite:
-            self.logger.debug(f"Pickle file already exists at {path}. Skipping.")
-        else:
-            if overwrite:
-                self.logger.warning(f"Overwriting pickle file at {path}")
-            self._atomic_pickle_dump(path)
-
-        # 5. Common Logic: Return the full and relative paths
-        return path, path.replace(ogm.pickle_storage_path + "/", "")
-
-    def _atomic_pickle_dump(self, path: str) -> None:
-        """
-        Private helper to atomically dump the object to a pickle file.
-        This prevents file corruption if the process is interrupted.
-        """
-        dir_, fname = os.path.split(path)
-        # Ensure the target directory exists
-        os.makedirs(dir_, exist_ok=True)
-
-        fd, tmp_path = tempfile.mkstemp(prefix=f"{fname}~", dir=dir_)
-        os.close(fd)
-        try:
-            with open(tmp_path, "wb") as handle:
-                cloudpickle.dump(self, handle)
-            # Atomic replace is safer than a direct write
-            os.replace(tmp_path, path)
-            self.logger.debug(f"Successfully persisted pickle to {path}")
-        except Exception:
-            # Clean up the temporary file on error to avoid clutter
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-            raise
 
     def get_logger_context_variables(self) -> dict[str, Any]:
         return dict(
@@ -331,16 +250,6 @@ class APIDataNode(DataAccessMixin):
     def update_hash(self):
         return self._get_update_hash(storage_hash=self.storage_hash)
 
-    def __getstate__(self) -> dict[str, Any]:
-        """Prepares the state for pickling."""
-        state = self.__dict__.copy()
-        # Remove unpicklable/transient state specific to APIDataNode
-        names_to_remove = [
-            "_local_persist_manager",  # APIPersistManager instance
-        ]
-        cleaned_state = {k: v for k, v in state.items() if k not in names_to_remove}
-        return cleaned_state
-
     @property
     def local_persist_manager(self) -> Any:
         """Gets the local persistence manager, initializing it if necessary."""
@@ -451,21 +360,6 @@ class DataNode(DataAccessMixin, ABC):
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
     DATA_NODE_UPDATE_CLASS = DataNodeUpdate
-
-    # --- Dunder & Serialization Methods ---
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        # Restore instance attributes (i.e., filename and lineno).
-        self.__dict__.update(state)
-
-    def __getstate__(self) -> dict[str, Any]:
-        # Copy the object's state from self.__dict__ which contains
-        # all our instance attributes. Always use the dict.copy()
-        # method to avoid modifying the original state.
-        state = self._prepare_state_for_pickle(state=self.__dict__)
-
-        # Remove the unpicklable entries.
-        return state
 
     def __init__(
         self,
@@ -798,7 +692,6 @@ class DataNode(DataAccessMixin, ABC):
         normal production-style behavior. A non-empty value means this node was
         constructed in an isolated namespace and its hashes include that namespace.
         """
-        # Works for old pickles too (attribute may not exist)
         return getattr(self, "_hash_namespace", "") or ""
 
     @property
@@ -876,7 +769,7 @@ class DataNode(DataAccessMixin, ABC):
         graph_depth: int = 0,
     ) -> None:
         """
-        Sets the state of the DataNode after loading from pickle, including sessions.
+        Attaches runtime sessions and synchronizes backend metadata after rebuild.
 
         Args:
             include_client_objects: Whether to include nested client objects.
@@ -888,71 +781,20 @@ class DataNode(DataAccessMixin, ABC):
 
         minimum_required_depth_for_update = self.get_minimum_required_depth_for_update()
 
-        state = self.__dict__
-
         if graph_depth_limit < minimum_required_depth_for_update and graph_depth == 0:
             graph_depth_limit = minimum_required_depth_for_update
             self.logger.warning(
                 f"Graph depth limit overwritten to {minimum_required_depth_for_update}"
             )
 
-        # if the data source is not local then the de-serialization needs to happend after setting the local persist manager
-        # to guranteed a proper patch in the back-end
+        # If the data source is remote, initialize persistence before backend sync.
         if graph_depth <= graph_depth_limit and self.data_source.related_resource_class_type:
             self._set_local_persist_manager(
                 update_hash=self.update_hash,
                 data_node_update=None,
             )
 
-        deserializer = build_operations.DeserializerManager()
-        state = deserializer.deserialize_pickle_state(
-            state=state,
-            data_source_uid=self.data_source_uid,
-            include_client_objects=include_client_objects,
-            graph_depth_limit=graph_depth_limit,
-            graph_depth=graph_depth + 1,
-        )
-
-        self.__dict__.update(state)
-
         self.local_persist_manager.synchronize_data_node_update(data_node_update=None)
-
-    def _prepare_state_for_pickle(self, state: dict[str, Any]) -> dict[str, Any]:
-        """
-        Prepares the object's state for pickling by serializing and removing unpicklable entries.
-
-        Args:
-            state: The object's __dict__.
-
-        Returns:
-            A pickle-safe dictionary representing the object's state.
-        """
-        properties = state
-        serializer = build_operations.Serializer()
-        properties = serializer.serialize_for_pickle(properties)
-        names_to_remove = []
-        for name, attr in properties.items():
-            if name in [
-                "local_persist_manager",
-                "logger",
-                "_data_node_update_future",
-                "_data_node_update_lock",
-                "_local_persist_manager",
-                "update_tracker",
-            ]:
-                names_to_remove.append(name)
-                continue
-
-            try:
-                cloudpickle.dumps(attr)
-            except Exception as e:
-                logger.exception(f"Cant Pickle property {name}")
-                raise e
-
-        for n in names_to_remove:
-            properties.pop(n, None)
-
-        return properties
 
     def _set_local_persist_manager(
         self,

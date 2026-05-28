@@ -448,79 +448,92 @@ def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
     assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in message
 
 
-def test_build_operations_pickled_data_node_marker_uses_data_source_uid():
+def test_build_operations_data_node_reference_serialization_uses_data_source_uid():
     data_node = types.SimpleNamespace(
         update_hash="update-hash-1",
         data_source_uid=DATA_SOURCE_UID,
     )
 
-    payload = build_operations._serialize_timeserie(data_node, pickle_ts=True)
+    payload = build_operations._serialize_timeserie(data_node)
 
     assert payload == {
-        "is_time_serie_pickled": True,
+        "is_time_serie_instance": True,
         "update_hash": "update-hash-1",
         "data_source_uid": DATA_SOURCE_UID,
     }
     assert "data_source_id" not in payload
+    assert "is_time_serie_pickled" not in payload
 
 
-def test_build_operations_pickled_api_node_marker_uses_data_source_uid():
-    calls = []
+def test_build_operations_api_node_reference_serialization_uses_data_source_uid():
     api_node = types.SimpleNamespace(
         update_hash="api-update-hash-1",
         data_source_uid=DATA_SOURCE_UID,
-        persist_to_pickle=lambda: calls.append("persisted"),
     )
 
-    payload = build_operations._serialize_api_timeserie(api_node, pickle_ts=True)
+    payload = build_operations._serialize_api_timeserie(api_node)
 
-    assert calls == ["persisted"]
     assert payload == {
-        "is_api_time_serie_pickled": True,
+        "is_api_time_serie_instance": True,
         "update_hash": "api-update-hash-1",
         "data_source_uid": DATA_SOURCE_UID,
     }
     assert "data_source_id" not in payload
+    assert "is_api_time_serie_pickled" not in payload
 
 
-def test_build_operations_pickle_paths_use_data_source_uid(monkeypatch, tmp_path):
+def test_build_operations_rebuilds_from_configuration_without_pickle(monkeypatch):
+    calls = []
+
+    class FakeLogger:
+        def debug(self, message):
+            calls.append(("debug", message))
+
+    class FakeDataNode:
+        logger = FakeLogger()
+
+        def set_relation_tree(self):
+            calls.append(("set_relation_tree",))
+
+        def _set_state_with_sessions(
+            self,
+            *,
+            graph_depth,
+            graph_depth_limit,
+            include_client_objects,
+        ):
+            calls.append(
+                (
+                    "set_state_with_sessions",
+                    graph_depth,
+                    graph_depth_limit,
+                    include_client_objects,
+                )
+            )
+
+    fake_ts = FakeDataNode()
+
+    def fake_rebuild_from_configuration(update_hash, data_source):
+        calls.append(("rebuild_from_configuration", update_hash, data_source))
+        return fake_ts
+
     monkeypatch.setattr(
         build_operations,
-        "ogm",
-        types.SimpleNamespace(pickle_storage_path=str(tmp_path)),
+        "rebuild_from_configuration",
+        fake_rebuild_from_configuration,
     )
 
-    path = build_operations.get_pickle_path(
+    result = build_operations.rebuild_and_set_from_update_hash(
         update_hash="update-hash-1",
         data_source_uid=DATA_SOURCE_UID,
+        set_dependencies_df=True,
+        graph_depth_limit=3,
     )
-    data_source_path = build_operations.data_source_pickle_path(DATA_SOURCE_UID)
 
-    assert path == str(tmp_path / DATA_SOURCE_UID / "update-hash-1.pickle")
-    assert data_source_path == str(tmp_path / DATA_SOURCE_UID / "data_source.pickle")
-
-
-def test_build_operations_rejects_legacy_pickled_data_node_marker_data_source_id():
-    rebuilder = build_operations.PickleRebuilder()
-
-    with pytest.raises(ValueError, match="is_time_serie_pickled requires data_source_uid"):
-        rebuilder._handle_pickled_timeserie(
-            {
-                "is_time_serie_pickled": True,
-                "update_hash": "update-hash-1",
-                "data_source_id": 7,
-            }
-        )
-
-
-def test_build_operations_rejects_legacy_pickled_api_node_marker_data_source_id():
-    rebuilder = build_operations.PickleRebuilder()
-
-    with pytest.raises(ValueError, match="is_api_time_serie_pickled requires data_source_uid"):
-        rebuilder._handle_api_timeserie(
-            {
-                "is_api_time_serie_pickled": True,
-                "update_hash": "update-hash-1",
-                "data_source_id": 7,
-            }
-        )
+    assert result is fake_ts
+    assert calls == [
+        ("rebuild_from_configuration", "update-hash-1", DATA_SOURCE_UID),
+        ("set_relation_tree",),
+        ("set_state_with_sessions", 0, 3, False),
+        ("debug", "ts update-hash-1 rebuilt from configuration"),
+    ]

@@ -423,7 +423,7 @@ class UpdateRunner:
         # Enforce backend-safe physical column names for non-local storage.
         if storage_class_type not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES:
 
-            for col, dtype in df.dtypes.items():
+            for col, _dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
                     raise ValueError(f"Column name '{col}' must be a lowercase string.")
                 if len(col) > 63:
@@ -646,7 +646,7 @@ class UpdateRunner:
             _ = dependency_ts.local_persist_manager
 
             logger.debug(f"Adding dependency '{name}' to update map.")
-            dependecy_map[key] = {"is_pickle": False, "ts": dependency_ts}
+            dependecy_map[key] = {"ts": dependency_ts}
             declared_dependencies = dependency_ts.dependencies() or {}
             # Recursively call get_update_map on the dependency to traverse the entire graph
             self._get_update_map(
@@ -692,7 +692,7 @@ class UpdateRunner:
 
                     else:
                         # If not in the map, it must be rebuilt from storage
-                        ts_to_update, _ = build_operations.rebuild_and_set_from_update_hash(
+                        ts_to_update = build_operations.rebuild_and_set_from_update_hash(
                             update_hash=key[0], data_source_uid=key[1]
                         )
 

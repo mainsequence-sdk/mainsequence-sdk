@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import json
-import os
 from collections.abc import Mapping
 from typing import Any, ClassVar, Literal
 
@@ -654,13 +653,6 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
         dump = self.model_dump()
         dump["related_resource"] = self.related_resource.model_dump()
         return json.dumps(dump, **json_dumps_kwargs)
-
-    def persist_to_pickle(self, path):
-        import cloudpickle
-
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as handle:
-            cloudpickle.dump(self, handle)
 
     @classmethod
     def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):

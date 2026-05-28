@@ -24,7 +24,6 @@ classifiers = [
 dependencies = [
   "cachetools",
   "click>=8.3.0",
-  "cloudpickle",
   "concurrent-log-handler",
   "numpy",
   "opentelemetry-api",

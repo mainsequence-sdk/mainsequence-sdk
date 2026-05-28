@@ -6,25 +6,20 @@ import datetime
 import hashlib
 import importlib
 import json
-import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from enum import Enum
 from functools import singledispatch
-from pathlib import Path
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
 
-import cloudpickle
 from pydantic import BaseModel
 
-import mainsequence.client as ms_client
 from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.client.models_tdag import _resolve_local_pod_project
 from mainsequence.instrumentation import tracer, tracer_instrumentator
-from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, ogm
 from mainsequence.tdag.pydantic_metadata import (
     is_serialized_pydantic_model,
     serialize_pydantic_model,
@@ -38,7 +33,8 @@ from .persist_managers import PersistManager
 if TYPE_CHECKING:
     from .data_nodes import APIDataNode, DataNode
 
-build_model = lambda model_data: get_model_class(model_data["orm_class"])(**model_data)
+def build_model(model_data):
+    return get_model_class(model_data["orm_class"])(**model_data)
 
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 _HASH_SUFFIX_LENGTH = 33
@@ -46,7 +42,7 @@ _HASH_SUFFIX_LENGTH = 33
 
 # 1. Create a "registry" function using the decorator
 @singledispatch
-def serialize_argument(value: Any, pickle_ts: bool) -> Any:
+def serialize_argument(value: Any) -> Any:
     """
     Default implementation for any type not specifically registered.
     It can either return the value as is or raise a TypeError.
@@ -56,44 +52,39 @@ def serialize_argument(value: Any, pickle_ts: bool) -> Any:
     return value
 
 
-def _serialize_timeserie(value: DataNode, pickle_ts: bool = False) -> dict[str, Any]:
+def _serialize_timeserie(value: DataNode) -> dict[str, Any]:
     """Serialization logic for DataNode objects."""
-    print(f"Serializing DataNode: {value.update_hash}")
-    if pickle_ts:
-        return {
-            "is_time_serie_pickled": True,
-            "update_hash": value.update_hash,
-            "data_source_uid": value.data_source_uid,
-        }
-    return {"is_time_serie_instance": True, "update_hash": value.update_hash}
+    return {
+        "is_time_serie_instance": True,
+        "update_hash": value.update_hash,
+        "data_source_uid": str(value.data_source_uid),
+    }
 
 
-def _serialize_api_timeserie(value, pickle_ts: bool):
-    if pickle_ts:
-        new_value = {"is_api_time_serie_pickled": True}
-        value.persist_to_pickle()
-        new_value["update_hash"] = value.update_hash
-        new_value["data_source_uid"] = value.data_source_uid
-        return new_value
-    return value
+def _serialize_api_timeserie(value: APIDataNode) -> dict[str, Any]:
+    return {
+        "is_api_time_serie_instance": True,
+        "update_hash": value.update_hash,
+        "data_source_uid": str(value.data_source_uid),
+    }
 
 
 @serialize_argument.register(datetime.datetime)
-def _(value: datetime.datetime, pickle_ts: bool = False) -> str:
+def _(value: datetime.datetime) -> str:
     return value.isoformat()
 
 
 @serialize_argument.register(BaseModel)
-def _(value: BaseModel, pickle_ts: bool = False) -> dict[str, Any]:
+def _(value: BaseModel) -> dict[str, Any]:
     """Serialization logic for any Pydantic BaseModel."""
     return serialize_pydantic_model(
         value,
-        serialize_field=lambda field_value: serialize_argument(field_value, pickle_ts),
+        serialize_field=serialize_argument,
     )
 
 
 @serialize_argument.register(SourceTableForeignKey)
-def _(value: SourceTableForeignKey, pickle_ts: bool = False) -> dict[str, Any]:
+def _(value: SourceTableForeignKey) -> dict[str, Any]:
     """Serialize FK authoring references to their hashable structural identity."""
     import_path = {"module": value.__class__.__module__, "qualname": value.__class__.__qualname__}
     return {
@@ -117,15 +108,8 @@ def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> An
     return strip_pydantic_hash_exclusions(value, for_storage_hash=for_storage_hash)
 
 
-def _require_serialized_data_source_uid(value: Mapping[str, Any], *, marker: str) -> str:
-    data_source_uid = value.get("data_source_uid")
-    if data_source_uid in (None, ""):
-        raise ValueError(f"{marker} requires data_source_uid.")
-    return str(data_source_uid)
-
-
 @serialize_argument.register(BaseObjectOrm)
-def _(value, pickle_ts: bool):
+def _(value):
     new_dict = json.loads(value.model_dump_json())
     if hasattr(value, "unique_identifier"):
         # Generic SDK object identity.
@@ -134,7 +118,7 @@ def _(value, pickle_ts: bool):
 
 
 @serialize_argument.register(list)
-def _(value: list, pickle_ts: bool):
+def _(value: list):
     if not value:
         return []
 
@@ -145,52 +129,43 @@ def _(value: list, pickle_ts: bool):
         sorted_value = sorted(value, key=lambda x: x.unique_identifier)
 
         # 3. SERIALIZE each item in the now-sorted list
-        serialized_items = [serialize_argument(item, pickle_ts) for item in sorted_value]
+        serialized_items = [serialize_argument(item) for item in sorted_value]
 
         # 4. WRAP the result in an identifiable structure for deserialization
         return {"__type__": "orm_model_list", "items": serialized_items}
 
     # Fallback for all other list types
-    return [serialize_argument(item, pickle_ts) for item in value]
+    return [serialize_argument(item) for item in value]
 
 
 @serialize_argument.register(tuple)
-def _(value, pickle_ts: bool):
-    items = [serialize_argument(item, pickle_ts) for item in value]
+def _(value):
+    items = [serialize_argument(item) for item in value]
     return {"__type__": "tuple", "items": items}
 
 
 @serialize_argument.register(dict)
-def _(value: dict, pickle_ts: bool):
+def _(value: dict):
     # Check for the special marker key.
     if value.get("is_time_series_config") is True:
         # If it's a special config dict, preserve its unique structure.
         # Serialize its contents recursively.
-        config_data = {k: serialize_argument(v, pickle_ts) for k, v in value.items()}
+        config_data = {k: serialize_argument(v) for k, v in value.items()}
 
         return {"is_time_series_config": True, "config_data": config_data}
 
     # Otherwise, handle it as a regular dictionary.
-    return {k: serialize_argument(v, pickle_ts) for k, v in value.items()}
+    return {k: serialize_argument(v) for k, v in value.items()}
 
 
 @serialize_argument.register(SimpleNamespace)
-def _(value, pickle_ts: bool):
-    return serialize_argument.dispatch(dict)(vars(value), pickle_ts)
+def _(value):
+    return serialize_argument.dispatch(dict)(vars(value))
 
 
 @serialize_argument.register(Enum)
-def _(value, pickle_ts: bool):
+def _(value):
     return value.value
-
-
-def data_source_dir_path(data_source_uid: str) -> str:
-    path = ogm.pickle_storage_path
-    return f"{path}/{data_source_uid}"
-
-
-def data_source_pickle_path(data_source_uid: str) -> str:
-    return f"{data_source_dir_path(data_source_uid)}/data_source.pickle"
 
 
 def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any]:
@@ -228,13 +203,6 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
                 local_ts_dict_to_hash[key] = parse_dictionary_before_hashing(value)
 
     return local_ts_dict_to_hash
-
-
-def verify_backend_git_hash_with_pickle(
-    local_persist_manager: PersistManager, time_serie_class: DataNode
-) -> None:
-    """Backend storage no longer stores source-code hashes, so no verification is possible."""
-    return
 
 
 def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
@@ -297,20 +265,14 @@ class Serializer:
         Serializes __init__ keyword arguments for a DataNode.
         This maps to your original `serialize_init_kwargs`.
         """
-        return self._serialize_dict(kwargs=kwargs, pickle_ts=False)
+        return self._serialize_dict(kwargs=kwargs)
 
-    def serialize_for_pickle(self, properties: dict[str, Any]) -> dict[str, Any]:
-        """
-        Serializes properties to a pickle-friendly dictionary.
-        """
-        return self._serialize_dict(kwargs=properties, pickle_ts=True)
-
-    def _serialize_dict(self, kwargs: dict[str, Any], pickle_ts: bool) -> dict[str, Any]:
+    def _serialize_dict(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """
         Internal worker that serializes a dictionary by calling the dispatcher.
         This maps to your original `_serialize_configuration_dict`.
         """
-        new_kwargs = {key: serialize_argument(value, pickle_ts) for key, value in kwargs.items()}
+        new_kwargs = {key: serialize_argument(value) for key, value in kwargs.items()}
         return collections.OrderedDict(sorted(new_kwargs.items()))
 
 
@@ -357,84 +319,6 @@ class BaseRebuilder(ABC):
         return value  # Fallback
 
 
-class PickleRebuilder(BaseRebuilder):
-    """Specialist for deserializing objects from a pickled state."""
-
-    @property
-    def registry(self) -> dict[str, Callable]:
-        return {
-            "is_time_serie_pickled": self._handle_pickled_timeserie,
-            "is_api_time_serie_pickled": self._handle_api_timeserie,
-            "pydantic_model_import_path": self._handle_pydantic_model,
-            "is_time_series_config": self._handle_timeseries_config,
-            "orm_class": self._handle_orm_model,
-            "__type__": self._handle_complex_type,
-        }
-
-    def _handle_pickled_timeserie(self, value: dict, **state_kwargs) -> DataNode:
-        """Handles 'is_time_serie_pickled' markers."""
-        import cloudpickle
-
-        # Note: You need to make DataNode available here
-        data_source_uid = _require_serialized_data_source_uid(
-            value,
-            marker="is_time_serie_pickled",
-        )
-        full_path = get_pickle_path(
-            update_hash=value["update_hash"], data_source_uid=data_source_uid
-        )
-        with open(full_path, "rb") as handle:
-            ts = cloudpickle.load(handle)
-
-        ds_pickle_path = data_source_pickle_path(data_source_uid)
-        data_source = load_data_source_from_pickle(ds_pickle_path)
-        ts.set_data_source(data_source=data_source)
-
-        if state_kwargs.get("graph_depth", 0) - 1 <= state_kwargs.get("graph_depth_limit", 0):
-            ts._set_state_with_sessions(**state_kwargs)
-        return ts
-
-    def _handle_pydantic_model(self, value: dict, **state_kwargs) -> Any:
-        path_info = value["pydantic_model_import_path"]
-        module = importlib.import_module(path_info["module"])
-        PydanticClass = getattr(module, path_info["qualname"])
-
-        rebuilt_value = self.rebuild(value["serialized_model"], **state_kwargs)
-        return PydanticClass(**rebuilt_value)
-
-    def _handle_api_timeserie(self, value: dict, **state_kwargs) -> APIDataNode:
-        """Handles 'is_api_time_serie_pickled' markers."""
-        import cloudpickle
-
-        # Note: You need to make APIDataNode available here
-        data_source_uid = _require_serialized_data_source_uid(
-            value,
-            marker="is_api_time_serie_pickled",
-        )
-        full_path = get_pickle_path(
-            update_hash=value["update_hash"],
-            data_source_uid=data_source_uid,
-            is_api=True,
-        )
-        with open(full_path, "rb") as handle:
-            ts = cloudpickle.load(handle)
-        return ts
-
-    def _handle_timeseries_config(self, value: dict, **state_kwargs) -> dict:
-        """Handles 'is_time_series_config' markers."""
-        return self.rebuild(value["config_data"], **state_kwargs)
-
-    def _handle_orm_model(self, value: dict, **state_kwargs) -> Any:
-        """Handles 'orm_class' markers for single models."""
-        return build_model(value)
-
-    def _handle_complex_type(self, value: dict, **state_kwargs) -> Any:
-        """Handles generic '__type__' markers (like tuples)."""
-        rebuild_function = lambda x: self.rebuild(x, **state_kwargs)
-        # Assumes rebuild_with_type handles different __type__ values
-        return rebuild_with_type(value, rebuild_function=rebuild_function)
-
-
 class ConfigRebuilder(BaseRebuilder):
 
     @property
@@ -472,7 +356,6 @@ class DeserializerManager:
     """Handles serialization and deserialization of configurations."""
 
     def __init__(self):
-        self.pickle_rebuilder = PickleRebuilder()
         self.config_rebuilder = ConfigRebuilder()
 
     def rebuild_config(self, config: dict[str, Any], **kwargs) -> dict[str, Any]:
@@ -495,11 +378,6 @@ class DeserializerManager:
         config = self.rebuild_config(config=config)
 
         return config
-
-    def deserialize_pickle_state(self, state: Any, **kwargs) -> Any:
-        """Deserializes an entire pickled state object."""
-        return self.pickle_rebuilder.rebuild(state, **kwargs)
-
 
 @dataclass
 class TimeSerieConfig:
@@ -545,8 +423,6 @@ def create_config(
     """
     Creates the configuration and hashes using the original hash_signature logic.
     """
-    global logger
-
     try:
         build_configuration_json_schema = extract_pydantic_fields_from_dict(kwargs)
     except Exception as e:
@@ -577,87 +453,14 @@ def create_config(
     )
 
 
-def flush_pickle(pickle_path) -> None:
-    """Deletes the pickle file for this time series."""
-    if os.path.isfile(pickle_path):
-        os.remove(pickle_path)
-
-
-# In class BuildManager:
-
-
-@tracer.start_as_current_span("TS: load_from_pickle")
-def load_from_pickle(pickle_path: str) -> DataNode:
-    """
-    Loads a DataNode object from a pickle file, handling both standard and API types.
-
-    Args:
-        pickle_path: The path to the pickle file.
-
-    Returns:
-        The loaded DataNode object.
-    """
-
-    import cloudpickle
-
-    directory = os.path.dirname(pickle_path)
-    filename = os.path.basename(pickle_path)
-    prefixed_path = os.path.join(directory, f"{API_TS_PICKLE_PREFIFX}{filename}")
-    if os.path.isfile(prefixed_path) and os.path.isfile(pickle_path):
-        raise FileExistsError(
-            "Both default and API timeseries pickle exist - cannot decide which to load"
-        )
-
-    if os.path.isfile(prefixed_path):
-        pickle_path = prefixed_path
-
-    try:
-        with open(pickle_path, "rb") as handle:
-            time_serie = cloudpickle.load(handle)
-    except Exception as e:
-        raise e
-
-    if time_serie.is_api:
-        return time_serie
-
-    data_source = load_data_source_from_pickle(pickle_path=pickle_path)
-
-    # set objects that are not pickleable
-    time_serie.set_data_source(data_source=data_source)
-    time_serie._local_persist_manager = None
-    # verify pickle
-    verify_backend_git_hash_with_pickle(
-        local_persist_manager=time_serie.local_persist_manager,
-        time_serie_class=time_serie.__class__,
-    )
-    return time_serie
-
-
-def get_pickle_path(update_hash: str, data_source_uid: str, is_api=False) -> str:
-    if is_api:
-        return os.path.join(
-            ogm.pickle_storage_path,
-            str(data_source_uid),
-            f"{API_TS_PICKLE_PREFIFX}{update_hash}.pickle",
-        )
-    return os.path.join(ogm.pickle_storage_path, str(data_source_uid), f"{update_hash}.pickle")
-
-
-def load_data_source_from_pickle(pickle_path: str) -> Any:
-    data_path = Path(pickle_path).parent / "data_source.pickle"
-    with open(data_path, "rb") as handle:
-        data_source = cloudpickle.load(handle)
-    return data_source
-
-
 def rebuild_and_set_from_update_hash(
-    update_hash: int,
+    update_hash: str,
     data_source_uid: str,
     set_dependencies_df: bool = False,
     graph_depth_limit: int = 1,
-) -> tuple[DataNode, str]:
+) -> DataNode:
     """
-    Rebuilds a DataNode from its local hash ID and pickles it if it doesn't exist.
+    Rebuilds a DataNode from stored configuration and attaches runtime sessions.
 
     Args:
         update_hash: The local hash ID of the DataNode.
@@ -666,47 +469,20 @@ def rebuild_and_set_from_update_hash(
         graph_depth_limit: The depth limit for graph traversal.
 
     Returns:
-        A tuple containing the DataNode object and the path to its pickle file.
+        The rebuilt DataNode object.
     """
-    pickle_path = get_pickle_path(
+    ts = rebuild_from_configuration(
         update_hash=update_hash,
-        data_source_uid=data_source_uid,
+        data_source=data_source_uid,
     )
-    if not os.path.isfile(pickle_path) or os.stat(pickle_path).st_size == 0:
-        # rebuild time serie and pickle
-        ts = rebuild_from_configuration(
-            update_hash=update_hash,
-            data_source=data_source_uid,
-        )
-        if set_dependencies_df:
-            ts.set_relation_tree()
-
-        ts.persist_to_pickle()
-        ts.logger.info(f"ts {update_hash} pickled ")
-
-    ts = load_and_set_from_pickle(
-        pickle_path=pickle_path,
-        graph_depth_limit=graph_depth_limit,
-    )
-    ts.logger.debug(f"ts {update_hash} loaded from pickle ")
-    return ts, pickle_path
-
-
-def load_and_set_from_pickle(pickle_path: str, graph_depth_limit: int = 1) -> DataNode:
-    """
-    Loads a DataNode from a pickle file and sets its state.
-
-    Args:
-        pickle_path: The path to the pickle file.
-        graph_depth_limit: The depth limit for setting the state.
-
-    Returns:
-        The loaded and configured DataNode object.
-    """
-    ts = load_from_pickle(pickle_path)
+    if set_dependencies_df:
+        ts.set_relation_tree()
     ts._set_state_with_sessions(
-        graph_depth=0, graph_depth_limit=graph_depth_limit, include_client_objects=False
+        graph_depth=0,
+        graph_depth_limit=graph_depth_limit,
+        include_client_objects=False,
     )
+    ts.logger.debug(f"ts {update_hash} rebuilt from configuration")
     return ts
 
 
@@ -725,14 +501,6 @@ def rebuild_from_configuration(update_hash: str, data_source: str | object) -> D
     import importlib
 
     tracer_instrumentator.append_attribute_to_current_span("update_hash", update_hash)
-
-    if isinstance(data_source, str):
-        pickle_path = get_pickle_path(data_source_uid=data_source, update_hash=update_hash)
-        if not os.path.isfile(pickle_path):
-            data_source = ms_client.DynamicTableDataSource.get_by_uid(data_source)
-            data_source.persist_to_pickle(data_source_pickle_path(data_source.uid))
-
-        data_source = load_data_source_from_pickle(pickle_path=pickle_path)
 
     data_source_uid = getattr(data_source, "uid", data_source)
     data_node_update = PersistManager.UPDATE_CLASS.get_or_none(
@@ -777,9 +545,3 @@ def rebuild_from_configuration(update_hash: str, data_source: str | object) -> D
         re_build_ts = TimeSerieClass(**time_serie_config)
 
     return re_build_ts
-
-
-def load_and_set_from_hash_id(update_hash: int, data_source_uid: str) -> DataNode:
-    path = get_pickle_path(update_hash=update_hash, data_source_uid=data_source_uid)
-    ts = load_and_set_from_pickle(pickle_path=path)
-    return ts

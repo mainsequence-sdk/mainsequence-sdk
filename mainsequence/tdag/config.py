@@ -6,8 +6,6 @@ from .utils import read_key_from_yaml, read_yaml, write_yaml
 
 DEFAULT_RETENTION_POLICY = dict(scheduler_name="default", retention_policy_time="90 days")
 
-API_TS_PICKLE_PREFIFX = "api-"
-
 TIME_SERIES_SOURCE_TIMESCALE = "timescale"
 TIME_SERIES_SOURCE_PARQUET = "parquet"
 
@@ -123,15 +121,6 @@ class TimeSeriesOGM:
         target_path = os.path.join(f"{self.time_series_folder}", "data_node_update")
         self.verify_exist(target_path=target_path)
         return target_path
-
-    @property
-    def pickle_storage_path(self):
-        target_path = os.path.join(f"{self.time_series_folder}", "pickled_ts")
-        self.verify_exist(target_path=target_path)
-        return target_path
-
-    def get_ts_pickle_path(self, update_hash: str):
-        return os.path.join(f"{self.pickle_storage_path}", f"{update_hash}.pickle")
 
 
 ogm = TimeSeriesOGM()

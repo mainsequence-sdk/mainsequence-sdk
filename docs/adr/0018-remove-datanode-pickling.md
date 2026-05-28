@@ -2,7 +2,7 @@
 
 Date: 2026-05-28
 
-Status: Proposed
+Status: Accepted and implemented
 
 ## Related ADRs
 
@@ -107,44 +107,44 @@ In scope:
 - `mainsequence/tdag/data_nodes/run_operations.py`
 - `mainsequence/tdag/config.py` pickle path contract
 
-Likely follow-up scope:
+Also removed:
 
-- `mainsequence/client/models_metatables.py::persist_to_pickle()` if it is still
-  only serving the removed DataNode sidecar path
+- `mainsequence/client/models_metatables.py::persist_to_pickle()` because it only
+  served the removed DataNode sidecar path
 
 ## Implementation Tasks
 
-- [ ] Deprecate pickle-specific public helpers in docs and docstrings.
-- [ ] Change `rebuild_and_set_from_update_hash(...)` to rebuild from canonical
+- [x] Deprecate pickle-specific public helpers in docs and docstrings.
+- [x] Change `rebuild_and_set_from_update_hash(...)` to rebuild from canonical
       configuration without first creating a pickle.
-- [ ] Replace `load_and_set_from_pickle(...)` call sites with a pure
+- [x] Replace `load_and_set_from_pickle(...)` call sites with a pure
       rebuild-and-attach flow.
-- [ ] Update `run_operations._execute_sequential_debug_update(...)` to use the
+- [x] Update `run_operations._execute_sequential_debug_update(...)` to use the
       pure rebuild path.
-- [ ] Simplify `DataNode._set_state_with_sessions(...)` so it no longer
+- [x] Simplify `DataNode._set_state_with_sessions(...)` so it no longer
       deserializes pickle markers from object state.
-- [ ] Remove `PickleRebuilder` handling for:
+- [x] Remove `PickleRebuilder` handling for:
       - `is_time_serie_pickled`
       - `is_api_time_serie_pickled`
-- [ ] Remove marker emission from:
+- [x] Remove marker emission from:
       - `_serialize_timeserie(...)`
       - `_serialize_api_timeserie(...)`
-- [ ] Remove:
+- [x] Remove:
       - `DataNode.persist_to_pickle()`
       - `DataNode._atomic_pickle_dump()`
       - `DataNode.get_pickle_path_from_time_serie()`
       - `load_from_pickle(...)`
       - `load_and_set_from_pickle(...)`
       - `flush_pickle(...)`
-- [ ] Remove sidecar data source pickles:
+- [x] Remove sidecar data source pickles:
       - `data_source_dir_path(...)`
       - `data_source_pickle_path(...)`
       - `load_data_source_from_pickle(...)`
-- [ ] Remove `DataNode.__getstate__()`, `DataNode.__setstate__()`, and
+- [x] Remove `DataNode.__getstate__()`, `DataNode.__setstate__()`, and
       `_prepare_state_for_pickle(...)`.
-- [ ] Remove runtime `cloudpickle` imports from DataNode execution code.
-- [ ] Remove or repurpose `ogm.pickle_storage_path` if nothing else requires it.
-- [ ] Rewrite tests that currently assert pickle markers, pickle paths, and
+- [x] Remove runtime `cloudpickle` imports from DataNode execution code.
+- [x] Remove or repurpose `ogm.pickle_storage_path` if nothing else requires it.
+- [x] Rewrite tests that currently assert pickle markers, pickle paths, and
       pickle rebuild behavior.
 
 ## Consequences
@@ -181,12 +181,12 @@ The second major risk is runtime reattachment:
 
 ## Validation
 
-- [ ] Add tests proving `rebuild_and_set_from_update_hash(...)` works without
+- [x] Add tests proving `rebuild_and_set_from_update_hash(...)` works without
       creating local pickle files.
 - [ ] Add tests proving dependency execution rebuilds missing nodes from
       canonical configuration only.
 - [ ] Add tests proving no data source sidecar pickle is required.
-- [ ] Remove tests that assert pickle marker emission and pickle path layout.
+- [x] Remove tests that assert pickle marker emission and pickle path layout.
 - [ ] Add targeted regression coverage around sequential debug execution and
       cold dependency rebuilds.
 
