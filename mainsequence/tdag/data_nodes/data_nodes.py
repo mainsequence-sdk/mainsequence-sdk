@@ -987,8 +987,13 @@ class DataNode(DataAccessMixin, ABC):
         """
         return self.data_node_storage.sourcetableconfiguration.get_data_updates()
 
+    def prepare_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
+        """Hook for subclasses to scope or enrich update statistics before update()."""
+        return update_statistics
+
     def _set_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """Attach generic update statistics."""
+        update_statistics = self.prepare_update_statistics(update_statistics)
         self.update_statistics = update_statistics
         return update_statistics
 

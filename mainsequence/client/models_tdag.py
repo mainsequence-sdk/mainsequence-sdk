@@ -2866,7 +2866,7 @@ class UpdateStatistics(BaseUpdateStatistics):
         return dimension_range_map
 
     def get_last_update_for_identity(self, identity_value):
-        return self._progress_stats()[identity_value] or self._initial_fallback_date
+        return self._progress_stats().get(identity_value)
 
     def get_earliest_update_for_identity(self, identity_value):
         stats = self._progress_stats().get(identity_value)

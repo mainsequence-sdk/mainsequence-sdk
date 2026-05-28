@@ -5,6 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client.models_tdag import UpdateStatistics
+from mainsequence.tdag.data_nodes.data_nodes import DataNode
 
 
 def _dt(hour: int) -> datetime.datetime:
@@ -79,6 +80,57 @@ def test_update_statistics_two_index_normalizes_progress():
 
     stats["asset-3"] = "2026-05-01T03:00:00Z"
     assert stats.index_progress["asset-3"] == _dt(3)
+
+
+def test_update_statistics_missing_identity_has_no_last_update():
+    stats = UpdateStatistics(index_progress={"asset-1": "2026-05-01T02:00:00Z"})
+    stats._initial_fallback_date = _dt(0)
+
+    assert stats.get_last_update_for_identity("asset-2") is None
+
+
+def test_base_data_node_attaches_update_statistics_without_forcing_fallback_date():
+    class ExampleNode(DataNode):
+        OFFSET_START = _dt(0)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return None
+
+    node = object.__new__(ExampleNode)
+    stats = UpdateStatistics(index_progress={})
+
+    returned = node._set_update_statistics(stats)
+
+    assert returned is stats
+    assert node.update_statistics is stats
+    assert stats._initial_fallback_date is None
+
+
+def test_base_data_node_update_statistics_prepare_hook_can_set_fallback_date():
+    class ExampleNode(DataNode):
+        OFFSET_START = _dt(0)
+
+        def prepare_update_statistics(self, update_statistics):
+            update_statistics._initial_fallback_date = self.get_offset_start()
+            return update_statistics
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return None
+
+    node = object.__new__(ExampleNode)
+    stats = UpdateStatistics(index_progress={})
+
+    returned = node._set_update_statistics(stats)
+
+    assert returned is stats
+    assert node.update_statistics is stats
+    assert stats._initial_fallback_date == _dt(0)
 
 
 def test_update_statistics_builds_canonical_dimension_range_map_for_nested_progress():
