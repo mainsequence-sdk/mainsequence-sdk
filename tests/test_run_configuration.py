@@ -146,14 +146,12 @@ def test_persist_manager_requires_explicit_storage_table():
         UPDATE_CLASS = UpdateResource
 
     manager = ExplicitStoragePersistManager(
-        data_source=SimpleNamespace(uid="data-source-uid"),
         update_hash="prices-update-hash",
     )
 
     with pytest.raises(ValueError, match="explicit storage_table"):
         manager.local_persist_exist_set_config(
             local_configuration={},
-            open_to_public=False,
         )
 
 
@@ -178,14 +176,12 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
         UPDATE_CLASS = UpdateResource
 
     manager = ExplicitStoragePersistManager(
-        data_source=SimpleNamespace(uid="data-source-uid"),
         update_hash="prices-update-hash",
-        data_node_storage=storage_table,
+        storage_table=storage_table,
     )
 
     manager.local_persist_exist_set_config(
         local_configuration={"config": {"identifier": "prices"}},
-        open_to_public=False,
     )
 
     assert created_update_payloads == [
@@ -196,7 +192,7 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
             "meta_table_uid": "meta-table-uid",
         }
     ]
-    assert manager.data_node_storage is storage_table
+    assert manager.storage_table is storage_table
 
 
 def test_persist_manager_preserves_explicit_storage_table_during_update_lookup():
@@ -210,13 +206,12 @@ def test_persist_manager_preserves_explicit_storage_table_during_update_lookup()
 
     storage_table = _meta_table(storage_hash="canonical_prices_table")
     manager = ExplicitStoragePersistManager(
-        data_source=SimpleNamespace(uid="data-source-uid"),
         update_hash="prices-update-hash",
-        data_node_storage=storage_table,
+        storage_table=storage_table,
     )
 
     assert manager.data_node_update is None
-    assert manager.data_node_storage is storage_table
+    assert manager.storage_table is storage_table
 
 
 def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
@@ -255,25 +250,20 @@ def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
 
 
 def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
-    monkeypatch.setattr(
-        data_nodes_mod,
-        "get_data_source_from_orm",
-        lambda: SimpleNamespace(uid="data-source-uid", related_resource_class_type=None),
-    )
-
     captured = {}
 
-    def fake_get_from_data_type(**kwargs):
+    def fake_get_from_storage_table(storage_table, **kwargs):
         captured.update(kwargs)
+        captured["storage_table_arg"] = storage_table
         return SimpleNamespace(
             data_node_update=None,
-            data_node_storage=kwargs.get("data_node_storage"),
+            storage_table=storage_table,
         )
 
     monkeypatch.setattr(
         data_nodes_mod.PersistManager,
-        "get_from_data_type",
-        staticmethod(fake_get_from_data_type),
+        "get_from_storage_table",
+        staticmethod(fake_get_from_storage_table),
     )
 
     class Config(DataNodeConfiguration):
@@ -292,34 +282,23 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
     storage_table = _meta_table(storage_hash="canonical_prices_table")
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
-    assert node.local_persist_manager.data_node_storage is storage_table
-    assert captured["data_node_storage"] is storage_table
+    assert node.local_persist_manager.storage_table is storage_table
+    assert captured["storage_table_arg"] is storage_table
 
 
-def test_data_node_rejects_storage_table_from_different_data_source(monkeypatch):
-    monkeypatch.setattr(
-        data_nodes_mod,
-        "get_data_source_from_orm",
-        lambda: SimpleNamespace(uid="active-data-source", related_resource_class_type=None),
-    )
-
-    class Config(DataNodeConfiguration):
-        identifier: str
-
+def test_data_node_data_source_uid_is_derived_from_storage_table():
     class StorageTableNode(DataNode):
-        def __init__(self, config: Config, storage_table: MetaTable | None = None):
-            super().__init__(config=config, storage_table=storage_table)
-
         def dependencies(self):
             return {}
 
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _meta_table(data_source_uid="other-data-source")
+    node = StorageTableNode.__new__(StorageTableNode)
+    node.storage_table = _meta_table(data_source_uid="canonical-data-source")
+    node._data_source = SimpleNamespace(uid="runtime-data-source")
 
-    with pytest.raises(ValueError, match="storage_table.data_source_uid"):
-        StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
+    assert node.data_source_uid == "canonical-data-source"
 
 
 def test_data_node_update_accepts_labels():

@@ -734,9 +734,21 @@ def rebuild_from_configuration(update_hash: str, data_source: str | object) -> D
 
         data_source = load_data_source_from_pickle(pickle_path=pickle_path)
 
-    persist_manager = PersistManager.get_from_data_type(
+    data_source_uid = getattr(data_source, "uid", data_source)
+    data_node_update = PersistManager.UPDATE_CLASS.get_or_none(
         update_hash=update_hash,
-        data_source=data_source,
+        remote_table__data_source__uid=str(data_source_uid),
+        include_relations_detail=True,
+    )
+    if data_node_update is None:
+        raise ValueError(
+            f"DataNodeUpdate {update_hash!r} with data source {data_source_uid!r} "
+            "was not found."
+        )
+    persist_manager = PersistManager.get_from_storage_table(
+        update_hash=update_hash,
+        storage_table=None,
+        data_node_update=data_node_update,
     )
     try:
         time_serie_config = persist_manager.local_build_configuration

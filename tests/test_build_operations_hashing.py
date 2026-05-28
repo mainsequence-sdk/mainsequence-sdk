@@ -189,15 +189,6 @@ def test_offset_start_changes_update_hash_but_not_storage_hash(monkeypatch):
     assert storage_hash_a == storage_hash_b
 
 
-def test_open_to_public_changes_neither_hash(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
-    hashes_a = _hashes(DataNodeConfiguration(open_to_public=False))
-    hashes_b = _hashes(DataNodeConfiguration(open_to_public=True))
-
-    assert hashes_a == hashes_b
-
-
 def test_source_table_foreign_key_hash_uses_target_meta_table_uid(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
@@ -309,13 +300,12 @@ def test_legacy_args_ignore_in_storage_hash_class_attribute_is_rejected():
                 return None
 
 
-def test_data_node_configuration_overrides_offset_start_and_open_to_public():
+def test_data_node_configuration_overrides_offset_start():
     class NodeConfig(DataNodeConfiguration):
         pass
 
     class ConfigurableDataNode(DataNode):
         OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
-        OPEN_TO_PUBLIC = True
         TEST_OFFSET_START = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
 
         def __init__(self, node_config: NodeConfig, *args, **kwargs):
@@ -331,14 +321,9 @@ def test_data_node_configuration_overrides_offset_start_and_open_to_public():
     node = object.__new__(ConfigurableDataNode)
     node.config = NodeConfig(
         offset_start=datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC),
-        open_to_public=True,
     )
 
     assert node.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
-    assert node.get_open_to_public() is True
-
-    node.config = NodeConfig()
-    assert node.get_open_to_public() is True
 
     node._hash_namespace = "test"
     assert node.get_offset_start() == ConfigurableDataNode.TEST_OFFSET_START

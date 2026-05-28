@@ -88,7 +88,6 @@ The pre-migration write path was:
        storage_hash=storage_hash,
        data_source_uid=data_source.uid,
        build_configuration_json_schema=...,
-       open_to_public=...,
        namespace=...,
    )
    ```
@@ -238,12 +237,6 @@ The final persisted update record should reference storage by MetaTable UID:
 
 ```python
 meta_table_uid: str
-```
-
-Compatibility aliases may continue to expose:
-
-```python
-data_node_storage: str | DataNodeStorage
 ```
 
 but new request payloads should send `meta_table_uid`, not
@@ -465,7 +458,7 @@ backend exposes equivalent MetaTable routes for timestamped table reads.
 
 Compatibility fields:
 
-- `data_source_uid` remains required.
+- `data_source_uid` is derived from the resolved MetaTable.
 - integer `data_source_id` remains removed per ADR 0015.
 
 ## Client Import And Inheritance Plan

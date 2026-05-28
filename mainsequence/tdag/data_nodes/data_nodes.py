@@ -9,6 +9,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
 from functools import wraps
+from types import SimpleNamespace
 from typing import Any, Union
 
 import cloudpickle
@@ -21,7 +22,6 @@ import mainsequence.tdag.data_nodes.run_operations as run_operations
 from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
     BaseUpdateStatistics,
-    DataNodeStorage,
     DataNodeUpdate,
     DataSource,
     DynamicTableDataSource,
@@ -388,16 +388,16 @@ class APIDataNode(DataAccessMixin):
             storage_hash=self.storage_hash,
             data_source_uid=self.data_source_uid,
         )
-        data_node_storage = self._local_persist_manager.data_node_storage
+        storage_table = self._local_persist_manager.storage_table
 
-        assert data_node_storage is not None, f"Verify that the table {self.storage_hash} exists "
+        assert storage_table is not None, f"Verify that the table {self.storage_hash} exists "
 
     def get_update_statistics(self):
         """
         Gets update statistics from the database.
         """
         return (
-            self.local_persist_manager.data_node_storage.sourcetableconfiguration.get_data_updates()
+            self.local_persist_manager.storage_table.sourcetableconfiguration.get_data_updates()
         )
 
     def update(self, *args, **kwargs) -> pd.DataFrame:
@@ -450,7 +450,6 @@ class DataNode(DataAccessMixin, ABC):
     """
 
     OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=pytz.utc)
-    OPEN_TO_PUBLIC=False # flag for enterprise data providers that want to open their data nmodes
     DATA_NODE_UPDATE_CLASS = DataNodeUpdate
 
     # --- Dunder & Serialization Methods ---
@@ -786,23 +785,6 @@ class DataNode(DataAccessMixin, ABC):
                 continue
             setattr(self, field_name, value)
 
-    def _validate_storage_table_data_source(self) -> None:
-        storage_table = self.storage_table
-        if storage_table is None:
-            return
-
-        storage_data_source_uid = getattr(storage_table, "data_source_uid", None)
-        data_source = getattr(self, "_data_source", None)
-        data_source_uid = getattr(data_source, "uid", None)
-
-        if storage_data_source_uid in (None, "") or data_source_uid in (None, ""):
-            return
-        if str(storage_data_source_uid) != str(data_source_uid):
-            raise ValueError(
-                "DataNode storage_table.data_source_uid must match the active "
-                "data_source.uid."
-            )
-
     def _get_data_node_configuration(self) -> BaseConfiguration | None:
         config = getattr(self, "config", None)
         return config if isinstance(config, BaseConfiguration) else None
@@ -843,35 +825,32 @@ class DataNode(DataAccessMixin, ABC):
             return config.offset_start
         return self.OFFSET_START
 
-    def get_open_to_public(self) -> bool:
-        """
-        Return the publication flag for the node.
-
-        Resolution order:
-        1. explicit ``DataNodeConfiguration.open_to_public`` when set on a config object
-        2. legacy class attribute ``OPEN_TO_PUBLIC``
-        """
-        config = self._get_data_node_configuration()
-        if config is not None and "open_to_public" in getattr(config, "model_fields_set", set()):
-            return config.open_to_public
-        return self.OPEN_TO_PUBLIC
-
     @property
     def is_api(self):
         return False
 
     @property
     def data_source_uid(self) -> str:
-        return self.data_source.uid
+        storage_table = self.storage_table
+        if storage_table is None:
+            raise ValueError("DataNode data_source_uid requires storage_table.data_source_uid.")
+
+        data_source_uid = getattr(storage_table, "data_source_uid", None)
+        if data_source_uid in (None, ""):
+            data_source = getattr(storage_table, "data_source", None)
+            if isinstance(data_source, dict):
+                data_source_uid = data_source.get("uid")
+            else:
+                data_source_uid = getattr(data_source, "uid", None)
+
+        if data_source_uid in (None, ""):
+            raise ValueError("DataNode data_source_uid requires storage_table.data_source_uid.")
+        return str(data_source_uid)
 
     @property
     def data_node_update(self) -> DataNodeUpdate:
         """The local time series metadata object."""
         return self.local_persist_manager.data_node_update
-
-    @property
-    def data_node_storage(self) -> DataNodeStorage:
-        return self.local_persist_manager.data_node_storage
 
     @property
     def local_persist_manager(self) -> PersistManager:
@@ -928,7 +907,7 @@ class DataNode(DataAccessMixin, ABC):
         deserializer = build_operations.DeserializerManager()
         state = deserializer.deserialize_pickle_state(
             state=state,
-            data_source_uid=self.data_source.uid,
+            data_source_uid=self.data_source_uid,
             include_client_objects=include_client_objects,
             graph_depth_limit=graph_depth_limit,
             graph_depth=graph_depth + 1,
@@ -991,26 +970,50 @@ class DataNode(DataAccessMixin, ABC):
            data_node_update : Union[None, dict], optional
                Local metadata for the time series, if available.
         """
-        self._local_persist_manager = PersistManager.get_from_data_type(
+        self._local_persist_manager = PersistManager.get_from_storage_table(
+            storage_table=self.storage_table,
             update_hash=update_hash,
             class_name=self.__class__.__name__,
             data_node_update=data_node_update,
-            data_node_storage=self.storage_table,
-            data_source=self.data_source,
         )
 
     def set_data_source(self, data_source: object | None = None) -> None:
         """
-        Sets the data source for the time series.
+        Sets or derives the data source for the time series.
 
         Args:
-            data_source: The data source object. If None, the default is fetched from the ORM.
+            data_source: Optional already-loaded data source object.
         """
-        if data_source is None:
-            self._data_source = get_data_source_from_orm()
-        else:
+        if data_source is not None:
             self._data_source = data_source
-        self._validate_storage_table_data_source()
+            return
+
+        storage_table = self.storage_table
+        if storage_table is not None:
+            storage_data_source = getattr(storage_table, "data_source", None)
+            if isinstance(storage_data_source, dict):
+                self._data_source = SimpleNamespace(
+                    uid=storage_data_source.get("uid"),
+                    related_resource_class_type=storage_data_source.get(
+                        "related_resource_class_type"
+                    ),
+                    related_resource=storage_data_source.get("related_resource"),
+                )
+                return
+            if storage_data_source not in (None, "") and not isinstance(
+                storage_data_source, int | str
+            ):
+                self._data_source = storage_data_source
+                return
+            storage_data_source_uid = getattr(storage_table, "data_source_uid", None)
+            if storage_data_source_uid not in (None, ""):
+                self._data_source = SimpleNamespace(
+                    uid=str(storage_data_source_uid),
+                    related_resource_class_type=None,
+                )
+                return
+
+        self._data_source = get_data_source_from_orm()
 
     def verify_and_build_remote_objects(self) -> None:
         """
@@ -1019,7 +1022,6 @@ class DataNode(DataAccessMixin, ABC):
         """
         self.local_persist_manager.local_persist_exist_set_config(
             local_configuration=self.local_initial_configuration,
-            open_to_public=self.get_open_to_public(),
         )
 
     def set_relation_tree(self):
@@ -1066,7 +1068,7 @@ class DataNode(DataAccessMixin, ABC):
         """
         This method always queries last state
         """
-        return self.data_node_storage.sourcetableconfiguration.get_data_updates()
+        return self.local_persist_manager.storage_table.sourcetableconfiguration.get_data_updates()
 
     def prepare_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """Hook for subclasses to scope or enrich update statistics before update()."""

@@ -144,7 +144,7 @@ def test_api_data_node_local_persist_manager_receives_only_data_source_uid(monke
     class FakeAPIPersistManager:
         def __init__(self, **kwargs):
             captured.update(kwargs)
-            self.data_node_storage = object()
+            self.storage_table = object()
 
     monkeypatch.setattr(data_nodes.APIDataNode, "_verify_local_data_source", lambda self: None)
     monkeypatch.setattr(data_nodes, "APIPersistManager", FakeAPIPersistManager)

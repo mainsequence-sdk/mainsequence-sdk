@@ -309,7 +309,7 @@ class UpdateRunner:
             {
                 "uid": _require_uid(self.ts.data_node_update, "DataNodeUpdate"),
                 "update_hash": self.ts.data_node_update.update_hash,
-                "remote_table_hash_id": self.ts.data_node_update.data_node_storage.storage_hash,
+                "remote_table_hash_id": self.ts.local_persist_manager.storage_table.storage_hash,
                 "node_type": self.ts.data_node_update.NODE_TYPE,
             }
         )

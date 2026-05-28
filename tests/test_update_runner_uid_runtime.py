@@ -20,6 +20,7 @@ class _Logger:
 class _PersistManager:
     def __init__(self, data_node_update):
         self.data_node_update = data_node_update
+        self.storage_table = data_node_update.data_node_storage
         self.patch_calls = []
 
     def synchronize_data_node_update(self, data_node_update=None):

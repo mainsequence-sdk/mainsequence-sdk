@@ -80,17 +80,15 @@ class BasePersistManager:
 
     def __init__(
         self,
-        data_source: DynamicTableDataSource,
         update_hash: str,
         description: str | None = None,
         class_name: str | None = None,
-        data_node_storage: Any | None = None,
+        storage_table: Any | None = None,
         data_node_update: Any | None = None,
     ):
-        self.data_source: DynamicTableDataSource = data_source
         self.update_hash: str = update_hash
-        if data_node_update is not None and data_node_storage is None:
-            data_node_storage = self._extract_storage_from_update(data_node_update)
+        if data_node_update is not None and storage_table is None:
+            storage_table = self._extract_storage_from_update(data_node_update)
         self.description: str | None = description
         self.logger = logger
 
@@ -100,8 +98,9 @@ class BasePersistManager:
         self._data_node_update_future: Future | None = None
         self._data_node_update_cached: Any | None = None
         self._data_node_update_lock = threading.Lock()
-        self._data_node_storage_cached: Any | None = data_node_storage
-        self._explicit_data_node_storage = data_node_storage is not None
+        self._storage_table_cached: Any | None = storage_table
+        self._explicit_storage_table = storage_table is not None
+        self._data_source_cached: DynamicTableDataSource | Any | None = None
 
         if self.update_hash is not None:
             self.synchronize_data_node_update(data_node_update=data_node_update)
@@ -109,21 +108,41 @@ class BasePersistManager:
     def _extract_storage_from_update(self, data_node_update: Any) -> Any:
         return data_node_update.data_node_storage
 
-    def _get_source_table_configuration(self) -> Any | None:
-        data_node_storage = self.data_node_storage
-        if data_node_storage is None or isinstance(data_node_storage, int):
+    @staticmethod
+    def _storage_data_source_object(storage: Any) -> Any | None:
+        if storage is None:
             return None
-        if isinstance(data_node_storage, dict):
-            return data_node_storage.get(self.SOURCE_TABLE_CONFIGURATION_ATTR)
-        return getattr(data_node_storage, self.SOURCE_TABLE_CONFIGURATION_ATTR, None)
+        if isinstance(storage, dict):
+            data_source = storage.get("data_source")
+        else:
+            data_source = getattr(storage, "data_source", None)
+        if isinstance(data_source, int | str | UUID):
+            return None
+        return data_source
 
-    def _get_storage_hash(self) -> str | None:
-        data_node_storage = self.data_node_storage
-        if data_node_storage is None:
+    @property
+    def data_source(self) -> DynamicTableDataSource | Any:
+        if self._data_source_cached is not None:
+            return self._data_source_cached
+
+        storage = self.storage_table
+        data_source = self._storage_data_source_object(storage)
+        if data_source is None:
+            data_source_uid = self._storage_data_source_uid(storage)
+            if data_source_uid in (None, ""):
+                raise ValueError("PersistManager requires storage_table.data_source_uid.")
+            data_source = DynamicTableDataSource.get_by_uid(data_source_uid)
+
+        self._data_source_cached = data_source
+        return data_source
+
+    def _get_source_table_configuration(self) -> Any | None:
+        storage_table = self.storage_table
+        if storage_table is None or isinstance(storage_table, int):
             return None
-        if isinstance(data_node_storage, dict):
-            return data_node_storage.get("storage_hash")
-        return getattr(data_node_storage, "storage_hash", None)
+        if isinstance(storage_table, dict):
+            return storage_table.get(self.SOURCE_TABLE_CONFIGURATION_ATTR)
+        return getattr(storage_table, self.SOURCE_TABLE_CONFIGURATION_ATTR, None)
 
     def _build_update_get_or_none_kwargs(
         self,
@@ -134,9 +153,9 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        data_source_uid = getattr(self.data_source, "uid", None)
+        data_source_uid = self._storage_data_source_uid(self.storage_table)
         if data_source_uid in (None, ""):
-            raise ValueError("DataNode update lookup requires data_source.uid.")
+            raise ValueError("DataNode update lookup requires storage_table.data_source_uid.")
         kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = str(data_source_uid)
         return kwargs
 
@@ -168,7 +187,7 @@ class BasePersistManager:
         return str(nested_uid) if nested_uid not in (None, "") else None
 
     def _require_existing_storage_table(self) -> Any:
-        storage = self.data_node_storage
+        storage = self.storage_table
         if storage is None:
             raise ValueError(
                 "PersistManager requires an explicit storage_table. Create or "
@@ -187,15 +206,6 @@ class BasePersistManager:
         storage_data_source_uid = self._storage_data_source_uid(storage)
         if storage_data_source_uid in (None, ""):
             raise ValueError("PersistManager requires storage_table.data_source_uid.")
-
-        data_source_uid = getattr(self.data_source, "uid", None)
-        if data_source_uid in (None, ""):
-            raise ValueError("PersistManager requires data_source.uid.")
-        if str(storage_data_source_uid) != str(data_source_uid):
-            raise ValueError(
-                "PersistManager storage_table.data_source_uid must match "
-                "data_source.uid."
-            )
         return storage
 
     def _build_update_get_or_create_kwargs(
@@ -203,18 +213,17 @@ class BasePersistManager:
         *,
         storage: Any,
         local_configuration: dict | None = None,
-        open_to_public: bool = False,
     ) -> dict[str, Any]:
-        data_source_uid = getattr(self.data_source, "uid", None)
-        if data_source_uid in (None, ""):
-            raise ValueError("DataNode update creation requires data_source.uid.")
+        storage_data_source_uid = self._storage_data_source_uid(storage)
+        if storage_data_source_uid in (None, ""):
+            raise ValueError("DataNode update creation requires storage_table.data_source_uid.")
         storage_uid = self._storage_uid(storage)
         if storage_uid in (None, ""):
             raise ValueError("DataNode update creation requires storage_table.uid.")
         kwargs = dict(
             update_hash=self.update_hash,
             build_configuration=local_configuration,
-            data_source_uid=str(data_source_uid),
+            data_source_uid=str(storage_data_source_uid),
         )
         kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = storage_uid
         return kwargs
@@ -224,7 +233,7 @@ class BasePersistManager:
 
     @property
     def metadata(self) -> Any | None:
-        return self.data_node_storage
+        return self.storage_table
 
     @property
     def remote_build_configuration(self) -> dict | None:
@@ -242,7 +251,7 @@ class BasePersistManager:
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
     def set_data_node_update(self, data_node_update: Any) -> None:
-        previous_storage = self._data_node_storage_cached
+        previous_storage = self._storage_table_cached
         self._data_node_update_cached = data_node_update
         try:
             extracted_storage = self._extract_storage_from_update(data_node_update)
@@ -250,11 +259,11 @@ class BasePersistManager:
             extracted_storage = None
 
         if extracted_storage is None:
-            self._data_node_storage_cached = previous_storage
+            self._storage_table_cached = previous_storage
         elif previous_storage is not None and isinstance(extracted_storage, int | str | UUID):
-            self._data_node_storage_cached = previous_storage
+            self._storage_table_cached = previous_storage
         else:
-            self._data_node_storage_cached = extracted_storage
+            self._storage_table_cached = extracted_storage
 
     @property
     def data_node_update(self) -> Any:
@@ -268,17 +277,18 @@ class BasePersistManager:
             return self._data_node_update_cached
 
     @property
-    def data_node_storage(self) -> Any | None:
-        if self._data_node_storage_cached is not None:
-            return self._data_node_storage_cached
+    def storage_table(self) -> Any | None:
+        if self._storage_table_cached is not None:
+            return self._storage_table_cached
         if self.data_node_update is None:
             return None
-        self._data_node_storage_cached = self._extract_storage_from_update(self.data_node_update)
-        return self._data_node_storage_cached
+        self._storage_table_cached = self._extract_storage_from_update(self.data_node_update)
+        return self._storage_table_cached
 
-    @data_node_storage.setter
-    def data_node_storage(self, value: Any | None) -> None:
-        self._data_node_storage_cached = value
+    @storage_table.setter
+    def storage_table(self, value: Any | None) -> None:
+        self._storage_table_cached = value
+        self._explicit_storage_table = value is not None
 
     @property
     def local_build_configuration(self) -> dict:
@@ -297,8 +307,8 @@ class BasePersistManager:
         with self._data_node_update_lock:
             if force_registry:
                 self._data_node_update_cached = None
-                if not self._explicit_data_node_storage:
-                    self._data_node_storage_cached = None
+                if not self._explicit_storage_table:
+                    self._storage_table_cached = None
             new_future = Future()
             self._data_node_update_future = new_future
             future_registry.add_future(new_future)
@@ -322,7 +332,7 @@ class BasePersistManager:
 
         thread = threading.Thread(
             target=_get_or_none_data_node_update,
-            name=f"LocalDataNodeStorageThreadPM-{self.update_hash}",
+            name=f"LocalStorageTableThreadPM-{self.update_hash}",
             daemon=False,
         )
         thread.start()
@@ -334,7 +344,7 @@ class BasePersistManager:
             )
         else:
             self.data_node_update.depends_on_connect_to_api_table(
-                target_table_uid=new_ts.local_persist_manager.data_node_storage.uid
+                target_table_uid=new_ts.local_persist_manager.storage_table.uid
             )
 
     def get_all_dependencies_update_priority(self) -> pd.DataFrame:
@@ -357,7 +367,7 @@ class BasePersistManager:
 
     def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
         logger.debug(
-            "Skipping DataNodeStorage source-code patch because backend storage "
+            "Skipping storage-table source-code patch because backend storage "
             "metadata no longer stores source code fields."
         )
 
@@ -367,20 +377,19 @@ class BasePersistManager:
 
     @property
     def persist_size(self) -> int:
-        data_node_storage = self.data_node_storage
-        if data_node_storage is None:
+        storage_table = self.storage_table
+        if storage_table is None:
             return 0
-        if isinstance(data_node_storage, dict):
-            return data_node_storage.get("table_size", 0)
-        return getattr(data_node_storage, "table_size", 0)
+        if isinstance(storage_table, dict):
+            return storage_table.get("table_size", 0)
+        return getattr(storage_table, "table_size", 0)
 
     def time_serie_exist(self) -> bool:
-        return self.data_node_storage is not None
+        return self.storage_table is not None
 
     def local_persist_exist_set_config(
         self,
         local_configuration: dict,
-        open_to_public: bool,
     ) -> None:
         storage = self._require_existing_storage_table()
         if self._should_refresh_update_when_remote_exists():
@@ -389,14 +398,12 @@ class BasePersistManager:
         self._verify_local_ts_exists(
             storage=storage,
             local_configuration=local_configuration,
-            open_to_public=open_to_public,
         )
 
     def _verify_local_ts_exists(
         self,
         storage: Any,
         local_configuration: dict | None = None,
-        open_to_public: bool = False,
     ) -> None:
         local_build_configuration = None
         if self.data_node_update is not None:
@@ -411,7 +418,6 @@ class BasePersistManager:
                     **self._build_update_get_or_create_kwargs(
                         storage=storage,
                         local_configuration=local_configuration,
-                        open_to_public=open_to_public,
                     ),
                 )
             else:
@@ -433,9 +439,7 @@ class BasePersistManager:
 
         def _update_task():
             try:
-                self.data_node_update.data_node_storage.build_or_update_update_details(
-                    **update_kwargs
-                )
+                self.storage_table.build_or_update_update_details(**update_kwargs)
                 future.set_result(True)
             except Exception as exc:
                 future.set_exception(exc)
@@ -449,17 +453,17 @@ class BasePersistManager:
         future.add_done_callback(self.set_data_node_update_lazy_callback)
 
     def patch_table(self, **kwargs) -> None:
-        self.data_node_storage.patch(**kwargs)
+        self.storage_table.patch(**kwargs)
 
     def protect_from_deletion(self, protect_from_deletion: bool = True) -> None:
-        self.data_node_storage.patch(protect_from_deletion=protect_from_deletion)
+        self.storage_table.patch(protect_from_deletion=protect_from_deletion)
 
     def open_for_everyone(self, open_for_everyone: bool = True) -> None:
         if not self.data_node_update.open_for_everyone:
             self.data_node_update.patch(open_for_everyone=open_for_everyone)
 
-        if not self.data_node_storage.open_for_everyone:
-            self.data_node_storage.patch(open_for_everyone=open_for_everyone)
+        if not self.storage_table.open_for_everyone:
+            self.storage_table.patch(open_for_everyone=open_for_everyone)
 
         source_table_configuration = self._get_source_table_configuration()
         if (
@@ -482,7 +486,7 @@ class BasePersistManager:
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ):
-        return self.data_node_storage.get_last_observation(
+        return self.storage_table.get_last_observation(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
@@ -502,9 +506,9 @@ class BasePersistManager:
                 db_interface = get_sqlite_interface_class()()
             else:
                 raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
-            db_interface.drop_table(self.data_node_storage.storage_hash)
+            db_interface.drop_table(self.storage_table.storage_hash)
 
-        self.data_node_storage.delete()
+        self.storage_table.delete()
 
     @tracer.start_as_current_span("TS: Persist Data")
     def persist_updated_data(
@@ -527,7 +531,7 @@ class BasePersistManager:
         return persisted
 
     def get_update_statistics_for_table(self) -> UpdateStatistics:
-        if isinstance(self.data_node_storage, int):
+        if isinstance(self.storage_table, int):
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
         source_table_configuration = self._get_source_table_configuration()
@@ -541,6 +545,6 @@ class BasePersistManager:
 
     def update_git_and_code_in_backend(self, time_serie_class) -> None:
         logger.debug(
-            "Skipping DataNodeStorage source-code patch because backend storage "
+            "Skipping storage-table source-code patch because backend storage "
             "metadata no longer stores source code fields."
         )
