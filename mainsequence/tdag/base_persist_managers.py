@@ -102,7 +102,9 @@ class BasePersistManager:
         self._explicit_storage_table = storage_table is not None
         self._data_source_cached: DynamicTableDataSource | Any | None = None
 
-        if self.update_hash is not None:
+        if self.update_hash is not None and (
+            data_node_update is not None or storage_table is not None
+        ):
             self.synchronize_data_node_update(data_node_update=data_node_update)
 
     def _extract_storage_from_update(self, data_node_update: Any) -> Any:
@@ -153,7 +155,7 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        data_source_uid = self._storage_data_source_uid(self.storage_table)
+        data_source_uid = self._storage_data_source_uid(self._storage_table_cached)
         if data_source_uid in (None, ""):
             raise ValueError("DataNode update lookup requires storage_table.data_source_uid.")
         kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = str(data_source_uid)
@@ -187,7 +189,7 @@ class BasePersistManager:
         return str(nested_uid) if nested_uid not in (None, "") else None
 
     def _require_existing_storage_table(self) -> Any:
-        storage = self.storage_table
+        storage = self._storage_table_cached
         if storage is None:
             raise ValueError(
                 "PersistManager requires an explicit storage_table. Create or "
@@ -321,8 +323,9 @@ class BasePersistManager:
                     )
                 )
                 if result is None:
+                    data_source_uid = self._storage_data_source_uid(self._storage_table_cached)
                     self.logger.warning(
-                        f"TimeSeries {self.update_hash} with data source {self.data_source.uid} not found in backend"
+                        f"TimeSeries {self.update_hash} with data source {data_source_uid} not found in backend"
                     )
                 new_future.set_result(result)
             except Exception as exc:

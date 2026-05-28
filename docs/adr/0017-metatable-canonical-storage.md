@@ -419,8 +419,8 @@ The write path should become:
    ```
 
 3. The runtime computes only `update_hash`.
-4. `PersistManager` validates that `storage_table.uid` and
-   `storage_table.data_source_uid` are present.
+4. `PersistManager` receives `storage_table` only, then derives storage UID and
+   data-source UID from that MetaTable.
 5. `PersistManager` creates or resolves the backend update record with:
 
    ```python
