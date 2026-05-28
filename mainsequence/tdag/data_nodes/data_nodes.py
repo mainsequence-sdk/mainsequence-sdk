@@ -39,7 +39,6 @@ from mainsequence.client.models_tdag import (
 from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.tdag.base_persist_managers import get_data_node_source_code
 from mainsequence.tdag.config import ogm
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
 
@@ -953,20 +952,11 @@ class DataNode(DataAccessMixin, ABC):
         Verifies and builds remote objects by calling the persistence layer.
         This logic is now correctly located within the BuildManager.
         """
-        # Use self.owner to get properties from the DataNode instance
-        owner_class = self.__class__
-        time_serie_source_code_git_hash = build_operations.get_data_node_source_code_git_hash(
-            owner_class
-        )
-        time_serie_source_code = get_data_node_source_code(owner_class)
-
         # The call to the low-level persist manager is encapsulated here
         self.local_persist_manager.local_persist_exist_set_config(
             storage_hash=self.storage_hash,
             local_configuration=self.local_initial_configuration,
             remote_configuration=self.remote_initial_configuration,
-            time_serie_source_code_git_hash=time_serie_source_code_git_hash,
-            time_serie_source_code=time_serie_source_code,
             data_source=self.data_source,
             build_configuration_json_schema=self.build_configuration_json_schema,
             open_to_public=self.get_open_to_public(),
@@ -1131,7 +1121,6 @@ class DataNode(DataAccessMixin, ABC):
         return TableMetaData(
             identifier=node_metadata.identifier,
             description=node_metadata.description,
-            data_frequency_id=node_metadata.data_frequency_id,
         )
 
     def get_record_definitions(self) -> list[Any] | None:

@@ -1,4 +1,5 @@
 import os
+from types import SimpleNamespace
 
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
@@ -16,8 +17,34 @@ from mainsequence.client.models_tdag import (
     Project,
 )
 from mainsequence.tdag import DataNode, DataNodeConfiguration, SourceTableForeignKey
+from mainsequence.tdag.base_persist_managers import BasePersistManager
 from mainsequence.tdag.data_nodes.models import RecordDefinition
 from mainsequence.tdag.data_nodes.run_operations import UpdateRunner
+
+
+def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint():
+    assert issubclass(DataNodeStorage, MetaTable)
+    for inherited_field in (
+        "storage_hash",
+        "management_mode",
+        "physical_table_name",
+        "labels",
+        "creation_date",
+    ):
+        assert inherited_field not in DataNodeStorage.__annotations__
+
+    storage = DataNodeStorage(
+        uid="data-node-storage-12",
+        storage_hash="prices_storage_hash",
+        data_source=1,
+        source_class_name="PricesNode",
+        creation_date="2026-04-13T00:00:00Z",
+    )
+
+    assert isinstance(storage, MetaTable)
+    assert storage.management_mode == "platform_managed"
+    assert storage.physical_table_name == "prices_storage_hash"
+    assert DataNodeStorage.get_object_url().endswith("/ts_manager/dynamic_table")
 
 
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
@@ -52,6 +79,7 @@ def test_data_node_storage_accepts_namespace():
     storage = DataNodeStorage(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
+        physical_table_name="prices_physical_table",
         namespace="pytest_case_123",
         data_source=1,
         source_class_name="PricesNode",
@@ -59,6 +87,50 @@ def test_data_node_storage_accepts_namespace():
     )
 
     assert storage.namespace == "pytest_case_123"
+    assert storage.physical_table_name == "prices_physical_table"
+
+
+@pytest.mark.parametrize(
+    "removed_field",
+    [
+        "build_configuration",
+        "time_serie_source_code_git_hash",
+        "time_serie_source_code",
+        "data_frequency_id",
+        "table_name",
+    ],
+)
+def test_data_node_storage_rejects_removed_backend_fields(removed_field):
+    payload = {
+        "uid": "data-node-storage-1",
+        "storage_hash": "hash",
+        "source_class_name": "ExampleNode",
+        "data_source": 1,
+        "creation_date": "2026-04-13T00:00:00Z",
+        removed_field: "removed",
+    }
+
+    with pytest.raises(ValidationError):
+        DataNodeStorage(**payload)
+
+
+def test_storage_creation_payload_excludes_removed_storage_fields():
+    payload = BasePersistManager._build_storage_get_or_create_kwargs(
+        storage_hash="hash",
+        remote_configuration={"window": 30},
+        data_source=SimpleNamespace(uid="data-source-uid"),
+        build_configuration_json_schema={"config": {}},
+        open_to_public=False,
+        namespace="pytest",
+    )
+
+    assert payload == {
+        "storage_hash": "hash",
+        "namespace": "pytest",
+        "data_source_uid": "data-source-uid",
+        "build_configuration_json_schema": {"config": {}},
+        "open_to_public": False,
+    }
 
 
 def test_data_node_update_accepts_labels():

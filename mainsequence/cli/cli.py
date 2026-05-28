@@ -5339,11 +5339,11 @@ def _data_node_storage_list_impl(
             [
                 "UID",
                 "Storage Hash",
+                "Physical Table",
                 "Source Class",
                 "Identifier",
                 "Namespace",
                 "Data Source",
-                "Frequency",
             ],
             _build_data_node_storage_rows(storages),
         )
@@ -5359,11 +5359,11 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
             [
                 str(storage.get("uid") or "-"),
                 str(storage.get("storage_hash") or "-"),
+                str(storage.get("physical_table_name") or "-"),
                 str(storage.get("source_class_name") or "-"),
                 str(storage.get("identifier") or "-"),
                 str(storage.get("namespace") or "-"),
                 _format_data_node_storage_data_source(storage.get("data_source")),
-                str(storage.get("data_frequency_id") or "-"),
             ]
         )
     return rows
@@ -5435,7 +5435,15 @@ def _data_node_storage_search_impl(
     if storages:
         print_table(
             title,
-            ["UID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            [
+                "UID",
+                "Storage Hash",
+                "Physical Table",
+                "Source Class",
+                "Identifier",
+                "Namespace",
+                "Data Source",
+            ],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -5466,7 +5474,15 @@ def _print_data_node_storage_search_section(
     if storages:
         print_table(
             title,
-            ["UID", "Storage Hash", "Source Class", "Identifier", "Data Source", "Frequency"],
+            [
+                "UID",
+                "Storage Hash",
+                "Physical Table",
+                "Source Class",
+                "Identifier",
+                "Namespace",
+                "Data Source",
+            ],
             _build_data_node_storage_rows(storages),
         )
     else:
@@ -6864,10 +6880,10 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
         [
             ("UID", str(storage.get("uid") or storage_uid)),
             ("Storage Hash", str(storage.get("storage_hash") or "-")),
+            ("Physical Table", str(storage.get("physical_table_name") or "-")),
             ("Identifier", str(storage.get("identifier") or "-")),
             ("Source Class", str(storage.get("source_class_name") or "-")),
             ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
-            ("Frequency", str(storage.get("data_frequency_id") or "-")),
             ("Protected", str(storage.get("protect_from_deletion"))),
             ("Created", str(storage.get("creation_date") or "-")),
             ("Created By", str(storage.get("created_by_user") or "-")),
@@ -6879,7 +6895,6 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     print_kv(
         "Data Node Storage Config",
         [
-            ("Build Configuration", _format_json_value(storage.get("build_configuration"))),
             ("Source Table Configuration", _format_json_value(source_table_configuration)),
             ("Storage Layout", _format_json_value(storage_layout)),
             ("Physical Index Plan", _format_json_value(physical_index_plan)),

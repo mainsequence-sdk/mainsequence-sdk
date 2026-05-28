@@ -2,6 +2,7 @@ import types
 
 import pytest
 
+import mainsequence.client.models_metatables as models_metatables
 import mainsequence.client.models_tdag as models_tdag
 from mainsequence.tdag.data_nodes import build_operations
 
@@ -153,7 +154,7 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
 
 def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
     captured = {}
-    monkeypatch.setattr(models_tdag, "bios_uuid", lambda: "host-123")
+    monkeypatch.setattr(models_metatables, "bios_uuid", lambda: "host-123")
 
     def _get_or_create(cls, time_out=None, **kwargs):
         captured["time_out"] = time_out
@@ -180,7 +181,7 @@ def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
 
 def test_data_source_create_sqlite_makes_creation_explicit(monkeypatch):
     captured = {}
-    monkeypatch.setattr(models_tdag, "bios_uuid", lambda: "host-456")
+    monkeypatch.setattr(models_metatables, "bios_uuid", lambda: "host-456")
 
     def _get_or_create(cls, time_out=None, **kwargs):
         captured["time_out"] = time_out

@@ -1,22 +1,48 @@
 from __future__ import annotations
 
 import datetime
+import json
+import os
 from collections.abc import Mapping
 from typing import Any, ClassVar, Literal
 
+import pandas as pd
 from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
+from mainsequence.logconf import logger
+
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from .data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
 from .dtype_codec import (
     DATE,
     TIMESTAMP_TZ,
     normalize_column_dtypes_map,
     normalize_dtype_token,
     serialize_remote_parameters,
+    token_to_pandas_series,
 )
 from .exceptions import raise_for_response
-from .models_tdag import DynamicTableDataSource
-from .utils import make_request, serialize_to_json
+from .utils import UniqueIdentifierRangeMap, bios_uuid, make_request, serialize_to_json
+
+DUCK_DB = "duck_db"
+SQLITE = "sqlite"
+LOCAL_DATA_SOURCE_CLASS_TYPES = {DUCK_DB, SQLITE}
+
+
+def _duckdb_interface():
+    return get_duckdb_interface_class()()
+
+
+def _sqlite_interface():
+    return get_sqlite_interface_class()()
+
+
+def _local_data_interface(class_type: str):
+    if class_type == DUCK_DB:
+        return _duckdb_interface()
+    if class_type == SQLITE:
+        return _sqlite_interface()
+    raise ValueError(f"Unsupported local data source class_type: {class_type!r}")
 
 MetaTableManagementMode = Literal["external_registered", "platform_managed"]
 MetaTableOperation = Literal["select", "insert", "update", "delete", "upsert"]
@@ -345,7 +371,7 @@ class MetaTableCompiledSQLOperation(BasePydanticModel):
 class MetaTableRegistrationRequest(BasePydanticModel):
     data_source_uid: str
     management_mode: MetaTableManagementMode
-    storage_hash: str
+    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     table_contract: MetaTableContract | dict[str, Any]
     identifier: str | None = None
     namespace: str | None = None
@@ -375,6 +401,357 @@ class MetaTableValidateContractRequest(BasePydanticModel):
         return self
 
 
+class DataSource(BasePydanticModel, BaseObjectOrm):
+    uid: str | None = Field(
+        None,
+        description="Public uid of the data source.",
+    )
+    data_source_uid: str | None = Field(
+        None,
+        description="Compatibility alias for the public data source uid.",
+    )
+    id: int | None = Field(None, description="The unique identifier of the Local Disk Source Lake")
+    display_name: str
+    organization: int | None = Field(
+        None, description="The unique identifier of the Local Disk Source Lake"
+    )
+    organization_uid: str | None = Field(
+        None,
+        description="Public uid of the owning organization.",
+    )
+    class_type: str
+    status: str
+    extra_arguments: dict | None = None
+
+    STATUS_AVAILABLE: ClassVar[str] = "AVAILABLE"
+
+    @classmethod
+    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_duck_db/"
+        payload = {"json": serialize_to_json(kwargs)}
+        s = cls.build_session()
+        r = make_request(
+            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_sqlite/"
+        payload = {"json": serialize_to_json(kwargs)}
+        s = cls.build_session()
+        r = make_request(
+            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def create_duckdb(
+        cls,
+        time_out: int | None = None,
+        *,
+        display_name: str | None = None,
+        host_mac_address: str | None = None,
+        **kwargs,
+    ):
+        """
+        Explicitly create or resolve the physical DuckDB DataSource for this host.
+        """
+        host_uid = host_mac_address or bios_uuid()
+        payload = dict(kwargs)
+        payload.setdefault("host_mac_address", host_uid)
+        payload.setdefault("display_name", display_name or f"DuckDB_{host_uid}")
+        return cls.get_or_create_duck_db(time_out=time_out, **payload)
+
+    @classmethod
+    def create_sqlite(
+        cls,
+        time_out: int | None = None,
+        *,
+        display_name: str | None = None,
+        host_mac_address: str | None = None,
+        **kwargs,
+    ):
+        """
+        Explicitly create or resolve the physical SQLite DataSource for this host.
+        """
+        host_uid = host_mac_address or bios_uuid()
+        payload = dict(kwargs)
+        payload.setdefault("host_mac_address", host_uid)
+        payload.setdefault("display_name", display_name or f"SQLite_{host_uid}")
+        return cls.get_or_create_sqlite(time_out=time_out, **payload)
+
+    def insert_data_into_table(
+        self,
+        serialized_data_frame: pd.DataFrame,
+        data_node_update: Any,
+        overwrite: bool,
+        time_index_name: str,
+        index_names: list,
+        grouped_dates: dict,
+        column_dtypes_map: Mapping[str, Any] | None = None,
+    ):
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            storage = data_node_update.data_node_storage
+            _local_data_interface(self.class_type).upsert(
+                df=serialized_data_frame,
+                table=getattr(storage, "physical_table_name", None) or storage.storage_hash,
+                index_names=index_names,
+                time_index_name=time_index_name,
+            )
+        else:
+            from .models_tdag import DataNodeUpdate
+
+            DataNodeUpdate.post_data_frame_in_chunks(
+                serialized_data_frame=serialized_data_frame,
+                data_node_update=data_node_update,
+                data_source=self,
+                index_names=index_names,
+                time_index_name=time_index_name,
+                overwrite=overwrite,
+                column_dtypes_map=column_dtypes_map,
+            )
+
+    def insert_data_into_local_table(
+        self,
+        serialized_data_frame: pd.DataFrame,
+        data_node_update: Any,
+        overwrite: bool,
+        time_index_name: str,
+        index_names: list,
+        grouped_dates: dict,
+    ):
+        raise NotImplementedError
+
+    def get_data_by_time_index(
+        self,
+        data_node_update: Any,
+        start_date: datetime.datetime | None = None,
+        end_date: datetime.datetime | None = None,
+        great_or_equal: bool = True,
+        less_or_equal: bool = True,
+        columns: list[str] | None = None,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
+    ) -> pd.DataFrame:
+
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            db_interface = _local_data_interface(self.class_type)
+            storage = data_node_update.data_node_storage
+            table_name = getattr(storage, "physical_table_name", None) or storage.storage_hash
+            stc = storage.sourcetableconfiguration
+
+            adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
+                db_interface.constrain_read(
+                    table=table_name,
+                    start=start_date,
+                    end=end_date,
+                    time_index_name=stc.time_index_name,
+                    index_names=stc.index_names,
+                    dimension_filters=dimension_filters,
+                    index_coordinates=index_coordinates,
+                    dimension_range_map=dimension_range_map,
+                )
+            )
+
+            df = db_interface.read(
+                table=table_name,
+                start=adjusted_start,
+                end=adjusted_end,
+                great_or_equal=great_or_equal,
+                less_or_equal=less_or_equal,
+                index_names=stc.index_names,
+                time_index_name=stc.time_index_name,
+                dimension_filters=dimension_filters,
+                index_coordinates=index_coordinates,
+                dimension_range_map=adjusted_dimension_range_map,
+                columns=columns,
+            )
+
+        else:
+            if column_range_descriptor is not None:
+                raise Exception("On this data source do not use column_range_descriptor")
+            df = data_node_update.get_data_between_dates_from_api(
+                start_date=start_date,
+                end_date=end_date,
+                great_or_equal=great_or_equal,
+                less_or_equal=less_or_equal,
+                dimension_filters=dimension_filters,
+                index_coordinates=index_coordinates,
+                dimension_range_map=dimension_range_map,
+                columns=columns,
+            )
+        if len(df) == 0:
+            logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
+            return df
+
+        stc = data_node_update.data_node_storage.sourcetableconfiguration
+        try:
+            df[stc.time_index_name] = token_to_pandas_series(
+                df[stc.time_index_name],
+                TIMESTAMP_TZ,
+                is_time_index=True,
+            )
+        except Exception as e:
+            raise e
+        columns_to_loop = set(columns or stc.column_dtypes_map.keys()) | set(stc.index_names)
+        for c, c_type in stc.column_dtypes_map.items():
+            if c not in columns_to_loop:
+                continue
+            if c in df.columns:
+                df[c] = token_to_pandas_series(
+                    df[c],
+                    c_type,
+                    is_time_index=c == stc.time_index_name,
+                )
+        df = df.set_index(stc.index_names)
+        return df
+
+    def get_earliest_value(
+        self,
+        data_node_update: Any,
+    ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
+        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
+            db_interface = _local_data_interface(self.class_type)
+            storage = data_node_update.data_node_storage
+            table_name = (
+                getattr(storage, "physical_table_name", None)
+                or getattr(storage, "storage_hash", None)
+            )
+            stc = storage.sourcetableconfiguration
+            return db_interface.time_index_minima(
+                table=table_name,
+                index_names=stc.index_names,
+                time_index_name=stc.time_index_name,
+            )
+
+        else:
+            raise NotImplementedError
+
+
+class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
+    uid: str | None = Field(
+        None,
+        description="Public uid of the dynamic table data source.",
+    )
+    id: int | None = Field(
+        None,
+        description="Legacy numeric identifier of the dynamic table data source.",
+    )
+    related_resource: DataSource
+    related_resource_class_type: str
+
+    class Config:
+        use_enum_values = True
+
+    def model_dump_json(self, **json_dumps_kwargs) -> str:
+        dump = self.model_dump()
+        dump["related_resource"] = self.related_resource.model_dump()
+        return json.dumps(dump, **json_dumps_kwargs)
+
+    def persist_to_pickle(self, path):
+        import cloudpickle
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as handle:
+            cloudpickle.dump(self, handle)
+
+    @classmethod
+    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_duck_db/"
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": kwargs},
+            time_out=time_out,
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
+        url = cls.get_object_url() + "/get_or_create_sqlite/"
+        s = cls.build_session()
+        r = make_request(
+            s=s,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": kwargs},
+            time_out=time_out,
+        )
+        if r.status_code not in [200, 201]:
+            raise Exception(f"Error in request {r.text}")
+        return cls(**r.json())
+
+    @classmethod
+    def create_duckdb(
+        cls,
+        *,
+        data_source: int | DataSource,
+        time_out: int | None = None,
+        **kwargs,
+    ):
+        related_resource_id = (
+            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
+        )
+        if related_resource_id is None:
+            raise ValueError("A DuckDB DataSource with an id is required.")
+
+        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
+        if class_type is not None and class_type != DUCK_DB:
+            raise ValueError(
+                f"DynamicTableDataSource.create_duckdb requires a {DUCK_DB!r} "
+                f"DataSource, got {class_type!r}."
+            )
+
+        return cls.get_or_create_duck_db(
+            time_out=time_out,
+            related_resource=related_resource_id,
+            **kwargs,
+        )
+
+    @classmethod
+    def create_sqlite(
+        cls,
+        *,
+        data_source: int | DataSource,
+        time_out: int | None = None,
+        **kwargs,
+    ):
+        related_resource_id = (
+            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
+        )
+        if related_resource_id is None:
+            raise ValueError("A SQLite DataSource with an id is required.")
+
+        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
+        if class_type is not None and class_type != SQLITE:
+            raise ValueError(
+                f"DynamicTableDataSource.create_sqlite requires a {SQLITE!r} "
+                f"DataSource, got {class_type!r}."
+            )
+
+        return cls.get_or_create_sqlite(
+            time_out=time_out,
+            related_resource=related_resource_id,
+            **kwargs,
+        )
+
+    def get_data_by_time_index(self, *args, **kwargs):
+        return self.related_resource.get_data_by_time_index(*args, **kwargs)
+
+
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
     ENDPOINT: ClassVar[str] = "ts_manager/meta_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
@@ -398,9 +775,9 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     }
 
     uid: str | None = Field(None, description="Public uid of this MetaTable.")
-    data_source: DynamicTableDataSource | dict[str, Any] | None = None
+    data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
     data_source_uid: str | None = None
-    storage_hash: str
+    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     identifier: str | None = None
     namespace: str | None = None
     description: str | None = None
@@ -557,6 +934,10 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
 
 
 __all__ = [
+    "DataSource",
+    "DynamicTableDataSource",
+    "DUCK_DB",
+    "LOCAL_DATA_SOURCE_CLASS_TYPES",
     "MetaTable",
     "MetaTableColumnContract",
     "MetaTableColumnPayload",
@@ -578,5 +959,6 @@ __all__ = [
     "MetaTableRegistrationRequest",
     "MetaTableStatementPayload",
     "MetaTableValidateContractRequest",
+    "SQLITE",
     "COMPILED_SQL_V1",
 ]

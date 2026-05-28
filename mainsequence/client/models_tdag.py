@@ -28,7 +28,6 @@ from mainsequence.logconf import logger
 
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
-from .data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
 from .dtype_codec import (
     TIMESTAMP_TZ,
     is_temporal_token,
@@ -41,14 +40,26 @@ from .dtype_codec import (
     token_to_pandas_series,
 )
 from .exceptions import raise_for_response
+from .models_metatables import (
+    DUCK_DB,
+    LOCAL_DATA_SOURCE_CLASS_TYPES,
+    SQLITE,
+    DataSource,
+    DynamicTableDataSource,
+    MetaTable,
+)
+from .models_metatables import (
+    _duckdb_interface as _metatable_duckdb_interface,
+)
+from .models_metatables import (
+    _sqlite_interface as _metatable_sqlite_interface,
+)
 from .utils import (
     MAINSEQUENCE_ENDPOINT,
     TDAG_CONSTANTS,
-    DataFrequency,
     DateInfo,
     DoesNotExist,
     UniqueIdentifierRangeMap,
-    bios_uuid,
     get_network_ip,
     is_process_running,
     loaders,
@@ -74,9 +85,6 @@ def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
 
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
-DUCK_DB = "duck_db"
-SQLITE = "sqlite"
-LOCAL_DATA_SOURCE_CLASS_TYPES = {DUCK_DB, SQLITE}
 
 _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
@@ -87,16 +95,12 @@ if TYPE_CHECKING:
     from mainsequence.tdag.data_nodes.filters import SearchRequest
 
 
-class AlreadyExist(Exception):
-    pass
-
-
 def _duckdb_interface():
-    return get_duckdb_interface_class()()
+    return _metatable_duckdb_interface()
 
 
 def _sqlite_interface():
-    return get_sqlite_interface_class()()
+    return _metatable_sqlite_interface()
 
 
 def _local_data_interface(class_type: str):
@@ -107,6 +111,8 @@ def _local_data_interface(class_type: str):
     raise ValueError(f"Unsupported local data source class_type: {class_type!r}")
 
 
+class AlreadyExist(Exception):
+    pass
 
 
 class SchedulerDoesNotExist(Exception):
@@ -1191,32 +1197,10 @@ class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
 class TableMetaData(BaseModel):
     identifier: str = None
     description: str | None = None
-    data_frequency_id: DataFrequency | None = None
 
 
-class AbstractTable:
-    uid: str | None = Field(None, description="Public uid of this table storage")
-    storage_hash: str = Field(..., max_length=63, description="Max length of PostgreSQL table name")
-    namespace: str | None = Field(
-        None,
-        description="Optional hash namespace used to isolate table identity for tests or experiments.",
-    )
-    build_configuration_json_schema: dict[str, Any] | None = Field(
-        None,
-        description="JSON schema describing the build configuration",
-    )
-    identifier: str | None = None
-    protect_from_deletion: bool = Field(
-        default=False,
-        description="Flag to protect the record from deletion",
-    )
-    description: str | None = None
-
-    def _public_uid(self) -> str:
-        return _require_public_uid(self, self.__class__.__name__)
-
-
-class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
+class DataNodeStorage(MetaTable):
+    ENDPOINT: ClassVar[str] = "ts_manager/dynamic_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
         "identifier": ["in", "exact", "contains"],
@@ -1262,33 +1246,14 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         ),
     }
 
-    labels: list[str] = Field(
-        default_factory=list,
-        description=(
-            "Organizational labels attached to the data node. "
-            "These are helpers for grouping and discovery only and do not change runtime behavior or functionality."
-        ),
-    )
-    creation_date: datetime.datetime = Field(..., description="Creation timestamp")
-    created_by_user_uid: str | None = Field(None, description="UID reference to User")
-    organization_owner_uid: str | None = Field(None, description="UID reference to Organization")
-    open_for_everyone: bool = Field(
-        default=False, description="Whether the table is open for everyone"
+    build_configuration_json_schema: dict[str, Any] | None = Field(
+        None,
+        description="JSON schema describing the DataNode update build configuration.",
     )
     data_source_open_for_everyone: bool = Field(
         default=False, description="Whether the data source is open for everyone"
     )
-    build_configuration: dict[str, Any] | None = Field(
-        None, description="Configuration in JSON format"
-    )
-    time_serie_source_code_git_hash: str | None = Field(
-        None, max_length=255, description="Git hash of the time series source code"
-    )
-    time_serie_source_code: str | None = Field(
-        None, description="File path for time series source code"
-    )
-    data_source: int | DynamicTableDataSource
-    source_class_name: str
+    source_class_name: str | None = None
     sourcetableconfiguration: SourceTableConfiguration | None = None
     table_index_names: dict | None = None
 
@@ -1296,11 +1261,20 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
     compression_policy_config: dict | None = None
     retention_policy_config: dict | None = None
 
-    # MetaData
-    data_frequency_id: DataFrequency | None = None
-
     _drop_indices: bool = False  # for direct incertion we can pass this values
     _rebuild_indices: bool = False  # for direct incertion we can pass this values
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fill_legacy_dynamic_table_metatable_fields(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+
+        data = dict(value)
+        data.setdefault("management_mode", "platform_managed")
+        if data.get("physical_table_name") in (None, ""):
+            data["physical_table_name"] = data.get("storage_hash")
+        return data
 
     @staticmethod
     def _date_for_payload(value: Any) -> Any:
@@ -3394,375 +3368,6 @@ class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, SourceTabl
     all_index_stats: dict[str, Any]
     data_node_updates: list[UpdateT]
 
-
-
-
-class DataSource(BasePydanticModel, BaseObjectOrm):
-    uid: str | None = Field(
-        None,
-        description="Public uid of the data source.",
-    )
-    data_source_uid: str | None = Field(
-        None,
-        description="Compatibility alias for the public data source uid.",
-    )
-    id: int | None = Field(None, description="The unique identifier of the Local Disk Source Lake")
-    display_name: str
-    organization: int | None = Field(
-        None, description="The unique identifier of the Local Disk Source Lake"
-    )
-    organization_uid: str | None = Field(
-        None,
-        description="Public uid of the owning organization.",
-    )
-    class_type: str
-    status: str
-    extra_arguments: dict | None = None
-
-    STATUS_AVAILABLE: ClassVar[str] = "AVAILABLE"
-
-    @classmethod
-    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_duck_db/"
-        payload = {"json": serialize_to_json(kwargs)}
-        s = cls.build_session()
-        r = make_request(
-            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_sqlite/"
-        payload = {"json": serialize_to_json(kwargs)}
-        s = cls.build_session()
-        r = make_request(
-            s=s, loaders=cls.LOADERS, r_type="POST", url=url, payload=payload, time_out=time_out
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def create_duckdb(
-        cls,
-        time_out: int | None = None,
-        *,
-        display_name: str | None = None,
-        host_mac_address: str | None = None,
-        **kwargs,
-    ):
-        """
-        Explicitly create or resolve the physical DuckDB DataSource for this host.
-        """
-        host_uid = host_mac_address or bios_uuid()
-        payload = dict(kwargs)
-        payload.setdefault("host_mac_address", host_uid)
-        payload.setdefault("display_name", display_name or f"DuckDB_{host_uid}")
-        return cls.get_or_create_duck_db(time_out=time_out, **payload)
-
-    @classmethod
-    def create_sqlite(
-        cls,
-        time_out: int | None = None,
-        *,
-        display_name: str | None = None,
-        host_mac_address: str | None = None,
-        **kwargs,
-    ):
-        """
-        Explicitly create or resolve the physical SQLite DataSource for this host.
-        """
-        host_uid = host_mac_address or bios_uuid()
-        payload = dict(kwargs)
-        payload.setdefault("host_mac_address", host_uid)
-        payload.setdefault("display_name", display_name or f"SQLite_{host_uid}")
-        return cls.get_or_create_sqlite(time_out=time_out, **payload)
-
-    def insert_data_into_table(
-        self,
-        serialized_data_frame: pd.DataFrame,
-        data_node_update: DataNodeUpdate,
-        overwrite: bool,
-        time_index_name: str,
-        index_names: list,
-        grouped_dates: dict,
-        column_dtypes_map: Mapping[str, Any] | None = None,
-    ):
-
-        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
-            _local_data_interface(self.class_type).upsert(
-                df=serialized_data_frame,
-                table=data_node_update.data_node_storage.storage_hash,
-                index_names=index_names,
-                time_index_name=time_index_name,
-            )
-        else:
-            DataNodeUpdate.post_data_frame_in_chunks(
-                serialized_data_frame=serialized_data_frame,
-                data_node_update=data_node_update,
-                data_source=self,
-                index_names=index_names,
-                time_index_name=time_index_name,
-                overwrite=overwrite,
-                column_dtypes_map=column_dtypes_map,
-            )
-
-    def insert_data_into_local_table(
-        self,
-        serialized_data_frame: pd.DataFrame,
-        data_node_update: DataNodeUpdate,
-        overwrite: bool,
-        time_index_name: str,
-        index_names: list,
-        grouped_dates: dict,
-    ):
-
-        # DataNodeUpdate.post_data_frame_in_chunks(
-        #     serialized_data_frame=serialized_data_frame,
-        #     data_node_update=data_node_update,
-        #     data_source=self,
-        #     index_names=index_names,
-        #     time_index_name=time_index_name,
-        #     overwrite=overwrite,
-        # )
-        raise NotImplementedError
-
-    def get_data_by_time_index(
-        self,
-        data_node_update: DataNodeUpdate,
-        start_date: datetime.datetime | None = None,
-        end_date: datetime.datetime | None = None,
-        great_or_equal: bool = True,
-        less_or_equal: bool = True,
-        columns: list[str] | None = None,
-        dimension_filters: dict[str, list[Any]] | None = None,
-        index_coordinates: list[dict[str, Any]] | None = None,
-        dimension_range_map: list[dict[str, Any]] | None = None,
-        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
-    ) -> pd.DataFrame:
-
-        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
-            db_interface = _local_data_interface(self.class_type)
-            table_name = data_node_update.data_node_storage.storage_hash
-            stc = data_node_update.data_node_storage.sourcetableconfiguration
-
-            adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
-                db_interface.constrain_read(
-                    table=table_name,
-                    start=start_date,
-                    end=end_date,
-                    time_index_name=stc.time_index_name,
-                    index_names=stc.index_names,
-                    dimension_filters=dimension_filters,
-                    index_coordinates=index_coordinates,
-                    dimension_range_map=dimension_range_map,
-                )
-            )
-
-            df = db_interface.read(
-                table=table_name,
-                start=adjusted_start,
-                end=adjusted_end,
-                great_or_equal=great_or_equal,
-                less_or_equal=less_or_equal,
-                index_names=stc.index_names,
-                time_index_name=stc.time_index_name,
-                dimension_filters=dimension_filters,
-                index_coordinates=index_coordinates,
-                dimension_range_map=adjusted_dimension_range_map,
-                columns=columns,
-            )
-
-        else:
-            if column_range_descriptor is not None:
-                raise Exception("On this data source do not use column_range_descriptor")
-            df = data_node_update.get_data_between_dates_from_api(
-                start_date=start_date,
-                end_date=end_date,
-                great_or_equal=great_or_equal,
-                less_or_equal=less_or_equal,
-                dimension_filters=dimension_filters,
-                index_coordinates=index_coordinates,
-                dimension_range_map=dimension_range_map,
-                columns=columns,
-            )
-        if len(df) == 0:
-            logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
-            return df
-
-        stc = data_node_update.data_node_storage.sourcetableconfiguration
-        try:
-            df[stc.time_index_name] = token_to_pandas_series(
-                df[stc.time_index_name],
-                TIMESTAMP_TZ,
-                is_time_index=True,
-            )
-        except Exception as e:
-            raise e
-        columns_to_loop = set(columns or stc.column_dtypes_map.keys()) | set(stc.index_names)
-        for c, c_type in stc.column_dtypes_map.items():
-            if c not in columns_to_loop:
-                continue
-            if c in df.columns:
-                df[c] = token_to_pandas_series(
-                    df[c],
-                    c_type,
-                    is_time_index=c == stc.time_index_name,
-                )
-        df = df.set_index(stc.index_names)
-        return df
-
-    def get_earliest_value(
-        self,
-        data_node_update: DataNodeUpdate,
-    ) -> tuple[pd.Timestamp | None, dict[Any, pd.Timestamp | None]]:
-        if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
-            db_interface = _local_data_interface(self.class_type)
-            storage = data_node_update.data_node_storage
-            table_name = getattr(storage, "storage_hash", None) or storage.table_name
-            stc = storage.sourcetableconfiguration
-            return db_interface.time_index_minima(
-                table=table_name,
-                index_names=stc.index_names,
-                time_index_name=stc.time_index_name,
-            )
-
-        else:
-            raise NotImplementedError
-
-
-class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
-    uid: str | None = Field(
-        None,
-        description="Public uid of the dynamic table data source.",
-    )
-    id: int | None = Field(
-        None,
-        description="Legacy numeric identifier of the dynamic table data source.",
-    )
-    related_resource: DataSource
-    related_resource_class_type: str
-
-
-
-
-    class Config:
-        use_enum_values = True  # This ensures that enums are stored as their values (e.g., 'TEXT')
-
-    def model_dump_json(self, **json_dumps_kwargs) -> str:
-        """
-        Dump the current instance to a JSON string,
-        ensuring that the dependent `related_resource` is also properly dumped.
-        """
-        # Obtain the dictionary representation using Pydantic's model_dump
-        dump = self.model_dump()
-        # Properly dump the dependent resource if it supports model_dump
-        dump["related_resource"] = self.related_resource.model_dump()
-        # Convert the dict to a JSON string
-        return json.dumps(dump, **json_dumps_kwargs)
-
-    def persist_to_pickle(self, path):
-        import cloudpickle
-
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as handle:
-            cloudpickle.dump(self, handle)
-
-    @classmethod
-    def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_duck_db/"
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": kwargs},
-            time_out=time_out,
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def get_or_create_sqlite(cls, time_out=None, *args, **kwargs):
-        url = cls.get_object_url() + "/get_or_create_sqlite/"
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": kwargs},
-            time_out=time_out,
-        )
-        if r.status_code not in [200, 201]:
-            raise Exception(f"Error in request {r.text}")
-        return cls(**r.json())
-
-    @classmethod
-    def create_duckdb(
-        cls,
-        *,
-        data_source: int | DataSource,
-        time_out: int | None = None,
-        **kwargs,
-    ):
-        related_resource_id = (
-            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
-        )
-        if related_resource_id is None:
-            raise ValueError("A DuckDB DataSource with an id is required.")
-
-        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
-        if class_type is not None and class_type != DUCK_DB:
-            raise ValueError(
-                f"DynamicTableDataSource.create_duckdb requires a {DUCK_DB!r} "
-                f"DataSource, got {class_type!r}."
-            )
-
-        return cls.get_or_create_duck_db(
-            time_out=time_out,
-            related_resource=related_resource_id,
-            **kwargs,
-        )
-
-    @classmethod
-    def create_sqlite(
-        cls,
-        *,
-        data_source: int | DataSource,
-        time_out: int | None = None,
-        **kwargs,
-    ):
-        related_resource_id = (
-            data_source if isinstance(data_source, int) else getattr(data_source, "id", None)
-        )
-        if related_resource_id is None:
-            raise ValueError("A SQLite DataSource with an id is required.")
-
-        class_type = None if isinstance(data_source, int) else getattr(data_source, "class_type", None)
-        if class_type is not None and class_type != SQLITE:
-            raise ValueError(
-                f"DynamicTableDataSource.create_sqlite requires a {SQLITE!r} "
-                f"DataSource, got {class_type!r}."
-            )
-
-        return cls.get_or_create_sqlite(
-            time_out=time_out,
-            related_resource=related_resource_id,
-            **kwargs,
-        )
-
-    def get_data_by_time_index(self, *args, **kwargs):
-        return self.related_resource.get_data_by_time_index(*args, **kwargs)
-
-
-
-
 class GithubOrganization(BasePydanticModel, BaseObjectOrm):
     uid: str
     login: str
@@ -4744,7 +4349,10 @@ class PodDataSource:
             data_source__uid=local_dynamic_data_source.uid,
             list_tables=True,
         )
-        remote_table_names = [t.storage_hash for t in remote_node_storages]
+        remote_table_names = [
+            getattr(t, "physical_table_name", None) or t.storage_hash
+            for t in remote_node_storages
+        ]
         db_interface = _local_data_interface(class_type)
         local_table_names = db_interface.list_tables()
 
@@ -4755,8 +4363,12 @@ class PodDataSource:
 
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
         for remote_table in remote_node_storages:
-            if remote_table.storage_hash in tables_to_delete_remotely:
-                logger.debug(f"Deleting table remotely {remote_table.storage_hash}")
+            remote_physical_table_name = (
+                getattr(remote_table, "physical_table_name", None)
+                or remote_table.storage_hash
+            )
+            if remote_physical_table_name in tables_to_delete_remotely:
+                logger.debug(f"Deleting table remotely {remote_physical_table_name}")
                 if remote_table.protect_from_deletion:
                     remote_table.patch(protect_from_deletion=False)
 

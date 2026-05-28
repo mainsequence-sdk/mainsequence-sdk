@@ -4961,10 +4961,10 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                     model_dump=lambda *args, **kwargs: {
                         "uid": "data-node-storage-42",
                         "storage_hash": "weights_daily",
+                        "physical_table_name": "weights_daily_physical",
                         "source_class_name": "NodeWeights",
                         "identifier": "weights_daily",
                         "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                        "data_frequency_id": "1d",
                     }
                 )
             ]
@@ -4976,10 +4976,10 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
                 model_dump=lambda *args, **kwargs: {
                     "uid": uid,
                     "storage_hash": "weights_daily",
+                    "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                    "data_frequency_id": "1d",
                     "protect_from_deletion": True,
                 }
             )
@@ -5002,10 +5002,10 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
         {
             "uid": "data-node-storage-42",
             "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
             "source_class_name": "NodeWeights",
             "identifier": "weights_daily",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "data_frequency_id": "1d",
         }
     ]
     assert detail["uid"] == "data-node-storage-42"
@@ -7644,11 +7644,11 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
             {
                 "uid": "data-node-storage-42",
                 "storage_hash": "weights_daily",
+                "physical_table_name": "weights_daily_physical",
                 "source_class_name": "NodeWeights",
                 "identifier": "weights_daily",
                 "namespace": "pytest_weights",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                "data_frequency_id": "1d",
             }
         ],
     )
@@ -7656,7 +7656,7 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     result = runner.invoke(cli_mod.app, ["data-node", "list"])
     assert result.exit_code == 0
     assert "Data Node Storages" in result.output
-    assert "weights_d" in result.output
+    assert "weights_" in result.output
     assert "Node" in result.output
     assert "NodeWeig" in result.output
     assert "Namespac" in result.output
@@ -7835,10 +7835,10 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
                 {
                     "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
+                    "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                    "data_frequency_id": "1d",
                 }
             ],
         }
@@ -7881,7 +7881,7 @@ def test_data_node_storage_description_search(cli_mod, runner, monkeypatch):
         "filters": {"data_source__id": "2"},
     }
     assert "Description Matches" in result.output
-    assert "weights_d" in result.output
+    assert "weights_" in result.output
     assert "Pagination" in result.output
     assert "Count" in result.output
 
@@ -7901,10 +7901,10 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
             {
                 "uid": "data-node-storage-43",
                 "storage_hash": "prices_daily",
+                "physical_table_name": "prices_daily_physical",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                "data_frequency_id": "1d",
             }
         ]
 
@@ -7919,7 +7919,7 @@ def test_data_node_storage_column_search(cli_mod, runner, monkeypatch):
     assert captured["entries"] == ["storage_hash__contains=weights"]
     assert captured["search"] == {"q": "close", "filters": {"storage_hash__contains": "weights"}}
     assert "Column Matches" in result.output
-    assert "prices_da" in result.output
+    assert "prices_d" in result.output
     assert 'Column Matches: 1 match(es) for "close"' in result.output
 
 
@@ -7961,10 +7961,10 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
                 {
                     "uid": "data-node-storage-42",
                     "storage_hash": "weights_daily",
+                    "physical_table_name": "weights_daily_physical",
                     "source_class_name": "NodeWeights",
                     "identifier": "weights_daily",
                     "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                    "data_frequency_id": "1d",
                 }
             ],
         }
@@ -7975,10 +7975,10 @@ def test_data_node_storage_search_combines_description_and_column(cli_mod, runne
             {
                 "uid": "data-node-storage-43",
                 "storage_hash": "prices_daily",
+                "physical_table_name": "prices_daily_physical",
                 "source_class_name": "PriceBars",
                 "identifier": "prices_daily",
                 "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-                "data_frequency_id": "1d",
             }
         ]
 
@@ -8042,16 +8042,15 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
         lambda storage_uid, timeout=None: {
             "uid": storage_uid,
             "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
             "identifier": "weights_daily",
             "source_class_name": "NodeWeights",
             "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
-            "data_frequency_id": "1d",
             "protect_from_deletion": True,
             "creation_date": "2026-03-16T10:00:00Z",
             "created_by_user": 7,
             "organization_owner": 2,
             "description": "Daily node weights",
-            "build_configuration": {"window": 30},
             "sourcetableconfiguration": {
                 "time_index_name": "time_index",
                 "storage_layout": {
@@ -8072,8 +8071,9 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
     assert result.exit_code == 0
     assert "Data Node Storage" in result.output
     assert "weights_daily" in result.output
+    assert "weights_daily_physical" in result.output
     assert "Daily node weights" in result.output
-    assert "Build Configuration" in result.output
+    assert "Build Configuration" not in result.output
     assert "time_index_name" in result.output
     assert "Storage Layout" in result.output
     assert "identity_dimensions" in result.output

@@ -24,14 +24,13 @@ from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.client.models_tdag import _resolve_local_pod_project
 from mainsequence.instrumentation import tracer, tracer_instrumentator
-from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, bcolors, ogm
+from mainsequence.tdag.config import API_TS_PICKLE_PREFIFX, ogm
 from mainsequence.tdag.pydantic_metadata import (
     is_serialized_pydantic_model,
     serialize_pydantic_model,
     strip_pydantic_hash_exclusions,
 )
 
-from ..base_persist_managers import get_data_node_source_code_git_hash
 from .models import SourceTableForeignKey
 from .namespacing import disable_hash_namespace
 from .persist_managers import PersistManager
@@ -234,31 +233,8 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
 def verify_backend_git_hash_with_pickle(
     local_persist_manager: PersistManager, time_serie_class: DataNode
 ) -> None:
-    """Verifies if the git hash in the backend matches the one from the pickled object."""
-    if local_persist_manager.data_node_storage is not None:
-        load_git_hash = get_data_node_source_code_git_hash(time_serie_class)
-
-        persisted_pickle_hash = (
-            local_persist_manager.data_node_storage.time_serie_source_code_git_hash
-        )
-        if load_git_hash != persisted_pickle_hash:
-            local_persist_manager.logger.warning(
-                f"{bcolors.WARNING}Source code does not match with pickle rebuilding{bcolors.ENDC}"
-            )
-            pickle_path = get_pickle_path(
-                update_hash=local_persist_manager.update_hash,
-                data_source_uid=local_persist_manager.data_source.uid,
-            )
-            flush_pickle(pickle_path)
-
-            rebuild_time_serie = rebuild_from_configuration(
-                update_hash=local_persist_manager.update_hash,
-                data_source=local_persist_manager.data_source,
-            )
-            rebuild_time_serie.persist_to_pickle()
-        else:
-            # if no need to rebuild, just sync the metadata
-            local_persist_manager.synchronize_data_node_storage(data_node_update=None)
+    """Backend storage no longer stores source-code hashes, so no verification is possible."""
+    return
 
 
 def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:

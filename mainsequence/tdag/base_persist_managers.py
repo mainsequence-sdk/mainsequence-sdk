@@ -147,8 +147,6 @@ class BasePersistManager:
         storage_hash: str,
         remote_configuration: dict,
         data_source: DynamicTableDataSource,
-        time_serie_source_code_git_hash: str,
-        time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
         namespace: str | None = None,
@@ -161,9 +159,6 @@ class BasePersistManager:
         kwargs = dict(
             storage_hash=storage_hash,
             namespace=namespace,
-            time_serie_source_code_git_hash=time_serie_source_code_git_hash,
-            time_serie_source_code=time_serie_source_code,
-            build_configuration=remote_configuration,
             data_source_uid=str(data_source_uid),
             build_configuration_json_schema=build_configuration_json_schema,
             open_to_public=open_to_public,
@@ -201,12 +196,12 @@ class BasePersistManager:
 
     @property
     def remote_build_configuration(self) -> dict | None:
-        data_node_storage = self.data_node_storage
-        if data_node_storage is None or isinstance(data_node_storage, int):
+        data_node_update = self.data_node_update
+        if data_node_update is None:
             return None
-        if isinstance(data_node_storage, dict):
-            return data_node_storage.get("build_configuration")
-        return getattr(data_node_storage, "build_configuration", None)
+        if isinstance(data_node_update, dict):
+            return data_node_update.get("build_configuration")
+        return getattr(data_node_update, "build_configuration", None)
 
     def synchronize_data_node_update(self, data_node_update: Any | None) -> None:
         if data_node_update is not None:
@@ -328,9 +323,9 @@ class BasePersistManager:
         return self._get_source_table_configuration()
 
     def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
-        self.data_node_update.data_node_storage = self.data_node_storage.patch(
-            time_serie_source_code_git_hash=git_hash_id,
-            time_serie_source_code=source_code,
+        logger.debug(
+            "Skipping DataNodeStorage source-code patch because backend storage "
+            "metadata no longer stores source code fields."
         )
 
     def add_tags(self, tags: list[str]) -> None:
@@ -355,15 +350,13 @@ class BasePersistManager:
         local_configuration: dict,
         remote_configuration: dict,
         data_source: DynamicTableDataSource,
-        time_serie_source_code_git_hash: str,
-        time_serie_source_code: str,
         build_configuration_json_schema: dict,
         open_to_public: bool,
         namespace: str | None = None,
     ) -> None:
-        remote_build_configuration = self.remote_build_configuration
+        remote_storage = self.data_node_storage
 
-        if remote_build_configuration is None:
+        if remote_storage is None:
             logger.debug(f"remote table {storage_hash} does not exist creating")
 
             try:
@@ -371,8 +364,6 @@ class BasePersistManager:
                     storage_hash=storage_hash,
                     remote_configuration=remote_configuration,
                     data_source=data_source,
-                    time_serie_source_code_git_hash=time_serie_source_code_git_hash,
-                    time_serie_source_code=time_serie_source_code,
                     build_configuration_json_schema=build_configuration_json_schema,
                     open_to_public=open_to_public,
                     namespace=namespace,
@@ -390,7 +381,7 @@ class BasePersistManager:
                 self.set_data_node_update_lazy(
                     force_registry=True, include_relations_detail=True
                 )
-            storage_hash = self._get_storage_hash()
+            storage_hash = self._get_storage_hash() or storage_hash
 
         self._verify_local_ts_exists(
             storage_hash=storage_hash,
@@ -580,7 +571,7 @@ class BasePersistManager:
         return self.data_node_update.ogm_dependencies_linked
 
     def update_git_and_code_in_backend(self, time_serie_class) -> None:
-        self.update_source_informmation(
-            git_hash_id=get_data_node_source_code_git_hash(time_serie_class),
-            source_code=get_data_node_source_code(time_serie_class),
+        logger.debug(
+            "Skipping DataNodeStorage source-code patch because backend storage "
+            "metadata no longer stores source code fields."
         )

@@ -6,8 +6,6 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mainsequence.client.utils import DataFrequency
-
 from ..configuration_models import BaseConfiguration
 
 
@@ -296,17 +294,6 @@ class DataNodeMetaData(BaseModel):
         title="Description",
         description="Optional human-readable dataset description.",
         examples=["Global daily prices dataset."],
-        json_schema_extra={"hash_excluded": True},
-    )
-    data_frequency_id: DataFrequency | None = Field(
-        default=None,
-        title="Data Frequency",
-        description=(
-            "Optional published frequency metadata. This remains hash-excluded "
-            "to preserve the current get_table_metadata() behavior where table "
-            "metadata does not participate in hashing."
-        ),
-        examples=["one_d"],
         json_schema_extra={"hash_excluded": True},
     )
 
