@@ -108,10 +108,14 @@ class DataAccessMixin:
             self._local_persist_manager = None
 
         # 3. Common Logic: Persist the data source if needed
-        data_source_uid = getattr(self.data_source, "uid", self.data_source_uid)
+        data_source = getattr(self, "data_source", None)
+        data_source_uid = getattr(data_source, "uid", None) or self.data_source_uid
         data_source_path = build_operations.data_source_pickle_path(data_source_uid)
-        if not os.path.isfile(data_source_path) or overwrite:
-            self.data_source.persist_to_pickle(data_source_path)
+        if data_source is None:
+            if not self.is_api:
+                raise ValueError("DataNode pickle persistence requires a data source.")
+        elif not os.path.isfile(data_source_path) or overwrite:
+            data_source.persist_to_pickle(data_source_path)
 
         # 4. Common Logic: Atomically write the main pickle file
         if os.path.isfile(path) and not overwrite:
@@ -161,7 +165,7 @@ class DataAccessMixin:
         """Gets a logger instance with bound context variables."""
         # import structlog.contextvars as cvars
         # cvars.bind_contextvars(update_hash=self.update_hash,
-        #                      update_hash=self.data_source_id,
+        #                      data_source_uid=self.data_source_uid,
         #                      api_time_series=True,)
         global logger
         if not hasattr(self, "_logger"):
@@ -215,17 +219,36 @@ class DataAccessMixin:
 
 
 class APIDataNode(DataAccessMixin):
+    @staticmethod
+    def _require_data_source_uid(data_source: Any, *, context: str) -> str:
+        if isinstance(data_source, dict):
+            data_source_uid = data_source.get("uid")
+        else:
+            data_source_uid = getattr(data_source, "uid", None)
+        if data_source_uid in (None, ""):
+            raise ValueError(f"{context} requires data_source.uid.")
+        return str(data_source_uid)
 
     @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
         return cls(
-            data_source_id=source_table.data_source.id, storage_hash=source_table.storage_hash
+            data_source_uid=cls._require_data_source_uid(
+                source_table.data_source,
+                context="APIDataNode.build_from_local_time_serie",
+            ),
+            storage_hash=source_table.storage_hash,
         )
 
     @classmethod
-    def build_from_table_id(cls, table_id: str) -> "APIDataNode":
-        table = DataNodeStorage.get(id=table_id)
-        ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
+    def build_from_table_uid(cls, table_uid: str) -> "APIDataNode":
+        table = DataNodeStorage.get(uid=table_uid)
+        ts = cls(
+            data_source_uid=cls._require_data_source_uid(
+                table.data_source,
+                context="APIDataNode.build_from_table_uid",
+            ),
+            storage_hash=table.storage_hash,
+        )
         return ts
 
 
@@ -233,12 +256,18 @@ class APIDataNode(DataAccessMixin):
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
 
         table = DataNodeStorage.get(identifier=identifier)
-        ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
+        ts = cls(
+            data_source_uid=cls._require_data_source_uid(
+                table.data_source,
+                context="APIDataNode.build_from_identifier",
+            ),
+            storage_hash=table.storage_hash,
+        )
         return ts
 
     def __init__(
         self,
-        data_source_id: int,
+        data_source_uid: str,
         storage_hash: str,
         data_source_local_lake: DataSource | None = None,
     ):
@@ -246,8 +275,8 @@ class APIDataNode(DataAccessMixin):
         Initializes an APIDataNode.
 
         Args:
-            data_source_id: The ID of the data source.
-            update_hash: The local hash ID of the time series.
+            data_source_uid: The UID of the data source.
+            storage_hash: The storage hash of the data node table.
             data_source_local_lake: Optional local data source for the lake.
         """
         if data_source_local_lake is not None:
@@ -255,8 +284,9 @@ class APIDataNode(DataAccessMixin):
                 data_source_local_lake.data_type in CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE
             ), "data_source_local_lake should be of type CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE"
 
-        assert isinstance(data_source_id, int)
-        self.data_source_id = data_source_id
+        if data_source_uid in (None, ""):
+            raise ValueError("APIDataNode requires data_source_uid.")
+        self.data_source_uid = str(data_source_uid)
         self.storage_hash = storage_hash
         self.data_source = data_source_local_lake
         self._local_persist_manager: APIPersistManager = None
@@ -321,16 +351,18 @@ class APIDataNode(DataAccessMixin):
         Returns:
             A DataSource object.
         """
+        data_source_uid = data_config.get("uid")
+        if data_source_uid in (None, ""):
+            raise ValueError("Data source configuration requires uid.")
         ModelClass = DynamicTableDataSource.get_class(data_config["data_type"])
-        pod_source = ModelClass.get(data_config["id"])
+        pod_source = ModelClass.get(uid=data_source_uid)
         return pod_source
 
     def _set_local_persist_manager(self) -> None:
         self._verify_local_data_source()
         self._local_persist_manager = APIPersistManager(
             storage_hash=self.storage_hash,
-            data_source_id=self.data_source_id,
-            data_source_uid=getattr(self.data_source, "uid", None),
+            data_source_uid=self.data_source_uid,
         )
         data_node_storage = self._local_persist_manager.data_node_storage
 
@@ -759,10 +791,6 @@ class DataNode(DataAccessMixin, ABC):
     @property
     def is_api(self):
         return False
-
-    @property
-    def data_source_id(self) -> int:
-        return self.data_source.id
 
     @property
     def data_source_uid(self) -> str:

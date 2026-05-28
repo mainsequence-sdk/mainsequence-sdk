@@ -118,6 +118,13 @@ def _strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> An
     return strip_pydantic_hash_exclusions(value, for_storage_hash=for_storage_hash)
 
 
+def _require_serialized_data_source_uid(value: Mapping[str, Any], *, marker: str) -> str:
+    data_source_uid = value.get("data_source_uid")
+    if data_source_uid in (None, ""):
+        raise ValueError(f"{marker} requires data_source_uid.")
+    return str(data_source_uid)
+
+
 @serialize_argument.register(BaseObjectOrm)
 def _(value, pickle_ts: bool):
     new_dict = json.loads(value.model_dump_json())
@@ -393,7 +400,10 @@ class PickleRebuilder(BaseRebuilder):
         import cloudpickle
 
         # Note: You need to make DataNode available here
-        data_source_uid = value.get("data_source_uid") or value.get("data_source_id")
+        data_source_uid = _require_serialized_data_source_uid(
+            value,
+            marker="is_time_serie_pickled",
+        )
         full_path = get_pickle_path(
             update_hash=value["update_hash"], data_source_uid=data_source_uid
         )
@@ -421,9 +431,13 @@ class PickleRebuilder(BaseRebuilder):
         import cloudpickle
 
         # Note: You need to make APIDataNode available here
+        data_source_uid = _require_serialized_data_source_uid(
+            value,
+            marker="is_api_time_serie_pickled",
+        )
         full_path = get_pickle_path(
             update_hash=value["update_hash"],
-            data_source_uid=value.get("data_source_uid") or value.get("data_source_id"),
+            data_source_uid=data_source_uid,
             is_api=True,
         )
         with open(full_path, "rb") as handle:

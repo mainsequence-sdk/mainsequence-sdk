@@ -860,7 +860,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         update_priority_dict: Mapping[str, int] | None,
     ):
         """
-        {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_id': 1},
+        {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_uid': '...'},
         :param local_hash_id__in:
         :param multi_index_asset_symbols_filter:
         :param update_details_kwargs:

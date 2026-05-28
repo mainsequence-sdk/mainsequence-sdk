@@ -463,8 +463,31 @@ def test_build_operations_pickled_data_node_marker_uses_data_source_uid():
     assert "data_source_id" not in payload
 
 
+def test_build_operations_pickled_api_node_marker_uses_data_source_uid():
+    calls = []
+    api_node = types.SimpleNamespace(
+        update_hash="api-update-hash-1",
+        data_source_uid=DATA_SOURCE_UID,
+        persist_to_pickle=lambda: calls.append("persisted"),
+    )
+
+    payload = build_operations._serialize_api_timeserie(api_node, pickle_ts=True)
+
+    assert calls == ["persisted"]
+    assert payload == {
+        "is_api_time_serie_pickled": True,
+        "update_hash": "api-update-hash-1",
+        "data_source_uid": DATA_SOURCE_UID,
+    }
+    assert "data_source_id" not in payload
+
+
 def test_build_operations_pickle_paths_use_data_source_uid(monkeypatch, tmp_path):
-    monkeypatch.setattr(build_operations.ogm, "pickle_storage_path", str(tmp_path))
+    monkeypatch.setattr(
+        build_operations,
+        "ogm",
+        types.SimpleNamespace(pickle_storage_path=str(tmp_path)),
+    )
 
     path = build_operations.get_pickle_path(
         update_hash="update-hash-1",
@@ -474,3 +497,29 @@ def test_build_operations_pickle_paths_use_data_source_uid(monkeypatch, tmp_path
 
     assert path == str(tmp_path / DATA_SOURCE_UID / "update-hash-1.pickle")
     assert data_source_path == str(tmp_path / DATA_SOURCE_UID / "data_source.pickle")
+
+
+def test_build_operations_rejects_legacy_pickled_data_node_marker_data_source_id():
+    rebuilder = build_operations.PickleRebuilder()
+
+    with pytest.raises(ValueError, match="is_time_serie_pickled requires data_source_uid"):
+        rebuilder._handle_pickled_timeserie(
+            {
+                "is_time_serie_pickled": True,
+                "update_hash": "update-hash-1",
+                "data_source_id": 7,
+            }
+        )
+
+
+def test_build_operations_rejects_legacy_pickled_api_node_marker_data_source_id():
+    rebuilder = build_operations.PickleRebuilder()
+
+    with pytest.raises(ValueError, match="is_api_time_serie_pickled requires data_source_uid"):
+        rebuilder._handle_api_timeserie(
+            {
+                "is_api_time_serie_pickled": True,
+                "update_hash": "update-hash-1",
+                "data_source_id": 7,
+            }
+        )

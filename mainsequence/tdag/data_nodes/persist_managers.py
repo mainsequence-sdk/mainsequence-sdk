@@ -25,12 +25,13 @@ class APIPersistManager:
 
     def __init__(
         self,
-        data_source_id: int | None = None,
+        *,
         storage_hash: str | None = None,
-        data_source_uid: str | None = None,
+        data_source_uid: str,
     ):
-        self.data_source_id: int | None = data_source_id
-        self.data_source_uid: str | None = str(data_source_uid) if data_source_uid else None
+        if data_source_uid in (None, ""):
+            raise ValueError("APIPersistManager requires data_source_uid.")
+        self.data_source_uid: str = str(data_source_uid)
         self.storage_hash: str = storage_hash
 
         logger.debug(f"Initializing Time Serie {self.storage_hash}  as APIDataNode")
@@ -52,8 +53,6 @@ class APIPersistManager:
 
     def _init_data_node_storage(self) -> None:
         try:
-            if self.data_source_uid in (None, ""):
-                raise ValueError("APIPersistManager requires data_source_uid.")
             result = DataNodeStorage.get_or_none(
                 storage_hash=self.storage_hash,
                 data_source__uid=self.data_source_uid,
