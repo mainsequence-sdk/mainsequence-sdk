@@ -24,6 +24,25 @@ def _hashes(payload):
     return build_operations.hash_signature({"config": serialized_payload})
 
 
+def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatch):
+    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
+
+    class_name = "VeryLongDataNodeClassNameThatWouldOverflowPostgresIdentifierLimit"
+
+    config = build_operations.create_config(
+        ts_class_name=class_name,
+        kwargs={"identifier": "prices"},
+    )
+
+    expected_prefix = class_name.lower()[:30].rstrip("_")
+    assert len(config.storage_hash) == 63
+    assert len(config.update_hash) == 63
+    assert config.storage_hash.startswith(f"{expected_prefix}_")
+    assert config.update_hash.startswith(f"{expected_prefix}_")
+    assert len(config.storage_hash.rsplit("_", 1)[1]) == 32
+    assert len(config.update_hash.rsplit("_", 1)[1]) == 32
+
+
 def test_nested_pydantic_runtime_only_fields_inside_lists_do_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 

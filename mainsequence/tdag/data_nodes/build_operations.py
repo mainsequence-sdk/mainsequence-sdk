@@ -41,6 +41,9 @@ if TYPE_CHECKING:
 
 build_model = lambda model_data: get_model_class(model_data["orm_class"])(**model_data)
 
+POSTGRES_IDENTIFIER_MAX_LENGTH = 63
+_HASH_SUFFIX_LENGTH = 33
+
 
 # 1. Create a "registry" function using the decorator
 @singledispatch
@@ -533,6 +536,15 @@ def extract_pydantic_fields_from_dict(d: Mapping[str, Any]) -> dict[str, dict[st
     return result
 
 
+def _crop_hash_prefix(prefix: str, *, max_length: int = POSTGRES_IDENTIFIER_MAX_LENGTH) -> str:
+    max_prefix_length = max_length - _HASH_SUFFIX_LENGTH
+    if max_prefix_length <= 0:
+        raise ValueError("max_length must leave room for '_' plus the hash suffix.")
+
+    cropped_prefix = prefix[:max_prefix_length].rstrip("_")
+    return cropped_prefix or "hash"
+
+
 def create_config(
     ts_class_name: str,
     kwargs: dict[str, Any],
@@ -562,8 +574,8 @@ def create_config(
     # 4. Create the remote configuration by removing ignored keys
     remote_config = copy.deepcopy(dict_to_hash)
 
-    update_prefix = (update_hash_prefix or ts_class_name).lower()
-    storage_prefix = (storage_hash_prefix or ts_class_name).lower()
+    update_prefix = _crop_hash_prefix((update_hash_prefix or ts_class_name).lower())
+    storage_prefix = _crop_hash_prefix((storage_hash_prefix or ts_class_name).lower())
 
     # 5. Return all computed values in the structured dataclass
     return TimeSerieConfig(
