@@ -127,7 +127,7 @@ class DynamicTableDoesNotExist(Exception):
     pass
 
 
-class SourceTableConfigurationDoesNotExist(Exception):
+class TimeIndexedProfileDoesNotExist(Exception):
     pass
 
 
@@ -147,15 +147,29 @@ def _require_public_uid(obj: Any, object_name: str) -> str:
 
 class BaseColumnMetaData(BasePydanticModel):
     column_name: str = Field(
-        ..., max_length=63, description="Name of the column (must match column_dtypes_map key)"
+        ..., max_length=63, description="Name of the column in the DynamicTable column contract"
     )
     dtype: str = Field(
         ...,
         max_length=100,
-        description="Data type (will be synced from the configuration’s dtype map)",
+        description="Portable data type from the DynamicTable column contract",
     )
-    label: str = Field(..., max_length=250, description="Human‐readable label")
-    description: str = Field(..., description="Longer description of the column")
+    label: str | None = Field(None, max_length=250, description="Human‐readable label")
+    description: str | None = Field(None, description="Longer description of the column")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_contract_aliases(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        if data.get("column_name") in (None, "") and data.get("name") not in (None, ""):
+            data["column_name"] = data["name"]
+        if data.get("dtype") in (None, "") and data.get("data_type") not in (None, ""):
+            data["dtype"] = data["data_type"]
+        data.pop("name", None)
+        data.pop("data_type", None)
+        return data
 
     @field_validator("dtype")
     @classmethod
@@ -166,7 +180,7 @@ class BaseColumnMetaData(BasePydanticModel):
 class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     source_config_id: int | None = Field(
         None,
-        description="Primary key of the related SourceTableConfiguration",
+        description="Legacy backend primary key for the time-indexed profile projection",
     )
 
 
@@ -223,34 +237,135 @@ def _serialize_source_table_column_metadata(
         raw = column_metadata.model_dump(mode="json", exclude_none=True)
     else:
         raw = dict(column_metadata)
+    if raw.get("column_name") in (None, "") and raw.get("name") not in (None, ""):
+        raw["column_name"] = raw["name"]
+    if raw.get("dtype") in (None, "") and raw.get("data_type") not in (None, ""):
+        raw["dtype"] = raw["data_type"]
     raw.pop("orm_class", None)
     raw.pop("source_config_id", None)
+    raw.pop("name", None)
+    raw.pop("data_type", None)
     if "dtype" in raw:
         raw["dtype"] = normalize_dtype_token(raw["dtype"], remote=True)
     return raw
 
 
-class SourceTableConfigurationBase:
-    column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
+def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
+    if isinstance(obj, Mapping):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _dynamic_table_contract_fragment(table_contract: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(table_contract, Mapping):
+        return {}
+    dynamic_contract = table_contract.get("dynamic_table")
+    if isinstance(dynamic_contract, Mapping):
+        return dict(dynamic_contract)
+    return {}
+
+
+def _column_contracts_from_dtype_map(
+    column_dtypes_map: Mapping[str, Any],
+    *,
+    index_names: Sequence[str] | None = None,
+    remote: bool,
+    allow_naive_datetime: bool,
+) -> list[dict[str, Any]]:
+    normalized_dtypes = normalize_column_dtypes_map(
+        column_dtypes_map,
+        remote=remote,
+        allow_naive_datetime=allow_naive_datetime,
+    )
+    index_name_set = {str(name) for name in (index_names or [])}
+    return [
+        {
+            "name": str(column_name),
+            "data_type": dtype,
+            "nullable": str(column_name) not in index_name_set,
+            "primary_key": False,
+            "unique": False,
+            "ordinal_position": position,
+        }
+        for position, (column_name, dtype) in enumerate(normalized_dtypes.items())
+    ]
+
+
+def _normalize_time_indexed_column_contracts(
+    columns: Sequence[Mapping[str, Any] | Any],
+    *,
+    remote: bool,
+    allow_naive_datetime: bool,
+) -> list[dict[str, Any]]:
+    normalized: list[dict[str, Any]] = []
+    for position, column in enumerate(columns):
+        name = _payload_get(column, "name") or _payload_get(column, "column_name")
+        data_type = _payload_get(column, "data_type") or _payload_get(column, "dtype")
+        if name in (None, ""):
+            raise ValueError("DynamicTable column contracts require a non-empty name.")
+        if data_type in (None, ""):
+            raise ValueError(f"DynamicTable column {name!r} requires a data_type.")
+        normalized.append(
+            {
+                "name": str(name),
+                "data_type": normalize_dtype_token(
+                    str(data_type),
+                    remote=remote,
+                    allow_naive_datetime=allow_naive_datetime,
+                ),
+                "backend_type": _payload_get(column, "backend_type"),
+                "nullable": bool(_payload_get(column, "nullable", True)),
+                "primary_key": bool(_payload_get(column, "primary_key", False)),
+                "unique": bool(_payload_get(column, "unique", False)),
+                "ordinal_position": int(_payload_get(column, "ordinal_position", position) or 0),
+                "description": _payload_get(column, "description"),
+                "label": _payload_get(column, "label"),
+            }
+        )
+    return normalized
+
+
+def _column_dtype_map_from_contracts(
+    columns: Sequence[Mapping[str, Any] | Any],
+    *,
+    remote: bool,
+    allow_naive_datetime: bool,
+) -> dict[str, str]:
+    return {
+        column["name"]: column["data_type"]
+        for column in _normalize_time_indexed_column_contracts(
+            columns,
+            remote=remote,
+            allow_naive_datetime=allow_naive_datetime,
+        )
+    }
+
+
+class TimeIndexedProfileBase:
+    column_dtypes_map: dict[str, Any] = Field(
+        ..., description="Derived dtype map projected from canonical MetaTable columns"
+    )
     index_names: list
-    foreign_keys: list[SourceTableForeignKeyContract] = Field(default_factory=list)
+    foreign_keys: list[SourceTableForeignKeyProjection | SourceTableForeignKeyContract] = Field(
+        default_factory=list
+    )
 
     @field_validator("column_dtypes_map")
     @classmethod
     def _normalize_column_dtypes_map(cls, value: dict[str, Any]) -> dict[str, str]:
         return normalize_column_dtypes_map(value, remote=False, allow_naive_datetime=True)
 
-    def get_data_updates(self) -> BaseUpdateStatistics:
-        raise NotImplementedError
+class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
+    """Read-only DynamicTable time-indexed profile.
 
-    def set_or_update_columns_metadata(
-        self,
-        columns_metadata: list[BaseColumnMetaData],
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> Any:
-        raise NotImplementedError
+    This is a value object returned by DataNodeStorage responses. It is not a
+    public REST resource; operations such as stats reads and column metadata
+    updates are routed through DataNodeStorage.
+    """
 
-class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, BaseObjectOrm):
+    dynamic_table_uid: str | None = Field(
+        None, description="Public uid of the related DynamicTable/DataNodeStorage"
+    )
     related_table_uid: str | None = Field(
         None, description="Public uid of the related DataNodeStorage"
     )
@@ -275,115 +390,10 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     multi_index_column_stats: dict[str, Any] | None = Field(
         None, description="Column-level multi-index statistics"
     )
-    open_for_everyone: bool = Field(
-        default=False, description="Whether the table configuration is open for everyone"
-    )
     columns_metadata: list[ColumnMetaData] | None = None
 
     # todo remove
     column_index_names: list | None = [None]
-
-    def _related_table_uid(self) -> str:
-        if self.related_table_uid in (None, ""):
-            raise ValueError("SourceTableConfiguration must have related_table_uid before calling this endpoint.")
-        return str(self.related_table_uid)
-
-    def get_data_updates(self) -> UpdateStatistics:
-        url = self.get_object_url() + f"/{self._related_table_uid()}/get_stats/"
-        s = self.build_session()
-        r = make_request(s=s, loaders=self.LOADERS, r_type="GET", url=url, accept_gzip=True)
-        if r.status_code != 200:
-            raise_for_response(r)
-        data = r.json()
-        multi_index_stats = data.get("multi_index_stats")
-        multi_index_column_stats = data.get("multi_index_column_stats")
-        max_time_index_value = self.last_time_index_value
-        global_index_progress = None
-        index_progress = None
-        index_min = None
-
-        if multi_index_stats is not None:
-            global_index_progress = (
-                multi_index_stats.get("_GLOBAL_")
-                or multi_index_stats.get("global_index_progress")
-            )
-            global_index_progress = UpdateStatistics._normalize_nested(global_index_progress)
-            index_progress = UpdateStatistics._normalize_nested(
-                multi_index_stats.get("index_progress")
-            )
-            index_min = UpdateStatistics._normalize_nested(multi_index_stats.get("index_min"))
-
-            if global_index_progress is not None:
-                max_time_index_value = global_index_progress.get("max") or max_time_index_value
-
-        du = UpdateStatistics(
-            max_time_index_value=max_time_index_value,
-            global_index_progress=global_index_progress,
-            index_progress=index_progress,
-            index_min=index_min,
-            multi_index_column_stats=multi_index_column_stats,
-        )
-
-        du._max_time_in_update_statistics = max_time_index_value
-        return du
-
-    def get_time_scale_extra_table_indices(self) -> dict:
-        url = self.get_object_url() + f"/{self._related_table_uid()}/get_time_scale_extra_table_indices/"
-        s = self.build_session()
-        r = make_request(
-            s=s,
-            loaders=self.LOADERS,
-            r_type="GET",
-            url=url,
-        )
-        if r.status_code != 200:
-            raise_for_response(r)
-
-        return r.json()
-
-    def set_or_update_columns_metadata(
-        self,
-        columns_metadata: list[BaseColumnMetaData],
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> Any:
-        """ """
-
-        serialized_columns_metadata = []
-        for column_metadata in columns_metadata:
-            if isinstance(column_metadata, BaseModel):
-                raw = column_metadata.model_dump(exclude={"orm_class"})
-            else:
-                raw = dict(column_metadata)
-            if "dtype" in raw:
-                raw["dtype"] = normalize_dtype_token(raw["dtype"], remote=True)
-            serialized_columns_metadata.append(raw)
-        url = self.get_object_url() + f"/{self._related_table_uid()}/set_or_update_columns_metadata/"
-        s = self.build_session()
-        r = make_request(
-            s=s,
-            loaders=self.LOADERS,
-            r_type="POST",
-            time_out=timeout,
-            url=url,
-            payload={"json": {"columns_metadata": serialized_columns_metadata}},
-        )
-        if r.status_code not in [200, 201]:
-            raise_for_response(r)
-
-        return r.json()
-
-    def patch(self, *args, **kwargs):
-        url = self.get_object_url() + f"/{self._related_table_uid()}/"
-        payload = {"json": serialize_to_json(kwargs)}
-        r = make_request(
-            s=self.build_session(),
-            loaders=self.LOADERS,
-            r_type="PATCH",
-            url=url,
-            payload=payload,
-        )
-        raise_for_response(r)
-        return self.__class__(**r.json())
 
 
 
@@ -607,7 +617,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         r = make_request(s=s, loaders=cls.LOADERS, r_type="GET", url=url, time_out=timeout)
 
         if r.status_code == 404:
-            raise SourceTableConfigurationDoesNotExist
+            raise TimeIndexedProfileDoesNotExist
 
         if r.status_code != 200:
             raise Exception(f"{data_node_storage['update_hash']}{r.text}")
@@ -647,7 +657,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         )
 
         if r.status_code == 404:
-            raise SourceTableConfigurationDoesNotExist
+            raise TimeIndexedProfileDoesNotExist
 
         if r.status_code != 200:
             raise Exception(f"{self.update_hash}{r.text}")
@@ -894,9 +904,9 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
         response_json = r.json()
-        source_table_config_map = {
-            str(k): SourceTableConfiguration(**v) if v is not None else v
-            for k, v in response_json["source_table_config_map"].items()
+        time_indexed_profile_map = {
+            str(k): TimeIndexedProfile(**v) if v is not None else v
+            for k, v in response_json["time_indexed_profile_map"].items()
         }
         state_data = {
             str(k): DataNodeUpdateDetails(**v) for k, v in response_json["state_data"].items()
@@ -906,9 +916,9 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return UpdateBatchResponse[
             DataNodeUpdate,
             DataNodeUpdateDetails,
-            SourceTableConfiguration,
+            TimeIndexedProfile,
         ](
-            source_table_config_map=source_table_config_map,
+            time_indexed_profile_map=time_indexed_profile_map,
             state_data=state_data,
             all_index_stats=all_index_stats,
             data_node_updates=data_node_updates,
@@ -1039,7 +1049,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     ):
 
         overwrite = True  # ALWAYS OVERWRITE
-        metadata = self.data_node_storage
         storage_class_type = getattr(getattr(data_source, "related_resource", None), "class_type", None)
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
@@ -1066,36 +1075,37 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                         f"index_names. DataFrame: {inferred_index_names}; "
                         f"declared: {index_names}"
                     )
+            schema_columns = source_table_schema.get("columns")
             schema_column_dtypes_map = source_table_schema.get("column_dtypes_map")
-            if schema_column_dtypes_map is not None:
-                column_dtypes_map = normalize_column_dtypes_map(
-                    schema_column_dtypes_map,
+            if schema_columns is not None:
+                column_dtypes_map = _column_dtype_map_from_contracts(
+                    schema_columns,
                     remote=not is_local_storage,
                     allow_naive_datetime=is_local_storage,
                 )
-            if columns_metadata is None:
-                columns_metadata = source_table_schema.get("columns_metadata")
+            elif schema_column_dtypes_map is not None:
+                column_contracts = _column_contracts_from_dtype_map(
+                    schema_column_dtypes_map,
+                    index_names=index_names,
+                    remote=not is_local_storage,
+                    allow_naive_datetime=is_local_storage,
+                )
+                column_dtypes_map = _column_dtype_map_from_contracts(
+                    column_contracts,
+                    remote=not is_local_storage,
+                    allow_naive_datetime=is_local_storage,
+                )
         index_names = list(index_names)
         missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
         if missing_index_dtypes:
             raise ValueError(
-                "Every index column must exist in column_dtypes_map. "
+                "Every index column must exist in the DynamicTable column contract. "
                 f"Missing: {missing_index_dtypes}"
             )
 
         # overwrite data origina data frame to release memory
         if not data[time_index_name].is_monotonic_increasing:
             data = data.sort_values(time_index_name)
-
-        metadata.handle_source_table_configuration_creation(
-            column_dtypes_map=column_dtypes_map,
-            index_names=index_names,
-            time_index_name=time_index_name,
-            data=data,
-            overwrite=overwrite,
-            columns_metadata=columns_metadata,
-            foreign_keys=foreign_keys,
-        )
 
         duplicates_exist = data.duplicated(subset=index_names).any()
         if duplicates_exist:
@@ -1254,7 +1264,7 @@ class DataNodeStorage(MetaTable):
         default=False, description="Whether the data source is open for everyone"
     )
     source_class_name: str | None = None
-    sourcetableconfiguration: SourceTableConfiguration | None = None
+    time_indexed_profile: TimeIndexedProfile | None = None
     table_index_names: dict | None = None
 
     # TS specifi
@@ -1275,6 +1285,135 @@ class DataNodeStorage(MetaTable):
         if data.get("physical_table_name") in (None, ""):
             data["physical_table_name"] = data.get("storage_hash")
         return data
+
+    def _time_indexed_dynamic_contract(self) -> dict[str, Any]:
+        return _dynamic_table_contract_fragment(self.table_contract)
+
+    def _time_indexed_storage_layout(self) -> dict[str, Any]:
+        profile = self.time_indexed_profile
+        if profile is not None and isinstance(profile.storage_layout, Mapping):
+            return dict(profile.storage_layout)
+
+        dynamic_contract = self._time_indexed_dynamic_contract()
+        storage_layout = dynamic_contract.get("storage_layout")
+        if isinstance(storage_layout, Mapping):
+            return dict(storage_layout)
+
+        contract_layout = self.table_contract.get("storage_layout") if isinstance(self.table_contract, Mapping) else None
+        if isinstance(contract_layout, Mapping):
+            return dict(contract_layout)
+        return {}
+
+    @property
+    def time_index_name(self) -> str | None:
+        profile = self.time_indexed_profile
+        if profile is not None and profile.time_index_name:
+            return str(profile.time_index_name)
+
+        dynamic_contract = self._time_indexed_dynamic_contract()
+        if dynamic_contract.get("time_index_name"):
+            return str(dynamic_contract["time_index_name"])
+
+        index_names = dynamic_contract.get("index_names")
+        if isinstance(index_names, Sequence) and not isinstance(index_names, (str, bytes, bytearray)) and index_names:
+            return str(index_names[0])
+
+        storage_layout = self._time_indexed_storage_layout()
+        time_index = storage_layout.get("time_index")
+        if isinstance(time_index, Mapping) and time_index.get("name"):
+            return str(time_index["name"])
+        return None
+
+    @property
+    def index_names(self) -> list[str]:
+        profile = self.time_indexed_profile
+        if profile is not None and profile.index_names:
+            return [str(name) for name in profile.index_names]
+
+        dynamic_contract = self._time_indexed_dynamic_contract()
+        dynamic_index_names = dynamic_contract.get("index_names")
+        if isinstance(dynamic_index_names, Sequence) and not isinstance(dynamic_index_names, (str, bytes, bytearray)):
+            return [str(name) for name in dynamic_index_names]
+
+        storage_layout = self._time_indexed_storage_layout()
+        uniqueness_columns = (storage_layout.get("uniqueness") or {}).get("columns")
+        if isinstance(uniqueness_columns, Sequence) and not isinstance(uniqueness_columns, (str, bytes, bytearray)):
+            return [str(name) for name in uniqueness_columns]
+
+        time_index_name = self.time_index_name
+        identity_dimensions = storage_layout.get("identity_dimensions")
+        if time_index_name and isinstance(identity_dimensions, Sequence) and not isinstance(identity_dimensions, (str, bytes, bytearray)):
+            return [time_index_name, *[str(name) for name in identity_dimensions]]
+        return [time_index_name] if time_index_name else []
+
+    @property
+    def column_dtypes_map(self) -> dict[str, str]:
+        profile = self.time_indexed_profile
+        if profile is not None and profile.column_dtypes_map:
+            return normalize_column_dtypes_map(
+                profile.column_dtypes_map,
+                remote=False,
+                allow_naive_datetime=True,
+            )
+
+        if self.columns:
+            return _column_dtype_map_from_contracts(
+                self.columns,
+                remote=False,
+                allow_naive_datetime=True,
+            )
+
+        contract_columns = (
+            self.table_contract.get("columns")
+            if isinstance(self.table_contract, Mapping)
+            else None
+        )
+        if isinstance(contract_columns, Sequence) and not isinstance(contract_columns, (str, bytes, bytearray)):
+            return _column_dtype_map_from_contracts(
+                contract_columns,
+                remote=False,
+                allow_naive_datetime=True,
+            )
+        return {}
+
+    @property
+    def time_indexed_foreign_keys(
+        self,
+    ) -> list[SourceTableForeignKeyProjection | SourceTableForeignKeyContract]:
+        profile = self.time_indexed_profile
+        if profile is not None:
+            return list(profile.foreign_key_projections or profile.foreign_keys or [])
+        if self.foreign_keys:
+            return [
+                SourceTableForeignKeyProjection(
+                    name=foreign_key.name,
+                    source_columns=list(foreign_key.source_columns or []),
+                    target_meta_table_uid=str(
+                        foreign_key.target_table_uid
+                        or _payload_get(foreign_key, "target_meta_table_uid", "")
+                    ),
+                    target_columns=list(foreign_key.target_columns or []),
+                    on_delete=foreign_key.on_delete or "restrict",
+                    target_meta_table_storage_hash=foreign_key.target_table_storage_hash,
+                )
+                for foreign_key in self.foreign_keys
+                if (
+                    foreign_key.target_table_uid
+                    or _payload_get(foreign_key, "target_meta_table_uid", None)
+                )
+            ]
+        return []
+
+    def _require_time_indexed_table_contract(self) -> tuple[str, list[str], dict[str, str]]:
+        time_index_name = self.time_index_name
+        index_names = self.index_names
+        column_dtypes_map = self.column_dtypes_map
+        if not time_index_name or not index_names or not column_dtypes_map:
+            raise ValueError(
+                "DataNodeStorage is missing its time-indexed table contract. "
+                "Expected canonical MetaTable columns plus a time_indexed_profile projection."
+            )
+        return time_index_name, index_names, column_dtypes_map
 
     @staticmethod
     def _date_for_payload(value: Any) -> Any:
@@ -1463,10 +1602,10 @@ class DataNodeStorage(MetaTable):
         *,
         time_index_name: str,
         index_names: list[str],
-        column_dtypes_map: dict[str, Any],
+        column_dtypes_map: dict[str, Any] | None = None,
+        columns: Sequence[Mapping[str, Any] | Any] | None = None,
         storage_layout: dict[str, Any] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
-        open_for_everyone: bool | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
         """
@@ -1475,10 +1614,10 @@ class DataNodeStorage(MetaTable):
         This calls:
             POST /orm/api/ts_manager/dynamic_table/{uid}/initialize-source-table/
 
-        It creates or validates the SourceTableConfiguration and creates the
-        physical backing table without inserting a bootstrap row. Optional
-        column metadata and foreign keys are resolved by the caller and sent as
-        source-table schema metadata.
+        The SDK treats canonical MetaTable column contracts as the source
+        shape. `column_dtypes_map` is accepted only as a temporary convenience
+        input and is converted to column contracts before the backend request is
+        assembled.
         """
         cls = type(self)
         url = f"{cls.get_object_url()}/{self._public_uid()}/initialize-source-table/"
@@ -1487,9 +1626,9 @@ class DataNodeStorage(MetaTable):
             time_index_name=time_index_name,
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
+            columns=columns,
             storage_layout=storage_layout,
             foreign_keys=foreign_keys,
-            open_for_everyone=open_for_everyone,
             timeout=timeout,
         )
 
@@ -1499,10 +1638,10 @@ class DataNodeStorage(MetaTable):
         url: str,
         time_index_name: str,
         index_names: list[str],
-        column_dtypes_map: dict[str, Any],
+        column_dtypes_map: dict[str, Any] | None = None,
+        columns: Sequence[Mapping[str, Any] | Any] | None = None,
         storage_layout: dict[str, Any] | None = None,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
-        open_for_everyone: bool | None = None,
         timeout: int | None = None,
     ) -> dict[str, Any]:
         if self.uid is None:
@@ -1513,8 +1652,26 @@ class DataNodeStorage(MetaTable):
             None,
         )
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
-        column_dtypes_map = normalize_column_dtypes_map(
-            column_dtypes_map,
+        if columns is not None:
+            column_contracts = _normalize_time_indexed_column_contracts(
+                columns,
+                remote=not is_local_storage,
+                allow_naive_datetime=is_local_storage,
+            )
+        elif column_dtypes_map is not None:
+            column_contracts = _column_contracts_from_dtype_map(
+                column_dtypes_map,
+                index_names=index_names,
+                remote=not is_local_storage,
+                allow_naive_datetime=is_local_storage,
+            )
+        else:
+            raise ValueError(
+                "initialize_source_table requires canonical `columns` or the "
+                "temporary `column_dtypes_map` helper input."
+            )
+        request_column_dtypes_map = _column_dtype_map_from_contracts(
+            column_contracts,
             remote=not is_local_storage,
             allow_naive_datetime=is_local_storage,
         )
@@ -1522,7 +1679,10 @@ class DataNodeStorage(MetaTable):
         payload_body: dict[str, Any] = {
             "time_index_name": time_index_name,
             "index_names": list(index_names),
-            "column_dtypes_map": dict(column_dtypes_map),
+            # Transitional backend request shape. The SDK builds this from the
+            # canonical column contracts above instead of treating it as source
+            # of truth.
+            "column_dtypes_map": dict(request_column_dtypes_map),
         }
         if storage_layout is not None:
             payload_body["storage_layout"] = storage_layout
@@ -1531,8 +1691,6 @@ class DataNodeStorage(MetaTable):
                 _serialize_source_table_foreign_key_contract(foreign_key)
                 for foreign_key in foreign_keys
             ]
-        if open_for_everyone is not None:
-            payload_body["open_for_everyone"] = open_for_everyone
 
         cls = type(self)
         response = make_request(
@@ -1545,9 +1703,71 @@ class DataNodeStorage(MetaTable):
         )
         raise_for_response(response, payload=payload_body)
         data = response.json()
-        source_config_data = data.get("source_table_configuration")
-        if isinstance(source_config_data, dict):
-            self.sourcetableconfiguration = SourceTableConfiguration(**source_config_data)
+        profile_data = data.get("time_indexed_profile")
+        if isinstance(profile_data, dict):
+            self.time_indexed_profile = TimeIndexedProfile(**profile_data)
+        return data
+
+    def get_data_updates(self, *, timeout: int | None = None) -> UpdateStatistics:
+        """Fetch update-progress statistics through the DynamicTable endpoint."""
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before fetching update stats.")
+
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self._public_uid()}/get-stats/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=url,
+            time_out=timeout,
+        )
+        raise_for_response(response)
+        payload = response.json()
+        if "update_statistics" in payload and isinstance(payload["update_statistics"], Mapping):
+            payload = payload["update_statistics"]
+        multi_index_stats = payload.get("multi_index_stats") or {}
+        return UpdateStatistics(
+            global_index_progress=(
+                payload.get("global_index_progress")
+                or multi_index_stats.get("_GLOBAL_")
+                or multi_index_stats.get("global_index_progress")
+            ),
+            index_progress=payload.get("index_progress") or multi_index_stats.get("index_progress"),
+            index_min=payload.get("index_min") or multi_index_stats.get("index_min"),
+            multi_index_column_stats=payload.get("multi_index_column_stats"),
+        )
+
+    def set_or_update_columns_metadata(
+        self,
+        column_metadata: Sequence[BaseColumnMetaData | Mapping[str, Any]],
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        """Update DynamicTable column metadata through the storage endpoint."""
+        if self.uid is None:
+            raise ValueError("DataNodeStorage must have a uid before updating column metadata.")
+        payload_body = {
+            "columns_metadata": [
+                _serialize_source_table_column_metadata(item)
+                for item in column_metadata
+            ]
+        }
+        cls = type(self)
+        url = f"{cls.get_object_url()}/{self._public_uid()}/set-or-update-columns-metadata/"
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload={"json": serialize_to_json(payload_body)},
+            time_out=timeout,
+        )
+        raise_for_response(response, payload=payload_body)
+        data = response.json() if getattr(response, "content", True) else {}
+        profile_data = data.get("time_indexed_profile") if isinstance(data, Mapping) else None
+        if isinstance(profile_data, dict):
+            self.time_indexed_profile = TimeIndexedProfile(**profile_data)
         return data
 
     def run_query(
@@ -1695,7 +1915,7 @@ class DataNodeStorage(MetaTable):
 
         self.delete()
 
-    def handle_source_table_configuration_creation(
+    def handle_time_indexed_profile_creation(
         self,
         column_dtypes_map: dict,
         index_names: list[str],
@@ -1706,71 +1926,216 @@ class DataNodeStorage(MetaTable):
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
     ):
         """
-        Handles the creation or retrieval of the source table configuration.
+        Legacy compatibility path for callers that still invoke the old hook.
 
-        Parameters:
-        ----------
-        metadata : dict
-            Metadata dictionary containing "sourcetableconfiguration" and "uid".
-        column_dtypes_map : dict
-            Mapping of column names to their data types.
-        index_names : list
-            List of index names.
-        time_index_name : str
-            Name of the time index column.
-
-        data : DataFrame
-            The input DataFrame.
-        overwrite : bool, optional
-            Whether to overwrite existing configurations (default is False).
-
-        Returns:
-        -------
-        dict or None
-            Updated metadata with the source table configuration, and potentially filtered data.
+        DataNode runtime must not create or mutate TimeIndexedProfile records.
+        Storage must be registered/bootstraped before writes.
         """
-        stc = self.sourcetableconfiguration
+        del data, overwrite
+        configured_time_index_name = self.time_index_name
+        configured_index_names = self.index_names
+        configured_column_dtypes_map = self.column_dtypes_map
+        if not configured_time_index_name or not configured_index_names or not configured_column_dtypes_map:
+            raise ValueError(
+                "DynamicTable time-indexed profile must already exist before DataNode writes. "
+                "Register/bootstrap the storage table before running the DataNode update."
+            )
+
         storage_class_type = getattr(
             getattr(getattr(self, "data_source", None), "related_resource", None),
             "class_type",
             None,
         )
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
-        column_dtypes_map = normalize_column_dtypes_map(
+        expected_dtypes = normalize_column_dtypes_map(
             column_dtypes_map,
             remote=not is_local_storage,
             allow_naive_datetime=is_local_storage,
         )
+        configured_dtypes = normalize_column_dtypes_map(
+            configured_column_dtypes_map,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
 
-        if stc is None or foreign_keys is not None:
-            try:
-                response_data = self.initialize_source_table(
-                    column_dtypes_map=column_dtypes_map,
-                    index_names=index_names,
-                    time_index_name=time_index_name,
-                    foreign_keys=foreign_keys,
-                    open_for_everyone=self.open_for_everyone,
+        if configured_time_index_name != time_index_name:
+            raise ValueError(
+                "Existing DynamicTable time_index_name does not match "
+                f"DataNode output. Existing: {configured_time_index_name!r}; "
+                f"output: {time_index_name!r}."
+            )
+
+        configured_index_names = [str(name) for name in configured_index_names]
+        if configured_index_names != list(index_names):
+            raise ValueError(
+                "Existing DynamicTable index_names do not match "
+                f"DataNode output. Existing: {configured_index_names}; "
+                f"output: {list(index_names)}."
+            )
+
+        missing_columns = [name for name in expected_dtypes if name not in configured_dtypes]
+        if missing_columns:
+            raise ValueError(
+                "Existing DynamicTable column contract is missing DataNode output columns: "
+                f"{missing_columns}."
+            )
+
+        dtype_mismatches = {
+            name: {
+                "existing": configured_dtypes[name],
+                "output": expected_dtype,
+            }
+            for name, expected_dtype in expected_dtypes.items()
+            if configured_dtypes[name] != expected_dtype
+        }
+        if dtype_mismatches:
+            raise ValueError(
+                "Existing DynamicTable column contract does not match "
+                f"DataNode output: {dtype_mismatches}."
+            )
+
+        self._validate_existing_source_table_columns_metadata(
+            storage=self,
+            columns_metadata=columns_metadata,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
+        self._validate_existing_source_table_foreign_keys(
+            storage=self,
+            foreign_keys=foreign_keys,
+        )
+        return self.time_indexed_profile or self
+
+    @staticmethod
+    def _serialize_column_metadata_for_validation(
+        column_metadata: BaseColumnMetaData | dict[str, Any],
+        *,
+        remote: bool,
+        allow_naive_datetime: bool,
+    ) -> dict[str, Any]:
+        if isinstance(column_metadata, BaseModel):
+            raw = column_metadata.model_dump(mode="json", exclude_none=True)
+        else:
+            raw = dict(column_metadata)
+        if raw.get("column_name") in (None, "") and raw.get("name") not in (None, ""):
+            raw["column_name"] = raw["name"]
+        if raw.get("dtype") in (None, "") and raw.get("data_type") not in (None, ""):
+            raw["dtype"] = raw["data_type"]
+        raw.pop("orm_class", None)
+        raw.pop("source_config_id", None)
+        raw.pop("name", None)
+        raw.pop("data_type", None)
+        if "dtype" in raw:
+            raw["dtype"] = normalize_dtype_token(
+                raw["dtype"],
+                remote=remote,
+                allow_naive_datetime=allow_naive_datetime,
+            )
+        return raw
+
+    @classmethod
+    def _validate_existing_source_table_columns_metadata(
+        cls,
+        *,
+        storage: DataNodeStorage,
+        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None,
+        remote: bool,
+        allow_naive_datetime: bool,
+    ) -> None:
+        if columns_metadata is None:
+            return
+
+        existing_metadata = {
+            item["column_name"]: item
+            for item in (
+                cls._serialize_column_metadata_for_validation(
+                    column_metadata,
+                    remote=remote,
+                    allow_naive_datetime=allow_naive_datetime,
                 )
-                stc_data = response_data.get("source_table_configuration")
-                if isinstance(stc_data, dict):
-                    stc = SourceTableConfiguration(**stc_data)
-                    self.sourcetableconfiguration = stc
-            except AlreadyExist as err:
-                if not overwrite:
-                    # Feature not implemented yet → make the causal link explicit
-                    raise NotImplementedError(
-                        "Removing values per asset when overwrite=False is not implemented yet."
-                    ) from err
-                    # Filter the data based on time_index_name and last_time_index_value
-
-        stc = self.sourcetableconfiguration
-        if columns_metadata is not None:
-            if stc is None:
-                raise ValueError(
-                    "Cannot update columns metadata before SourceTableConfiguration exists."
+                for column_metadata in (
+                    (storage.time_indexed_profile.columns_metadata or [])
+                    if storage.time_indexed_profile is not None
+                    else storage.columns
                 )
-            stc.set_or_update_columns_metadata(columns_metadata=columns_metadata)
+            )
+        }
+        requested_metadata = {
+            item["column_name"]: item
+            for item in (
+                cls._serialize_column_metadata_for_validation(
+                    column_metadata,
+                    remote=remote,
+                    allow_naive_datetime=allow_naive_datetime,
+                )
+                for column_metadata in columns_metadata
+            )
+        }
 
+        missing_metadata = [
+            column_name
+            for column_name in requested_metadata
+            if column_name not in existing_metadata
+        ]
+        if missing_metadata:
+            raise ValueError(
+                "DataNode write path cannot create column metadata. Existing "
+                "DynamicTable column projection is missing metadata for columns: "
+                f"{missing_metadata}."
+            )
+
+        metadata_mismatches = {}
+        for column_name, requested in requested_metadata.items():
+            existing = existing_metadata[column_name]
+            mismatched_fields = {
+                key: {"existing": existing.get(key), "output": value}
+                for key, value in requested.items()
+                if existing.get(key) != value
+            }
+            if mismatched_fields:
+                metadata_mismatches[column_name] = mismatched_fields
+
+        if metadata_mismatches:
+            raise ValueError(
+                "Existing DynamicTable column metadata does not "
+                f"match DataNode output: {metadata_mismatches}."
+            )
+
+    @staticmethod
+    def _normalize_source_table_foreign_key_for_validation(
+        foreign_key: SourceTableForeignKeyContract | dict[str, Any],
+    ) -> dict[str, Any]:
+        raw = _serialize_source_table_foreign_key_contract(foreign_key)
+        return SourceTableForeignKeyContract(**raw).model_dump(mode="json")
+
+    @classmethod
+    def _validate_existing_source_table_foreign_keys(
+        cls,
+        *,
+        storage: DataNodeStorage,
+        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None,
+    ) -> None:
+        if foreign_keys is None:
+            return
+
+        existing_foreign_keys = [
+            cls._normalize_source_table_foreign_key_for_validation(foreign_key)
+            for foreign_key in storage.time_indexed_foreign_keys
+        ]
+        missing_foreign_keys = [
+            foreign_key
+            for foreign_key in (
+                cls._normalize_source_table_foreign_key_for_validation(foreign_key)
+                for foreign_key in foreign_keys
+            )
+            if foreign_key not in existing_foreign_keys
+        ]
+        if missing_foreign_keys:
+            raise ValueError(
+                "DataNode write path cannot create foreign-key metadata. Existing "
+                "DynamicTable foreign-key projection is missing foreign keys: "
+                f"{missing_foreign_keys}."
+            )
 
     @staticmethod
     def map_columns_to_df(df,
@@ -1821,15 +2186,15 @@ class DataNodeStorage(MetaTable):
         df=pd.DataFrame(r.json())
         if df.empty:
             return df
-        stc = self.sourcetableconfiguration
+        time_index_name, index_names, column_dtypes_map = self._require_time_indexed_table_contract()
         try:
-            df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format="ISO8601")
+            df[time_index_name] = pd.to_datetime(df[time_index_name], format="ISO8601")
         except Exception as e:
             raise e
 
-        df=self.map_columns_to_df(df=df,column_dtypes_map=stc.column_dtypes_map,
-                                  time_index_name=stc.time_index_name,
-                                  index_names=stc.index_names,
+        df=self.map_columns_to_df(df=df,column_dtypes_map=column_dtypes_map,
+                                  time_index_name=time_index_name,
+                                  index_names=index_names,
                                   )
 
 
@@ -2002,13 +2367,38 @@ class DataNodeStorage(MetaTable):
     @staticmethod
     def _normalize_dtype_for_pandas(dtype_str: str) -> str:
         """
-        Convert your stc.column_dtypes_map types into pandas dtypes that can hold NULLs.
+        Convert DynamicTable column-contract dtypes into pandas dtypes that can hold NULLs.
         """
         return token_to_pandas_dtype(dtype_str)
 
     @staticmethod
     def _get_search_meta_attr(obj: Any, attr: str, default: Any = None) -> Any:
         if isinstance(obj, Mapping):
+            if attr == "column_dtypes_map" and "column_dtypes_map" not in obj:
+                columns = obj.get("columns")
+                if not columns and isinstance(obj.get("table_contract"), Mapping):
+                    columns = obj["table_contract"].get("columns")
+                if isinstance(columns, Sequence) and not isinstance(columns, (str, bytes, bytearray)):
+                    return _column_dtype_map_from_contracts(
+                        columns,
+                        remote=False,
+                        allow_naive_datetime=True,
+                    )
+            if attr in {"time_index_name", "index_names"} and attr not in obj:
+                dynamic_contract = _dynamic_table_contract_fragment(obj.get("table_contract"))
+                if attr in dynamic_contract:
+                    return dynamic_contract[attr]
+                storage_layout = dynamic_contract.get("storage_layout")
+                if not isinstance(storage_layout, Mapping) and isinstance(obj.get("table_contract"), Mapping):
+                    storage_layout = obj["table_contract"].get("storage_layout")
+                if attr == "time_index_name" and isinstance(storage_layout, Mapping):
+                    time_index = storage_layout.get("time_index")
+                    if isinstance(time_index, Mapping):
+                        return time_index.get("name", default)
+                if attr == "index_names" and isinstance(storage_layout, Mapping):
+                    uniqueness_columns = (storage_layout.get("uniqueness") or {}).get("columns")
+                    if uniqueness_columns:
+                        return uniqueness_columns
             return obj.get(attr, default)
         return getattr(obj, attr, default)
 
@@ -2031,11 +2421,8 @@ class DataNodeStorage(MetaTable):
     @classmethod
     def _iter_search_source_configs(cls, data_node_storage_map: dict):
         for meta in (data_node_storage_map or {}).values():
-            stc = cls._get_search_meta_attr(meta, "sourcetableconfiguration")
-            if stc is None:
-                stc = cls._get_search_meta_attr(meta, "source_table_configuration")
-            if stc is not None:
-                yield stc
+            stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
+            yield stc if stc is not None else meta
 
     @classmethod
     def _resolve_search_response_index_names(
@@ -2134,11 +2521,11 @@ class DataNodeStorage(MetaTable):
             except Exception:
                 pass
 
-        # 2) Cast prefixed columns using each table's SourceTableConfiguration
+        # 2) Cast prefixed columns using each table's time-indexed profile projection.
         for prefix, meta in (data_node_storage_map or {}).items():
-            stc = cls._get_search_meta_attr(meta, "sourcetableconfiguration")
+            stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
             if stc is None:
-                stc = cls._get_search_meta_attr(meta, "source_table_configuration")
+                stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
             if stc is None:
                 continue
 
@@ -2891,7 +3278,7 @@ class UpdateStatistics(BaseUpdateStatistics):
         ----------
         level_name : str
             The name of the index-level to filter on (must be one of
-            self.metadata.sourcetableconfiguration.index_names).
+            self.metadata.time_indexed_profile.index_names).
         filters : List
             The allowed values at that level.  Any branches whose key at
             `level_name` is not in this list will be removed.
@@ -3357,13 +3744,13 @@ class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord,BasePydanticModel, 
 
 UpdateT = TypeVar("UpdateT")
 UpdateDetailsT = TypeVar("UpdateDetailsT")
-SourceTableConfigurationT = TypeVar("SourceTableConfigurationT")
+TimeIndexedProfileT = TypeVar("TimeIndexedProfileT")
 
 
-class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, SourceTableConfigurationT]):
+class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, TimeIndexedProfileT]):
     model_config = ConfigDict(extra="forbid")
 
-    source_table_config_map: dict[str, SourceTableConfigurationT | None]
+    time_indexed_profile_map: dict[str, TimeIndexedProfileT | None]
     state_data: dict[str, UpdateDetailsT]
     all_index_stats: dict[str, Any]
     data_node_updates: list[UpdateT]
@@ -4020,20 +4407,22 @@ class TimeScaleDB(DataSource):
                 )
             return df
 
-        stc = data_node_update.data_node_storage.sourcetableconfiguration
-        df[stc.time_index_name] = token_to_pandas_series(
-            df[stc.time_index_name],
+        time_index_name, index_names, column_dtypes_map = (
+            data_node_update.data_node_storage._require_time_indexed_table_contract()
+        )
+        df[time_index_name] = token_to_pandas_series(
+            df[time_index_name],
             TIMESTAMP_TZ,
             is_time_index=True,
         )
-        for c, c_type in stc.column_dtypes_map.items():
+        for c, c_type in column_dtypes_map.items():
             if c in df.columns:
                 df[c] = token_to_pandas_series(
                     df[c],
                     c_type,
-                    is_time_index=c == stc.time_index_name,
+                    is_time_index=c == time_index_name,
                 )
-        df = df.set_index(stc.index_names)
+        df = df.set_index(index_names)
         return df
 
 
@@ -4595,7 +4984,7 @@ SessionDataSource.set_remote_db()
 DataNodeUpdateDetails.model_rebuild()
 DataNodeUpdate.model_rebuild()
 RunConfiguration.model_rebuild()
-SourceTableConfiguration.model_rebuild()
+TimeIndexedProfile.model_rebuild()
 DataNodeStorage.model_rebuild()
 DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()

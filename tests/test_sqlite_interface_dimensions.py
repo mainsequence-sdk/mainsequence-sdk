@@ -280,7 +280,7 @@ def test_sqlite_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
         update_hash="update-hash",
         data_node_storage=SimpleNamespace(
             storage_hash="storage-hash",
-            sourcetableconfiguration=stc,
+            time_indexed_profile=stc,
         ),
     )
     data_source = models_tdag.DataSource.model_construct(class_type=models_tdag.SQLITE)

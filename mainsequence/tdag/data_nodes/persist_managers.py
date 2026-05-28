@@ -83,22 +83,24 @@ class APIPersistManager:
         if filtered_data.empty:
             return filtered_data
 
-        stc = self.storage_table.sourcetableconfiguration
-        filtered_data[stc.time_index_name] = token_to_pandas_series(
-            filtered_data[stc.time_index_name],
+        time_index_name, index_names, column_dtypes_map = (
+            self.storage_table._require_time_indexed_table_contract()
+        )
+        filtered_data[time_index_name] = token_to_pandas_series(
+            filtered_data[time_index_name],
             TIMESTAMP_TZ,
             is_time_index=True,
         )
-        column_filter = kwargs.get("columns") or stc.column_dtypes_map.keys()
+        column_filter = kwargs.get("columns") or column_dtypes_map.keys()
         for c in column_filter:
-            c_type = stc.column_dtypes_map[c]
+            c_type = column_dtypes_map[c]
             if c in filtered_data.columns:
                 filtered_data[c] = token_to_pandas_series(
                     filtered_data[c],
                     c_type,
-                    is_time_index=c == stc.time_index_name,
+                    is_time_index=c == time_index_name,
                 )
-        filtered_data = filtered_data.set_index(stc.index_names)
+        filtered_data = filtered_data.set_index(index_names)
 
         return filtered_data
 
@@ -120,4 +122,7 @@ class TimeScaleLocalPersistManager(PersistManager):
     """
 
     def get_table_schema(self, _):
-        return self.storage_table["sourcetableconfiguration"]["column_dtypes_map"]
+        if isinstance(self.storage_table, dict):
+            profile = self.storage_table.get("time_indexed_profile") or {}
+            return profile.get("column_dtypes_map") or {}
+        return self.storage_table.column_dtypes_map

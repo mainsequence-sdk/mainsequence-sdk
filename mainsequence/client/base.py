@@ -93,7 +93,6 @@ class BaseObjectOrm:
         "DynamicTableDataSource": "ts_manager/dynamic_table_data_source",
         "DataSource": "pods/data_source",
         "Project": "pods/projects",
-        "SourceTableConfiguration": "ts_manager/source_table_config",
         "Artifact": "pods/artifact",
         "Job": "pods/job",
         "JobRun": "pods/job-run",

@@ -305,9 +305,7 @@ class APIDataNode(DataAccessMixin):
         """
         Gets update statistics from the database.
         """
-        return (
-            self.local_persist_manager.storage_table.sourcetableconfiguration.get_data_updates()
-        )
+        return self.local_persist_manager.storage_table.get_data_updates()
 
     def update(self, *args, **kwargs) -> pd.DataFrame:
         self.logger.info("Not updating series")
@@ -910,7 +908,7 @@ class DataNode(DataAccessMixin, ABC):
         """
         This method always queries last state
         """
-        return self.local_persist_manager.storage_table.sourcetableconfiguration.get_data_updates()
+        return self.local_persist_manager.storage_table.get_data_updates()
 
     def prepare_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """Hook for subclasses to scope or enrich update statistics before update()."""

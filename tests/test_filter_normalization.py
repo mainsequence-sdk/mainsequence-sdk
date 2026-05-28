@@ -327,7 +327,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        sourcetableconfiguration=models_tdag.SourceTableConfiguration(
+        time_indexed_profile=models_tdag.TimeIndexedProfile(
             related_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],
@@ -394,7 +394,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        sourcetableconfiguration=models_tdag.SourceTableConfiguration(
+        time_indexed_profile=models_tdag.TimeIndexedProfile(
             related_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],

@@ -6866,13 +6866,13 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     if _emit_json(storage):
         return
 
-    source_table_configuration = storage.get("sourcetableconfiguration")
+    time_indexed_profile = storage.get("time_indexed_profile")
     storage_layout = storage.get("storage_layout")
     physical_index_plan = storage.get("physical_index_plan")
-    if isinstance(source_table_configuration, dict):
-        storage_layout = source_table_configuration.get("storage_layout") or storage_layout
+    if isinstance(time_indexed_profile, dict):
+        storage_layout = time_indexed_profile.get("storage_layout") or storage_layout
         physical_index_plan = (
-            source_table_configuration.get("physical_index_plan") or physical_index_plan
+            time_indexed_profile.get("physical_index_plan") or physical_index_plan
         )
 
     print_kv(
@@ -6895,7 +6895,7 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     print_kv(
         "Data Node Storage Config",
         [
-            ("Source Table Configuration", _format_json_value(source_table_configuration)),
+            ("Time Indexed Profile", _format_json_value(time_indexed_profile)),
             ("Storage Layout", _format_json_value(storage_layout)),
             ("Physical Index Plan", _format_json_value(physical_index_plan)),
             ("Table Index Names", _format_json_value(storage.get("table_index_names"))),

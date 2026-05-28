@@ -6,13 +6,13 @@ import pytest
 from mainsequence.client import models_tdag
 
 
-def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfiguration:
+def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
     column_dtypes_map = {
         "time_index": "datetime64[ns, UTC]",
         "value": "float64",
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
-    return models_tdag.SourceTableConfiguration(
+    return models_tdag.TimeIndexedProfile(
         related_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
@@ -34,7 +34,7 @@ def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        sourcetableconfiguration=_source_config(index_names),
+        time_indexed_profile=_source_config(index_names),
     )
 
 
@@ -49,7 +49,7 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
         def json():
             return {
                 "dynamic_table_metadata": {"id": 714},
-                "source_table_configuration": {
+                "time_indexed_profile": {
                     "related_table_uid": "714",
                     "time_index_name": "time_index",
                     "index_names": [
@@ -64,10 +64,9 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
                     },
                     "storage_layout": {},
                     "physical_index_plan": {},
-                    "open_for_everyone": False,
                     "columns_metadata": [],
                 },
-                "created_source_table_configuration": True,
+                "created_time_indexed_profile": True,
                 "created_physical_table": True,
             }
 
@@ -109,7 +108,7 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
             "unique_identifier": "string",
         },
     }
-    assert storage.sourcetableconfiguration.index_names == [
+    assert storage.time_indexed_profile.index_names == [
         "time_index",
         "account_uid",
         "unique_identifier",
@@ -126,7 +125,7 @@ def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypa
         @staticmethod
         def json():
             return {
-                "source_table_configuration": {
+                "time_indexed_profile": {
                     "related_table_uid": "714",
                     "time_index_name": "time_index",
                     "index_names": ["time_index", "asset_uid"],
@@ -137,7 +136,6 @@ def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypa
                     },
                     "storage_layout": {},
                     "physical_index_plan": {},
-                    "open_for_everyone": False,
                     "columns_metadata": [],
                     "foreign_keys": [
                         {
@@ -148,7 +146,7 @@ def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypa
                         }
                     ],
                 },
-                "created_source_table_configuration": True,
+                "created_time_indexed_profile": True,
                 "created_physical_table": True,
             }
 
@@ -195,48 +193,38 @@ def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypa
     ]
 
 
-def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch):
-    captured = {}
-    captured_metadata = {}
-
-    def _fake_initialize_source_table(self, **kwargs):
-        captured.update(kwargs)
-        return {
-            "source_table_configuration": {
-                "related_table_uid": "714",
-                "time_index_name": kwargs["time_index_name"],
-                "index_names": kwargs["index_names"],
-                "column_dtypes_map": kwargs["column_dtypes_map"],
-                "storage_layout": {},
-                "physical_index_plan": {},
-                "open_for_everyone": kwargs["open_for_everyone"],
-                "columns_metadata": [],
-            }
-        }
-
+def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
     monkeypatch.setattr(
         models_tdag.DataNodeStorage,
         "initialize_source_table",
-        _fake_initialize_source_table,
-    )
-    monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
-        "set_or_update_columns_metadata",
-        lambda self, columns_metadata, timeout=None: captured_metadata.update(
-            columns_metadata=columns_metadata,
-            timeout=timeout,
-        ) or {"ok": True},
+        lambda self, **kwargs: pytest.fail("initialize_source_table was called"),
     )
 
-    storage = _storage(["time_index"])
-    storage.sourcetableconfiguration = None
+    storage = _storage(["time_index", "asset_uid"])
+    storage.time_indexed_profile.column_dtypes_map["asset_uid"] = "uuid"
+    storage.time_indexed_profile.columns_metadata = [
+        models_tdag.ColumnMetaData(
+            column_name="asset_uid",
+            dtype="uuid",
+            label="Asset",
+            description="Asset UID.",
+        )
+    ]
+    storage.time_indexed_profile.foreign_key_projections = [
+        models_tdag.SourceTableForeignKeyProjection(
+            name="fk_prices_asset_uid_asset_uid",
+            source_columns=["asset_uid"],
+            target_meta_table_uid="asset-meta-table-uid",
+            target_columns=["uid"],
+        )
+    ]
     foreign_key = models_tdag.SourceTableForeignKeyContract(
         source_columns=["asset_uid"],
         target_meta_table_uid="asset-meta-table-uid",
         target_columns=["uid"],
     )
 
-    storage.handle_source_table_configuration_creation(
+    result = storage.handle_time_indexed_profile_creation(
         column_dtypes_map={
             "time_index": "datetime64[ns, UTC]",
             "asset_uid": "uuid",
@@ -256,12 +244,7 @@ def test_source_table_creation_hot_path_uses_initialize_source_table(monkeypatch
         foreign_keys=[foreign_key],
     )
 
-    assert captured["time_index_name"] == "time_index"
-    assert captured["index_names"] == ["time_index", "asset_uid"]
-    assert captured["foreign_keys"] == [foreign_key]
-    assert "columns_metadata" not in captured
-    assert captured_metadata["columns_metadata"][0].column_name == "asset_uid"
-    assert storage.sourcetableconfiguration.index_names == ["time_index", "asset_uid"]
+    assert result is storage.time_indexed_profile
 
 
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):

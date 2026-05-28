@@ -5,13 +5,13 @@ from mainsequence.client import models_tdag
 from mainsequence.tdag.data_nodes.filters import JoinKey, JoinSpec, SearchRequest
 
 
-def _source_config(index_names: list[str]) -> models_tdag.SourceTableConfiguration:
+def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
     column_dtypes_map = {
         "time_index": "datetime64[ns, UTC]",
         "value": "float64",
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
-    return models_tdag.SourceTableConfiguration(
+    return models_tdag.TimeIndexedProfile(
         related_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
@@ -33,7 +33,7 @@ def _storage(index_names: list[str], *, storage_hash: str = "prices_hash") -> mo
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        sourcetableconfiguration=_source_config(index_names),
+        time_indexed_profile=_source_config(index_names),
     )
 
 

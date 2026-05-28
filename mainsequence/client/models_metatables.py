@@ -544,15 +544,15 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             db_interface = _local_data_interface(self.class_type)
             storage = data_node_update.data_node_storage
             table_name = getattr(storage, "physical_table_name", None) or storage.storage_hash
-            stc = storage.sourcetableconfiguration
+            time_index_name, index_names, _ = storage._require_time_indexed_table_contract()
 
             adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
                 db_interface.constrain_read(
                     table=table_name,
                     start=start_date,
                     end=end_date,
-                    time_index_name=stc.time_index_name,
-                    index_names=stc.index_names,
+                    time_index_name=time_index_name,
+                    index_names=index_names,
                     dimension_filters=dimension_filters,
                     index_coordinates=index_coordinates,
                     dimension_range_map=dimension_range_map,
@@ -565,8 +565,8 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 end=adjusted_end,
                 great_or_equal=great_or_equal,
                 less_or_equal=less_or_equal,
-                index_names=stc.index_names,
-                time_index_name=stc.time_index_name,
+                index_names=index_names,
+                time_index_name=time_index_name,
                 dimension_filters=dimension_filters,
                 index_coordinates=index_coordinates,
                 dimension_range_map=adjusted_dimension_range_map,
@@ -590,26 +590,28 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
             return df
 
-        stc = data_node_update.data_node_storage.sourcetableconfiguration
+        time_index_name, index_names, column_dtypes_map = (
+            data_node_update.data_node_storage._require_time_indexed_table_contract()
+        )
         try:
-            df[stc.time_index_name] = token_to_pandas_series(
-                df[stc.time_index_name],
+            df[time_index_name] = token_to_pandas_series(
+                df[time_index_name],
                 TIMESTAMP_TZ,
                 is_time_index=True,
             )
         except Exception as e:
             raise e
-        columns_to_loop = set(columns or stc.column_dtypes_map.keys()) | set(stc.index_names)
-        for c, c_type in stc.column_dtypes_map.items():
+        columns_to_loop = set(columns or column_dtypes_map.keys()) | set(index_names)
+        for c, c_type in column_dtypes_map.items():
             if c not in columns_to_loop:
                 continue
             if c in df.columns:
                 df[c] = token_to_pandas_series(
                     df[c],
                     c_type,
-                    is_time_index=c == stc.time_index_name,
+                    is_time_index=c == time_index_name,
                 )
-        df = df.set_index(stc.index_names)
+        df = df.set_index(index_names)
         return df
 
     def get_earliest_value(
@@ -623,11 +625,11 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 getattr(storage, "physical_table_name", None)
                 or getattr(storage, "storage_hash", None)
             )
-            stc = storage.sourcetableconfiguration
+            time_index_name, index_names, _ = storage._require_time_indexed_table_contract()
             return db_interface.time_index_minima(
                 table=table_name,
-                index_names=stc.index_names,
-                time_index_name=stc.time_index_name,
+                index_names=index_names,
+                time_index_name=time_index_name,
             )
 
         else:

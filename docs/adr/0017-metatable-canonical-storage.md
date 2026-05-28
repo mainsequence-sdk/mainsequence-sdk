@@ -407,6 +407,61 @@ to expose `SourceTableConfiguration`. The implementation should make it a
 projection of MetaTable-backed source-table state instead of a separate schema
 source of truth.
 
+## DataNode Storage Creation Removal
+
+The DataNode runtime path must stop creating storage resources.
+
+The following objects must be assumed to already exist before any DataNode
+update process runs:
+
+- the canonical storage `MetaTable`;
+- the compatibility `DataNodeStorage` / dynamic-table projection when legacy
+  dynamic-table routes are still used;
+- the DataNode table profile exposed as `SourceTableConfiguration` or its
+  MetaTable-backed replacement.
+
+DataNode-related code may validate and read these objects, but it must not
+create them. This applies to every relation of the DataNode runtime: constructor
+setup, persist manager registration, update-record creation, write bootstrap,
+DataFrame upsert, local database setup, and foreign-key/schema metadata paths.
+
+The old hot path violated this boundary:
+
+```python
+metadata.handle_time_indexed_profile_creation(
+    column_dtypes_map=column_dtypes_map,
+    index_names=index_names,
+    time_index_name=time_index_name,
+    data=data,
+    overwrite=overwrite,
+    columns_metadata=columns_metadata,
+    foreign_keys=foreign_keys,
+)
+```
+
+`handle_time_indexed_profile_creation(...)` could call
+`initialize_source_table(...)`, which creates or validates
+`TimeIndexedProfile` and may create the physical backing table. In the
+canonical model, this is not allowed in the update hot path.
+
+The replacement behavior is:
+
+- `DataNodeUpdate.upsert_data_into_table(...)` assumes the DataNode already has
+  the resolved MetaTable/storage profile before the update runs.
+- `DataNodeUpdate.upsert_data_into_table(...)` must not call storage/profile
+  creation, initialization, mutation, or validation helpers.
+- Schema/profile validation belongs to DataNode setup, MetaTable registration,
+  or explicit bootstrap commands, not the update hot path.
+- `columns_metadata` and `foreign_keys` must not trigger creation or mutation
+  from the DataNode write path.
+- `DataNodeStorage.initialize_source_table(...)` remains only for explicit
+  storage/bootstrap commands during migration. It must not be called by
+  DataNode runtime, `PersistManager`, or `DataNodeUpdate` hot-path code.
+- `TimeIndexedProfile.create(...)` and `DataNodeStorage.get_or_create(...)`
+  must not be used by DataNode runtime relations. Storage creation belongs to
+  MetaTable registration or an explicit schema/bootstrap command that runs
+  before updates.
+
 ## Persist Manager Flow
 
 The write path should become:
@@ -440,6 +495,11 @@ The write path should become:
 
 `PersistManager.local_persist_exist_set_config(...)` should no longer create
 storage as part of update registration.
+
+It should also not create or initialize the source-table profile. Its only
+storage responsibilities are to resolve the explicit storage table, verify that
+the required profile already exists, and pass storage identity into update
+record creation.
 
 ## Read And APIDataNode Flow
 
@@ -553,6 +613,28 @@ Required backend capabilities:
 - Replace storage creation with storage validation.
 - Create update records with `meta_table_uid`.
 
+### Phase 4A: Remove Source-Table Creation From DataNode Runtime
+
+- Replace
+  `DataNodeStorage.handle_time_indexed_profile_creation(...)` calls from
+  `DataNodeUpdate.upsert_data_into_table(...)` without adding replacement
+  write-path validation.
+- Remove or deprecate `handle_time_indexed_profile_creation(...)` as a
+  DataNode write-path helper. If kept temporarily, rename or split it so the
+  runtime path cannot call `initialize_source_table(...)`.
+- Keep profile existence and compatibility checks in DataNode setup,
+  MetaTable registration, or explicit bootstrap flows.
+- Remove all DataNode-runtime calls to:
+  `DataNodeStorage.get_or_create(...)`,
+  `TimeIndexedProfile.create(...)`, and
+  `DataNodeStorage.initialize_source_table(...)`.
+- Keep explicit schema/bootstrap commands responsible for calling
+  MetaTable registration and, during transition only, explicit
+  `initialize_source_table(...)`.
+- Add regression tests proving `DataNodeUpdate.upsert_data_into_table(...)`
+  does not call `handle_time_indexed_profile_creation(...)` or
+  `initialize_source_table(...)`.
+
 ### Phase 5: Validate Against MetaTable Contract
 
 - Update output validation to validate against `storage_table.table_contract`.
@@ -616,6 +698,16 @@ Required backend capabilities:
       storage.
 - [x] Change update record creation to send `meta_table_uid`.
 - [x] Validate update output DataFrames against MetaTable contract.
+- [x] Remove `DataNodeUpdate.upsert_data_into_table(...)` calls to
+      `handle_time_indexed_profile_creation(...)`.
+- [x] Remove DataNode-runtime calls to
+      `DataNodeStorage.initialize_source_table(...)`.
+- [x] Keep `DataNodeUpdate.upsert_data_into_table(...)` free of replacement
+      storage/profile validation.
+- [x] Add tests proving the DataNode write path does not call the legacy
+      profile creation helper.
+- [ ] Add tests proving foreign-key and column metadata in the DataNode write
+      path are not used to mutate/create storage metadata.
 - [x] Update `APIDataNode` factories to resolve MetaTable-backed storage.
 - [ ] Update CLI data-node and meta-table command ownership.
 - [ ] Update DataNode and MetaTable tutorials.
@@ -634,7 +726,12 @@ Not allowed as final behavior:
 
 - DataNode runtime computes storage identity.
 - PersistManager creates storage as a hidden side effect of updater creation.
-- Table schema is split between DataNode config and SourceTableConfiguration.
+- DataNode runtime creates or initializes `DataNodeStorage`.
+- DataNode runtime creates or initializes `TimeIndexedProfile`.
+- `DataNodeUpdate.upsert_data_into_table(...)` calls
+  `handle_time_indexed_profile_creation(...)` or any helper that can
+  create storage/profile state.
+- Table schema is split between DataNode config and TimeIndexedProfile.
 - New docs teach users to put table storage concerns inside update config.
 - Public code requires integer resource IDs.
 
@@ -682,6 +779,13 @@ The migration is complete when:
   storage argument.
 - DataNode update runtime no longer computes `storage_hash`.
 - `PersistManager` does not create storage in the normal path.
+- No DataNode runtime relation calls `DataNodeStorage.get_or_create(...)`,
+  `DataNodeStorage.initialize_source_table(...)`, or
+  `TimeIndexedProfile.create(...)`.
+- `DataNodeUpdate.upsert_data_into_table(...)` does not call storage/profile
+  creation, initialization, mutation, or validation helpers.
+- Column metadata and foreign-key metadata on the DataNode write path do not
+  create or mutate storage/profile schema.
 - Update records link to storage by MetaTable UID.
 - DataFrame output validation uses the MetaTable table contract.
 - SourceTableConfiguration no longer owns structural schema.

@@ -44,10 +44,10 @@ def _source_config_payload():
     }
 
 
-def test_source_table_configuration_parses_canonical_response_without_table_partition():
-    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+def test_time_indexed_profile_parses_canonical_response_without_table_partition():
+    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
 
-    assert "table_partition" not in models_tdag.SourceTableConfiguration.model_fields
+    assert "table_partition" not in models_tdag.TimeIndexedProfile.model_fields
     assert not hasattr(config, "table_partition")
     assert config.storage_layout == {
         "time_index": "time_index",
@@ -66,15 +66,15 @@ def test_source_table_configuration_parses_canonical_response_without_table_part
     )
 
 
-def test_source_table_configuration_rejects_table_partition_typed_surface():
+def test_time_indexed_profile_rejects_table_partition_typed_surface():
     payload = _source_config_payload()
     payload["table_partition"] = {"kind": "legacy"}
 
     with pytest.raises(ValidationError, match="table_partition"):
-        models_tdag.SourceTableConfiguration(**payload)
+        models_tdag.TimeIndexedProfile(**payload)
 
 
-def test_source_table_configuration_parses_generated_fk_projection_name():
+def test_time_indexed_profile_parses_generated_fk_projection_name():
     payload = _source_config_payload()
     payload["foreign_key_projections"] = [
         {
@@ -87,7 +87,7 @@ def test_source_table_configuration_parses_generated_fk_projection_name():
         }
     ]
 
-    config = models_tdag.SourceTableConfiguration(**payload)
+    config = models_tdag.TimeIndexedProfile(**payload)
     projection = config.foreign_key_projections[0]
 
     assert projection.name == "fk_prices_asset_uid_4f3a2b1c"
@@ -100,7 +100,7 @@ def test_source_table_configuration_parses_generated_fk_projection_name():
     }
 
 
-def test_source_table_configuration_get_data_updates_prefers_canonical_stats(monkeypatch):
+def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -136,27 +136,31 @@ def test_source_table_configuration_get_data_updates_prefers_canonical_stats(mon
                 },
             }
 
-    def _fake_make_request(*, s, loaders, r_type, url, accept_gzip=False):
+    def _fake_make_request(*, s, loaders, r_type, url, time_out=None):
         captured["r_type"] = r_type
         captured["url"] = url
-        captured["accept_gzip"] = accept_gzip
+        captured["timeout"] = time_out
         return FakeResponse()
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
+        models_tdag.DataNodeStorage,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
+    storage = models_tdag.DataNodeStorage.model_construct(
+        uid="storage-uid-44",
+        time_indexed_profile=config,
+    )
 
-    update_stats = config.get_data_updates()
+    update_stats = storage.get_data_updates()
 
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/storage-uid-44/get_stats/",
-        "accept_gzip": True,
+        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/storage-uid-44/get-stats/",
+        "timeout": None,
     }
     assert update_stats.max_time_index_value == datetime.datetime(
         2026, 5, 1, 3, tzinfo=datetime.UTC
@@ -183,42 +187,7 @@ def test_source_table_configuration_get_data_updates_prefers_canonical_stats(mon
         }
     }
 
-
-def test_source_table_configuration_extra_index_route_uses_related_table_uid(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {"indexes": ["idx_account"]}
-
-    def _fake_make_request(*, s, loaders, r_type, url):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
-
-    assert config.get_time_scale_extra_table_indices() == {"indexes": ["idx_account"]}
-    assert captured == {
-        "r_type": "GET",
-        "url": (
-            f"{models_tdag.SourceTableConfiguration.get_object_url()}"
-            "/storage-uid-44/get_time_scale_extra_table_indices/"
-        ),
-    }
-
-
-def test_source_table_configuration_column_metadata_route_uses_related_table_uid(monkeypatch):
+def test_time_indexed_profile_column_metadata_route_uses_related_table_uid(monkeypatch):
     captured = {}
 
     class FakeResponse:
@@ -237,12 +206,16 @@ def test_source_table_configuration_column_metadata_route_uses_related_table_uid
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
+        models_tdag.DataNodeStorage,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
+    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
+    storage = models_tdag.DataNodeStorage.model_construct(
+        uid="storage-uid-44",
+        time_indexed_profile=config,
+    )
     metadata = models_tdag.BaseColumnMetaData(
         column_name="value",
         dtype="float64",
@@ -250,12 +223,12 @@ def test_source_table_configuration_column_metadata_route_uses_related_table_uid
         description="Metric value",
     )
 
-    assert config.set_or_update_columns_metadata([metadata], timeout=15) == {"ok": True}
+    assert storage.set_or_update_columns_metadata([metadata], timeout=15) == {"ok": True}
     assert captured["r_type"] == "POST"
     assert captured["time_out"] == 15
     assert captured["url"] == (
-        f"{models_tdag.SourceTableConfiguration.get_object_url()}"
-        "/storage-uid-44/set_or_update_columns_metadata/"
+        f"{models_tdag.DataNodeStorage.get_object_url()}"
+        "/storage-uid-44/set-or-update-columns-metadata/"
     )
     assert captured["payload"]["json"]["columns_metadata"] == [
         {
@@ -276,7 +249,7 @@ def test_initialize_source_table_conflict_surfaces_existing_schema_or_fk_metadat
         def json():
             return {
                 "detail": (
-                    "Existing SourceTableConfiguration conflicts with requested "
+                    "Existing TimeIndexedProfile conflicts with requested "
                     "foreign key metadata."
                 )
             }
@@ -307,46 +280,7 @@ def test_initialize_source_table_conflict_surfaces_existing_schema_or_fk_metadat
             ],
         )
 
-
-def test_source_table_configuration_patch_route_uses_related_table_uid(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            payload = _source_config_payload()
-            payload["open_for_everyone"] = True
-            return payload
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag, "raise_for_response", lambda response, payload=None: None)
-    monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    config = models_tdag.SourceTableConfiguration(**_source_config_payload())
-
-    patched = config.patch(open_for_everyone=True)
-    assert isinstance(patched, models_tdag.SourceTableConfiguration)
-    assert patched.open_for_everyone is True
-    assert captured == {
-        "r_type": "PATCH",
-        "url": f"{models_tdag.SourceTableConfiguration.get_object_url()}/storage-uid-44/",
-        "payload": {"json": {"open_for_everyone": True}},
-    }
-
-
-def test_source_table_configuration_get_data_updates_ignores_removed_legacy_asset_stats(
+def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stats(
     monkeypatch,
 ):
     class FakeResponse:
@@ -374,7 +308,7 @@ def test_source_table_configuration_get_data_updates_ignores_removed_legacy_asse
         lambda **_kwargs: FakeResponse(),
     )
     monkeypatch.setattr(
-        models_tdag.SourceTableConfiguration,
+        models_tdag.DataNodeStorage,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -388,13 +322,15 @@ def test_source_table_configuration_get_data_updates_ignores_removed_legacy_asse
     payload["physical_index_plan"] = {
         "uniqueness": {"columns": ["time_index", "unique_identifier"]},
     }
-    config = models_tdag.SourceTableConfiguration(**payload)
+    config = models_tdag.TimeIndexedProfile(**payload)
+    storage = models_tdag.DataNodeStorage.model_construct(
+        uid="storage-uid-44",
+        time_indexed_profile=config,
+    )
 
-    update_stats = config.get_data_updates()
+    update_stats = storage.get_data_updates()
 
     assert update_stats.global_index_progress is None
-    assert update_stats.max_time_index_value == datetime.datetime(
-        2026, 5, 1, 3, tzinfo=datetime.UTC
-    )
+    assert update_stats.max_time_index_value is None
     assert update_stats.index_progress is None
     assert update_stats.index_min is None

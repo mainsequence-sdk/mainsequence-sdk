@@ -28,6 +28,49 @@ def _minimal_update(**kwargs):
     return models_tdag.DataNodeUpdate(**payload)
 
 
+def _source_config(
+    *,
+    index_names: list[str],
+    column_dtypes_map: dict[str, str],
+    columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
+    foreign_key_projections: list[models_tdag.SourceTableForeignKeyProjection] | None = None,
+) -> models_tdag.TimeIndexedProfile:
+    return models_tdag.TimeIndexedProfile(
+        related_table_uid="data-node-storage-44",
+        time_index_name="time_index",
+        index_names=index_names,
+        column_dtypes_map=column_dtypes_map,
+        storage_layout={
+            "time_index": "time_index",
+            "identity_dimensions": index_names[1:],
+        },
+        physical_index_plan={
+            "uniqueness": {"columns": index_names},
+        },
+        columns_metadata=columns_metadata,
+        foreign_key_projections=foreign_key_projections or [],
+    )
+
+
+def _storage_with_source_config(
+    *,
+    index_names: list[str],
+    column_dtypes_map: dict[str, str],
+    columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
+    foreign_key_projections: list[models_tdag.SourceTableForeignKeyProjection] | None = None,
+) -> models_tdag.DataNodeStorage:
+    return models_tdag.DataNodeStorage.model_construct(
+        uid="data-node-storage-44",
+        storage_hash="storage-hash",
+        time_indexed_profile=_source_config(
+            index_names=index_names,
+            column_dtypes_map=column_dtypes_map,
+            columns_metadata=columns_metadata,
+            foreign_key_projections=foreign_key_projections,
+        ),
+    )
+
+
 def _decode_compressed_payload(captured_payload):
     compressed = base64.b64decode(captured_payload["json"]["data"])
     return json.loads(gzip.decompress(compressed).decode("utf-8"))
@@ -325,13 +368,13 @@ def test_set_last_update_index_time_rejects_legacy_per_asset_backend_payload(mon
 def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     calls = {}
 
-    class FakeStorage:
-        def handle_source_table_configuration_creation(self, **kwargs):
-            calls["source_config"] = kwargs
-
     class FakeResource:
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
+
+    class FakeStorage:
+        def handle_time_indexed_profile_creation(self, **_kwargs):
+            raise AssertionError("upsert should not create or validate source-table profile")
 
     update = models_tdag.DataNodeUpdate.model_construct(
         id=77,
@@ -368,11 +411,6 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     )
 
     assert result == "updated"
-    assert calls["source_config"]["index_names"] == [
-        "time_index",
-        "account_uid",
-        "unique_identifier",
-    ]
     assert calls["insert"]["index_names"] == [
         "time_index",
         "account_uid",
@@ -400,10 +438,6 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
 def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns():
     calls = {}
 
-    class FakeStorage:
-        def handle_source_table_configuration_creation(self, **kwargs):
-            calls["source_config"] = kwargs
-
     class FakeResource:
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
@@ -413,7 +447,14 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         update_hash="update-hash",
         build_configuration={},
         ogm_dependencies_linked=False,
-        data_node_storage=FakeStorage(),
+        data_node_storage=_storage_with_source_config(
+            index_names=["time_index"],
+            column_dtypes_map={
+                "time_index": "timestamp with time zone",
+                "venue_specific_properties": "jsonb",
+                "venue_event_time": "timestamp with time zone",
+            },
+        ),
     )
 
     object.__setattr__(
@@ -450,7 +491,7 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         ],
     )
 
-    assert calls["source_config"]["column_dtypes_map"] == {
+    assert calls["insert"]["column_dtypes_map"] == {
         "time_index": "timestamp with time zone",
         "venue_specific_properties": "jsonb",
         "venue_event_time": "timestamp with time zone",
@@ -497,8 +538,14 @@ def test_upsert_data_into_table_rejects_full_index_duplicates():
         update_hash="update-hash",
         build_configuration={},
         ogm_dependencies_linked=False,
-        data_node_storage=SimpleNamespace(
-            handle_source_table_configuration_creation=lambda **_kwargs: None
+        data_node_storage=_storage_with_source_config(
+            index_names=["time_index", "account_uid", "unique_identifier"],
+            column_dtypes_map={
+                "time_index": "timestamp with time zone",
+                "account_uid": "string",
+                "unique_identifier": "string",
+                "value": "float64",
+            },
         ),
     )
     duplicate_index = pd.MultiIndex.from_tuples(

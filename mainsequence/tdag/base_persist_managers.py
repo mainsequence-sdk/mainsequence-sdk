@@ -76,7 +76,7 @@ class BasePersistManager:
 
     UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP: ClassVar[str] = "remote_table__data_source__uid"
     UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "meta_table_uid"
-    SOURCE_TABLE_CONFIGURATION_ATTR: ClassVar[str] = "sourcetableconfiguration"
+    TIME_INDEXED_PROFILE_ATTR: ClassVar[str] = "time_indexed_profile"
 
     def __init__(
         self,
@@ -138,13 +138,13 @@ class BasePersistManager:
         self._data_source_cached = data_source
         return data_source
 
-    def _get_source_table_configuration(self) -> Any | None:
+    def _get_time_indexed_profile(self) -> Any | None:
         storage_table = self.storage_table
         if storage_table is None or isinstance(storage_table, int):
             return None
         if isinstance(storage_table, dict):
-            return storage_table.get(self.SOURCE_TABLE_CONFIGURATION_ATTR)
-        return getattr(storage_table, self.SOURCE_TABLE_CONFIGURATION_ATTR, None)
+            return storage_table.get(self.TIME_INDEXED_PROFILE_ATTR)
+        return getattr(storage_table, self.TIME_INDEXED_PROFILE_ATTR, None)
 
     def _build_update_get_or_none_kwargs(
         self,
@@ -365,8 +365,8 @@ class BasePersistManager:
         return self.data_node_update.run_configuration
 
     @property
-    def source_table_configuration(self) -> Any | None:
-        return self._get_source_table_configuration()
+    def time_indexed_profile(self) -> Any | None:
+        return self._get_time_indexed_profile()
 
     def update_source_informmation(self, git_hash_id: str, source_code: str) -> None:
         logger.debug(
@@ -468,13 +468,6 @@ class BasePersistManager:
         if not self.storage_table.open_for_everyone:
             self.storage_table.patch(open_for_everyone=open_for_everyone)
 
-        source_table_configuration = self._get_source_table_configuration()
-        if (
-            source_table_configuration is not None
-            and not source_table_configuration.open_for_everyone
-        ):
-            source_table_configuration.patch(open_for_everyone=open_for_everyone)
-
     def get_df_between_dates(self, *args, **kwargs) -> pd.DataFrame:
         return self.data_source.get_data_by_time_index(
             *args,
@@ -537,11 +530,10 @@ class BasePersistManager:
         if isinstance(self.storage_table, int):
             self.set_data_node_update_lazy(force_registry=True, include_relations_detail=True)
 
-        source_table_configuration = self._get_source_table_configuration()
-        if source_table_configuration is None:
+        if self.storage_table is None or isinstance(self.storage_table, int):
             return UpdateStatistics()
 
-        return source_table_configuration.get_data_updates()
+        return self.storage_table.get_data_updates()
 
     def is_local_relation_tree_set(self) -> bool:
         return self.data_node_update.ogm_dependencies_linked

@@ -8051,7 +8051,7 @@ def test_data_node_storage_detail(cli_mod, runner, monkeypatch):
             "created_by_user": 7,
             "organization_owner": 2,
             "description": "Daily node weights",
-            "sourcetableconfiguration": {
+            "time_indexed_profile": {
                 "time_index_name": "time_index",
                 "storage_layout": {
                     "time_index": "time_index",
