@@ -43,6 +43,44 @@ def _local_data_interface(class_type: str):
         return _sqlite_interface()
     raise ValueError(f"Unsupported local data source class_type: {class_type!r}")
 
+
+def _storage_time_indexed_contract(storage: Any) -> tuple[str, list[str], dict[str, Any]]:
+    if hasattr(storage, "_require_time_indexed_table_contract"):
+        return storage._require_time_indexed_table_contract()
+
+    def _field(obj: Any, name: str, default: Any = None) -> Any:
+        if isinstance(obj, Mapping):
+            return obj.get(name, default)
+        return getattr(obj, name, default)
+
+    profile = _field(storage, "time_indexed_profile")
+    if profile is not None:
+        time_index_name = _field(profile, "time_index_name")
+        index_names = _field(profile, "index_names")
+        column_dtypes_map = _field(profile, "column_dtypes_map")
+        if time_index_name and index_names and column_dtypes_map:
+            return str(time_index_name), [str(name) for name in index_names], dict(column_dtypes_map)
+
+    columns = _field(storage, "columns")
+    if columns:
+        column_dtypes_map = {
+            str(_field(column, "name")): _field(column, "data_type")
+            for column in columns
+            if _field(column, "name")
+        }
+        table_contract = _field(storage, "table_contract", {})
+        dynamic_contract = (
+            table_contract.get("dynamic_table") or {}
+            if isinstance(table_contract, Mapping)
+            else {}
+        )
+        index_names = dynamic_contract.get("index_names") or []
+        time_index_name = dynamic_contract.get("time_index_name") or (index_names[0] if index_names else None)
+        if time_index_name and index_names and column_dtypes_map:
+            return str(time_index_name), [str(name) for name in index_names], column_dtypes_map
+
+    raise ValueError("Storage is missing its time-indexed table contract.")
+
 MetaTableManagementMode = Literal["external_registered", "platform_managed"]
 MetaTableOperation = Literal["select", "insert", "update", "delete", "upsert"]
 COMPILED_SQL_V1 = "compiled-sql.v1"
@@ -544,7 +582,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             db_interface = _local_data_interface(self.class_type)
             storage = data_node_update.data_node_storage
             table_name = getattr(storage, "physical_table_name", None) or storage.storage_hash
-            time_index_name, index_names, _ = storage._require_time_indexed_table_contract()
+            time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
 
             adjusted_start, adjusted_end, adjusted_dimension_range_map, _ = (
                 db_interface.constrain_read(
@@ -590,8 +628,8 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             logger.warning(f"No data returned from remote API for {data_node_update.update_hash}")
             return df
 
-        time_index_name, index_names, column_dtypes_map = (
-            data_node_update.data_node_storage._require_time_indexed_table_contract()
+        time_index_name, index_names, column_dtypes_map = _storage_time_indexed_contract(
+            data_node_update.data_node_storage
         )
         try:
             df[time_index_name] = token_to_pandas_series(
@@ -625,7 +663,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 getattr(storage, "physical_table_name", None)
                 or getattr(storage, "storage_hash", None)
             )
-            time_index_name, index_names, _ = storage._require_time_indexed_table_contract()
+            time_index_name, index_names, _ = _storage_time_indexed_contract(storage)
             return db_interface.time_index_minima(
                 table=table_name,
                 index_names=index_names,

@@ -10,6 +10,7 @@ from pydantic import ConfigDict, Field
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
 import mainsequence.client.models_helpers as models_helpers_mod
+import mainsequence.client.models_tdag as models_tdag_mod
 import mainsequence.client.models_user as models_user_mod
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 
