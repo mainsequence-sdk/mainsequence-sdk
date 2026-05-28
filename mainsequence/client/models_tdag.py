@@ -29,6 +29,17 @@ from mainsequence.logconf import logger
 from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from .data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
+from .dtype_codec import (
+    TIMESTAMP_TZ,
+    is_temporal_token,
+    normalize_column_dtypes_map,
+    normalize_dtype_token,
+    pandas_dtypes_to_column_map,
+    prepare_dataframe_for_remote_write,
+    record_definitions_to_column_dtypes_map,
+    token_to_pandas_dtype,
+    token_to_pandas_series,
+)
 from .exceptions import raise_for_response
 from .utils import (
     MAINSEQUENCE_ENDPOINT,
@@ -50,38 +61,6 @@ _default_data_source = None  # Module-level cache
 
 JSON_COMPRESSED_PREFIX = ["json_compressed", "jcomp_"]
 LOGICAL_COLUMN_DTYPES_ATTR = "mainsequence_column_dtypes_map"
-
-
-def _record_definition_field(record: Any, field_name: str) -> Any:
-    if isinstance(record, Mapping):
-        return record.get(field_name)
-    return getattr(record, field_name, None)
-
-
-def _records_to_column_dtypes_map(records: Sequence[Any] | None) -> dict[str, str]:
-    if not records:
-        return {}
-
-    column_dtypes_map: dict[str, str] = {}
-    duplicate_columns: set[str] = set()
-    for record in records:
-        column_name = _record_definition_field(record, "column_name")
-        dtype = _record_definition_field(record, "dtype")
-        if not column_name or not dtype:
-            raise ValueError(
-                "Record definitions must include non-empty 'column_name' and 'dtype' fields."
-            )
-        column_name = str(column_name)
-        if column_name in column_dtypes_map:
-            duplicate_columns.add(column_name)
-        column_dtypes_map[column_name] = str(dtype)
-
-    if duplicate_columns:
-        raise ValueError(
-            f"Duplicate DataNode record column names: {sorted(duplicate_columns)}"
-        )
-
-    return column_dtypes_map
 
 
 def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
@@ -172,6 +151,11 @@ class BaseColumnMetaData(BasePydanticModel):
     label: str = Field(..., max_length=250, description="Human‐readable label")
     description: str = Field(..., description="Longer description of the column")
 
+    @field_validator("dtype")
+    @classmethod
+    def _normalize_dtype(cls, value: str) -> str:
+        return normalize_dtype_token(value, remote=False, allow_naive_datetime=True)
+
 
 class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     source_config_id: int | None = Field(
@@ -235,6 +219,8 @@ def _serialize_source_table_column_metadata(
         raw = dict(column_metadata)
     raw.pop("orm_class", None)
     raw.pop("source_config_id", None)
+    if "dtype" in raw:
+        raw["dtype"] = normalize_dtype_token(raw["dtype"], remote=True)
     return raw
 
 
@@ -242,6 +228,11 @@ class SourceTableConfigurationBase:
     column_dtypes_map: dict[str, Any] = Field(..., description="Column data types map")
     index_names: list
     foreign_keys: list[SourceTableForeignKeyContract] = Field(default_factory=list)
+
+    @field_validator("column_dtypes_map")
+    @classmethod
+    def _normalize_column_dtypes_map(cls, value: dict[str, Any]) -> dict[str, str]:
+        return normalize_column_dtypes_map(value, remote=False, allow_naive_datetime=True)
 
     def get_data_updates(self) -> BaseUpdateStatistics:
         raise NotImplementedError
@@ -351,7 +342,15 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
     ) -> Any:
         """ """
 
-        columns_metadata = [c.model_dump(exclude={"orm_class"}) for c in columns_metadata]
+        serialized_columns_metadata = []
+        for column_metadata in columns_metadata:
+            if isinstance(column_metadata, BaseModel):
+                raw = column_metadata.model_dump(exclude={"orm_class"})
+            else:
+                raw = dict(column_metadata)
+            if "dtype" in raw:
+                raw["dtype"] = normalize_dtype_token(raw["dtype"], remote=True)
+            serialized_columns_metadata.append(raw)
         url = self.get_object_url() + f"/{self._related_table_uid()}/set_or_update_columns_metadata/"
         s = self.build_session()
         r = make_request(
@@ -360,7 +359,7 @@ class SourceTableConfiguration(SourceTableConfigurationBase, BasePydanticModel, 
             r_type="POST",
             time_out=timeout,
             url=url,
-            payload={"json": {"columns_metadata": columns_metadata}},
+            payload={"json": {"columns_metadata": serialized_columns_metadata}},
         )
         if r.status_code not in [200, 201]:
             raise_for_response(r)
@@ -754,6 +753,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         index_names: list = None,
         time_index_name: str = "timestamp",
         overwrite: bool = False,
+        column_dtypes_map: Mapping[str, Any] | None = None,
     ):
         """
         Sends a large DataFrame to a Django backend in multiple chunks.
@@ -783,6 +783,12 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             chunk_stats, _ = get_index_progress_chunk_stats(
                 chunk_df=df_chunk, index_names=index_names, time_index_name=time_index_name
             )
+            if column_dtypes_map is not None:
+                df_chunk = prepare_dataframe_for_remote_write(
+                    df_chunk,
+                    column_dtypes_map=column_dtypes_map,
+                    time_index_name=time_index_name,
+                )
             chunk_json_str = df_chunk.to_json(orient="records", date_format="iso")
             compressed = gzip.compress(chunk_json_str.encode("utf-8"))
             compressed_b64 = base64.b64encode(compressed).decode("utf-8")
@@ -936,9 +942,16 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_frame: pd.DataFrame,
         time_index_name: str | None = None,
         records: Sequence[Any] | None = None,
+        *,
+        remote_dtypes: bool = True,
+        allow_naive_datetime: bool = False,
     ):
         logical_column_dtypes_map = data_frame.attrs.get(LOGICAL_COLUMN_DTYPES_ATTR)
-        record_column_dtypes_map = _records_to_column_dtypes_map(records)
+        record_column_dtypes_map = record_definitions_to_column_dtypes_map(
+            records,
+            remote=remote_dtypes,
+            allow_naive_datetime=allow_naive_datetime,
+        )
         if time_index_name is  None:
             time_index_name = data_frame.index.names[0]
             if time_index_name is None:
@@ -953,7 +966,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_frame = data_frame.reset_index()
         data_frame.columns = [str(c) for c in data_frame.columns]
         data_frame = data_frame.rename(columns={data_frame.columns[time_col_loc]: time_index_name})
-        column_dtypes_map = {key: str(value) for key, value in data_frame.dtypes.to_dict().items()}
+        column_dtypes_map = pandas_dtypes_to_column_map(
+            data_frame.dtypes.to_dict(),
+            remote=remote_dtypes,
+            allow_naive_datetime=allow_naive_datetime,
+        )
         missing_record_columns = [
             column_name
             for column_name in record_column_dtypes_map
@@ -965,9 +982,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                 f"{missing_record_columns}"
             )
         if logical_column_dtypes_map is not None:
-            logical_column_dtypes_map = {
-                str(key): str(value) for key, value in logical_column_dtypes_map.items()
-            }
+            logical_column_dtypes_map = normalize_column_dtypes_map(
+                logical_column_dtypes_map,
+                remote=remote_dtypes,
+                allow_naive_datetime=allow_naive_datetime,
+            )
             missing_logical_columns = [
                 column_name
                 for column_name in logical_column_dtypes_map
@@ -1015,6 +1034,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
         overwrite = True  # ALWAYS OVERWRITE
         metadata = self.data_node_storage
+        storage_class_type = getattr(getattr(data_source, "related_resource", None), "class_type", None)
+        is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
         schema_time_index_name = (
             str(source_table_schema["time_index_name"])
@@ -1025,6 +1046,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             data,
             time_index_name=schema_time_index_name,
             records=records,
+            remote_dtypes=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
         )
         inferred_index_names = list(index_names)
         if source_table_schema:
@@ -1039,10 +1062,11 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                     )
             schema_column_dtypes_map = source_table_schema.get("column_dtypes_map")
             if schema_column_dtypes_map is not None:
-                column_dtypes_map = {
-                    str(column_name): str(dtype)
-                    for column_name, dtype in schema_column_dtypes_map.items()
-                }
+                column_dtypes_map = normalize_column_dtypes_map(
+                    schema_column_dtypes_map,
+                    remote=not is_local_storage,
+                    allow_naive_datetime=is_local_storage,
+                )
             if columns_metadata is None:
                 columns_metadata = source_table_schema.get("columns_metadata")
         index_names = list(index_names)
@@ -1089,6 +1113,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             time_index_name=time_index_name,
             index_names=index_names,
             grouped_dates=grouped_dates,
+            column_dtypes_map=column_dtypes_map,
         )
 
         data_node_update = self.set_last_update_index_time_from_update_stats(
@@ -1508,6 +1533,17 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
     ) -> dict[str, Any]:
         if self.uid is None:
             raise ValueError("DataNodeStorage must have a uid before initializing a source table.")
+        storage_class_type = getattr(
+            getattr(getattr(self, "data_source", None), "related_resource", None),
+            "class_type",
+            None,
+        )
+        is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
+        column_dtypes_map = normalize_column_dtypes_map(
+            column_dtypes_map,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
 
         payload_body: dict[str, Any] = {
             "time_index_name": time_index_name,
@@ -1720,6 +1756,17 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
             Updated metadata with the source table configuration, and potentially filtered data.
         """
         stc = self.sourcetableconfiguration
+        storage_class_type = getattr(
+            getattr(getattr(self, "data_source", None), "related_resource", None),
+            "class_type",
+            None,
+        )
+        is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
+        column_dtypes_map = normalize_column_dtypes_map(
+            column_dtypes_map,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
 
         if stc is None or foreign_keys is not None:
             try:
@@ -1760,10 +1807,12 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         for c, c_type in column_dtypes_map.items():
             if c not in columns_to_loop:
                 continue
-            if c != time_index_name:
-                if c_type == "object":
-                    c_type = "str"
-                df[c] = df[c].astype(c_type)
+            if c in df.columns:
+                df[c] = token_to_pandas_series(
+                    df[c],
+                    c_type,
+                    is_time_index=c == time_index_name,
+                )
         df = df.set_index(index_names)
         return df
 
@@ -1981,26 +2030,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
         """
         Convert your stc.column_dtypes_map types into pandas dtypes that can hold NULLs.
         """
-        t = (dtype_str or "").strip().lower()
-
-        # your map often uses numpy-ish names
-        if t in {"object", "str", "string"}:
-            return "string"
-
-        # integers must be nullable because FULL OUTER JOIN introduces NULLs on either side
-        if t in {"int", "int32", "int64", "int16", "uint32", "uint64", "uint16", "integer"}:
-            return "Int64"
-
-        # bool must be nullable too
-        if t in {"bool", "boolean"}:
-            return "boolean"
-
-        # floats already handle NaN
-        if t in {"float", "float32", "float64", "double"}:
-            return "float64"
-
-        # fallback: try what you got
-        return dtype_str
+        return token_to_pandas_dtype(dtype_str)
 
     @staticmethod
     def _get_search_meta_attr(obj: Any, attr: str, default: Any = None) -> Any:
@@ -2115,18 +2145,18 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                 data_node_storage_map=data_node_storage_map,
                 column_name=key_col,
             )
-            dtype_name = (dtype_str or "").lower()
-            if key_col in time_index_names or "datetime" in dtype_name:
-                df[key_col] = pd.to_datetime(
-                    df[key_col], format="ISO8601", errors="coerce", utc=True
+            if key_col in time_index_names:
+                df[key_col] = token_to_pandas_series(
+                    df[key_col],
+                    TIMESTAMP_TZ,
+                    is_time_index=True,
                 )
                 continue
+            if dtype_str is not None and is_temporal_token(dtype_str):
+                df[key_col] = token_to_pandas_series(df[key_col], dtype_str)
+                continue
             try:
-                pandas_dtype = cls._normalize_dtype_for_pandas(dtype_str or "string")
-                if pandas_dtype == "string":
-                    df[key_col] = df[key_col].astype("string")
-                else:
-                    df[key_col] = df[key_col].astype(pandas_dtype)
+                df[key_col] = token_to_pandas_series(df[key_col], dtype_str or "string")
             except Exception:
                 pass
 
@@ -2155,20 +2185,7 @@ class DataNodeStorage(AbstractTable, LabelableObjectMixin, ShareableObjectMixin,
                     continue
 
                 try:
-                    # Datetime-ish columns (besides main time_index)
-                    ct = (str(col_type) or "").lower()
-                    if "datetime" in ct:
-                        df[df_col] = pd.to_datetime(df[df_col], format="ISO8601", errors="coerce", utc=True)
-                        continue
-
-                    pandas_dtype = cls._normalize_dtype_for_pandas(str(col_type))
-
-                    # string/object handling
-                    if pandas_dtype in {"string"}:
-                        df[df_col] = df[df_col].astype("string")
-                    else:
-                        df[df_col] = df[df_col].astype(pandas_dtype)
-
+                    df[df_col] = token_to_pandas_series(df[df_col], col_type)
                 except Exception:
                     # last resort: leave as object (do not crash on one bad cast)
                     pass
@@ -3472,6 +3489,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         time_index_name: str,
         index_names: list,
         grouped_dates: dict,
+        column_dtypes_map: Mapping[str, Any] | None = None,
     ):
 
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
@@ -3489,6 +3507,7 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
                 index_names=index_names,
                 time_index_name=time_index_name,
                 overwrite=overwrite,
+                column_dtypes_map=column_dtypes_map,
             )
 
     def insert_data_into_local_table(
@@ -3576,17 +3595,23 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
 
         stc = data_node_update.data_node_storage.sourcetableconfiguration
         try:
-            df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name], format="ISO8601")
+            df[stc.time_index_name] = token_to_pandas_series(
+                df[stc.time_index_name],
+                TIMESTAMP_TZ,
+                is_time_index=True,
+            )
         except Exception as e:
             raise e
         columns_to_loop = set(columns or stc.column_dtypes_map.keys()) | set(stc.index_names)
         for c, c_type in stc.column_dtypes_map.items():
             if c not in columns_to_loop:
                 continue
-            if c != stc.time_index_name:
-                if c_type == "object":
-                    c_type = "str"
-                df[c] = df[c].astype(c_type)
+            if c in df.columns:
+                df[c] = token_to_pandas_series(
+                    df[c],
+                    c_type,
+                    is_time_index=c == stc.time_index_name,
+                )
         df = df.set_index(stc.index_names)
         return df
 
@@ -4346,6 +4371,7 @@ class TimeScaleDB(DataSource):
         time_index_name: str,
         index_names: list,
         grouped_dates: dict,
+        column_dtypes_map: Mapping[str, Any] | None = None,
     ):
 
         DataNodeUpdate.post_data_frame_in_chunks(
@@ -4355,6 +4381,7 @@ class TimeScaleDB(DataSource):
             index_names=index_names,
             time_index_name=time_index_name,
             overwrite=overwrite,
+            column_dtypes_map=column_dtypes_map,
         )
 
     def get_data_by_time_index(
@@ -4389,12 +4416,18 @@ class TimeScaleDB(DataSource):
             return df
 
         stc = data_node_update.data_node_storage.sourcetableconfiguration
-        df[stc.time_index_name] = pd.to_datetime(df[stc.time_index_name])
+        df[stc.time_index_name] = token_to_pandas_series(
+            df[stc.time_index_name],
+            TIMESTAMP_TZ,
+            is_time_index=True,
+        )
         for c, c_type in stc.column_dtypes_map.items():
-            if c != stc.time_index_name:
-                if c_type == "object":
-                    c_type = "str"
-                df[c] = df[c].astype(c_type)
+            if c in df.columns:
+                df[c] = token_to_pandas_series(
+                    df[c],
+                    c_type,
+                    is_time_index=c == stc.time_index_name,
+                )
         df = df.set_index(stc.index_names)
         return df
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from mainsequence.client.dtype_codec import sqlalchemy_backend_type, sqlalchemy_type_to_token
 from mainsequence.client.models_metatables import (
     MetaTable,
     MetaTableColumnContract,
@@ -723,11 +724,8 @@ def _column_type_contract(column: Any) -> dict[str, str]:
     if column_type is None:
         raise ValueError(f"Column {column.name!r} does not expose a SQLAlchemy type.")
 
-    type_name = type(column_type).__name__.lower()
-    backend_type = str(column_type).upper()
-    data_type = _logical_data_type(type_name=type_name, backend_type=backend_type)
-    if data_type == "uuid":
-        backend_type = "UUID"
+    data_type = sqlalchemy_type_to_token(column_type, remote=True)
+    backend_type = sqlalchemy_backend_type(column_type, data_type)
     return {
         "data_type": data_type,
         "backend_type": backend_type or data_type,
@@ -736,43 +734,6 @@ def _column_type_contract(column: Any) -> dict[str, str]:
 
 def _is_server_generated_uuid_primary_key(column: Any, *, data_type: str) -> bool:
     return bool(getattr(column, "primary_key", False)) and data_type == "uuid"
-
-
-def _logical_data_type(*, type_name: str, backend_type: str) -> str:
-    normalized_backend = backend_type.lower()
-    if type_name in {"uuid", "uuidtype", "uuid_", "postgresqluuid"} or normalized_backend == "uuid":
-        return "uuid"
-    if type_name in {"string", "unicode", "text", "varchar", "char"}:
-        return "str"
-    if "varchar" in normalized_backend or normalized_backend in {"text", "char"}:
-        return "str"
-    if type_name in {"integer", "biginteger"}:
-        return "int64"
-    if type_name in {"smallinteger"}:
-        return "int16"
-    if normalized_backend in {"integer", "int", "int4"}:
-        return "int32"
-    if normalized_backend in {"bigint", "int8"}:
-        return "int64"
-    if normalized_backend in {"smallint", "int2"}:
-        return "int16"
-    if type_name in {"float", "double", "doubleprecision"}:
-        return "float64"
-    if normalized_backend in {"real", "float4"}:
-        return "float32"
-    if "double" in normalized_backend or normalized_backend in {"float", "float8"}:
-        return "float64"
-    if type_name in {"numeric", "decimal"} or normalized_backend.startswith("numeric"):
-        return "numeric"
-    if type_name in {"boolean"} or normalized_backend in {"bool", "boolean"}:
-        return "bool"
-    if type_name in {"datetime"} or "timestamp" in normalized_backend:
-        return "datetime"
-    if type_name in {"date"} or normalized_backend == "date":
-        return "date"
-    if type_name in {"json", "jsonb"} or normalized_backend in {"json", "jsonb"}:
-        return "jsonb" if "jsonb" in normalized_backend or type_name == "jsonb" else "json"
-    raise ValueError(f"Unsupported SQLAlchemy column type {backend_type!r}.")
 
 
 def _build_configured_storage_hash(

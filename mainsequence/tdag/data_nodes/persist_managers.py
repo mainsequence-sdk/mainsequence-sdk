@@ -8,6 +8,7 @@ import pandas as pd
 
 from mainsequence.client import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.client import DataNodeStorage, DataNodeUpdate, DynamicTableDataSource
+from mainsequence.client.dtype_codec import TIMESTAMP_TZ, token_to_pandas_series
 from mainsequence.client.models_tdag import DataNodeUpdateDetails
 from mainsequence.logconf import logger
 
@@ -84,16 +85,20 @@ class APIPersistManager:
             return filtered_data
 
         stc = self.data_node_storage.sourcetableconfiguration
-        filtered_data[stc.time_index_name] = pd.to_datetime(
-            filtered_data[stc.time_index_name], utc=True
+        filtered_data[stc.time_index_name] = token_to_pandas_series(
+            filtered_data[stc.time_index_name],
+            TIMESTAMP_TZ,
+            is_time_index=True,
         )
         column_filter = kwargs.get("columns") or stc.column_dtypes_map.keys()
         for c in column_filter:
             c_type = stc.column_dtypes_map[c]
-            if c != stc.time_index_name:
-                if c_type == "object":
-                    c_type = "str"
-                filtered_data[c] = filtered_data[c].astype(c_type)
+            if c in filtered_data.columns:
+                filtered_data[c] = token_to_pandas_series(
+                    filtered_data[c],
+                    c_type,
+                    is_time_index=c == stc.time_index_name,
+                )
         filtered_data = filtered_data.set_index(stc.index_names)
 
         return filtered_data

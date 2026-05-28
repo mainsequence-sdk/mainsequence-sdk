@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import datetime
 from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.models_metatables as meta_table_models
-from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.tdag.meta_tables import (
+    build_compiled_sql_v1_operation,
+    compile_sqlalchemy_statement,
+)
 
 
 class _Response:
@@ -220,6 +224,107 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
             operation="select",
             statement=meta_table_models.MetaTableStatementPayload(sql="SELECT 1"),
             scope=meta_table_models.MetaTableOperationScope(tables=[]),
+        )
+
+
+def test_compiled_sql_v1_serializes_typed_temporal_parameters():
+    operation = build_compiled_sql_v1_operation(
+        operation="select",
+        sql="SELECT * FROM asset WHERE as_of = %(as_of)s AND seen_at = %(seen_at)s",
+        parameters={
+            "as_of": datetime.date(2026, 5, 28),
+            "seen_at": datetime.datetime(2026, 5, 28, 12, 30, tzinfo=datetime.UTC),
+        },
+        parameter_types={
+            "as_of": "date",
+            "seen_at": "datetime64[ns, UTC]",
+        },
+        scope={
+            "tables": [
+                {
+                    "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "alias": "asset",
+                }
+            ]
+        },
+    )
+
+    assert operation.statement.parameter_types == {
+        "as_of": "date",
+        "seen_at": "timestamp with time zone",
+    }
+    assert operation.statement.parameters == {
+        "as_of": "2026-05-28",
+        "seen_at": "2026-05-28T12:30:00Z",
+    }
+
+
+def test_compiled_sql_v1_rejects_untyped_temporal_parameters():
+    with pytest.raises(ValidationError, match="parameter_types"):
+        build_compiled_sql_v1_operation(
+            operation="select",
+            sql="SELECT * FROM asset WHERE as_of = %(as_of)s",
+            parameters={"as_of": datetime.date(2026, 5, 28)},
+            scope={
+                "tables": [
+                    {
+                        "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "alias": "asset",
+                    }
+                ]
+            },
+        )
+
+
+def test_compile_sqlalchemy_statement_emits_temporal_parameter_types():
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+
+    statement = sqlalchemy.select(
+        sqlalchemy.bindparam(
+            "seen_at",
+            datetime.datetime(2026, 5, 28, 12, 30, tzinfo=datetime.UTC),
+            type_=sqlalchemy.DateTime(timezone=True),
+        )
+    )
+
+    operation = compile_sqlalchemy_statement(
+        statement,
+        operation="select",
+        scope_tables=[
+            {
+                "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "alias": "asset",
+            }
+        ],
+    )
+
+    assert operation.statement.parameter_types == {
+        "seen_at": "timestamp with time zone",
+    }
+    assert operation.statement.parameters["seen_at"] == "2026-05-28T12:30:00Z"
+
+
+def test_compile_sqlalchemy_statement_rejects_naive_datetime_bind_types():
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+
+    statement = sqlalchemy.select(
+        sqlalchemy.bindparam(
+            "seen_at",
+            datetime.datetime(2026, 5, 28, 12, 30),
+            type_=sqlalchemy.DateTime(timezone=False),
+        )
+    )
+
+    with pytest.raises(ValueError, match="Timezone-naive"):
+        compile_sqlalchemy_statement(
+            statement,
+            operation="select",
+            scope_tables=[
+                {
+                    "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "alias": "asset",
+                }
+            ],
         )
 
 

@@ -10,6 +10,12 @@ import pandas as pd
 
 from mainsequence.logconf import logger as base_logger
 
+from ..dtype_codec import (
+    TIMESTAMP_TZ,
+    pandas_dtype_to_token,
+    token_to_backend_type,
+    token_to_pandas_series,
+)
 from ..utils import UniqueIdentifierRangeMap
 
 
@@ -78,15 +84,12 @@ class SQLiteInterface:
 
     @staticmethod
     def _sqlite_type(series: pd.Series, *, is_time_index: bool = False) -> str:
-        if is_time_index or pd.api.types.is_datetime64_any_dtype(series):
-            return "TEXT"
-        if pd.api.types.is_bool_dtype(series):
-            return "INTEGER"
-        if pd.api.types.is_integer_dtype(series):
-            return "INTEGER"
-        if pd.api.types.is_float_dtype(series):
-            return "REAL"
-        return "TEXT"
+        token = (
+            TIMESTAMP_TZ
+            if is_time_index
+            else pandas_dtype_to_token(series.dtype, remote=False, allow_naive_datetime=True)
+        )
+        return token_to_backend_type(token, "sqlite")
 
     @staticmethod
     def _sqlite_value(value: Any) -> Any:
@@ -442,7 +445,11 @@ class SQLiteInterface:
 
         df = pd.read_sql_query(query, self.con, params=params)
         if not df.empty and time_index_name in df.columns:
-            df[time_index_name] = pd.to_datetime(df[time_index_name], utc=True)
+            df[time_index_name] = token_to_pandas_series(
+                df[time_index_name],
+                TIMESTAMP_TZ,
+                is_time_index=True,
+            )
         return df
 
     def time_index_minima(

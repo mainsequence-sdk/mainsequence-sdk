@@ -18,6 +18,10 @@ import structlog.contextvars as cvars
 
 import mainsequence.tdag.data_nodes.build_operations as build_operations
 import mainsequence.tdag.data_nodes.run_operations as run_operations
+from mainsequence.client.dtype_codec import (
+    normalize_dtype_token,
+    record_definitions_to_column_dtypes_map,
+)
 from mainsequence.client.models_tdag import (
     BaseUpdateStatistics,
     ColumnMetaData,
@@ -1184,18 +1188,7 @@ class DataNode(DataAccessMixin, ABC):
                 f"{index_names!r}."
             )
 
-        column_dtypes_map: dict[str, str] = {}
-        duplicate_record_names: set[str] = set()
-        for record in records:
-            column_name = str(record.column_name)
-            if column_name in column_dtypes_map:
-                duplicate_record_names.add(column_name)
-            column_dtypes_map[column_name] = str(record.dtype)
-
-        if duplicate_record_names:
-            raise ValueError(
-                f"Duplicate DataNode record column names: {sorted(duplicate_record_names)}"
-            )
+        column_dtypes_map = record_definitions_to_column_dtypes_map(records, remote=True)
 
         missing_index_records = [
             index_name for index_name in index_names if index_name not in column_dtypes_map
@@ -1234,7 +1227,7 @@ class DataNode(DataAccessMixin, ABC):
         return [
             ColumnMetaData(
                 column_name=record.column_name,
-                dtype=record.dtype,
+                dtype=normalize_dtype_token(record.dtype, remote=True),
                 label=record.label or record.column_name,
                 description=record.description or "",
             )

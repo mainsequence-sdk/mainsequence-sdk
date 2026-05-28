@@ -5,7 +5,7 @@ import datetime
 import gc
 import json
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
@@ -18,6 +18,15 @@ from opentelemetry.trace import Status, StatusCode
 # Client and ORM Models
 import mainsequence.client as ms_client
 from mainsequence.client import BaseUpdateStatistics
+from mainsequence.client.dtype_codec import (
+    DATE,
+    LOCAL_DATETIME_NAIVE,
+    TIMESTAMP_TZ,
+    normalize_dtype_token,
+    pandas_dtype_to_token,
+    record_definitions_to_column_dtypes_map,
+    serialize_remote_value,
+)
 
 # Instrumentation and Logging
 from mainsequence.instrumentation import TracerInstrumentator, tracer
@@ -34,38 +43,6 @@ class DependencyUpdateError(Exception):
 
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
-
-
-def _record_definition_field(record: Any, field_name: str) -> Any:
-    if isinstance(record, Mapping):
-        return record.get(field_name)
-    return getattr(record, field_name, None)
-
-
-def _records_to_column_dtypes_map(records: Sequence[Any] | None) -> dict[str, str]:
-    if not records:
-        return {}
-
-    column_dtypes_map: dict[str, str] = {}
-    duplicate_columns: set[str] = set()
-    for record in records:
-        column_name = _record_definition_field(record, "column_name")
-        dtype = _record_definition_field(record, "dtype")
-        if not column_name or not dtype:
-            raise ValueError(
-                "Record definitions must include non-empty 'column_name' and 'dtype' fields."
-            )
-        column_name = str(column_name)
-        if column_name in column_dtypes_map:
-            duplicate_columns.add(column_name)
-        column_dtypes_map[column_name] = str(dtype)
-
-    if duplicate_columns:
-        raise ValueError(
-            f"Duplicate DataNode record column names: {sorted(duplicate_columns)}"
-        )
-
-    return column_dtypes_map
 
 
 def _is_nullish(value: Any) -> bool:
@@ -123,25 +100,65 @@ def _validate_declared_record_dtype(
     declared_dtype: str,
     actual_dtype: Any,
     values: Sequence[Any],
+    remote_dtypes: bool = True,
+    allow_naive_datetime: bool = False,
 ) -> None:
-    normalized_declared_dtype = declared_dtype.strip().lower()
-    normalized_actual_dtype = str(actual_dtype).strip().lower()
+    normalized_declared_dtype = normalize_dtype_token(
+        declared_dtype,
+        remote=remote_dtypes,
+        allow_naive_datetime=allow_naive_datetime,
+    )
     if normalized_declared_dtype in {"json", "jsonb"}:
         _validate_json_compatible_values(column_name, values)
         return
     if normalized_declared_dtype == "uuid":
         _validate_uuid_compatible_values(column_name, values)
         return
-    if normalized_declared_dtype in {"string", "str"}:
-        if normalized_actual_dtype not in {"object", "string", "str"}:
+    if normalized_declared_dtype in {DATE, TIMESTAMP_TZ}:
+        for value in values:
+            try:
+                serialize_remote_value(value, normalized_declared_dtype)
+            except Exception as exc:
+                raise TypeError(
+                    f"Column '{column_name}' is declared as {declared_dtype} "
+                    f"but contains an incompatible temporal value: {value!r}"
+                ) from exc
+        return
+
+    try:
+        normalized_actual_dtype = pandas_dtype_to_token(
+            actual_dtype,
+            remote=remote_dtypes,
+            allow_naive_datetime=allow_naive_datetime,
+        )
+    except ValueError as exc:
+        raise TypeError(
+            f"Column '{column_name}' is declared as {declared_dtype} "
+            f"but DataFrame dtype is {actual_dtype}"
+        ) from exc
+
+    if normalized_declared_dtype == "string":
+        if normalized_actual_dtype != "string":
             raise TypeError(
                 f"Column '{column_name}' is declared as {declared_dtype} "
                 f"but DataFrame dtype is {actual_dtype}"
             )
         _validate_string_compatible_values(column_name, values)
         return
+    if normalized_declared_dtype == LOCAL_DATETIME_NAIVE:
+        if remote_dtypes:
+            raise TypeError(
+                f"Column '{column_name}' is declared as {declared_dtype}, "
+                "but timezone-naive datetime is local-backend-only."
+            )
+        if normalized_actual_dtype != LOCAL_DATETIME_NAIVE:
+            raise TypeError(
+                f"Column '{column_name}' is declared as {declared_dtype} "
+                f"but DataFrame dtype is {actual_dtype}"
+            )
+        return
 
-    if str(actual_dtype) != declared_dtype:
+    if normalized_actual_dtype != normalized_declared_dtype:
         raise TypeError(
             f"Column '{column_name}' is declared as {declared_dtype} "
             f"but DataFrame dtype is {actual_dtype}"
@@ -385,7 +402,7 @@ class UpdateRunner:
         ):
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
-        # Check for forbidden data types and enforce lowercase columns
+        # Enforce backend-safe physical column names for non-local storage.
         if storage_class_type not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES:
 
             for col, dtype in df.dtypes.items():
@@ -395,10 +412,12 @@ class UpdateRunner:
                     raise ValueError(
                         f"Column name '{col}' must be 63 characters or fewer."
                     )
-                if "datetime64" in str(dtype):
-                    raise TypeError(f"Column '{col}' has a forbidden datetime64 dtype. dates should be stored as timestamps to avoid  client side error conversions")
-
-        record_column_dtypes_map = _records_to_column_dtypes_map(records)
+        is_local_storage = storage_class_type in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES
+        record_column_dtypes_map = record_definitions_to_column_dtypes_map(
+            records,
+            remote=not is_local_storage,
+            allow_naive_datetime=is_local_storage,
+        )
         if not record_column_dtypes_map:
             return
 
@@ -431,6 +450,8 @@ class UpdateRunner:
                 declared_dtype=declared_dtype,
                 actual_dtype=actual_dtype,
                 values=values,
+                remote_dtypes=not is_local_storage,
+                allow_naive_datetime=is_local_storage,
             )
 
 

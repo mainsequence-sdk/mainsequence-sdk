@@ -33,6 +33,61 @@ def _decode_compressed_payload(captured_payload):
     return json.loads(gzip.decompress(compressed).decode("utf-8"))
 
 
+def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def _fake_make_request(*, s, loaders, payload, r_type, url, time_out=None):
+        captured["payload"] = payload
+        captured["r_type"] = r_type
+        captured["url"] = url
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_tdag.DataNodeUpdate,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    frame = pd.DataFrame(
+        {
+            "time_index": [pd.Timestamp("2026-05-01T00:00:00Z")],
+            "event_date": [datetime.date(2026, 5, 1)],
+            "event_time": [pd.Timestamp("2026-05-01T12:30:00Z")],
+        }
+    )
+
+    models_tdag.DataNodeUpdate.post_data_frame_in_chunks(
+        serialized_data_frame=frame,
+        data_node_update=_minimal_update(),
+        index_names=["time_index"],
+        time_index_name="time_index",
+        column_dtypes_map={
+            "time_index": "timestamp with time zone",
+            "event_date": "date",
+            "event_time": "datetime64[ns, UTC]",
+        },
+    )
+
+    decoded = _decode_compressed_payload(captured["payload"])
+    assert decoded == [
+        {
+            "time_index": "2026-05-01T00:00:00Z",
+            "event_date": "2026-05-01",
+            "event_time": "2026-05-01T12:30:00Z",
+        }
+    ]
+
+
 def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
     class FakeResponse:
         status_code = 201
@@ -43,7 +98,7 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
         def json():
             return {
                 "historical_update": {
-                    "id": 15,
+                    "uid": "historical-update-15",
                     "related_table_uid": "data-node-update-77",
                     "update_time_start": "2026-05-01T03:00:00Z",
                 },
@@ -387,7 +442,7 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_jsonb():
     )
 
     assert calls["source_config"]["column_dtypes_map"] == {
-        "time_index": "datetime64[ns, UTC]",
+        "time_index": "timestamp with time zone",
         "venue_specific_properties": "jsonb",
     }
 

@@ -34,7 +34,6 @@ def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        organization_owner=1,
         sourcetableconfiguration=_source_config(index_names),
     )
 
@@ -105,9 +104,9 @@ def test_initialize_source_table_posts_schema_contract(monkeypatch):
         "time_index_name": "time_index",
         "index_names": ["time_index", "account_uid", "unique_identifier"],
         "column_dtypes_map": {
-            "time_index": "datetime64[ns, UTC]",
+            "time_index": "timestamp with time zone",
             "account_uid": "uuid",
-            "unique_identifier": "object",
+            "unique_identifier": "string",
         },
     }
     assert storage.sourcetableconfiguration.index_names == [

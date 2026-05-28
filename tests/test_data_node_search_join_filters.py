@@ -33,7 +33,6 @@ def _storage(index_names: list[str], *, storage_hash: str = "prices_hash") -> mo
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        organization_owner=1,
         sourcetableconfiguration=_source_config(index_names),
     )
 

@@ -730,16 +730,15 @@ def is_process_running(pid: int) -> bool:
 
 
 def set_types_in_table(df, column_types):
+    from mainsequence.client.dtype_codec import token_to_pandas_series
+
     index_cols = [name for name in df.index.names if name is not None]
     if index_cols:
         df = df.reset_index()
 
     for c, col_type in column_types.items():
         if c in df.columns:
-            if col_type == "object":
-                df[c] = df[c].astype(str)
-            else:
-                df[c] = df[c].astype(col_type)
+            df[c] = token_to_pandas_series(df[c], col_type)
 
     if index_cols:
         df = df.set_index(index_cols)

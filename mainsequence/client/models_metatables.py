@@ -4,9 +4,16 @@ import datetime
 from collections.abc import Mapping
 from typing import Any, ClassVar, Literal
 
-from pydantic import AliasChoices, ConfigDict, Field
+from pydantic import AliasChoices, ConfigDict, Field, field_validator, model_validator
 
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from .dtype_codec import (
+    DATE,
+    TIMESTAMP_TZ,
+    normalize_column_dtypes_map,
+    normalize_dtype_token,
+    serialize_remote_parameters,
+)
 from .exceptions import raise_for_response
 from .models_tdag import DynamicTableDataSource
 from .utils import make_request, serialize_to_json
@@ -53,6 +60,54 @@ def _payload_json(payload: Mapping[str, Any] | BasePydanticModel) -> dict[str, A
     return _strip_client_metadata(
         serialize_to_json({key: convert(value) for key, value in dict(payload).items()})
     )
+
+
+def _normalize_backend_type(value: str | None) -> str | None:
+    if value is None:
+        return None
+    raw = str(value)
+    token = normalize_dtype_token(raw, remote=True)
+    if token == TIMESTAMP_TZ:
+        return "TIMESTAMP WITH TIME ZONE"
+    if token == DATE:
+        return "DATE"
+    return raw
+
+
+def _normalize_contract_mapping(contract: Mapping[str, Any]) -> dict[str, Any]:
+    normalized = dict(contract)
+    columns = normalized.get("columns")
+    if isinstance(columns, list):
+        normalized_columns = []
+        for column in columns:
+            if not isinstance(column, Mapping):
+                normalized_columns.append(column)
+                continue
+            column_dict = dict(column)
+            if "data_type" in column_dict:
+                column_dict["data_type"] = normalize_dtype_token(
+                    column_dict["data_type"],
+                    remote=True,
+                )
+            if "backend_type" in column_dict:
+                column_dict["backend_type"] = _normalize_backend_type(
+                    column_dict.get("backend_type")
+                )
+            normalized_columns.append(column_dict)
+        normalized["columns"] = normalized_columns
+    return normalized
+
+
+def _temporal_parameter_names(parameters: dict[str, Any] | list[Any]) -> set[str]:
+    if isinstance(parameters, Mapping):
+        items = parameters.items()
+    else:
+        items = ((str(index), value) for index, value in enumerate(parameters))
+    temporal_names: set[str] = set()
+    for name, value in items:
+        if isinstance(value, (datetime.date, datetime.datetime)):
+            temporal_names.add(str(name))
+    return temporal_names
 
 
 class MetaTablePhysicalContract(BasePydanticModel):
@@ -112,6 +167,16 @@ class MetaTableColumnContract(BasePydanticModel):
         default=None,
         description="Optional logical or semantic column name.",
     )
+
+    @field_validator("data_type")
+    @classmethod
+    def _normalize_data_type(cls, value: str) -> str:
+        return normalize_dtype_token(value, remote=True)
+
+    @field_validator("backend_type")
+    @classmethod
+    def _normalize_backend_type(cls, value: str | None) -> str | None:
+        return _normalize_backend_type(value)
 
 
 class MetaTableIndexContract(BasePydanticModel):
@@ -193,6 +258,16 @@ class MetaTableColumnPayload(BasePydanticModel):
         description="Raw normalized contract fragment for this projected column.",
     )
 
+    @field_validator("data_type")
+    @classmethod
+    def _normalize_data_type(cls, value: str) -> str:
+        return normalize_dtype_token(value, remote=True)
+
+    @field_validator("backend_type")
+    @classmethod
+    def _normalize_backend_type(cls, value: str | None) -> str | None:
+        return _normalize_backend_type(value)
+
 
 class MetaTableIndexPayload(BasePydanticModel):
     name: str
@@ -216,7 +291,26 @@ class MetaTableForeignKeyPayload(BasePydanticModel):
 class MetaTableStatementPayload(BasePydanticModel):
     sql: str = Field(..., min_length=1)
     parameters: dict[str, Any] | list[Any] = Field(default_factory=dict)
+    parameter_types: dict[str, str] | None = None
     paramstyle: MetaTableCompiledSQLParamstyle = "pyformat"
+
+    @model_validator(mode="after")
+    def _normalize_parameters(self) -> MetaTableStatementPayload:
+        temporal_names = _temporal_parameter_names(self.parameters)
+        if temporal_names:
+            missing_types = temporal_names - set(self.parameter_types or {})
+            if missing_types:
+                raise ValueError(
+                    "MetaTable compiled SQL temporal parameters require "
+                    f"statement.parameter_types entries. Missing: {sorted(missing_types)}"
+                )
+        if self.parameter_types:
+            self.parameter_types = normalize_column_dtypes_map(self.parameter_types, remote=True)
+            self.parameters = serialize_remote_parameters(
+                self.parameters,
+                self.parameter_types,
+            )
+        return self
 
 
 class MetaTableOperationScopeTable(BasePydanticModel):
@@ -262,11 +356,23 @@ class MetaTableRegistrationRequest(BasePydanticModel):
     provisioning: dict[str, Any] | None = None
     introspect: bool = False
 
+    @model_validator(mode="after")
+    def _normalize_table_contract(self) -> MetaTableRegistrationRequest:
+        if isinstance(self.table_contract, Mapping):
+            self.table_contract = _normalize_contract_mapping(self.table_contract)
+        return self
+
 
 class MetaTableValidateContractRequest(BasePydanticModel):
     table_contract: MetaTableContract | dict[str, Any]
     management_mode: MetaTableManagementMode | None = None
     storage_hash: str | None = None
+
+    @model_validator(mode="after")
+    def _normalize_table_contract(self) -> MetaTableValidateContractRequest:
+        if isinstance(self.table_contract, Mapping):
+            self.table_contract = _normalize_contract_mapping(self.table_contract)
+        return self
 
 
 class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, BaseObjectOrm):
@@ -437,9 +543,14 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
+        payload = (
+            operation
+            if isinstance(operation, MetaTableCompiledSQLOperation)
+            else MetaTableCompiledSQLOperation(**operation)
+        )
         return cls._post_action(
             "execute-operation",
-            operation,
+            payload,
             timeout=timeout,
             expected_statuses=(200,),
         )

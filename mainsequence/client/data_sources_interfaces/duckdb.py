@@ -14,6 +14,14 @@ from pyarrow import fs
 
 from mainsequence.logconf import logger as base_logger
 
+from ..dtype_codec import (
+    TIMESTAMP_TZ,
+    backend_type_to_token,
+    pandas_dtype_to_token,
+    token_to_backend_type,
+    token_to_pandas_dtype,
+    token_to_pandas_series,
+)
 from ..utils import DataFrequency, UniqueIdentifierRangeMap
 
 
@@ -422,7 +430,11 @@ class DuckDBInterface:
 
         # —— basic hygiene ——--------------------------------------------------
         df = df.copy()
-        df[time_index_name] = pd.to_datetime(df[time_index_name], utc=True)
+        df[time_index_name] = token_to_pandas_series(
+            df[time_index_name],
+            TIMESTAMP_TZ,
+            is_time_index=True,
+        )
 
         # —— derive partition columns ——---------------------------------------
         partitions = self._partition_keys(df[time_index_name], data_frequency=data_frequency)
@@ -1364,23 +1376,7 @@ class DuckDBInterface:
                 }
                 for col, target_type in type_map.items():
                     try:
-                        if target_type == "datetime64[ns, UTC]":
-                            arr = df[col].values
-                            arr_ns = arr.astype("datetime64[ns]")
-                            df[col] = pd.Series(
-                                pd.DatetimeIndex(arr_ns, tz="UTC"),
-                                index=df.index,
-                                name=col,
-                            )
-                        elif target_type == "datetime64[ns]":
-                            df[col] = pd.to_datetime(df[col], errors="coerce")
-                        else:
-                            if isinstance(
-                                target_type, (pd.Int64Dtype, pd.BooleanDtype, pd.StringDtype)
-                            ):
-                                df[col] = df[col].astype(target_type, errors="ignore")
-                            else:
-                                df[col] = df[col].astype(target_type, errors="ignore")
+                        df[col] = token_to_pandas_series(df[col], target_type)
                     except Exception as type_e:
                         logger.warning(
                             f"Could not coerce column '{col}' to type '{target_type}': {type_e}"
@@ -1530,15 +1526,8 @@ class DuckDBInterface:
         """
         Minimal dtype → DuckDB mapping. Extend as needed.
         """
-        if pd.api.types.is_datetime64_any_dtype(dtype) or pd.api.types.is_datetime64tz_dtype(dtype):
-            return "TIMESTAMPTZ"
-        if pd.api.types.is_integer_dtype(dtype):
-            return "BIGINT"
-        if pd.api.types.is_float_dtype(dtype):
-            return "DOUBLE"
-        if pd.api.types.is_bool_dtype(dtype):
-            return "BOOLEAN"
-        return "VARCHAR"
+        token = pandas_dtype_to_token(dtype, remote=False, allow_naive_datetime=True)
+        return token_to_backend_type(token, "duckdb")
 
     @staticmethod
     def _duck_to_pandas(duck_type: str, data_frequency: DataFrequency):
@@ -1548,34 +1537,5 @@ class DuckDBInterface:
         `df.astype({...})` gets pandas’ nullable dtypes.
         Extend as needed.
         """
-        dt = duck_type.upper()
-
-        # --- datetimes ------------------------------------------------------
-        if dt in ("TIMESTAMPTZ", "TIMESTAMP WITH TIME ZONE"):
-            # keep the UTC tz-awareness
-            return "datetime64[ns, UTC]"
-
-        if dt in (
-            "TIMESTAMP",
-            "DATETIME",
-        ):
-            # keep timezone if present; duckdb returns tz‑aware objects already,
-            # so no explicit 'UTC' suffix is needed here.
-            return "datetime64[ns]"
-        if dt == "DATE":
-            return "datetime64[ns]"  # pandas treats it as midnight
-
-        # --- integers -------------------------------------------------------
-        if dt in ("TINYINT", "SMALLINT", "INTEGER", "INT", "BIGINT"):
-            return pd.Int64Dtype()  # nullable 64‑bit int
-
-        # --- floats / numerics ---------------------------------------------
-        if dt in ("REAL", "FLOAT", "DOUBLE", "DECIMAL"):
-            return "float64"
-
-        # --- booleans -------------------------------------------------------
-        if dt == "BOOLEAN":
-            return pd.BooleanDtype()  # nullable boolean
-
-        # --- everything else ------------------------------------------------
-        return pd.StringDtype()  # pandas‘ native nullable string
+        token = backend_type_to_token(duck_type, "duckdb", allow_naive_datetime=True)
+        return token_to_pandas_dtype(token)

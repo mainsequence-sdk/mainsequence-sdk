@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from mainsequence.client.dtype_codec import DATE, TIMESTAMP_TZ, sqlalchemy_type_to_token
 from mainsequence.client.models_metatables import (
     COMPILED_SQL_V1,
     MetaTableCompiledSQLDialect,
@@ -21,6 +22,7 @@ def build_compiled_sql_v1_operation(
     operation: MetaTableOperation,
     sql: str,
     parameters: Mapping[str, Any] | Sequence[Any] | None = None,
+    parameter_types: Mapping[str, str] | None = None,
     scope: MetaTableOperationScope | Mapping[str, Any],
     dialect: MetaTableCompiledSQLDialect = "postgresql",
     paramstyle: MetaTableCompiledSQLParamstyle = "pyformat",
@@ -48,6 +50,7 @@ def build_compiled_sql_v1_operation(
         statement=MetaTableStatementPayload(
             sql=sql,
             parameters=statement_parameters,
+            parameter_types=dict(parameter_types) if parameter_types is not None else None,
             paramstyle=paramstyle,
         ),
         scope=(
@@ -101,6 +104,7 @@ def compile_sqlalchemy_statement(
         dialect=postgresql.dialect(paramstyle=paramstyle),
         compile_kwargs=resolved_compile_kwargs,
     )
+    parameter_types = _compiled_sqlalchemy_parameter_types(compiled)
     scope = MetaTableOperationScope(
         tables=[
             (
@@ -115,11 +119,27 @@ def compile_sqlalchemy_statement(
         operation=operation,
         sql=str(compiled),
         parameters=dict(compiled.params),
+        parameter_types=parameter_types,
         scope=scope,
         dialect=dialect,
         paramstyle=paramstyle,
         limits=limits,
     )
+
+
+def _compiled_sqlalchemy_parameter_types(compiled: Any) -> dict[str, str]:
+    parameter_types: dict[str, str] = {}
+    bind_names = getattr(compiled, "bind_names", {}) or {}
+    for bind_parameter, rendered_name in bind_names.items():
+        if rendered_name not in getattr(compiled, "params", {}):
+            continue
+        column_type = getattr(bind_parameter, "type", None)
+        if column_type is None:
+            continue
+        token = sqlalchemy_type_to_token(column_type, remote=True)
+        if token in {DATE, TIMESTAMP_TZ}:
+            parameter_types[str(rendered_name)] = token
+    return parameter_types
 
 
 __all__ = [

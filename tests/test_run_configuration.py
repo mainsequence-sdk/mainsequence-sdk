@@ -120,6 +120,49 @@ def test_data_node_update_output_rejects_column_names_longer_than_63_characters(
         UpdateRunner.validate_data_frame(frame, storage_class_type="timescale")
 
 
+def test_data_node_update_output_allows_datetime_payload_columns():
+    frame = pd.DataFrame(
+        {"event_time": [pd.Timestamp("2026-04-13T12:00:00Z")]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
+    )
+
+    UpdateRunner.validate_data_frame(frame, storage_class_type="timescale")
+
+
+def test_data_node_update_output_accepts_declared_temporal_payload_columns():
+    frame = pd.DataFrame(
+        {
+            "event_date": pd.to_datetime(["2026-04-13"]),
+            "event_time": [pd.Timestamp("2026-04-13T12:00:00Z")],
+        },
+        index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
+    )
+    assert str(frame["event_date"].dtype) == "datetime64[ns]"
+
+    UpdateRunner.validate_data_frame(
+        frame,
+        storage_class_type="timescale",
+        records=[
+            RecordDefinition(column_name="event_date", dtype="date"),
+            RecordDefinition(column_name="event_time", dtype="datetime64[ns, UTC]"),
+        ],
+    )
+
+
+def test_data_node_update_output_rejects_remote_naive_datetime_payload_columns():
+    frame = pd.DataFrame(
+        {"event_time": [pd.Timestamp("2026-04-13T12:00:00")]},
+        index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
+    )
+
+    with pytest.raises((TypeError, ValueError), match="naive|timezone"):
+        UpdateRunner.validate_data_frame(
+            frame,
+            storage_class_type="timescale",
+            records=[RecordDefinition(column_name="event_time", dtype="datetime64[ns]")],
+        )
+
+
 def test_data_node_update_output_rejects_declared_dtype_mismatch():
     frame = pd.DataFrame(
         {"value": ["1.0"]},
@@ -212,7 +255,7 @@ def test_source_table_initialization_schema_uses_records_and_index_config():
     assert schema["time_index_name"] == "time_index"
     assert schema["index_names"] == ["time_index", "asset_uid"]
     assert schema["column_dtypes_map"] == {
-        "time_index": "datetime64[ns, UTC]",
+        "time_index": "timestamp with time zone",
         "asset_uid": "uuid",
         "venue_specific_properties": "jsonb",
     }
