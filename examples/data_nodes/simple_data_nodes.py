@@ -168,6 +168,7 @@ class RandomDataNodeConfig(DataNodeConfiguration):
 class DailyRandomAdditionConfig(DataNodeConfiguration):
     mean: float
     std: float
+    daily_random_number_storage_table: type[PlatformTimeIndexMetaData]
 
 
 class DailyRandomAdditionAPIConfig(DataNodeConfiguration):
@@ -232,7 +233,6 @@ class DailyRandomAddition(DataNode):
         self,
         config: DailyRandomAdditionConfig,
         storage_table: type[PlatformTimeIndexMetaData],
-        daily_random_number_storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
     ):
@@ -241,7 +241,7 @@ class DailyRandomAddition(DataNode):
         self.std = config.std
         self.daily_random_number_data_node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
-            storage_table=daily_random_number_storage_table,
+            storage_table=config.daily_random_number_storage_table,
             hash_namespace=hash_namespace,
         )
         super().__init__(
@@ -391,9 +391,12 @@ def run_graph(
 
     # 2) Node with DataNode dependency.
     add = DailyRandomAddition(
-        config=DailyRandomAdditionConfig(mean=0.0, std=1.0),
+        config=DailyRandomAdditionConfig(
+            mean=0.0,
+            std=1.0,
+            daily_random_number_storage_table=number_storage_table,
+        ),
         storage_table=addition_storage_table,
-        daily_random_number_storage_table=number_storage_table,
     )
     print(f"{label} DailyRandomAddition.update_hash  = {add.update_hash}")
     print(f"{label} DailyRandomAddition.meta_table_uid = {add.storage_table.get_meta_table_uid()}")

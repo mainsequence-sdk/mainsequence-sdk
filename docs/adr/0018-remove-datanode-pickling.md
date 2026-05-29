@@ -11,6 +11,7 @@ Status: Accepted and implemented
 - ADR 0014: DataNode Records and Foreign Keys
 - ADR 0015: APIDataNode UID Runtime Identity
 - ADR 0017: MetaTable Canonical Storage
+- ADR 0019: Remove Cold Rebuild From DataNode Dependency Execution
 
 ## Context
 
@@ -46,14 +47,11 @@ There is also a filesystem contract in `mainsequence/meta_tables/config.py`:
 - API node pickles:
   - `pickled_ts/<data_source_uid>/api-<update_hash>.pickle`
 
-At the same time, the runtime already contains a canonical non-pickle rebuild
-path:
-
-- `rebuild_from_configuration(...)`
-
-That function reconstructs a DataNode from stored build configuration and data
-source identity. This is a stronger source of truth than local pickled object
-state.
+During the initial migration, a non-pickle rebuild path,
+`rebuild_from_configuration(...)`, was treated as a possible replacement for
+pickle loading. ADR 0019 supersedes that direction: dependency execution should
+use the source-declared `DataNode.dependencies()` graph, not generic object
+reconstruction from backend build configuration.
 
 The current pickle-based design causes several problems:
 
@@ -74,12 +72,9 @@ to the design.
 
 Remove DataNode pickling as a runtime mechanism.
 
-The canonical rebuild path will be:
-
-1. resolve backend/local persisted build configuration;
-2. rebuild the DataNode from configuration;
-3. reattach runtime-only collaborators explicitly;
-4. synchronize persistence/session state explicitly.
+No replacement object snapshot or generic DataNode reconstruction path is part
+of runtime execution. Dependency execution after pickle removal is governed by
+ADR 0019.
 
 The runtime will no longer:
 
@@ -92,8 +87,8 @@ The runtime will no longer:
 ## Non-Goals
 
 - Do not preserve long-term compatibility for existing `pickled_ts/` files.
-- Do not keep dual rebuild modes where some paths use pickle and some use pure
-  rebuild indefinitely.
+- Do not keep dual rebuild modes where some paths use pickle and some paths
+  reconstruct objects from backend build configuration indefinitely.
 - Do not replace file-based pickles with another opaque object snapshot format.
 - Do not broaden the scope to unrelated persistence helpers unless they are
   directly part of DataNode runtime execution.
@@ -115,12 +110,10 @@ Also removed:
 ## Implementation Tasks
 
 - [x] Deprecate pickle-specific public helpers in docs and docstrings.
-- [x] Change `rebuild_and_set_from_update_hash(...)` to rebuild from canonical
-      configuration without first creating a pickle.
-- [x] Replace `load_and_set_from_pickle(...)` call sites with a pure
-      rebuild-and-attach flow.
-- [x] Update `run_operations._execute_sequential_debug_update(...)` to use the
-      pure rebuild path.
+- [x] Remove pickle-backed rebuild from runtime execution.
+- [x] Replace `load_and_set_from_pickle(...)` call sites without preserving a
+      pickle-shaped object reconstruction model.
+- [x] Remove dependency execution paths that load pickled DataNode objects.
 - [x] Simplify `DataNode._set_state_with_sessions(...)` so it no longer
       deserializes pickle markers from object state.
 - [x] Remove `PickleRebuilder` handling for:
@@ -151,25 +144,23 @@ Also removed:
 
 ### Positive
 
-- Runtime rebuild becomes explicit and deterministic.
+- Runtime execution no longer depends on opaque object snapshots.
 - Local filesystem state stops being part of normal DataNode execution.
 - Cross-version pickle compatibility stops being a runtime concern.
 - DataNode execution becomes easier to reason about and test.
-- The runtime aligns more closely with canonical backend build configuration.
+- Dependency execution can be aligned with source-declared graphs, as described
+  in ADR 0019.
 
 ### Negative
 
-- Cold rebuilds may become slower unless an in-memory cache is introduced.
 - Existing local `pickled_ts/` artifacts become obsolete.
 - Any downstream tooling that depends on local pickle files will need migration.
 
 ### Risk
 
-The most sensitive runtime impact is dependency execution:
-
-- `run_operations._execute_sequential_debug_update(...)` currently rebuilds
-  missing dependencies through `rebuild_and_set_from_update_hash(...)`
-- if the pure rebuild path is not equivalent, dependency execution will regress
+The most sensitive runtime impact is dependency execution. ADR 0019 resolves
+that follow-up by deleting generic cold rebuild and requiring dependencies to be
+executed from the source-declared dependency graph.
 
 The second major risk is runtime reattachment:
 
@@ -181,20 +172,20 @@ The second major risk is runtime reattachment:
 
 ## Validation
 
-- [x] Add tests proving `rebuild_and_set_from_update_hash(...)` works without
-      creating local pickle files.
-- [ ] Add tests proving dependency execution rebuilds missing nodes from
-      canonical configuration only.
+- [x] Remove tests proving `rebuild_and_set_from_update_hash(...)` works without
+      creating local pickle files; that API is deleted by ADR 0019.
+- [x] Add tests proving dependency execution does not rebuild missing nodes from
+      canonical configuration.
 - [ ] Add tests proving no data source sidecar pickle is required.
 - [x] Remove tests that assert pickle marker emission and pickle path layout.
-- [ ] Add targeted regression coverage around sequential debug execution and
-      cold dependency rebuilds.
+- [x] Add targeted regression coverage around sequential debug execution and
+      rejection of undeclared backend dependency rows.
 
 ## Migration Notes
 
 The recommended execution order is:
 
-1. replace runtime call sites with pure rebuild;
+1. remove pickle-backed runtime call sites;
 2. simplify runtime attachment/state restoration;
 3. remove marker serialization;
 4. remove file persistence;

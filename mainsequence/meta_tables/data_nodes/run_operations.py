@@ -31,9 +31,6 @@ from mainsequence.client.dtype_codec import (
 # Instrumentation and Logging
 from mainsequence.instrumentation import TracerInstrumentator, tracer
 
-# MetaTable DataNode core components and helpers
-from mainsequence.meta_tables.data_nodes import build_operations
-
 if TYPE_CHECKING:
     from .data_nodes import DataNode
 
@@ -377,7 +374,6 @@ class UpdateRunner:
 
     def _start_update(
         self,
-        reuse_declared_dependency_instances: bool,
         override_update_stats: BaseUpdateStatistics | None = None,
     ) -> tuple[bool, LocalUpdateResult]:
         """Orchestrates a single DataNode update, including pre/post routines."""
@@ -404,7 +400,6 @@ class UpdateRunner:
                 self.logger.debug(f"Update required for {self.ts}.")
                 update_result = self._update_local(
                     historical_update=historical_update,
-                    reuse_declared_dependency_instances=reuse_declared_dependency_instances,
                 )
             else:
                 self.logger.debug(f"Already up-to-date. Skipping update for {self.ts}.")
@@ -509,7 +504,6 @@ class UpdateRunner:
     def _update_local(
         self,
         historical_update: Any,
-        reuse_declared_dependency_instances: bool,
     ) -> LocalUpdateResult:
         """
         Calculates, validates, and persists the node update result.
@@ -519,14 +513,11 @@ class UpdateRunner:
                 ``set_start_of_execution()`` for this run. The node-specific
                 ``_execute_local_update(...)`` implementation is responsible for
                 interpreting any fields on this object.
-            reuse_declared_dependency_instances: When True in debug mode, dependency
-                updates reuse already-instantiated dependency nodes from the current
-                in-memory dependency graph instead of rebuilding them from backend
-                metadata.
+            Dependencies are executed from the source-declared in-memory graph.
         """
         # 1. Handle dependency tree update first
         if self.update_tree:
-            self._verify_tree_is_updated(reuse_declared_dependency_instances)
+            self._verify_tree_is_updated()
             if self.update_only_tree:
                 self.logger.info(
                     f"Dependency tree for {self.ts} updated. Halting run as requested."
@@ -552,10 +543,7 @@ class UpdateRunner:
                 self.ts.update_statistics = us
 
     @tracer.start_as_current_span("UpdateRunner._verify_tree_is_updated")
-    def _verify_tree_is_updated(
-        self,
-        reuse_declared_dependency_instances: bool,
-    ) -> None:
+    def _verify_tree_is_updated(self) -> None:
         """
         Ensures all dependencies in the tree are updated before the head node.
 
@@ -563,10 +551,9 @@ class UpdateRunner:
         then delegates the update execution to either a sequential (debug) or
         parallel (production) helper method.
 
-        Args:
-            reuse_declared_dependency_instances: If True in debug mode, reuse the
-                already-declared in-memory dependency instances instead of rebuilding
-                them from backend metadata.
+        Dependencies are executed from the currently declared DataNode graph.
+        Backend dependency metadata is ordering/state only; it is not used to
+        cold-rebuild executable DataNode instances.
         """
         # 1. Ensure the dependency graph is built in the backend
         declared_dependencies = self.ts.dependencies() or {}
@@ -611,10 +598,8 @@ class UpdateRunner:
             self.logger.debug("No dependencies to update.")
             return
 
-        # 3. Build a map of dependency instances if needed for debug mode
-        update_map = {}
-        if self.debug_mode and reuse_declared_dependency_instances:
-            update_map = self._get_update_map(declared_dependencies, logger=self.logger)
+        # 3. Build the executable dependency map from source declarations.
+        update_map = self._get_update_map(declared_dependencies, logger=self.logger)
 
         # 4. Delegate to the appropriate execution method
         self.logger.debug(f"Starting update for {len(dependencies_df)} dependencies...")
@@ -638,7 +623,7 @@ class UpdateRunner:
         declared_dependencies: dict[str, DataNode],
         logger: object,
         dependecy_map: dict | None = None,
-    ) -> dict[tuple[str, int], dict[str, Any]]:
+    ) -> dict[str, dict[str, Any]]:
         """
         Obtains all DataNode objects in the dependency graph by recursively
         calling the dependencies() method.
@@ -651,7 +636,7 @@ class UpdateRunner:
             dependecy_map: An optional dictionary to store the dependency map, used for recursion.
 
         Returns:
-            A dictionary mapping (update_hash, data_source_uid) to DataNode info.
+            A dictionary mapping update node uid to DataNode info.
         """
         # Initialize the map on the first call
         if dependecy_map is None:
@@ -660,16 +645,16 @@ class UpdateRunner:
         # Get the explicitly declared dependencies, just like set_relation_tree
 
         for name, dependency_ts in declared_dependencies.items():
-            key = (dependency_ts.update_hash, dependency_ts.data_source_uid)
+            if dependency_ts.is_api:
+                continue
+
+            # Ensure the dependency is initialized in the persistence layer.
+            _ = dependency_ts.local_persist_manager
+            key = _require_uid(dependency_ts.data_node_update, "DataNodeUpdate")
 
             # If we have already processed this node, skip it to prevent infinite loops
             if key in dependecy_map:
                 continue
-            if dependency_ts.is_api:
-                continue
-
-            # Ensure the dependency is initialized in the persistence layer
-            _ = dependency_ts.local_persist_manager
 
             logger.debug(f"Adding dependency '{name}' to update map.")
             dependecy_map[key] = {"ts": dependency_ts}
@@ -686,7 +671,7 @@ class UpdateRunner:
     def _execute_sequential_debug_update(
         self,
         dependencies_df: pd.DataFrame,
-        update_map: dict[tuple[str, str], dict],
+        update_map: dict[str, dict],
     ) -> None:
         """Runs dependency updates sequentially in the same process for debugging."""
         self.logger.info("Executing dependency updates in sequential debug mode.")
@@ -707,40 +692,34 @@ class UpdateRunner:
             sorted_deps = priority_df.sort_values("number_of_upstreams", ascending=False)
 
             for _, ts_row in sorted_deps.iterrows():
-                key = (ts_row["update_hash"], ts_row["data_source_uid"])
-                ts_to_update = None
+                update_node_uid = str(ts_row["update_node_uid"])
                 try:
-                    if key in update_map:
-                        ts_to_update = update_map[key]["ts"]
-
-                        # update the update_statistics of the dependencies
-                        refresh_update_statistics_of_deps(ts_to_update)
-
-                    else:
-                        # If not in the map, it must be rebuilt from storage
-                        ts_to_update = build_operations.rebuild_and_set_from_update_hash(
-                            update_hash=key[0], data_source_uid=key[1]
+                    if update_node_uid not in update_map:
+                        raise DependencyUpdateError(
+                            "Backend dependency metadata includes an update node that "
+                            "is not declared by the current DataNode.dependencies() graph: "
+                            f"update_node_uid={update_node_uid!r}."
                         )
 
-                    if ts_to_update:
-                        self.logger.debug(
-                            f"Running debug update for dependency: {ts_to_update.update_hash}"
-                        )
-                        # Each dependency gets its own clean runner
-                        dep_runner = UpdateRunner(
-                            time_serie=ts_to_update,
-                            debug_mode=True,
-                            update_tree=False,  # We only update one node at a time
-                            force_update=self.force_update,
-                            remote_scheduler=self.scheduler,
-                        )
-                        dep_runner._setup_scheduler()
+                    ts_to_update = update_map[update_node_uid]["ts"]
+                    refresh_update_statistics_of_deps(ts_to_update)
 
-                        dep_runner._start_update(
-                            reuse_declared_dependency_instances=False,
-                        )
+                    self.logger.debug(
+                        f"Running debug update for dependency: {ts_to_update.update_hash}"
+                    )
+                    # Each dependency gets its own clean runner.
+                    dep_runner = UpdateRunner(
+                        time_serie=ts_to_update,
+                        debug_mode=True,
+                        update_tree=False,
+                        force_update=self.force_update,
+                        remote_scheduler=self.scheduler,
+                    )
+                    dep_runner._setup_scheduler()
+
+                    dep_runner._start_update()
                 except Exception as e:
-                    self.logger.exception(f"Failed to update dependency {key[0]}")
+                    self.logger.exception(f"Failed to update dependency {update_node_uid}")
                     raise e  # Re-raise to halt the entire process on failure
 
         # refresh update statistics of direct dependencies
@@ -803,7 +782,6 @@ class UpdateRunner:
 
                 # 5. Trigger the core update process
                 error_on_last_update, update_result = self._start_update(
-                    reuse_declared_dependency_instances=True,
                     override_update_stats=self.override_update_stats,
                 )
 

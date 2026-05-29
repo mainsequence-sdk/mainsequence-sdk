@@ -10,8 +10,11 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 import mainsequence.meta_tables.data_nodes.build_operations as build_operations
+from mainsequence.client.models_metatables import TimeIndexMetaData
 from mainsequence.meta_tables import (
+    DataNode,
     DataNodeConfiguration,
+    PlatformTimeIndexMetaData,
     RecordDefinition,
 )
 
@@ -168,6 +171,44 @@ def test_offset_start_changes_update_hash(monkeypatch):
 
     assert update_hash_a != update_hash_b
     assert storage_hash_a != storage_hash_b
+
+
+def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkeypatch):
+    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
+
+    class StorageA(PlatformTimeIndexMetaData):
+        pass
+
+    class StorageB(PlatformTimeIndexMetaData):
+        pass
+
+    class StorageC(PlatformTimeIndexMetaData):
+        pass
+
+    StorageA.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
+    StorageB.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
+    StorageC.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-c"))
+
+    class NodeConfig(BaseModel):
+        dependency_storage: type[PlatformTimeIndexMetaData]
+
+    hashes_a = _hashes(NodeConfig(dependency_storage=StorageA))
+    hashes_b = _hashes(NodeConfig(dependency_storage=StorageB))
+    hashes_c = _hashes(NodeConfig(dependency_storage=StorageC))
+
+    assert hashes_a == hashes_b
+    assert hashes_a != hashes_c
+
+    config = build_operations.create_config(
+        ts_class_name="StorageConfigNode",
+        kwargs={"config": NodeConfig(dependency_storage=StorageA)},
+    )
+    assert (
+        config.local_initial_configuration["config"]["serialized_model"]["dependency_storage"][
+            "uid"
+        ]
+        == "storage-uid-a"
+    )
 
 
 def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrapper(monkeypatch):

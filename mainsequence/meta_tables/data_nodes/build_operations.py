@@ -19,15 +19,11 @@ from pydantic import BaseModel
 from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.client.models_metatables import _resolve_local_pod_project
-from mainsequence.instrumentation import tracer, tracer_instrumentator
 from mainsequence.meta_tables.pydantic_metadata import (
     is_serialized_pydantic_model,
     serialize_pydantic_model,
     strip_pydantic_hash_exclusions,
 )
-
-from .namespacing import disable_hash_namespace
-from .persist_managers import PersistManager
 
 if TYPE_CHECKING:
     from .data_nodes import APIDataNode, DataNode
@@ -67,6 +63,46 @@ def _serialize_api_timeserie(value: APIDataNode) -> dict[str, Any]:
         "is_api_time_serie_instance": True,
         "update_hash": value.update_hash,
         "data_source_uid": str(value.data_source_uid),
+    }
+
+
+def _import_qualified_name(module_name: str, qualname: str) -> Any:
+    module = importlib.import_module(module_name)
+    value: Any = module
+    for part in qualname.split("."):
+        value = getattr(value, part)
+    return value
+
+
+def _is_platform_time_index_metadata_class(value: Any) -> bool:
+    try:
+        from mainsequence.meta_tables.sqlalchemy_contracts import PlatformTimeIndexMetaData
+    except ImportError:
+        return False
+
+    try:
+        return isinstance(value, type) and issubclass(value, PlatformTimeIndexMetaData)
+    except TypeError:
+        return False
+
+
+@serialize_argument.register(type)
+def _(value: type[Any]) -> Any:
+    if not _is_platform_time_index_metadata_class(value):
+        return value
+
+    time_index_metadata = value.get_time_index_metadata()
+    uid = getattr(time_index_metadata, "uid", None)
+    if uid in (None, ""):
+        raise ValueError(
+            "PlatformTimeIndexMetaData config values must be registered or bound "
+            "before they can be hashed."
+        )
+    return {
+        "__type__": "platform_time_index_metadata",
+        "uid": str(uid),
+        "module": value.__module__,
+        "qualname": value.__qualname__,
     }
 
 
@@ -180,6 +216,8 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
                 # The value["items"] are already serialized dicts
 
                 local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
+            elif value.get("__type__") == "platform_time_index_metadata":
+                local_ts_dict_to_hash[key] = value["uid"]
             else:
                 # recursively apply hash signature
                 local_ts_dict_to_hash[key] = parse_dictionary_before_hashing(value)
@@ -327,6 +365,8 @@ class ConfigRebuilder(BaseRebuilder):
         return build_model(value)
 
     def _handle_complex_type(self, value: dict, **kwargs) -> Any:
+        if value.get("__type__") == "platform_time_index_metadata":
+            return _import_qualified_name(value["module"], value["qualname"])
         # Special case for ORM lists within the generic complex type handler
         if value.get("__type__") == "orm_model_list":
             return [build_model(item) for item in value["items"]]
@@ -434,97 +474,3 @@ def create_config(
         remote_initial_configuration=remote_config,
         build_configuration_json_schema=build_configuration_json_schema,
     )
-
-
-def rebuild_and_set_from_update_hash(
-    update_hash: str,
-    data_source_uid: str,
-    set_dependencies_df: bool = False,
-    graph_depth_limit: int = 1,
-) -> DataNode:
-    """
-    Rebuilds a DataNode from stored configuration and attaches runtime sessions.
-
-    Args:
-        update_hash: The local hash ID of the DataNode.
-        data_source_uid: The data source UID.
-        set_dependencies_df: Whether to set the dependencies DataFrame.
-        graph_depth_limit: The depth limit for graph traversal.
-
-    Returns:
-        The rebuilt DataNode object.
-    """
-    ts = rebuild_from_configuration(
-        update_hash=update_hash,
-        data_source=data_source_uid,
-    )
-    if set_dependencies_df:
-        ts.set_relation_tree()
-    ts._set_state_with_sessions(
-        graph_depth=0,
-        graph_depth_limit=graph_depth_limit,
-        include_client_objects=False,
-    )
-    ts.logger.debug(f"ts {update_hash} rebuilt from configuration")
-    return ts
-
-
-@tracer.start_as_current_span("TS: Rebuild From Configuration")
-def rebuild_from_configuration(update_hash: str, data_source: str | object) -> DataNode:
-    """
-    Rebuilds a DataNode instance from its configuration.
-
-    Args:
-        update_hash: The local hash ID of the DataNode.
-        data_source: The data source UID or object.
-
-    Returns:
-        The rebuilt DataNode instance.
-    """
-    import importlib
-
-    tracer_instrumentator.append_attribute_to_current_span("update_hash", update_hash)
-
-    data_source_uid = getattr(data_source, "uid", data_source)
-    data_node_update = PersistManager.UPDATE_CLASS.get_or_none(
-        update_hash=update_hash,
-        remote_table__data_source__uid=str(data_source_uid),
-        include_relations_detail=True,
-    )
-    if data_node_update is None:
-        raise ValueError(
-            f"DataNodeUpdate {update_hash!r} with data source {data_source_uid!r} was not found."
-        )
-    storage_table = data_node_update.data_node_storage
-    persist_manager = PersistManager.get_from_storage_table(
-        update_hash=update_hash,
-        storage_table=storage_table,
-        data_node_update=data_node_update,
-    )
-    try:
-        time_serie_config = persist_manager.local_build_configuration
-    except Exception as e:
-        raise e
-
-    try:
-        mod = importlib.import_module(time_serie_config["time_series_class_import_path"]["module"])
-        TimeSerieClass = getattr(
-            mod, time_serie_config["time_series_class_import_path"]["qualname"]
-        )
-    except Exception as e:
-        raise e
-
-    time_serie_class_name = time_serie_config["time_series_class_import_path"]["qualname"]
-
-    time_serie_config.pop("time_series_class_import_path")
-    time_serie_config = DeserializerManager().rebuild_serialized_config(
-        time_serie_config, time_serie_class_name=time_serie_class_name
-    )
-
-    # IMPORTANT:
-    # When rebuilding from stored config, ignore any ambient test namespace.
-    # If the stored config includes 'hash_namespace' (test tables), it will still be passed explicitly.
-    with disable_hash_namespace():
-        re_build_ts = TimeSerieClass(**time_serie_config)
-
-    return re_build_ts

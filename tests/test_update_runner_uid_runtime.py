@@ -16,6 +16,9 @@ class _Logger:
     def info(self, *_args, **_kwargs):
         return None
 
+    def exception(self, *_args, **_kwargs):
+        return None
+
 
 class _PersistManager:
     def __init__(self, data_node_update):
@@ -29,6 +32,9 @@ class _PersistManager:
 
     def set_data_node_update_lazy(self, include_relations_detail=False):
         self.include_relations_detail = include_relations_detail
+
+    def get_update_statistics_for_table(self):
+        return {"updated": self.data_node_update.uid}
 
 
 class _Scheduler:
@@ -172,9 +178,13 @@ def test_update_runner_verify_tree_uses_dependency_uids(monkeypatch):
         depth_df=depth_df,
         dependencies_df=depth_df.copy(),
     )
-    ts.dependencies = lambda: {
-        "dependency": SimpleNamespace(is_api=False, data_node_update=dependency_update)
-    }
+    dependency = SimpleNamespace(
+        is_api=False,
+        data_node_update=dependency_update,
+        local_persist_manager=_PersistManager(dependency_update),
+        dependencies=lambda: {},
+    )
+    ts.dependencies = lambda: {"dependency": dependency}
     runner = run_operations.UpdateRunner(ts, debug_mode=True)
     executed = {}
     monkeypatch.setattr(
@@ -188,10 +198,81 @@ def test_update_runner_verify_tree_uses_dependency_uids(monkeypatch):
         ),
     )
 
-    runner._verify_tree_is_updated(reuse_declared_dependency_instances=False)
+    runner._verify_tree_is_updated()
 
     assert patch_calls == []
     assert executed["update_node_uids"] == ["dep-uid"]
+    assert list(executed["update_map"]) == ["dep-uid"]
+
+
+def test_sequential_debug_update_uses_update_node_uid_without_data_source_uid(monkeypatch):
+    dependency_update = _update("dep-uid")
+    dependency = SimpleNamespace(
+        is_api=False,
+        data_node_update=dependency_update,
+        update_hash="dep-hash",
+        local_persist_manager=_PersistManager(dependency_update),
+        dependencies=lambda: {},
+        logger=_Logger(),
+    )
+    dependencies_df = pd.DataFrame(
+        [
+            {
+                "update_node_uid": "dep-uid",
+                "update_hash": "dep-hash",
+                "update_priority": 0,
+                "number_of_upstreams": 0,
+            }
+        ]
+    )
+    ts = _time_series()
+    ts.dependencies = lambda: {"dependency": dependency}
+    runner = run_operations.UpdateRunner(ts, debug_mode=True)
+    runner.scheduler = _Scheduler()
+    started = []
+
+    monkeypatch.setattr(
+        run_operations.UpdateRunner,
+        "_setup_scheduler",
+        lambda self: started.append(("scheduler", self.ts.data_node_update.uid)),
+    )
+    monkeypatch.setattr(
+        run_operations.UpdateRunner,
+        "_start_update",
+        lambda self, **_kwargs: started.append(("update", self.ts.data_node_update.uid)),
+    )
+
+    runner._execute_sequential_debug_update(
+        dependencies_df=dependencies_df,
+        update_map={"dep-uid": {"ts": dependency}},
+    )
+
+    assert started == [("scheduler", "dep-uid"), ("update", "dep-uid")]
+
+
+def test_sequential_debug_update_rejects_backend_dependency_not_declared():
+    dependencies_df = pd.DataFrame(
+        [
+            {
+                "update_node_uid": "stale-dep-uid",
+                "update_hash": "stale-dep-hash",
+                "update_priority": 0,
+                "number_of_upstreams": 0,
+            }
+        ]
+    )
+    runner = run_operations.UpdateRunner(_time_series(), debug_mode=True)
+
+    try:
+        runner._execute_sequential_debug_update(
+            dependencies_df=dependencies_df,
+            update_map={},
+        )
+    except run_operations.DependencyUpdateError as exc:
+        assert "not declared by the current DataNode.dependencies() graph" in str(exc)
+        assert "stale-dep-uid" in str(exc)
+    else:
+        raise AssertionError("Expected DependencyUpdateError")
 
 
 def test_data_node_update_dependency_priority_normalizes_uid_columns(monkeypatch):

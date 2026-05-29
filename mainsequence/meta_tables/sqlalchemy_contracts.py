@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
 from mainsequence.client.dtype_codec import (
@@ -20,6 +20,9 @@ from mainsequence.client.models_metatables import (
 )
 
 from .hashing import build_meta_table_configured_storage_hash, build_meta_table_storage_hash
+
+if TYPE_CHECKING:
+    from mainsequence.client.models_metatables import TimeIndexMetaData
 
 DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "create_table": True,
@@ -351,19 +354,19 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     ordinary non-null table columns.
     """
 
-    __time_index_metadata__: ClassVar[Any | None] = None
+    __time_index_metadata__: ClassVar[TimeIndexMetaData | None] = None
 
     if _sqlalchemy_declared_attr is not None:
         __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
     @classmethod
-    def bind_meta_table(cls, meta_table: Any) -> Any:
+    def bind_meta_table(cls, meta_table: TimeIndexMetaData) -> TimeIndexMetaData:
         bound = super().bind_meta_table(meta_table)
         cls.__time_index_metadata__ = bound
         return bound
 
     @classmethod
-    def get_time_index_metadata(cls) -> Any | None:
+    def get_time_index_metadata(cls) -> TimeIndexMetaData | None:
         return getattr(cls, "__time_index_metadata__", None)
 
     @classmethod

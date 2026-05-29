@@ -486,58 +486,6 @@ def test_build_operations_api_node_reference_serialization_uses_data_source_uid(
     assert "is_api_time_serie_pickled" not in payload
 
 
-def test_build_operations_rebuilds_from_configuration_without_pickle(monkeypatch):
-    calls = []
-
-    class FakeLogger:
-        def debug(self, message):
-            calls.append(("debug", message))
-
-    class FakeDataNode:
-        logger = FakeLogger()
-
-        def set_relation_tree(self):
-            calls.append(("set_relation_tree",))
-
-        def _set_state_with_sessions(
-            self,
-            *,
-            graph_depth,
-            graph_depth_limit,
-            include_client_objects,
-        ):
-            calls.append(
-                (
-                    "set_state_with_sessions",
-                    graph_depth,
-                    graph_depth_limit,
-                    include_client_objects,
-                )
-            )
-
-    fake_ts = FakeDataNode()
-
-    def fake_rebuild_from_configuration(update_hash, data_source):
-        calls.append(("rebuild_from_configuration", update_hash, data_source))
-        return fake_ts
-
-    monkeypatch.setattr(
-        build_operations,
-        "rebuild_from_configuration",
-        fake_rebuild_from_configuration,
-    )
-
-    result = build_operations.rebuild_and_set_from_update_hash(
-        update_hash="update-hash-1",
-        data_source_uid=DATA_SOURCE_UID,
-        set_dependencies_df=True,
-        graph_depth_limit=3,
-    )
-
-    assert result is fake_ts
-    assert calls == [
-        ("rebuild_from_configuration", "update-hash-1", DATA_SOURCE_UID),
-        ("set_relation_tree",),
-        ("set_state_with_sessions", 0, 3, False),
-        ("debug", "ts update-hash-1 rebuilt from configuration"),
-    ]
+def test_build_operations_does_not_expose_data_node_cold_rebuild_helpers():
+    assert not hasattr(build_operations, "rebuild_from_configuration")
+    assert not hasattr(build_operations, "rebuild_and_set_from_update_hash")

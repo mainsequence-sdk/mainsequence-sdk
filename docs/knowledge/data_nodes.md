@@ -125,6 +125,18 @@ class MyNode(DataNode):
 constructor args being reflected back into hashed configuration automatically,
 and they should not expect `DataNode` to create storage.
 
+The output storage table itself is not config. It remains the explicit
+`storage_table: type[PlatformTimeIndexMetaData]` constructor argument. If a node
+needs to select another DataNode's storage model as a dependency, that
+dependency storage reference is update-scope config because changing it changes
+the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
+
+When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
+hashes it by the bound `TimeIndexMetaData.uid` available through
+`StorageClass.__time_index_metadata__`. Register or bind the class before
+constructing the DataNode. Do not pass dependency storage classes as extra
+constructor arguments.
+
 ### 4.1 Storage meaning belongs to the storage table
 
 These define the dataset contract and table identity and should be represented
@@ -358,11 +370,13 @@ Do:
 
 - instantiate dependency nodes in `__init__`
 - return them in `dependencies()`
+- put dependency storage-table selection in `DataNodeConfiguration`
 - keep dependency graph deterministic
 
 Do not:
 
 - create dependencies inside `update()`
+- pass dependency storage tables as ad hoc constructor arguments
 - make dependency construction depend on current time or hidden env state
 
 ## 9) Records, foreign keys, and metadata

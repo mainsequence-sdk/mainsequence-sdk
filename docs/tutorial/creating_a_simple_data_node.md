@@ -210,6 +210,13 @@ Use `hash_excluded` only for descriptive metadata. If changing the field would
 change output values, dependencies, or schema, it must remain a normal
 configuration field.
 
+If a DataNode depends on another DataNode and needs to select that dependency's
+storage model, put that dependency storage reference in the config, not as an
+extra constructor argument. A config field typed as
+`type[PlatformTimeIndexMetaData]` is hashed by the registered or bound
+`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. Register or
+bind that storage class before constructing the DataNode.
+
 ### DataNode Recipe
 
 Every `DataNode` follows the same basic recipe:
@@ -595,6 +602,7 @@ Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the
 class DailyRandomAdditionConfig(DataNodeConfiguration):
     mean: float
     std: float
+    daily_random_number_storage_table: type[PlatformTimeIndexMetaData]
 
 
 class DailyRandomAddition(DataNode):
@@ -602,7 +610,6 @@ class DailyRandomAddition(DataNode):
         self,
         config: DailyRandomAdditionConfig,
         storage_table: type[PlatformTimeIndexMetaData],
-        daily_random_number_storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
     ):
@@ -610,7 +617,7 @@ class DailyRandomAddition(DataNode):
         self.std = config.std
         self.daily_random_number_data_node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
-            storage_table=daily_random_number_storage_table,
+            storage_table=config.daily_random_number_storage_table,
             hash_namespace=hash_namespace,
         )
         super().__init__(
@@ -644,7 +651,11 @@ class DailyRandomAddition(DataNode):
         )
 ```
 
-This adds a **dependent** node, `DailyRandomAddition`, that reads the output of `DailyRandomNumber` and uses it in its own update logic.
+This adds a **dependent** node, `DailyRandomAddition`, that reads the output of
+`DailyRandomNumber` and uses it in its own update logic. The dependency storage
+table is part of `DailyRandomAdditionConfig` because changing it changes the
+dependency graph and therefore the update identity. The constructor keeps only
+the output `storage_table` argument.
 
 Create a launcher at `scripts\random_daily_addition_launcher.py`:
 
@@ -668,9 +679,12 @@ DailyRandomAdditionStorage.register(
 
 
 daily_node = DailyRandomAddition(
-    config=DailyRandomAdditionConfig(mean=0.0, std=1.0),
+    config=DailyRandomAdditionConfig(
+        mean=0.0,
+        std=1.0,
+        daily_random_number_storage_table=DailyRandomNumberStorage,
+    ),
     storage_table=DailyRandomAdditionStorage,
-    daily_random_number_storage_table=DailyRandomNumberStorage,
 )
 daily_node.run(debug_mode=True, force_update=True)
 ```

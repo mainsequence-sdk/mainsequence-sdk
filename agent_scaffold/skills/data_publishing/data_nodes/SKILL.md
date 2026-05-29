@@ -161,6 +161,16 @@ The DataNode constructor should accept:
 - a registered `storage_table: type[PlatformTimeIndexMetaData]`
 - optional `hash_namespace`
 
+The constructor `storage_table` is the output storage contract. Keep it out of
+`DataNodeConfiguration`.
+
+If the DataNode needs to select another DataNode's storage table as a
+dependency, put that dependency storage reference in the config as
+`type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
+dependency storage tables. Config values of this type are hashed by the bound
+`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`, so the class
+must be registered or bound before DataNode construction.
+
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.
 
@@ -287,6 +297,9 @@ Time index must be datetime64[ns, UTC]
 
 Dependencies belong in constructor setup and `dependencies()`.
 
+Dependency storage-table selection belongs in `DataNodeConfiguration`, because
+changing it changes the dependency graph and update identity.
+
 Do not construct dependency graphs dynamically inside `update()`.
 
 ### 8. Asset-Scoped Updates Must Be Explicit
@@ -318,7 +331,8 @@ surface for new DataNode work.
 
 When reviewing an existing DataNode, look for:
 
-- storage contract hidden in `DataNodeConfiguration`
+- output storage contract hidden in `DataNodeConfiguration`
+- dependency storage table passed as an ad hoc constructor argument
 - old `RecordDefinition` or `DataNodeMetaData` schema patterns
 - `update_only`, `runtime_only`, or `ignore_from_storage_hash`
 - `test_node=True`
@@ -339,6 +353,7 @@ Do not claim success until you have checked:
 - the relevant docs were read first
 - storage is a registered or bound `PlatformTimeIndexMetaData` class
 - the DataNode constructor requires `storage_table`
+- dependency storage-table references live in config and are registered or bound
 - config fields are updater-scoped by default
 - no removed hash metadata markers remain
 - no `test_node` usage remains
