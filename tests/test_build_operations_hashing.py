@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
-import mainsequence.tdag.data_nodes.build_operations as build_operations
+import mainsequence.meta_tables.data_nodes.build_operations as build_operations
 from mainsequence.client.models_metatables import MetaTable
-from mainsequence.tdag import (
+from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
     RecordDefinition,

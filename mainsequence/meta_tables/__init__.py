@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from importlib import import_module
 
+from mainsequence.instrumentation import TracerInstrumentator
+
 _LAZY_IMPORTS = {
+    "TIME_SERIES_SOURCE_TIMESCALE": (".config", "TIME_SERIES_SOURCE_TIMESCALE"),
+    "RunningMode": (".config", "RunningMode"),
+    "configuration": (".config", "configuration"),
+    "ogm": (".config", "ogm"),
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING": (
         ".sqlalchemy_contracts",
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
@@ -10,6 +16,13 @@ _LAZY_IMPORTS = {
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
+    "BaseConfiguration": (".data_nodes", "BaseConfiguration"),
+    "APIDataNode": (".data_nodes", "APIDataNode"),
+    "DataNode": (".data_nodes", "DataNode"),
+    "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
+    "DataNodeMetaData": (".data_nodes", "DataNodeMetaData"),
+    "RecordDefinition": (".data_nodes", "RecordDefinition"),
+    "SourceTableForeignKey": (".data_nodes", "SourceTableForeignKey"),
     "build_compiled_sql_v1_operation": (
         ".compiled_sql",
         "build_compiled_sql_v1_operation",
@@ -52,10 +65,12 @@ _LAZY_IMPORTS = {
     ),
 }
 
-__all__ = list(_LAZY_IMPORTS.keys())
+__all__ = ["TracerInstrumentator", *_LAZY_IMPORTS.keys()]
 
 
 def __getattr__(name: str):
+    if name == "TracerInstrumentator":
+        return TracerInstrumentator
     if name in _LAZY_IMPORTS:
         module_name, attr_name = _LAZY_IMPORTS[name]
         module = import_module(module_name, __name__)

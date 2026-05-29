@@ -7,7 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.models_metatables as meta_table_models
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     build_compiled_sql_v1_operation,
     compile_sqlalchemy_statement,
 )

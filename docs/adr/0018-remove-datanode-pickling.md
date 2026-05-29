@@ -20,11 +20,11 @@ rebuild.
 The active mechanism spans several layers:
 
 - `DataNode.persist_to_pickle()` in
-  `mainsequence/tdag/data_nodes/data_nodes.py`
+  `mainsequence/meta_tables/data_nodes/data_nodes.py`
 - object-state serialization via `DataNode.__getstate__()` and
   `_prepare_state_for_pickle(...)`
 - marker emission from
-  `mainsequence/tdag/data_nodes/build_operations.py`:
+  `mainsequence/meta_tables/data_nodes/build_operations.py`:
   - `is_time_serie_pickled`
   - `is_api_time_serie_pickled`
 - file loading through:
@@ -38,7 +38,7 @@ The active mechanism spans several layers:
 - sidecar persistence of the data source to:
   - `pickled_ts/<data_source_uid>/data_source.pickle`
 
-There is also a filesystem contract in `mainsequence/tdag/config.py`:
+There is also a filesystem contract in `mainsequence/meta_tables/config.py`:
 
 - `ogm.pickle_storage_path`
 - default node pickles:
@@ -102,10 +102,10 @@ The runtime will no longer:
 
 In scope:
 
-- `mainsequence/tdag/data_nodes/data_nodes.py`
-- `mainsequence/tdag/data_nodes/build_operations.py`
-- `mainsequence/tdag/data_nodes/run_operations.py`
-- `mainsequence/tdag/config.py` pickle path contract
+- `mainsequence/meta_tables/data_nodes/data_nodes.py`
+- `mainsequence/meta_tables/data_nodes/build_operations.py`
+- `mainsequence/meta_tables/data_nodes/run_operations.py`
+- `mainsequence/meta_tables/config.py` pickle path contract
 
 Also removed:
 

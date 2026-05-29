@@ -121,7 +121,7 @@ import datetime
 from sqlalchemy import DateTime, Float, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
 
 
 class Base(DeclarativeBase):
@@ -168,8 +168,8 @@ Do not accept `test_node`. It has been removed. Use explicit
 Pattern:
 
 ```python
-from mainsequence.tdag import DataNode, DataNodeConfiguration
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import DataNode, DataNodeConfiguration
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
 
 
 class PricesConfig(DataNodeConfiguration):

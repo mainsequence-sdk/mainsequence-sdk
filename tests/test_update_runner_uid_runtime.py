@@ -6,7 +6,7 @@ from uuid import uuid4
 import pandas as pd
 
 from mainsequence.client import models_tdag
-from mainsequence.tdag.data_nodes import run_operations
+from mainsequence.meta_tables.data_nodes import run_operations
 
 
 class _Logger:

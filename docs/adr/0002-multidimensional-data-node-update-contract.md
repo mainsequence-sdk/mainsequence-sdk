@@ -60,8 +60,8 @@ The source of truth for this client work is the server documentation:
 The relevant client-side model surface is concentrated in:
 
 - `mainsequence/client/models_tdag.py`
-- `mainsequence/tdag/data_nodes/`
-- `mainsequence/tdag/data_nodes/persist_managers.py`
+- `mainsequence/meta_tables/data_nodes/`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py`
 - `mainsequence/client/data_sources_interfaces/`
 
 The update flow today is:
@@ -693,8 +693,8 @@ Current search found concentrated legacy terminology in this file, including
 
 Affected files:
 
-- `mainsequence/tdag/data_nodes/data_nodes.py`
-- `mainsequence/tdag/data_nodes/persist_managers.py`
+- `mainsequence/meta_tables/data_nodes/data_nodes.py`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py`
 
 The `DataAccessMixin.get_df_between_dates()` API is user-facing and currently
 documents and forwards `unique_identifier_list` and `unique_identifier_range_map`.
@@ -873,8 +873,8 @@ runtime callers are migrated around backend-bound API payloads.
 
 ### Phase 6: Downstream Runtime Audit
 
-- [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
-- [x] Audit and migrate `mainsequence/tdag/data_nodes/persist_managers.py`.
+- [x] Audit and migrate `mainsequence/meta_tables/data_nodes/`.
+- [x] Audit and migrate `mainsequence/meta_tables/data_nodes/persist_managers.py`.
 - [x] Audit downstream callers for the shared chunk stats helper dependency.
 - [x] Replace direct reads of `asset_time_statistics` with canonical helper calls
    or clearly marked `LEGACY_COMPAT` projections.

@@ -1,4 +1,4 @@
-# mainsequence/tdag/data_nodes/namespacing.py
+# mainsequence/meta_tables/data_nodes/namespacing.py
 from __future__ import annotations
 
 from contextlib import contextmanager
@@ -7,12 +7,15 @@ from contextvars import ContextVar
 # IMPORTANT:
 # - no env var here (tests-only, explicit usage)
 # - default is empty => production behavior unchanged
-_TDAG_HASH_NAMESPACE: ContextVar[str] = ContextVar("TDAG_HASH_NAMESPACE", default="")
+_META_TABLES_HASH_NAMESPACE: ContextVar[str] = ContextVar(
+    "META_TABLES_HASH_NAMESPACE",
+    default="",
+)
 
 
 def current_hash_namespace() -> str:
     """Returns the current namespace for hashing (empty string means 'no namespace')."""
-    return _TDAG_HASH_NAMESPACE.get() or ""
+    return _META_TABLES_HASH_NAMESPACE.get() or ""
 
 
 @contextmanager
@@ -26,11 +29,11 @@ def hash_namespace(namespace: str):
             ts.run(...)
     """
     ns = (namespace or "").strip()
-    token = _TDAG_HASH_NAMESPACE.set(ns)
+    token = _META_TABLES_HASH_NAMESPACE.set(ns)
     try:
         yield
     finally:
-        _TDAG_HASH_NAMESPACE.reset(token)
+        _META_TABLES_HASH_NAMESPACE.reset(token)
 
 
 @contextmanager
@@ -42,8 +45,8 @@ def disable_hash_namespace():
     does NOT accidentally change hashes for legacy/prod nodes that were stored without
     'hash_namespace' in their config.
     """
-    token = _TDAG_HASH_NAMESPACE.set("")
+    token = _META_TABLES_HASH_NAMESPACE.set("")
     try:
         yield
     finally:
-        _TDAG_HASH_NAMESPACE.reset(token)
+        _META_TABLES_HASH_NAMESPACE.reset(token)

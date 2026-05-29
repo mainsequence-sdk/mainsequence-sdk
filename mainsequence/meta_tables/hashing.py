@@ -6,7 +6,7 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
-from mainsequence.tdag.pydantic_metadata import strip_pydantic_hash_exclusions
+from mainsequence.meta_tables.pydantic_metadata import strip_pydantic_hash_exclusions
 
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 _HASH_SUFFIX_LENGTH = 33
@@ -34,7 +34,7 @@ def build_meta_table_storage_hash(
     Build a PostgreSQL-safe MetaTable storage hash using the DataNode hash path.
 
     The table name prefix keeps the identifier readable while the hash suffix is
-    produced by ``mainsequence.tdag.data_nodes.build_operations.create_config``.
+    produced by ``mainsequence.meta_tables.data_nodes.build_operations.create_config``.
     """
 
     if max_length <= _HASH_SUFFIX_LENGTH:
@@ -70,8 +70,7 @@ def build_meta_table_storage_hash(
     )
     if len(storage_hash) > max_length:
         raise ValueError(
-            f"Generated MetaTable storage hash exceeds {max_length} characters: "
-            f"{storage_hash!r}."
+            f"Generated MetaTable storage hash exceeds {max_length} characters: {storage_hash!r}."
         )
     return storage_hash
 
@@ -123,8 +122,7 @@ def build_meta_table_configured_storage_hash(
     )
     if len(storage_hash) > max_length:
         raise ValueError(
-            f"Generated MetaTable storage hash exceeds {max_length} characters: "
-            f"{storage_hash!r}."
+            f"Generated MetaTable storage hash exceeds {max_length} characters: {storage_hash!r}."
         )
     return storage_hash
 
@@ -135,7 +133,7 @@ def _build_storage_hash_with_data_node_machinery(
     hash_payload: Mapping[str, Any],
 ) -> str:
     try:
-        from mainsequence.tdag.data_nodes.build_operations import create_config
+        from mainsequence.meta_tables.data_nodes.build_operations import create_config
     except (AssertionError, ImportError):
         return _build_storage_hash_without_tdag_config(prefix=prefix, hash_payload=hash_payload)
 

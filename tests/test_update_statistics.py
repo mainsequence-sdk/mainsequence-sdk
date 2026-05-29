@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client.models_tdag import UpdateStatistics
-from mainsequence.tdag.data_nodes.data_nodes import DataNode
+from mainsequence.meta_tables.data_nodes.data_nodes import DataNode
 
 
 def _dt(hour: int) -> datetime.datetime:

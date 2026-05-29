@@ -8,8 +8,8 @@ import pytest
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh")
 
-from mainsequence.tdag.data_nodes import data_nodes
-from mainsequence.tdag.data_nodes.models import DataNodeConfiguration
+from mainsequence.meta_tables.data_nodes import data_nodes
+from mainsequence.meta_tables.data_nodes.models import DataNodeConfiguration
 
 
 def _clear_command_center_env(monkeypatch):
@@ -248,7 +248,7 @@ def test_core_tdag_public_api_has_no_domain_asset_compatibility_vocabulary():
         "unique_identifier_range_map",
         "filter_by_assets_ranges",
     )
-    paths = list((PROJECT_ROOT / "mainsequence" / "tdag").rglob("*.py"))
+    paths = list((PROJECT_ROOT / "mainsequence" / "meta_tables").rglob("*.py"))
     paths.append(PROJECT_ROOT / "mainsequence" / "client" / "models_tdag.py")
 
     violations = []

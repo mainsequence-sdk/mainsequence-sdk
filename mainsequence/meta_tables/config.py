@@ -9,17 +9,20 @@ DEFAULT_RETENTION_POLICY = dict(scheduler_name="default", retention_policy_time=
 TIME_SERIES_SOURCE_TIMESCALE = "timescale"
 TIME_SERIES_SOURCE_PARQUET = "parquet"
 
-TDAG_PATH = os.environ.get("TDAG_ROOT_PATH", f"{str(Path.home())}/tdag")
-TDAG_CONFIG_PATH = os.environ.get("TDAG_CONFIG_PATH", f"{TDAG_PATH}/config.yml")
+META_TABLES_PATH = os.environ.get("META_TABLES_ROOT_PATH", f"{str(Path.home())}/meta_tables")
+META_TABLES_CONFIG_PATH = os.environ.get(
+    "META_TABLES_CONFIG_PATH",
+    f"{META_TABLES_PATH}/config.yml",
+)
 
-TDAG_DATA_PATH = f"{TDAG_PATH}/data"
-GT_TEMP_PATH = f"{TDAG_PATH}/temp"
-GT_RAY_FOLDER = f"{TDAG_PATH}/ray"
+META_TABLES_DATA_PATH = f"{META_TABLES_PATH}/data"
+META_TABLES_TEMP_PATH = f"{META_TABLES_PATH}/temp"
+META_TABLES_RAY_FOLDER = f"{META_TABLES_PATH}/ray"
 
-TIME_SERIES_FOLDER = f"{TDAG_DATA_PATH}/time_series_data"
+TIME_SERIES_FOLDER = f"{META_TABLES_DATA_PATH}/time_series_data"
 os.makedirs(TIME_SERIES_FOLDER, exist_ok=True)
-Path(GT_TEMP_PATH).mkdir(parents=True, exist_ok=True)
-Path(GT_RAY_FOLDER).mkdir(parents=True, exist_ok=True)
+Path(META_TABLES_TEMP_PATH).mkdir(parents=True, exist_ok=True)
+Path(META_TABLES_RAY_FOLDER).mkdir(parents=True, exist_ok=True)
 
 dir_path = os.path.dirname(os.path.realpath(__file__))
 
@@ -56,20 +59,19 @@ class Configuration:
         cls.OBLIGATORY_ENV_VARIABLES.extend(env_vars)
 
     def set_gt_configuration(self):
-        if not os.path.isfile(TDAG_CONFIG_PATH):
+        if not os.path.isfile(META_TABLES_CONFIG_PATH):
             self._build_template_yaml()
 
-        self.configuration = read_yaml(TDAG_CONFIG_PATH)
+        self.configuration = read_yaml(META_TABLES_CONFIG_PATH)
 
     def _assert_env_variables(self):
-        do_not_check = os.environ.get("DO_NOT_CHECK_TDAG", "false").lower() == "true"
+        do_not_check = os.environ.get("DO_NOT_CHECK_META_TABLES", "false").lower() == "true"
         if do_not_check:
             return None
         for ob_var in self.OBLIGATORY_ENV_VARIABLES:
             assert ob_var in os.environ, f"{ob_var} not in environment variables"
-        assert (
-            os.environ.get("MAINSEQUENCE_ACCESS_TOKEN")
-            or os.environ.get("MAINSEQUENCE_REFRESH_TOKEN")
+        assert os.environ.get("MAINSEQUENCE_ACCESS_TOKEN") or os.environ.get(
+            "MAINSEQUENCE_REFRESH_TOKEN"
         ), (
             "Authentication env is missing. Set MAINSEQUENCE_ACCESS_TOKEN / "
             "MAINSEQUENCE_REFRESH_TOKEN."
@@ -85,7 +87,7 @@ class Configuration:
                 "export_trace_to_console": False,
             },
         }
-        write_yaml(path=TDAG_CONFIG_PATH, dict_file=config)
+        write_yaml(path=META_TABLES_CONFIG_PATH, dict_file=config)
 
 
 configuration = Configuration()
@@ -97,7 +99,7 @@ class TimeSeriesOGM:
 
     @property
     def time_series_config(self):
-        ts_config = read_key_from_yaml("time_series_config", path=TDAG_CONFIG_PATH)
+        ts_config = read_key_from_yaml("time_series_config", path=META_TABLES_CONFIG_PATH)
         ts_config["LOCAL_DATA_PATH"] = TIME_SERIES_FOLDER
         return ts_config
 

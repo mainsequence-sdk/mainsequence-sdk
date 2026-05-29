@@ -69,7 +69,7 @@ import uuid
 from sqlalchemy import Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.tdag.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 
 
 NAMESPACE = "sdk-examples"
@@ -194,7 +194,7 @@ Example insert:
 import uuid
 
 from mainsequence.client import MetaTable
-from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables import build_compiled_sql_v1_operation
 
 
 def qualified_name(meta_table: MetaTable) -> str:

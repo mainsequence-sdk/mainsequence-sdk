@@ -74,8 +74,8 @@ from fastapi import FastAPI, Query, Request
 
 from mainsequence.client import MetaTable
 from mainsequence.client.fastapi import LoggedUserContextMiddleware
-from mainsequence.tdag import APIDataNode
-from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables import APIDataNode
+from mainsequence.meta_tables import build_compiled_sql_v1_operation
 
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"

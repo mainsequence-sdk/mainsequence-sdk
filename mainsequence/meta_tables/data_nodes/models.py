@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class BaseConfiguration(BaseModel):
     """
-    Shared runtime configuration fields for TDAG-backed DataNode objects.
+    Shared runtime configuration fields for MetaTable-backed DataNode objects.
 
     Subclasses can add hashed build fields.
     """
@@ -314,6 +314,7 @@ class DataNodeConfiguration(BaseConfiguration):
     ``json_schema_extra={"hash_excluded": True}`` only when it must not affect
     update identity.
     """
+
     offset_start: datetime.datetime | None = Field(
         default=None,
         description=(

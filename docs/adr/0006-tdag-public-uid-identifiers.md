@@ -109,7 +109,7 @@ Those paths need explicit UID migration, not a mechanical rename.
 
 ### Current id-dependent update path
 
-`mainsequence/tdag/data_nodes/run_operations.py` still uses ids throughout the
+`mainsequence/meta_tables/data_nodes/run_operations.py` still uses ids throughout the
 main update lifecycle:
 
 - `_setup_scheduler()` builds the scheduler name from
@@ -130,13 +130,13 @@ main update lifecycle:
 - `_verify_tree_is_updated()` compares those ids against
   `dependencies_df["update_node_id"]`.
 
-`mainsequence/tdag/data_nodes/data_nodes.py` also treats
+`mainsequence/meta_tables/data_nodes/data_nodes.py` also treats
 `update_node_id`/`.id` as the dependency dataframe key:
 
 - `set_dependencies_df()` filters the head node with
   `depth_df["update_node_id"] != self.data_node_update.id`.
 
-`mainsequence/tdag/data_nodes/persist_managers.py` still connects dependencies with
+`mainsequence/meta_tables/data_nodes/persist_managers.py` still connects dependencies with
 id-named arguments:
 
 - `depends_on_connect(target_time_serie_id=new_ts.data_node_update.id)`

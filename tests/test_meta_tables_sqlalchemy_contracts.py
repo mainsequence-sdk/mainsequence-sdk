@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 import pytest
 
-import mainsequence.tdag.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
+import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.models_metatables import MetaTableRegistrationRequest
-from mainsequence.client.models_tdag import DynamicTableRegistrationRequest
-from mainsequence.tdag.meta_tables import (
+from mainsequence.client.models_tdag import TimeIndexMetaTableRegistrationRequest
+from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
@@ -617,14 +617,18 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
         description="Account holdings data node storage",
     )
 
-    assert isinstance(request, DynamicTableRegistrationRequest)
+    assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
     assert request.storage_hash == table.name
     assert request.identifier == "AccountHoldings"
     assert request.namespace == "example.assets"
     assert request.description == "Account holdings data node storage"
     assert request.time_index_name == "time_index"
-    assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
-    assert [column.name for column in request.columns] == [
+    assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+    assert [column["name"] for column in request.table_contract["columns"]] == [
         "time_index",
         "account_uid",
         "unique_identifier",
@@ -632,7 +636,11 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
     ]
 
     payload = request.model_dump(mode="json", exclude_none=True)
-    assert "table_contract" not in payload
+    assert "table_contract" in payload
+    assert "columns" not in payload
+    assert "index_names" not in payload
+    assert "foreign_keys" not in payload
+    assert "storage_layout" not in payload
     assert "management_mode" not in payload
     assert "physical_table_name" not in payload
     assert "identity_dimensions" not in payload
@@ -786,7 +794,10 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     assert captured["url"].endswith("/ts_manager/dynamic_table/register/")
     assert captured["timeout"] == 15
     assert captured["payload"]["json"]["time_index_name"] == "time_index"
-    assert captured["payload"]["json"]["index_names"] == [
+    assert "index_names" not in captured["payload"]["json"]
+    assert captured["payload"]["json"]["table_contract"]["authoring"]["time_indexed"][
+        "index_names"
+    ] == [
         "time_index",
         "account_uid",
         "unique_identifier",
@@ -910,13 +921,22 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
 
     assert request.storage_hash == AccountHoldings.__table__.name
     assert request.time_index_name == "time_index"
-    assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
-    assert [column.primary_key for column in request.columns] == [False, False, False]
-    assert len(request.foreign_keys) == 1
-    assert request.foreign_keys[0].source_columns == ["account_uid"]
-    assert request.foreign_keys[0].target_meta_table_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    assert request.foreign_keys[0].target_columns == ["uid"]
-    assert request.foreign_keys[0].on_delete == "restrict"
+    assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
+    assert [column["primary_key"] for column in request.table_contract["columns"]] == [
+        False,
+        False,
+        False,
+    ]
+    assert len(request.table_contract["foreign_keys"]) == 1
+    foreign_key = request.table_contract["foreign_keys"][0]
+    assert foreign_key["source_columns"] == ["account_uid"]
+    assert foreign_key["target_meta_table_uid"] == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert foreign_key["target_columns"] == ["uid"]
+    assert foreign_key["on_delete"] == "restrict"
 
 
 def test_platform_managed_requires_storage_hash_table_name():

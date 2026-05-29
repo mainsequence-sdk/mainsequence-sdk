@@ -34,7 +34,7 @@ This repository contains the SDK and the documentation used to build and operate
 
 Main package areas:
 
-- `mainsequence.tdag`: data orchestration, `DataNode`s, update workflows, and persistence
+- `mainsequence.meta_tables`: `MetaTable`s, `DataNode`s, update workflows, and persistence
 - `mainsequence.client`: API client models for projects, jobs, data node storages, sharing, and platform resources
 - `mainsequence.cli`: the `mainsequence` command-line interface
 

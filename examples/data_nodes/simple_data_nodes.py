@@ -18,16 +18,16 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 import mainsequence.client as msc
 from mainsequence.client import MetaTable
-from mainsequence.tdag.data_nodes import (
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
+    build_compiled_sql_v1_operation,
+)
+from mainsequence.meta_tables.data_nodes import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
     hash_namespace,
-)
-from mainsequence.tdag.meta_tables import (
-    PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
-    build_compiled_sql_v1_operation,
 )
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"

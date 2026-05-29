@@ -9,7 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client import models_tdag
-from mainsequence.tdag.data_nodes.models import RecordDefinition
+from mainsequence.meta_tables.data_nodes.models import RecordDefinition
 
 
 def _dt(hour: int) -> datetime.datetime:

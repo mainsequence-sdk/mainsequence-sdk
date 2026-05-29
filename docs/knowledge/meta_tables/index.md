@@ -38,7 +38,7 @@ from mainsequence.client.models_metatables import MetaTableRegistrationRequest
 Higher-level SDK helpers live in:
 
 ```python
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     metatable_tablename,

@@ -44,7 +44,6 @@ from .models_metatables import (
     DataSource,
     DynamicTableDataSource,
     MetaTable,
-    MetaTableColumnContract,
 )
 from .models_metatables import (
     _duckdb_interface as _metatable_duckdb_interface,
@@ -80,7 +79,6 @@ def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
     )
 
 
-
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
@@ -88,6 +86,7 @@ _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
 _POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
 POD_PROJECT = None
+
 
 def _duckdb_interface():
     return _metatable_duckdb_interface()
@@ -205,10 +204,10 @@ class SourceTableForeignKeyProjection(SourceTableForeignKeyContract):
     )
 
 
-class DynamicTableRegistrationRequest(BasePydanticModel):
+class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     model_config = ConfigDict(extra="forbid")
 
-    data_source_uid: str = Field(..., description="Public uid of the DynamicTableDataSource")
+    data_source_uid: str = Field(..., description="Public uid of the storage data source")
     storage_hash: str = Field(..., max_length=63, description="Canonical physical table name")
     identifier: str | None = Field(None, description="Optional published storage identifier")
     namespace: str | None = Field(None, description="Optional published storage namespace")
@@ -219,17 +218,57 @@ class DynamicTableRegistrationRequest(BasePydanticModel):
         default_factory=lambda: {"create_table": True, "if_not_exists": True}
     )
     time_index_name: str = Field(..., description="Canonical timestamp column name")
-    index_names: list[str] = Field(
-        ..., min_length=1, description="Ordered DynamicTable index columns"
+    partition_strategy: str = Field(
+        default="backend_default",
+        description="Time-indexed MetaTable physical partitioning strategy",
     )
-    columns: list[MetaTableColumnContract] = Field(
-        ..., min_length=1, description="Canonical MetaTable column contracts"
+    table_contract: dict[str, Any] = Field(
+        ...,
+        description="Inherited MetaTable contract; owns columns, indexes, and foreign keys.",
     )
-    storage_layout: dict[str, Any] | None = Field(
-        None,
-        description="Optional explicit time-indexed storage-layout hints",
-    )
-    foreign_keys: list[SourceTableForeignKeyContract] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_flat_table_shape_fields(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        forbidden = [
+            field
+            for field in ("columns", "index_names", "foreign_keys", "storage_layout")
+            if field in data
+        ]
+        if forbidden:
+            raise ValueError(
+                "Time-indexed MetaTable registration uses table_contract for table shape. "
+                f"Do not submit flat fields: {forbidden}."
+            )
+        table_contract = data.get("table_contract")
+        if not isinstance(table_contract, Mapping):
+            return data
+        if "dynamic_table" in table_contract:
+            raise ValueError(
+                "Time-indexed MetaTable storage fields are first-class fields; do not nest "
+                "dynamic_table inside table_contract."
+            )
+        legacy_contract_fields = [
+            field
+            for field in ("index_names", "storage_layout", "physical_index_plan")
+            if field in table_contract
+        ]
+        if legacy_contract_fields:
+            raise ValueError(
+                "table_contract must be a MetaTable contract. Remove legacy "
+                f"time-indexed storage fields: {legacy_contract_fields}."
+            )
+        normalized_contract = dict(table_contract)
+        normalized_contract["table_kind"] = "time_indexed"
+        normalized_contract.setdefault("version", "relational-table.v1")
+        normalized_contract.setdefault("physical", {})
+        normalized_contract.setdefault("indexes", [])
+        normalized_contract.setdefault("foreign_keys", [])
+        data["table_contract"] = normalized_contract
+        return data
 
 
 def _serialize_source_table_foreign_key_contract(
@@ -356,6 +395,7 @@ class TimeIndexedProfileBase:
     def _normalize_column_dtypes_map(cls, value: dict[str, Any]) -> dict[str, str]:
         return normalize_column_dtypes_map(value, remote=False, allow_naive_datetime=True)
 
+
 class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     """Read-only DynamicTable time-indexed profile.
 
@@ -395,9 +435,6 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
 
     # todo remove
     column_index_names: list | None = [None]
-
-
-
 
 
 class TableUpdateNode(BasePydanticModel):
@@ -635,7 +672,10 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         timeout=None,
     ) -> DataNodeUpdate:
         s = self.build_session()
-        url = self.get_object_url() + f"/{self._public_uid()}/set_last_update_index_time_from_update_stats/"
+        url = (
+            self.get_object_url()
+            + f"/{self._public_uid()}/set_last_update_index_time_from_update_stats/"
+        )
 
         data_to_comp = build_last_update_index_time_payload(
             global_index_progress=global_index_progress,
@@ -678,8 +718,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         if r.status_code != 201:
             raise Exception(f"Error in request {r.url} {r.text}")
 
-
-
     def get_all_dependencies_update_priority(self, timeout=None) -> pd.DataFrame:
         s = self.build_session()
         url = self.get_object_url() + f"/{self._public_uid()}/get_all_dependencies_update_priority/"
@@ -710,8 +748,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                     errors="ignore",
                 )
                 depth_df["update_node_uid"] = update_node_uid
-
-
 
         return depth_df
 
@@ -750,14 +786,16 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         })
         """
         s = self.build_session()
-        url = self.get_object_url() + f"/{self._public_uid()}/verify_if_direct_dependencies_are_updated/"
+        url = (
+            self.get_object_url()
+            + f"/{self._public_uid()}/verify_if_direct_dependencies_are_updated/"
+        )
         r = make_request(s=s, loaders=None, r_type="GET", url=url)
         if r.status_code != 200:
             raise Exception(f"Error in request: {r.text}")
         return r.json()
 
     def get_data_between_dates_from_api(self, *args, **kwargs):
-
         return self.data_node_storage.get_data_between_dates_from_api(*args, **kwargs)
 
     @classmethod
@@ -853,8 +891,9 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                     return
 
                 logger.warning(f"Error in request for chunk {part_label}: {r.text}")
-                raise_for_response(r, )
-
+                raise_for_response(
+                    r,
+                )
 
             except requests.exceptions.RequestException as e:
                 logger.exception(f"Network error uploading chunk {part_label}: {e}")
@@ -926,7 +965,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         )
 
     def depends_on_connect(self, target_update_node_uid):
-
         url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect/"
         s = self.build_session()
         payload = dict(
@@ -939,7 +977,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             raise Exception(f"Error in request {r.text}")
 
     def depends_on_connect_to_api_table(self, target_table_uid, timeout=None):
-
         url = self.get_object_url() + f"/{self._public_uid()}/depends_on_connect_to_api_table/"
         s = self.build_session()
         payload = dict(
@@ -969,7 +1006,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             remote=remote_dtypes,
             allow_naive_datetime=allow_naive_datetime,
         )
-        if time_index_name is  None:
+        if time_index_name is None:
             time_index_name = data_frame.index.names[0]
             if time_index_name is None:
                 time_index_name = "time_index"
@@ -1048,9 +1085,10 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         records: Sequence[Any] | None = None,
         source_table_schema: Mapping[str, Any] | None = None,
     ):
-
         overwrite = True  # ALWAYS OVERWRITE
-        storage_class_type = getattr(getattr(data_source, "related_resource", None), "class_type", None)
+        storage_class_type = getattr(
+            getattr(data_source, "related_resource", None), "class_type", None
+        )
         is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
 
         schema_time_index_name = (
@@ -1142,7 +1180,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         return data_node_update
 
     def get_node_time_to_wait(self):
-
         next_update = self.update_details.next_update
         time_to_wait = 0.0
         if next_update is not None:
@@ -1152,14 +1189,14 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
             time_to_wait = max(0, time_to_wait)
         return time_to_wait, next_update
 
-    def wait_for_update_time(        self,    ):
-
+    def wait_for_update_time(
+        self,
+    ):
         if self.update_details.error_on_last_update or self.update_details.last_update is None:
             return None
 
         time_to_wait, next_update = self.get_node_time_to_wait()
         if time_to_wait > 0:
-
             logger.info(f"Scheduler Waiting for ts update time at {next_update} {time_to_wait}")
             time.sleep(time_to_wait)
         else:
@@ -1191,8 +1228,10 @@ class BaseUpdateDetails:
     )
 
 
-class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
-    related_table_uid: str | None = Field(None, description="Public uid of the related DataNodeUpdate")
+class DataNodeUpdateDetails(BaseUpdateDetails, BasePydanticModel, BaseObjectOrm):
+    related_table_uid: str | None = Field(
+        None, description="Public uid of the related DataNodeUpdate"
+    )
     run_configuration: RunConfiguration | None = None
 
     @classmethod
@@ -1304,7 +1343,11 @@ class TimeIndexMetaData(MetaTable):
         if isinstance(storage_layout, Mapping):
             return dict(storage_layout)
 
-        contract_layout = self.table_contract.get("storage_layout") if isinstance(self.table_contract, Mapping) else None
+        contract_layout = (
+            self.table_contract.get("storage_layout")
+            if isinstance(self.table_contract, Mapping)
+            else None
+        )
         if isinstance(contract_layout, Mapping):
             return dict(contract_layout)
         return {}
@@ -1320,7 +1363,11 @@ class TimeIndexMetaData(MetaTable):
             return str(dynamic_contract["time_index_name"])
 
         index_names = dynamic_contract.get("index_names")
-        if isinstance(index_names, Sequence) and not isinstance(index_names, (str, bytes, bytearray)) and index_names:
+        if (
+            isinstance(index_names, Sequence)
+            and not isinstance(index_names, (str, bytes, bytearray))
+            and index_names
+        ):
             return str(index_names[0])
 
         storage_layout = self._time_indexed_storage_layout()
@@ -1337,17 +1384,25 @@ class TimeIndexMetaData(MetaTable):
 
         dynamic_contract = self._time_indexed_dynamic_contract()
         dynamic_index_names = dynamic_contract.get("index_names")
-        if isinstance(dynamic_index_names, Sequence) and not isinstance(dynamic_index_names, (str, bytes, bytearray)):
+        if isinstance(dynamic_index_names, Sequence) and not isinstance(
+            dynamic_index_names, (str, bytes, bytearray)
+        ):
             return [str(name) for name in dynamic_index_names]
 
         storage_layout = self._time_indexed_storage_layout()
         uniqueness_columns = (storage_layout.get("uniqueness") or {}).get("columns")
-        if isinstance(uniqueness_columns, Sequence) and not isinstance(uniqueness_columns, (str, bytes, bytearray)):
+        if isinstance(uniqueness_columns, Sequence) and not isinstance(
+            uniqueness_columns, (str, bytes, bytearray)
+        ):
             return [str(name) for name in uniqueness_columns]
 
         time_index_name = self.time_index_name
         identity_dimensions = storage_layout.get("identity_dimensions")
-        if time_index_name and isinstance(identity_dimensions, Sequence) and not isinstance(identity_dimensions, (str, bytes, bytearray)):
+        if (
+            time_index_name
+            and isinstance(identity_dimensions, Sequence)
+            and not isinstance(identity_dimensions, (str, bytes, bytearray))
+        ):
             return [time_index_name, *[str(name) for name in identity_dimensions]]
         return [time_index_name] if time_index_name else []
 
@@ -1369,11 +1424,11 @@ class TimeIndexMetaData(MetaTable):
             )
 
         contract_columns = (
-            self.table_contract.get("columns")
-            if isinstance(self.table_contract, Mapping)
-            else None
+            self.table_contract.get("columns") if isinstance(self.table_contract, Mapping) else None
         )
-        if isinstance(contract_columns, Sequence) and not isinstance(contract_columns, (str, bytes, bytearray)):
+        if isinstance(contract_columns, Sequence) and not isinstance(
+            contract_columns, (str, bytes, bytearray)
+        ):
             return _column_dtype_map_from_contracts(
                 contract_columns,
                 remote=False,
@@ -1454,7 +1509,9 @@ class TimeIndexMetaData(MetaTable):
         if index_coordinates is not None:
             payload["index_coordinates"] = index_coordinates
         if dimension_range_map is not None:
-            payload["dimension_range_map"] = self._normalize_dimension_range_map(dimension_range_map)
+            payload["dimension_range_map"] = self._normalize_dimension_range_map(
+                dimension_range_map
+            )
         return payload
 
     @classmethod
@@ -1473,14 +1530,16 @@ class TimeIndexMetaData(MetaTable):
     @classmethod
     def register(
         cls,
-        request: DynamicTableRegistrationRequest | Mapping[str, Any] | None = None,
+        request: TimeIndexMetaTableRegistrationRequest | Mapping[str, Any] | None = None,
         *,
         timeout: int | float | tuple[float, float] | None = None,
         **kwargs: Any,
     ) -> TimeIndexMetaData:
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
-        payload = request if request is not None else DynamicTableRegistrationRequest(**kwargs)
+        payload = (
+            request if request is not None else TimeIndexMetaTableRegistrationRequest(**kwargs)
+        )
         if isinstance(payload, BaseModel):
             payload_json = payload.model_dump(mode="json", exclude_none=True)
         else:
@@ -1559,7 +1618,9 @@ class TimeIndexMetaData(MetaTable):
             raise ValueError("TimeIndexMetaData must have a uid before deleting rows after a date.")
 
         payload_body: dict[str, Any] = {
-            "after_date": after_date.isoformat() if isinstance(after_date, datetime.datetime) else after_date
+            "after_date": after_date.isoformat()
+            if isinstance(after_date, datetime.datetime)
+            else after_date
         }
         payload_body.update(
             self._build_dimension_payload(
@@ -1632,7 +1693,11 @@ class TimeIndexMetaData(MetaTable):
         configured_time_index_name = self.time_index_name
         configured_index_names = self.index_names
         configured_column_dtypes_map = self.column_dtypes_map
-        if not configured_time_index_name or not configured_index_names or not configured_column_dtypes_map:
+        if (
+            not configured_time_index_name
+            or not configured_index_names
+            or not configured_column_dtypes_map
+        ):
             raise ValueError(
                 "DynamicTable time-indexed profile must already exist before DataNode writes. "
                 "Register/bootstrap the storage table before running the DataNode update."
@@ -1835,10 +1900,12 @@ class TimeIndexMetaData(MetaTable):
             )
 
     @staticmethod
-    def map_columns_to_df(df,
-                          column_dtypes_map:dict,time_index_name:str,
-                          index_names:list[str],
-                          )->pd.DataFrame:
+    def map_columns_to_df(
+        df,
+        column_dtypes_map: dict,
+        time_index_name: str,
+        index_names: list[str],
+    ) -> pd.DataFrame:
         columns_to_loop = column_dtypes_map.keys()
         for c, c_type in column_dtypes_map.items():
             if c not in columns_to_loop:
@@ -1880,42 +1947,45 @@ class TimeIndexMetaData(MetaTable):
         )
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
-        df=pd.DataFrame(r.json())
+        df = pd.DataFrame(r.json())
         if df.empty:
             return df
-        time_index_name, index_names, column_dtypes_map = self._require_time_indexed_table_contract()
+        time_index_name, index_names, column_dtypes_map = (
+            self._require_time_indexed_table_contract()
+        )
         try:
             df[time_index_name] = pd.to_datetime(df[time_index_name], format="ISO8601")
         except Exception as e:
             raise e
 
-        df=self.map_columns_to_df(df=df,column_dtypes_map=column_dtypes_map,
-                                  time_index_name=time_index_name,
-                                  index_names=index_names,
-                                  )
-
+        df = self.map_columns_to_df(
+            df=df,
+            column_dtypes_map=column_dtypes_map,
+            time_index_name=time_index_name,
+            index_names=index_names,
+        )
 
         return df
 
     @classmethod
     def _get_data_between_dates_common(
-            cls,
-            url: str,
-            start_date: datetime.datetime = None,
-            end_date: datetime.datetime = None,
-            great_or_equal: bool = None,
-            less_or_equal: bool = None,
-            dimension_filters: dict[str, list[Any]] | None = None,
-            index_coordinates: list[dict[str, Any]] | None = None,
-            dimension_range_map: list[dict[str, Any]] | None = None,
-            columns: list = None,
-            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-            node_identifier: str | None = None,
+        cls,
+        url: str,
+        start_date: datetime.datetime = None,
+        end_date: datetime.datetime = None,
+        great_or_equal: bool = None,
+        less_or_equal: bool = None,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+        columns: list = None,
+        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+        node_identifier: str | None = None,
     ) -> pd.DataFrame:
         """Internal shared implementation for fetching data between dates."""
-        return_storage_node=False
+        return_storage_node = False
         if "get_data_between_dates_from_node_identifier" in url:
-            return_storage_node=True
+            return_storage_node = True
 
         def fetch_one_batch(chunk_dimension_range_map):
             all_results_chunk = []
@@ -1953,7 +2023,7 @@ class TimeIndexMetaData(MetaTable):
                 )
                 if r.status_code != 200:
                     logger.warning(f"Error in request: {r.text}")
-                    return [] ,None
+                    return [], None
 
                 response_data = r.json()
                 # Accumulate results
@@ -1968,7 +2038,7 @@ class TimeIndexMetaData(MetaTable):
                 # Update offset for the next iteration
                 offset = next_offset
 
-            return all_results_chunk,response_data
+            return all_results_chunk, response_data
 
         s = cls.build_session()
 
@@ -1977,32 +2047,34 @@ class TimeIndexMetaData(MetaTable):
         if dimension_range_map:
             chunk_size = 100
             for start_idx in range(0, len(dimension_range_map), chunk_size):
-                chunk_range_map = dimension_range_map[start_idx: start_idx + chunk_size]
+                chunk_range_map = dimension_range_map[start_idx : start_idx + chunk_size]
 
                 # Fetch data (including any pagination via next_offset)
-                chunk_results,response_data = fetch_one_batch(chunk_range_map)
+                chunk_results, response_data = fetch_one_batch(chunk_range_map)
                 all_results.extend(chunk_results)
         else:
             # If dimension_range_map is None, do a single batch with offset-based pagination.
-            chunk_results,response_data = fetch_one_batch(None)
+            chunk_results, response_data = fetch_one_batch(None)
             all_results.extend(chunk_results)
         if not return_storage_node:
             return pd.DataFrame(all_results)
         else:
-            storage_node=cls(**response_data['storage_node']) if response_data is not None else None
-            return pd.DataFrame(all_results),storage_node
+            storage_node = (
+                cls(**response_data["storage_node"]) if response_data is not None else None
+            )
+            return pd.DataFrame(all_results), storage_node
 
     def get_data_between_dates_from_api(
-            self,
-            start_date: datetime.datetime = None,
-            end_date: datetime.datetime = None,
-            great_or_equal: bool = None,
-            less_or_equal: bool = None,
-            dimension_filters: dict[str, list[Any]] | None = None,
-            index_coordinates: list[dict[str, Any]] | None = None,
-            dimension_range_map: list[dict[str, Any]] | None = None,
-            columns: list = None,
-            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+        self,
+        start_date: datetime.datetime = None,
+        end_date: datetime.datetime = None,
+        great_or_equal: bool = None,
+        less_or_equal: bool = None,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+        columns: list = None,
+        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
     ):
         """Public helper for /{uid}/get_data_between_dates_from_remote/."""
         url = self.get_object_url() + f"/{self._public_uid()}/get_data_between_dates_from_remote/"
@@ -2028,18 +2100,18 @@ class TimeIndexMetaData(MetaTable):
 
     @classmethod
     def get_data_between_dates_from_node_identifier(
-            cls,
-            node_identifier: str,
-            start_date: datetime.datetime = None,
-            end_date: datetime.datetime = None,
-            great_or_equal: bool = None,
-            less_or_equal: bool = None,
-            dimension_filters: dict[str, list[Any]] | None = None,
-            index_coordinates: list[dict[str, Any]] | None = None,
-            dimension_range_map: list[dict[str, Any]] | None = None,
-            columns: list = None,
-            column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-    )->[pd.DataFrame,TimeIndexMetaData]:
+        cls,
+        node_identifier: str,
+        start_date: datetime.datetime = None,
+        end_date: datetime.datetime = None,
+        great_or_equal: bool = None,
+        less_or_equal: bool = None,
+        dimension_filters: dict[str, list[Any]] | None = None,
+        index_coordinates: list[dict[str, Any]] | None = None,
+        dimension_range_map: list[dict[str, Any]] | None = None,
+        columns: list = None,
+        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
+    ) -> [pd.DataFrame, TimeIndexMetaData]:
         """
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.
@@ -2060,6 +2132,7 @@ class TimeIndexMetaData(MetaTable):
             column_range_descriptor=column_range_descriptor,
             node_identifier=node_identifier,
         )
+
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")
@@ -2100,7 +2173,6 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
             raise SchedulerDoesNotExist(r.json().get("detail", r.text))
         r.raise_for_status()
         return cls(**r.json())
-
 
     @classmethod
     def build_and_assign_to_update_nodes(
@@ -2174,9 +2246,8 @@ class Scheduler(BasePydanticModel, BaseObjectOrm):
         # test call
         if self.is_running and hasattr(self, "api_address"):
             # verify  scheduler host is the same
-            if (
-                self.api_address == get_network_ip()
-                and is_process_running(self.running_process_pid)
+            if self.api_address == get_network_ip() and is_process_running(
+                self.running_process_pid
             ):
                 return True
         return False
@@ -2268,12 +2339,13 @@ class UpdateStatistics(BaseUpdateStatistics):
     index_progress: dict[str, Any] | None = None
     index_min: dict[str, Any] | None = None
 
-    max_time_index_value: datetime.datetime | None = None  # does not include filter applicable for 1d index
+    max_time_index_value: datetime.datetime | None = (
+        None  # does not include filter applicable for 1d index
+    )
     limit_update_time: datetime.datetime | None = None  # flag to limit the update of data node
 
     _max_time_in_update_statistics: datetime.datetime | None = None  # include filter
     _initial_fallback_date: datetime.datetime | None = None
-
 
     # when working with DuckDb and column based storage we want to have also stats by  column
     multi_index_column_stats: dict[str, Any] | None = None
@@ -2300,7 +2372,7 @@ class UpdateStatistics(BaseUpdateStatistics):
                 else value.replace(tzinfo=datetime.UTC)
             )
 
-        if isinstance(value, (int| float)):
+        if isinstance(value, (int | float)):
             v = float(value)
             # seconds / ms / µs / ns heuristics by magnitude
             if v > 1e17:  # ns
@@ -2317,11 +2389,7 @@ class UpdateStatistics(BaseUpdateStatistics):
                 s = s[:-1] + "+00:00"
             try:
                 dt = datetime.datetime.fromisoformat(s)
-                return (
-                    dt.astimezone(datetime.UTC)
-                    if dt.tzinfo
-                    else dt.replace(tzinfo=datetime.UTC)
-                )
+                return dt.astimezone(datetime.UTC) if dt.tzinfo else dt.replace(tzinfo=datetime.UTC)
             except ValueError:
                 return value
 
@@ -2390,13 +2458,11 @@ class UpdateStatistics(BaseUpdateStatistics):
         print(f"  max_time_index_value: {self.max_time_index_value}")
         print(f"  _max_time_in_update_statistics: {self._max_time_in_update_statistics}")
 
-
-
     def identity_values(self):
         return list(self._progress_stats().keys())
 
     def get_max_time_in_update_statistics(self):
-        if not hasattr(self, "_max_time_in_update_statistics") :
+        if not hasattr(self, "_max_time_in_update_statistics"):
             self._max_time_in_update_statistics = (
                 self.max_time_index_value or self._initial_fallback_date
             )
@@ -2407,21 +2473,18 @@ class UpdateStatistics(BaseUpdateStatistics):
         return self._max_time_in_update_statistics
 
     @property
-    def is_any_identity_on_fallback_date(self)->bool:
+    def is_any_identity_on_fallback_date(self) -> bool:
         """Return true if any index progress leaf equals _initial_fallback_date."""
         return any(
-            value == self._initial_fallback_date
-            for value in self.get_index_progress_leaf_values()
+            value == self._initial_fallback_date for value in self.get_index_progress_leaf_values()
         )
 
     @property
-    def are_all_identities_on_fallback_date(self)->bool:
+    def are_all_identities_on_fallback_date(self) -> bool:
         """Return true if all index progress leaves equal _initial_fallback_date."""
         return all(
-            value == self._initial_fallback_date
-            for value in self.get_index_progress_leaf_values()
+            value == self._initial_fallback_date for value in self.get_index_progress_leaf_values()
         )
-
 
     def get_columnar_identity_range_map_great_or_equal(
         self,
@@ -2438,14 +2501,11 @@ class UpdateStatistics(BaseUpdateStatistics):
 
         def _start_dt(bounds):
             dt = (
-                (bounds or {}).get("max")
-                if isinstance(bounds, dict)
-                else bounds
+                (bounds or {}).get("max") if isinstance(bounds, dict) else bounds
             ) or self._initial_fallback_date
             if extra_time_delta:
                 dt = dt + extra_time_delta
             return dt
-
 
         range_map = {
             col: {
@@ -2467,7 +2527,6 @@ class UpdateStatistics(BaseUpdateStatistics):
         self,
         extra_time_delta: datetime.timedelta | None = None,
     ):
-
         if extra_time_delta is None:
             range_map = {
                 k: DateInfo(
@@ -2556,7 +2615,7 @@ class UpdateStatistics(BaseUpdateStatistics):
                     "start_date_operand": ">=",
                     "start_date": start_date,
                 }
-        )
+            )
         return dimension_range_map
 
     def get_last_update_for_identity(self, identity_value):
@@ -2610,11 +2669,13 @@ class UpdateStatistics(BaseUpdateStatistics):
 
         # Special-case: filtering on the first identity level.
         if target_depth == 0:
-            self._set_progress_stats({
-                identity_value: stats
-                for identity_value, stats in self._progress_stats().items()
-                if identity_value in filters
-            })
+            self._set_progress_stats(
+                {
+                    identity_value: stats
+                    for identity_value, stats in self._progress_stats().items()
+                    if identity_value in filters
+                }
+            )
             return self
 
         allowed = set(filters)
@@ -2652,9 +2713,7 @@ class UpdateStatistics(BaseUpdateStatistics):
         # stats dict sits at depth=1 under each top-level identity.
         for identity_value, stats in self._progress_stats().items():
             if stats is None:
-                new_stats[identity_value] = {
-                    f: self._initial_fallback_date for f in allowed
-                }
+                new_stats[identity_value] = {f: self._initial_fallback_date for f in allowed}
             else:
                 pr = _prune(stats, current_depth=1)
                 new_stats[identity_value] = pr or None
@@ -2673,11 +2732,9 @@ class UpdateStatistics(BaseUpdateStatistics):
             identity_values = list((progress_stats or {}).keys())
 
         for identity_value in identity_values:
-
             if progress_stats and identity_value in progress_stats:
                 new_update_statistics[identity_value] = progress_stats[identity_value]
             else:
-
                 new_update_statistics[identity_value] = init_fallback_date
 
         def _max_in_nested(d):
@@ -2788,8 +2845,6 @@ class UpdateStatistics(BaseUpdateStatistics):
         return self.index_progress.items()
 
     def filter_df_by_latest_value(self, df: pd.DataFrame) -> pd.DataFrame:
-
-
         names = list(df.index.names)
         time_level = names[0]
         identity_levels = [n for n in names if n != time_level]
@@ -2904,7 +2959,9 @@ def request_to_datetime(value: Any):
     return UpdateStatistics._to_utc_datetime(value)
 
 
-def _combine_index_min_max_stats_as_timestamps(index_min: dict[str, Any], index_progress: dict[str, Any]):
+def _combine_index_min_max_stats_as_timestamps(
+    index_min: dict[str, Any], index_progress: dict[str, Any]
+):
     combined = combine_index_min_max_stats(index_min=index_min, index_progress=index_progress)
 
     def _recurse(node):
@@ -3037,7 +3094,6 @@ def build_last_update_index_time_payload(
     return LastUpdateIndexTimePayload.model_validate(raw_payload).to_nested_payload()
 
 
-
 class HistoricalUpdateRecord:
     uid: str | None = Field(None, description="Public uid of this historical update")
     update_time_start: datetime.datetime
@@ -3052,9 +3108,11 @@ class HistoricalUpdateRecord:
     must_update: bool | None = None
     direct_dependency_uids: list[str] | None = None
 
-class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord,BasePydanticModel, BaseObjectOrm):
 
-    related_table_uid: str | None = Field(None, description="Public uid of the related DataNodeUpdate")
+class LocalTimeSeriesHistoricalUpdate(HistoricalUpdateRecord, BasePydanticModel, BaseObjectOrm):
+    related_table_uid: str | None = Field(
+        None, description="Public uid of the related DataNodeUpdate"
+    )
     last_time_index_value: datetime.datetime | None = None
 
 
@@ -3070,6 +3128,7 @@ class UpdateBatchResponse(BaseModel, Generic[UpdateT, UpdateDetailsT, TimeIndexe
     state_data: dict[str, UpdateDetailsT]
     all_index_stats: dict[str, Any]
     data_node_updates: list[UpdateT]
+
 
 class GithubOrganization(BasePydanticModel, BaseObjectOrm):
     uid: str
@@ -3089,8 +3148,6 @@ class ProjectBaseImage(BasePydanticModel, BaseObjectOrm):
 
     def __str__(self):
         return yaml.safe_dump(self.model_dump(), sort_keys=False, default_flow_style=False)
-
-
 
 
 class ProjectNameValidationNormalized(BasePydanticModel):
@@ -3240,7 +3297,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         json_schema_extra={"label": "Is Initialized"},
     )
 
-
     @staticmethod
     def _normalize_env_vars(
         env_vars: dict[str, str] | list[dict[str, str]] | None,
@@ -3255,6 +3311,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             return [{"name": k, "value": v} for k, v in env_vars.items()]
         # assume already list-of-dicts shape
         return env_vars
+
     @staticmethod
     def _coerce_uid(obj: Any, *, field_name: str) -> str | None:
         """
@@ -3291,7 +3348,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         github_org_uid: str | GithubOrganization | dict[str, Any] | None = None,
         repository_branch: str | None = None,
         env_vars: dict[str, str] | list[dict[str, str]] | None = None,
-            timeout:int | None = None,
+        timeout: int | None = None,
     ) -> Project:
         """
         POST /projects/
@@ -3335,7 +3392,8 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             loaders=cls.LOADERS,
             r_type="POST",
             url=url,
-            payload={"json":payload},time_out=timeout
+            payload={"json": payload},
+            time_out=timeout,
         )
 
         # your helpers already exist; use them consistently
@@ -3343,7 +3401,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
         # DRF should return 201 with your detail serializer shape
         return cls(**r.json())
-
 
     @classmethod
     def get_user_default_project(cls):
@@ -3357,7 +3414,9 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
             url=url,
         )
         if r.status_code == 404:
-            raise_for_response(r,)
+            raise_for_response(
+                r,
+            )
 
         if r.status_code != 200:
             raise Exception(f"Error in request {r.text}")
@@ -3494,10 +3553,10 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         return data
 
     def delete(
-            self,
-            *,
-            delete_repositories: bool = False,
-            timeout: int | None = None,
+        self,
+        *,
+        delete_repositories: bool = False,
+        timeout: int | None = None,
     ) -> dict[str, Any] | None:
         """
         DELETE /projects/{uid}/
@@ -3570,7 +3629,6 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
         )
 
 
-
 class ProjectImage(BasePydanticModel, BaseObjectOrm):
     """
     Image build from a a project
@@ -3594,7 +3652,9 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
     project_repo_hash: str = Field(..., description="Canonical full commit SHA for the built image")
     related_project_uid: str | None = Field(None, description="Public UID of the owning project")
     base_image: ProjectBaseImage | None = Field(None, description="Persisted parent base image")
-    tags: list[str] | None = Field(default=[], description="Observed registry tags for the project image")
+    tags: list[str] | None = Field(
+        default=[], description="Observed registry tags for the project image"
+    )
     build_error: str | None = Field(None, description="Backend build error, when present")
     is_ready: bool = Field(..., description="Whether the image is ready in Artifact Registry")
     creation_date: datetime.datetime | None = Field(None, description="Creation timestamp")
@@ -3660,6 +3720,7 @@ class ProjectImage(BasePydanticModel, BaseObjectOrm):
             raise_for_response(r, payload=request_payload)
         return cls(**r.json())
 
+
 class TimeScaleDB(DataSource):
     database_user: str
     password: str
@@ -3681,7 +3742,6 @@ class TimeScaleDB(DataSource):
         grouped_dates: dict,
         column_dtypes_map: Mapping[str, Any] | None = None,
     ):
-
         DataNodeUpdate.post_data_frame_in_chunks(
             serialized_data_frame=serialized_data_frame,
             data_node_update=data_node_update,
@@ -3704,8 +3764,6 @@ class TimeScaleDB(DataSource):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ) -> pd.DataFrame:
-
-
         df = data_node_update.get_data_between_dates_from_api(
             start_date=start_date,
             end_date=end_date,
@@ -3755,9 +3813,8 @@ class DynamicResource(BasePydanticModel, BaseObjectOrm):
     pod: int
 
     @classmethod
-    def create(self,*args, **kwargs):
+    def create(self, *args, **kwargs):
         return super().create(*args, **kwargs)
-
 
 
 def query_agent(json_payload: dict, timeout=None):
@@ -3771,6 +3828,7 @@ def query_agent(json_payload: dict, timeout=None):
         time_out=(timeout if timeout is not None else 200),
     )
     from .exceptions import raise_for_response
+
     raise_for_response(r, payload={"json": json_payload})
     return r
 
@@ -3790,7 +3848,10 @@ def add_created_object_to_jobrun(
     Returns:
         A dictionary representing the created record.
     """
-    url = MAINSEQUENCE_ENDPOINT + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
+    url = (
+        MAINSEQUENCE_ENDPOINT
+        + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
+    )
     payload = {"json": {"app_label": app_label, "model_name": model_name, "object_id": object_id}}
 
     r = make_request(
@@ -3803,9 +3864,9 @@ def add_created_object_to_jobrun(
     )
 
     from .exceptions import raise_for_response
+
     raise_for_response(r, payload=payload)
     return r.json()
-
 
 
 class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
@@ -3826,15 +3887,13 @@ class Bucket(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         examples=["47b8eac1-7630-44f4-bb42-7b4055ec4afe"],
         json_schema_extra={"label": "Bucket UID"},
     )
-    name:str= Field(
+    name: str = Field(
         ...,
         title="Bucket Name",
         description="Human-readable Bucket name ",
         examples=["daily_positions_report.pdf"],
         json_schema_extra={"label": "Bucket Name"},
     )
-
-
 
 
 class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
@@ -3870,7 +3929,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     content: Any = Field(
         ...,
         title="Artifact Content",
-         description="signed url pointed to the download link of the content",
+        description="signed url pointed to the download link of the content",
         examples=["<binary-or-serialized-artifact-content>"],
         json_schema_extra={"label": "Artifact Content"},
     )
@@ -3883,8 +3942,8 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     )
 
     @classmethod
-    def upload_file(cls, filepath, name,  bucket_name=None):
-        bucket_name=bucket_name if bucket_name else "default_bucket"
+    def upload_file(cls, filepath, name, bucket_name=None):
+        bucket_name = bucket_name if bucket_name else "default_bucket"
         return cls.get_or_create(
             filepath=filepath,
             name=name,
@@ -3892,7 +3951,7 @@ class Artifact(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         )
 
     @classmethod
-    def get_or_create(cls, filepath, name,  bucket_name):
+    def get_or_create(cls, filepath, name, bucket_name):
         url = cls.get_object_url() + "/get_or_create/"
         s = cls.build_session()
         with open(filepath, "rb") as f:
@@ -4043,9 +4102,13 @@ class PodDataSource:
             raise ValueError("set_local_db requires a persisted local DataSource with an id.")
 
         if class_type == DUCK_DB:
-            local_dynamic_data_source = DynamicTableDataSource.create_duckdb(data_source=data_source)
+            local_dynamic_data_source = DynamicTableDataSource.create_duckdb(
+                data_source=data_source
+            )
         elif class_type == SQLITE:
-            local_dynamic_data_source = DynamicTableDataSource.create_sqlite(data_source=data_source)
+            local_dynamic_data_source = DynamicTableDataSource.create_sqlite(
+                data_source=data_source
+            )
         else:
             raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
 
@@ -4055,8 +4118,7 @@ class PodDataSource:
             list_tables=True,
         )
         remote_table_names = [
-            getattr(t, "physical_table_name", None) or t.storage_hash
-            for t in remote_node_storages
+            getattr(t, "physical_table_name", None) or t.storage_hash for t in remote_node_storages
         ]
         db_interface = _local_data_interface(class_type)
         local_table_names = db_interface.list_tables()
@@ -4069,8 +4131,7 @@ class PodDataSource:
         tables_to_delete_remotely = set(remote_table_names) - set(local_table_names)
         for remote_table in remote_node_storages:
             remote_physical_table_name = (
-                getattr(remote_table, "physical_table_name", None)
-                or remote_table.storage_hash
+                getattr(remote_table, "physical_table_name", None) or remote_table.storage_hash
             )
             if remote_physical_table_name in tables_to_delete_remotely:
                 logger.debug(f"Deleting table remotely {remote_physical_table_name}")
@@ -4118,7 +4179,7 @@ def _norm_value(v: Any) -> Any:
         return getattr(v, "id", v)
 
     # Common iterables → sorted tuples to ignore order in queries like name__in
-    if isinstance(v, (set| list| tuple)):
+    if isinstance(v, (set | list | tuple)):
         # Convert nested items too, just in case
         return tuple(sorted(_norm_value(x) for x in v))
 
@@ -4139,6 +4200,7 @@ def _norm_kwargs(kwargs: dict[str, Any]) -> tuple[tuple[str, Any], ...]:
         else:
             items.append((k, _norm_value(v)))
     return tuple(sorted(items))
+
 
 class Secret(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
@@ -4276,7 +4338,6 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
     def create_constants_if_not_exist(cls, constants_to_create: dict):
         # crete global constants if not exist in  backed
 
-
         existing_constants = cls.filter(name__in=list(constants_to_create.keys()))
         existing_constants_names = [c.name for c in existing_constants]
         constants_to_register = {
@@ -4287,11 +4348,6 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
             new_constant = cls.create(name=k, value=v)
             created_constants.append(new_constant)
         return created_constants
-
-
-
-
-
 
 
 SessionDataSource = PodDataSource()

@@ -12,7 +12,7 @@ from examples.meta_tables.common import (
 )
 from mainsequence.client import DataSource, DynamicTableDataSource, MetaTable
 from mainsequence.client.data_sources_interfaces import get_sqlite_interface_class
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
 )
 

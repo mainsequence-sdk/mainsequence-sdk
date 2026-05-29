@@ -16,7 +16,7 @@ import uuid
 from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -188,7 +188,11 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
 request = AccountHoldings.build_registration_request()
 
 assert request.time_index_name == "time_index"
-assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
+assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
+    "time_index",
+    "account_uid",
+    "unique_identifier",
+]
 
 holdings_storage = AccountHoldings.register()
 ```
@@ -209,7 +213,7 @@ Use `external_registered` when your app or migration framework creates the
 physical table.
 
 ```python
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
 )

@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.models_tdag as models_tdag
-import mainsequence.tdag.data_nodes.data_nodes as data_nodes_mod
+import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
 from mainsequence.client.command_center import Workspace
 from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
@@ -19,11 +19,15 @@ from mainsequence.client.models_tdag import (
     Project,
     TimeIndexMetaData,
 )
-from mainsequence.tdag import DataNode, DataNodeConfiguration, SourceTableForeignKey
-from mainsequence.tdag.data_nodes.models import RecordDefinition
-from mainsequence.tdag.data_nodes.persist_managers import BasePersistManager
-from mainsequence.tdag.data_nodes.run_operations import UpdateRunner
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import (
+    DataNode,
+    DataNodeConfiguration,
+    PlatformTimeIndexMetaData,
+    SourceTableForeignKey,
+)
+from mainsequence.meta_tables.data_nodes.models import RecordDefinition
+from mainsequence.meta_tables.data_nodes.persist_managers import BasePersistManager
+from mainsequence.meta_tables.data_nodes.run_operations import UpdateRunner
 
 
 def _meta_table(

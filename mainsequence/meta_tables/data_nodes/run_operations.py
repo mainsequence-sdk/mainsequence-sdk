@@ -31,11 +31,12 @@ from mainsequence.client.dtype_codec import (
 # Instrumentation and Logging
 from mainsequence.instrumentation import TracerInstrumentator, tracer
 
-# TDAG Core Components and Helpers
-from mainsequence.tdag.data_nodes import build_operations
+# MetaTable DataNode core components and helpers
+from mainsequence.meta_tables.data_nodes import build_operations
 
 if TYPE_CHECKING:
     from .data_nodes import DataNode
+
 
 # Custom Exceptions
 class DependencyUpdateError(Exception):
@@ -204,9 +205,7 @@ def _storage_hash(storage_table: Any) -> str | None:
     if storage_table is None:
         return None
     if isinstance(storage_table, Mapping):
-        storage_hash = storage_table.get("storage_hash") or storage_table.get(
-            "physical_table_name"
-        )
+        storage_hash = storage_table.get("storage_hash") or storage_table.get("physical_table_name")
     else:
         hash_getter = getattr(storage_table, "get_storage_hash", None)
         try:
@@ -392,7 +391,6 @@ class UpdateRunner:
         self.ts.local_persist_manager.set_data_node_update_lazy(include_relations_detail=True)
 
         if override_update_stats is not None:
-
             self.ts.update_statistics = override_update_stats
         else:
             update_statistics = historical_update.update_statistics
@@ -432,34 +430,31 @@ class UpdateRunner:
         meta_table: Any | None = None,
     ) -> None:
         """
-               Performs a series of critical checks on the DataFrame before persistence.
+        Performs a series of critical checks on the DataFrame before persistence.
 
-               Args:
-                   df: The DataFrame returned from the DataNode's update method.
+        Args:
+            df: The DataFrame returned from the DataNode's update method.
 
-               Raises:
-                   AssertionError or Exception if any validation check fails.
-               """
+        Raises:
+            AssertionError or Exception if any validation check fails.
+        """
         # Check for infinite values
         df.replace([np.inf, -np.inf], np.nan, inplace=True)
 
         # Check that the time index is a UTC datetime
         time_index = df.index.get_level_values(0)
         if not pd.api.types.is_datetime64_ns_dtype(time_index) or str(time_index.tz) != str(
-                datetime.UTC
+            datetime.UTC
         ):
             raise TypeError(f"Time index must be datetime64[ns, UTC], but found {time_index.dtype}")
 
         # Enforce backend-safe physical column names for non-local storage.
         if storage_class_type not in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES:
-
             for col, _dtype in df.dtypes.items():
                 if not isinstance(col, str) or not col.islower():
                     raise ValueError(f"Column name '{col}' must be a lowercase string.")
                 if len(col) > 63:
-                    raise ValueError(
-                        f"Column name '{col}' must be 63 characters or fewer."
-                    )
+                    raise ValueError(f"Column name '{col}' must be 63 characters or fewer.")
         is_local_storage = storage_class_type in ms_client.LOCAL_DATA_SOURCE_CLASS_TYPES
         contract_column_dtypes_map = _metatable_contract_column_dtypes_map(meta_table)
         if contract_column_dtypes_map:
@@ -510,8 +505,6 @@ class UpdateRunner:
                 allow_naive_datetime=is_local_storage,
             )
 
-
-
     @tracer.start_as_current_span("UpdateRunner._update_local")
     def _update_local(
         self,
@@ -558,7 +551,6 @@ class UpdateRunner:
                 us = self.ts.local_persist_manager.get_update_statistics_for_table()
                 self.ts.update_statistics = us
 
-
     @tracer.start_as_current_span("UpdateRunner._verify_tree_is_updated")
     def _verify_tree_is_updated(
         self,
@@ -589,7 +581,11 @@ class UpdateRunner:
 
         # 2. Get the list of dependencies to update
         dependencies_df = self.ts.dependencies_df
-        if dependencies_df is not None and not dependencies_df.empty and "update_node_uid" not in dependencies_df.columns:
+        if (
+            dependencies_df is not None
+            and not dependencies_df.empty
+            and "update_node_uid" not in dependencies_df.columns
+        ):
             raise ValueError("Dependency dataframe must include 'update_node_uid'.")
         dependency_uids_in_tree = (
             dependencies_df["update_node_uid"].astype(str).to_list()
@@ -700,7 +696,7 @@ class UpdateRunner:
         def refresh_update_statistics_of_deps(ts):
             for _, ts_dep in ts.dependencies().items():
                 if ts_dep.is_api:
-                    continue # No need to update statistics for API dependencies
+                    continue  # No need to update statistics for API dependencies
                 ts_dep.update_statistics = (
                     ts_dep.local_persist_manager.get_update_statistics_for_table()
                 )
@@ -781,7 +777,6 @@ class UpdateRunner:
 
         # 1. Set up the scheduler for this run
         try:
-
             self.ts.verify_and_build_remote_objects()  # needed to start sch
             self._setup_scheduler()
             cvars.bind_contextvars(

@@ -4,7 +4,7 @@ import pytest
 
 import mainsequence.client.models_metatables as models_metatables
 import mainsequence.client.models_tdag as models_tdag
-from mainsequence.tdag.data_nodes import build_operations
+from mainsequence.meta_tables.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
 DATA_SOURCE_UID = "864e7c22-482a-464a-8758-0d3408abd77f"

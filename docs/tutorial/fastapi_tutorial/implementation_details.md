@@ -77,7 +77,7 @@ Example service:
 import os
 
 from mainsequence.client import MetaTable
-from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables import build_compiled_sql_v1_operation
 
 
 CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
@@ -127,7 +127,7 @@ Example service:
 import datetime as dt
 import os
 
-from mainsequence.tdag import APIDataNode
+from mainsequence.meta_tables import APIDataNode
 
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"

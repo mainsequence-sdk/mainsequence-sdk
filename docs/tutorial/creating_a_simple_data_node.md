@@ -45,12 +45,12 @@ from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uui
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client import MetaTable
-from mainsequence.tdag import (
+from mainsequence.meta_tables import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
 )
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     build_compiled_sql_v1_operation,
@@ -227,7 +227,7 @@ configuration field.
 
 Every `DataNode` follows the same basic recipe:
 
-1. Extend the base class `mainsequence.tdag.DataNode`
+1. Extend the base class `mainsequence.meta_tables.DataNode`
 2. Implement the constructor method `__init__()` and accept a registered `storage_table`
 3. Implement the `dependencies()` method
 4. Implement the `update()` method
@@ -425,7 +425,7 @@ Run it with the active project data source:
 import uuid
 
 import mainsequence.client as msc
-from mainsequence.tdag.data_nodes import hash_namespace
+from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
     AccountHoldingsConfig,
@@ -508,7 +508,7 @@ developing or testing:
 
 ```python
 import mainsequence.client as msc
-from mainsequence.tdag.data_nodes import hash_namespace
+from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,
@@ -542,7 +542,7 @@ For real projects, also keep a small smoke test under `tests/`, for example `tes
 
 ```python
 import mainsequence.client as msc
-from mainsequence.tdag.data_nodes import hash_namespace
+from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,

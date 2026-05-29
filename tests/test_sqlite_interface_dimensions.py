@@ -16,7 +16,7 @@ def _dt(hour: int) -> datetime.datetime:
 
 
 def _interface(tmp_path) -> SQLiteInterface:
-    os.environ["DO_NOT_CHECK_TDAG"] = "true"
+    os.environ["DO_NOT_CHECK_META_TABLES"] = "true"
     return SQLiteInterface(db_path=tmp_path / "sqlite")
 
 

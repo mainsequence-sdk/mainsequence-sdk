@@ -68,10 +68,10 @@ The relevant client models are:
 - `MetaTable` in `mainsequence/client/models_metatables.py`
 - `TimeIndexMetaData` in `mainsequence/client/models_tdag.py`
 - `DataNodeUpdate` in `mainsequence/client/models_tdag.py`
-- `DataNode` runtime class in `mainsequence/tdag/data_nodes/data_nodes.py`
-- `PersistManager` in `mainsequence/tdag/data_nodes/persist_managers.py`
+- `DataNode` runtime class in `mainsequence/meta_tables/data_nodes/data_nodes.py`
+- `PersistManager` in `mainsequence/meta_tables/data_nodes/persist_managers.py`
 - `build_operations.create_config(...)` in
-  `mainsequence/tdag/data_nodes/build_operations.py`
+  `mainsequence/meta_tables/data_nodes/build_operations.py`
 
 The pre-migration write path was:
 
@@ -332,7 +332,7 @@ New code should separate storage creation from update process creation.
 Storage authoring:
 
 ```python
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
 
 
 class PricesTable(PlatformTimeIndexMetaData, Base):
@@ -354,8 +354,8 @@ the authoring model with `PricesTable.bind_meta_table(prepared_meta_table)`.
 Update authoring:
 
 ```python
-from mainsequence.tdag import DataNode, DataNodeUpdateConfiguration
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import DataNode, DataNodeUpdateConfiguration
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
 
 
 class PricesUpdateConfiguration(DataNodeUpdateConfiguration):
@@ -634,7 +634,7 @@ Required backend capabilities:
 - Keep public imports stable from `mainsequence.client`.
 - Add focused import tests for:
   `mainsequence.client.MetaTable`, `mainsequence.client.TimeIndexMetaData`,
-  `mainsequence.client.DataNodeUpdate`, and `mainsequence.tdag.DataNode`.
+  `mainsequence.client.DataNodeUpdate`, and `mainsequence.meta_tables.DataNode`.
 
 ### Phase 2: Make TimeIndexMetaData Inherit MetaTable
 
@@ -716,7 +716,7 @@ Required backend capabilities:
   deferred.
 - Keep the client resource currently named `DataNodeUpdate` unchanged unless a
   separate naming ADR is accepted.
-- Update docs to distinguish `mainsequence.tdag.DataNode` as the runtime class
+- Update docs to distinguish `mainsequence.meta_tables.DataNode` as the runtime class
   from `mainsequence.client.DataNodeUpdate` as the backend update record.
 
 ### Phase 8: CLI And Docs

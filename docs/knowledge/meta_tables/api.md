@@ -28,7 +28,7 @@ from mainsequence.client.models_metatables import (
 SQLAlchemy helpers:
 
 ```python
-from mainsequence.tdag.meta_tables import (
+from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     compile_sqlalchemy_statement,
     external_registered_registration_request_from_sqlalchemy_model,
@@ -38,7 +38,7 @@ from mainsequence.tdag.meta_tables import (
 )
 ```
 
-The SQLAlchemy helpers are lazy. Importing `mainsequence.tdag.meta_tables` does
+The SQLAlchemy helpers are lazy. Importing `mainsequence.meta_tables` does
 not require SQLAlchemy to be installed. SQLAlchemy-specific behavior is used
 only when a helper or platform-managed class needs to compile, inspect, or
 construct SQLAlchemy objects.

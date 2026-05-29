@@ -14,8 +14,8 @@ import pandas as pd
 import pytz
 import structlog.contextvars as cvars
 
-import mainsequence.tdag.data_nodes.build_operations as build_operations
-import mainsequence.tdag.data_nodes.run_operations as run_operations
+import mainsequence.meta_tables.data_nodes.build_operations as build_operations
+import mainsequence.meta_tables.data_nodes.run_operations as run_operations
 from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
     BaseUpdateStatistics,
@@ -26,11 +26,11 @@ from mainsequence.client.models_tdag import (
     SessionDataSource,
     UpdateStatistics,
 )
-from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
+from mainsequence.client.utils import META_TABLES_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables.data_nodes.persist_managers import APIPersistManager, PersistManager
 
 from .models import BaseConfiguration
 from .namespacing import current_hash_namespace
@@ -56,7 +56,7 @@ class DataAccessMixin:
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
     ):
-        """Return the latest observation using generic TDAG dimensions."""
+        """Return the latest observation using generic time-index dimensions."""
         return self.local_persist_manager.get_last_observation(
             dimension_filters=dimension_filters,
             index_coordinates=index_coordinates,
@@ -110,11 +110,11 @@ class DataAccessMixin:
         dimension_range_map: list[dict] | None = None,
         columns: list[str] | None = None,
     ) -> pd.DataFrame:
-        """Retrieve rows using time bounds and explicit TDAG dimensions.
+        """Retrieve rows using time bounds and explicit time-index dimensions.
 
         `dimension_filters`, `index_coordinates`, and `dimension_range_map`
-        are the only identity-scoping inputs accepted by core TDAG. Domain
-        specific helpers should live outside the TDAG core.
+        are the only identity-scoping inputs accepted by the MetaTables core.
+        Domain specific helpers should live outside the package core.
         """
         return self.local_persist_manager.get_df_between_dates(
             start_date=start_date,
@@ -216,9 +216,9 @@ class APIDataNode(DataAccessMixin):
             storage_table: Optional resolved MetaTable backing this read wrapper.
         """
         if data_source_local_lake is not None:
-            assert (
-                data_source_local_lake.data_type in CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE
-            ), "data_source_local_lake should be of type CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE"
+            assert data_source_local_lake.data_type in CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE, (
+                "data_source_local_lake should be of type CONSTANTS.DATA_SOURCE_TYPE_LOCAL_DISK_LAKE"
+            )
 
         if data_source_uid in (None, ""):
             raise ValueError("APIDataNode requires data_source_uid.")
@@ -442,12 +442,8 @@ class DataNode(DataAccessMixin, ABC):
                     'hash_namespace="..." or with hash_namespace("...") instead.'
                 )
             explicit_namespace = kwargs.pop("hash_namespace", None)
-            namespace_aliases = tuple(
-                getattr(cls, "_HASH_NAMESPACE_ALIASES", ()) or ()
-            )
-            provided_namespace_aliases = [
-                alias for alias in namespace_aliases if alias in kwargs
-            ]
+            namespace_aliases = tuple(getattr(cls, "_HASH_NAMESPACE_ALIASES", ()) or ())
+            provided_namespace_aliases = [alias for alias in namespace_aliases if alias in kwargs]
             alias_namespace = None
             alias_namespace_provided = bool(provided_namespace_aliases)
             if len(provided_namespace_aliases) > 1:
@@ -460,8 +456,7 @@ class DataNode(DataAccessMixin, ABC):
             if (
                 explicit_namespace is not None
                 and alias_namespace_provided
-                and (explicit_namespace or "").strip()
-                != (alias_namespace or "").strip()
+                and (explicit_namespace or "").strip() != (alias_namespace or "").strip()
             ):
                 raise ValueError(
                     f"{cls.__name__} received both hash_namespace and "
@@ -648,9 +643,8 @@ class DataNode(DataAccessMixin, ABC):
                 "DataNode storage_table is required and must be a "
                 "PlatformTimeIndexMetaData model class."
             )
-        is_time_index_model_class = (
-            isinstance(value, type)
-            and issubclass(value, PlatformTimeIndexMetaData)
+        is_time_index_model_class = isinstance(value, type) and issubclass(
+            value, PlatformTimeIndexMetaData
         )
         if not is_time_index_model_class:
             raise TypeError(
@@ -726,7 +720,9 @@ class DataNode(DataAccessMixin, ABC):
     def data_source_uid(self) -> str:
         data_source_uid = self.storage_table.get_data_source_uid()
         if data_source_uid in (None, ""):
-            raise ValueError("DataNode data_source_uid requires storage_table data-source identity.")
+            raise ValueError(
+                "DataNode data_source_uid requires storage_table data-source identity."
+            )
         return str(data_source_uid)
 
     @property
@@ -858,7 +854,6 @@ class DataNode(DataAccessMixin, ABC):
                 depth_df["update_node_uid"].astype(str) != str(self.data_node_update.uid)
             ].copy()
 
-
         else:
             self.dependencies_df = pd.DataFrame()
 
@@ -880,7 +875,7 @@ class DataNode(DataAccessMixin, ABC):
 
     def run(
         self,
-        debug_mode: bool=True,
+        debug_mode: bool = True,
         *,
         update_tree: bool = True,
         force_update: bool = False,
@@ -921,7 +916,7 @@ class DataNode(DataAccessMixin, ABC):
             Result returned by ``UpdateRunner.run()``.
         """
 
-        debug_mode=True # Todo: onle enterpsie distributed has the distribured node update.
+        debug_mode = True  # Todo: onle enterpsie distributed has the distribured node update.
 
         def _do_run():
             update_runner = run_operations.UpdateRunner(
@@ -980,7 +975,7 @@ class DataNode(DataAccessMixin, ABC):
             # projection kept for older SDK surfaces. Runtime logic should prefer
             # update_statistics.max_time_index_value from global_index_progress.
             warnings.warn(
-                "Deprecated TDAG compatibility path: "
+                "Deprecated DataNode compatibility path: "
                 "historical_update.last_time_index_value was read. Use "
                 "historical_update.update_statistics.max_time_index_value instead.",
                 FutureWarning,
@@ -1027,10 +1022,7 @@ class DataNode(DataAccessMixin, ABC):
             self.logger.warning(f"{self} produced no new data in this update round.")
             return temp_df
 
-        if (
-            latest_persisted_time_index is None
-            and not SessionDataSource.is_local_db
-        ):
+        if latest_persisted_time_index is None and not SessionDataSource.is_local_db:
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 
         if temp_df.empty:
@@ -1046,10 +1038,6 @@ class DataNode(DataAccessMixin, ABC):
         )
         self.logger.info(f"Successfully updated {self}.")
         return temp_df
-
-
-
-        
 
     @abstractmethod
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:

@@ -95,7 +95,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### DataNode Authoring and Metadata
 
-- `mainsequence/tdag/data_nodes/models.py:28`
+- `mainsequence/meta_tables/data_nodes/models.py:28`
   - `RecordDefinition.dtype` is an unconstrained string authored by users.
   - This is a structural dtype declaration and participates in hashing.
 
@@ -107,7 +107,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `SourceTableConfigurationBase.column_dtypes_map` is typed as
     `dict[str, Any]` and accepts backend-returned dtype strings without parsing.
 
-- `mainsequence/tdag/data_nodes/data_nodes.py:1234`
+- `mainsequence/meta_tables/data_nodes/data_nodes.py:1234`
   - `DataNode.get_column_metadata()` copies `record.dtype` directly into
     `ColumnMetaData.dtype`.
 
@@ -117,11 +117,11 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `_records_to_column_dtypes_map()` converts each record dtype with
     `str(dtype)`.
 
-- `mainsequence/tdag/data_nodes/run_operations.py:45`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:45`
   - Duplicate `_records_to_column_dtypes_map()` also converts each record dtype
     with `str(dtype)`.
 
-- `mainsequence/tdag/data_nodes/data_nodes.py:1187`
+- `mainsequence/meta_tables/data_nodes/data_nodes.py:1187`
   - `get_source_table_initialization_schema()` builds `column_dtypes_map`
     directly from `str(record.dtype)`.
 
@@ -158,7 +158,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `DataNodeUpdate.upsert_data_into_table()` passes the resulting
     `column_dtypes_map` into source-table creation.
 
-- `mainsequence/tdag/data_nodes/persist_managers.py`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py`
   - `BasePersistManager.persist_updated_data()` forwards records,
     `columns_metadata`, and `source_table_schema` into
     `DataNodeUpdate.upsert_data_into_table()`.
@@ -192,30 +192,30 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `SourceTableConfiguration.set_or_update_columns_metadata()` sends
     `columns_metadata` to the backend.
 
-- `mainsequence/tdag/data_nodes/persist_managers.py`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py`
   - `BasePersistManager.set_column_metadata()` decides whether to sync
     `ColumnMetaData` back to the backend.
 
 ### DataNode Runtime Validation and Parsing
 
-- `mainsequence/tdag/data_nodes/run_operations.py:120`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:120`
   - `_validate_declared_record_dtype()` compares declared dtype strings to
     actual pandas dtype strings.
 
-- `mainsequence/tdag/data_nodes/run_operations.py:127`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:127`
   - `_validate_declared_record_dtype()` lowercases declared and actual dtype
     strings but only has special handling for `json/jsonb`, `uuid`, and
     `string/str`.
 
-- `mainsequence/tdag/data_nodes/run_operations.py:381`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:381`
   - `UpdateRunner.validate_data_frame()` enforces the first index level as
     `datetime64[ns, UTC]`.
 
-- `mainsequence/tdag/data_nodes/run_operations.py:398`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:398`
   - `UpdateRunner.validate_data_frame()` builds a record dtype map for output
     validation.
 
-- `mainsequence/tdag/data_nodes/run_operations.py:416`
+- `mainsequence/meta_tables/data_nodes/run_operations.py:416`
   - `UpdateRunner.validate_data_frame()` validates every declared record dtype
     against the DataFrame/index dtype.
 
@@ -274,11 +274,11 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 - `mainsequence/client/models_tdag.py:4393`
   - Timescale response restoration casts columns from `stc.column_dtypes_map`.
 
-- `mainsequence/tdag/data_nodes/persist_managers.py:86`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py:86`
   - `APIPersistManager.get_data_between_dates_from_api()` reads
     `stc.column_dtypes_map` for response restoration.
 
-- `mainsequence/tdag/data_nodes/persist_managers.py:92`
+- `mainsequence/meta_tables/data_nodes/persist_managers.py:92`
   - `APIPersistManager.get_data_between_dates_from_api()` casts returned
     columns using `astype(c_type)`.
 
@@ -373,30 +373,30 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### MetaTable SQLAlchemy DType Mapping
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:695`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:695`
   - `_column_contract()` converts SQLAlchemy columns into
     `MetaTableColumnContract`.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:721`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:721`
   - `_column_type_contract()` reads `column.type` and converts it to
     `data_type` plus `backend_type`.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:727`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:727`
   - `_column_type_contract()` serializes backend type as
     `str(column_type).upper()`.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:741`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:741`
   - `_logical_data_type()` maps SQLAlchemy/backend type names into logical
     dtype strings.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:769`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:769`
   - `_logical_data_type()` maps SQLAlchemy datetime/timestamp types to
     `"datetime"`.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:771`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:771`
   - `_logical_data_type()` maps SQLAlchemy date types to `"date"`.
 
-- `mainsequence/tdag/meta_tables/sqlalchemy_contracts.py:839`
+- `mainsequence/meta_tables/sqlalchemy_contracts.py:839`
   - `_column_storage_identity()` includes `data_type` and `backend_type` in the
     MetaTable storage hash identity.
 

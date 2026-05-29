@@ -94,7 +94,7 @@ A simple and scalable pattern is:
 Preferred constructor shape:
 
 ```python
-from mainsequence.tdag import DataNode, DataNodeConfiguration
+from mainsequence.meta_tables import DataNode, DataNodeConfiguration
 
 
 class MyNodeConfig(DataNodeConfiguration):
@@ -236,7 +236,7 @@ So the isolation is not only for the top-level node. It propagates across the ru
 For tests, prefer:
 
 ```python
-from mainsequence.tdag.data_nodes import hash_namespace
+from mainsequence.meta_tables.data_nodes import hash_namespace
 
 with hash_namespace("pytest_case_123"):
     node = MyNode(...)
@@ -371,7 +371,7 @@ Use `DataNodeConfiguration.records` when a node has a stable output contract:
 ```python
 from pydantic import Field
 
-from mainsequence.tdag import DataNodeConfiguration, RecordDefinition
+from mainsequence.meta_tables import DataNodeConfiguration, RecordDefinition
 
 
 ASSET_UID = RecordDefinition(
@@ -408,7 +408,7 @@ When a DataNode source table should reference a registered MetaTable, add
 model:
 
 ```python
-from mainsequence.tdag import SourceTableForeignKey
+from mainsequence.meta_tables import SourceTableForeignKey
 
 
 class PricesConfig(DataNodeConfiguration):
@@ -760,7 +760,7 @@ A practical pattern is to keep the production class unchanged, pass a narrow
 `offset_start` in the test config, and run the node inside a namespace:
 
 ```python
-from mainsequence.tdag.data_nodes import hash_namespace
+from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.my_node import MyNode, MyNodeConfig
 
@@ -825,7 +825,7 @@ When you are consuming a table that already exists in the platform, the first qu
 Start with `APIDataNode.build_from_identifier(...)` when you already know the published table identifier.
 
 ```python
-from mainsequence.tdag import APIDataNode
+from mainsequence.meta_tables import APIDataNode
 
 prices = APIDataNode.build_from_identifier("simulated_prices_tutorial")
 

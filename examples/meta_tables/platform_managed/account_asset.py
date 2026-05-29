@@ -10,7 +10,7 @@ from examples.meta_tables.common import (
     DEFAULT_TIMEOUT,
     print_json,
 )
-from mainsequence.tdag.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 
 NAMESPACE = "sdk-examples"
 

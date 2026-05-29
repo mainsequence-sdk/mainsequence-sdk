@@ -64,7 +64,7 @@ scope.
 Use this when you already have SQL text and parameters:
 
 ```python
-from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables import build_compiled_sql_v1_operation
 
 
 operation = build_compiled_sql_v1_operation(
@@ -108,7 +108,7 @@ The SDK imports SQLAlchemy lazily only when this helper is called.
 ```python
 from sqlalchemy import select
 
-from mainsequence.tdag.meta_tables import compile_sqlalchemy_statement
+from mainsequence.meta_tables import compile_sqlalchemy_statement
 
 
 stmt = (

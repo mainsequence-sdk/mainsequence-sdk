@@ -33,11 +33,11 @@ class SQLiteInterface:
     """
 
     def __init__(self, db_path: str | Path | None = None):
-        from mainsequence.tdag.config import TDAG_DATA_PATH
+        from mainsequence.meta_tables.config import META_TABLES_DATA_PATH
 
         default_path = os.getenv(
             "SQLITE_PATH",
-            os.path.join(f"{TDAG_DATA_PATH}", "sqlite"),
+            os.path.join(f"{META_TABLES_DATA_PATH}", "sqlite"),
         )
         raw_path = Path(str(db_path or default_path)).expanduser()
         if raw_path.suffix in {".db", ".sqlite", ".sqlite3"}:
@@ -149,11 +149,12 @@ class SQLiteInterface:
                 is_time_index=column == time_index_name,
             )
             self.con.execute(
-                f"ALTER TABLE {self._qident(table)} "
-                f"ADD COLUMN {self._qident(column)} {col_type}"
+                f"ALTER TABLE {self._qident(table)} ADD COLUMN {self._qident(column)} {col_type}"
             )
 
-        missing_index_columns = [name for name in index_names if name not in self._table_columns(table)]
+        missing_index_columns = [
+            name for name in index_names if name not in self._table_columns(table)
+        ]
         if missing_index_columns:
             raise ValueError(
                 "SQLite table is missing configured index columns. "
@@ -257,7 +258,12 @@ class SQLiteInterface:
         unique_identifier_range_map: dict[str, dict[str, Any]] | None = None,
         max_rows: int | None = None,
         now: datetime.datetime | None = None,
-    ) -> tuple[datetime.datetime | None, datetime.datetime | None, list[dict[str, Any]] | None, dict[str, Any]]:
+    ) -> tuple[
+        datetime.datetime | None,
+        datetime.datetime | None,
+        list[dict[str, Any]] | None,
+        dict[str, Any],
+    ]:
         self._validate_index(index_names, time_index_name)
         identity_dimensions = [name for name in index_names if name != time_index_name]
         uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
@@ -467,7 +473,9 @@ class SQLiteInterface:
         global_min_raw = self.con.execute(
             f"SELECT MIN({qtime}) AS min_val FROM {self._qident(table)}"
         ).fetchone()["min_val"]
-        global_min = pd.to_datetime(global_min_raw, utc=True) if global_min_raw is not None else None
+        global_min = (
+            pd.to_datetime(global_min_raw, utc=True) if global_min_raw is not None else None
+        )
 
         identity_dimensions = [name for name in index_names if name != time_index_name]
         if not identity_dimensions:

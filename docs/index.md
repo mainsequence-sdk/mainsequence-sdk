@@ -57,7 +57,7 @@ Use the generated reference when you need the API surface directly:
 
 The SDK is organized around a few main areas:
 
-- `mainsequence.tdag`: `DataNode`s, persistence, orchestration, and update workflows
+- `mainsequence.meta_tables`: `DataNode`s, persistence, orchestration, and update workflows
 - `mainsequence.client`: API client models for projects, jobs, tables, platform resources, and sharing
 - `mainsequence.cli`: the `mainsequence` command-line interface
 

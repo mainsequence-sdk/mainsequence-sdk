@@ -38,14 +38,12 @@ DEFAULT_ALLOWED_METHODS = frozenset(["HEAD", "GET", "OPTIONS", "POST", "PUT", "P
 DEFAULT_TIMEOUT: tuple[float, float] = (5.0, 120.0)
 
 
-
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
-
 
 
 class DataFrequency(str, Enum):
     one_m = "1m"
-    one_min="1m"
+    one_min = "1m"
     five_m = "5m"
     one_d = "1d"
     one_w = "1w"
@@ -62,6 +60,7 @@ class DateInfo(TypedDict, total=False):
 
 
 UniqueIdentifierRangeMap = dict[str, DateInfo]
+
 
 class AuthError(Exception):
     pass
@@ -131,6 +130,7 @@ def _decode_jwt_exp(token: str | None) -> int | None:
     except Exception:
         return None
 
+
 class BaseAuthProvider:
     def get_headers(self) -> CaseInsensitiveDict:
         raise NotImplementedError
@@ -179,9 +179,7 @@ class SessionJWTAuthProvider(BaseAuthProvider):
         session: requests.Session | None = None,
     ) -> None:
         if force:
-            raise AuthError(
-                "Refresh is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt."
-            )
+            raise AuthError("Refresh is not allowed when MAINSEQUENCE_AUTH_MODE=session_jwt.")
         return None
 
 
@@ -260,14 +258,15 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
             )
             if response.status_code < 200 or response.status_code >= 300:
                 raise AuthError(
-                    "Runtime credential exchange failed with status "
-                    f"{response.status_code}."
+                    f"Runtime credential exchange failed with status {response.status_code}."
                 )
 
             data = response.json()
             access = str(data.get("access") or "").strip()
             if not access:
-                raise AuthError("Runtime credential exchange response did not include access token.")
+                raise AuthError(
+                    "Runtime credential exchange response did not include access token."
+                )
 
             token_type = str(data.get("token_type") or self.token_type or "Bearer").strip()
             self.token_type = token_type or "Bearer"
@@ -286,7 +285,9 @@ class RuntimeCredentialAuthProvider(BaseAuthProvider):
 
         access_token = self._current_access_token()
         if not access_token:
-            raise AuthError("MAINSEQUENCE_ACCESS_TOKEN is missing after runtime credential exchange.")
+            raise AuthError(
+                "MAINSEQUENCE_ACCESS_TOKEN is missing after runtime credential exchange."
+            )
 
         return CaseInsensitiveDict(
             {
@@ -344,10 +345,10 @@ class JWTAuthProvider(BaseAuthProvider):
         return exp <= int(time.time()) + self.refresh_skew_seconds
 
     def refresh(
-            self,
-            *,
-            force: bool = False,
-            session: requests.Session | None = None,
+        self,
+        *,
+        force: bool = False,
+        session: requests.Session | None = None,
     ) -> None:
         with self._lock:
             if not force and not self._needs_refresh():
@@ -394,10 +395,10 @@ class JWTAuthProvider(BaseAuthProvider):
         )
 
     def login(
-            self,
-            username: str,
-            password: str,
-            session: requests.Session | None = None,
+        self,
+        username: str,
+        password: str,
+        session: requests.Session | None = None,
     ) -> dict:
         http_client = session or requests
 
@@ -427,6 +428,7 @@ def request_to_datetime(string_date: str):
         )
     return date
 
+
 def build_default_auth_provider() -> BaseAuthProvider:
     provider_kind = _default_auth_provider_kind()
 
@@ -440,8 +442,7 @@ def build_default_auth_provider() -> BaseAuthProvider:
         return JWTAuthProvider()
 
     raise AuthError(
-        "No auth configured. Set MAINSEQUENCE_ACCESS_TOKEN / "
-        "MAINSEQUENCE_REFRESH_TOKEN."
+        "No auth configured. Set MAINSEQUENCE_ACCESS_TOKEN / MAINSEQUENCE_REFRESH_TOKEN."
     )
 
 
@@ -456,9 +457,13 @@ class AuthLoaders:
     def _provider(self) -> BaseAuthProvider:
         provider_kind = _default_auth_provider_kind()
 
-        if provider_kind == "runtime_credential" and not isinstance(self.provider, RuntimeCredentialAuthProvider):
+        if provider_kind == "runtime_credential" and not isinstance(
+            self.provider, RuntimeCredentialAuthProvider
+        ):
             self.provider = RuntimeCredentialAuthProvider()
-        elif provider_kind == "session_jwt" and not isinstance(self.provider, SessionJWTAuthProvider):
+        elif provider_kind == "session_jwt" and not isinstance(
+            self.provider, SessionJWTAuthProvider
+        ):
             self.provider = SessionJWTAuthProvider()
         elif provider_kind == "jwt" and not isinstance(self.provider, JWTAuthProvider):
             self.provider = JWTAuthProvider()
@@ -471,9 +476,9 @@ class AuthLoaders:
         return self._provider().get_headers()
 
     def refresh_headers(
-            self,
-            force: bool = False,
-            session: requests.Session | None = None,
+        self,
+        force: bool = False,
+        session: requests.Session | None = None,
     ):
         provider = self._provider()
         provider.refresh(force=force, session=session)
@@ -487,6 +492,7 @@ class AuthLoaders:
 
     def clear_auth(self):
         self.provider = None
+
 
 def get_rest_token_header():
     return loaders.refresh_headers()
@@ -596,12 +602,12 @@ def make_request(
             break
 
         logger.debug(
-            f"Trying request again after {TIMEOFF}s "
-            f"- Counter: {counter}/{TRIES} - URL: {url}"
+            f"Trying request again after {TIMEOFF}s - Counter: {counter}/{TRIES} - URL: {url}"
         )
         time.sleep(TIMEOFF)
 
     return r
+
 
 def build_session(
     *,
@@ -639,9 +645,11 @@ def build_session(
     s.mount("http://", adapter)
     return s
 
+
 # ---- Shared backend (import this in base/models) ----
 loaders = AuthLoaders()
 session = build_session(loaders=loaders)
+
 
 def get_constants_tdag():
     url = f"{MAINSEQUENCE_ENDPOINT}/orm/api/ts_manager/api/constants"
@@ -697,8 +705,11 @@ class LazyConstants(dict):
         return out
 
 
+if "META_TABLES_CONSTANTS" not in locals():
+    META_TABLES_CONSTANTS = LazyConstants("tdag")
+
 if "TDAG_CONSTANTS" not in locals():
-    TDAG_CONSTANTS = LazyConstants("tdag")
+    TDAG_CONSTANTS = META_TABLES_CONSTANTS
 
 
 def get_network_ip():
@@ -772,8 +783,6 @@ def serialize_to_json(kwargs):
         return v
 
     return {k: to_jsonable(v) for k, v in kwargs.items()}
-
-
 
 
 def _linux_machine_id() -> str | None:

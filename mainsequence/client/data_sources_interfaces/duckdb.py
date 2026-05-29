@@ -53,12 +53,12 @@ class DuckDBInterface:
                                              environment variable or 'analytics.duckdb'
                                              in the current directory if the variable is not set.
         """
-        from mainsequence.tdag.config import TDAG_DATA_PATH
+        from mainsequence.meta_tables.config import META_TABLES_DATA_PATH
 
         # ── choose default & normalise to string ───────────────────────────
         default_path = os.getenv(
             "DUCKDB_PATH",
-            os.path.join(f"{TDAG_DATA_PATH}", "duck_db"),
+            os.path.join(f"{META_TABLES_DATA_PATH}", "duck_db"),
         )
         db_uri = str(db_path or default_path).rstrip("/")
 
@@ -812,9 +812,7 @@ class DuckDBInterface:
             m = int(m_month.group(1))
             if m_day:
                 d = int(m_day.group(1))
-                start = pd.Timestamp(
-                    datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.UTC)
-                )
+                start = pd.Timestamp(datetime.datetime(y, m, d, 0, 0, 0, tzinfo=datetime.UTC))
                 end = start + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1)
                 return start, end
             # month granularity
@@ -822,9 +820,7 @@ class DuckDBInterface:
             start = pd.Timestamp(datetime.datetime(y, m, 1, 0, 0, 0, tzinfo=datetime.UTC))
             end = pd.Timestamp(
                 datetime.datetime(y, m, last_day, 23, 59, 59, tzinfo=datetime.UTC)
-            ) + pd.Timedelta(
-                seconds=0.999999999
-            )  # inclusive
+            ) + pd.Timedelta(seconds=0.999999999)  # inclusive
             return start, end
 
         def _collect_row_groups_meta(
@@ -1119,7 +1115,12 @@ class DuckDBInterface:
                 "mode": "row_group_metadata",
             }
             # Nothing to change
-            return start_ts or eff_start, end_ts or eff_end, normalized_dimension_range_map, diagnostics
+            return (
+                start_ts or eff_start,
+                end_ts or eff_end,
+                normalized_dimension_range_map,
+                diagnostics,
+            )
 
         # Binary search for latest T in [eff_start, eff_end] with est_rows <= max_rows
         lo = eff_start.value
@@ -1219,6 +1220,7 @@ class DuckDBInterface:
         Raises:
             ValueError: If both `ids` and `unique_identifier_range_map` are provided.
         """
+
         def qident(name: str) -> str:
             return '"' + str(name).replace('"', '""') + '"'
 

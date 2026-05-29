@@ -12,7 +12,7 @@ from examples.meta_tables.common import (
     print_json,
 )
 from mainsequence.client import MetaTable
-from mainsequence.tdag.meta_tables import compile_sqlalchemy_statement
+from mainsequence.meta_tables import compile_sqlalchemy_statement
 
 
 def load_models(*, mode: str):

@@ -226,7 +226,7 @@ Example:
 ```python
 from pydantic import Field
 
-from mainsequence.tdag import DataNodeConfiguration, RecordDefinition
+from mainsequence.meta_tables import DataNodeConfiguration, RecordDefinition
 
 ASSET_UID = RecordDefinition(
     column_name="asset_uid",

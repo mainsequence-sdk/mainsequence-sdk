@@ -24,7 +24,7 @@ from mainsequence.client.models_tdag import (
 )
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaData
 
 from .. import future_registry
 
@@ -142,9 +142,7 @@ class BasePersistManager:
     def storage_metadata(self) -> Any:
         storage_metadata = self.storage_table.get_time_index_metadata()
         if storage_metadata is None:
-            raise ValueError(
-                "PersistManager storage_table must be registered or bound before use."
-            )
+            raise ValueError("PersistManager storage_table must be registered or bound before use.")
         return storage_metadata
 
     @property
@@ -166,9 +164,7 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = (
-            self.storage_table.get_data_source_uid()
-        )
+        kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = self.storage_table.get_data_source_uid()
         return kwargs
 
     def _build_update_get_or_create_kwargs(

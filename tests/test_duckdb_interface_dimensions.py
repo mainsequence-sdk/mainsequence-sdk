@@ -16,7 +16,7 @@ def _dt(hour: int) -> datetime.datetime:
 
 
 def _interface(tmp_path) -> DuckDBInterface:
-    os.environ["DO_NOT_CHECK_TDAG"] = "true"
+    os.environ["DO_NOT_CHECK_META_TABLES"] = "true"
     return DuckDBInterface(db_path=tmp_path / "duckdb")
 
 
@@ -76,9 +76,7 @@ def test_duckdb_local_backend_stores_data_without_physical_fk_constraints(tmp_pa
         table="node",
         index_names=INDEX_NAMES,
         time_index_name="time_index",
-        index_coordinates=[
-            {"account_uid": "acct-a", "asset_uid": "missing-target-asset"}
-        ],
+        index_coordinates=[{"account_uid": "acct-a", "asset_uid": "missing-target-asset"}],
     )
     constraints = interface.con.execute(
         "SELECT * FROM duckdb_constraints() WHERE table_name = 'node'"

@@ -20,7 +20,7 @@ from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
 from mainsequence.client.models_tdag import _resolve_local_pod_project
 from mainsequence.instrumentation import tracer, tracer_instrumentator
-from mainsequence.tdag.pydantic_metadata import (
+from mainsequence.meta_tables.pydantic_metadata import (
     is_serialized_pydantic_model,
     serialize_pydantic_model,
     strip_pydantic_hash_exclusions,
@@ -33,8 +33,10 @@ from .persist_managers import PersistManager
 if TYPE_CHECKING:
     from .data_nodes import APIDataNode, DataNode
 
+
 def build_model(model_data):
     return get_model_class(model_data["orm_class"])(**model_data)
+
 
 POSTGRES_IDENTIFIER_MAX_LENGTH = 63
 _HASH_SUFFIX_LENGTH = 33
@@ -182,7 +184,6 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
         local_ts_dict_to_hash[key] = value
         if isinstance(value, dict):
             if "orm_class" in value.keys():
-
                 local_ts_dict_to_hash[key] = value["unique_identifier"]
 
             elif "is_time_series_config" in value.keys():
@@ -193,7 +194,6 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
                 }
 
             elif isinstance(value, dict) and value.get("__type__") == "orm_model_list":
-
                 # The value["items"] are already serialized dicts
 
                 local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
@@ -213,7 +213,9 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
 
     # The function expects to receive the full dictionary, including meta-args
     parsed_dictionary = parse_dictionary_before_hashing(dictionary)
-    local_ts_dict_to_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=False)
+    local_ts_dict_to_hash = _strip_pydantic_hash_exclusions(
+        parsed_dictionary, for_storage_hash=False
+    )
     remote_ts_in_db_hash = _strip_pydantic_hash_exclusions(parsed_dictionary, for_storage_hash=True)
 
     # Add project_uid for local hash so local hashing follows the public project contract.
@@ -228,7 +230,6 @@ def hash_signature(dictionary: dict[str, Any]) -> tuple[str, str]:
     dhash_remote.update(encoded_remote)
 
     return dhash_local.hexdigest(), dhash_remote.hexdigest()
-
 
 
 def rebuild_with_type(value: dict[str, Any], rebuild_function: Callable) -> tuple | Any:
@@ -319,7 +320,6 @@ class BaseRebuilder(ABC):
 
 
 class ConfigRebuilder(BaseRebuilder):
-
     @property
     def registry(self) -> dict[str, Callable]:
         return {
@@ -377,6 +377,7 @@ class DeserializerManager:
         config = self.rebuild_config(config=config)
 
         return config
+
 
 @dataclass
 class TimeSerieConfig:
@@ -509,8 +510,7 @@ def rebuild_from_configuration(update_hash: str, data_source: str | object) -> D
     )
     if data_node_update is None:
         raise ValueError(
-            f"DataNodeUpdate {update_hash!r} with data source {data_source_uid!r} "
-            "was not found."
+            f"DataNodeUpdate {update_hash!r} with data source {data_source_uid!r} was not found."
         )
     storage_table = data_node_update.data_node_storage
     persist_manager = PersistManager.get_from_storage_table(

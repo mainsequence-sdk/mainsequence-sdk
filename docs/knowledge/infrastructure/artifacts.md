@@ -154,7 +154,7 @@ This is a common pattern when an upstream system gives you files, but your downs
 import pandas as pd
 
 from mainsequence.client import Artifact
-from mainsequence.tdag import DataNode, DataNodeConfiguration
+from mainsequence.meta_tables import DataNode, DataNodeConfiguration
 
 
 class ExternalPricesConfig(DataNodeConfiguration):

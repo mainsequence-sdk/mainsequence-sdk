@@ -26,6 +26,49 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "if_not_exists": True,
 }
 SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
+POSTGRESQL_MAX_IDENTIFIER_LENGTH = 63
+
+
+def _truncate_postgresql_identifier(value: str) -> str:
+    return str(value)[:POSTGRESQL_MAX_IDENTIFIER_LENGTH]
+
+
+def _default_time_indexed_meta_table_indexes(index_names: Sequence[str]) -> list[dict[str, Any]]:
+    normalized_index_names = [str(name) for name in index_names or []]
+    if not normalized_index_names:
+        return []
+
+    time_index_name, *identity_dimensions = normalized_index_names
+    indexes: list[dict[str, Any]] = [
+        {
+            "name": "time_idx",
+            "columns": [time_index_name],
+            "unique": False,
+            "method": "brin",
+            "expression": None,
+        }
+    ]
+    if identity_dimensions:
+        indexes.append(
+            {
+                "name": _truncate_postgresql_identifier(f"{'_'.join(identity_dimensions)}_idx"),
+                "columns": identity_dimensions,
+                "unique": False,
+                "method": "btree",
+                "expression": None,
+            }
+        )
+    indexes.append(
+        {
+            "name": "time_identifier_ev_idx",
+            "columns": normalized_index_names,
+            "unique": True,
+            "method": "btree",
+            "expression": None,
+        }
+    )
+    return indexes
+
 
 try:
     from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
@@ -529,7 +572,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     index_names: Sequence[str] | None = None,
     storage_layout: Mapping[str, Any] | None = None,
 ) -> Any:
-    from mainsequence.client.models_tdag import DynamicTableRegistrationRequest
+    from mainsequence.client.models_tdag import TimeIndexMetaTableRegistrationRequest
 
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -572,12 +615,35 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     if enforce_storage_hash_name and table_name != configured_storage_hash:
         raise ValueError(
             "Platform-managed time-indexed SQLAlchemy tables must use the configured "
-            "DynamicTable storage hash as their physical table name. Use PlatformTimeIndexMetaData "
+            "time-indexed MetaTable storage hash as their physical table name. Use PlatformTimeIndexMetaData "
             "or metatable_configured_tablename(...) for __tablename__. "
             f"Expected {configured_storage_hash!r}, got {table_name!r}."
         )
 
-    return DynamicTableRegistrationRequest(
+    column_contracts = [
+        _column_contract(column, ordinal_position=position).model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+        for position, column in enumerate(columns)
+    ]
+    foreign_key_contracts = [
+        _source_table_foreign_key_contract(
+            foreign_key_constraint,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
+        ).model_dump(mode="json", exclude_none=True)
+        for foreign_key_constraint in sorted(
+            _iter_foreign_key_constraints(table),
+            key=lambda item: item.name or "",
+        )
+    ]
+    module, qualname = _resolve_model_path(
+        model_or_table,
+        table_model_module=None,
+        table_model_qualname=None,
+    )
+
+    return TimeIndexMetaTableRegistrationRequest(
         data_source_uid=_resolve_data_source_uid(
             data_source=data_source,
             data_source_uid=data_source_uid,
@@ -590,22 +656,28 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         labels=list(labels or []),
         provisioning=dict(provisioning or DEFAULT_PLATFORM_MANAGED_PROVISIONING),
         time_index_name=resolved_time_index_name,
-        index_names=resolved_index_names,
-        columns=[
-            _column_contract(column, ordinal_position=position)
-            for position, column in enumerate(columns)
-        ],
-        storage_layout=dict(resolved_storage_layout) if resolved_storage_layout else None,
-        foreign_keys=[
-            _source_table_foreign_key_contract(
-                foreign_key_constraint,
-                target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
-            )
-            for foreign_key_constraint in sorted(
-                _iter_foreign_key_constraints(table),
-                key=lambda item: item.name or "",
-            )
-        ],
+        table_contract={
+            "version": "relational-table.v1",
+            "table_kind": "time_indexed",
+            "authoring": {
+                "table_model": {
+                    "kind": "sqlalchemy",
+                    "module": module,
+                    "qualname": qualname,
+                },
+                "time_indexed": {
+                    "time_index_name": resolved_time_index_name,
+                    "index_names": resolved_index_names,
+                    "storage_layout": (
+                        dict(resolved_storage_layout) if resolved_storage_layout else None
+                    ),
+                },
+            },
+            "physical": {"table_name": table_name},
+            "columns": column_contracts,
+            "indexes": _default_time_indexed_meta_table_indexes(resolved_index_names),
+            "foreign_keys": foreign_key_contracts,
+        },
     )
 
 
