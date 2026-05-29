@@ -251,7 +251,7 @@ class MetaTableIndexContract(BasePydanticModel):
 
 
 class MetaTableForeignKeyContract(BasePydanticModel):
-    name: str
+    name: str | None = None
     source_columns: list[str] = Field(default_factory=list)
     target_meta_table_uid: str = Field(
         ...,

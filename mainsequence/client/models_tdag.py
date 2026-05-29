@@ -44,6 +44,8 @@ from .models_metatables import (
     DataSource,
     DynamicTableDataSource,
     MetaTable,
+    MetaTableForeignKeyContract,
+    MetaTableForeignKeyPayload,
 )
 from .models_metatables import (
     _duckdb_interface as _metatable_duckdb_interface,
@@ -177,33 +179,6 @@ class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     )
 
 
-class SourceTableForeignKeyContract(BasePydanticModel):
-    source_columns: list[str] = Field(
-        default_factory=list,
-        description="Ordered DynamicTable source columns",
-    )
-    target_meta_table_uid: str = Field(
-        ...,
-        description="Public uid of the target MetaTable",
-    )
-    target_columns: list[str] = Field(
-        default_factory=list,
-        description="Ordered target MetaTable columns",
-    )
-    on_delete: str = Field(
-        default="restrict",
-        description="Foreign-key delete action",
-    )
-
-
-class SourceTableForeignKeyProjection(SourceTableForeignKeyContract):
-    name: str = Field(..., description="Server-derived foreign-key constraint name")
-    target_meta_table_storage_hash: str | None = Field(
-        None,
-        description="Storage hash of the target MetaTable projection",
-    )
-
-
 class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -261,6 +236,12 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
                 "table_contract must be a MetaTable contract. Remove legacy "
                 f"time-indexed storage fields: {legacy_contract_fields}."
             )
+        authoring = table_contract.get("authoring")
+        if isinstance(authoring, Mapping) and "time_indexed" in authoring:
+            raise ValueError(
+                "Time-indexed storage fields are first-class fields; do not put "
+                "time_indexed state under table_contract.authoring."
+            )
         normalized_contract = dict(table_contract)
         normalized_contract["table_kind"] = "time_indexed"
         normalized_contract.setdefault("version", "relational-table.v1")
@@ -271,23 +252,22 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         return data
 
 
-def _serialize_source_table_foreign_key_contract(
-    foreign_key: SourceTableForeignKeyContract | dict[str, Any],
+def _serialize_meta_table_foreign_key_contract(
+    foreign_key: MetaTableForeignKeyContract | MetaTableForeignKeyPayload | dict[str, Any],
 ) -> dict[str, Any]:
     if isinstance(foreign_key, BaseModel):
         raw = foreign_key.model_dump(mode="json", exclude_none=True)
     else:
         raw = dict(foreign_key)
-    return {
-        key: raw[key]
-        for key in (
-            "source_columns",
-            "target_meta_table_uid",
-            "target_columns",
-            "on_delete",
-        )
-        if key in raw
+    target_meta_table_uid = raw.get("target_meta_table_uid") or raw.get("target_table_uid")
+    serialized = {
+        "source_columns": list(raw.get("source_columns") or []),
+        "target_columns": list(raw.get("target_columns") or []),
+        "on_delete": raw.get("on_delete") or "restrict",
     }
+    if target_meta_table_uid not in (None, ""):
+        serialized["target_meta_table_uid"] = str(target_meta_table_uid)
+    return serialized
 
 
 def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -386,9 +366,7 @@ class TimeIndexedProfileBase:
         ..., description="Derived dtype map projected from canonical MetaTable columns"
     )
     index_names: list
-    foreign_keys: list[SourceTableForeignKeyProjection | SourceTableForeignKeyContract] = Field(
-        default_factory=list
-    )
+    foreign_keys: list[MetaTableForeignKeyContract] = Field(default_factory=list)
 
     @field_validator("column_dtypes_map")
     @classmethod
@@ -420,10 +398,6 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     )
     physical_index_plan: dict[str, Any] | None = Field(
         None, description="Server-rendered physical index plan"
-    )
-    foreign_key_projections: list[SourceTableForeignKeyProjection] = Field(
-        default_factory=list,
-        description="Server-resolved DynamicTable-to-MetaTable FK projections",
     )
     multi_index_stats: dict[str, Any] | None = Field(
         None, description="Canonical multi-index progress statistics"
@@ -1081,7 +1055,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_source: DynamicTableDataSource,
         overwrite: bool,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
-        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
+        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None = None,
         records: Sequence[Any] | None = None,
         source_table_schema: Mapping[str, Any] | None = None,
     ):
@@ -1439,14 +1413,13 @@ class TimeIndexMetaData(MetaTable):
     @property
     def time_indexed_foreign_keys(
         self,
-    ) -> list[SourceTableForeignKeyProjection | SourceTableForeignKeyContract]:
+    ) -> list[MetaTableForeignKeyContract]:
         profile = self.time_indexed_profile
         if profile is not None:
-            return list(profile.foreign_key_projections or profile.foreign_keys or [])
+            return list(profile.foreign_keys or [])
         if self.foreign_keys:
             return [
-                SourceTableForeignKeyProjection(
-                    name=foreign_key.name,
+                MetaTableForeignKeyContract(
                     source_columns=list(foreign_key.source_columns or []),
                     target_meta_table_uid=str(
                         foreign_key.target_table_uid
@@ -1454,7 +1427,6 @@ class TimeIndexMetaData(MetaTable):
                     ),
                     target_columns=list(foreign_key.target_columns or []),
                     on_delete=foreign_key.on_delete or "restrict",
-                    target_meta_table_storage_hash=foreign_key.target_table_storage_hash,
                 )
                 for foreign_key in self.foreign_keys
                 if (
@@ -1681,7 +1653,7 @@ class TimeIndexMetaData(MetaTable):
         data,
         overwrite=False,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
-        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
+        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None = None,
     ):
         """
         Legacy compatibility path for callers that still invoke the old hook.
@@ -1864,30 +1836,32 @@ class TimeIndexMetaData(MetaTable):
             )
 
     @staticmethod
-    def _normalize_source_table_foreign_key_for_validation(
-        foreign_key: SourceTableForeignKeyContract | dict[str, Any],
+    def _normalize_meta_table_foreign_key_for_validation(
+        foreign_key: MetaTableForeignKeyContract | MetaTableForeignKeyPayload | dict[str, Any],
     ) -> dict[str, Any]:
-        raw = _serialize_source_table_foreign_key_contract(foreign_key)
-        return SourceTableForeignKeyContract(**raw).model_dump(mode="json")
+        raw = _serialize_meta_table_foreign_key_contract(foreign_key)
+        return _serialize_meta_table_foreign_key_contract(
+            MetaTableForeignKeyContract(**raw)
+        )
 
     @classmethod
     def _validate_existing_source_table_foreign_keys(
         cls,
         *,
         storage: TimeIndexMetaData,
-        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None,
+        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None,
     ) -> None:
         if foreign_keys is None:
             return
 
         existing_foreign_keys = [
-            cls._normalize_source_table_foreign_key_for_validation(foreign_key)
+            cls._normalize_meta_table_foreign_key_for_validation(foreign_key)
             for foreign_key in storage.time_indexed_foreign_keys
         ]
         missing_foreign_keys = [
             foreign_key
             for foreign_key in (
-                cls._normalize_source_table_foreign_key_for_validation(foreign_key)
+                cls._normalize_meta_table_foreign_key_for_validation(foreign_key)
                 for foreign_key in foreign_keys
             )
             if foreign_key not in existing_foreign_keys

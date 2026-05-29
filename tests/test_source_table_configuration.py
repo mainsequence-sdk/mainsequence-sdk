@@ -73,25 +73,23 @@ def test_time_indexed_profile_rejects_table_partition_typed_surface():
         models_tdag.TimeIndexedProfile(**payload)
 
 
-def test_time_indexed_profile_parses_generated_fk_projection_name():
+def test_time_indexed_profile_parses_metatable_foreign_keys():
     payload = _source_config_payload()
-    payload["foreign_key_projections"] = [
+    payload["foreign_keys"] = [
         {
             "name": "fk_prices_asset_uid_4f3a2b1c",
             "source_columns": ["account_uid"],
             "target_meta_table_uid": "asset-meta-table-uid",
             "target_columns": ["uid"],
             "on_delete": "restrict",
-            "target_meta_table_storage_hash": "asset_storage_hash",
         }
     ]
 
     config = models_tdag.TimeIndexedProfile(**payload)
-    projection = config.foreign_key_projections[0]
+    foreign_key = config.foreign_keys[0]
 
-    assert projection.name == "fk_prices_asset_uid_4f3a2b1c"
-    assert projection.target_meta_table_storage_hash == "asset_storage_hash"
-    assert models_tdag._serialize_source_table_foreign_key_contract(projection) == {
+    assert foreign_key.name == "fk_prices_asset_uid_4f3a2b1c"
+    assert models_tdag._serialize_meta_table_foreign_key_contract(foreign_key) == {
         "source_columns": ["account_uid"],
         "target_meta_table_uid": "asset-meta-table-uid",
         "target_columns": ["uid"],

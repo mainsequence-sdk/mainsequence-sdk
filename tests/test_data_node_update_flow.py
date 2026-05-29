@@ -33,7 +33,7 @@ def _source_config(
     index_names: list[str],
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
-    foreign_key_projections: list[models_tdag.SourceTableForeignKeyProjection] | None = None,
+    foreign_keys: list[models_tdag.MetaTableForeignKeyContract] | None = None,
 ) -> models_tdag.TimeIndexedProfile:
     return models_tdag.TimeIndexedProfile(
         related_table_uid="data-node-storage-44",
@@ -48,7 +48,7 @@ def _source_config(
             "uniqueness": {"columns": index_names},
         },
         columns_metadata=columns_metadata,
-        foreign_key_projections=foreign_key_projections or [],
+        foreign_keys=foreign_keys or [],
     )
 
 
@@ -57,7 +57,7 @@ def _storage_with_source_config(
     index_names: list[str],
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
-    foreign_key_projections: list[models_tdag.SourceTableForeignKeyProjection] | None = None,
+    foreign_keys: list[models_tdag.MetaTableForeignKeyContract] | None = None,
 ) -> models_tdag.TimeIndexMetaData:
     return models_tdag.TimeIndexMetaData.model_construct(
         uid="data-node-storage-44",
@@ -66,7 +66,7 @@ def _storage_with_source_config(
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
             columns_metadata=columns_metadata,
-            foreign_key_projections=foreign_key_projections,
+            foreign_keys=foreign_keys,
         ),
     )
 

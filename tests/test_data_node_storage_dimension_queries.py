@@ -60,15 +60,14 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
             description="Asset UID.",
         )
     ]
-    storage.time_indexed_profile.foreign_key_projections = [
-        models_tdag.SourceTableForeignKeyProjection(
-            name="fk_prices_asset_uid_asset_uid",
+    storage.time_indexed_profile.foreign_keys = [
+        models_tdag.MetaTableForeignKeyContract(
             source_columns=["asset_uid"],
             target_meta_table_uid="asset-meta-table-uid",
             target_columns=["uid"],
         )
     ]
-    foreign_key = models_tdag.SourceTableForeignKeyContract(
+    foreign_key = models_tdag.MetaTableForeignKeyContract(
         source_columns=["asset_uid"],
         target_meta_table_uid="asset-meta-table-uid",
         target_columns=["uid"],

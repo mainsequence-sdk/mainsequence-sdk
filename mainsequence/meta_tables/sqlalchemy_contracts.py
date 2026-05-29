@@ -665,15 +665,8 @@ def time_indexed_registration_request_from_sqlalchemy_model(
                     "module": module,
                     "qualname": qualname,
                 },
-                "time_indexed": {
-                    "time_index_name": resolved_time_index_name,
-                    "index_names": resolved_index_names,
-                    "storage_layout": (
-                        dict(resolved_storage_layout) if resolved_storage_layout else None
-                    ),
-                },
             },
-            "physical": {"table_name": table_name},
+            "physical": {},
             "columns": column_contracts,
             "indexes": _default_time_indexed_meta_table_indexes(resolved_index_names),
             "foreign_keys": foreign_key_contracts,
@@ -1672,9 +1665,7 @@ def _source_table_foreign_key_contract(
     foreign_key_constraint: Any,
     *,
     target_meta_table_uid_by_fullname: Mapping[str, Any],
-) -> Any:
-    from mainsequence.client.models_tdag import SourceTableForeignKeyContract
-
+) -> MetaTableForeignKeyContract:
     elements = list(getattr(foreign_key_constraint, "elements", []) or [])
     if not elements:
         raise ValueError("DynamicTable SQLAlchemy foreign keys must expose elements.")
@@ -1697,7 +1688,7 @@ def _source_table_foreign_key_contract(
         "ondelete",
         None,
     )
-    return SourceTableForeignKeyContract(
+    return MetaTableForeignKeyContract(
         source_columns=[str(element.parent.name) for element in elements],
         target_meta_table_uid=target_meta_table_uid,
         target_columns=[str(element.column.name) for element in elements],

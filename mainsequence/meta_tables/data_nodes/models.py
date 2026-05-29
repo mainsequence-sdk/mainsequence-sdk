@@ -174,7 +174,7 @@ class SourceTableForeignKey(BaseModel):
     Hashable authoring declaration for a DataNode source-table FK to a MetaTable.
 
     This is not the backend serializer contract. It accepts user-facing object
-    references and resolves them to ``SourceTableForeignKeyContract`` only at the
+    references and resolves them to ``MetaTableForeignKeyContract`` only at the
     source-table initialization boundary.
     """
 
@@ -270,9 +270,9 @@ class SourceTableForeignKey(BaseModel):
                 f"DataNodeConfiguration.records. Missing: {missing_source_columns}"
             )
 
-        from mainsequence.client.models_tdag import SourceTableForeignKeyContract
+        from mainsequence.client.models_metatables import MetaTableForeignKeyContract
 
-        return SourceTableForeignKeyContract(
+        return MetaTableForeignKeyContract(
             source_columns=source_column_names,
             target_meta_table_uid=self.target_meta_table_uid(
                 data_source_uid=data_source_uid,
