@@ -6,7 +6,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..configuration_models import BaseConfiguration
+
+class BaseConfiguration(BaseModel):
+    """
+    Shared runtime configuration fields for TDAG-backed DataNode objects.
+
+    Subclasses can add hashed build fields.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class RecordDefinition(BaseModel):

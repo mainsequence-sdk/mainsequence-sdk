@@ -112,7 +112,7 @@ Out of scope:
 The CLI should align to this pattern:
 
 - `Project`: `uid`
-- `DataNodeStorage`: `uid`
+- `TimeIndexMetaData`: `uid`
 - `DataNodeUpdate`: `uid`
 - `Scheduler`: `uid`
 - `Workspace`: `uid`
@@ -241,7 +241,7 @@ CLI identity policy.
 The CLI should not attempt all families at once. Prioritize by user-facing risk:
 
 1. `Project`
-2. `DataNodeStorage` / TDAG resources
+2. `TimeIndexMetaData` / TDAG resources
 3. Command Center workspaces and connections
 4. agents and runtime resources
 5. infrastructure/resource-release/job/image surfaces

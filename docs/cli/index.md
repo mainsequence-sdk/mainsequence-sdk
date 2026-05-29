@@ -382,28 +382,28 @@ mainsequence skills path workspace_builder --json
 - `mainsequence secrets add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate secret team sharing through the SDK `ShareableObjectMixin` team-action paths.
 - `mainsequence secrets delete` deletes a secret through the SDK client `Secret.delete()` path and always requires typed verification before the delete call is sent.
 - Secret list and delete previews intentionally show metadata only, not secret values.
-- `mainsequence data-node list` lists data node storages through the SDK client `DataNodeStorage.filter()` path.
-- `mainsequence data-node list --show-filters` prints the filters exposed by `DataNodeStorage.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node list` lists data node storages through the SDK client `TimeIndexMetaData.filter()` path.
+- `mainsequence data-node list --show-filters` prints the filters exposed by `TimeIndexMetaData.FILTERSET_FIELDS` and the expected value shapes from `FILTER_VALUE_NORMALIZERS`.
 - `mainsequence data-node list --filter namespace=...` is the first-class CLI form for narrowing data node storages by storage namespace.
 - `mainsequence data-node list --data-source-id 2` is the first-class shortcut for the common `data_source__id` filter.
-- `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `DataNodeStorage.description_search()` and `DataNodeStorage.column_search()` paths.
-- `mainsequence data-node search --mode description` only uses `DataNodeStorage.description_search()`.
-- `mainsequence data-node search --mode column` only uses `DataNodeStorage.column_search()`.
+- `mainsequence data-node search` is the public search command for data nodes. It can search descriptions, columns, or both through the SDK client `TimeIndexMetaData.description_search()` and `TimeIndexMetaData.column_search()` paths.
+- `mainsequence data-node search --mode description` only uses `TimeIndexMetaData.description_search()`.
+- `mainsequence data-node search --mode column` only uses `TimeIndexMetaData.column_search()`.
 - `mainsequence data-node search --data-source-id 2` is the first-class shortcut for filtering search results by data source.
-- `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `DataNodeStorage.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
-- `mainsequence data-node detail` fetches one storage through `DataNodeStorage.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
-- `mainsequence data-node run_query` executes `DataNodeStorage.run_query()` against one storage uid and prints the backend query envelope.
-- `mainsequence data-node refresh-search-index` calls the SDK instance method `DataNodeStorage.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
-- `mainsequence data-node add-label` and `remove-label` mutate `DataNodeStorage` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
+- `mainsequence data-node search` supports the same `--filter KEY=VALUE` and `--show-filters` pattern as `data-node list`, based on `TimeIndexMetaData.FILTERSET_FIELDS` and `FILTER_VALUE_NORMALIZERS`.
+- `mainsequence data-node detail` fetches one storage through `TimeIndexMetaData.get()` and renders its configuration in the terminal, including the backend-derived `storage_layout` and `physical_index_plan` when the source table configuration exposes them.
+- `mainsequence data-node run_query` executes `TimeIndexMetaData.run_query()` against one storage uid and prints the backend query envelope.
+- `mainsequence data-node refresh-search-index` calls the SDK instance method `TimeIndexMetaData.refresh_table_search_index()` for one storage and prints the backend response in the terminal.
+- `mainsequence data-node add-label` and `remove-label` mutate `TimeIndexMetaData` labels through the SDK `LabelableObjectMixin` path. Labels are organizational metadata only and do not affect runtime behavior or functionality.
 - `mainsequence project search "<QUERY>"` is the first-class CLI command for finding existing projects before creation or local setup. Use it for fuzzy discovery, then use `mainsequence project validate-name "<PROJECT_NAME>"` for the exact create-time availability check.
 - `mainsequence project validate-name "<PROJECT_NAME>"` validates a candidate project name through the SDK client `Project.validate_name()` path, prints normalized names and suggestions, and exits non-zero when the name is unavailable.
 - `mainsequence project update AGENTS.md` is project-scoped. It resolves the target project first, then reads `AGENTS.md` from the running CLI's installed `agent_scaffold` bundle. This command does not require the target project's `.venv`. If the target file is missing, it creates it from that installed bundle. If an existing `AGENTS.md` has no Main Sequence managed marker, the command replaces the whole file. If the managed marker exists, the command updates only that managed block.
 - `mainsequence project update_agent_skills` is project-scoped. It resolves the target project first, then copies every top-level skill folder from that project's installed `agent_scaffold/skills/` bundle in `.venv` into `.agents/skills/mainsequence/`, overwriting only folders with the same names under that namespace. It does not copy bundle-root files such as `AGENTS.md`, and it does not remove existing top-level project skills under `.agents/skills/`.
-- `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `DataNodeStorage`.
-- `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `DataNodeStorage`.
+- `mainsequence data-node can_view` lists users returned by the SDK `ShareableObjectMixin.can_view()` path for `TimeIndexMetaData`.
+- `mainsequence data-node can_edit` lists users returned by the SDK `ShareableObjectMixin.can_edit()` path for `TimeIndexMetaData`.
 - `mainsequence data-node add_to_view`, `add_to_edit`, `remove_from_view`, and `remove_from_edit` mutate data-node user sharing through the SDK `ShareableObjectMixin` paths and render the resulting permission state in the terminal.
 - `mainsequence data-node add_team_to_view`, `add_team_to_edit`, `remove_team_from_view`, and `remove_team_from_edit` mutate data-node team sharing through the SDK `ShareableObjectMixin` team-action paths.
-- `mainsequence data-node delete` executes the SDK client `DataNodeStorage.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
+- `mainsequence data-node delete` executes the SDK client `TimeIndexMetaData.delete()` path and exposes the same delete flags as the client: `full_delete_selected`, `full_delete_downstream_tables`, `delete_with_no_table`, and `override_protection`.
 - `mainsequence data-node delete` always requires typed verification before the delete call is sent.
 - `mainsequence project images list` lists project images using the SDK client `ProjectImage.filter()` path.
 - `ProjectImage` responses include backend metadata such as `creation_date`, and the SDK model accepts that field.

@@ -16,7 +16,7 @@ DataNodes created in this part: **none new** (you orchestrate DataNodes built in
 
 This chapter is intentionally CLI-only so the workflow stays reproducible and easy to automate.
 
-Some project and job-management steps can also be done through the VS Code extension, but the main tutorial documents only the terminal flow. A separate GUI tutorial will live under `docs/tutorial_gui/`.
+Some project and job-management steps can also be done through the VS Code extension, but the main tutorial documents only the terminal flow.
 
 ## Before You Start
 

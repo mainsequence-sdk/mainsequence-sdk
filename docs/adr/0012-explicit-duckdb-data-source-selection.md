@@ -55,5 +55,5 @@ local DuckDB storage.
 - [x] Add `DynamicTableDataSource.create_duckdb(data_source=...)`.
 - [x] Make `PodDataSource.set_local_db(...)` require an explicit DuckDB
   `DataSource`.
-- [x] Remove hidden DuckDB creation from `DataNodeStorage.delete_table(...)`.
+- [x] Remove hidden DuckDB creation from `TimeIndexMetaData.delete_table(...)`.
 - [x] Add tests for explicit creation, local setup, and cleanup behavior.

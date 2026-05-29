@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, ClassVar, Literal
 
 import pandas as pd
@@ -805,6 +805,25 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "labels__in": "str",
         "labels__contains": "str",
     }
+    DESTROY_QUERY_PARAMS: ClassVar[dict[str, str]] = {
+        "full_delete_selected": "bool",
+        "full_delete_downstream_tables": "bool",
+        "delete_with_no_table": "bool",
+        "override_protection": "bool",
+    }
+    DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
+        "full_delete_selected": "Fully delete the selected table metadata row.",
+        "full_delete_downstream_tables": (
+            "Delete downstream table metadata dependencies starting from the selected row."
+        ),
+        "delete_with_no_table": (
+            "Scan table metadata rows and fully delete records whose backing database table "
+            "does not exist."
+        ),
+        "override_protection": (
+            "Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true."
+        ),
+    }
 
     uid: str | None = Field(None, description="Public uid of this MetaTable.")
     data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
@@ -836,6 +855,21 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if self.uid in (None, ""):
             raise ValueError("MetaTable must have a uid before calling this endpoint.")
         return str(self.uid)
+
+    @classmethod
+    def _deserialize_search_response(cls, data: Any):
+        if isinstance(data, dict) and isinstance(data.get("results"), list):
+            hydrated = dict(data)
+            hydrated["results"] = [cls(**item) for item in hydrated["results"]]
+            return hydrated
+
+        if isinstance(data, list):
+            return [cls(**item) for item in data]
+
+        if isinstance(data, dict):
+            return cls(**data)
+
+        return data
 
     @classmethod
     def _post_action(
@@ -885,6 +919,81 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if response.status_code != 200:
             raise_for_response(response, payload=request_payload)
         return response.json()
+
+    def patch(
+        self,
+        time_out: None | int = None,
+        *args,
+        **kwargs,
+    ):
+        url = f"{type(self).get_object_url().rstrip('/')}/{self._public_uid()}/"
+        payload = {"json": serialize_to_json(kwargs)}
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="PATCH",
+            url=url,
+            payload=payload,
+            time_out=time_out,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+        return type(self)(**response.json())
+
+    @classmethod
+    def patch_by_hash(cls, storage_hash: str, *args, **kwargs):
+        metadata = cls.get(storage_hash=storage_hash)
+        return metadata.patch(*args, **kwargs)
+
+    @classmethod
+    def destroy_by_uid(
+        cls,
+        uid: str,
+        *,
+        full_delete_selected: bool = False,
+        full_delete_downstream_tables: bool = False,
+        delete_with_no_table: bool = False,
+        override_protection: bool = False,
+        timeout: int | None = None,
+    ):
+        if uid in (None, ""):
+            raise ValueError(f"{cls.__name__} uid is required for deletion.")
+        payload = {
+            "params": {
+                "full_delete_selected": full_delete_selected,
+                "full_delete_downstream_tables": full_delete_downstream_tables,
+                "delete_with_no_table": delete_with_no_table,
+                "override_protection": override_protection,
+            }
+        }
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="DELETE",
+            url=f"{cls.get_object_url().rstrip('/')}/{uid}/",
+            payload=payload,
+            time_out=timeout,
+        )
+        raise_for_response(response)
+        return response.json() if response.content else None
+
+    def delete(
+        self,
+        *,
+        full_delete_selected: bool = False,
+        full_delete_downstream_tables: bool = False,
+        delete_with_no_table: bool = False,
+        override_protection: bool = False,
+        timeout: int | None = None,
+    ):
+        return type(self).destroy_by_uid(
+            self._public_uid(),
+            timeout=timeout,
+            full_delete_selected=full_delete_selected,
+            full_delete_downstream_tables=full_delete_downstream_tables,
+            delete_with_no_table=delete_with_no_table,
+            override_protection=override_protection,
+        )
 
     @classmethod
     def register(
@@ -944,6 +1053,133 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         if isinstance(snapshot, dict):
             self.introspection_snapshot = snapshot
         return response_json
+
+    def refresh_table_search_index(
+        self,
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any] | None:
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=(
+                f"{type(self).get_object_url().rstrip('/')}/"
+                f"{self._public_uid()}/refresh-table-search-index/"
+            ),
+            payload={},
+            time_out=timeout,
+        )
+        raise_for_response(response)
+        return response.json() if response.content else None
+
+    def run_query(
+        self,
+        sql: str,
+        *,
+        timeout: int | None = None,
+    ) -> dict[str, Any]:
+        if self.uid is None:
+            raise ValueError(f"{type(self).__name__} must have a uid before running a query.")
+
+        sql = str(sql or "").strip()
+        if not sql:
+            raise ValueError("sql is required.")
+
+        cls = type(self)
+        url = f"{cls.get_object_url().rstrip('/')}/{self._public_uid()}/run_query/"
+        session = cls.build_session()
+        old_content_type = session.headers.get("Content-Type")
+        session.headers["Content-Type"] = "text/plain"
+        try:
+            response = make_request(
+                s=session,
+                loaders=cls.LOADERS,
+                r_type="POST",
+                url=url,
+                payload={"data": sql},
+                time_out=timeout,
+            )
+        finally:
+            if old_content_type is None:
+                session.headers.pop("Content-Type", None)
+            else:
+                session.headers["Content-Type"] = old_content_type
+
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+
+        if isinstance(data, dict) and "ok" in data:
+            return data
+
+        raise_for_response(response, payload={"data": sql})
+        return response.json()
+
+    @classmethod
+    def description_search(
+        cls,
+        q: str,
+        *,
+        q_embedding: Sequence[float] | None = None,
+        trigram_k: int = 200,
+        embed_k: int = 200,
+        w_trgm: float = 0.65,
+        w_emb: float = 0.35,
+        embedding_model: str = "default",
+        **filters,
+    ):
+        q = (q or "").strip()
+        if not q:
+            raise ValueError("q is required")
+
+        body = {
+            "q": q,
+            "trigram_k": trigram_k,
+            "embed_k": embed_k,
+            "w_trgm": w_trgm,
+            "w_emb": w_emb,
+            "embedding_model": embedding_model,
+        }
+
+        if q_embedding is not None:
+            body["q_embedding"] = [float(x) for x in q_embedding]
+
+        if filters:
+            body.update(filters)
+
+        payload = {"json": serialize_to_json(body)}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=f"{cls.get_object_url().rstrip('/')}/description-search/",
+            payload=payload,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+
+        return cls._deserialize_search_response(response.json())
+
+    @classmethod
+    def column_search(cls, q: str, **filters):
+        q = (q or "").strip()
+        if not q:
+            raise ValueError("q is required")
+
+        payload = {"params": serialize_to_json({"q": q, **filters})}
+        response = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="GET",
+            url=f"{cls.get_object_url().rstrip('/')}/column-search/",
+            payload=payload,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+
+        return cls._deserialize_search_response(response.json())
 
     @classmethod
     def execute_operation(

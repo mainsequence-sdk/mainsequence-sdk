@@ -142,7 +142,7 @@ Base audit findings that remain for model-group migration:
 
 ### 3. TDAG migration
 
-- [x] Confirm UID detail lookup for `DataNodeStorage`.
+- [x] Confirm UID detail lookup for `TimeIndexMetaData`.
 - [x] Confirm UID detail lookup for `DataNodeUpdate`.
 - [x] Confirm UID detail lookup for `DataNodeUpdateDetails`.
 - [x] Confirm UID-scoped lookup for `SourceTableConfiguration`.

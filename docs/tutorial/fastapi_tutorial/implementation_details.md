@@ -117,7 +117,7 @@ Why this is a good fit:
 - it declares the table scope and access mode explicitly
 - it avoids direct database credentials in the API process
 
-## 4. Reading From `DataNode`
+## 4. Reading DataNode Output
 
 For published time-series tables, prefer `APIDataNode`.
 
@@ -131,7 +131,7 @@ from mainsequence.tdag import APIDataNode
 
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
-RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}_0.0"
+RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}"
 
 
 def get_random_numbers(*, start_date: dt.date, end_date: dt.date) -> dict[str, object]:
@@ -304,8 +304,8 @@ Keep stable:
 
 This is the same discipline already used for:
 
-- `DataNode` identifiers
-- `MetaTable` schemas
+- published table identifiers
+- `MetaTable` contracts
 - dashboard and agent interfaces
 
 ## 10. Local Development Flow
@@ -367,7 +367,7 @@ This is the same deployment pattern you already see with Streamlit dashboards an
 ## 12. Related Pages
 
 - [Part 3.2 — Create Your First API](../create_your_first_api.md)
-- [Part 3.1 — Working With MetaTables](../working_with_meta_tables.md)
+- [Part 2 — Working With MetaTables](../working_with_meta_tables.md)
 - [Command Center Widget Data Contracts](../../knowledge/command_center/widget_data_contracts.md)
 - [Data Nodes](../../knowledge/data_nodes.md)
 - [MetaTables Overview](../../knowledge/meta_tables/index.md)

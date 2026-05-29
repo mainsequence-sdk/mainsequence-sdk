@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, ClassVar
+from uuid import UUID
 
-from mainsequence.client.dtype_codec import sqlalchemy_backend_type, sqlalchemy_type_to_token
+from mainsequence.client.dtype_codec import (
+    is_temporal_token,
+    sqlalchemy_backend_type,
+    sqlalchemy_type_to_token,
+)
 from mainsequence.client.models_metatables import (
     MetaTable,
     MetaTableColumnContract,
@@ -59,7 +64,7 @@ def metatable_configured_tablename(
     return _build_configured_storage_hash(
         namespace=resolved_namespace,
         schema=resolved_schema,
-        table_storage_identity=_table_storage_identity(table),
+        table_storage_identity=_configured_table_storage_identity(model_or_table, table=table),
         hash_namespace=hash_namespace,
         extra_hash_components=extra_hash_components,
     )
@@ -80,6 +85,9 @@ class PlatformManagedMetaTable:
     """
 
     __metatable_use_configured_table_name__ = True
+    __metatable__: ClassVar[Any | None] = None
+    __metatable_uid__: ClassVar[str | None] = None
+    __metatable_data_source_uid__: ClassVar[str | None] = None
 
     if _sqlalchemy_declared_attr is not None:
         __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
@@ -200,7 +208,45 @@ class PlatformManagedMetaTable:
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
         )
-        return MetaTable.register(request, timeout=timeout)
+        meta_table = MetaTable.register(request, timeout=timeout)
+        cls.bind_meta_table(meta_table)
+        return meta_table
+
+    @classmethod
+    def bind_meta_table(cls, meta_table: Any) -> Any:
+        """Attach an already-created backend MetaTable resource to this authoring model."""
+        meta_table_uid = _meta_table_uid(meta_table)
+        if meta_table_uid in (None, ""):
+            raise ValueError("PlatformManagedMetaTable.bind_meta_table requires meta_table.uid.")
+
+        cls.__metatable__ = meta_table
+        cls.__metatable_uid__ = str(meta_table_uid)
+
+        data_source_uid = _meta_table_data_source_uid(meta_table)
+        if data_source_uid not in (None, ""):
+            cls.__metatable_data_source_uid__ = str(data_source_uid)
+        return meta_table
+
+    @classmethod
+    def get_meta_table(cls) -> Any | None:
+        return getattr(cls, "__metatable__", None)
+
+    @classmethod
+    def get_meta_table_uid(cls) -> str | None:
+        uid = getattr(cls, "__metatable_uid__", None) or getattr(cls, "meta_table_uid", None)
+        return _coerce_optional_uid(uid)
+
+    @classmethod
+    def get_data_source_uid(cls) -> str | None:
+        data_source_uid = (
+            getattr(cls, "__metatable_data_source_uid__", None)
+            or getattr(cls, "data_source_uid", None)
+        )
+        return _coerce_optional_uid(data_source_uid)
+
+    @classmethod
+    def get_storage_hash(cls) -> str:
+        return _table_name(_resolve_table(cls))
 
     @classmethod
     def resolve_foreign_key_targets(
@@ -226,6 +272,172 @@ class PlatformManagedMetaTable:
             resolved_targets=explicit_targets,
             timeout=timeout,
         )
+
+
+class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
+    """SQLAlchemy declarative base mixin for platform-managed DynamicTableMetaData.
+
+    This is the SDK authoring surface for time-indexed DataNode storage. It
+    reuses the MetaTable column/type/FK projection, but registers through the
+    DynamicTable endpoint and validates the opinionated table shape:
+    the first index must be the time index, and any extra index dimensions are
+    ordinary non-null table columns.
+    """
+
+    __time_index_metadata__: ClassVar[Any | None] = None
+
+    @classmethod
+    def bind_meta_table(cls, meta_table: Any) -> Any:
+        bound = super().bind_meta_table(meta_table)
+        cls.__time_index_metadata__ = bound
+        return bound
+
+    @classmethod
+    def get_time_index_metadata(cls) -> Any | None:
+        return getattr(cls, "__time_index_metadata__", None)
+
+    @classmethod
+    def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
+        if _sqlalchemy_declared_attr is None:
+            raise ImportError(
+                "PlatformTimeIndexMetaData requires SQLAlchemy. Install SQLAlchemy in the "
+                "application environment before using this mixin."
+            )
+        if len(args) < 2:
+            raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
+
+        _name, metadata, *table_items = args
+        kwargs = dict(kwargs)
+        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
+        if not kwargs.get("schema"):
+            kwargs["schema"] = schema
+
+        columns = [item for item in table_items if _looks_like_column(item)]
+        time_index_name = _resolve_time_index_name(cls)
+        index_names = _resolve_time_index_names(cls, time_index_name=time_index_name)
+        _validate_time_index_contract(
+            columns=columns,
+            time_index_name=time_index_name,
+            index_names=index_names,
+        )
+
+        table_name = _build_configured_storage_hash(
+            namespace=_resolve_class_namespace(cls),
+            schema=schema,
+            table_storage_identity=_time_index_table_items_storage_identity(
+                table_items,
+                time_index_name=time_index_name,
+                index_names=index_names,
+                storage_layout=_resolve_time_index_storage_layout(cls),
+            ),
+            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
+            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
+        )
+
+        from sqlalchemy import Table
+
+        return Table(table_name, metadata, *table_items, **kwargs)
+
+    @classmethod
+    def build_registration_request(
+        cls,
+        *,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool = False,
+        provisioning: Mapping[str, Any] | None = None,
+        target_meta_tables: Mapping[Any, Any] | None = None,
+        target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+        foreign_key_lookup_timeout: int | float | tuple[float, float] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+        time_index_name: str | None = None,
+        index_names: Sequence[str] | None = None,
+        storage_layout: Mapping[str, Any] | None = None,
+    ) -> Any:
+        resolved_data_source_uid = _resolve_data_source_uid(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        )
+        resolved_targets = cls.resolve_foreign_key_targets(
+            data_source_uid=resolved_data_source_uid,
+            target_meta_tables=target_meta_tables,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+            timeout=foreign_key_lookup_timeout,
+        )
+        return time_indexed_registration_request_from_sqlalchemy_model(
+            cls,
+            data_source_uid=resolved_data_source_uid,
+            identifier=identifier,
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            provisioning=provisioning,
+            target_meta_table_uid_by_fullname=resolved_targets,
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=enforce_storage_hash_name,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            storage_layout=storage_layout,
+        )
+
+    @classmethod
+    def register(
+        cls,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool = False,
+        provisioning: Mapping[str, Any] | None = None,
+        target_meta_tables: Mapping[Any, Any] | None = None,
+        target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+        foreign_key_lookup_timeout: int | float | tuple[float, float] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+        time_index_name: str | None = None,
+        index_names: Sequence[str] | None = None,
+        storage_layout: Mapping[str, Any] | None = None,
+    ) -> Any:
+        request = cls.build_registration_request(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            identifier=identifier,
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            provisioning=provisioning,
+            target_meta_tables=target_meta_tables,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+            foreign_key_lookup_timeout=(
+                timeout if foreign_key_lookup_timeout is None else foreign_key_lookup_timeout
+            ),
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=enforce_storage_hash_name,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            storage_layout=storage_layout,
+        )
+
+        from mainsequence.client.models_tdag import TimeIndexMetaData
+
+        time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
+        cls.bind_meta_table(time_index_metadata)
+        return time_index_metadata
 
 
 def table_contract_from_sqlalchemy_model(
@@ -267,6 +479,106 @@ def table_contract_from_sqlalchemy_model(
         ],
         foreign_keys=[
             _foreign_key_contract(
+                foreign_key_constraint,
+                target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
+            )
+            for foreign_key_constraint in sorted(
+                _iter_foreign_key_constraints(table),
+                key=lambda item: item.name or "",
+            )
+        ],
+    )
+
+
+def time_indexed_registration_request_from_sqlalchemy_model(
+    model_or_table: Any,
+    *,
+    data_source: Any | None = None,
+    data_source_uid: str | None = None,
+    identifier: str | None = None,
+    namespace: str | None = None,
+    description: str | None = None,
+    labels: Sequence[str] | None = None,
+    protect_from_deletion: bool = False,
+    provisioning: Mapping[str, Any] | None = None,
+    target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
+    schema: str | None = None,
+    hash_namespace: str | None = None,
+    extra_hash_components: Mapping[str, Any] | None = None,
+    enforce_storage_hash_name: bool = True,
+    time_index_name: str | None = None,
+    index_names: Sequence[str] | None = None,
+    storage_layout: Mapping[str, Any] | None = None,
+) -> Any:
+    from mainsequence.client.models_tdag import DynamicTableRegistrationRequest
+
+    table = _resolve_table(model_or_table)
+    resolved_schema = _resolve_schema(table, schema=schema)
+    resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
+    resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    resolved_time_index_name = _resolve_time_index_name(
+        model_or_table,
+        time_index_name=time_index_name,
+    )
+    resolved_index_names = _resolve_time_index_names(
+        model_or_table,
+        time_index_name=resolved_time_index_name,
+        index_names=index_names,
+    )
+    resolved_storage_layout = _resolve_time_index_storage_layout(
+        model_or_table,
+        storage_layout=storage_layout,
+    )
+
+    columns = _iter_columns(table)
+    _validate_time_index_contract(
+        columns=columns,
+        time_index_name=resolved_time_index_name,
+        index_names=resolved_index_names,
+    )
+
+    configured_storage_hash = _build_configured_storage_hash(
+        namespace=resolved_namespace,
+        schema=resolved_schema,
+        table_storage_identity=_time_index_table_storage_identity(
+            table,
+            time_index_name=resolved_time_index_name,
+            index_names=resolved_index_names,
+            storage_layout=resolved_storage_layout,
+        ),
+        hash_namespace=hash_namespace,
+        extra_hash_components=extra_hash_components,
+    )
+    table_name = _table_name(table)
+    if enforce_storage_hash_name and table_name != configured_storage_hash:
+        raise ValueError(
+            "Platform-managed time-indexed SQLAlchemy tables must use the configured "
+            "DynamicTable storage hash as their physical table name. Use PlatformTimeIndexMetaData "
+            "or metatable_configured_tablename(...) for __tablename__. "
+            f"Expected {configured_storage_hash!r}, got {table_name!r}."
+        )
+
+    return DynamicTableRegistrationRequest(
+        data_source_uid=_resolve_data_source_uid(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        ),
+        storage_hash=table_name,
+        identifier=resolved_identifier,
+        namespace=resolved_namespace,
+        description=description,
+        protect_from_deletion=protect_from_deletion,
+        labels=list(labels or []),
+        provisioning=dict(provisioning or DEFAULT_PLATFORM_MANAGED_PROVISIONING),
+        time_index_name=resolved_time_index_name,
+        index_names=resolved_index_names,
+        columns=[
+            _column_contract(column, ordinal_position=position)
+            for position, column in enumerate(columns)
+        ],
+        storage_layout=dict(resolved_storage_layout) if resolved_storage_layout else None,
+        foreign_keys=[
+            _source_table_foreign_key_contract(
                 foreign_key_constraint,
                 target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
             )
@@ -414,7 +726,11 @@ def register_platform_managed_sqlalchemy_model(
         data_source_uid=data_source_uid,
         **kwargs,
     )
-    return MetaTable.register(request, timeout=timeout)
+    meta_table = MetaTable.register(request, timeout=timeout)
+    binder = getattr(model_or_table, "bind_meta_table", None)
+    if callable(binder):
+        binder(meta_table)
+    return meta_table
 
 
 def register_external_sqlalchemy_model(
@@ -624,6 +940,47 @@ def _target_meta_table_uid(meta_table: Any) -> str:
     return str(uid)
 
 
+def _coerce_optional_uid(value: Any) -> str | None:
+    if isinstance(value, UUID):
+        return str(value)
+    if isinstance(value, str) and value:
+        return value
+    return None
+
+
+def _meta_table_uid(meta_table: Any) -> str | None:
+    if isinstance(meta_table, Mapping):
+        uid = meta_table.get("meta_table_uid") or meta_table.get("uid")
+    else:
+        uid = (
+            getattr(meta_table, "meta_table_uid", None)
+            or getattr(meta_table, "__metatable_uid__", None)
+            or getattr(meta_table, "uid", None)
+        )
+    return _coerce_optional_uid(uid)
+
+
+def _meta_table_data_source_uid(meta_table: Any) -> str | None:
+    if isinstance(meta_table, Mapping):
+        data_source_uid = meta_table.get("data_source_uid")
+        data_source = meta_table.get("data_source")
+    else:
+        data_source_uid = (
+            getattr(meta_table, "data_source_uid", None)
+            or getattr(meta_table, "__metatable_data_source_uid__", None)
+        )
+        data_source = getattr(meta_table, "data_source", None)
+
+    coerced_data_source_uid = _coerce_optional_uid(data_source_uid)
+    if coerced_data_source_uid is not None:
+        return coerced_data_source_uid
+    if isinstance(data_source, Mapping):
+        nested_uid = data_source.get("uid")
+    else:
+        nested_uid = getattr(data_source, "uid", None)
+    return _coerce_optional_uid(nested_uid)
+
+
 def _resolve_identifier(model_or_table: Any, *, identifier: str | None) -> str:
     resolved_identifier = (
         identifier
@@ -761,6 +1118,28 @@ def _table_storage_identity(table: Any) -> dict[str, Any]:
     )
 
 
+def _configured_table_storage_identity(model_or_table: Any, *, table: Any) -> dict[str, Any]:
+    if not _has_time_index_contract(model_or_table):
+        return _table_storage_identity(table)
+
+    time_index_name = _resolve_time_index_name(model_or_table)
+    index_names = _resolve_time_index_names(
+        model_or_table,
+        time_index_name=time_index_name,
+    )
+    _validate_time_index_contract(
+        columns=_iter_columns(table),
+        time_index_name=time_index_name,
+        index_names=index_names,
+    )
+    return _time_index_table_storage_identity(
+        table,
+        time_index_name=time_index_name,
+        index_names=index_names,
+        storage_layout=_resolve_time_index_storage_layout(model_or_table),
+    )
+
+
 def _table_items_storage_identity(table_items: Sequence[Any]) -> dict[str, Any]:
     columns = [item for item in table_items if _looks_like_column(item)]
     indexes = [item for item in table_items if _looks_like_index(item)]
@@ -770,6 +1149,199 @@ def _table_items_storage_identity(table_items: Sequence[Any]) -> dict[str, Any]:
         indexes=indexes,
         foreign_key_constraints=foreign_key_constraints,
     )
+
+
+def _time_index_table_storage_identity(
+    table: Any,
+    *,
+    time_index_name: str,
+    index_names: Sequence[str],
+    storage_layout: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return _time_index_storage_identity(
+        table_storage_identity=_table_storage_identity(table),
+        time_index_name=time_index_name,
+        index_names=index_names,
+        storage_layout=storage_layout,
+    )
+
+
+def _time_index_table_items_storage_identity(
+    table_items: Sequence[Any],
+    *,
+    time_index_name: str,
+    index_names: Sequence[str],
+    storage_layout: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    return _time_index_storage_identity(
+        table_storage_identity=_table_items_storage_identity(table_items),
+        time_index_name=time_index_name,
+        index_names=index_names,
+        storage_layout=storage_layout,
+    )
+
+
+def _time_index_storage_identity(
+    *,
+    table_storage_identity: Mapping[str, Any],
+    time_index_name: str,
+    index_names: Sequence[str],
+    storage_layout: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    profile: dict[str, Any] = {
+        "kind": "time_indexed",
+        "time_index_name": str(time_index_name),
+        "index_names": [str(name) for name in index_names],
+    }
+    if storage_layout:
+        profile["storage_layout"] = dict(storage_layout)
+    return {
+        "relational_table": dict(table_storage_identity),
+        "time_indexed_profile": profile,
+    }
+
+
+def _has_time_index_contract(model_or_table: Any) -> bool:
+    if getattr(model_or_table, "__time_index_name__", None) is not None:
+        return True
+    if getattr(model_or_table, "__dynamic_table_time_index_name__", None) is not None:
+        return True
+    if getattr(model_or_table, "__index_names__", None) is not None:
+        return True
+    if getattr(model_or_table, "__dynamic_table_index_names__", None) is not None:
+        return True
+
+    time_index_cls = globals().get("PlatformTimeIndexMetaData")
+    if isinstance(time_index_cls, type) and isinstance(model_or_table, type):
+        try:
+            if issubclass(model_or_table, time_index_cls):
+                return True
+        except TypeError:
+            pass
+
+    table = _resolve_table(model_or_table)
+    info = getattr(table, "info", None)
+    return isinstance(info, Mapping) and (
+        info.get("time_index_name") is not None
+        or info.get("index_names") is not None
+        or info.get("dynamic_table") is not None
+    )
+
+
+def _resolve_time_index_name(
+    model_or_table: Any,
+    *,
+    time_index_name: str | None = None,
+) -> str:
+    resolved = (
+        time_index_name
+        or getattr(model_or_table, "__time_index_name__", None)
+        or getattr(model_or_table, "__dynamic_table_time_index_name__", None)
+        or _table_info_value(model_or_table, "time_index_name")
+        or _dynamic_table_info_value(model_or_table, "time_index_name")
+        or "time_index"
+    )
+    resolved = str(resolved)
+    if not resolved:
+        raise ValueError("PlatformTimeIndexMetaData requires a non-empty time_index_name.")
+    return resolved
+
+
+def _resolve_time_index_names(
+    model_or_table: Any,
+    *,
+    time_index_name: str,
+    index_names: Sequence[str] | None = None,
+) -> list[str]:
+    resolved = (
+        index_names
+        or getattr(model_or_table, "__index_names__", None)
+        or getattr(model_or_table, "__dynamic_table_index_names__", None)
+        or _table_info_value(model_or_table, "index_names")
+        or _dynamic_table_info_value(model_or_table, "index_names")
+    )
+    if resolved is None:
+        identity_dimensions = (
+            getattr(model_or_table, "__identity_dimensions__", None)
+            or getattr(model_or_table, "__dynamic_table_identity_dimensions__", None)
+            or _table_info_value(model_or_table, "identity_dimensions")
+            or _dynamic_table_info_value(model_or_table, "identity_dimensions")
+        )
+        if identity_dimensions is None:
+            return [time_index_name]
+        resolved = [time_index_name, *list(identity_dimensions)]
+
+    names = [str(name) for name in list(resolved or [])]
+    if not names:
+        raise ValueError("PlatformTimeIndexMetaData requires at least the time index in index_names.")
+    return names
+
+
+def _resolve_time_index_storage_layout(
+    model_or_table: Any,
+    *,
+    storage_layout: Mapping[str, Any] | None = None,
+) -> Mapping[str, Any] | None:
+    resolved = (
+        storage_layout
+        or getattr(model_or_table, "__storage_layout__", None)
+        or getattr(model_or_table, "__dynamic_table_storage_layout__", None)
+        or _table_info_value(model_or_table, "storage_layout")
+        or _dynamic_table_info_value(model_or_table, "storage_layout")
+    )
+    if resolved is None:
+        return None
+    if not isinstance(resolved, Mapping):
+        raise ValueError("PlatformTimeIndexMetaData storage_layout must be a mapping when provided.")
+    return resolved
+
+
+def _dynamic_table_info_value(model_or_table: Any, key: str) -> Any:
+    dynamic_table = _table_info_value(model_or_table, "dynamic_table")
+    if isinstance(dynamic_table, Mapping):
+        return dynamic_table.get(key)
+    return None
+
+
+def _validate_time_index_contract(
+    *,
+    columns: Sequence[Any],
+    time_index_name: str,
+    index_names: Sequence[str],
+) -> None:
+    names = [str(name) for name in index_names]
+    if names[0] != time_index_name:
+        raise ValueError(
+            "PlatformTimeIndexMetaData index_names must start with the time_index_name. "
+            f"Expected {time_index_name!r}, got {names[0]!r}."
+        )
+    if len(set(names)) != len(names):
+        raise ValueError("PlatformTimeIndexMetaData index_names cannot contain duplicates.")
+
+    columns_by_name = {str(column.name): column for column in columns}
+    missing = [name for name in names if name not in columns_by_name]
+    if missing:
+        raise ValueError(
+            "PlatformTimeIndexMetaData index_names must all exist as table columns. "
+            f"Missing columns: {missing!r}."
+        )
+
+    time_column = columns_by_name[time_index_name]
+    time_type = _column_type_contract(time_column)["data_type"]
+    if not is_temporal_token(time_type):
+        raise ValueError(
+            "PlatformTimeIndexMetaData time_index_name must reference a temporal column. "
+            f"Column {time_index_name!r} has type {time_type!r}."
+        )
+
+    nullable_index_columns = [
+        name for name in names if bool(getattr(columns_by_name[name], "nullable", True))
+    ]
+    if nullable_index_columns:
+        raise ValueError(
+            "PlatformTimeIndexMetaData index columns must be non-nullable. "
+            f"Nullable index columns: {nullable_index_columns!r}."
+        )
 
 
 def _storage_identity_from_parts(
@@ -999,6 +1571,43 @@ def _foreign_key_contract(
     )
 
 
+def _source_table_foreign_key_contract(
+    foreign_key_constraint: Any,
+    *,
+    target_meta_table_uid_by_fullname: Mapping[str, Any],
+) -> Any:
+    from mainsequence.client.models_tdag import SourceTableForeignKeyContract
+
+    elements = list(getattr(foreign_key_constraint, "elements", []) or [])
+    if not elements:
+        raise ValueError("DynamicTable SQLAlchemy foreign keys must expose elements.")
+
+    target_tables = {
+        _foreign_key_element_target_table(element)
+        for element in elements
+        if _foreign_key_element_target_table(element)
+    }
+    if len(target_tables) != 1:
+        raise ValueError("Composite foreign keys must target one table.")
+
+    target_table_fullname = next(iter(target_tables))
+    target_meta_table_uid = _lookup_target_meta_table_uid(
+        target_table_fullname,
+        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+    )
+    on_delete = getattr(elements[0], "ondelete", None) or getattr(
+        foreign_key_constraint,
+        "ondelete",
+        None,
+    )
+    return SourceTableForeignKeyContract(
+        source_columns=[str(element.parent.name) for element in elements],
+        target_meta_table_uid=target_meta_table_uid,
+        target_columns=[str(element.column.name) for element in elements],
+        on_delete=str(on_delete or "restrict").lower(),
+    )
+
+
 def _lookup_target_meta_table_uid(
     target_table_fullname: str,
     *,
@@ -1026,6 +1635,7 @@ def _column_names(columns: Any) -> list[str]:
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     "PlatformManagedMetaTable",
+    "PlatformTimeIndexMetaData",
     "external_registered_registration_request_from_sqlalchemy_model",
     "metatable_configured_tablename",
     "metatable_tablename",
@@ -1033,4 +1643,5 @@ __all__ = [
     "register_external_sqlalchemy_model",
     "register_platform_managed_sqlalchemy_model",
     "table_contract_from_sqlalchemy_model",
+    "time_indexed_registration_request_from_sqlalchemy_model",
 ]

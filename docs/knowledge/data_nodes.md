@@ -68,11 +68,11 @@ If you want to inspect existing DataNode table identifiers from the CLI, run:
 mainsequence data-node list
 ```
 
-The `Identifier` column lists DataNode table identifiers exposed by `DataNodeStorage`. It does not list asset `unique_identifier` values.
+The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaData`. It does not list asset `unique_identifier` values.
 
 ### 3.2 Labels are organization metadata only
 
-`DataNodeStorage` objects can also carry `labels`.
+`TimeIndexMetaData` objects can also carry `labels`.
 
 Those labels do not change:
 
@@ -485,7 +485,7 @@ Avoid logging secrets.
 
 Good metadata is not just for humans reading code. It also powers search and discovery across published data nodes.
 
-`DataNodeStorage` now exposes two complementary search paths:
+`TimeIndexMetaData` now exposes two complementary search paths:
 
 - `description_search(q, ...)`
 - `column_search(q, ...)`
@@ -532,7 +532,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-results = msc.DataNodeStorage.description_search(
+results = msc.TimeIndexMetaData.description_search(
     "daily close price",
     data_source__id=2,
 )
@@ -559,7 +559,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-results = msc.DataNodeStorage.column_search(
+results = msc.TimeIndexMetaData.column_search(
     "close",
     data_source__id=2,
 )
@@ -596,7 +596,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
 storage.refresh_table_search_index()
 ```
 
@@ -608,7 +608,7 @@ mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
 
 #### Running read-only SQL against a dynamic table
 
-`DataNodeStorage.run_query(...)` executes a raw SQL query directly against one published dynamic table.
+`TimeIndexMetaData.run_query(...)` executes a raw SQL query directly against one published dynamic table.
 
 This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `DataNode` API contract.
 
@@ -628,7 +628,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.run_query("SELECT * FROM my_table LIMIT 100")
 ```
 
@@ -663,7 +663,7 @@ mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM my_table
 
 #### Tail deleting rows after a cutoff
 
-`DataNodeStorage.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.
+`TimeIndexMetaData.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.
 
 This is not arbitrary range deletion:
 
@@ -683,7 +683,7 @@ For a normal table:
 ```python
 import mainsequence.client as msc
 
-storage = msc.DataNodeStorage.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 
@@ -873,7 +873,7 @@ Use this approach when building:
 - notebook analysis with ad-hoc slices,
 - joins between dynamic tables (for example prices + fundamentals).
 
-The main entry point is `mainsequence.tdag.data_nodes.filters.SearchRequest`, which you submit through `DataNodeStorage.get_data_from_filter(...)`.
+The main entry point is `mainsequence.tdag.data_nodes.filters.SearchRequest`, which you submit through `TimeIndexMetaData.get_data_from_filter(...)`.
 
 ```python
 import datetime as dt
@@ -893,7 +893,7 @@ request = SearchRequest(
     ),
 )
 
-df = msc.DataNodeStorage.get_data_from_filter(request)
+df = msc.TimeIndexMetaData.get_data_from_filter(request)
 ```
 
 Use `APIDataNode.build_from_identifier(...)` and `get_df_between_dates(...)` when you are reading one table in a fixed way.

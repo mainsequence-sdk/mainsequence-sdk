@@ -9,7 +9,7 @@ _LAZY_IMPORTS = {
     "RunningMode": (".config", "RunningMode"),
     "configuration": (".config", "configuration"),
     "ogm": (".config", "ogm"),
-    "BaseConfiguration": (".configuration_models", "BaseConfiguration"),
+    "BaseConfiguration": (".data_nodes", "BaseConfiguration"),
     "APIDataNode": (".data_nodes", "APIDataNode"),
     "DataNode": (".data_nodes", "DataNode"),
     "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),

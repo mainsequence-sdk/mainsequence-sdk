@@ -26,8 +26,8 @@ def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
     )
 
 
-def _storage(index_names: list[str], *, storage_hash: str = "prices_hash") -> models_tdag.DataNodeStorage:
-    return models_tdag.DataNodeStorage(
+def _storage(index_names: list[str], *, storage_hash: str = "prices_hash") -> models_tdag.TimeIndexMetaData:
+    return models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash=storage_hash,
         data_source=1,
@@ -123,7 +123,7 @@ def test_search_request_rejects_invalid_join_index_vectors(join_on, match):
 def test_apply_dtypes_from_meta_restores_two_index_join_response():
     index_names = ["time_index", "unique_identifier"]
 
-    df = models_tdag.DataNodeStorage._apply_dtypes_from_meta(
+    df = models_tdag.TimeIndexMetaData._apply_dtypes_from_meta(
         _joined_response_frame(index_names),
         data_node_storage_map={
             "base": _storage(index_names, storage_hash="base_hash"),
@@ -143,7 +143,7 @@ def test_apply_dtypes_from_meta_restores_two_index_join_response():
 def test_apply_dtypes_from_meta_restores_three_index_join_response():
     index_names = ["time_index", "account_uid", "unique_identifier"]
 
-    df = models_tdag.DataNodeStorage._apply_dtypes_from_meta(
+    df = models_tdag.TimeIndexMetaData._apply_dtypes_from_meta(
         _joined_response_frame(index_names),
         data_node_storage_map={
             "base": _storage(index_names, storage_hash="base_hash"),
@@ -193,12 +193,12 @@ def test_get_data_from_filter_uses_server_returned_index_names(monkeypatch):
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    df = models_tdag.DataNodeStorage.get_data_from_filter(
+    df = models_tdag.TimeIndexMetaData.get_data_from_filter(
         SearchRequest(node_unique_identifier="base"),
         batch_limit=10,
     )

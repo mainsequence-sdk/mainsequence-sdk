@@ -22,7 +22,7 @@ The SDK currently has two table-storage concepts that overlap:
 - `MetaTable`, exposed by `mainsequence.client.models_metatables.MetaTable`,
   is the SDK model for row-oriented relational table storage, table contracts,
   permissions, labels, UID lookup, introspection, and governed SQL operations.
-- `DataNodeStorage`, exposed by `mainsequence.client.models_tdag.DataNodeStorage`,
+- `TimeIndexMetaData`, exposed by `mainsequence.client.models_tdag.TimeIndexMetaData`,
   is the SDK projection of server `DynamicTableMetaData`. It is the storage
   table for DataNode writes and reads. It carries `storage_hash`, data source,
   labels, permissions, metadata, source-table configuration, and data access
@@ -66,7 +66,7 @@ make DataNode a pure update-process abstraction.
 The relevant client models are:
 
 - `MetaTable` in `mainsequence/client/models_metatables.py`
-- `DataNodeStorage` in `mainsequence/client/models_tdag.py`
+- `TimeIndexMetaData` in `mainsequence/client/models_tdag.py`
 - `DataNodeUpdate` in `mainsequence/client/models_tdag.py`
 - `DataNode` runtime class in `mainsequence/tdag/data_nodes/data_nodes.py`
 - `PersistManager` in `mainsequence/tdag/base_persist_managers.py`
@@ -81,10 +81,10 @@ The pre-migration write path was:
 3. `create_config(...)` returns both `update_hash` and `storage_hash`.
 4. `DataNode.verify_and_build_remote_objects()` calls
    `PersistManager.local_persist_exist_set_config(...)`.
-5. `PersistManager` creates or resolves `DataNodeStorage` with:
+5. `PersistManager` creates or resolves `TimeIndexMetaData` with:
 
    ```python
-   DataNodeStorage.get_or_create(
+   TimeIndexMetaData.get_or_create(
        storage_hash=storage_hash,
        data_source_uid=data_source.uid,
        build_configuration_json_schema=...,
@@ -104,7 +104,7 @@ The pre-migration write path was:
    ```
 
 7. `DataNodeUpdate.upsert_data_into_table(...)` initializes
-   `SourceTableConfiguration` on `DataNodeStorage`, uploads data, and updates
+   `SourceTableConfiguration` on `TimeIndexMetaData`, uploads data, and updates
    progress statistics.
 
 In that old flow, the storage row was a side effect of constructing an updater.
@@ -119,9 +119,9 @@ The current design creates these issues:
   table" without letting the DataNode compute a `storage_hash`.
 - Table schema and table metadata are split across
   `DataNodeConfiguration.records`, `DataNodeConfiguration.foreign_keys`,
-  `DataNodeConfiguration.node_metadata`, `DataNodeStorage`, and
+  `DataNodeConfiguration.node_metadata`, `TimeIndexMetaData`, and
   `SourceTableConfiguration`.
-- `DataNodeStorage` and `MetaTable` duplicate storage-facing fields, filters,
+- `TimeIndexMetaData` and `MetaTable` duplicate storage-facing fields, filters,
   labels, sharing, UID identity, and data-source identity.
 - The name `DataNode` suggests a data product/storage object, but the runtime
   class is increasingly the update process.
@@ -129,7 +129,7 @@ The current design creates these issues:
   backend update record, so renaming the runtime class to `DataNodeUpdate`
   requires a deliberate compatibility plan.
 - `MetaTable` currently imports `DynamicTableDataSource` from `models_tdag.py`.
-  Making `DataNodeStorage` inherit from `MetaTable` inside `models_tdag.py`
+  Making `TimeIndexMetaData` inherit from `MetaTable` inside `models_tdag.py`
   creates a direct import-cycle risk unless shared data-source/storage models
   are split first.
 
@@ -137,42 +137,47 @@ The current design creates these issues:
 
 Make `MetaTable` the canonical storage model.
 
-`DataNodeStorage` becomes a DataNode-specific compatibility/storage projection
+`TimeIndexMetaData` becomes a DataNode-specific compatibility/storage projection
 that inherits from the MetaTable client model:
 
 ```python
-class DataNodeStorage(MetaTable):
+class TimeIndexMetaData(MetaTable):
     ENDPOINT = "ts_manager/dynamic_table"
 
     source_table_configuration: SourceTableConfiguration | None = None
     source_class_name: str | None = None  # compatibility only
 ```
 
-`DataNodeStorage` remains available during migration because many public SDK,
+`TimeIndexMetaData` remains available during migration because many public SDK,
 CLI, tutorial, and backend paths still use that name. Its meaning changes:
 
 - final canonical table fields come from `MetaTable`;
-- DataNode-specific update/read extensions remain on `DataNodeStorage` only as
+- DataNode-specific update/read extensions remain on `TimeIndexMetaData` only as
   compatibility or typed extension fields;
 - new storage APIs should accept and return `MetaTable` wherever possible;
-- old `DataNodeStorage` read/write helpers delegate to MetaTable-backed routes
+- old `TimeIndexMetaData` read/write helpers delegate to MetaTable-backed routes
   or continue to use legacy dynamic-table routes until the backend endpoint is
   migrated.
 
-The DataNode runtime no longer computes the storage table identity. It accepts
-the target storage table as a first-class constructor argument:
+The DataNode runtime no longer computes the storage table identity and does not
+resolve or register storage. It accepts the target platform-managed storage
+model as a first-class constructor argument:
 
 ```python
-storage_table = MetaTable.get(uid=meta_table_uid)
+class PricesTable(PlatformTimeIndexMetaData, Base):
+    ...
+
+# Done by storage/bootstrap code before the DataNode is constructed.
+PricesTable.bind_meta_table(prepared_meta_table)
+
 data_node = PricesUpdate(
     config=PricesUpdateConfiguration(...),
-    storage_table=storage_table,
+    storage_table=PricesTable,
 )
 ```
 
-This is the long-term public direction. It is not part of the current
-implementation sequence. For now, the runtime authoring class remains
-`DataNode`; the immediate change is to pass storage explicitly.
+This is the runtime direction in this migration. The runtime authoring class
+remains `DataNode`; the immediate change is to pass storage explicitly.
 
 ## Final Model Boundaries
 
@@ -198,9 +203,9 @@ implementation sequence. For now, the runtime authoring class remains
 For DataNode-produced tables, the physical table is still timestamped and
 multi-indexed, but the structural contract belongs to MetaTable.
 
-### DataNodeStorage
+### TimeIndexMetaData
 
-`DataNodeStorage` becomes a specialized MetaTable projection for legacy
+`TimeIndexMetaData` becomes a specialized MetaTable projection for legacy
 DataNode table operations.
 
 It may keep DataNode-specific extension fields:
@@ -213,12 +218,17 @@ It may keep DataNode-specific extension fields:
 
 It should not own generic storage metadata that MetaTable already owns.
 
-Fields that should move away from `DataNodeStorage` over time:
+Fields that should move away from `TimeIndexMetaData` over time:
 
 - `build_configuration_json_schema`: belongs to the update process, not storage;
 - `source_class_name`: belongs to update provenance, not storage;
 - table/column/foreign-key structure: belongs to `MetaTable.table_contract`;
 - label/share/open state: inherited from MetaTable.
+
+`TimeIndexMetaData.initialize_source_table(...)` and
+`TimeIndexMetaData.set_or_update_columns_metadata(...)` are removed from the SDK
+surface. New code should put source-table setup, column labels/descriptions,
+and structural metadata in MetaTable registration/bootstrap contracts.
 
 ### DataNodeUpdate Client Record
 
@@ -251,7 +261,7 @@ class DataNode(DataAccessMixin, ABC):
     def __init__(
         self,
         config: DataNodeUpdateConfiguration,
-        storage_table: MetaTable,
+        storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
         test_node: bool = False,
@@ -270,40 +280,31 @@ New code should separate storage creation from update process creation.
 Storage authoring:
 
 ```python
-from mainsequence.client import MetaTable
+from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
 
-storage_table = MetaTable.register(
-    data_source_uid=data_source.uid,
-    management_mode="platform_managed",
-    storage_hash="prices_daily",
-    identifier="prices_daily",
-    namespace="market_data",
-    table_contract={
-        "version": "relational-table.v1",
-        "physical": {"table_name": "prices_daily"},
-        "columns": [
-            {"name": "time_index", "data_type": "timestamp with time zone", "nullable": False},
-            {"name": "asset_uid", "data_type": "uuid", "nullable": False},
-            {"name": "close", "data_type": "double precision", "nullable": False},
-        ],
-        "indexes": [
-            {"name": "prices_daily_identity_idx", "columns": ["time_index", "asset_uid"], "unique": True}
-        ],
-        "foreign_keys": [],
-        "authoring": {
-            "data_node": {
-                "time_index_name": "time_index",
-                "index_names": ["time_index", "asset_uid"],
-            }
-        },
-    },
-)
+
+class PricesTable(PlatformTimeIndexMetaData, Base):
+    __table_args__ = {"schema": "public"}
+    __metatable_namespace__ = "market_data"
+    __metatable_identifier__ = "prices_daily"
+    __time_index_name__ = "time_index"
+    __index_names__ = ["time_index", "unique_identifier"]
+
+    ...
+
+
+PricesTable.register()
 ```
+
+Storage/bootstrap code may also bind a previously-created backend MetaTable to
+the authoring model with `PricesTable.bind_meta_table(prepared_meta_table)`.
+`DataNode` must not perform either operation.
 
 Update authoring:
 
 ```python
 from mainsequence.tdag import DataNode, DataNodeUpdateConfiguration
+from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
 
 
 class PricesUpdateConfiguration(DataNodeUpdateConfiguration):
@@ -311,7 +312,11 @@ class PricesUpdateConfiguration(DataNodeUpdateConfiguration):
 
 
 class PricesUpdate(DataNode):
-    def __init__(self, config: PricesUpdateConfiguration, storage_table: MetaTable):
+    def __init__(
+        self,
+        config: PricesUpdateConfiguration,
+        storage_table: type[PlatformTimeIndexMetaData],
+    ):
         super().__init__(config=config, storage_table=storage_table)
 
     def dependencies(self):
@@ -324,10 +329,9 @@ class PricesUpdate(DataNode):
 The user should be able to instantiate:
 
 ```python
-storage_table = MetaTable(...)
 data_node_update = PricesUpdate(
     config=PricesUpdateConfiguration(shard_id="eu"),
-    storage_table=storage_table,
+    storage_table=PricesTable,
 )
 ```
 
@@ -402,7 +406,7 @@ This can be represented either as:
 - a DataNode extension block in `MetaTable.table_contract["authoring"]`; and/or
 - a server-side `SourceTableConfiguration` relation attached to a MetaTable UID.
 
-During compatibility, `DataNodeStorage.sourcetableconfiguration` can continue
+During compatibility, `TimeIndexMetaData.sourcetableconfiguration` can continue
 to expose `SourceTableConfiguration`. The implementation should make it a
 projection of MetaTable-backed source-table state instead of a separate schema
 source of truth.
@@ -415,7 +419,7 @@ The following objects must be assumed to already exist before any DataNode
 update process runs:
 
 - the canonical storage `MetaTable`;
-- the compatibility `DataNodeStorage` / dynamic-table projection when legacy
+- the compatibility `TimeIndexMetaData` / dynamic-table projection when legacy
   dynamic-table routes are still used;
 - the DataNode table profile exposed as `SourceTableConfiguration` or its
   MetaTable-backed replacement.
@@ -454,10 +458,10 @@ The replacement behavior is:
   or explicit bootstrap commands, not the update hot path.
 - `columns_metadata` and `foreign_keys` must not trigger creation or mutation
   from the DataNode write path.
-- `DataNodeStorage.initialize_source_table(...)` remains only for explicit
-  storage/bootstrap commands during migration. It must not be called by
-  DataNode runtime, `PersistManager`, or `DataNodeUpdate` hot-path code.
-- `TimeIndexedProfile.create(...)` and `DataNodeStorage.get_or_create(...)`
+- `TimeIndexMetaData.initialize_source_table(...)` is removed from the SDK
+  surface. DataNode runtime, `PersistManager`, and `DataNodeUpdate` hot-path
+  code must not call source-table initialization.
+- `TimeIndexedProfile.create(...)` and `TimeIndexMetaData.get_or_create(...)`
   must not be used by DataNode runtime relations. Storage creation belongs to
   MetaTable registration or an explicit schema/bootstrap command that runs
   before updates.
@@ -466,7 +470,8 @@ The replacement behavior is:
 
 The write path should become:
 
-1. User constructs or resolves a `MetaTable`.
+1. User prepares a `PlatformTimeIndexMetaData` storage model outside DataNode
+   runtime. That bootstrap path registers or binds the backend MetaTable UID.
 2. User constructs a DataNode update process with:
 
    ```python
@@ -474,21 +479,21 @@ The write path should become:
    ```
 
 3. The runtime computes only `update_hash`.
-4. `PersistManager` receives `storage_table` only, then derives storage UID and
-   data-source UID from that MetaTable.
+4. `PersistManager` receives `storage_table` only, then derives MetaTable UID
+   and data-source UID from that platform-managed model.
 5. `PersistManager` creates or resolves the backend update record with:
 
    ```python
    DataNodeUpdateRecord.get_or_create(
        update_hash=update_hash,
        build_configuration=local_configuration,
-       data_source_uid=storage_table.data_source_uid,
-       meta_table_uid=storage_table.uid,
+       data_source_uid=storage_table.get_data_source_uid(),
+       meta_table_uid=storage_table.get_meta_table_uid(),
    )
    ```
 
 6. The update runner validates the output DataFrame against
-   `storage_table.table_contract`.
+   the storage table contract.
 7. Writes target the storage table by UID.
 8. Update progress is stored on the update record and the DataNode table profile,
    not on generic table metadata.
@@ -497,8 +502,8 @@ The write path should become:
 storage as part of update registration.
 
 It should also not create or initialize the source-table profile. Its only
-storage responsibilities are to resolve the explicit storage table, verify that
-the required profile already exists, and pass storage identity into update
+storage responsibility is to use the already supplied MetaTable target, verify
+that the required profile already exists, and pass storage identity into update
 record creation.
 
 ## Read And APIDataNode Flow
@@ -523,14 +528,14 @@ Compatibility fields:
 
 ## Client Import And Inheritance Plan
 
-Before `DataNodeStorage(MetaTable)` can be implemented, the client model import
+Before `TimeIndexMetaData(MetaTable)` can be implemented, the client model import
 cycle must be removed.
 
 Current cycle risk:
 
 - `models_metatables.py` imports `DynamicTableDataSource` from `models_tdag.py`.
 - `models_tdag.py` would need to import `MetaTable` to make
-  `DataNodeStorage` inherit from it.
+  `TimeIndexMetaData` inherit from it.
 
 Implemented refactor:
 
@@ -567,7 +572,7 @@ Required backend capabilities:
 
 ### Phase 0: Inventory And Contract Lock
 
-- Inventory every `DataNodeStorage` field and method and classify it as:
+- Inventory every `TimeIndexMetaData` field and method and classify it as:
   canonical MetaTable field, DataNode table extension, update-process field, or
   compatibility field.
 - Inventory every backend dynamic-table serializer field and confirm what can
@@ -580,32 +585,36 @@ Required backend capabilities:
 - Move shared data-source models from `models_tdag.py` into `models_metatables.py`.
 - Keep public imports stable from `mainsequence.client`.
 - Add focused import tests for:
-  `mainsequence.client.MetaTable`, `mainsequence.client.DataNodeStorage`,
+  `mainsequence.client.MetaTable`, `mainsequence.client.TimeIndexMetaData`,
   `mainsequence.client.DataNodeUpdate`, and `mainsequence.tdag.DataNode`.
 
-### Phase 2: Make DataNodeStorage Inherit MetaTable
+### Phase 2: Make TimeIndexMetaData Inherit MetaTable
 
-- Change `DataNodeStorage` to inherit from `MetaTable`.
+- Change `TimeIndexMetaData` to inherit from `MetaTable`.
 - Override `ENDPOINT` to keep legacy dynamic-table routes during transition.
 - Override required MetaTable fields only where legacy backend payloads cannot
   yet provide them.
 - Add aliases for `sourcetableconfiguration` and
   `source_table_configuration`.
 - Prevent MetaTable registration class methods from accidentally becoming a
-  public `DataNodeStorage.register(...)` surface unless that behavior is
+  public `TimeIndexMetaData.register(...)` surface unless that behavior is
   intentionally supported.
 ### Phase 3: Introduce Explicit Storage Table Runtime Argument
 
 - Update the runtime `DataNode` constructor to accept:
 
   ```python
-  __init__(config: DataNodeUpdateConfiguration, storage_table: MetaTable, ...)
+  __init__(
+      config: DataNodeUpdateConfiguration,
+      storage_table: type[PlatformTimeIndexMetaData],
+      ...
+  )
   ```
 
 - Do not add a derived runtime `storage_hash` property; storage identity stays
-  on `MetaTable`.
-- Fail explicitly when a DataNode update is run without a resolved
-  `storage_table`.
+  on the platform-managed storage model and its bound MetaTable UID.
+- Fail explicitly when a DataNode update is run without a prepared
+  `storage_table` carrying MetaTable identity.
 
 ### Phase 4: Move Storage Creation Out Of PersistManager
 
@@ -616,7 +625,7 @@ Required backend capabilities:
 ### Phase 4A: Remove Source-Table Creation From DataNode Runtime
 
 - Replace
-  `DataNodeStorage.handle_time_indexed_profile_creation(...)` calls from
+  `TimeIndexMetaData.handle_time_indexed_profile_creation(...)` calls from
   `DataNodeUpdate.upsert_data_into_table(...)` without adding replacement
   write-path validation.
 - Remove or deprecate `handle_time_indexed_profile_creation(...)` as a
@@ -625,12 +634,12 @@ Required backend capabilities:
 - Keep profile existence and compatibility checks in DataNode setup,
   MetaTable registration, or explicit bootstrap flows.
 - Remove all DataNode-runtime calls to:
-  `DataNodeStorage.get_or_create(...)`,
+  `TimeIndexMetaData.get_or_create(...)`,
   `TimeIndexedProfile.create(...)`, and
-  `DataNodeStorage.initialize_source_table(...)`.
-- Keep explicit schema/bootstrap commands responsible for calling
-  MetaTable registration and, during transition only, explicit
-  `initialize_source_table(...)`.
+  `TimeIndexMetaData.initialize_source_table(...)`.
+- Keep explicit schema/bootstrap commands responsible for MetaTable
+  registration/bootstrap. Do not expose direct dynamic-table
+  `initialize_source_table(...)` from `TimeIndexMetaData`.
 - Add regression tests proving `DataNodeUpdate.upsert_data_into_table(...)`
   does not call `handle_time_indexed_profile_creation(...)` or
   `initialize_source_table(...)`.
@@ -650,7 +659,7 @@ Required backend capabilities:
 - Update source-table initialization to target storage by MetaTable UID.
 - Update latest-observation, between-date reads, search, tail delete, and
   query helpers to accept MetaTable-backed storage.
-- Keep `DataNodeStorage` methods as compatibility wrappers until backend routes
+- Keep `TimeIndexMetaData` methods as compatibility wrappers until backend routes
   converge.
 
 ### Phase 7: Keep Runtime Naming Stable
@@ -667,13 +676,19 @@ Required backend capabilities:
 - Make `mainsequence meta-table ...` the canonical table-storage CLI.
 - Keep `mainsequence data-node ...` focused on update processes and
   DataNode-specific read helpers.
+- Keep existing `mainsequence data-node ...` storage commands available as
+  compatibility commands during the transition, but stop treating them as the
+  canonical storage-management surface.
 - Update tutorials to teach:
 
   ```python
-  storage_table = MetaTable(...)
+  storage_table = PricesTable
   data_node = PricesUpdate(config, storage_table)
   ```
 
+- Tutorial order must introduce `MetaTable` first as the canonical platform
+  table abstraction, then introduce `DataNode` as an opinionated
+  MetaTable-backed update workflow.
 - Replace `update_hash vs storage_hash` explanations with:
   "MetaTable is storage; DataNode is the update process."
 - Regenerate reference docs after public signatures stabilize.
@@ -687,13 +702,13 @@ Required backend capabilities:
 
 ## Implementation Tasks
 
-- [ ] Inventory `DataNodeStorage` fields and classify their final owner.
-- [ ] Inventory `DataNodeStorage` methods and classify as MetaTable method,
+- [ ] Inventory `TimeIndexMetaData` fields and classify their final owner.
+- [ ] Inventory `TimeIndexMetaData` methods and classify as MetaTable method,
       DataNode table extension, update-process method, or compatibility wrapper.
 - [x] Move data-source client models from `models_tdag.py` into
       `models_metatables.py` to avoid import cycles.
-- [x] Make `DataNodeStorage` inherit from `MetaTable`.
-- [x] Add first-class `storage_table: MetaTable` runtime argument.
+- [x] Make `TimeIndexMetaData` inherit from `MetaTable`.
+- [x] Add first-class `storage_table: PlatformTimeIndexMetaData` runtime argument.
 - [x] Change `PersistManager` to validate existing storage instead of creating
       storage.
 - [x] Change update record creation to send `meta_table_uid`.
@@ -701,7 +716,9 @@ Required backend capabilities:
 - [x] Remove `DataNodeUpdate.upsert_data_into_table(...)` calls to
       `handle_time_indexed_profile_creation(...)`.
 - [x] Remove DataNode-runtime calls to
-      `DataNodeStorage.initialize_source_table(...)`.
+      `TimeIndexMetaData.initialize_source_table(...)`.
+- [x] Remove `TimeIndexMetaData.initialize_source_table(...)` from the SDK
+      surface.
 - [x] Keep `DataNodeUpdate.upsert_data_into_table(...)` free of replacement
       storage/profile validation.
 - [x] Add tests proving the DataNode write path does not call the legacy
@@ -709,8 +726,8 @@ Required backend capabilities:
 - [ ] Add tests proving foreign-key and column metadata in the DataNode write
       path are not used to mutate/create storage metadata.
 - [x] Update `APIDataNode` factories to resolve MetaTable-backed storage.
-- [ ] Update CLI data-node and meta-table command ownership.
-- [ ] Update DataNode and MetaTable tutorials.
+- [x] Update CLI data-node and meta-table command ownership.
+- [x] Update DataNode and MetaTable tutorials.
 - [ ] Regenerate reference docs.
 
 ## Compatibility Policy
@@ -721,12 +738,12 @@ the documented path.
 Allowed temporary compatibility:
 
 - `DataNode` remains importable.
-- `DataNodeStorage` remains importable and can keep dynamic-table read helpers.
+- `TimeIndexMetaData` remains importable and can keep dynamic-table read helpers.
 Not allowed as final behavior:
 
 - DataNode runtime computes storage identity.
 - PersistManager creates storage as a hidden side effect of updater creation.
-- DataNode runtime creates or initializes `DataNodeStorage`.
+- DataNode runtime creates or initializes `TimeIndexMetaData`.
 - DataNode runtime creates or initializes `TimeIndexedProfile`.
 - `DataNodeUpdate.upsert_data_into_table(...)` calls
   `handle_time_indexed_profile_creation(...)` or any helper that can
@@ -754,13 +771,13 @@ creation before this ADR lands.
 
 ## Risks
 
-- Direct `DataNodeStorage(MetaTable)` inheritance can break Pydantic validation
+- Direct `TimeIndexMetaData(MetaTable)` inheritance can break Pydantic validation
   if backend dynamic-table payloads do not include required MetaTable fields.
 - Import cycles will occur unless shared data-source/client models are split
   first.
-- Inherited MetaTable class methods may expose invalid DataNodeStorage command
+- Inherited MetaTable class methods may expose invalid TimeIndexMetaData command
   surfaces unless they are moved, guarded, or overridden.
-- Existing docs and CLI commands heavily use `DataNodeStorage`; they must be
+- Existing docs and CLI commands heavily use `TimeIndexMetaData`; they must be
   migrated carefully to avoid confusing users.
 - Changing update hashing would affect runtime identity compatibility; keep it
   outside this migration unless a separate hashing ADR is accepted.
@@ -771,16 +788,16 @@ creation before this ADR lands.
 
 The migration is complete when:
 
-- `DataNodeStorage` inherits from the MetaTable client model without import
+- `TimeIndexMetaData` inherits from the MetaTable client model without import
   cycles.
 - DataNode-produced storage tables expose canonical MetaTable fields and UID
   identity.
-- New DataNode update runtime construction requires an explicit MetaTable
-  storage argument.
+- New DataNode update runtime construction requires an explicit
+  `PlatformTimeIndexMetaData` storage argument carrying MetaTable identity.
 - DataNode update runtime no longer computes `storage_hash`.
 - `PersistManager` does not create storage in the normal path.
-- No DataNode runtime relation calls `DataNodeStorage.get_or_create(...)`,
-  `DataNodeStorage.initialize_source_table(...)`, or
+- No DataNode runtime relation calls `TimeIndexMetaData.get_or_create(...)`,
+  `TimeIndexMetaData.initialize_source_table(...)`, or
   `TimeIndexedProfile.create(...)`.
 - `DataNodeUpdate.upsert_data_into_table(...)` does not call storage/profile
   creation, initialization, mutation, or validation helpers.
@@ -794,7 +811,7 @@ The migration is complete when:
 - DataNode tutorials show:
 
   ```python
-  storage_table = MetaTable(...)
+  storage_table = PricesTable
   data_node = PricesUpdate(config, storage_table)
   ```
 

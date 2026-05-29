@@ -1,23 +1,30 @@
-# Part 3.1: Working With MetaTables
+# Part 2: Working With MetaTables
 
 ## Quick Summary
 
 In this tutorial, you will:
 
+- understand `MetaTable` as the canonical platform table abstraction
 - define simple relational tables with SQLAlchemy models
 - register backend-managed `MetaTable`s
 - let TS Manager create the physical tables through a configured data source
 - register a parent table before a child table with a foreign key
 - insert and read rows through governed MetaTable operations
-- keep application table contracts separate from `DataNode` time-series contracts
+- understand how a `DataNode` later becomes an opinionated MetaTable-backed update workflow
 
 The concrete examples in this repository live under
 [`examples/meta_tables`](../../examples/meta_tables/README.md).
 
-## 1. When To Use MetaTables
+## 1. MetaTable Is The Canonical Table
 
-Use a `MetaTable` when your application needs row-oriented relational data that
-is not naturally a time-series `DataNode`.
+Use a `MetaTable` when your application needs a platform table contract: table
+UID, physical table name, data source, schema, labels, sharing, and governed
+read/write operations. `MetaTable` is the base storage concept in Main
+Sequence.
+
+This chapter starts with row-oriented relational data because it makes the table
+contract visible without introducing update scheduling or DataNode dependencies
+yet.
 
 Good examples:
 
@@ -27,8 +34,10 @@ Good examples:
 - mappings
 - application records that need stable primary keys and relational constraints
 
-If your data is organized around `time_index`, use a `DataNode`. If your data is
-row-oriented and application-facing, use a `MetaTable`.
+The next tutorial introduces `DataNode` as an opinionated MetaTable-backed
+update workflow. Use a `DataNode` when the table should be produced or refreshed
+by SDK update logic, dependencies, and scheduling. Use `MetaTable` directly when
+you need the table contract and governed operations without that update layer.
 
 Legacy row-table authoring helpers are deprecated. New tutorial code should use
 `MetaTable`.
@@ -267,18 +276,19 @@ the same: compiled SQL plus declared MetaTable scope.
 
 Use them together:
 
-- `DataNode`s publish time-indexed series and derived datasets
-- `MetaTable`s publish row-oriented application records
+- `MetaTable`s publish canonical table contracts and governed access
+- `DataNode`s are opinionated producers for MetaTable-backed datasets, usually time-indexed or derived from other resources
 - APIs and dashboards consume those contracts instead of reaching into private project code
 
 A common project shape is:
 
-- `DataNode` for daily metrics
 - backend-managed `MetaTable` for customer, account, or mapping records
+- `DataNode` for daily metrics backed by a governed table contract
 - FastAPI route that combines both into a stable response
 
 ## 9. Further Reading
 
+- [Creating a Data Node](creating_a_simple_data_node.md)
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Registering SQLAlchemy Tables](../knowledge/meta_tables/sqlalchemy.md)
 - [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)

@@ -64,6 +64,11 @@ from .api import (
     add_data_node_storage_user_to_edit,
     add_data_node_storage_user_to_view,
     add_deploy_key,
+    add_meta_table_labels,
+    add_meta_table_team_to_edit,
+    add_meta_table_team_to_view,
+    add_meta_table_user_to_edit,
+    add_meta_table_user_to_view,
     add_project_labels,
     add_project_team_to_edit,
     add_project_team_to_view,
@@ -92,6 +97,7 @@ from .api import (
     delete_agent,
     delete_constant,
     delete_data_node_storage,
+    delete_meta_table,
     delete_organization_team,
     delete_project,
     delete_project_image,
@@ -108,6 +114,7 @@ from .api import (
     get_current_user_profile,
     get_data_node_storage,
     get_logged_user_details,
+    get_meta_table,
     get_or_create_agent,
     get_organization_team,
     get_project,
@@ -134,6 +141,9 @@ from .api import (
     list_data_node_storages,
     list_dynamic_table_data_sources,
     list_github_organizations,
+    list_meta_table_users_can_edit,
+    list_meta_table_users_can_view,
+    list_meta_tables,
     list_organization_teams,
     list_project_base_images,
     list_project_images,
@@ -165,6 +175,11 @@ from .api import (
     remove_data_node_storage_team_from_view,
     remove_data_node_storage_user_from_edit,
     remove_data_node_storage_user_from_view,
+    remove_meta_table_labels,
+    remove_meta_table_team_from_edit,
+    remove_meta_table_team_from_view,
+    remove_meta_table_user_from_edit,
+    remove_meta_table_user_from_view,
     remove_project_labels,
     remove_project_team_from_edit,
     remove_project_team_from_view,
@@ -320,7 +335,8 @@ connection_type = typer.Typer(help="Connection type commands")
 connection = typer.Typer(help="Connection commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
-data_node_storage_group = typer.Typer(help="Data node commands")
+meta_table_group = typer.Typer(help="MetaTable table-storage commands")
+data_node_storage_group = typer.Typer(help="DataNode update/read-helper commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
 project_project_resource_group = typer.Typer(help="Project resource commands")
@@ -357,6 +373,8 @@ app.add_typer(connection, name="connection", hidden=True)
 app.add_typer(connection, name="connections", hidden=True)
 app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
+app.add_typer(meta_table_group, name="meta-table")
+app.add_typer(meta_table_group, name="meta_table")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
 app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)
@@ -403,7 +421,8 @@ CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_tdag.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
-DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.DataNodeStorage"
+DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.TimeIndexMetaData"
+META_TABLE_MODEL_REF = "mainsequence.client.models_metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
 WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
@@ -1473,6 +1492,19 @@ def _format_data_node_storage_delete_preview(storage: dict[str, object]) -> list
         ("Source Class", str(storage.get("source_class_name") or "-")),
         ("Data Source", _format_data_node_storage_data_source(storage.get("data_source"))),
         ("Protected", str(storage.get("protect_from_deletion"))),
+    ]
+
+
+def _format_meta_table_delete_preview(meta_table: dict[str, object]) -> list[tuple[str, str]]:
+    return [
+        ("UID", str(meta_table.get("uid") or "-")),
+        ("Storage Hash", str(meta_table.get("storage_hash") or "-")),
+        ("Identifier", str(meta_table.get("identifier") or "-")),
+        ("Namespace", str(meta_table.get("namespace") or "-")),
+        ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
+        ("Management Mode", str(meta_table.get("management_mode") or "-")),
+        ("Data Source", _format_data_node_storage_data_source(meta_table.get("data_source"))),
+        ("Protected", str(meta_table.get("protect_from_deletion"))),
     ]
 
 
@@ -5352,6 +5384,54 @@ def _data_node_storage_list_impl(
     info(f"Total data node storages: {len(storages)}")
 
 
+def _meta_table_list_impl(
+    timeout: int | None,
+    filter_entries: list[str] | None,
+    show_filters: bool,
+    data_source_uid: str | None = None,
+) -> None:
+    filters = _resolve_cli_list_filters(
+        model_ref=META_TABLE_MODEL_REF,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        command_label="MetaTable",
+    )
+    filters = _merge_cli_filter_alias(
+        filters,
+        filter_key="data_source__uid",
+        value=data_source_uid,
+        option_name="data-source-uid",
+    )
+    _require_login()
+
+    try:
+        meta_tables = list_meta_tables(timeout=timeout, filters=filters)
+    except ApiError as e:
+        error(f"MetaTables fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(meta_tables):
+        return
+
+    if meta_tables:
+        print_table(
+            "MetaTables",
+            [
+                "UID",
+                "Storage Hash",
+                "Physical Table",
+                "Identifier",
+                "Namespace",
+                "Mode",
+                "Data Source",
+            ],
+            _build_meta_table_rows(meta_tables),
+        )
+    else:
+        info("No MetaTables.")
+    info(f"Total MetaTables: {len(meta_tables)}")
+
+
 def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[list[str]]:
     rows: list[list[str]] = []
     for storage in storages:
@@ -5364,6 +5444,23 @@ def _build_data_node_storage_rows(storages: list[dict[str, object]]) -> list[lis
                 str(storage.get("identifier") or "-"),
                 str(storage.get("namespace") or "-"),
                 _format_data_node_storage_data_source(storage.get("data_source")),
+            ]
+        )
+    return rows
+
+
+def _build_meta_table_rows(meta_tables: list[dict[str, object]]) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for meta_table in meta_tables:
+        rows.append(
+            [
+                str(meta_table.get("uid") or "-"),
+                str(meta_table.get("storage_hash") or "-"),
+                str(meta_table.get("physical_table_name") or "-"),
+                str(meta_table.get("identifier") or "-"),
+                str(meta_table.get("namespace") or "-"),
+                str(meta_table.get("management_mode") or "-"),
+                _format_data_node_storage_data_source(meta_table.get("data_source")),
             ]
         )
     return rows
@@ -6905,6 +7002,50 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     )
 
 
+def _meta_table_detail_impl(meta_table_uid: str, timeout: int | None) -> None:
+    _require_login()
+
+    try:
+        meta_table = get_meta_table(meta_table_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"MetaTable fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(meta_table):
+        return
+
+    print_kv(
+        "MetaTable",
+        [
+            ("UID", str(meta_table.get("uid") or meta_table_uid)),
+            ("Storage Hash", str(meta_table.get("storage_hash") or "-")),
+            ("Physical Table", str(meta_table.get("physical_table_name") or "-")),
+            ("Identifier", str(meta_table.get("identifier") or "-")),
+            ("Namespace", str(meta_table.get("namespace") or "-")),
+            ("Management Mode", str(meta_table.get("management_mode") or "-")),
+            ("Data Source", _format_data_node_storage_data_source(meta_table.get("data_source"))),
+            ("Protected", str(meta_table.get("protect_from_deletion"))),
+            ("Created", str(meta_table.get("creation_date") or "-")),
+            ("Created By", str(meta_table.get("created_by_user_uid") or "-")),
+            ("Organization", str(meta_table.get("organization_owner_uid") or "-")),
+            ("Description", str(meta_table.get("description") or "-")),
+        ],
+    )
+
+    print_kv(
+        "MetaTable Contract",
+        [
+            ("Contract Version", str(meta_table.get("contract_version") or "-")),
+            ("Table Contract", _format_json_value(meta_table.get("table_contract"))),
+            ("Columns", _format_json_value(meta_table.get("columns"))),
+            ("Indexes", _format_json_value(meta_table.get("indexes_meta"))),
+            ("Foreign Keys", _format_json_value(meta_table.get("foreign_keys"))),
+            ("Incoming FKs", _format_json_value(meta_table.get("incoming_fks"))),
+            ("Introspection", _format_json_value(meta_table.get("introspection_snapshot"))),
+        ],
+    )
+
+
 def _data_node_storage_run_query_impl(
     *,
     storage_uid: str,
@@ -6985,6 +7126,314 @@ def _data_node_storage_delete_impl(
     print_kv("Deleted Data Node Storage", _format_data_node_storage_delete_preview(deleted))
 
 
+def _meta_table_delete_impl(
+    *,
+    meta_table_uid: str,
+    timeout: int | None,
+) -> None:
+    _require_login()
+
+    try:
+        meta_table = get_meta_table(meta_table_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"MetaTable fetch failed: {e}")
+        raise typer.Exit(1) from e
+
+    verification_value = str(
+        meta_table.get("storage_hash") or meta_table.get("uid") or meta_table_uid
+    )
+    _require_delete_verification(
+        preview_title="MetaTable Delete Preview",
+        preview_items=_format_meta_table_delete_preview(meta_table),
+        verification_value=verification_value,
+        verification_label="storage hash" if meta_table.get("storage_hash") else "MetaTable uid",
+    )
+
+    try:
+        deleted = delete_meta_table(meta_table_uid, timeout=timeout)
+    except ApiError as e:
+        error(f"MetaTable deletion failed: {e}")
+        raise typer.Exit(1) from e
+
+    if _emit_json(deleted):
+        return
+
+    success(f"MetaTable deleted: uid={meta_table_uid}")
+    print_kv("Deleted MetaTable", _format_meta_table_delete_preview(deleted))
+
+
+@meta_table_group.command("list")
+def meta_table_list_cmd(
+    data_source_uid: str | None = typer.Option(
+        None, "--data-source-uid", help="Filter by data source UID."
+    ),
+    filter_entries: list[str] | None = typer.Option(None, "--filter", help=LIST_FILTER_OPTION_HELP),
+    show_filters: bool = typer.Option(
+        False, "--show-filters", help="Show the filters supported by this list command and exit."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    List MetaTables visible to the authenticated user.
+
+    Uses SDK client `MetaTable.filter()` as the canonical table-storage surface.
+    """
+    _meta_table_list_impl(
+        timeout=timeout,
+        filter_entries=filter_entries,
+        show_filters=show_filters,
+        data_source_uid=data_source_uid,
+    )
+
+
+@meta_table_group.command("detail")
+def meta_table_detail_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Show one MetaTable and render its table contract in the terminal.
+    """
+    _meta_table_detail_impl(meta_table_uid=meta_table_uid, timeout=timeout)
+
+
+@meta_table_group.command("delete")
+def meta_table_delete_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """
+    Delete one MetaTable through the canonical table-storage model.
+    """
+    _meta_table_delete_impl(meta_table_uid=meta_table_uid, timeout=timeout)
+
+
+@meta_table_group.command("can_view")
+def meta_table_can_view_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """List users who can view one MetaTable."""
+    _shareable_user_list_impl(
+        fetch_fn=list_meta_table_users_can_view,
+        object_label="MetaTable",
+        access_label="view",
+        object_id=meta_table_uid,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("can_edit")
+def meta_table_can_edit_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """List users who can edit one MetaTable."""
+    _shareable_user_list_impl(
+        fetch_fn=list_meta_table_users_can_edit,
+        object_label="MetaTable",
+        access_label="edit",
+        object_id=meta_table_uid,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("add-label")
+def meta_table_add_label_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to add. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Add one or more organizational labels to a MetaTable."""
+    _labelable_object_labels_update_impl(
+        action_fn=add_meta_table_labels,
+        object_label="MetaTable",
+        action_label="add-label",
+        object_id=meta_table_uid,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("add_label", hidden=True)
+def meta_table_add_label_alias_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    labels: list[str] | None = typer.Option(None, "--label", help="Organizational label to add."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence meta-table add-label`."""
+    meta_table_add_label_cmd(meta_table_uid=meta_table_uid, labels=labels, timeout=timeout)
+
+
+@meta_table_group.command("remove-label")
+def meta_table_remove_label_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    labels: list[str] | None = typer.Option(
+        None,
+        "--label",
+        help="Organizational label to remove. Repeatable or comma-separated.",
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Remove one or more organizational labels from a MetaTable."""
+    _labelable_object_labels_update_impl(
+        action_fn=remove_meta_table_labels,
+        object_label="MetaTable",
+        action_label="remove-label",
+        object_id=meta_table_uid,
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("remove_label", hidden=True)
+def meta_table_remove_label_alias_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    labels: list[str] | None = typer.Option(
+        None, "--label", help="Organizational label to remove."
+    ),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Backward-compatible alias for `mainsequence meta-table remove-label`."""
+    meta_table_remove_label_cmd(meta_table_uid=meta_table_uid, labels=labels, timeout=timeout)
+
+
+@meta_table_group.command("add_to_view")
+def meta_table_add_to_view_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    user_id: int = typer.Argument(..., help="User ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Grant explicit view access to one user for one MetaTable."""
+    _shareable_user_access_update_impl(
+        action_fn=add_meta_table_user_to_view,
+        object_label="MetaTable",
+        action_label="add_to_view",
+        object_id=meta_table_uid,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("add_to_edit")
+def meta_table_add_to_edit_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    user_id: int = typer.Argument(..., help="User ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Grant explicit edit access to one user for one MetaTable."""
+    _shareable_user_access_update_impl(
+        action_fn=add_meta_table_user_to_edit,
+        object_label="MetaTable",
+        action_label="add_to_edit",
+        object_id=meta_table_uid,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("remove_from_view")
+def meta_table_remove_from_view_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Remove explicit view access from one user for one MetaTable."""
+    _shareable_user_access_update_impl(
+        action_fn=remove_meta_table_user_from_view,
+        object_label="MetaTable",
+        action_label="remove_from_view",
+        object_id=meta_table_uid,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("remove_from_edit")
+def meta_table_remove_from_edit_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    user_id: int = typer.Argument(..., help="User ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    """Remove explicit edit access from one user for one MetaTable."""
+    _shareable_user_access_update_impl(
+        action_fn=remove_meta_table_user_from_edit,
+        object_label="MetaTable",
+        action_label="remove_from_edit",
+        object_id=meta_table_uid,
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("add_team_to_view")
+def meta_table_add_team_to_view_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant view access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_meta_table_team_to_view,
+        object_label="MetaTable",
+        action_label="add_team_to_view",
+        object_id=meta_table_uid,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("add_team_to_edit")
+def meta_table_add_team_to_edit_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    team_id: int = typer.Argument(..., help="Team ID to grant edit access."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=add_meta_table_team_to_edit,
+        object_label="MetaTable",
+        action_label="add_team_to_edit",
+        object_id=meta_table_uid,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("remove_team_from_view")
+def meta_table_remove_team_from_view_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit view access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_meta_table_team_from_view,
+        object_label="MetaTable",
+        action_label="remove_team_from_view",
+        object_id=meta_table_uid,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+@meta_table_group.command("remove_team_from_edit")
+def meta_table_remove_team_from_edit_cmd(
+    meta_table_uid: str = typer.Argument(..., help="MetaTable UID."),
+    team_id: int = typer.Argument(..., help="Team ID to remove explicit edit access from."),
+    timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
+):
+    _shareable_team_access_update_impl(
+        action_fn=remove_meta_table_team_from_edit,
+        object_label="MetaTable",
+        action_label="remove_team_from_edit",
+        object_id=meta_table_uid,
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
 @data_node_storage_group.command("list")
 def data_node_storage_list_cmd(
     data_source_id: int | None = typer.Option(
@@ -6999,7 +7448,7 @@ def data_node_storage_list_cmd(
     """
     List data node storages visible to the authenticated user.
 
-    Uses SDK client `DataNodeStorage.filter()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaData.filter()` as the single source of truth.
 
     Parameters
     ----------
@@ -7036,7 +7485,7 @@ def data_node_storage_detail_cmd(
     `physical_index_plan` when the backend exposes them on the source table
     configuration.
 
-    Uses SDK client `DataNodeStorage.get()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaData.get()` as the single source of truth.
 
     Parameters
     ----------
@@ -7076,7 +7525,7 @@ def data_node_storage_refresh_search_index_cmd(
     """
     Refresh the semantic search index for one data node storage.
 
-    Uses SDK client `DataNodeStorage.refresh_table_search_index()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaData.refresh_table_search_index()` as the single source of truth.
 
     Examples
     --------
@@ -7150,8 +7599,8 @@ def data_node_storage_search_cmd(
     """
     Search data node storages by description metadata, column metadata, or both.
 
-    Uses SDK client `DataNodeStorage.description_search()` and
-    `DataNodeStorage.column_search()` as the single sources of truth.
+    Uses SDK client `TimeIndexMetaData.description_search()` and
+    `TimeIndexMetaData.column_search()` as the single sources of truth.
 
     Examples
     --------
@@ -7323,7 +7772,7 @@ def data_node_storage_column_search_cmd(
     """
     Search data node storages by column metadata.
 
-    Uses SDK client `DataNodeStorage.column_search()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaData.column_search()` as the single source of truth.
 
     Examples
     --------
@@ -7385,7 +7834,7 @@ def data_node_storage_delete_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Delete one data node storage using the SDK client `DataNodeStorage.delete()` path.
+    Delete one data node storage using the SDK client `TimeIndexMetaData.delete()` path.
 
     The command always requires typed verification before the delete call is executed.
 
@@ -7415,7 +7864,7 @@ def data_node_storage_can_view_cmd(
     """
     List users who can view one data node storage.
 
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `DataNodeStorage` model.
+    Uses the SDK `ShareableObjectMixin.can_view()` path through the `TimeIndexMetaData` model.
 
     Examples
     --------
@@ -7441,7 +7890,7 @@ def data_node_storage_can_edit_cmd(
     """
     List users who can edit one data node storage.
 
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `DataNodeStorage` model.
+    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `TimeIndexMetaData` model.
 
     Examples
     --------

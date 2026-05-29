@@ -245,9 +245,9 @@ def test_project_image_accepts_creation_date():
 
 
 def test_data_node_storage_normalizes_namespace_filters():
-    from mainsequence.client.models_tdag import DataNodeStorage
+    from mainsequence.client.models_tdag import TimeIndexMetaData
 
-    normalized = DataNodeStorage._normalize_filter_kwargs(
+    normalized = TimeIndexMetaData._normalize_filter_kwargs(
         {
             "namespace__contains": "  pytest  ",
             "namespace__in": [" alpha ", "beta"],
@@ -263,11 +263,11 @@ def test_data_node_storage_normalizes_namespace_filters():
 
 
 def test_data_node_storage_normalizes_data_source_uid_filters():
-    from mainsequence.client.models_tdag import DataNodeStorage
+    from mainsequence.client.models_tdag import TimeIndexMetaData
 
     uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
-    normalized = DataNodeStorage._normalize_filter_kwargs(
+    normalized = TimeIndexMetaData._normalize_filter_kwargs(
         {
             "data_source__uid": {"uid": uid},
             "data_source__uid__in": [{"uid": uid}],
@@ -281,10 +281,10 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
-    from mainsequence.client.models_tdag import DataNodeStorage
+    from mainsequence.client.models_tdag import TimeIndexMetaData
 
-    with pytest.raises(ValueError, match="Unsupported DataNodeStorage filter"):
-        DataNodeStorage._normalize_filter_kwargs({"data_source__id": {"id": 7}})
+    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaData filter"):
+        TimeIndexMetaData._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
@@ -320,9 +320,9 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: object()))
 
-    storage = models_tdag.DataNodeStorage(
+    storage = models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -357,7 +357,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     assert result["deleted_count"] == 123
     assert captured == {
         "r_type": "POST",
-        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/714/delete_after_date/",
+        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/714/delete_after_date/",
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
@@ -387,9 +387,9 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         return FakeResponse()
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: object()))
 
-    storage = models_tdag.DataNodeStorage(
+    storage = models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -428,9 +428,9 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
 
 
 def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases():
-    from mainsequence.client.models_tdag import DataNodeStorage
+    from mainsequence.client.models_tdag import TimeIndexMetaData
 
-    storage = DataNodeStorage(
+    storage = TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -452,7 +452,7 @@ def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases(
 
 
 def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
-    from mainsequence.client import models_tdag
+    from mainsequence.client import models_metatables, models_tdag
 
     captured = {}
     session = SimpleNamespace(headers={"Content-Type": "application/json"})
@@ -483,10 +483,10 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: session))
 
-    storage = models_tdag.DataNodeStorage(
+    storage = models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -501,7 +501,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     assert captured == {
         "headers": {"Content-Type": "text/plain"},
         "r_type": "POST",
-        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/714/run_query/",
+        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/714/run_query/",
         "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
         "timeout": 30,
     }
@@ -509,7 +509,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
 
 
 def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
-    from mainsequence.client import models_tdag
+    from mainsequence.client import models_metatables, models_tdag
 
     session = SimpleNamespace(headers={})
 
@@ -535,10 +535,10 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
                 },
             }
 
-    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
-    monkeypatch.setattr(models_tdag.DataNodeStorage, "build_session", classmethod(lambda cls: session))
+    monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
+    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: session))
 
-    storage = models_tdag.DataNodeStorage(
+    storage = models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,

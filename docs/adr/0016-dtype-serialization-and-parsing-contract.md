@@ -166,14 +166,14 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 ### SourceTable API Payload Serialization
 
 - `mainsequence/client/models_tdag.py:1462`
-  - `DataNodeStorage.initialize_source_table()` accepts `column_dtypes_map`.
+  - `TimeIndexMetaData.initialize_source_table()` accepts `column_dtypes_map`.
 
 - `mainsequence/client/models_tdag.py:1512`
   - `_initialize_source_table_at_url()` serializes source-table creation
     payload with `"column_dtypes_map": dict(column_dtypes_map)`.
 
 - `mainsequence/client/models_tdag.py:1688`
-  - `DataNodeStorage.handle_source_table_configuration_creation()` accepts
+  - `TimeIndexMetaData.handle_source_table_configuration_creation()` accepts
     `column_dtypes_map` and routes it to initialization.
 
 - `mainsequence/client/models_tdag.py:1726`
@@ -222,14 +222,14 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 ### DataNode Response DType Deserialization
 
 - `mainsequence/client/models_tdag.py:1754`
-  - `DataNodeStorage.map_columns_to_df()` casts columns from
+  - `TimeIndexMetaData.map_columns_to_df()` casts columns from
     `column_dtypes_map`.
 
 - `mainsequence/client/models_tdag.py:1764`
   - `map_columns_to_df()` rewrites `"object"` to `"str"` before `astype(...)`.
 
 - `mainsequence/client/models_tdag.py:1803`
-  - `DataNodeStorage.get_last_observation()` parses the configured time index
+  - `TimeIndexMetaData.get_last_observation()` parses the configured time index
     with `pd.to_datetime(...)`.
 
 - `mainsequence/client/models_tdag.py:1807`

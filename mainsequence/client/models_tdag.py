@@ -26,7 +26,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, m
 
 from mainsequence.logconf import logger
 
-from . import exceptions
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from .dtype_codec import (
     TIMESTAMP_TZ,
@@ -47,6 +46,7 @@ from .models_metatables import (
     DataSource,
     DynamicTableDataSource,
     MetaTable,
+    MetaTableColumnContract,
 )
 from .models_metatables import (
     _duckdb_interface as _metatable_duckdb_interface,
@@ -211,6 +211,33 @@ class SourceTableForeignKeyProjection(SourceTableForeignKeyContract):
     )
 
 
+class DynamicTableRegistrationRequest(BasePydanticModel):
+    model_config = ConfigDict(extra="forbid")
+
+    data_source_uid: str = Field(..., description="Public uid of the DynamicTableDataSource")
+    storage_hash: str = Field(..., max_length=63, description="Canonical physical table name")
+    identifier: str | None = Field(None, description="Optional published storage identifier")
+    namespace: str | None = Field(None, description="Optional published storage namespace")
+    description: str | None = Field(None, description="Optional storage description")
+    labels: list[str] = Field(default_factory=list)
+    protect_from_deletion: bool = False
+    provisioning: dict[str, Any] = Field(
+        default_factory=lambda: {"create_table": True, "if_not_exists": True}
+    )
+    time_index_name: str = Field(..., description="Canonical timestamp column name")
+    index_names: list[str] = Field(
+        ..., min_length=1, description="Ordered DynamicTable index columns"
+    )
+    columns: list[MetaTableColumnContract] = Field(
+        ..., min_length=1, description="Canonical MetaTable column contracts"
+    )
+    storage_layout: dict[str, Any] | None = Field(
+        None,
+        description="Optional explicit time-indexed storage-layout hints",
+    )
+    foreign_keys: list[SourceTableForeignKeyContract] = Field(default_factory=list)
+
+
 def _serialize_source_table_foreign_key_contract(
     foreign_key: SourceTableForeignKeyContract | dict[str, Any],
 ) -> dict[str, Any]:
@@ -228,26 +255,6 @@ def _serialize_source_table_foreign_key_contract(
         )
         if key in raw
     }
-
-
-def _serialize_source_table_column_metadata(
-    column_metadata: BaseColumnMetaData | dict[str, Any],
-) -> dict[str, Any]:
-    if isinstance(column_metadata, BaseModel):
-        raw = column_metadata.model_dump(mode="json", exclude_none=True)
-    else:
-        raw = dict(column_metadata)
-    if raw.get("column_name") in (None, "") and raw.get("name") not in (None, ""):
-        raw["column_name"] = raw["name"]
-    if raw.get("dtype") in (None, "") and raw.get("data_type") not in (None, ""):
-        raw["dtype"] = raw["data_type"]
-    raw.pop("orm_class", None)
-    raw.pop("source_config_id", None)
-    raw.pop("name", None)
-    raw.pop("data_type", None)
-    if "dtype" in raw:
-        raw["dtype"] = normalize_dtype_token(raw["dtype"], remote=True)
-    return raw
 
 
 def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
@@ -358,16 +365,16 @@ class TimeIndexedProfileBase:
 class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     """Read-only DynamicTable time-indexed profile.
 
-    This is a value object returned by DataNodeStorage responses. It is not a
+    This is a value object returned by TimeIndexMetaData responses. It is not a
     public REST resource; operations such as stats reads and column metadata
-    updates are routed through DataNodeStorage.
+    updates are routed through TimeIndexMetaData.
     """
 
     dynamic_table_uid: str | None = Field(
-        None, description="Public uid of the related DynamicTable/DataNodeStorage"
+        None, description="Public uid of the related DynamicTable/TimeIndexMetaData"
     )
     related_table_uid: str | None = Field(
-        None, description="Public uid of the related DataNodeStorage"
+        None, description="Public uid of the related TimeIndexMetaData"
     )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
     last_time_index_value: datetime.datetime | None = Field(
@@ -445,7 +452,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     NODE_TYPE: ClassVar[str] = "local_time_serie"
 
-    data_node_storage: str | UUID | DataNodeStorage
+    data_node_storage: str | UUID | TimeIndexMetaData
     tags: list[str] | None = Field(default=[], description="List of tags")
     labels: list[str] = Field(
         default_factory=list,
@@ -1194,6 +1201,29 @@ class DataNodeUpdateDetails(BaseUpdateDetails,BasePydanticModel, BaseObjectOrm):
     related_table_uid: str | None = Field(None, description="Public uid of the related DataNodeUpdate")
     run_configuration: RunConfiguration | None = None
 
+    @classmethod
+    def patch_for_data_node_update_uid(
+        cls,
+        data_node_update_uid: str,
+        *,
+        timeout: int | None = None,
+        **kwargs,
+    ) -> DataNodeUpdateDetails:
+        if data_node_update_uid in (None, ""):
+            raise ValueError("DataNodeUpdate uid is required to patch update details.")
+
+        payload = {"json": serialize_to_json(kwargs)}
+        r = make_request(
+            s=cls.build_session(),
+            loaders=cls.LOADERS,
+            r_type="PATCH",
+            url=f"{cls.get_object_url()}/{data_node_update_uid}/",
+            payload=payload,
+            time_out=timeout,
+        )
+        if r.status_code != 200:
+            raise_for_response(r, payload=payload)
+        return cls(**r.json())
 
     @staticmethod
     def _parse_parameters_filter(parameters):
@@ -1209,7 +1239,7 @@ class TableMetaData(BaseModel):
     description: str | None = None
 
 
-class DataNodeStorage(MetaTable):
+class TimeIndexMetaData(MetaTable):
     ENDPOINT: ClassVar[str] = "ts_manager/dynamic_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
@@ -1237,25 +1267,6 @@ class DataNodeStorage(MetaTable):
             "This changes response detail only and does not change which rows are returned."
         ),
     }
-    DESTROY_QUERY_PARAMS: ClassVar[dict[str, str]] = {
-        "full_delete_selected": "bool",
-        "full_delete_downstream_tables": "bool",
-        "delete_with_no_table": "bool",
-        "override_protection": "bool",
-    }
-    DESTROY_QUERY_PARAM_DESCRIPTIONS: ClassVar[dict[str, str]] = {
-        "full_delete_selected": "Fully delete the selected DataNode instance.",
-        "full_delete_downstream_tables": (
-            "Delete downstream tables/dependencies starting from the selected metadata instance."
-        ),
-        "delete_with_no_table": (
-            "Scan all DataNode rows and fully delete records whose backing DB table does not exist."
-        ),
-        "override_protection": (
-            "Bypass protect_from_deletion. ORG_ADMIN only. Used with full_delete_selected=true."
-        ),
-    }
-
     build_configuration_json_schema: dict[str, Any] | None = Field(
         None,
         description="JSON schema describing the DataNode update build configuration.",
@@ -1410,7 +1421,7 @@ class DataNodeStorage(MetaTable):
         column_dtypes_map = self.column_dtypes_map
         if not time_index_name or not index_names or not column_dtypes_map:
             raise ValueError(
-                "DataNodeStorage is missing its time-indexed table contract. "
+                "TimeIndexMetaData is missing its time-indexed table contract. "
                 "Expected canonical MetaTable columns plus a time_indexed_profile projection."
             )
         return time_index_name, index_names, column_dtypes_map
@@ -1452,86 +1463,6 @@ class DataNodeStorage(MetaTable):
             payload["dimension_range_map"] = self._normalize_dimension_range_map(dimension_range_map)
         return payload
 
-    def patch(
-        self,
-        time_out: None | int = None,
-        *args,
-        **kwargs,
-    ):
-        url = self.get_object_url() + f"/{self._public_uid()}/"
-        payload = {"json": serialize_to_json(kwargs)}
-        s = self.build_session()
-        r = make_request(
-            s=s, loaders=self.LOADERS, r_type="PATCH", url=url, payload=payload, time_out=time_out
-        )
-        if r.status_code != 200:
-            data = r.json()  # guaranteed JSON from your backend
-
-            error=data.get("error") or data.get("detail")
-            if r.status_code == 409:
-                raise exceptions.ConflictError(error)
-            raise exceptions.ApiError(error)
-        return self.__class__(**r.json())
-
-    @classmethod
-    def patch_by_hash(cls, storage_hash: str, *args, **kwargs):
-        metadata = cls.get(storage_hash=storage_hash)
-        metadata.patch(*args, **kwargs)
-
-    @classmethod
-    def destroy_by_uid(
-        cls,
-        uid: str,
-        *,
-        full_delete_selected: bool = False,
-        full_delete_downstream_tables: bool = False,
-        delete_with_no_table: bool = False,
-        override_protection: bool = False,
-        timeout: int | None = None,
-    ):
-        """Delete a DataNodeStorage row using its public uid."""
-        if uid in (None, ""):
-            raise ValueError("DataNodeStorage uid is required for deletion.")
-        payload = {
-            "params": {
-                "full_delete_selected": full_delete_selected,
-                "full_delete_downstream_tables": full_delete_downstream_tables,
-                "delete_with_no_table": delete_with_no_table,
-                "override_protection": override_protection,
-            }
-        }
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="DELETE",
-            url=f"{cls.get_object_url()}/{uid}/",
-            payload=payload,
-            time_out=timeout,
-        )
-        raise_for_response(r)
-        return r.json() if r.content else None
-
-    def delete(
-        self,
-        *,
-        full_delete_selected: bool = False,
-        full_delete_downstream_tables: bool = False,
-        delete_with_no_table: bool = False,
-        override_protection: bool = False,
-        timeout: int | None = None,
-    ):
-        """
-        Instance wrapper for `destroy_by_uid()` with the same delete query parameters.
-        """
-        return type(self).destroy_by_uid(
-            self._public_uid(),
-            timeout=timeout,
-            full_delete_selected=full_delete_selected,
-            full_delete_downstream_tables=full_delete_downstream_tables,
-            delete_with_no_table=delete_with_no_table,
-            override_protection=override_protection,
-        )
-
     @classmethod
     def get_or_create(cls, **kwargs):
         kwargs = serialize_to_json(kwargs)
@@ -1545,173 +1476,38 @@ class DataNodeStorage(MetaTable):
         data = r.json()
         return cls(**data)
 
-    def build_or_update_update_details(self, *args, **kwargs):
-        base_url = self.get_object_url()
-        payload = {"json": kwargs}
-        s = self.build_session()
-        url = f"{base_url}/{self._public_uid()}/build_or_update_update_details/"
-        r = make_request(
-            r_type="PATCH",
-            url=url,
-            payload=payload,
-            s=s,
-            loaders=self.LOADERS,
-        )
-        if r.status_code != 202:
-            raise Exception(f"Error in request {r.text}")
-
-    def refresh_table_search_index(
-        self,
+    @classmethod
+    def register(
+        cls,
+        request: DynamicTableRegistrationRequest | Mapping[str, Any] | None = None,
         *,
-        timeout: int | None = None,
-    ) -> dict[str, Any] | None:
-        """
-        Refresh the semantic search index for this data node storage.
-
-        The backend joins the table's column definitions with the code used to
-        generate the data node, builds a consolidated textual description, and
-        embeds that description into a vector representation for smart search.
-
-        This hits:
-            POST /{uid}/refresh-table-search-index/
-
-        Parameters
-        ----------
-        timeout:
-            Optional request timeout in seconds.
-        """
-        if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before refreshing the table search index.")
-
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_uid()}/refresh-table-search-index/"
-        r = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={},
-            time_out=timeout,
-        )
-        raise_for_response(r)
-
-        return r.json() if r.content else None
-
-    def initialize_source_table(
-        self,
-        *,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any] | None = None,
-        columns: Sequence[Mapping[str, Any] | Any] | None = None,
-        storage_layout: dict[str, Any] | None = None,
-        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Initialize this DynamicTableMetaData source table from schema only.
-
-        This calls:
-            POST /orm/api/ts_manager/dynamic_table/{uid}/initialize-source-table/
-
-        The SDK treats canonical MetaTable column contracts as the source
-        shape. `column_dtypes_map` is accepted only as a temporary convenience
-        input and is converted to column contracts before the backend request is
-        assembled.
-        """
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_uid()}/initialize-source-table/"
-        return self._initialize_source_table_at_url(
-            url=url,
-            time_index_name=time_index_name,
-            index_names=index_names,
-            column_dtypes_map=column_dtypes_map,
-            columns=columns,
-            storage_layout=storage_layout,
-            foreign_keys=foreign_keys,
-            timeout=timeout,
-        )
-
-    def _initialize_source_table_at_url(
-        self,
-        *,
-        url: str,
-        time_index_name: str,
-        index_names: list[str],
-        column_dtypes_map: dict[str, Any] | None = None,
-        columns: Sequence[Mapping[str, Any] | Any] | None = None,
-        storage_layout: dict[str, Any] | None = None,
-        foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None = None,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before initializing a source table.")
-        storage_class_type = getattr(
-            getattr(getattr(self, "data_source", None), "related_resource", None),
-            "class_type",
-            None,
-        )
-        is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
-        if columns is not None:
-            column_contracts = _normalize_time_indexed_column_contracts(
-                columns,
-                remote=not is_local_storage,
-                allow_naive_datetime=is_local_storage,
-            )
-        elif column_dtypes_map is not None:
-            column_contracts = _column_contracts_from_dtype_map(
-                column_dtypes_map,
-                index_names=index_names,
-                remote=not is_local_storage,
-                allow_naive_datetime=is_local_storage,
-            )
+        timeout: int | float | tuple[float, float] | None = None,
+        **kwargs: Any,
+    ) -> TimeIndexMetaData:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = request if request is not None else DynamicTableRegistrationRequest(**kwargs)
+        if isinstance(payload, BaseModel):
+            payload_json = payload.model_dump(mode="json", exclude_none=True)
         else:
-            raise ValueError(
-                "initialize_source_table requires canonical `columns` or the "
-                "temporary `column_dtypes_map` helper input."
-            )
-        request_column_dtypes_map = _column_dtype_map_from_contracts(
-            column_contracts,
-            remote=not is_local_storage,
-            allow_naive_datetime=is_local_storage,
-        )
-
-        payload_body: dict[str, Any] = {
-            "time_index_name": time_index_name,
-            "index_names": list(index_names),
-            # Transitional backend request shape. The SDK builds this from the
-            # canonical column contracts above instead of treating it as source
-            # of truth.
-            "column_dtypes_map": dict(request_column_dtypes_map),
-        }
-        if storage_layout is not None:
-            payload_body["storage_layout"] = storage_layout
-        if foreign_keys is not None:
-            payload_body["foreign_keys"] = [
-                _serialize_source_table_foreign_key_contract(foreign_key)
-                for foreign_key in foreign_keys
-            ]
-
-        cls = type(self)
+            payload_json = dict(payload)
+        request_payload = {"json": serialize_to_json(payload_json)}
         response = make_request(
             s=cls.build_session(),
             loaders=cls.LOADERS,
             r_type="POST",
-            url=url,
-            payload={"json": serialize_to_json(payload_body)},
+            url=f"{cls.get_object_url()}/register/",
+            payload=request_payload,
             time_out=timeout,
         )
-        raise_for_response(response, payload=payload_body)
-        data = response.json()
-        profile_data = data.get("time_indexed_profile")
-        if isinstance(profile_data, dict):
-            self.time_indexed_profile = TimeIndexedProfile(**profile_data)
-        return data
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=request_payload)
+        return cls(**response.json())
 
     def get_data_updates(self, *, timeout: int | None = None) -> UpdateStatistics:
         """Fetch update-progress statistics through the DynamicTable endpoint."""
         if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before fetching update stats.")
+            raise ValueError("TimeIndexMetaData must have a uid before fetching update stats.")
 
         cls = type(self)
         url = f"{cls.get_object_url()}/{self._public_uid()}/get-stats/"
@@ -1737,99 +1533,6 @@ class DataNodeStorage(MetaTable):
             index_min=payload.get("index_min") or multi_index_stats.get("index_min"),
             multi_index_column_stats=payload.get("multi_index_column_stats"),
         )
-
-    def set_or_update_columns_metadata(
-        self,
-        column_metadata: Sequence[BaseColumnMetaData | Mapping[str, Any]],
-        *,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """Update DynamicTable column metadata through the storage endpoint."""
-        if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before updating column metadata.")
-        payload_body = {
-            "columns_metadata": [
-                _serialize_source_table_column_metadata(item)
-                for item in column_metadata
-            ]
-        }
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_uid()}/set-or-update-columns-metadata/"
-        response = make_request(
-            s=cls.build_session(),
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload={"json": serialize_to_json(payload_body)},
-            time_out=timeout,
-        )
-        raise_for_response(response, payload=payload_body)
-        data = response.json() if getattr(response, "content", True) else {}
-        profile_data = data.get("time_indexed_profile") if isinstance(data, Mapping) else None
-        if isinstance(profile_data, dict):
-            self.time_indexed_profile = TimeIndexedProfile(**profile_data)
-        return data
-
-    def run_query(
-        self,
-        sql: str,
-        *,
-        timeout: int | None = None,
-    ) -> dict[str, Any]:
-        """
-        Execute a raw SQL query against this dynamic table.
-
-        This hits:
-            POST /orm/api/ts_manager/dynamic_table/{uid}/run_query/
-
-        Request contract:
-        - body is the raw SQL string as `text/plain`
-        - do not send JSON like `{"sql": "..."}`
-
-        Response contract:
-        - returns the backend query envelope with `ok`, `results`, `row_count`,
-          `truncated`, and error fields
-        - when the backend returns a structured query envelope with `ok=false`,
-          that envelope is returned directly so callers can inspect the backend
-          error payload
-        """
-        if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before running a query.")
-
-        sql = str(sql or "").strip()
-        if not sql:
-            raise ValueError("sql is required.")
-
-        cls = type(self)
-        url = f"{cls.get_object_url()}/{self._public_uid()}/run_query/"
-        session = cls.build_session()
-        old_content_type = session.headers.get("Content-Type")
-        session.headers["Content-Type"] = "text/plain"
-        try:
-            response = make_request(
-                s=session,
-                loaders=cls.LOADERS,
-                r_type="POST",
-                url=url,
-                payload={"data": sql},
-                time_out=timeout,
-            )
-        finally:
-            if old_content_type is None:
-                session.headers.pop("Content-Type", None)
-            else:
-                session.headers["Content-Type"] = old_content_type
-
-        try:
-            data = response.json()
-        except Exception:
-            data = None
-
-        if isinstance(data, dict) and "ok" in data:
-            return data
-
-        raise_for_response(response, payload={"data": sql})
-        return response.json()
 
     def delete_after_date(
         self,
@@ -1859,7 +1562,7 @@ class DataNodeStorage(MetaTable):
         detail after the delete.
         """
         if self.uid is None:
-            raise ValueError("DataNodeStorage must have a uid before deleting rows after a date.")
+            raise ValueError("TimeIndexMetaData must have a uid before deleting rows after a date.")
 
         payload_body: dict[str, Any] = {
             "after_date": after_date.isoformat() if isinstance(after_date, datetime.datetime) else after_date
@@ -2037,7 +1740,7 @@ class DataNodeStorage(MetaTable):
     def _validate_existing_source_table_columns_metadata(
         cls,
         *,
-        storage: DataNodeStorage,
+        storage: TimeIndexMetaData,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None,
         remote: bool,
         allow_naive_datetime: bool,
@@ -2112,7 +1815,7 @@ class DataNodeStorage(MetaTable):
     def _validate_existing_source_table_foreign_keys(
         cls,
         *,
-        storage: DataNodeStorage,
+        storage: TimeIndexMetaData,
         foreign_keys: list[SourceTableForeignKeyContract | dict[str, Any]] | None,
     ) -> None:
         if foreign_keys is None:
@@ -2342,7 +2045,7 @@ class DataNodeStorage(MetaTable):
             dimension_range_map: list[dict[str, Any]] | None = None,
             columns: list = None,
             column_range_descriptor: None | UniqueIdentifierRangeMap = None,
-    )->[pd.DataFrame,DataNodeStorage]:
+    )->[pd.DataFrame,TimeIndexMetaData]:
         """
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.
@@ -2615,7 +2318,7 @@ class DataNodeStorage(MetaTable):
         # IMPORTANT: dtype=object prevents pandas from converting big ints to float when NULLs exist
         df = pd.DataFrame(all_results, dtype=object)
 
-        # Build DataNodeStorage objects from serializer payloads
+        # Build TimeIndexMetaData objects from serializer payloads
         storage_objs = {}
         for prefix, meta_json in (data_node_storage_map_json or {}).items():
             try:
@@ -2634,116 +2337,6 @@ class DataNodeStorage(MetaTable):
         )
 
         return df
-
-    @classmethod
-    def _deserialize_search_response(cls, data: Any):
-        """
-        Supports both:
-        - paginated DRF responses: {"count": ..., "next": ..., "previous": ..., "results": [...]}
-        - non-paginated list responses: [...]
-        """
-        if isinstance(data, dict) and isinstance(data.get("results"), list):
-            hydrated = dict(data)
-            hydrated["results"] = [cls(**item) for item in hydrated["results"]]
-            return hydrated
-
-        if isinstance(data, list):
-            return [cls(**item) for item in data]
-
-        if isinstance(data, dict):
-            return cls(**data)
-
-        return data
-
-    @classmethod
-    def description_search(
-            cls,
-            q: str,
-            *,
-            q_embedding: Sequence[float] | None = None,
-            trigram_k: int = 200,
-            embed_k: int = 200,
-            w_trgm: float = 0.65,
-            w_emb: float = 0.35,
-            embedding_model: str = "default",
-            **filters,
-    ):
-        """
-        Hits:
-            POST <object_url>/description-search/
-
-        Server behavior:
-        - if q_embedding is omitted, the server generates it from q
-        - returns paginated or non-paginated serialized DynamicTableMetaData rows
-        """
-        q = (q or "").strip()
-        if not q:
-            raise ValueError("q is required")
-
-        url = cls.get_object_url() + "/description-search/"
-        body = {
-            "q": q,
-            "trigram_k": trigram_k,
-            "embed_k": embed_k,
-            "w_trgm": w_trgm,
-            "w_emb": w_emb,
-            "embedding_model": embedding_model,
-        }
-
-        if q_embedding is not None:
-            body["q_embedding"] = [float(x) for x in q_embedding]
-
-        if filters:
-            body.update(filters)
-
-        body = serialize_to_json(body)
-        payload = {"json": body}
-
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="POST",
-            url=url,
-            payload=payload,
-        )
-        if r.status_code != 200:
-            raise_for_response(r, payload=payload)
-
-        return cls._deserialize_search_response(r.json())
-
-    @classmethod
-    def column_search(cls, q: str, **filters):
-        """
-        Hits:
-            GET <object_url>/column-search/?q=...
-
-        Extra kwargs are passed through as query params so your DRF filters still work
-        (e.g. storage_hash=..., identifier=..., data_source__uid=..., page=...).
-        """
-        q = (q or "").strip()
-        if not q:
-            raise ValueError("q is required")
-
-        url = cls.get_object_url() + "/column-search/"
-        params = {"q": q, **filters}
-        params = serialize_to_json(params)
-        payload = {"params": params}
-
-        s = cls.build_session()
-        r = make_request(
-            s=s,
-            loaders=cls.LOADERS,
-            r_type="GET",
-            url=url,
-            payload=payload,
-        )
-        if r.status_code != 200:
-            raise_for_response(r, payload=payload)
-
-        return cls._deserialize_search_response(r.json())
-
-
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")
@@ -4734,7 +4327,7 @@ class PodDataSource:
             raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
-        remote_node_storages = DataNodeStorage.filter(
+        remote_node_storages = TimeIndexMetaData.filter(
             data_source__uid=local_dynamic_data_source.uid,
             list_tables=True,
         )
@@ -4985,6 +4578,6 @@ DataNodeUpdateDetails.model_rebuild()
 DataNodeUpdate.model_rebuild()
 RunConfiguration.model_rebuild()
 TimeIndexedProfile.model_rebuild()
-DataNodeStorage.model_rebuild()
+TimeIndexMetaData.model_rebuild()
 DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()

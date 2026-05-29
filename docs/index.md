@@ -4,7 +4,7 @@ Main Sequence is a platform for building data products, deploying workflows, and
 
 The Main Sequence platform allows you to:
 
-1. rapidly build and deploy data products and data workflows as a unified API with a normalized structure through `DataNode`s
+1. rapidly build and deploy data products and data workflows as a unified API with normalized table contracts through `MetaTable`s and `DataNode`s
 2. rapidly deploy RBAC-enabled dashboards on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
@@ -14,15 +14,16 @@ The key idea is that you can focus on development and deployment, while the plat
 
 ### Tutorial
 
-Use the tutorial if you want a guided path from project setup to data nodes, orchestration, and dashboards.
+Use the tutorial if you want a guided path from project setup to canonical tables, DataNode update workflows, orchestration, and dashboards.
 
-The main tutorial path is intentionally CLI-only. A separate GUI tutorial will live under `docs/tutorial_gui/`.
+The main tutorial path is intentionally CLI-only.
 
 Recommended starting points:
 
 - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
-- [Part 2 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
-- [Part 3.1 — Working With MetaTables](tutorial/working_with_meta_tables.md)
+- [Part 2 — Working With MetaTables](tutorial/working_with_meta_tables.md)
+- [Part 3 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
+- [Part 3.1 — Role-Based Access Control](tutorial/role_based_access_control.md)
 - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)
 - [Part 6 — Turn Your Project Into an Agent](tutorial/project_to_agent.md)
 
@@ -65,10 +66,10 @@ The SDK is organized around a few main areas:
 The fastest onboarding path is usually:
 
 1. create a project
-2. build your first `DataNode`
-3. model app-facing relational data with backend-managed `MetaTable`s when needed
-4. add an API or another consumer surface
-5. understand RBAC and shared resources
+2. model a canonical table with a backend-managed `MetaTable`
+3. build your first `DataNode` as an opinionated MetaTable-backed update workflow
+4. understand RBAC and shared resources
+5. add an API or another consumer surface
 6. schedule jobs
 7. expose the result through dashboards, downstream readers, or agent-facing project surfaces
 

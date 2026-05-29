@@ -513,9 +513,10 @@ def rebuild_from_configuration(update_hash: str, data_source: str | object) -> D
             f"DataNodeUpdate {update_hash!r} with data source {data_source_uid!r} "
             "was not found."
         )
+    storage_table = data_node_update.data_node_storage
     persist_manager = PersistManager.get_from_storage_table(
         update_hash=update_hash,
-        storage_table=None,
+        storage_table=storage_table,
         data_node_update=data_node_update,
     )
     try:

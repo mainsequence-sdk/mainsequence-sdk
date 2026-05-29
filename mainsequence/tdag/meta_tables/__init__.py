@@ -8,6 +8,7 @@ _LAZY_IMPORTS = {
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
+    "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "build_compiled_sql_v1_operation": (
         ".compiled_sql",
@@ -44,6 +45,10 @@ _LAZY_IMPORTS = {
     "table_contract_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "table_contract_from_sqlalchemy_model",
+    ),
+    "time_indexed_registration_request_from_sqlalchemy_model": (
+        ".sqlalchemy_contracts",
+        "time_indexed_registration_request_from_sqlalchemy_model",
     ),
 }
 

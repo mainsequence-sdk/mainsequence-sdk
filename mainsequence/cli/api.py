@@ -2729,12 +2729,12 @@ def list_data_node_storages(
     List data node storages via SDK client model.
 
     Single source of truth:
-      - delegates filtering and payload parsing to `DataNodeStorage.filter()`
+      - delegates filtering and payload parsing to `TimeIndexMetaData.filter()`
     """
     try:
         storages = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.filter(
                 timeout=timeout,
                 **dict(filters or {}),
@@ -2748,6 +2748,33 @@ def list_data_node_storages(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storages fetch failed: {e}") from e
+
+
+def list_meta_tables(
+    *,
+    filters: dict[str, Any] | None = None,
+    timeout: int | None = None,
+) -> list[dict[str, Any]]:
+    """
+    List MetaTables via SDK client model.
+
+    Single source of truth:
+      - delegates filtering and payload parsing to `MetaTable.filter()`
+    """
+    try:
+        meta_tables = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_metatables",
+            class_name="MetaTable",
+            operation=lambda ClientMetaTable: ClientMetaTable.filter(
+                timeout=timeout,
+                **dict(filters or {}),
+            ),
+        )
+        return [_sdk_object_to_dict(meta_table) for meta_table in meta_tables]
+    except Exception as e:
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"MetaTables fetch failed: {e}") from e
 
 
 def list_workspaces(
@@ -3171,12 +3198,12 @@ def data_node_storage_description_search(
 
     Single source of truth:
       - delegates search behavior and payload parsing to
-        `DataNodeStorage.description_search()`
+        `TimeIndexMetaData.description_search()`
     """
     try:
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.description_search(
                 q,
                 q_embedding=q_embedding,
@@ -3205,12 +3232,12 @@ def data_node_storage_column_search(
 
     Single source of truth:
       - delegates search behavior and payload parsing to
-        `DataNodeStorage.column_search()`
+        `TimeIndexMetaData.column_search()`
     """
     try:
         payload = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.column_search(
                 q,
                 **dict(filters or {}),
@@ -3965,12 +3992,12 @@ def get_data_node_storage(
     Retrieve one data node storage via SDK client model.
 
     Single source of truth:
-      - delegates detail fetching and payload parsing to `DataNodeStorage.get()`
+      - delegates detail fetching and payload parsing to `TimeIndexMetaData.get()`
     """
     try:
         storage = _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get(
                 uid=str(storage_uid),
                 timeout=timeout,
@@ -3986,6 +4013,36 @@ def get_data_node_storage(
         raise ApiError(f"Data node storage fetch failed: {e}") from e
 
 
+def get_meta_table(
+    meta_table_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Retrieve one MetaTable via SDK client model.
+
+    Single source of truth:
+      - delegates detail fetching and payload parsing to `MetaTable.get()`
+    """
+    try:
+        meta_table = _run_sdk_model_operation(
+            module_name="mainsequence.client.models_metatables",
+            class_name="MetaTable",
+            operation=lambda ClientMetaTable: ClientMetaTable.get(
+                uid=str(meta_table_uid),
+                timeout=timeout,
+            ),
+        )
+        return _sdk_object_to_dict(meta_table)
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"MetaTable not found: {meta_table_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"MetaTable fetch failed: {e}") from e
+
+
 def refresh_data_node_storage_search_index(
     storage_uid: str,
     *,
@@ -3995,7 +4052,7 @@ def refresh_data_node_storage_search_index(
     Refresh one data node storage search index via SDK client model.
 
     Single source of truth:
-      - delegates the refresh call to `DataNodeStorage.refresh_table_search_index()`
+      - delegates the refresh call to `TimeIndexMetaData.refresh_table_search_index()`
     """
     try:
 
@@ -4010,7 +4067,7 @@ def refresh_data_node_storage_search_index(
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=_refresh,
         )
     except Exception as e:
@@ -4040,7 +4097,7 @@ def run_data_node_storage_query(
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=_run_query,
         )
     except Exception as e:
@@ -4065,7 +4122,7 @@ def delete_data_node_storage(
     Delete one data node storage via SDK client model.
 
     Single source of truth:
-      - delegates deletion and destroy query params to `DataNodeStorage.delete()`
+      - delegates deletion and destroy query params to `TimeIndexMetaData.delete()`
     """
     try:
 
@@ -4083,7 +4140,7 @@ def delete_data_node_storage(
 
         return _run_sdk_model_operation(
             module_name="mainsequence.client.models_tdag",
-            class_name="DataNodeStorage",
+            class_name="TimeIndexMetaData",
             operation=_delete,
         )
     except Exception as e:
@@ -4093,6 +4150,39 @@ def delete_data_node_storage(
         if isinstance(e, (ApiError, NotLoggedIn)):
             raise
         raise ApiError(f"Data node storage deletion failed: {e}") from e
+
+
+def delete_meta_table(
+    meta_table_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Delete one MetaTable via SDK client model.
+
+    Single source of truth:
+      - delegates deletion to `MetaTable.delete()`
+    """
+    try:
+
+        def _delete(ClientMetaTable):
+            meta_table = ClientMetaTable.get(uid=str(meta_table_uid), timeout=timeout)
+            payload = _sdk_object_to_dict(meta_table)
+            meta_table.delete(timeout=timeout)
+            return payload
+
+        return _run_sdk_model_operation(
+            module_name="mainsequence.client.models_metatables",
+            class_name="MetaTable",
+            operation=_delete,
+        )
+    except Exception as e:
+        err_name = type(e).__name__
+        if err_name == "NotFoundError":
+            raise ApiError(f"MetaTable not found: {meta_table_uid}") from e
+        if isinstance(e, (ApiError, NotLoggedIn)):
+            raise
+        raise ApiError(f"MetaTable deletion failed: {e}") from e
 
 
 def list_data_node_storage_users_can_view(
@@ -4105,8 +4195,26 @@ def list_data_node_storage_users_can_view(
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        accessor_name="can_view",
+        timeout=timeout,
+    )
+
+
+def list_meta_table_users_can_view(
+    meta_table_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the view-access state for a MetaTable via `ShareableObjectMixin.can_view()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         accessor_name="can_view",
         timeout=timeout,
@@ -4123,8 +4231,26 @@ def list_data_node_storage_users_can_edit(
     """
     return _get_shareable_object_access_state(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        accessor_name="can_edit",
+        timeout=timeout,
+    )
+
+
+def list_meta_table_users_can_edit(
+    meta_table_uid: str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Fetch the edit-access state for a MetaTable via `ShareableObjectMixin.can_edit()`.
+    """
+    return _get_shareable_object_access_state(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         accessor_name="can_edit",
         timeout=timeout,
@@ -4142,8 +4268,28 @@ def add_data_node_storage_user_to_view(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="add_to_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_meta_table_user_to_view(
+    meta_table_uid: str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit view access to one user for a MetaTable.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_view",
         user_id=user_id,
@@ -4162,8 +4308,28 @@ def add_data_node_storage_user_to_edit(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="add_to_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def add_meta_table_user_to_edit(
+    meta_table_uid: str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Grant explicit edit access to one user for a MetaTable.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_to_edit",
         user_id=user_id,
@@ -4182,8 +4348,28 @@ def remove_data_node_storage_user_from_view(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="remove_from_view",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_meta_table_user_from_view(
+    meta_table_uid: str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit view access from one user for a MetaTable.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_view",
         user_id=user_id,
@@ -4202,8 +4388,28 @@ def remove_data_node_storage_user_from_edit(
     """
     return _mutate_shareable_object_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="remove_from_edit",
+        user_id=user_id,
+        timeout=timeout,
+    )
+
+
+def remove_meta_table_user_from_edit(
+    meta_table_uid: str,
+    user_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """
+    Remove explicit edit access from one user for a MetaTable.
+    """
+    return _mutate_shareable_object_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_from_edit",
         user_id=user_id,
@@ -4219,8 +4425,25 @@ def add_data_node_storage_team_to_view(
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="add_team_to_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_meta_table_team_to_view(
+    meta_table_uid: str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_view",
         team_id=team_id,
@@ -4236,8 +4459,25 @@ def add_data_node_storage_team_to_edit(
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="add_team_to_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def add_meta_table_team_to_edit(
+    meta_table_uid: str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_team_to_edit",
         team_id=team_id,
@@ -4253,8 +4493,25 @@ def remove_data_node_storage_team_from_view(
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="remove_team_from_view",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_meta_table_team_from_view(
+    meta_table_uid: str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_view",
         team_id=team_id,
@@ -4270,8 +4527,25 @@ def remove_data_node_storage_team_from_edit(
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="remove_team_from_edit",
+        team_id=team_id,
+        timeout=timeout,
+    )
+
+
+def remove_meta_table_team_from_edit(
+    meta_table_uid: str,
+    team_id: int | str,
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    return _mutate_shareable_object_team_access(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_team_from_edit",
         team_id=team_id,
@@ -4289,8 +4563,27 @@ def add_data_node_storage_labels(
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="add_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def add_meta_table_labels(
+    meta_table_uid: str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Attach one or more organizational labels to a MetaTable."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="add_label",
         labels=labels,
@@ -4308,8 +4601,27 @@ def remove_data_node_storage_labels(
 
     return _mutate_labelable_object_labels(
         module_name="mainsequence.client.models_tdag",
-        class_name="DataNodeStorage",
+        class_name="TimeIndexMetaData",
         object_id=storage_uid,
+        object_lookup_field="uid",
+        action_name="remove_label",
+        labels=labels,
+        timeout=timeout,
+    )
+
+
+def remove_meta_table_labels(
+    meta_table_uid: str,
+    labels: list[str],
+    *,
+    timeout: int | None = None,
+) -> dict[str, Any]:
+    """Remove one or more organizational labels from a MetaTable."""
+
+    return _mutate_labelable_object_labels(
+        module_name="mainsequence.client.models_metatables",
+        class_name="MetaTable",
+        object_id=meta_table_uid,
         object_lookup_field="uid",
         action_name="remove_label",
         labels=labels,

@@ -4985,7 +4985,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5010,6 +5010,91 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     ]
     assert detail["uid"] == "data-node-storage-42"
     assert detail["storage_hash"] == "weights_daily"
+
+
+def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
+    api_mod = importlib.import_module("mainsequence.cli.api")
+    captured = {"filters": []}
+
+    monkeypatch.setattr(
+        api_mod, "get_tokens", lambda: {"access": "acc", "refresh": "ref", "username": "u"}
+    )
+    monkeypatch.setattr(api_mod, "backend_url", lambda: "https://backend.test")
+
+    fake_client_pkg = types.ModuleType("mainsequence.client")
+    fake_utils = types.ModuleType("mainsequence.client.utils")
+    fake_base = types.ModuleType("mainsequence.client.base")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+
+    class FakeLoaders:
+        provider = "orig"
+
+        def use_jwt(self, *, access=None, refresh=None):
+            captured["jwt"] = (access, refresh)
+
+    fake_utils.loaders = FakeLoaders()
+    fake_utils.MAINSEQUENCE_ENDPOINT = "https://old.test"
+    fake_utils.API_ENDPOINT = "https://old.test/orm/api"
+
+    class FakeBaseObjectOrm:
+        ROOT_URL = "https://old.test/orm/api"
+
+    class FakeMetaTable:
+        ROOT_URL = "https://old.test/orm/api/ts_manager/meta_table"
+
+        @classmethod
+        def filter(cls, timeout=None, **kwargs):
+            captured["filters"].append({"filters": kwargs, "timeout": timeout})
+            return [
+                types.SimpleNamespace(
+                    model_dump=lambda *args, **kwargs: {
+                        "uid": "meta-table-42",
+                        "storage_hash": "weights_daily",
+                        "physical_table_name": "weights_daily",
+                        "identifier": "weights",
+                        "namespace": "pytest",
+                        "management_mode": "platform_managed",
+                    }
+                )
+            ]
+
+        @classmethod
+        def get(cls, uid=None, timeout=None, **filters):
+            captured["get"] = {"uid": uid, "filters": filters, "timeout": timeout}
+
+            class _MetaTable:
+                def model_dump(self, mode="json"):
+                    return {
+                        "uid": uid,
+                        "storage_hash": "weights_daily",
+                        "identifier": "weights",
+                    }
+
+                def delete(self, *, timeout=None):
+                    captured["delete"] = {"timeout": timeout}
+
+            return _MetaTable()
+
+    fake_base.BaseObjectOrm = FakeBaseObjectOrm
+    fake_models.MetaTable = FakeMetaTable
+    fake_client_pkg.utils = fake_utils
+
+    monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+
+    out = api_mod.list_meta_tables(filters={"namespace": "pytest"}, timeout=11)
+    detail = api_mod.get_meta_table("meta-table-42", timeout=12)
+    deleted = api_mod.delete_meta_table("meta-table-42", timeout=13)
+
+    assert captured["filters"] == [{"filters": {"namespace": "pytest"}, "timeout": 11}]
+    assert captured["get"] == {"uid": "meta-table-42", "filters": {}, "timeout": 13}
+    assert captured["delete"] == {"timeout": 13}
+    assert captured["jwt"] == ("acc", "ref")
+    assert out[0]["uid"] == "meta-table-42"
+    assert detail["storage_hash"] == "weights_daily"
+    assert deleted["uid"] == "meta-table-42"
 
 
 def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
@@ -5146,7 +5231,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
             }
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5234,7 +5319,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5298,8 +5383,12 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
 
             return _Storage()
 
+        @classmethod
+        def get_by_uid(cls, uid, timeout=None):
+            return cls.get(uid=uid, timeout=timeout)
+
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5376,8 +5465,12 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
 
             return _Storage()
 
+        @classmethod
+        def get_by_uid(cls, uid, timeout=None):
+            return cls.get(uid=uid, timeout=timeout)
+
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5466,8 +5559,12 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
 
             return _Storage()
 
+        @classmethod
+        def get_by_uid(cls, uid, timeout=None):
+            return cls.get(uid=uid, timeout=timeout)
+
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5538,8 +5635,12 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
 
             return _Storage()
 
+        @classmethod
+        def get_by_uid(cls, uid, timeout=None):
+            return cls.get(uid=uid, timeout=timeout)
+
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.DataNodeStorage = FakeDataNodeStorage
+    fake_models.TimeIndexMetaData = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -7666,6 +7767,106 @@ def test_data_node_storage_list(cli_mod, runner, monkeypatch):
     assert "Total data node storages: 1" in result.output
 
 
+def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
+    captured = {}
+
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+
+    def _parse(model_ref, entries):
+        captured["model_ref"] = model_ref
+        captured["entries"] = list(entries or [])
+        return {"namespace": "pytest_weights"}
+
+    def _list(timeout=None, filters=None):
+        captured["timeout"] = timeout
+        captured["filters"] = filters
+        return [
+            {
+                "uid": "meta-table-42",
+                "storage_hash": "weights_daily",
+                "physical_table_name": "weights_daily_physical",
+                "identifier": "weights_daily",
+                "namespace": "pytest_weights",
+                "management_mode": "platform_managed",
+                "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            }
+        ]
+
+    monkeypatch.setattr(cli_mod, "parse_cli_model_filters", _parse)
+    monkeypatch.setattr(cli_mod, "list_meta_tables", _list)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "meta-table",
+            "list",
+            "--filter",
+            "namespace=pytest_weights",
+            "--data-source-uid",
+            "data-source-1",
+            "--timeout",
+            "15",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured == {
+        "model_ref": "mainsequence.client.models_metatables.MetaTable",
+        "entries": ["namespace=pytest_weights"],
+        "timeout": 15,
+        "filters": {"namespace": "pytest_weights", "data_source__uid": "data-source-1"},
+    }
+    assert "MetaTables" in result.output
+    assert "weights_" in result.output
+    assert "platform" in result.output
+    assert "Total MetaTables: 1" in result.output
+
+
+def test_meta_table_detail(cli_mod, runner, monkeypatch):
+    monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
+    monkeypatch.setattr(
+        cli_mod,
+        "get_meta_table",
+        lambda meta_table_uid, timeout=None: {
+            "uid": meta_table_uid,
+            "storage_hash": "weights_daily",
+            "physical_table_name": "weights_daily_physical",
+            "identifier": "weights_daily",
+            "namespace": "pytest_weights",
+            "management_mode": "platform_managed",
+            "data_source": {"display_name": "Default DB", "class_type": "timescale_db"},
+            "protect_from_deletion": True,
+            "contract_version": "relational-table.v1",
+            "table_contract": {"columns": [{"name": "time_index"}]},
+            "columns": [{"name": "time_index", "data_type": "timestamp with time zone"}],
+            "indexes_meta": [{"name": "idx_weights_time"}],
+            "foreign_keys": [],
+            "incoming_fks": [],
+            "introspection_snapshot": {"row_count": 7},
+        },
+    )
+
+    result = runner.invoke(cli_mod.app, ["meta-table", "detail", "meta-table-42"])
+
+    assert result.exit_code == 0
+    assert "MetaTable" in result.output
+    assert "weights_daily" in result.output
+    assert "MetaTable Contract" in result.output
+    assert "relational-table.v1" in result.output
+    assert "time_index" in result.output
+
+
+def test_meta_table_command_exposes_storage_help(cli_mod, runner):
+    meta_result = runner.invoke(cli_mod.app, ["meta-table", "--help"])
+
+    assert meta_result.exit_code == 0
+    assert "list" in meta_result.output
+    assert "detail" in meta_result.output
+    assert "delete" in meta_result.output
+    assert "can_view" in meta_result.output
+    assert "add-label" in meta_result.output
+
+
 def test_data_node_storage_list_forwards_namespace_filter(cli_mod, runner, monkeypatch):
     captured = {}
 
@@ -8122,7 +8323,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
     )
     assert captured == {
         "module_name": "mainsequence.client.models_tdag",
-        "class_name": "DataNodeStorage",
+        "class_name": "TimeIndexMetaData",
         "uid": "data-node-storage-42",
         "timeout": 14,
         "sql": "SELECT 1 AS value",

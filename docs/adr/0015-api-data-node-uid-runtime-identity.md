@@ -21,7 +21,7 @@ The current failure mode appears when reading a published DataNode through
 `APIDataNode.build_from_identifier(...)`:
 
 ```python
-table = DataNodeStorage.get(identifier=identifier)
+table = TimeIndexMetaData.get(identifier=identifier)
 ts = cls(data_source_id=table.data_source.id, storage_hash=table.storage_hash)
 ```
 
@@ -31,7 +31,7 @@ The `APIDataNode` constructor then asserts that `data_source_id` is an integer:
 assert isinstance(data_source_id, int)
 ```
 
-That is wrong after the UID migration. A `DataNodeStorage` response may expose a
+That is wrong after the UID migration. A `TimeIndexMetaData` response may expose a
 `DynamicTableDataSource` whose public identity is `uid`, and the legacy
 integer `id` is no longer a valid runtime requirement.
 
@@ -51,7 +51,7 @@ At the same time, `APIPersistManager` already requires `data_source_uid` and
 uses it for the backend lookup:
 
 ```python
-DataNodeStorage.get_or_none(
+TimeIndexMetaData.get_or_none(
     storage_hash=self.storage_hash,
     data_source__uid=self.data_source_uid,
     include_relations_detail=True,
@@ -63,7 +63,7 @@ So the runtime is internally inconsistent:
 - APIDataNode factories still pass `data_source_id`.
 - APIDataNode constructor still requires `data_source_id`.
 - APIPersistManager already requires `data_source_uid`.
-- DataNodeStorage filters expose `data_source__uid`, not `data_source__id`.
+- TimeIndexMetaData filters expose `data_source__uid`, not `data_source__id`.
 
 ADR 0007 explicitly noted that some constructor-level compatibility arguments
 remained in local/API initialization paths. This ADR closes that gap.
@@ -86,7 +86,7 @@ The final contract is:
   `source_table.data_source.uid`.
 - `APIDataNode.build_from_table_id(...)` is removed.
 - The replacement helper is `APIDataNode.build_from_table_uid(...)`.
-- `build_from_table_uid(...)` resolves `DataNodeStorage` by `uid`, not `id`.
+- `build_from_table_uid(...)` resolves `TimeIndexMetaData` by `uid`, not `id`.
 - TDAG APIDataNode pickle markers require `data_source_uid`.
 - The old `data_source_id` pickle marker fallback is removed.
 
@@ -112,7 +112,7 @@ IDs are not part of the public runtime contract anymore.
       `source_table.data_source.uid`.
 - [x] Rename `APIDataNode.build_from_table_id(...)` to
       `APIDataNode.build_from_table_uid(...)`.
-- [x] Update `build_from_table_uid(...)` to call `DataNodeStorage.get(uid=...)`.
+- [x] Update `build_from_table_uid(...)` to call `TimeIndexMetaData.get(uid=...)`.
 - [x] Update `APIDataNode.build_from_identifier(...)` to pass
       `table.data_source.uid`.
 - [x] Update `_set_local_persist_manager(...)` to call:
@@ -135,7 +135,7 @@ IDs are not part of the public runtime contract anymore.
 - [x] Add focused tests proving `APIDataNode.build_from_identifier(...)` works
       when `DynamicTableDataSource.id` is absent but `uid` is present.
 - [x] Add focused tests proving `APIDataNode.build_from_table_uid(...)` uses
-      `DataNodeStorage.get(uid=...)`.
+      `TimeIndexMetaData.get(uid=...)`.
 - [x] Add focused tests proving `APIPersistManager` receives only
       `data_source_uid`.
 - [x] Add focused tests proving old `data_source_id` pickle markers are rejected.
@@ -150,5 +150,5 @@ readable. This is acceptable because this ADR removes the compatibility path
 instead of keeping an ambiguous identity contract.
 
 The public read path becomes consistent with the rest of the TDAG UID contract:
-the published table is resolved by `DataNodeStorage.uid` or identifier, and the
+the published table is resolved by `TimeIndexMetaData.uid` or identifier, and the
 data source is resolved by `DynamicTableDataSource.uid`.

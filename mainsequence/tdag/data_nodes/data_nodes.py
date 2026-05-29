@@ -8,7 +8,6 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
 from functools import wraps
-from types import SimpleNamespace
 from typing import Any, Union
 
 import pandas as pd
@@ -26,21 +25,16 @@ from mainsequence.client.models_tdag import (
     Scheduler,
     SessionDataSource,
     UpdateStatistics,
-    get_session_data_source,
 )
 from mainsequence.client.utils import TDAG_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
 from mainsequence.tdag.data_nodes.persist_managers import APIPersistManager, PersistManager
+from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
 
-from ..configuration_models import BaseConfiguration
+from .models import BaseConfiguration
 from .namespacing import current_hash_namespace
 from .namespacing import hash_namespace as _hash_namespace_cm
-
-
-def get_data_source_from_orm() -> Any:
-    return get_session_data_source()
-
 
 LocalUpdateResult = None | pd.DataFrame | Sequence[Any]
 
@@ -324,7 +318,7 @@ class DataNode(DataAccessMixin, ABC):
 
     Two identities matter:
 
-    - ``storage_table``: the first-class MetaTable storage contract.
+    - ``storage_table``: the first-class PlatformTimeIndexMetaData storage contract.
     - ``update_hash``: identifies the updater job writing to that table.
 
     This separation lets you run different updater jobs (for example, asset shards)
@@ -362,7 +356,7 @@ class DataNode(DataAccessMixin, ABC):
     def __init__(
         self,
         config: BaseConfiguration,
-        storage_table: MetaTable | None = None,
+        storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
         test_node: bool = False,
@@ -380,9 +374,10 @@ class DataNode(DataAccessMixin, ABC):
         ----------
         config : BaseConfiguration
             Canonical node configuration for this node.
-        storage_table : MetaTable | None
-            Explicit canonical storage table where this update process writes.
-            This is runtime state, not part of the build configuration payload.
+        storage_table : type[PlatformTimeIndexMetaData]
+            Explicit time-indexed platform storage model where this update
+            process writes. This is runtime state, not part of the build
+            configuration payload.
         hash_namespace : str | None
             Optional hash isolation namespace.
         test_node : bool
@@ -393,9 +388,13 @@ class DataNode(DataAccessMixin, ABC):
                 f"{self.__class__.__name__} expected config to be a BaseConfiguration; "
                 f"got {type(config).__name__}."
             )
+        if not issubclass(storage_table, PlatformTimeIndexMetaData):
+            raise TypeError(
+                f"{self.__class__.__name__} expected storage_table to be a subclass of "
+                f"PlatformTimeIndexMetaData; got {storage_table}."
+            )
 
         self.pre_load_routines_run = False
-        self._data_source: DynamicTableDataSource | None = None  # is set later
         self._local_persist_manager: PersistManager | None = None
         self.storage_table = storage_table
 
@@ -605,7 +604,7 @@ class DataNode(DataAccessMixin, ABC):
             for namespace_alias in namespace_aliases:
                 final_kwargs.pop(namespace_alias, None)
             storage_table = final_kwargs.pop("storage_table", None)
-            if storage_table is not None and self.storage_table is None:
+            if storage_table is not None:
                 self.storage_table = storage_table
             if final_kwargs.get("config") is None:
                 final_kwargs.pop("config", None)
@@ -624,8 +623,6 @@ class DataNode(DataAccessMixin, ABC):
             logger.debug(f"Running post-init routines for {self.__class__.__name__}")
             self._initialize_configuration(init_kwargs=final_kwargs)
 
-            # 7. Final setup
-            self.set_data_source()
             logger.bind(update_hash=self.update_hash)
 
             self.run_after_post_init_routines()
@@ -643,20 +640,47 @@ class DataNode(DataAccessMixin, ABC):
         cls.__init__ = wrapped_init
 
     @property
-    def storage_table(self) -> MetaTable | None:
-        return getattr(self, "_storage_table", None)
+    def storage_table(self) -> type[PlatformTimeIndexMetaData]:
+        try:
+            return self._storage_table
+        except AttributeError as exc:
+            raise AttributeError(
+                "DataNode storage_table has not been initialized. "
+                "Pass storage_table=... to DataNode.__init__."
+            ) from exc
 
     @storage_table.setter
-    def storage_table(self, value: MetaTable | None) -> None:
+    def storage_table(self, value: type[PlatformTimeIndexMetaData]) -> None:
         if value is None:
-            self._storage_table = None
-            return
-        if not isinstance(value, MetaTable):
             raise TypeError(
-                "DataNode storage_table must be a MetaTable instance; "
+                "DataNode storage_table is required and must be a "
+                "PlatformTimeIndexMetaData model class."
+            )
+        is_time_index_model_class = (
+            isinstance(value, type)
+            and issubclass(value, PlatformTimeIndexMetaData)
+        )
+        if not is_time_index_model_class:
+            raise TypeError(
+                "DataNode storage_table must be a PlatformTimeIndexMetaData model class; "
                 f"got {type(value).__name__}."
             )
+        if value.get_time_index_metadata() is None:
+            raise ValueError(
+                "DataNode storage_table must be registered or bound before construction."
+            )
+        if value.get_meta_table_uid() in (None, ""):
+            raise ValueError("DataNode storage_table must provide a MetaTable UID.")
+        if value.get_data_source_uid() in (None, ""):
+            raise ValueError("DataNode storage_table must provide a data-source UID.")
         self._storage_table = value
+
+    @property
+    def storage_metadata(self) -> Any:
+        storage_metadata = self.storage_table.get_time_index_metadata()
+        if storage_metadata is None:
+            raise ValueError("DataNode storage_table must be registered or bound before use.")
+        return storage_metadata
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:
         """Creates config from init args and sets them as instance attributes."""
@@ -722,20 +746,9 @@ class DataNode(DataAccessMixin, ABC):
 
     @property
     def data_source_uid(self) -> str:
-        storage_table = self.storage_table
-        if storage_table is None:
-            raise ValueError("DataNode data_source_uid requires storage_table.data_source_uid.")
-
-        data_source_uid = getattr(storage_table, "data_source_uid", None)
+        data_source_uid = self.storage_table.get_data_source_uid()
         if data_source_uid in (None, ""):
-            data_source = getattr(storage_table, "data_source", None)
-            if isinstance(data_source, dict):
-                data_source_uid = data_source.get("uid")
-            else:
-                data_source_uid = getattr(data_source, "uid", None)
-
-        if data_source_uid in (None, ""):
-            raise ValueError("DataNode data_source_uid requires storage_table.data_source_uid.")
+            raise ValueError("DataNode data_source_uid requires storage_table data-source identity.")
         return str(data_source_uid)
 
     @property
@@ -752,10 +765,10 @@ class DataNode(DataAccessMixin, ABC):
 
     @property
     def data_source(self) -> Any:
-        if self._data_source is not None:
-            return self._data_source
-        else:
-            raise Exception("Data source has not been set")
+        data_source = getattr(self.storage_metadata, "data_source", None)
+        if data_source is not None:
+            return data_source
+        return self.local_persist_manager.data_source
 
     # --- Persistence & Backend Methods ---
 
@@ -785,8 +798,13 @@ class DataNode(DataAccessMixin, ABC):
                 f"Graph depth limit overwritten to {minimum_required_depth_for_update}"
             )
 
-        # If the data source is remote, initialize persistence before backend sync.
-        if graph_depth <= graph_depth_limit and self.data_source.related_resource_class_type:
+        storage_data_source = getattr(self.storage_metadata, "data_source", None)
+        if isinstance(storage_data_source, dict):
+            relation_type = storage_data_source.get("related_resource_class_type")
+        else:
+            relation_type = getattr(storage_data_source, "related_resource_class_type", None)
+
+        if graph_depth <= graph_depth_limit and relation_type:
             self._set_local_persist_manager(
                 update_hash=self.update_hash,
                 data_node_update=None,
@@ -816,44 +834,6 @@ class DataNode(DataAccessMixin, ABC):
             class_name=self.__class__.__name__,
             data_node_update=data_node_update,
         )
-
-    def set_data_source(self, data_source: object | None = None) -> None:
-        """
-        Sets or derives the data source for the time series.
-
-        Args:
-            data_source: Optional already-loaded data source object.
-        """
-        if data_source is not None:
-            self._data_source = data_source
-            return
-
-        storage_table = self.storage_table
-        if storage_table is not None:
-            storage_data_source = getattr(storage_table, "data_source", None)
-            if isinstance(storage_data_source, dict):
-                self._data_source = SimpleNamespace(
-                    uid=storage_data_source.get("uid"),
-                    related_resource_class_type=storage_data_source.get(
-                        "related_resource_class_type"
-                    ),
-                    related_resource=storage_data_source.get("related_resource"),
-                )
-                return
-            if storage_data_source not in (None, "") and not isinstance(
-                storage_data_source, int | str
-            ):
-                self._data_source = storage_data_source
-                return
-            storage_data_source_uid = getattr(storage_table, "data_source_uid", None)
-            if storage_data_source_uid not in (None, ""):
-                self._data_source = SimpleNamespace(
-                    uid=str(storage_data_source_uid),
-                    related_resource_class_type=None,
-                )
-                return
-
-        self._data_source = get_data_source_from_orm()
 
     def verify_and_build_remote_objects(self) -> None:
         """
@@ -908,7 +888,7 @@ class DataNode(DataAccessMixin, ABC):
         """
         This method always queries last state
         """
-        return self.local_persist_manager.storage_table.get_data_updates()
+        return self.local_persist_manager.storage_metadata.get_data_updates()
 
     def prepare_update_statistics(self, update_statistics: UpdateStatistics) -> UpdateStatistics:
         """Hook for subclasses to scope or enrich update statistics before update()."""
@@ -1031,10 +1011,26 @@ class DataNode(DataAccessMixin, ABC):
         return legacy_last_time_index_value
 
     def _validate_update_output(self, temp_df: pd.DataFrame) -> None:
+        storage_data_source = getattr(self.storage_metadata, "data_source", None)
+        if storage_data_source is None:
+            storage_data_source = self.local_persist_manager.data_source
+        if isinstance(storage_data_source, dict):
+            related_resource = storage_data_source.get("related_resource")
+            if isinstance(related_resource, dict):
+                class_type = related_resource.get("class_type")
+            else:
+                class_type = getattr(related_resource, "class_type", None)
+        else:
+            class_type = getattr(
+                getattr(storage_data_source, "related_resource", None),
+                "class_type",
+                None,
+            )
+
         run_operations.UpdateRunner.validate_data_frame(
             temp_df,
-            self.data_source.related_resource.class_type,
-            meta_table=self.storage_table,
+            class_type,
+            meta_table=self.storage_metadata,
         )
 
     def _execute_local_update(

@@ -80,7 +80,7 @@ Today, the default source table creation path is still DataFrame-first:
    `_break_pandas_dataframe(...)`, which resets the index and infers
    `column_dtypes_map` from pandas dtypes.
 4. `DataNodeUpdate.upsert_data_into_table(...)` calls
-   `DataNodeStorage.handle_source_table_configuration_creation(...)`.
+   `TimeIndexMetaData.handle_source_table_configuration_creation(...)`.
 5. `handle_source_table_configuration_creation(...)` creates
    `SourceTableConfiguration` from the observed DataFrame.
 
@@ -99,7 +99,7 @@ The backend already exposes a schema-only initialization endpoint:
 POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/initialize-source-table/
 ```
 
-The client wrapper is `DataNodeStorage.initialize_source_table(...)`. It
+The client wrapper is `TimeIndexMetaData.initialize_source_table(...)`. It
 currently posts:
 
 ```json
@@ -521,7 +521,7 @@ foreign_keys = [
 - [x] Keep physical enforcement in `column_dtypes_map`; synchronize
       `columns_metadata` only after `SourceTableConfiguration` exists.
 - [x] Add an optional `foreign_keys` parameter to
-      `DataNodeStorage.initialize_source_table(...)`.
+      `TimeIndexMetaData.initialize_source_table(...)`.
 - [x] Include optional `foreign_keys` in
       `_initialize_source_table_at_url(...)` payload serialization.
 - [x] Extend the backend `initialize-source-table/` endpoint to accept

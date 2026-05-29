@@ -13,7 +13,7 @@ or documentation examples.
 
 The immediate SDK resources in scope are:
 
-- `DataNodeStorage`
+- `TimeIndexMetaData`
 - `DataNodeUpdate`
 - Source-table, update-details, scheduler, and dependency relation surfaces that
   refer to those resources
@@ -67,10 +67,10 @@ Observed migrated surfaces in `mainsequence/client/models_tdag.py`:
 - `TableUpdateNode._public_uid()` returns the public UID through the shared
   guard.
 - `DataNodeUpdate.FILTERSET_FIELDS` exposes `uid`.
-- `DataNodeUpdate.data_node_storage` is typed as `UUID | DataNodeStorage`.
+- `DataNodeUpdate.data_node_storage` is typed as `UUID | TimeIndexMetaData`.
 - `DataNodeUpdate` action URLs use `_public_uid()` for public-resource routes.
-- `DataNodeStorage` carries `uid: UUID | None`.
-- `DataNodeStorage` action URLs use `_public_uid()` for public-resource routes.
+- `TimeIndexMetaData` carries `uid: UUID | None`.
+- `TimeIndexMetaData` action URLs use `_public_uid()` for public-resource routes.
 - Scheduler client methods expose `update_node_uids` at the model boundary.
 - Historical update payloads include `direct_dependency_uids`.
 
@@ -288,7 +288,7 @@ replacement list.
   `LabelableObjectMixin` and `ShareableObjectMixin` build their action URLs
   from `get_detail_url()`.
 - [ ] Confirm CLI label helpers for affected TDAG storages work through the
-  generic resolution above. The CLI fetches `DataNodeStorage` by `uid`, then
+  generic resolution above. The CLI fetches `TimeIndexMetaData` by `uid`, then
   calls label/share instance methods whose detail-action URLs must also use
   `uid`.
 - [ ] Update CLI sharing output so affected TDAG resources do not prefer
@@ -314,7 +314,7 @@ replacement list.
 - [x] Update tutorial examples to use `<DATA_NODE_STORAGE_UID>`,
   and `.uid` fields for affected TDAG storage references.
 - [x] Update examples under `examples/data_nodes` that pass `.id` from
-  DataNodeStorage or DataNodeUpdate.
+  TimeIndexMetaData or DataNodeUpdate.
 
 ### Test tasks
 

@@ -13,7 +13,7 @@ The Main Sequence Python SDK is the client and development toolkit for the Main 
 
 The Main Sequence platform allows you to:
 
-1. rapidly build and deploy data products and data workflows as a unified API with a normalized structure through `DataNode`s
+1. rapidly build and deploy data products and data workflows as a unified API with normalized table contracts through `MetaTable`s and `DataNode`s
 2. rapidly deploy RBAC-enabled dashboards on the platform
 3. rapidly deploy agents using the Google Agent SDK
 
@@ -57,10 +57,10 @@ Recommended entry points:
 
 - Tutorial:
   - [Setting a Project (CLI)](docs/tutorial/setting_a_project.md)
-  - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
   - [Working With MetaTables](docs/tutorial/working_with_meta_tables.md)
-  - [Create Your First API](docs/tutorial/create_your_first_api.md)
+  - [Creating a Data Node](docs/tutorial/creating_a_simple_data_node.md)
   - [Role-Based Access Control](docs/tutorial/role_based_access_control.md)
+  - [Create Your First API](docs/tutorial/create_your_first_api.md)
   - [Turn Your Project Into an Agent](docs/tutorial/project_to_agent.md)
 - Knowledge:
   - [Data Nodes](docs/knowledge/data_nodes.md)
@@ -109,10 +109,10 @@ mainsequence project build_local_venv --path .
 
 From there, the normal learning path is:
 
-1. create your first `DataNode`
-2. model app-facing relational data with backend-managed `MetaTable`s when needed
-3. add an API or another application surface
-4. understand sharing and RBAC
+1. model your first canonical table with a backend-managed `MetaTable`
+2. create your first `DataNode` as an opinionated MetaTable-backed update workflow
+3. understand sharing and RBAC for published tables
+4. add an API or another application surface
 5. schedule jobs
 6. build dashboards or downstream consumers
 7. package the project as an agent-facing surface when the repository is ready

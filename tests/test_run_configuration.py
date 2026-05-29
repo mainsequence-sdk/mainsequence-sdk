@@ -1,4 +1,5 @@
 import os
+import threading
 from types import SimpleNamespace
 
 os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
@@ -8,19 +9,21 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+import mainsequence.client.models_tdag as models_tdag
 import mainsequence.tdag.data_nodes.data_nodes as data_nodes_mod
 from mainsequence.client.command_center import Workspace
 from mainsequence.client.models_metatables import MetaTable
 from mainsequence.client.models_tdag import (
-    DataNodeStorage,
     DataNodeUpdate,
     DataNodeUpdateDetails,
     Project,
+    TimeIndexMetaData,
 )
 from mainsequence.tdag import DataNode, DataNodeConfiguration, SourceTableForeignKey
-from mainsequence.tdag.base_persist_managers import BasePersistManager
 from mainsequence.tdag.data_nodes.models import RecordDefinition
+from mainsequence.tdag.data_nodes.persist_managers import BasePersistManager
 from mainsequence.tdag.data_nodes.run_operations import UpdateRunner
+from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
 
 
 def _meta_table(
@@ -28,11 +31,13 @@ def _meta_table(
     *,
     uid: str = "meta-table-uid",
     data_source_uid: str = "data-source-uid",
+    data_source: dict | None = None,
     columns: list[dict] | None = None,
 ) -> MetaTable:
     return MetaTable(
         uid=uid,
         data_source_uid=data_source_uid,
+        data_source=data_source,
         storage_hash=storage_hash,
         management_mode="platform_managed",
         physical_table_name=storage_hash,
@@ -44,8 +49,16 @@ def _meta_table(
     )
 
 
+def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMetaData]:
+    class RuntimeStorageTable(PlatformTimeIndexMetaData):
+        pass
+
+    RuntimeStorageTable.bind_meta_table(meta_table)
+    return RuntimeStorageTable
+
+
 def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint():
-    assert issubclass(DataNodeStorage, MetaTable)
+    assert issubclass(TimeIndexMetaData, MetaTable)
     for inherited_field in (
         "storage_hash",
         "management_mode",
@@ -53,9 +66,9 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
         "labels",
         "creation_date",
     ):
-        assert inherited_field not in DataNodeStorage.__annotations__
+        assert inherited_field not in TimeIndexMetaData.__annotations__
 
-    storage = DataNodeStorage(
+    storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         data_source=1,
@@ -66,7 +79,7 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
     assert isinstance(storage, MetaTable)
     assert storage.management_mode == "platform_managed"
     assert storage.physical_table_name == "prices_storage_hash"
-    assert DataNodeStorage.get_object_url().endswith("/ts_manager/dynamic_table")
+    assert TimeIndexMetaData.get_object_url().endswith("/ts_manager/dynamic_table")
 
 
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
@@ -97,8 +110,82 @@ def test_data_node_update_accepts_local_time_serie_update_details_in_run_configu
     assert update.update_details.run_configuration.local_time_serie_update_details == 8053
 
 
+def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"related_table_uid": "data-node-update-44"}
+
+    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
+        captured.update(
+            {
+                "r_type": r_type,
+                "url": url,
+                "payload": payload,
+                "time_out": time_out,
+            }
+        )
+        return FakeResponse()
+
+    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+
+    details = DataNodeUpdateDetails.patch_for_data_node_update_uid(
+        "data-node-update-44",
+        update_priority=7,
+        timeout=12,
+    )
+
+    assert isinstance(details, DataNodeUpdateDetails)
+    assert details.related_table_uid == "data-node-update-44"
+    assert captured["r_type"] == "PATCH"
+    assert captured["url"].endswith(
+        "/ts_manager/local_time_serie_update_details/data-node-update-44/"
+    )
+    assert captured["payload"] == {"json": {"update_priority": 7}}
+    assert captured["time_out"] == 12
+
+
+def test_persist_manager_build_update_details_uses_update_details_resource():
+    patched = []
+    patched_event = threading.Event()
+
+    class UpdateDetailsResource:
+        @classmethod
+        def patch_for_data_node_update_uid(cls, data_node_update_uid, **kwargs):
+            patched.append((data_node_update_uid, kwargs))
+            patched_event.set()
+
+    class DeprecatedStorageAction:
+        def build_or_update_update_details(self, **_kwargs):
+            raise AssertionError("storage-table update-details action is deprecated")
+
+    class UpdateDetailsPersistManager(BasePersistManager):
+        UPDATE_DETAILS_CLASS = UpdateDetailsResource
+
+    storage_table = _platform_storage_model(_meta_table())
+
+    manager = UpdateDetailsPersistManager(
+        update_hash="prices-update-hash",
+        storage_table=storage_table,
+        data_node_update=SimpleNamespace(
+            uid="data-node-update-44",
+            data_node_storage=DeprecatedStorageAction(),
+        ),
+    )
+    manager.set_data_node_update_lazy_callback = lambda _future: None
+
+    manager.build_update_details(source_class_name="PricesNode")
+
+    assert patched_event.wait(2)
+    assert patched == [("data-node-update-44", {})]
+
+
 def test_data_node_storage_accepts_namespace():
-    storage = DataNodeStorage(
+    storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         physical_table_name="prices_physical_table",
@@ -133,10 +220,10 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
     }
 
     with pytest.raises(ValidationError):
-        DataNodeStorage(**payload)
+        TimeIndexMetaData(**payload)
 
 
-def test_persist_manager_requires_explicit_storage_table():
+def test_persist_manager_requires_storage_table_constructor_argument():
     class UpdateResource:
         @staticmethod
         def get_or_none(**kwargs):
@@ -145,18 +232,15 @@ def test_persist_manager_requires_explicit_storage_table():
     class ExplicitStoragePersistManager(BasePersistManager):
         UPDATE_CLASS = UpdateResource
 
-    manager = ExplicitStoragePersistManager(
-        update_hash="prices-update-hash",
-    )
-
-    with pytest.raises(ValueError, match="explicit storage_table"):
-        manager.local_persist_exist_set_config(
-            local_configuration={},
+    with pytest.raises(TypeError, match="storage_table"):
+        ExplicitStoragePersistManager(
+            update_hash="prices-update-hash",
         )
 
 
 def test_persist_manager_validates_storage_table_without_creating_storage():
-    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    meta_table = _meta_table(storage_hash="canonical_prices_table")
+    storage_table = _platform_storage_model(meta_table)
     created_update_payloads = []
 
     class UpdateResource:
@@ -169,7 +253,7 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
             created_update_payloads.append(kwargs)
             return SimpleNamespace(
                 build_configuration=kwargs["build_configuration"],
-                data_node_storage=storage_table,
+                data_node_storage=meta_table,
             )
 
     class ExplicitStoragePersistManager(BasePersistManager):
@@ -193,34 +277,95 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
         }
     ]
     assert manager.storage_table is storage_table
+    assert manager.storage_metadata is meta_table
 
 
-def test_persist_manager_preserves_explicit_storage_table_during_update_lookup():
+def test_persist_manager_rejects_unbound_platform_time_index_storage_table():
+    class UnboundStorageTable(PlatformTimeIndexMetaData):
+        pass
+
+    with pytest.raises(ValueError, match="registered or bound"):
+        BasePersistManager(
+            update_hash="prices-update-hash",
+            storage_table=UnboundStorageTable,
+        )
+
+
+def test_persist_manager_uses_platform_managed_storage_identity():
+    meta_table = _meta_table(
+        uid="platform-meta-table-uid",
+        data_source_uid="platform-data-source-uid",
+        storage_hash="canonical_prices_table",
+    )
+    storage_table = _platform_storage_model(meta_table)
+    created_update_payloads = []
+
     class UpdateResource:
         @staticmethod
         def get_or_none(**kwargs):
             return None
 
+        @staticmethod
+        def get_or_create(**kwargs):
+            created_update_payloads.append(kwargs)
+            return SimpleNamespace(
+                build_configuration=kwargs["build_configuration"],
+                data_node_storage=meta_table,
+            )
+
     class ExplicitStoragePersistManager(BasePersistManager):
         UPDATE_CLASS = UpdateResource
 
-    storage_table = _meta_table(storage_hash="canonical_prices_table")
     manager = ExplicitStoragePersistManager(
         update_hash="prices-update-hash",
         storage_table=storage_table,
     )
 
-    assert manager.data_node_update is None
-    assert manager.storage_table is storage_table
-
-
-def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
-    monkeypatch.setattr(
-        data_nodes_mod,
-        "get_data_source_from_orm",
-        lambda: SimpleNamespace(uid="data-source-uid", related_resource_class_type=None),
+    manager.local_persist_exist_set_config(
+        local_configuration={"config": {"identifier": "prices"}},
     )
 
+    assert created_update_payloads == [
+        {
+            "update_hash": "prices-update-hash",
+            "build_configuration": {"config": {"identifier": "prices"}},
+            "data_source_uid": "platform-data-source-uid",
+            "meta_table_uid": "platform-meta-table-uid",
+        }
+    ]
+
+
+def test_persist_manager_preserves_storage_table_during_update_lookup():
+    stale_response_storage = _meta_table(
+        uid="stale-meta-table-uid",
+        data_source_uid="stale-data-source-uid",
+        storage_hash="stale_prices_table",
+    )
+
+    class UpdateResource:
+        @staticmethod
+        def get_or_none(**kwargs):
+            return SimpleNamespace(
+                build_configuration={},
+                data_node_storage=stale_response_storage,
+            )
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = UpdateResource
+
+    meta_table = _meta_table(storage_hash="canonical_prices_table")
+    storage_table = _platform_storage_model(meta_table)
+    manager = ExplicitStoragePersistManager(
+        update_hash="prices-update-hash",
+        storage_table=storage_table,
+    )
+
+    assert manager.data_node_update.data_node_storage is stale_response_storage
+    assert manager.storage_table is storage_table
+    assert manager.storage_metadata is meta_table
+
+
+def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
     class Config(DataNodeConfiguration):
         identifier: str
 
@@ -228,7 +373,7 @@ def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
         def __init__(
             self,
             config: Config,
-            storage_table: MetaTable | None = None,
+            storage_table: type[PlatformTimeIndexMetaData],
         ):
             super().__init__(config=config, storage_table=storage_table)
 
@@ -238,15 +383,35 @@ def test_data_node_accepts_storage_table_runtime_argument(monkeypatch):
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    storage_table = _platform_storage_model(
+        _meta_table(storage_hash="canonical_prices_table")
+    )
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.storage_table is storage_table
-    assert node.storage_table.storage_hash == "canonical_prices_table"
+    assert node.storage_metadata.storage_hash == "canonical_prices_table"
     assert "storage_hash" not in node.__dict__
     assert "storage_table" not in node.build_configuration
     assert "storage_table" not in node.local_initial_configuration
     assert "storage_table" not in node.remote_initial_configuration
+
+
+def test_data_node_requires_storage_table_constructor_argument():
+    class Config(DataNodeConfiguration):
+        identifier: str
+
+    class StorageTableNode(DataNode):
+        def __init__(self, config: Config):
+            super().__init__(config=config)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    with pytest.raises(TypeError, match="storage_table"):
+        StorageTableNode(Config(identifier="prices"))
 
 
 def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
@@ -270,7 +435,11 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         identifier: str
 
     class StorageTableNode(DataNode):
-        def __init__(self, config: Config, storage_table: MetaTable | None = None):
+        def __init__(
+            self,
+            config: Config,
+            storage_table: type[PlatformTimeIndexMetaData],
+        ):
             super().__init__(config=config, storage_table=storage_table)
 
         def dependencies(self):
@@ -279,7 +448,9 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _meta_table(storage_hash="canonical_prices_table")
+    storage_table = _platform_storage_model(
+        _meta_table(storage_hash="canonical_prices_table")
+    )
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.local_persist_manager.storage_table is storage_table
@@ -295,10 +466,56 @@ def test_data_node_data_source_uid_is_derived_from_storage_table():
             return pd.DataFrame()
 
     node = StorageTableNode.__new__(StorageTableNode)
-    node.storage_table = _meta_table(data_source_uid="canonical-data-source")
-    node._data_source = SimpleNamespace(uid="runtime-data-source")
+    node.storage_table = _platform_storage_model(
+        _meta_table(data_source_uid="canonical-data-source")
+    )
 
     assert node.data_source_uid == "canonical-data-source"
+
+
+def test_data_node_rejects_client_meta_table_storage_argument():
+    class StorageTableNode(DataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    node = StorageTableNode.__new__(StorageTableNode)
+
+    with pytest.raises(TypeError, match="PlatformTimeIndexMetaData"):
+        node.storage_table = _meta_table()
+
+
+def test_data_node_rejects_unbound_platform_time_index_storage_table():
+    class StorageTableNode(DataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    class UnboundStorageTable(PlatformTimeIndexMetaData):
+        pass
+
+    node = StorageTableNode.__new__(StorageTableNode)
+
+    with pytest.raises(ValueError, match="registered or bound"):
+        node.storage_table = UnboundStorageTable
+
+
+def test_data_node_rejects_none_storage_table():
+    class StorageTableNode(DataNode):
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    node = StorageTableNode.__new__(StorageTableNode)
+
+    with pytest.raises(TypeError, match="required"):
+        node.storage_table = None
 
 
 def test_data_node_update_accepts_labels():
@@ -329,7 +546,7 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         is_initialized=True,
         labels=["research"],
     )
-    data_node_storage = DataNodeStorage(
+    data_node_storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         data_source=1,
@@ -497,10 +714,16 @@ def test_data_node_update_output_validates_against_storage_table_contract():
         index=pd.DatetimeIndex([pd.Timestamp("2026-04-13T00:00:00Z")], name="time_index"),
     )
     node = SchemaNode.__new__(SchemaNode)
-    node._data_source = SimpleNamespace(
-        related_resource=SimpleNamespace(class_type="timescale"),
+    node.storage_table = _platform_storage_model(
+        _meta_table(
+            columns=[{"name": "value", "data_type": "float64"}],
+            data_source={
+                "uid": "data-source-uid",
+                "related_resource_class_type": "timescale",
+                "related_resource": {"class_type": "timescale"},
+            },
+        )
     )
-    node.storage_table = _meta_table(columns=[{"name": "value", "data_type": "float64"}])
 
     with pytest.raises(TypeError, match="declared as float64"):
         node._validate_update_output(frame)

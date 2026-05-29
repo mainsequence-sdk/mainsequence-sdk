@@ -58,8 +58,8 @@ def _storage_with_source_config(
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
     foreign_key_projections: list[models_tdag.SourceTableForeignKeyProjection] | None = None,
-) -> models_tdag.DataNodeStorage:
-    return models_tdag.DataNodeStorage.model_construct(
+) -> models_tdag.TimeIndexMetaData:
+    return models_tdag.TimeIndexMetaData.model_construct(
         uid="data-node-storage-44",
         storage_hash="storage-hash",
         time_indexed_profile=_source_config(

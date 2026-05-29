@@ -4,7 +4,6 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client import models_tdag
-from mainsequence.client.exceptions import ConflictError
 
 
 def _source_config_payload():
@@ -144,13 +143,13 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
     config = models_tdag.TimeIndexedProfile(**_source_config_payload())
-    storage = models_tdag.DataNodeStorage.model_construct(
+    storage = models_tdag.TimeIndexMetaData.model_construct(
         uid="storage-uid-44",
         time_indexed_profile=config,
     )
@@ -159,7 +158,7 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_tdag.DataNodeStorage.get_object_url()}/storage-uid-44/get-stats/",
+        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/storage-uid-44/get-stats/",
         "timeout": None,
     }
     assert update_stats.max_time_index_value == datetime.datetime(
@@ -187,98 +186,10 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
         }
     }
 
-def test_time_indexed_profile_column_metadata_route_uses_related_table_uid(monkeypatch):
-    captured = {}
 
-    class FakeResponse:
-        status_code = 200
+def test_time_indexed_profile_column_metadata_mutation_helper_is_removed():
+    assert not hasattr(models_tdag.TimeIndexMetaData, "set_or_update_columns_metadata")
 
-        @staticmethod
-        def json():
-            return {"ok": True}
-
-    def _fake_make_request(*, s, loaders, r_type, time_out, url, payload):
-        captured["r_type"] = r_type
-        captured["time_out"] = time_out
-        captured["url"] = url
-        captured["payload"] = payload
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
-    storage = models_tdag.DataNodeStorage.model_construct(
-        uid="storage-uid-44",
-        time_indexed_profile=config,
-    )
-    metadata = models_tdag.BaseColumnMetaData(
-        column_name="value",
-        dtype="float64",
-        label="Value",
-        description="Metric value",
-    )
-
-    assert storage.set_or_update_columns_metadata([metadata], timeout=15) == {"ok": True}
-    assert captured["r_type"] == "POST"
-    assert captured["time_out"] == 15
-    assert captured["url"] == (
-        f"{models_tdag.DataNodeStorage.get_object_url()}"
-        "/storage-uid-44/set-or-update-columns-metadata/"
-    )
-    assert captured["payload"]["json"]["columns_metadata"] == [
-        {
-            "column_name": "value",
-            "dtype": "float64",
-            "label": "Value",
-            "description": "Metric value",
-        }
-    ]
-
-
-def test_initialize_source_table_conflict_surfaces_existing_schema_or_fk_metadata(monkeypatch):
-    class FakeResponse:
-        status_code = 409
-        text = "conflict"
-
-        @staticmethod
-        def json():
-            return {
-                "detail": (
-                    "Existing TimeIndexedProfile conflicts with requested "
-                    "foreign key metadata."
-                )
-            }
-
-    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    storage = models_tdag.DataNodeStorage.model_construct(uid="storage-uid-44")
-
-    with pytest.raises(ConflictError, match="conflicts with requested foreign key metadata"):
-        storage.initialize_source_table(
-            time_index_name="time_index",
-            index_names=["time_index", "asset_uid"],
-            column_dtypes_map={
-                "time_index": "datetime64[ns, UTC]",
-                "asset_uid": "uuid",
-            },
-            foreign_keys=[
-                models_tdag.SourceTableForeignKeyContract(
-                    source_columns=["asset_uid"],
-                    target_meta_table_uid="asset-meta-table-uid",
-                    target_columns=["uid"],
-                )
-            ],
-        )
 
 def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stats(
     monkeypatch,
@@ -308,7 +219,7 @@ def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stat
         lambda **_kwargs: FakeResponse(),
     )
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -323,7 +234,7 @@ def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stat
         "uniqueness": {"columns": ["time_index", "unique_identifier"]},
     }
     config = models_tdag.TimeIndexedProfile(**payload)
-    storage = models_tdag.DataNodeStorage.model_construct(
+    storage = models_tdag.TimeIndexMetaData.model_construct(
         uid="storage-uid-44",
         time_indexed_profile=config,
     )

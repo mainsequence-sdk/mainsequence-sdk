@@ -1,13 +1,5 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict
+from .data_nodes.models import BaseConfiguration
 
-
-class BaseConfiguration(BaseModel):
-    """
-    Shared runtime configuration fields for TDAG-backed objects.
-
-    Subclasses can add hashed build fields.
-    """
-
-    model_config = ConfigDict(extra="forbid")
+__all__ = ["BaseConfiguration"]

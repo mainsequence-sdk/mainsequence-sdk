@@ -27,8 +27,8 @@ def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
     )
 
 
-def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
-    return models_tdag.DataNodeStorage(
+def _storage(index_names: list[str]) -> models_tdag.TimeIndexMetaData:
+    return models_tdag.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -38,166 +38,16 @@ def _storage(index_names: list[str]) -> models_tdag.DataNodeStorage:
     )
 
 
-def test_initialize_source_table_posts_schema_contract(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 201
-        text = ""
-
-        @staticmethod
-        def json():
-            return {
-                "dynamic_table_metadata": {"id": 714},
-                "time_indexed_profile": {
-                    "related_table_uid": "714",
-                    "time_index_name": "time_index",
-                    "index_names": [
-                        "time_index",
-                        "account_uid",
-                        "unique_identifier",
-                    ],
-                    "column_dtypes_map": {
-                        "time_index": "datetime64[ns, UTC]",
-                        "account_uid": "uuid",
-                        "unique_identifier": "object",
-                    },
-                    "storage_layout": {},
-                    "physical_index_plan": {},
-                    "columns_metadata": [],
-                },
-                "created_time_indexed_profile": True,
-                "created_physical_table": True,
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    storage = _storage(["time_index"])
-    result = storage.initialize_source_table(
-        time_index_name="time_index",
-        index_names=["time_index", "account_uid", "unique_identifier"],
-        column_dtypes_map={
-            "time_index": "datetime64[ns, UTC]",
-            "account_uid": "uuid",
-            "unique_identifier": "object",
-        },
-        timeout=30,
-    )
-
-    assert result["created_physical_table"] is True
-    assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/714/initialize-source-table/")
-    assert captured["payload"]["json"] == {
-        "time_index_name": "time_index",
-        "index_names": ["time_index", "account_uid", "unique_identifier"],
-        "column_dtypes_map": {
-            "time_index": "timestamp with time zone",
-            "account_uid": "uuid",
-            "unique_identifier": "string",
-        },
-    }
-    assert storage.time_indexed_profile.index_names == [
-        "time_index",
-        "account_uid",
-        "unique_identifier",
-    ]
-
-
-def test_initialize_source_table_posts_foreign_keys_not_column_metadata(monkeypatch):
-    captured = {}
-
-    class FakeResponse:
-        status_code = 201
-        text = ""
-
-        @staticmethod
-        def json():
-            return {
-                "time_indexed_profile": {
-                    "related_table_uid": "714",
-                    "time_index_name": "time_index",
-                    "index_names": ["time_index", "asset_uid"],
-                    "column_dtypes_map": {
-                        "time_index": "datetime64[ns, UTC]",
-                        "asset_uid": "uuid",
-                        "value": "float64",
-                    },
-                    "storage_layout": {},
-                    "physical_index_plan": {},
-                    "columns_metadata": [],
-                    "foreign_keys": [
-                        {
-                            "source_columns": ["asset_uid"],
-                            "target_meta_table_uid": "asset-meta-table-uid",
-                            "target_columns": ["uid"],
-                            "on_delete": "restrict",
-                        }
-                    ],
-                },
-                "created_time_indexed_profile": True,
-                "created_physical_table": True,
-            }
-
-    def _fake_make_request(*, s, loaders, r_type, url, payload, time_out=None):
-        captured["r_type"] = r_type
-        captured["url"] = url
-        captured["payload"] = payload
-        captured["timeout"] = time_out
-        return FakeResponse()
-
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    storage = _storage(["time_index"])
-    storage.initialize_source_table(
-        time_index_name="time_index",
-        index_names=["time_index", "asset_uid"],
-        column_dtypes_map={
-            "time_index": "datetime64[ns, UTC]",
-            "asset_uid": "uuid",
-            "value": "float64",
-        },
-        foreign_keys=[
-            models_tdag.SourceTableForeignKeyContract(
-                source_columns=["asset_uid"],
-                target_meta_table_uid="asset-meta-table-uid",
-                target_columns=["uid"],
-            )
-        ],
-    )
-
-    assert "columns_metadata" not in captured["payload"]["json"]
-    assert captured["payload"]["json"]["foreign_keys"] == [
-        {
-            "source_columns": ["asset_uid"],
-            "target_meta_table_uid": "asset-meta-table-uid",
-            "target_columns": ["uid"],
-            "on_delete": "restrict",
-        }
-    ]
+def test_data_node_storage_has_no_initialize_source_table_method():
+    assert not hasattr(models_tdag.TimeIndexMetaData, "initialize_source_table")
 
 
 def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "initialize_source_table",
         lambda self, **kwargs: pytest.fail("initialize_source_table was called"),
+        raising=False,
     )
 
     storage = _storage(["time_index", "asset_uid"])
@@ -274,7 +124,7 @@ def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatc
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -333,7 +183,7 @@ def test_get_data_between_dates_from_api_sends_dimension_range_map(monkeypatch):
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -403,12 +253,12 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    df, storage = models_tdag.DataNodeStorage.get_data_between_dates_from_node_identifier(
+    df, storage = models_tdag.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
         node_identifier="prices-node",
         dimension_filters={"account_uid": ["account-a"]},
         index_coordinates=[
@@ -446,7 +296,7 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
 
     monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeStorage,
+        models_tdag.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -485,7 +335,7 @@ def test_removed_unique_identifier_aliases_raise_type_error():
         )
 
     with pytest.raises(TypeError):
-        models_tdag.DataNodeStorage.get_data_between_dates_from_node_identifier(
+        models_tdag.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
             node_identifier="prices-node",
             unique_identifier_list=["BTC"],
         )

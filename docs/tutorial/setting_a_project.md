@@ -29,7 +29,7 @@ DataNodes created in this part: **none**.
 
 This tutorial is intentionally CLI-only.
 
-Some of the setup steps can also be done through the VS Code extension, but that flow is kept separate. A dedicated GUI tutorial will live under `docs/tutorial_gui/`.
+Some of the setup steps can also be done through the VS Code extension, but this tutorial documents the terminal flow.
 
 ## 1. Install and Verify the CLI
 

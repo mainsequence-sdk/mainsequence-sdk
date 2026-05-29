@@ -48,7 +48,7 @@ The central piece is reading the simulated prices table through `APIDataNode.bui
 api_node = APIDataNode.build_from_identifier(SIMULATED_PRICES_TABLE)
 ```
 
-This is the cleanest way to read a published table when you already know its identifier. It keeps the dashboard aligned with the same data contract used by the tutorial runner scripts, without manually resolving `DataNodeStorage` first.
+This is the cleanest way to read a published table when you already know its identifier. It keeps the dashboard aligned with the same data contract used by the tutorial runner scripts, without manually resolving `TimeIndexMetaData` first.
 
 ### Why use `APIDataNode.build_from_identifier(...)` here?
 
@@ -90,7 +90,7 @@ request = SearchRequest(
     ),
 )
 
-history = msc.DataNodeStorage.get_data_from_filter(request)
+history = msc.TimeIndexMetaData.get_data_from_filter(request)
 ```
 
 That is the better path when the UI is assembling filters at runtime, because it gives you a safe, structured request format instead of hard-coding one read shape into dashboard code.

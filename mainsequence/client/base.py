@@ -84,7 +84,7 @@ class BaseObjectOrm:
         "Scheduler": "ts_manager/scheduler",
         "MultiIndexMetadata": "orm/multi_index_metadata",
         "ContinuousAggMultiIndex": "ts_manager/cont_agg_multi_ind",
-        "DataNodeStorage": "ts_manager/dynamic_table",
+        "TimeIndexMetaData": "ts_manager/dynamic_table",
         # "LocalTimeSerieNodesMethods": "ogm/local_time_serie",
         "LocalTimeSerieNodesMethods": "ts_manager/local_time_serie",
         "DataNodeUpdate": "ts_manager/local_time_serie",

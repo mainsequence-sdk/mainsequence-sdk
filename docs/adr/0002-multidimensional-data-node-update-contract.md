@@ -36,7 +36,7 @@ are a normal timestamped table shape.
 
 Server-to-client naming:
 
-- server `DynamicTableMetaData` == client `DataNodeStorage`
+- server `DynamicTableMetaData` == client `TimeIndexMetaData`
 - server `SourceTableConfiguration` == client `SourceTableConfiguration`
 - server `LocalTimeSerie` == client update model currently named
   `DataNodeUpdate`
@@ -69,7 +69,7 @@ The update flow today is:
 1. `DataNode.run()` builds an `UpdateRunner`.
 2. `UpdateRunner.run()` calls `verify_and_build_remote_objects()`.
 3. `PersistManager.local_persist_exist_set_config()` creates or resolves
-   `DataNodeStorage` and `DataNodeUpdate`.
+   `TimeIndexMetaData` and `DataNodeUpdate`.
 4. `DataNodeUpdate.set_start_of_execution()` opens a historical update and
    returns update state.
 5. `DataNode.update()` returns a DataFrame.
@@ -139,7 +139,7 @@ Intentional reads should move to:
 
 ```python
 class SourceTableConfiguration(...):
-    related_table: int | DataNodeStorage
+    related_table: int | TimeIndexMetaData
     time_index_name: str
     last_time_index_value: datetime.datetime | None
     earliest_index_value: datetime.datetime | None
@@ -480,7 +480,7 @@ must fail the same way as any other unknown key.
 6. Call `set_last_update_index_time_from_update_stats()` using canonical
    fields.
 
-## DataNodeStorage Query Contract
+## TimeIndexMetaData Query Contract
 
 Canonical query and mutation inputs are dimension-aware:
 
@@ -527,11 +527,11 @@ Per-coordinate range example:
 
 Affected methods:
 
-- `DataNodeStorage.delete_after_date()`
-- `DataNodeStorage.get_last_observation()`
-- `DataNodeStorage._get_data_between_dates_common()`
-- `DataNodeStorage.get_data_between_dates_from_api()`
-- `DataNodeStorage.get_data_between_dates_from_node_identifier()`
+- `TimeIndexMetaData.delete_after_date()`
+- `TimeIndexMetaData.get_last_observation()`
+- `TimeIndexMetaData._get_data_between_dates_common()`
+- `TimeIndexMetaData.get_data_between_dates_from_api()`
+- `TimeIndexMetaData.get_data_between_dates_from_node_identifier()`
 - `DataSource.get_data_by_time_index()`
 - `DynamicTableDataSource.get_data_by_time_index()`
 - `TimeScaleDB.get_data_by_time_index()`
@@ -694,11 +694,11 @@ Hotspots:
 - `DataNodeUpdate.set_start_of_execution()`
 - `DataNodeUpdate.set_last_update_index_time_from_update_stats()`
 - `DataNodeUpdate.upsert_data_into_table()`
-- `DataNodeStorage.delete_after_date()`
-- `DataNodeStorage.get_last_observation()`
-- `DataNodeStorage._get_data_between_dates_common()`
-- `DataNodeStorage.get_data_between_dates_from_api()`
-- `DataNodeStorage.get_data_between_dates_from_node_identifier()`
+- `TimeIndexMetaData.delete_after_date()`
+- `TimeIndexMetaData.get_last_observation()`
+- `TimeIndexMetaData._get_data_between_dates_common()`
+- `TimeIndexMetaData.get_data_between_dates_from_api()`
+- `TimeIndexMetaData.get_data_between_dates_from_node_identifier()`
 - `UpdateStatistics`
 - `get_chunk_stats()`
 
@@ -865,7 +865,7 @@ Required test coverage:
 ### Phase 4: Query And Tail Delete APIs
 
 - [x] Add canonical `dimension_filters`, `index_coordinates`, and
-  `dimension_range_map` parameters to `DataNodeStorage` read, latest, and
+  `dimension_range_map` parameters to `TimeIndexMetaData` read, latest, and
   delete methods.
 - [x] Implement legacy alias translation only in the client communication layer.
 - [x] Validate that `unique_identifier_list` and `unique_identifier_range_map`

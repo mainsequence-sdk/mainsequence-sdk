@@ -15,8 +15,11 @@ In this tutorial, you will:
 
 This chapter belongs here for a reason.
 
-Up to this point, the tutorial has shown you how to publish data with `DataNode`s and how to model application-facing
-rows with backend-managed `MetaTable`s. An API is the next layer: it lets you turn those project resources into a request/response surface with your own validation, routing, and response shape.
+Up to this point, the tutorial has shown you how to model canonical tables with
+backend-managed `MetaTable`s and how to publish update-driven datasets with
+`DataNode`s. An API is the next layer: it lets you turn those project resources
+into a request/response surface with your own validation, routing, and response
+shape.
 
 ## 1. When To Build an API Instead of Another Table
 
@@ -29,9 +32,10 @@ Typical reasons:
 - expose a simpler contract to downstream applications
 - keep frontend or agent clients away from the raw storage/query details
 
-If all you need is a reusable dataset, keep using `DataNode`s.
+If all you need is a governed table contract, keep using backend-managed
+`MetaTable`s.
 
-If all you need is small relational application data, keep using backend-managed `MetaTable`s.
+If all you need is an update-driven dataset, keep using `DataNode`s.
 
 If you need an application surface on top of those building blocks, add an API.
 
@@ -75,7 +79,7 @@ from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
 
 
 PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
-RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}_0.0"
+RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}"
 CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
 CUSTOMER_META_TABLE_NAME = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_NAME"]
 CUSTOMER_META_TABLE_SCHEMA = os.getenv("MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA", "public")
@@ -293,8 +297,8 @@ The deployment model is the same one you later use for dashboards:
 
 That is the important continuity point:
 
-- `DataNode`s publish data contracts
-- `MetaTable`s publish application-facing rows
+- `MetaTable`s publish canonical table contracts and governed access
+- `DataNode`s publish update-driven datasets backed by those table contracts
 - APIs and dashboards are deployment-facing project resources built on top of that data layer
 
 You can deploy the discovered FastAPI project resource through the same CLI surface used for other releases:
@@ -315,7 +319,8 @@ The CLI uses the same deployment model as dashboards and other project resources
 
 ## 9. What To Keep Stable
 
-Treat the API as a contract just like you treat a `DataNode` identifier or a `MetaTable` schema as a contract.
+Treat the API as a contract just like you treat a published table identifier or
+a `MetaTable` contract as a contract.
 
 Keep these stable unless you mean to introduce a breaking change:
 

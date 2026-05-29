@@ -1,4 +1,4 @@
-# Part 2.1: Role-Based Access Control (RBAC)
+# Part 3.1: Role-Based Access Control (RBAC)
 
 ## Quick Summary
 
@@ -6,13 +6,13 @@ In this part, you will:
 
 - understand the Main Sequence RBAC model at a practical level
 - learn which platform resources can be shared directly
-- see how `DataNodeStorage` controls who can read and who can write to a published dataset
-- use the CLI to share the DataNodes you created in Part 2
+- see how MetaTable-backed storage controls who can read and who can write to a published dataset
+- use the CLI to share the DataNodes you created in Part 3
 - understand where constants and secrets fit inside the same access model
 
 DataNodes created in this part: **none**.
 
-Platform resources introduced in this part: **`Project`**, **`DataNodeStorage`**, **`Constant`**, **`Secret`**, **`Bucket`**, and **`ResourceRelease`**.
+Platform resources introduced in this part: **`Project`**, **`MetaTable`**, **`TimeIndexMetaData`**, **`Constant`**, **`Secret`**, **`Bucket`**, and **`ResourceRelease`**.
 
 ## Why this comes right after your first DataNode
 
@@ -41,7 +41,8 @@ That matters because the platform is built around shared objects, not just priva
 Examples of resources where access boundaries matter:
 
 - `Project`
-- `DataNodeStorage`
+- `MetaTable`
+- `TimeIndexMetaData`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -50,19 +51,21 @@ Examples of resources where access boundaries matter:
 You can think of these as different layers of collaboration:
 
 - `Project`: who can work inside the code and execution boundary
-- `DataNodeStorage`: who can read or maintain a published table
+- `MetaTable` / `TimeIndexMetaData`: who can read or maintain a published table
 - `Constant` and `Secret`: who can access runtime configuration
 - `Bucket`: who can access files and artifacts
 - `ResourceRelease`: who can access deployed resources such as dashboards and APIs
 
 ## The important detail for DataNodes
 
-When people say "share a DataNode", the platform object you are really sharing is usually the `DataNodeStorage`.
+When people say "share a DataNode", the platform object you are really sharing
+is the MetaTable-backed storage table. During the compatibility transition,
+some CLI output still names that DataNode-produced table `TimeIndexMetaData`.
 
 That distinction matters:
 
 - the Python `DataNode` class defines how data is produced
-- the `DataNodeStorage` is the published table other users, jobs, dashboards, and `APIDataNode`s consume
+- the MetaTable-backed storage table is the published table other users, jobs, dashboards, and `APIDataNode`s consume
 
 So in practice:
 
@@ -71,63 +74,60 @@ So in practice:
 
 This is the most practical RBAC boundary for data work on Main Sequence.
 
-## Find the DataNode storages you created in Part 2
+## Find the MetaTable storage you created in Part 3
 
-The first table from Part 2 has a friendly identifier based on `example_random_number`.
-
-!!! warning "IMPORTANT"
-    In the tutorial code for `DailyRandomAddition`, we did not define a friendly `get_table_metadata()` identifier.
-    So the first DataNode is easier to find by identifier, while the dependent one may need to be located through the CLI list output and its `Source Class`.
+The first table from Part 3 has a friendly identifier based on `example_random_number`.
 
 Find the first tutorial table:
 
 ```bash
-mainsequence data-node list --filter identifier__contains=example_random_number
+mainsequence meta-table list --filter identifier__contains=example_random_number
 ```
 
 If you want to inspect the full record once you have the uid:
 
 ```bash
-mainsequence data-node detail <DATA_NODE_STORAGE_UID>
+mainsequence meta-table detail <META_TABLE_UID>
 ```
 
-For the dependent node, list visible data nodes and use the `Source Class` column to identify the row created by `DailyRandomAddition`:
+For the dependent node, list tutorial MetaTables and use the `Identifier`
+column to identify the table created for `DailyRandomAddition`:
 
 ```bash
-mainsequence data-node list
+mainsequence meta-table list --filter identifier__contains=example_random_add
 ```
 
-## Share the DataNode you just created
+## Share the DataNode table you just created
 
-Once you have the storage uid, you can inspect who can read it:
+Once you have the MetaTable uid, you can inspect who can read it:
 
 ```bash
-mainsequence data-node can_view <DATA_NODE_STORAGE_UID>
+mainsequence meta-table can_view <META_TABLE_UID>
 ```
 
 Inspect who can edit it:
 
 ```bash
-mainsequence data-node can_edit <DATA_NODE_STORAGE_UID>
+mainsequence meta-table can_edit <META_TABLE_UID>
 ```
 
 Grant user `7` read access:
 
 ```bash
-mainsequence data-node add_to_view <DATA_NODE_STORAGE_UID> 7
+mainsequence meta-table add_to_view <META_TABLE_UID> 7
 ```
 
 Grant user `7` edit access:
 
 ```bash
-mainsequence data-node add_to_edit <DATA_NODE_STORAGE_UID> 7
+mainsequence meta-table add_to_edit <META_TABLE_UID> 7
 ```
 
 Remove those permissions again if needed:
 
 ```bash
-mainsequence data-node remove_from_view <DATA_NODE_STORAGE_UID> 7
-mainsequence data-node remove_from_edit <DATA_NODE_STORAGE_UID> 7
+mainsequence meta-table remove_from_view <META_TABLE_UID> 7
+mainsequence meta-table remove_from_edit <META_TABLE_UID> 7
 ```
 
 Here, the practical split is:

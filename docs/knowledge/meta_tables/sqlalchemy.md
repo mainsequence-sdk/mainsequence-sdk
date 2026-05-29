@@ -10,13 +10,15 @@ Pydantic transport objects for the backend.
 ## Imports
 
 ```python
+import datetime
 import uuid
 
-from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.tdag.meta_tables import (
     PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
 )
 ```
 
@@ -139,6 +141,67 @@ The SDK contract serializer extracts:
 - FK target MetaTable UID
 - FK target columns
 - backend type strings such as `VARCHAR(64)`
+
+## Time-Indexed DataNode Storage
+
+Use `PlatformTimeIndexMetaData` when the table is DynamicTable/DataNode storage rather
+than a generic relational MetaTable. It inherits the platform-managed MetaTable
+authoring behavior, but registers through:
+
+```text
+/orm/api/ts_manager/dynamic_table/register/
+```
+
+The client sends only the explicit time-indexed table contract:
+
+- `data_source_uid`
+- `storage_hash`
+- `identifier`
+- `namespace`
+- `description`
+- `time_index_name`
+- `index_names`
+- canonical `columns`
+- optional DynamicTable-to-MetaTable `foreign_keys`
+
+The backend derives identity dimensions, update progress grain, uniqueness,
+tail-delete scope, physical indexes, and the time-indexed profile.
+
+```python
+class AccountHoldings(PlatformTimeIndexMetaData, Base):
+    __table_args__ = {"schema": "public"}
+
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "AccountHoldings"
+    __time_index_name__ = "time_index"
+    __index_names__ = ["time_index", "account_uid", "unique_identifier"]
+
+    time_index: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+    quantity: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+request = AccountHoldings.build_registration_request()
+
+assert request.time_index_name == "time_index"
+assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
+
+holdings_storage = AccountHoldings.register()
+```
+
+Validation is intentionally strict:
+
+- the first index must be `time_index_name`
+- every index column must exist in the SQLAlchemy table
+- every index column must be non-nullable
+- the time-index column must be temporal and timezone-aware for remote storage
+- the client must not send derived backend fields such as `identity_dimensions`,
+  `index_progress`, `tail_delete`, `uniqueness`, `table_partition`, or
+  `physical_index_plan`
 
 ## External Registration
 

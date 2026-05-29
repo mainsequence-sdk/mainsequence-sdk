@@ -25,6 +25,7 @@ from mainsequence.client.dtype_codec import (
     normalize_dtype_token,
     pandas_dtype_to_token,
     serialize_remote_value,
+    sqlalchemy_type_to_token,
 )
 
 # Instrumentation and Logging
@@ -183,14 +184,41 @@ def _metatable_contract_column_dtypes_map(meta_table: Any) -> dict[str, str]:
     if not contract_columns:
         contract_columns = getattr(meta_table, "columns", []) or []
 
+    if not contract_columns:
+        table = getattr(meta_table, "__table__", None)
+        contract_columns = list(getattr(table, "columns", []) or [])
+
     column_dtypes: dict[str, str] = {}
     for column in contract_columns:
         column_name = _column_attr(column, "name", "column_name")
         data_type = _column_attr(column, "data_type", "dtype")
+        if data_type in (None, "") and getattr(column, "type", None) is not None:
+            data_type = sqlalchemy_type_to_token(column.type, remote=True)
         if column_name in (None, "") or data_type in (None, ""):
             continue
         column_dtypes[str(column_name)] = str(data_type)
     return column_dtypes
+
+
+def _storage_hash(storage_table: Any) -> str | None:
+    if storage_table is None:
+        return None
+    if isinstance(storage_table, Mapping):
+        storage_hash = storage_table.get("storage_hash") or storage_table.get(
+            "physical_table_name"
+        )
+    else:
+        hash_getter = getattr(storage_table, "get_storage_hash", None)
+        try:
+            storage_hash = hash_getter() if callable(hash_getter) else None
+        except Exception:
+            storage_hash = None
+        storage_hash = storage_hash or getattr(storage_table, "storage_hash", None)
+        storage_hash = storage_hash or getattr(storage_table, "physical_table_name", None)
+        if storage_hash in (None, ""):
+            table = getattr(storage_table, "__table__", None)
+            storage_hash = getattr(table, "name", None)
+    return str(storage_hash) if isinstance(storage_hash, str) and storage_hash else None
 
 
 def _require_uid(obj: Any, object_name: str) -> str:
@@ -309,7 +337,9 @@ class UpdateRunner:
             {
                 "uid": _require_uid(self.ts.data_node_update, "DataNodeUpdate"),
                 "update_hash": self.ts.data_node_update.update_hash,
-                "remote_table_hash_id": self.ts.local_persist_manager.storage_table.storage_hash,
+                "remote_table_hash_id": _storage_hash(
+                    self.ts.local_persist_manager.storage_metadata
+                ),
                 "node_type": self.ts.data_node_update.NODE_TYPE,
             }
         )
@@ -763,7 +793,9 @@ class UpdateRunner:
                 f"Scheduler Head Update: {self.ts.update_hash}"
             ) as span:
                 span.set_attribute("time_serie_update_hash", self.ts.update_hash)
-                span.set_attribute("storage_hash", self.ts.storage_hash)
+                storage_hash = _storage_hash(self.ts.local_persist_manager.storage_metadata)
+                if storage_hash is not None:
+                    span.set_attribute("storage_hash", storage_hash)
                 span.set_attribute("head_scheduler", self.scheduler.name)
 
                 # 3. Prepare the execution environment (Ray actors, dependency metadata)

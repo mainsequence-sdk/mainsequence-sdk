@@ -6,8 +6,10 @@ import pytest
 
 import mainsequence.tdag.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.models_metatables import MetaTableRegistrationRequest
+from mainsequence.client.models_tdag import DynamicTableRegistrationRequest
 from mainsequence.tdag.meta_tables import (
     PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
     metatable_configured_tablename,
     metatable_tablename,
@@ -120,6 +122,29 @@ def _platform_model_class(name, table, *, namespace="example.assets", identifier
             "__module__": "tests.client_tables",
             "__metatable_namespace__": namespace,
             "__metatable_identifier__": identifier or name,
+            "__table__": table,
+        },
+    )
+
+
+def _time_index_model_class(
+    name,
+    table,
+    *,
+    namespace="example.assets",
+    identifier=None,
+    time_index_name="time_index",
+    index_names=None,
+):
+    return type(
+        name,
+        (PlatformTimeIndexMetaData,),
+        {
+            "__module__": "tests.client_tables",
+            "__metatable_namespace__": namespace,
+            "__metatable_identifier__": identifier or name,
+            "__time_index_name__": time_index_name,
+            "__index_names__": list(index_names or [time_index_name]),
             "__table__": table,
         },
     )
@@ -533,7 +558,10 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     def fake_register(cls, request, timeout=None):
         captured["request"] = request
         captured["timeout"] = timeout
-        return SimpleNamespace(uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        return SimpleNamespace(
+            uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        )
 
     monkeypatch.setattr(
         sqlalchemy_contracts.MetaTable,
@@ -547,8 +575,211 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     )
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert Account.get_meta_table() is registered
+    assert Account.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert Account.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert captured["timeout"] == 15
     assert captured["request"].storage_hash == table.name
+
+
+def test_time_index_metadata_registration_request_uses_dynamic_contract():
+    table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=False),
+            FakeColumn("unique_identifier", String(255), nullable=False),
+            FakeColumn("quantity", String(64), nullable=False),
+        ],
+    )
+    AccountHoldings = _time_index_model_class(
+        "AccountHoldings",
+        table,
+        index_names=["time_index", "account_uid", "unique_identifier"],
+    )
+    table.name = metatable_configured_tablename(AccountHoldings)
+
+    request = AccountHoldings.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        description="Account holdings data node storage",
+    )
+
+    assert isinstance(request, DynamicTableRegistrationRequest)
+    assert request.storage_hash == table.name
+    assert request.identifier == "AccountHoldings"
+    assert request.namespace == "example.assets"
+    assert request.description == "Account holdings data node storage"
+    assert request.time_index_name == "time_index"
+    assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
+    assert [column.name for column in request.columns] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+        "quantity",
+    ]
+
+    payload = request.model_dump(mode="json", exclude_none=True)
+    assert "table_contract" not in payload
+    assert "management_mode" not in payload
+    assert "physical_table_name" not in payload
+    assert "identity_dimensions" not in payload
+    assert "index_progress" not in payload
+    assert "tail_delete" not in payload
+    assert "uniqueness" not in payload
+    assert "table_partition" not in payload
+    assert "physical_index_plan" not in payload
+
+
+def test_time_index_metadata_configured_tablename_changes_with_index_grain():
+    one_index_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("unique_identifier", String(255), nullable=False),
+        ],
+    )
+    three_index_table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=False),
+            FakeColumn("unique_identifier", String(255), nullable=False),
+        ],
+    )
+    OneIndex = _time_index_model_class(
+        "AccountHoldings",
+        one_index_table,
+        index_names=["time_index"],
+    )
+    ThreeIndex = _time_index_model_class(
+        "AccountHoldings",
+        three_index_table,
+        index_names=["time_index", "account_uid", "unique_identifier"],
+    )
+
+    assert metatable_configured_tablename(OneIndex) != metatable_configured_tablename(
+        ThreeIndex
+    )
+
+
+def test_time_index_metadata_rejects_first_index_not_time_index():
+    table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=False),
+        ],
+    )
+    BadHoldings = _time_index_model_class(
+        "BadHoldings",
+        table,
+        index_names=["account_uid", "time_index"],
+    )
+
+    with pytest.raises(ValueError, match="must start with the time_index_name"):
+        metatable_configured_tablename(BadHoldings)
+
+
+def test_time_index_metadata_rejects_nullable_index_columns():
+    table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=True),
+        ],
+    )
+    BadHoldings = _time_index_model_class(
+        "BadHoldings",
+        table,
+        index_names=["time_index", "account_uid"],
+    )
+
+    with pytest.raises(ValueError, match="index columns must be non-nullable"):
+        metatable_configured_tablename(BadHoldings)
+
+
+def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatch):
+    import mainsequence.client.models_tdag as models_tdag
+
+    table = FakeTable(
+        "placeholder",
+        columns=[
+            FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+            FakeColumn("account_uid", Uuid(), nullable=False),
+            FakeColumn("unique_identifier", String(255), nullable=False),
+        ],
+    )
+    AccountHoldings = _time_index_model_class(
+        "AccountHoldings",
+        table,
+        index_names=["time_index", "account_uid", "unique_identifier"],
+    )
+    table.name = metatable_configured_tablename(AccountHoldings)
+
+    captured = {}
+
+    class Response:
+        status_code = 201
+        content = b"{}"
+
+        def json(self):
+            return {
+                "uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "storage_hash": table.name,
+                "identifier": "AccountHoldings",
+                "namespace": "example.assets",
+                "management_mode": "platform_managed",
+                "physical_table_name": table.name,
+                "table_contract": {
+                    "version": "relational-table.v1",
+                    "physical": {"table_name": table.name},
+                    "columns": [],
+                    "dynamic_table": {
+                        "time_index_name": "time_index",
+                        "index_names": ["time_index", "account_uid", "unique_identifier"],
+                    },
+                },
+                "time_indexed_profile": {
+                    "dynamic_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "time_index_name": "time_index",
+                    "index_names": ["time_index", "account_uid", "unique_identifier"],
+                    "column_dtypes_map": {
+                        "time_index": "timestamp with time zone",
+                        "account_uid": "uuid",
+                        "unique_identifier": "string",
+                    },
+                    "foreign_keys": [],
+                },
+            }
+
+    def fake_make_request(*, s, loaders, r_type, url, payload=None, time_out=None):
+        captured["r_type"] = r_type
+        captured["url"] = url
+        captured["payload"] = payload
+        captured["timeout"] = time_out
+        return Response()
+
+    monkeypatch.setattr(models_tdag, "make_request", fake_make_request)
+
+    registered = AccountHoldings.register(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        timeout=15,
+    )
+
+    assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert AccountHoldings.get_meta_table() is registered
+    assert AccountHoldings.get_time_index_metadata() is registered
+    assert AccountHoldings.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/dynamic_table/register/")
+    assert captured["timeout"] == 15
+    assert captured["payload"]["json"]["time_index_name"] == "time_index"
+    assert captured["payload"]["json"]["index_names"] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
 
 
 def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy():
@@ -608,6 +839,43 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
     assert request.storage_hash == Asset.__table__.name
     assert request.table_contract.indexes[0].name
     assert request.table_contract.foreign_keys[0].name
+
+
+def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
+    pytest.importorskip("sqlalchemy")
+
+    import datetime
+    import uuid
+
+    from sqlalchemy import DateTime, MetaData, String, Uuid
+    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class AccountHoldings(PlatformTimeIndexMetaData, Base):
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "AccountHoldings"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "account_uid", "unique_identifier"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+        unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    assert AccountHoldings.__table__.name == metatable_configured_tablename(AccountHoldings)
+
+    request = AccountHoldings.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.storage_hash == AccountHoldings.__table__.name
+    assert request.time_index_name == "time_index"
+    assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
 
 
 def test_platform_managed_requires_storage_hash_table_name():
