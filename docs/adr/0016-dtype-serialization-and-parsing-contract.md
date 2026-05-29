@@ -99,11 +99,11 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `RecordDefinition.dtype` is an unconstrained string authored by users.
   - This is a structural dtype declaration and participates in hashing.
 
-- `mainsequence/client/models_tdag.py:167`
+- `mainsequence/client/models_foundry.py:167`
   - `BaseColumnMetaData.dtype` is an unconstrained string sent as column
     metadata.
 
-- `mainsequence/client/models_tdag.py:241`
+- `mainsequence/client/models_foundry.py:241`
   - `SourceTableConfigurationBase.column_dtypes_map` is typed as
     `dict[str, Any]` and accepts backend-returned dtype strings without parsing.
 
@@ -113,7 +113,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### DataNode Record-to-DType Map Serialization
 
-- `mainsequence/client/models_tdag.py:61`
+- `mainsequence/client/models_foundry.py:61`
   - `_records_to_column_dtypes_map()` converts each record dtype with
     `str(dtype)`.
 
@@ -127,34 +127,34 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### DataFrame-to-SourceTable Serialization
 
-- `mainsequence/client/models_tdag.py:940`
+- `mainsequence/client/models_foundry.py:940`
   - `_break_pandas_dataframe()` reads `data_frame.attrs[LOGICAL_COLUMN_DTYPES_ATTR]`.
 
-- `mainsequence/client/models_tdag.py:956`
+- `mainsequence/client/models_foundry.py:956`
   - `_break_pandas_dataframe()` serializes pandas dtypes as
     `{column: str(dtype)}` from `data_frame.dtypes`.
 
-- `mainsequence/client/models_tdag.py:967`
+- `mainsequence/client/models_foundry.py:967`
   - `_break_pandas_dataframe()` normalizes logical dtype attrs with
     `str(key)` and `str(value)`.
 
-- `mainsequence/client/models_tdag.py:998`
+- `mainsequence/client/models_foundry.py:998`
   - `_break_pandas_dataframe()` lets logical dtype attrs override inferred
     pandas dtype strings.
 
-- `mainsequence/client/models_tdag.py:999`
+- `mainsequence/client/models_foundry.py:999`
   - `_break_pandas_dataframe()` lets declared records override inferred dtype
     strings.
 
-- `mainsequence/client/models_tdag.py:1040`
+- `mainsequence/client/models_foundry.py:1040`
   - `DataNodeUpdate.upsert_data_into_table()` reads
     `source_table_schema["column_dtypes_map"]`.
 
-- `mainsequence/client/models_tdag.py:1042`
+- `mainsequence/client/models_foundry.py:1042`
   - `DataNodeUpdate.upsert_data_into_table()` normalizes source-table schema
     dtype entries with `str(column_name)` and `str(dtype)`.
 
-- `mainsequence/client/models_tdag.py:1060`
+- `mainsequence/client/models_foundry.py:1060`
   - `DataNodeUpdate.upsert_data_into_table()` passes the resulting
     `column_dtypes_map` into source-table creation.
 
@@ -165,30 +165,30 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### SourceTable API Payload Serialization
 
-- `mainsequence/client/models_tdag.py:1462`
+- `mainsequence/client/models_foundry.py:1462`
   - `TimeIndexMetaData.initialize_source_table()` accepts `column_dtypes_map`.
 
-- `mainsequence/client/models_tdag.py:1512`
+- `mainsequence/client/models_foundry.py:1512`
   - `_initialize_source_table_at_url()` serializes source-table creation
     payload with `"column_dtypes_map": dict(column_dtypes_map)`.
 
-- `mainsequence/client/models_tdag.py:1688`
+- `mainsequence/client/models_foundry.py:1688`
   - `TimeIndexMetaData.handle_source_table_configuration_creation()` accepts
     `column_dtypes_map` and routes it to initialization.
 
-- `mainsequence/client/models_tdag.py:1726`
+- `mainsequence/client/models_foundry.py:1726`
   - `handle_source_table_configuration_creation()` sends `column_dtypes_map`
     through `initialize_source_table()`.
 
-- `mainsequence/client/models_tdag.py:347`
+- `mainsequence/client/models_foundry.py:347`
   - `SourceTableConfiguration.set_or_update_columns_metadata()` accepts column
     metadata containing dtype strings.
 
-- `mainsequence/client/models_tdag.py:354`
+- `mainsequence/client/models_foundry.py:354`
   - `SourceTableConfiguration.set_or_update_columns_metadata()` serializes
     metadata through `model_dump(...)`.
 
-- `mainsequence/client/models_tdag.py:363`
+- `mainsequence/client/models_foundry.py:363`
   - `SourceTableConfiguration.set_or_update_columns_metadata()` sends
     `columns_metadata` to the backend.
 
@@ -221,57 +221,57 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### DataNode Response DType Deserialization
 
-- `mainsequence/client/models_tdag.py:1754`
+- `mainsequence/client/models_foundry.py:1754`
   - `TimeIndexMetaData.map_columns_to_df()` casts columns from
     `column_dtypes_map`.
 
-- `mainsequence/client/models_tdag.py:1764`
+- `mainsequence/client/models_foundry.py:1764`
   - `map_columns_to_df()` rewrites `"object"` to `"str"` before `astype(...)`.
 
-- `mainsequence/client/models_tdag.py:1803`
+- `mainsequence/client/models_foundry.py:1803`
   - `TimeIndexMetaData.get_last_observation()` parses the configured time index
     with `pd.to_datetime(...)`.
 
-- `mainsequence/client/models_tdag.py:1807`
+- `mainsequence/client/models_foundry.py:1807`
   - `get_last_observation()` calls `map_columns_to_df()` with
     `stc.column_dtypes_map`.
 
-- `mainsequence/client/models_tdag.py:1980`
+- `mainsequence/client/models_foundry.py:1980`
   - `_normalize_dtype_for_pandas()` maps dtype strings to pandas nullable
     dtypes for search responses.
 
-- `mainsequence/client/models_tdag.py:2068`
+- `mainsequence/client/models_foundry.py:2068`
   - `_search_response_column_dtype()` reads dtype strings from
     source-table metadata.
 
-- `mainsequence/client/models_tdag.py:2081`
+- `mainsequence/client/models_foundry.py:2081`
   - `_apply_dtypes_from_meta()` applies dtype restoration to DataNode search
     responses.
 
-- `mainsequence/client/models_tdag.py:2119`
+- `mainsequence/client/models_foundry.py:2119`
   - `_apply_dtypes_from_meta()` treats index keys as temporal when they are time
     indexes or their dtype string contains `"datetime"`.
 
-- `mainsequence/client/models_tdag.py:2160`
+- `mainsequence/client/models_foundry.py:2160`
   - `_apply_dtypes_from_meta()` treats prefixed payload columns as temporal only
     when their dtype string contains `"datetime"`.
 
-- `mainsequence/client/models_tdag.py:2251`
+- `mainsequence/client/models_foundry.py:2251`
   - DataNode search response construction calls `_apply_dtypes_from_meta()`.
 
-- `mainsequence/client/models_tdag.py:3577`
+- `mainsequence/client/models_foundry.py:3577`
   - API DataNode response restoration parses the configured time index with
     `pd.to_datetime(...)`.
 
-- `mainsequence/client/models_tdag.py:3583`
+- `mainsequence/client/models_foundry.py:3583`
   - API DataNode response restoration casts columns from
     `stc.column_dtypes_map`.
 
-- `mainsequence/client/models_tdag.py:4392`
+- `mainsequence/client/models_foundry.py:4392`
   - Timescale response restoration parses the configured time index with
     `pd.to_datetime(...)`.
 
-- `mainsequence/client/models_tdag.py:4393`
+- `mainsequence/client/models_foundry.py:4393`
   - Timescale response restoration casts columns from `stc.column_dtypes_map`.
 
 - `mainsequence/meta_tables/data_nodes/persist_managers.py:86`

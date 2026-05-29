@@ -58,7 +58,7 @@ The client model layer has already been partially migrated to public UIDs.
 
 ### TDAG client models
 
-Observed migrated surfaces in `mainsequence/client/models_tdag.py`:
+Observed migrated surfaces in `mainsequence/client/models_foundry.py`:
 
 - `UUID` is imported and used for TDAG public identifiers.
 - `UpdateNodeRef` carries `uid: UUID`.

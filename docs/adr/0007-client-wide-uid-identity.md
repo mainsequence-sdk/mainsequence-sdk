@@ -124,7 +124,7 @@ Base decision:
 Base audit findings that remain for model-group migration:
 
 - `mainsequence/client/models_helpers.py` no longer builds Job or JobRun detail URLs from `.id`; CLI wrappers still need separate cleanup where their arguments are named `job_id` / `job_run_id`.
-- `mainsequence/client/models_tdag.py` still has some local runtime/file-cache paths named `data_source_id`; backend API lookups for migrated TS Manager storage/update resources now use data-source UID.
+- `mainsequence/client/models_foundry.py` still has some local runtime/file-cache paths named `data_source_id`; backend API lookups for migrated TS Manager storage/update resources now use data-source UID.
 - `mainsequence/client/agent_runtime_models.py` still has runtime/session helper routes that require classification before renaming.
 - `mainsequence/client/models_user.py` still has user detail paths and permission subject identifiers that require separate user/team contract confirmation.
 

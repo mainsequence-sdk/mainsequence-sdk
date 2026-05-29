@@ -781,7 +781,7 @@ def search_projects(
     """
     try:
         payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Project",
             operation=lambda ClientProject: ClientProject.quick_search(
                 q=q,
@@ -809,7 +809,7 @@ def validate_project_name(
     """
     try:
         payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Project",
             operation=lambda ClientProject: ClientProject.validate_name(
                 project_name=project_name,
@@ -1538,7 +1538,7 @@ def list_project_users_can_view(
     Fetch the view-access state for a project via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         accessor_name="can_view",
@@ -1555,7 +1555,7 @@ def list_project_users_can_edit(
     Fetch the edit-access state for a project via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         accessor_name="can_edit",
@@ -1573,7 +1573,7 @@ def add_project_user_to_view(
     Grant explicit view access to one user for a project.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="add_to_view",
@@ -1592,7 +1592,7 @@ def add_project_user_to_edit(
     Grant explicit edit access to one user for a project.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="add_to_edit",
@@ -1611,7 +1611,7 @@ def remove_project_user_from_view(
     Remove explicit view access from one user for a project.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="remove_from_view",
@@ -1630,7 +1630,7 @@ def remove_project_user_from_edit(
     Remove explicit edit access from one user for a project.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="remove_from_edit",
@@ -1744,7 +1744,7 @@ def add_project_team_to_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="add_team_to_view",
@@ -1760,7 +1760,7 @@ def add_project_team_to_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="add_team_to_edit",
@@ -1776,7 +1776,7 @@ def remove_project_team_from_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="remove_team_from_view",
@@ -1792,7 +1792,7 @@ def remove_project_team_from_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="remove_team_from_edit",
@@ -1810,7 +1810,7 @@ def add_project_labels(
     """Attach one or more organizational labels to a project."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="add_label",
@@ -1828,7 +1828,7 @@ def remove_project_labels(
     """Remove one or more organizational labels from a project."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Project",
         object_id=project_id,
         action_name="remove_label",
@@ -1886,7 +1886,7 @@ def get_project_data_node_updates(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_tdag import Project as ClientProject
+        from mainsequence.client.models_foundry import Project as ClientProject
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -1935,7 +1935,7 @@ def get_project_data_node_updates(
                 pass
         if old_project_root_url is not None:
             try:
-                from mainsequence.client.models_tdag import Project as ClientProject
+                from mainsequence.client.models_foundry import Project as ClientProject
 
                 ClientProject.ROOT_URL = old_project_root_url
             except Exception:
@@ -1960,7 +1960,7 @@ def sync_project_after_commit(
     try:
         project_uid = resolve_project_uid(project_id)
         payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Project",
             operation=lambda ClientProject: ClientProject.sync_project_after_commit(
                 project_uid,
@@ -1999,7 +1999,7 @@ def prime_sync_project_after_commit_sdk() -> None:
         importlib.import_module("mainsequence.client")
         importlib.import_module("mainsequence.client.utils")
         importlib.import_module("mainsequence.client.base")
-        importlib.import_module("mainsequence.client.models_tdag")
+        importlib.import_module("mainsequence.client.models_foundry")
     except Exception as e:
         raise ApiError(f"Project post-commit SDK import failed: {e}") from e
 
@@ -2056,7 +2056,7 @@ def create_project_image(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+        from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -2103,7 +2103,7 @@ def create_project_image(
                 pass
         if old_image_root_url is not None:
             try:
-                from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+                from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
 
                 ClientProjectImage.ROOT_URL = old_image_root_url
             except Exception:
@@ -2167,7 +2167,7 @@ def list_project_images(
 
         from mainsequence.client import utils as _client_utils
         from mainsequence.client.base import BaseObjectOrm
-        from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+        from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
 
         client_utils = _client_utils
         old_provider = getattr(client_utils.loaders, "provider", None)
@@ -2216,7 +2216,7 @@ def list_project_images(
                 pass
         if old_image_root_url is not None:
             try:
-                from mainsequence.client.models_tdag import ProjectImage as ClientProjectImage
+                from mainsequence.client.models_foundry import ProjectImage as ClientProjectImage
 
                 ClientProjectImage.ROOT_URL = old_image_root_url
             except Exception:
@@ -2236,7 +2236,7 @@ def get_project_image(
 ) -> dict[str, Any]:
     try:
         image = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="ProjectImage",
             operation=lambda ClientProjectImage: ClientProjectImage.get(
                 pk=int(image_id),
@@ -2267,7 +2267,7 @@ def delete_project_image(
             return payload
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="ProjectImage",
             operation=_delete,
         )
@@ -2733,7 +2733,7 @@ def list_data_node_storages(
     """
     try:
         storages = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.filter(
                 timeout=timeout,
@@ -3202,7 +3202,7 @@ def data_node_storage_description_search(
     """
     try:
         payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.description_search(
                 q,
@@ -3236,7 +3236,7 @@ def data_node_storage_column_search(
     """
     try:
         payload = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.column_search(
                 q,
@@ -3263,7 +3263,7 @@ def list_constants(
     """
     try:
         constants = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Constant",
             operation=lambda ClientConstant: ClientConstant.filter(
                 timeout=timeout,
@@ -3290,7 +3290,7 @@ def list_secrets(
     """
     try:
         secrets = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Secret",
             operation=lambda ClientSecret: ClientSecret.filter(
                 timeout=timeout,
@@ -3317,7 +3317,7 @@ def get_secret(
     """
     try:
         secret = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Secret",
             operation=lambda ClientSecret: ClientSecret.get(
                 pk=secret_uid,
@@ -3348,7 +3348,7 @@ def create_secret(
     """
     try:
         secret = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Secret",
             operation=lambda ClientSecret: ClientSecret.create(
                 name=name,
@@ -3383,7 +3383,7 @@ def delete_secret(
             return payload
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Secret",
             operation=_delete,
         )
@@ -3405,7 +3405,7 @@ def list_secret_users_can_view(
     Fetch the view-access state for a secret via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         accessor_name="can_view",
@@ -3422,7 +3422,7 @@ def list_secret_users_can_edit(
     Fetch the edit-access state for a secret via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         accessor_name="can_edit",
@@ -3440,7 +3440,7 @@ def add_secret_user_to_view(
     Grant explicit view access to one user for a secret.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="add_to_view",
@@ -3459,7 +3459,7 @@ def add_secret_user_to_edit(
     Grant explicit edit access to one user for a secret.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="add_to_edit",
@@ -3478,7 +3478,7 @@ def remove_secret_user_from_view(
     Remove explicit view access from one user for a secret.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="remove_from_view",
@@ -3497,7 +3497,7 @@ def remove_secret_user_from_edit(
     Remove explicit edit access from one user for a secret.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="remove_from_edit",
@@ -3513,7 +3513,7 @@ def add_secret_team_to_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="add_team_to_view",
@@ -3529,7 +3529,7 @@ def add_secret_team_to_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="add_team_to_edit",
@@ -3545,7 +3545,7 @@ def remove_secret_team_from_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="remove_team_from_view",
@@ -3561,7 +3561,7 @@ def remove_secret_team_from_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Secret",
         object_id=secret_uid,
         action_name="remove_team_from_edit",
@@ -3583,7 +3583,7 @@ def get_constant(
     """
     try:
         constant = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Constant",
             operation=lambda ClientConstant: ClientConstant.get_by_uid(
                 str(constant_uid),
@@ -3614,7 +3614,7 @@ def create_constant(
     """
     try:
         constant = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Constant",
             operation=lambda ClientConstant: ClientConstant.create(
                 name=name,
@@ -3649,7 +3649,7 @@ def delete_constant(
             return payload
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_foundry",
             class_name="Constant",
             operation=_delete,
         )
@@ -3818,7 +3818,7 @@ def list_constant_users_can_view(
     Fetch the view-access state for a constant via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         accessor_name="can_view",
@@ -3835,7 +3835,7 @@ def list_constant_users_can_edit(
     Fetch the edit-access state for a constant via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         accessor_name="can_edit",
@@ -3853,7 +3853,7 @@ def add_constant_user_to_view(
     Grant explicit view access to one user for a constant.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="add_to_view",
@@ -3872,7 +3872,7 @@ def add_constant_user_to_edit(
     Grant explicit edit access to one user for a constant.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="add_to_edit",
@@ -3891,7 +3891,7 @@ def remove_constant_user_from_view(
     Remove explicit view access from one user for a constant.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="remove_from_view",
@@ -3910,7 +3910,7 @@ def remove_constant_user_from_edit(
     Remove explicit edit access from one user for a constant.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="remove_from_edit",
@@ -3926,7 +3926,7 @@ def add_constant_team_to_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="add_team_to_view",
@@ -3942,7 +3942,7 @@ def add_constant_team_to_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="add_team_to_edit",
@@ -3958,7 +3958,7 @@ def remove_constant_team_from_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="remove_team_from_view",
@@ -3974,7 +3974,7 @@ def remove_constant_team_from_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_foundry",
         class_name="Constant",
         object_id=constant_uid,
         action_name="remove_team_from_edit",
@@ -3996,7 +3996,7 @@ def get_data_node_storage(
     """
     try:
         storage = _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=lambda ClientDataNodeStorage: ClientDataNodeStorage.get(
                 uid=str(storage_uid),
@@ -4066,7 +4066,7 @@ def refresh_data_node_storage_search_index(
             return {"uid": str(storage_uid)}
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=_refresh,
         )
@@ -4096,7 +4096,7 @@ def run_data_node_storage_query(
             return dict(payload) if isinstance(payload, dict) else {"ok": True, "results": payload}
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=_run_query,
         )
@@ -4139,7 +4139,7 @@ def delete_data_node_storage(
             return payload
 
         return _run_sdk_model_operation(
-            module_name="mainsequence.client.models_tdag",
+            module_name="mainsequence.client.models_metatables",
             class_name="TimeIndexMetaData",
             operation=_delete,
         )
@@ -4194,7 +4194,7 @@ def list_data_node_storage_users_can_view(
     Fetch the view-access state for a data node storage via `ShareableObjectMixin.can_view()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4230,7 +4230,7 @@ def list_data_node_storage_users_can_edit(
     Fetch the edit-access state for a data node storage via `ShareableObjectMixin.can_edit()`.
     """
     return _get_shareable_object_access_state(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4267,7 +4267,7 @@ def add_data_node_storage_user_to_view(
     Grant explicit view access to one user for a data node storage.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4307,7 +4307,7 @@ def add_data_node_storage_user_to_edit(
     Grant explicit edit access to one user for a data node storage.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4347,7 +4347,7 @@ def remove_data_node_storage_user_from_view(
     Remove explicit view access from one user for a data node storage.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4387,7 +4387,7 @@ def remove_data_node_storage_user_from_edit(
     Remove explicit edit access from one user for a data node storage.
     """
     return _mutate_shareable_object_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4424,7 +4424,7 @@ def add_data_node_storage_team_to_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4458,7 +4458,7 @@ def add_data_node_storage_team_to_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4492,7 +4492,7 @@ def remove_data_node_storage_team_from_view(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4526,7 +4526,7 @@ def remove_data_node_storage_team_from_edit(
     timeout: int | None = None,
 ) -> dict[str, Any]:
     return _mutate_shareable_object_team_access(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4562,7 +4562,7 @@ def add_data_node_storage_labels(
     """Attach one or more organizational labels to a data node storage."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",
@@ -4600,7 +4600,7 @@ def remove_data_node_storage_labels(
     """Remove one or more organizational labels from a data node storage."""
 
     return _mutate_labelable_object_labels(
-        module_name="mainsequence.client.models_tdag",
+        module_name="mainsequence.client.models_metatables",
         class_name="TimeIndexMetaData",
         object_id=storage_uid,
         object_lookup_field="uid",

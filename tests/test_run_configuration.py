@@ -1,3 +1,4 @@
+import importlib
 import os
 import threading
 from types import SimpleNamespace
@@ -9,14 +10,17 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-import mainsequence.client.models_tdag as models_tdag
+import mainsequence.client.models_foundry as models_foundry
+import mainsequence.client.models_metatables as models_metatables
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
 from mainsequence.client.command_center import Workspace
-from mainsequence.client.models_metatables import MetaTable
-from mainsequence.client.models_tdag import (
+from mainsequence.client.models_foundry import (
+    Project,
+)
+from mainsequence.client.models_metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
-    Project,
+    MetaTable,
     TimeIndexMetaData,
 )
 from mainsequence.meta_tables import (
@@ -86,6 +90,29 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
     assert TimeIndexMetaData.get_object_url().endswith("/ts_manager/dynamic_table")
 
 
+def test_metatable_update_models_are_not_exported_from_models_foundry():
+    moved_names = [
+        "TimeIndexMetaData",
+        "TimeIndexedProfile",
+        "TimeIndexMetaTableRegistrationRequest",
+        "DataNodeUpdate",
+        "DataNodeUpdateDetails",
+        "RunConfiguration",
+        "Scheduler",
+        "UpdateStatistics",
+        "DataSource",
+        "DynamicTableDataSource",
+        "SessionDataSource",
+    ]
+
+    for name in moved_names:
+        assert hasattr(models_metatables, name)
+        assert not hasattr(models_foundry, name)
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("mainsequence.client.models_tdag")
+
+
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
     payload = {
         "uid": "data-node-update-44",
@@ -135,7 +162,7 @@ def test_data_node_update_details_patches_by_data_node_update_uid(monkeypatch):
         )
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
 
     details = DataNodeUpdateDetails.patch_for_data_node_update_uid(
         "data-node-update-44",
@@ -387,9 +414,7 @@ def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(storage_hash="canonical_prices_table")
-    )
+    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.storage_table is storage_table
@@ -418,9 +443,7 @@ def test_data_node_rejects_test_node_constructor_shortcut():
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(storage_hash="canonical_prices_table")
-    )
+    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
 
     with pytest.raises(TypeError, match="test_node has been removed"):
         StorageTableNode(
@@ -482,9 +505,7 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         def update(self):
             return pd.DataFrame()
 
-    storage_table = _platform_storage_model(
-        _meta_table(storage_hash="canonical_prices_table")
-    )
+    storage_table = _platform_storage_model(_meta_table(storage_hash="canonical_prices_table"))
     node = StorageTableNode(Config(identifier="prices"), storage_table=storage_table)
 
     assert node.local_persist_manager.storage_table is storage_table

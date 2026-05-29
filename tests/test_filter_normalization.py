@@ -9,8 +9,8 @@ from pydantic import ConfigDict, Field
 
 import mainsequence.client.agent_runtime_models as agent_models_mod
 import mainsequence.client.base as base_mod
+import mainsequence.client.models_foundry as models_foundry_mod
 import mainsequence.client.models_helpers as models_helpers_mod
-import mainsequence.client.models_tdag as models_tdag_mod
 import mainsequence.client.models_user as models_user_mod
 from mainsequence.client.base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 
@@ -223,7 +223,7 @@ def test_normalize_filter_kwargs_coerces_supported_values():
 
 
 def test_project_image_accepts_creation_date():
-    from mainsequence.client.models_tdag import ProjectImage
+    from mainsequence.client.models_foundry import ProjectImage
 
     image = ProjectImage(
         uid="f3cb8477-df47-49cb-a151-80b746fb1243",
@@ -245,7 +245,7 @@ def test_project_image_accepts_creation_date():
 
 
 def test_data_node_storage_normalizes_namespace_filters():
-    from mainsequence.client.models_tdag import TimeIndexMetaData
+    from mainsequence.client.models_metatables import TimeIndexMetaData
 
     normalized = TimeIndexMetaData._normalize_filter_kwargs(
         {
@@ -263,7 +263,7 @@ def test_data_node_storage_normalizes_namespace_filters():
 
 
 def test_data_node_storage_normalizes_data_source_uid_filters():
-    from mainsequence.client.models_tdag import TimeIndexMetaData
+    from mainsequence.client.models_metatables import TimeIndexMetaData
 
     uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
@@ -281,14 +281,14 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
-    from mainsequence.client.models_tdag import TimeIndexMetaData
+    from mainsequence.client.models_metatables import TimeIndexMetaData
 
     with pytest.raises(ValueError, match="Unsupported TimeIndexMetaData filter"):
         TimeIndexMetaData._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
-    from mainsequence.client import models_tdag
+    from mainsequence.client import models_metatables
 
     captured = {}
 
@@ -319,16 +319,18 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: object())
+    )
 
-    storage = models_tdag.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        time_indexed_profile=models_tdag.TimeIndexedProfile(
+        time_indexed_profile=models_metatables.TimeIndexedProfile(
             related_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],
@@ -357,7 +359,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     assert result["deleted_count"] == 123
     assert captured == {
         "r_type": "POST",
-        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/714/delete_after_date/",
+        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/714/delete_after_date/",
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
@@ -369,7 +371,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
 
 
 def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypatch):
-    from mainsequence.client import models_tdag
+    from mainsequence.client import models_metatables
 
     captured = {}
 
@@ -386,16 +388,18 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
         captured["payload"] = payload
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: object()))
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: object())
+    )
 
-    storage = models_tdag.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
-        time_indexed_profile=models_tdag.TimeIndexedProfile(
+        time_indexed_profile=models_metatables.TimeIndexedProfile(
             related_table_uid="714",
             time_index_name="time_index",
             index_names=["time_index", "entity_uid"],
@@ -428,7 +432,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
 
 
 def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases():
-    from mainsequence.client.models_tdag import TimeIndexMetaData
+    from mainsequence.client.models_metatables import TimeIndexMetaData
 
     storage = TimeIndexMetaData(
         uid="714",
@@ -452,7 +456,7 @@ def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases(
 
 
 def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
-    from mainsequence.client import models_metatables, models_tdag
+    from mainsequence.client import models_metatables
 
     captured = {}
     session = SimpleNamespace(headers={"Content-Type": "application/json"})
@@ -484,9 +488,11 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
         return FakeResponse()
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
-    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: session))
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: session)
+    )
 
-    storage = models_tdag.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -501,7 +507,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     assert captured == {
         "headers": {"Content-Type": "text/plain"},
         "r_type": "POST",
-        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/714/run_query/",
+        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/714/run_query/",
         "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
         "timeout": 30,
     }
@@ -509,7 +515,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
 
 
 def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
-    from mainsequence.client import models_metatables, models_tdag
+    from mainsequence.client import models_metatables
 
     session = SimpleNamespace(headers={})
 
@@ -536,9 +542,11 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
             }
 
     monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
-    monkeypatch.setattr(models_tdag.TimeIndexMetaData, "build_session", classmethod(lambda cls: session))
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: session)
+    )
 
-    storage = models_tdag.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -552,7 +560,7 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
 
 
 def test_data_node_update_normalizes_related_table_namespace_filters():
-    from mainsequence.client.models_tdag import DataNodeUpdate
+    from mainsequence.client.models_metatables import DataNodeUpdate
 
     normalized = DataNodeUpdate._normalize_filter_kwargs(
         {
@@ -570,7 +578,7 @@ def test_data_node_update_normalizes_related_table_namespace_filters():
 
 
 def test_data_node_update_accepts_uid_update_lookup_filters():
-    from mainsequence.client.models_tdag import DataNodeUpdate
+    from mainsequence.client.models_metatables import DataNodeUpdate
 
     uid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
@@ -588,7 +596,7 @@ def test_data_node_update_accepts_uid_update_lookup_filters():
 
 
 def test_data_node_update_rejects_data_source_id_filter():
-    from mainsequence.client.models_tdag import DataNodeUpdate
+    from mainsequence.client.models_metatables import DataNodeUpdate
 
     with pytest.raises(ValueError, match="Unsupported DataNodeUpdate filter"):
         DataNodeUpdate._normalize_filter_kwargs({"remote_table__data_source__id": {"id": 7}})
@@ -1555,15 +1563,19 @@ def _class_base_names_from_source(path: pathlib.Path) -> dict[str, list[str]]:
 
 def test_shareable_models_keep_shareable_object_mixin():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
-    models_tdag_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_tdag.py")
-    models_helpers_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_helpers.py")
+    models_foundry_bases = _class_base_names_from_source(
+        repo_root / "mainsequence" / "client" / "models_foundry.py"
+    )
+    models_helpers_bases = _class_base_names_from_source(
+        repo_root / "mainsequence" / "client" / "models_helpers.py"
+    )
 
     expected = {
-        "Artifact": models_tdag_bases,
-        "Bucket": models_tdag_bases,
-        "Project": models_tdag_bases,
-        "Constant": models_tdag_bases,
-        "Secret": models_tdag_bases,
+        "Artifact": models_foundry_bases,
+        "Bucket": models_foundry_bases,
+        "Project": models_foundry_bases,
+        "Constant": models_foundry_bases,
+        "Secret": models_foundry_bases,
         "ResourceRelease": models_helpers_bases,
     }
 
@@ -1575,17 +1587,17 @@ def test_shareable_models_keep_shareable_object_mixin():
 
 
 def test_secret_constant_bucket_artifact_accept_uid_identity_payloads():
-    secret = models_tdag_mod.Secret(uid="11111111-1111-4111-8111-111111111111", name="API_KEY")
-    constant = models_tdag_mod.Constant(
+    secret = models_foundry_mod.Secret(uid="11111111-1111-4111-8111-111111111111", name="API_KEY")
+    constant = models_foundry_mod.Constant(
         uid="22222222-2222-4222-8222-222222222222",
         name="APP__MODE",
         value="production",
     )
-    bucket = models_tdag_mod.Bucket(
+    bucket = models_foundry_mod.Bucket(
         uid="33333333-3333-4333-8333-333333333333",
         name="default_bucket",
     )
-    artifact = models_tdag_mod.Artifact(
+    artifact = models_foundry_mod.Artifact(
         uid="44444444-4444-4444-8444-444444444444",
         name="report.pdf",
         bucket_name="default_bucket",
@@ -1602,7 +1614,9 @@ def test_secret_constant_bucket_artifact_accept_uid_identity_payloads():
 
 def test_team_uses_permission_managed_object_mixin():
     repo_root = pathlib.Path(__file__).resolve().parents[1]
-    models_user_bases = _class_base_names_from_source(repo_root / "mainsequence" / "client" / "models_user.py")
+    models_user_bases = _class_base_names_from_source(
+        repo_root / "mainsequence" / "client" / "models_user.py"
+    )
 
     assert "Team" in models_user_bases, "Team class not found"
     assert "PermissionManagedObjectMixin" in models_user_bases["Team"], (

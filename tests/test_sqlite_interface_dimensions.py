@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_metatables
 from mainsequence.client.data_sources_interfaces.sqlite import SQLiteInterface
 
 INDEX_NAMES = ["time_index", "account_uid", "asset_uid"]
@@ -210,9 +210,9 @@ def test_sqlite_data_source_dispatch_uses_local_interface(monkeypatch):
         def upsert(self, **kwargs):
             calls["upsert"] = kwargs
 
-    monkeypatch.setattr(models_tdag, "_sqlite_interface", lambda: FakeSQLiteInterface())
+    monkeypatch.setattr(models_metatables, "_sqlite_interface", lambda: FakeSQLiteInterface())
 
-    data_source = models_tdag.DataSource.model_construct(class_type=models_tdag.SQLITE)
+    data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.SQLITE)
     update = SimpleNamespace(data_node_storage=SimpleNamespace(storage_hash="storage-hash"))
     df = pd.DataFrame(
         {
@@ -283,9 +283,9 @@ def test_sqlite_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
             time_indexed_profile=stc,
         ),
     )
-    data_source = models_tdag.DataSource.model_construct(class_type=models_tdag.SQLITE)
+    data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.SQLITE)
 
-    monkeypatch.setattr(models_tdag, "_sqlite_interface", lambda: FakeSQLiteInterface())
+    monkeypatch.setattr(models_metatables, "_sqlite_interface", lambda: FakeSQLiteInterface())
 
     original_range_map = [
         {

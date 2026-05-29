@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from mainsequence.client import models_metatables, models_tdag
+from mainsequence.client import models_metatables
 from mainsequence.client.data_sources_interfaces.duckdb import DuckDBInterface
 
 INDEX_NAMES = ["time_index", "account_uid", "asset_uid"]
@@ -216,7 +216,7 @@ def test_duckdb_insert_uses_existing_update_key_metadata_without_storage_config_
 
     monkeypatch.setattr(models_metatables, "_duckdb_interface", lambda: FakeDuckDBInterface())
 
-    data_source = models_tdag.DataSource.model_construct(class_type=models_tdag.DUCK_DB)
+    data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.DUCK_DB)
     update = SimpleNamespace(data_node_storage=Storage())
     df = pd.DataFrame(
         {
@@ -287,7 +287,7 @@ def test_duckdb_read_dispatch_uses_adjusted_constrain_read_outputs(monkeypatch):
             time_indexed_profile=stc,
         ),
     )
-    data_source = models_tdag.DataSource.model_construct(class_type=models_tdag.DUCK_DB)
+    data_source = models_metatables.DataSource.model_construct(class_type=models_metatables.DUCK_DB)
 
     monkeypatch.setattr(models_metatables, "_duckdb_interface", lambda: FakeDuckDBInterface())
 

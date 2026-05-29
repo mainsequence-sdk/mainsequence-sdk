@@ -44,9 +44,12 @@ def test_core_client_import_does_not_require_duckdb(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", _guarded_import)
 
-    module = importlib.import_module("mainsequence.client.models_tdag")
+    foundry_module = importlib.import_module("mainsequence.client.models_foundry")
+    metatables_module = importlib.import_module("mainsequence.client.models_metatables")
 
-    assert hasattr(module, "DynamicTableDataSource")
+    assert hasattr(foundry_module, "Project")
+    assert hasattr(metatables_module, "DynamicTableDataSource")
+    assert not hasattr(foundry_module, "DynamicTableDataSource")
 
 
 def test_duckdb_helper_points_to_local_data_extra(monkeypatch):

@@ -3,16 +3,16 @@ import datetime
 import pandas as pd
 import pytest
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_metatables
 
 
-def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
+def _source_config(index_names: list[str]) -> models_metatables.TimeIndexedProfile:
     column_dtypes_map = {
         "time_index": "datetime64[ns, UTC]",
         "value": "float64",
     }
     column_dtypes_map.update({name: "object" for name in index_names[1:]})
-    return models_tdag.TimeIndexedProfile(
+    return models_metatables.TimeIndexedProfile(
         related_table_uid="714",
         time_index_name="time_index",
         index_names=index_names,
@@ -27,8 +27,8 @@ def _source_config(index_names: list[str]) -> models_tdag.TimeIndexedProfile:
     )
 
 
-def _storage(index_names: list[str]) -> models_tdag.TimeIndexMetaData:
-    return models_tdag.TimeIndexMetaData(
+def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaData:
+    return models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
         data_source=1,
@@ -39,12 +39,12 @@ def _storage(index_names: list[str]) -> models_tdag.TimeIndexMetaData:
 
 
 def test_data_node_storage_has_no_initialize_source_table_method():
-    assert not hasattr(models_tdag.TimeIndexMetaData, "initialize_source_table")
+    assert not hasattr(models_metatables.TimeIndexMetaData, "initialize_source_table")
 
 
 def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "initialize_source_table",
         lambda self, **kwargs: pytest.fail("initialize_source_table was called"),
         raising=False,
@@ -53,7 +53,7 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
     storage = _storage(["time_index", "asset_uid"])
     storage.time_indexed_profile.column_dtypes_map["asset_uid"] = "uuid"
     storage.time_indexed_profile.columns_metadata = [
-        models_tdag.ColumnMetaData(
+        models_metatables.ColumnMetaData(
             column_name="asset_uid",
             dtype="uuid",
             label="Asset",
@@ -61,13 +61,13 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
         )
     ]
     storage.time_indexed_profile.foreign_keys = [
-        models_tdag.MetaTableForeignKeyContract(
+        models_metatables.MetaTableForeignKeyContract(
             source_columns=["asset_uid"],
             target_meta_table_uid="asset-meta-table-uid",
             target_columns=["uid"],
         )
     ]
-    foreign_key = models_tdag.MetaTableForeignKeyContract(
+    foreign_key = models_metatables.MetaTableForeignKeyContract(
         source_columns=["asset_uid"],
         target_meta_table_uid="asset-meta-table-uid",
         target_columns=["uid"],
@@ -83,7 +83,7 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
         time_index_name="time_index",
         data=pd.DataFrame(),
         columns_metadata=[
-            models_tdag.BaseColumnMetaData(
+            models_metatables.BaseColumnMetaData(
                 column_name="asset_uid",
                 dtype="uuid",
                 label="Asset",
@@ -121,9 +121,9 @@ def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatc
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -133,9 +133,7 @@ def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatc
             "account_uid": ["account-a"],
             "unique_identifier": ["BTC"],
         },
-        index_coordinates=[
-            {"account_uid": "account-a", "unique_identifier": "BTC"}
-        ],
+        index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
         timeout=30,
     )
 
@@ -145,9 +143,7 @@ def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatc
                 "account_uid": ["account-a"],
                 "unique_identifier": ["BTC"],
             },
-            "index_coordinates": [
-                {"account_uid": "account-a", "unique_identifier": "BTC"}
-            ],
+            "index_coordinates": [{"account_uid": "account-a", "unique_identifier": "BTC"}],
         }
     }
     assert captured["timeout"] == 30
@@ -180,16 +176,18 @@ def test_get_data_between_dates_from_api_sends_dimension_range_map(monkeypatch):
         captured_payloads.append(payload["json"])
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
     start = datetime.datetime(2026, 5, 1, 0, tzinfo=datetime.UTC)
     end = datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC)
-    df = _storage(["time_index", "account_uid", "unique_identifier"]).get_data_between_dates_from_api(
+    df = _storage(
+        ["time_index", "account_uid", "unique_identifier"]
+    ).get_data_between_dates_from_api(
         start_date=start,
         end_date=end,
         dimension_range_map=[
@@ -250,27 +248,23 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
         captured["url"] = url
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    df, storage = models_tdag.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
+    df, storage = models_metatables.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
         node_identifier="prices-node",
         dimension_filters={"account_uid": ["account-a"]},
-        index_coordinates=[
-            {"account_uid": "account-a", "unique_identifier": "BTC"}
-        ],
+        index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
     )
 
     assert df.empty
     assert storage.uid == "714"
     assert captured["payload"]["json"]["node_identifier"] == "prices-node"
-    assert captured["payload"]["json"]["dimension_filters"] == {
-        "account_uid": ["account-a"]
-    }
+    assert captured["payload"]["json"]["dimension_filters"] == {"account_uid": ["account-a"]}
     assert captured["payload"]["json"]["index_coordinates"] == [
         {"account_uid": "account-a", "unique_identifier": "BTC"}
     ]
@@ -293,18 +287,16 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
     result = _storage(["time_index", "account_uid", "unique_identifier"]).delete_after_date(
         "2026-05-01T00:00:00Z",
-        index_coordinates=[
-            {"account_uid": "account-a", "unique_identifier": "BTC"}
-        ],
+        index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
         timeout=30,
     )
 
@@ -313,9 +305,7 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
         "payload": {
             "json": {
                 "after_date": "2026-05-01T00:00:00Z",
-                "index_coordinates": [
-                    {"account_uid": "account-a", "unique_identifier": "BTC"}
-                ],
+                "index_coordinates": [{"account_uid": "account-a", "unique_identifier": "BTC"}],
             }
         },
         "timeout": 30,
@@ -334,7 +324,7 @@ def test_removed_unique_identifier_aliases_raise_type_error():
         )
 
     with pytest.raises(TypeError):
-        models_tdag.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
+        models_metatables.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
             node_identifier="prices-node",
             unique_identifier_list=["BTC"],
         )

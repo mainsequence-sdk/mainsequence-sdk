@@ -1,4 +1,4 @@
-from mainsequence.client.models_tdag import Secret
+from mainsequence.client.models_foundry import Secret
 
 
 def test_secret_deserializes_public_uid_payload():

@@ -167,7 +167,7 @@ onto one column.
 
 In scope:
 
-- `mainsequence/client/models_tdag.py`
+- `mainsequence/client/models_foundry.py`
 - `mainsequence/client/data_sources_interfaces/duckdb.py`
 - focused DuckDB adapter tests
 - focused DataSource dispatch tests

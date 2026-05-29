@@ -59,7 +59,7 @@ The source of truth for this client work is the server documentation:
 
 The relevant client-side model surface is concentrated in:
 
-- `mainsequence/client/models_tdag.py`
+- `mainsequence/client/models_foundry.py`
 - `mainsequence/meta_tables/data_nodes/`
 - `mainsequence/meta_tables/data_nodes/persist_managers.py`
 - `mainsequence/client/data_sources_interfaces/`
@@ -669,7 +669,7 @@ Negative:
 
 ### Primary Raw Model Surface
 
-`mainsequence/client/models_tdag.py` is the largest change point.
+`mainsequence/client/models_foundry.py` is the largest change point.
 
 Hotspots:
 
@@ -725,7 +725,7 @@ Timescale reads and writes now remain behind the backend API contract.
 ### Downstream Coupling
 
 Downstream callers may still import and use `get_chunk_stats()` from
-`models_tdag.py`.
+`models_foundry.py`.
 
 That means the DataNode helper rename cannot be done blindly. Either:
 
@@ -804,7 +804,7 @@ Required test coverage:
 
 ### Phase 1: Raw Model Contract
 
-- [x] Update `SourceTableConfiguration` in `mainsequence/client/models_tdag.py`.
+- [x] Update `SourceTableConfiguration` in `mainsequence/client/models_foundry.py`.
 - [x] Add `storage_layout`, `physical_index_plan`, and optional
    `multi_index_stats`.
 - [x] Remove `table_partition` from the typed model.

@@ -226,9 +226,10 @@ def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
     signature = inspect.signature(data_nodes.DataAccessMixin.get_df_between_dates)
     assert "unique_identifier_list" not in signature.parameters
     assert "unique_identifier_range_map" not in signature.parameters
-    assert "asset_list" not in inspect.signature(
-        data_nodes.DataAccessMixin.get_last_observation
-    ).parameters
+    assert (
+        "asset_list"
+        not in inspect.signature(data_nodes.DataAccessMixin.get_last_observation).parameters
+    )
     assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset")
     assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset_great_or_equal")
     assert not hasattr(data_nodes.DataAccessMixin, "filter_by_assets_ranges")
@@ -237,7 +238,6 @@ def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
     assert not hasattr(data_nodes.APIDataNode, "get_earliest_updated_asset_filter")
     assert not hasattr(data_nodes, "get_latest_update_by_assets_filter")
     assert not hasattr(data_nodes, "last_update_per_unique_identifier")
-
 
 
 def test_core_tdag_public_api_has_no_domain_asset_compatibility_vocabulary():
@@ -249,7 +249,7 @@ def test_core_tdag_public_api_has_no_domain_asset_compatibility_vocabulary():
         "filter_by_assets_ranges",
     )
     paths = list((PROJECT_ROOT / "mainsequence" / "meta_tables").rglob("*.py"))
-    paths.append(PROJECT_ROOT / "mainsequence" / "client" / "models_tdag.py")
+    paths.append(PROJECT_ROOT / "mainsequence" / "client" / "models_foundry.py")
 
     violations = []
     for path in paths:

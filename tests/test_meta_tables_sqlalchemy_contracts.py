@@ -5,8 +5,10 @@ from types import SimpleNamespace
 import pytest
 
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
-from mainsequence.client.models_metatables import MetaTableRegistrationRequest
-from mainsequence.client.models_tdag import TimeIndexMetaTableRegistrationRequest
+from mainsequence.client.models_metatables import (
+    MetaTableRegistrationRequest,
+    TimeIndexMetaTableRegistrationRequest,
+)
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
@@ -364,7 +366,7 @@ def test_platform_managed_accepts_configured_storage_hash_table_name():
 
 
 def test_platform_managed_metatable_build_request_uses_session_data_source(monkeypatch):
-    import mainsequence.client.models_tdag as models_tdag
+    import mainsequence.client.models_metatables as models_metatables
 
     table = FakeTable(
         "placeholder",
@@ -374,7 +376,7 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
     table.name = metatable_configured_tablename(Account)
 
     monkeypatch.setattr(
-        models_tdag.SessionDataSource,
+        models_metatables.SessionDataSource,
         "data_source",
         SimpleNamespace(
             uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -391,7 +393,7 @@ def test_platform_managed_metatable_build_request_uses_session_data_source(monke
 
 
 def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkeypatch):
-    import mainsequence.client.models_tdag as models_tdag
+    import mainsequence.client.models_metatables as models_metatables
 
     table = FakeTable(
         "placeholder",
@@ -401,7 +403,7 @@ def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkey
     table.name = metatable_configured_tablename(Account)
 
     monkeypatch.setattr(
-        models_tdag.SessionDataSource,
+        models_metatables.SessionDataSource,
         "data_source",
         SimpleNamespace(
             uid=None,
@@ -718,7 +720,7 @@ def test_time_index_metadata_rejects_nullable_index_columns():
 
 
 def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatch):
-    import mainsequence.client.models_tdag as models_tdag
+    import mainsequence.client.models_metatables as models_metatables
 
     table = FakeTable(
         "placeholder",
@@ -779,7 +781,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
         captured["timeout"] = time_out
         return Response()
 
-    monkeypatch.setattr(models_tdag, "make_request", fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
 
     registered = AccountHoldings.register(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",

@@ -8,18 +8,19 @@ from typing import Any, ClassVar
 
 import pandas as pd
 
-from mainsequence.client import DataNodeUpdate, TimeIndexMetaData
 from mainsequence.client.dtype_codec import (
     TIMESTAMP_TZ,
     sqlalchemy_type_to_token,
     token_to_pandas_series,
 )
-from mainsequence.client.models_tdag import (
+from mainsequence.client.models_metatables import (
     DUCK_DB,
     LOCAL_DATA_SOURCE_CLASS_TYPES,
     SQLITE,
+    DataNodeUpdate,
     DataNodeUpdateDetails,
     DynamicTableDataSource,
+    TimeIndexMetaData,
     UpdateStatistics,
 )
 from mainsequence.instrumentation import tracer

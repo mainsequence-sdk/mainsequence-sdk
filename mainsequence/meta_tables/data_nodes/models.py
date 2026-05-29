@@ -130,7 +130,7 @@ def _target_meta_table_uid(
         return uid
 
     if data_source_uid is None:
-        from mainsequence.client.models_tdag import get_session_data_source
+        from mainsequence.client.models_metatables import get_session_data_source
 
         data_source = get_session_data_source()
         data_source_uid = getattr(data_source, "uid", None)

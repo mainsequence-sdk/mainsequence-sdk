@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pandas as pd
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_metatables
 from mainsequence.meta_tables.data_nodes import run_operations
 
 
@@ -208,8 +208,8 @@ def test_data_node_update_dependency_priority_normalizes_uid_columns(monkeypatch
                 }
             ]
 
-    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: _Response())
-    update = models_tdag.DataNodeUpdate(
+    monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: _Response())
+    update = models_metatables.DataNodeUpdate(
         uid="head-uid",
         update_hash="head-hash",
         build_configuration={},

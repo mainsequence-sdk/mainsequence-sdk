@@ -3,7 +3,7 @@ import datetime
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_metatables
 
 
 def _source_config_payload():
@@ -44,9 +44,9 @@ def _source_config_payload():
 
 
 def test_time_indexed_profile_parses_canonical_response_without_table_partition():
-    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
+    config = models_metatables.TimeIndexedProfile(**_source_config_payload())
 
-    assert "table_partition" not in models_tdag.TimeIndexedProfile.model_fields
+    assert "table_partition" not in models_metatables.TimeIndexedProfile.model_fields
     assert not hasattr(config, "table_partition")
     assert config.storage_layout == {
         "time_index": "time_index",
@@ -57,12 +57,8 @@ def test_time_indexed_profile_parses_canonical_response_without_table_partition(
         "lookup": {"columns": ["account_uid", "unique_identifier"]},
     }
     assert config.multi_index_stats["_GLOBAL_"]["max"] == "2026-05-01T03:00:00Z"
-    assert config.last_time_index_value == datetime.datetime(
-        2026, 5, 1, 3, tzinfo=datetime.UTC
-    )
-    assert config.earliest_index_value == datetime.datetime(
-        2026, 5, 1, tzinfo=datetime.UTC
-    )
+    assert config.last_time_index_value == datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC)
+    assert config.earliest_index_value == datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
 
 
 def test_time_indexed_profile_rejects_table_partition_typed_surface():
@@ -70,7 +66,7 @@ def test_time_indexed_profile_rejects_table_partition_typed_surface():
     payload["table_partition"] = {"kind": "legacy"}
 
     with pytest.raises(ValidationError, match="table_partition"):
-        models_tdag.TimeIndexedProfile(**payload)
+        models_metatables.TimeIndexedProfile(**payload)
 
 
 def test_time_indexed_profile_parses_metatable_foreign_keys():
@@ -85,11 +81,11 @@ def test_time_indexed_profile_parses_metatable_foreign_keys():
         }
     ]
 
-    config = models_tdag.TimeIndexedProfile(**payload)
+    config = models_metatables.TimeIndexedProfile(**payload)
     foreign_key = config.foreign_keys[0]
 
     assert foreign_key.name == "fk_prices_asset_uid_4f3a2b1c"
-    assert models_tdag._serialize_meta_table_foreign_key_contract(foreign_key) == {
+    assert models_metatables._serialize_meta_table_foreign_key_contract(foreign_key) == {
         "source_columns": ["account_uid"],
         "target_meta_table_uid": "asset-meta-table-uid",
         "target_columns": ["uid"],
@@ -139,15 +135,15 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    config = models_tdag.TimeIndexedProfile(**_source_config_payload())
-    storage = models_tdag.TimeIndexMetaData.model_construct(
+    config = models_metatables.TimeIndexedProfile(**_source_config_payload())
+    storage = models_metatables.TimeIndexMetaData.model_construct(
         uid="storage-uid-44",
         time_indexed_profile=config,
     )
@@ -156,7 +152,7 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_tdag.TimeIndexMetaData.get_object_url()}/storage-uid-44/get-stats/",
+        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/storage-uid-44/get-stats/",
         "timeout": None,
     }
     assert update_stats.max_time_index_value == datetime.datetime(
@@ -186,7 +182,7 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
 
 def test_time_indexed_profile_column_metadata_mutation_helper_is_removed():
-    assert not hasattr(models_tdag.TimeIndexMetaData, "set_or_update_columns_metadata")
+    assert not hasattr(models_metatables.TimeIndexMetaData, "set_or_update_columns_metadata")
 
 
 def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stats(
@@ -212,12 +208,12 @@ def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stat
             }
 
     monkeypatch.setattr(
-        models_tdag,
+        models_metatables,
         "make_request",
         lambda **_kwargs: FakeResponse(),
     )
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -231,8 +227,8 @@ def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stat
     payload["physical_index_plan"] = {
         "uniqueness": {"columns": ["time_index", "unique_identifier"]},
     }
-    config = models_tdag.TimeIndexedProfile(**payload)
-    storage = models_tdag.TimeIndexMetaData.model_construct(
+    config = models_metatables.TimeIndexedProfile(**payload)
+    storage = models_metatables.TimeIndexMetaData.model_construct(
         uid="storage-uid-44",
         time_indexed_profile=config,
     )

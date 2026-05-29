@@ -21,7 +21,7 @@ The supported Timescale path now goes through the backend API:
 - `TimeScaleDB.get_data_by_time_index(...)` normalizes the API response into the
   expected indexed DataFrame
 
-The legacy file is still imported by `mainsequence/client/models_tdag.py` as
+The legacy file is still imported by `mainsequence/client/models_foundry.py` as
 `TimeScaleInterface`, but its only live dispatch path is the special
 `DynamicTableDataSource` branch for:
 
@@ -89,7 +89,7 @@ as a new explicit adapter with:
 In scope:
 
 - remove `mainsequence/client/data_sources_interfaces/timescale.py`
-- remove the `TimeScaleInterface` import from `mainsequence/client/models_tdag.py`
+- remove the `TimeScaleInterface` import from `mainsequence/client/models_foundry.py`
 - remove `DynamicTableDataSource.has_direct_postgres_connection(...)`
 - remove the direct branch in `DynamicTableDataSource.get_data_by_time_index(...)`
 - remove generated reference docs for the legacy module
@@ -109,7 +109,7 @@ Out of scope:
 
 ## Required Final State
 
-- importing `mainsequence.client.models_tdag` does not import a Timescale direct
+- importing `mainsequence.client.models_foundry` does not import a Timescale direct
   interface module
 - `mainsequence/client/data_sources_interfaces/__init__.py` exposes only
   maintained interface entry points

@@ -495,7 +495,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             storage_layout=storage_layout,
         )
 
-        from mainsequence.client.models_tdag import TimeIndexMetaData
+        from mainsequence.client.models_metatables import TimeIndexMetaData
 
         time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
         cls.bind_meta_table(time_index_metadata)
@@ -572,7 +572,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     index_names: Sequence[str] | None = None,
     storage_layout: Mapping[str, Any] | None = None,
 ) -> Any:
-    from mainsequence.client.models_tdag import TimeIndexMetaTableRegistrationRequest
+    from mainsequence.client.models_metatables import TimeIndexMetaTableRegistrationRequest
 
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -664,6 +664,15 @@ def time_indexed_registration_request_from_sqlalchemy_model(
                     "kind": "sqlalchemy",
                     "module": module,
                     "qualname": qualname,
+                },
+                "time_indexed": {
+                    "time_index_name": resolved_time_index_name,
+                    "index_names": resolved_index_names,
+                    **(
+                        {"storage_layout": dict(resolved_storage_layout)}
+                        if resolved_storage_layout
+                        else {}
+                    ),
                 },
             },
             "physical": {},
@@ -884,7 +893,7 @@ def _resolve_data_source_uid(
     resolved_data_source = data_source
     if resolved_data_source is None:
         try:
-            from mainsequence.client.models_tdag import get_session_data_source
+            from mainsequence.client.models_metatables import get_session_data_source
         except ImportError as exc:  # pragma: no cover - defensive import guard.
             raise RuntimeError("Could not import the session data source resolver.") from exc
         resolved_data_source = get_session_data_source()

@@ -3407,7 +3407,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3471,7 +3471,7 @@ def test_get_project_data_node_updates_sets_project_env(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.get_project_data_node_updates(123)
     assert captured["project_id_arg"] == "123"
@@ -3493,7 +3493,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3555,7 +3555,7 @@ def test_list_project_users_can_view_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_project_users_can_view(4, timeout=9)
     assert captured["get"] == {"pk": 4, "timeout": 9, "filters": {}}
@@ -3576,7 +3576,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3637,7 +3637,7 @@ def test_add_project_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.add_project_user_to_edit(4, 12, timeout=10)
     assert captured["get"] == {"pk": 4, "timeout": 10, "filters": {}}
@@ -3658,7 +3658,7 @@ def test_list_constants_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3696,7 +3696,7 @@ def test_list_constants_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_constants(filters={"name__in": ["ASSETS__MASTER"]})
     assert captured["filters"][0] == {"name__in": ["ASSETS__MASTER"]}
@@ -3716,7 +3716,7 @@ def test_create_constant_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3754,7 +3754,7 @@ def test_create_constant_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.create_constant(name="ASSETS__MASTER", value={"source": "bbg"}, timeout=15)
     assert captured["name"] == "ASSETS__MASTER"
@@ -3776,7 +3776,7 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3820,7 +3820,7 @@ def test_delete_constant_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.delete_constant(7, timeout=20)
     assert captured["get"] == {"pk": 7, "timeout": 20, "filters": {}}
@@ -3841,7 +3841,7 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3893,7 +3893,7 @@ def test_list_constant_users_can_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_constant_users_can_edit(7, timeout=12)
     assert captured["get"] == {"pk": 7, "timeout": 12, "filters": {}}
@@ -3914,7 +3914,7 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -3965,7 +3965,7 @@ def test_add_constant_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.add_constant_user_to_edit(7, 9, timeout=14)
     assert captured["get"] == {"pk": 7, "timeout": 14, "filters": {}}
@@ -3986,7 +3986,7 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4023,7 +4023,7 @@ def test_list_secrets_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_secrets(filters={"name__in": ["API_KEY"]})
     assert captured["filters"][0] == {"name__in": ["API_KEY"]}
@@ -4043,7 +4043,7 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4097,7 +4097,7 @@ def test_list_secret_users_can_view_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_secret_users_can_view(8, timeout=13)
     assert captured["get"] == {"pk": 8, "timeout": 13, "filters": {}}
@@ -4120,7 +4120,7 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4171,7 +4171,7 @@ def test_add_secret_user_to_edit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.add_secret_user_to_edit(8, 11, timeout=14)
     assert captured["get"] == {"pk": 8, "timeout": 14, "filters": {}}
@@ -4192,7 +4192,7 @@ def test_create_secret_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4229,7 +4229,7 @@ def test_create_secret_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.create_secret(name="API_KEY", value="super-secret", timeout=10)
     assert captured["name"] == "API_KEY"
@@ -4251,7 +4251,7 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4294,7 +4294,7 @@ def test_delete_secret_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.delete_secret(8, timeout=20)
     assert captured["get"] == {"pk": 8, "timeout": 20, "filters": {}}
@@ -4316,7 +4316,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4359,7 +4359,7 @@ def test_create_project_image_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.create_project_image(
         project_repo_hash="abc123", related_project_id=123, base_image_id=22
@@ -4386,7 +4386,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4429,7 +4429,7 @@ def test_list_project_images_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.list_project_images(
         related_project_id=123,
@@ -4465,7 +4465,7 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -4510,7 +4510,7 @@ def test_delete_project_image_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.delete_project_image(image_id=94)
     assert captured["get"] == {"pk": 94, "timeout": None, "filters": {}}
@@ -4935,7 +4935,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -4991,7 +4991,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.list_data_node_storages(filters={"storage_hash__contains": "weights"})
     detail = api_mod.get_data_node_storage("data-node-storage-42")
@@ -5109,7 +5109,7 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -5151,7 +5151,7 @@ def test_validate_project_name_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.validate_project_name(project_name="Rates Platform", timeout=25)
 
@@ -5174,7 +5174,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5237,7 +5237,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.data_node_storage_description_search(
         "node weights",
@@ -5287,7 +5287,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5325,7 +5325,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.data_node_storage_column_search(
         "close", filters={"storage_hash__contains": "prices"}
@@ -5354,7 +5354,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5394,7 +5394,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.refresh_data_node_storage_search_index("data-node-storage-42", timeout=30)
 
@@ -5416,7 +5416,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5476,7 +5476,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.delete_data_node_storage(
         "data-node-storage-42",
@@ -5514,7 +5514,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5570,7 +5570,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.list_data_node_storage_users_can_view("data-node-storage-42", timeout=15)
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 15}
@@ -5591,7 +5591,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5646,7 +5646,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
 
     out = api_mod.add_data_node_storage_user_to_edit("data-node-storage-42", 9, timeout=16)
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 16}
@@ -5763,7 +5763,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -5812,7 +5812,7 @@ def test_search_projects_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.search_projects("alpha", limit=10, timeout=12)
 
@@ -5849,7 +5849,7 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_tdag")
+    fake_models = types.ModuleType("mainsequence.client.models_foundry")
 
     class FakeLoaders:
         provider = "orig"
@@ -5883,7 +5883,7 @@ def test_sync_project_after_commit_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_tdag", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.models_foundry", fake_models)
 
     out = api_mod.sync_project_after_commit(123)
     assert captured["project_id"] == "123"
@@ -8322,7 +8322,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
         "data-node-storage-42", "SELECT 1 AS value", timeout=14
     )
     assert captured == {
-        "module_name": "mainsequence.client.models_tdag",
+        "module_name": "mainsequence.client.models_metatables",
         "class_name": "TimeIndexMetaData",
         "uid": "data-node-storage-42",
         "timeout": 14,

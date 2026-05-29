@@ -170,7 +170,7 @@ It must not silently apply a row limit that changes coordinate range semantics.
 
 In scope:
 
-- `mainsequence/client/models_tdag.py`
+- `mainsequence/client/models_foundry.py`
 - `mainsequence/client/data_sources_interfaces/sqlite.py`
 - `mainsequence/client/data_sources_interfaces/__init__.py`
 - focused SQLite adapter tests

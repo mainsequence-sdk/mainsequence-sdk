@@ -2,8 +2,8 @@ import types
 
 import pytest
 
+import mainsequence.client.models_foundry as models_foundry
 import mainsequence.client.models_metatables as models_metatables
-import mainsequence.client.models_tdag as models_tdag
 from mainsequence.meta_tables.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"
@@ -13,9 +13,9 @@ ORGANIZATION_UID = "56db6c13-235f-4ea4-adb7-f21fd9cebc67"
 
 @pytest.fixture(autouse=True)
 def _reset_pod_project_resolution_cache():
-    models_tdag._reset_local_pod_project_resolution_cache()
+    models_metatables._reset_local_pod_project_resolution_cache()
     yield
-    models_tdag._reset_local_pod_project_resolution_cache()
+    models_metatables._reset_local_pod_project_resolution_cache()
 
 
 def _project_payload_public() -> dict:
@@ -42,7 +42,7 @@ def _project_payload_public() -> dict:
 
 
 def test_project_deserializes_public_uid_serializer_payload():
-    project = models_tdag.Project(**_project_payload_public())
+    project = models_foundry.Project(**_project_payload_public())
 
     assert project.uid == PROJECT_UID
     assert project.created_by == "user-4"
@@ -61,12 +61,12 @@ def test_data_node_update_get_or_create_uses_current_project_uid(monkeypatch):
     captured = {}
 
     monkeypatch.setattr(
-        models_tdag.Project,
+        models_foundry.Project,
         "get",
         lambda *args, **kwargs: types.SimpleNamespace(uid=PROJECT_UID, data_source=None),
     )
     monkeypatch.setattr(
-        models_tdag.DataNodeUpdate,
+        models_metatables.DataNodeUpdate,
         "build_session",
         classmethod(lambda cls: types.SimpleNamespace(headers={})),
     )
@@ -94,9 +94,9 @@ def test_data_node_update_get_or_create_uses_current_project_uid(monkeypatch):
         captured.update(kwargs)
         return _Response()
 
-    monkeypatch.setattr(models_tdag, "make_request", _make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _make_request)
 
-    models_tdag.DataNodeUpdate.get_or_create(update_hash="abc123")
+    models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
 
     payload = captured["payload"]["json"]
     assert payload["current_project_uid"] == PROJECT_UID
@@ -114,10 +114,10 @@ def test_resolve_local_pod_project_uses_uid_lookup_and_caches(monkeypatch):
         calls.append(kwargs)
         return project
 
-    monkeypatch.setattr(models_tdag.Project, "get", _project_get)
+    monkeypatch.setattr(models_foundry.Project, "get", _project_get)
 
-    resolution_first = models_tdag._resolve_local_pod_project()
-    resolution_second = models_tdag._resolve_local_pod_project()
+    resolution_first = models_metatables._resolve_local_pod_project()
+    resolution_second = models_metatables._resolve_local_pod_project()
 
     assert resolution_first.status == "resolved"
     assert resolution_first.project is project
@@ -132,15 +132,17 @@ def test_set_remote_db_warns_once_for_lookup_failure(monkeypatch):
     warnings = []
     debugs = []
 
-    monkeypatch.setattr(models_tdag.logger, "warning", lambda message: warnings.append(message))
-    monkeypatch.setattr(models_tdag.logger, "debug", lambda message: debugs.append(message))
+    monkeypatch.setattr(
+        models_metatables.logger, "warning", lambda message: warnings.append(message)
+    )
+    monkeypatch.setattr(models_metatables.logger, "debug", lambda message: debugs.append(message))
 
     def _project_get(*args, **kwargs):
         raise RuntimeError("contract mismatch")
 
-    monkeypatch.setattr(models_tdag.Project, "get", _project_get)
+    monkeypatch.setattr(models_foundry.Project, "get", _project_get)
 
-    pod_data_source = models_tdag.PodDataSource()
+    pod_data_source = models_metatables.PodDataSource()
 
     assert pod_data_source.set_remote_db() is None
     assert pod_data_source.set_remote_db() is None
@@ -159,15 +161,15 @@ def test_data_source_create_duckdb_makes_creation_explicit(monkeypatch):
     def _get_or_create(cls, time_out=None, **kwargs):
         captured["time_out"] = time_out
         captured["kwargs"] = kwargs
-        return types.SimpleNamespace(id=7, class_type=models_tdag.DUCK_DB)
+        return types.SimpleNamespace(id=7, class_type=models_metatables.DUCK_DB)
 
     monkeypatch.setattr(
-        models_tdag.DataSource,
+        models_metatables.DataSource,
         "get_or_create_duck_db",
         classmethod(_get_or_create),
     )
 
-    data_source = models_tdag.DataSource.create_duckdb(time_out=15)
+    data_source = models_metatables.DataSource.create_duckdb(time_out=15)
 
     assert data_source.id == 7
     assert captured == {
@@ -186,15 +188,15 @@ def test_data_source_create_sqlite_makes_creation_explicit(monkeypatch):
     def _get_or_create(cls, time_out=None, **kwargs):
         captured["time_out"] = time_out
         captured["kwargs"] = kwargs
-        return types.SimpleNamespace(id=8, class_type=models_tdag.SQLITE)
+        return types.SimpleNamespace(id=8, class_type=models_metatables.SQLITE)
 
     monkeypatch.setattr(
-        models_tdag.DataSource,
+        models_metatables.DataSource,
         "get_or_create_sqlite",
         classmethod(_get_or_create),
     )
 
-    data_source = models_tdag.DataSource.create_sqlite(time_out=20)
+    data_source = models_metatables.DataSource.create_sqlite(time_out=20)
 
     assert data_source.id == 8
     assert captured == {
@@ -208,14 +210,14 @@ def test_data_source_create_sqlite_makes_creation_explicit(monkeypatch):
 
 def test_set_local_db_requires_explicit_duckdb_data_source():
     with pytest.raises(ValueError, match="DataSource.create_duckdb"):
-        models_tdag.PodDataSource().set_local_db()
+        models_metatables.PodDataSource().set_local_db()
 
 
 def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkeypatch):
     physical_data_source = types.SimpleNamespace(
         id=7,
         display_name="Local DuckDB",
-        class_type=models_tdag.DUCK_DB,
+        class_type=models_metatables.DUCK_DB,
         status="AVAILABLE",
     )
     dynamic_data_source = types.SimpleNamespace(
@@ -249,23 +251,23 @@ def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkey
             raise AssertionError(f"unexpected drop_table({table!r})")
 
     monkeypatch.setattr(
-        models_tdag.DataSource,
+        models_metatables.DataSource,
         "get_or_create_duck_db",
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_tdag.DynamicTableDataSource,
+        models_metatables.DynamicTableDataSource,
         "create_duckdb",
         classmethod(_create_dynamic),
     )
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "filter",
         classmethod(_filter_storages),
     )
-    monkeypatch.setattr(models_tdag, "_duckdb_interface", lambda: _DuckDB())
+    monkeypatch.setattr(models_metatables, "_duckdb_interface", lambda: _DuckDB())
 
-    pod_data_source = models_tdag.PodDataSource()
+    pod_data_source = models_metatables.PodDataSource()
     pod_data_source.set_local_db(data_source=physical_data_source)
 
     assert pod_data_source.data_source is dynamic_data_source
@@ -278,7 +280,7 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
     physical_data_source = types.SimpleNamespace(
         id=8,
         display_name="Local SQLite",
-        class_type=models_tdag.SQLITE,
+        class_type=models_metatables.SQLITE,
         status="AVAILABLE",
     )
     dynamic_data_source = types.SimpleNamespace(
@@ -312,23 +314,23 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
             raise AssertionError(f"unexpected drop_table({table!r})")
 
     monkeypatch.setattr(
-        models_tdag.DataSource,
+        models_metatables.DataSource,
         "get_or_create_sqlite",
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_tdag.DynamicTableDataSource,
+        models_metatables.DynamicTableDataSource,
         "create_sqlite",
         classmethod(_create_dynamic),
     )
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "filter",
         classmethod(_filter_storages),
     )
-    monkeypatch.setattr(models_tdag, "_sqlite_interface", lambda: _SQLite())
+    monkeypatch.setattr(models_metatables, "_sqlite_interface", lambda: _SQLite())
 
-    pod_data_source = models_tdag.PodDataSource()
+    pod_data_source = models_metatables.PodDataSource()
     pod_data_source.set_local_db(data_source=physical_data_source)
 
     assert pod_data_source.data_source is dynamic_data_source
@@ -345,30 +347,30 @@ def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
         raise AssertionError("delete_table should not create DuckDB data sources")
 
     monkeypatch.setattr(
-        models_tdag.DataSource,
+        models_metatables.DataSource,
         "get_or_create_duck_db",
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_tdag.DynamicTableDataSource,
+        models_metatables.DynamicTableDataSource,
         "get_or_create_duck_db",
         classmethod(_hidden_create),
     )
     monkeypatch.setattr(
-        models_tdag,
+        models_metatables,
         "_duckdb_interface",
         lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
     )
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "delete",
         lambda self: deletes.append(self.storage_hash),
     )
 
-    storage = models_tdag.TimeIndexMetaData.model_construct(
+    storage = models_metatables.TimeIndexMetaData.model_construct(
         storage_hash="node-storage",
         data_source=types.SimpleNamespace(
-            related_resource=types.SimpleNamespace(class_type=models_tdag.DUCK_DB),
+            related_resource=types.SimpleNamespace(class_type=models_metatables.DUCK_DB),
         ),
     )
 
@@ -383,20 +385,20 @@ def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
     deletes = []
 
     monkeypatch.setattr(
-        models_tdag,
+        models_metatables,
         "_sqlite_interface",
         lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
     )
     monkeypatch.setattr(
-        models_tdag.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaData,
         "delete",
         lambda self: deletes.append(self.storage_hash),
     )
 
-    storage = models_tdag.TimeIndexMetaData.model_construct(
+    storage = models_metatables.TimeIndexMetaData.model_construct(
         storage_hash="node-storage",
         data_source=types.SimpleNamespace(
-            related_resource=types.SimpleNamespace(class_type=models_tdag.SQLITE),
+            related_resource=types.SimpleNamespace(class_type=models_metatables.SQLITE),
         ),
     )
 
@@ -413,9 +415,9 @@ def test_resolve_local_pod_project_does_not_fall_back_to_project_id(monkeypatch)
     def _project_get(*args, **kwargs):
         raise AssertionError("MAIN_SEQUENCE_PROJECT_ID must not be used for project lookup.")
 
-    monkeypatch.setattr(models_tdag.Project, "get", _project_get)
+    monkeypatch.setattr(models_foundry.Project, "get", _project_get)
 
-    resolution = models_tdag._resolve_local_pod_project()
+    resolution = models_metatables._resolve_local_pod_project()
 
     assert resolution.status == "missing"
     assert "MAIN_SEQUENCE_PROJECT_UID is not configured." in resolution.detail
@@ -425,23 +427,25 @@ def test_data_node_update_get_or_create_requires_local_pod_project(monkeypatch):
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_UID", raising=False)
     monkeypatch.delenv("MAIN_SEQUENCE_PROJECT_ID", raising=False)
     monkeypatch.setattr(
-        models_tdag.logger,
+        models_metatables.logger,
         "debug",
         lambda message: None,
     )
     monkeypatch.setattr(
-        models_tdag.logger,
+        models_metatables.logger,
         "warning",
         lambda message: None,
     )
     monkeypatch.setattr(
-        models_tdag,
+        models_metatables,
         "make_request",
-        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("make_request should not run")),
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("make_request should not run")
+        ),
     )
 
     with pytest.raises(RuntimeError) as exc_info:
-        models_tdag.DataNodeUpdate.get_or_create(update_hash="abc123")
+        models_metatables.DataNodeUpdate.get_or_create(update_hash="abc123")
 
     message = str(exc_info.value)
     assert "DataNodeUpdate.get_or_create requires a local pod project." in message

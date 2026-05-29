@@ -43,7 +43,7 @@ Objects that inherit `LabelableObjectMixin` expose:
 Example:
 
 ```python
-from mainsequence.client.models_tdag import Project
+from mainsequence.client.models_foundry import Project
 
 project = Project.get(123)
 project.add_label(["rates", "research"])

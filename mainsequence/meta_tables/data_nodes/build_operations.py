@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from mainsequence.client import BaseObjectOrm
 from mainsequence.client.models_helpers import get_model_class
-from mainsequence.client.models_tdag import _resolve_local_pod_project
+from mainsequence.client.models_metatables import _resolve_local_pod_project
 from mainsequence.instrumentation import tracer, tracer_instrumentator
 from mainsequence.meta_tables.pydantic_metadata import (
     is_serialized_pydantic_model,

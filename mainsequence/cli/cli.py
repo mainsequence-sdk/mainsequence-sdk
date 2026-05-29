@@ -419,12 +419,12 @@ JOB_MODEL_REF = "mainsequence.client.models_helpers.Job"
 INTERVAL_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.IntervalSchedule"
 CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule"
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
-PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_tdag.ProjectImage"
+PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
-DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_tdag.TimeIndexMetaData"
+DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_metatables.TimeIndexMetaData"
 META_TABLE_MODEL_REF = "mainsequence.client.models_metatables.MetaTable"
-CONSTANT_MODEL_REF = "mainsequence.client.models_tdag.Constant"
-SECRET_MODEL_REF = "mainsequence.client.models_tdag.Secret"
+CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
+SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
 WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
 REGISTERED_WIDGET_TYPE_MODEL_REF = "mainsequence.client.command_center.RegisteredWidgetType"
 CONNECTION_TYPE_MODEL_REF = "mainsequence.client.command_center.connections.ConnectionType"
@@ -6968,9 +6968,7 @@ def _data_node_storage_detail_impl(storage_uid: str, timeout: int | None) -> Non
     physical_index_plan = storage.get("physical_index_plan")
     if isinstance(time_indexed_profile, dict):
         storage_layout = time_indexed_profile.get("storage_layout") or storage_layout
-        physical_index_plan = (
-            time_indexed_profile.get("physical_index_plan") or physical_index_plan
-        )
+        physical_index_plan = time_indexed_profile.get("physical_index_plan") or physical_index_plan
 
     print_kv(
         "Data Node Storage",

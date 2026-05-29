@@ -20,12 +20,11 @@ from ..compute_validation import (
 )
 from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import raise_for_response
-from .models_tdag import (
+from .models_foundry import (
     Project,
     ProjectImage,
-    _require_local_pod_project,
-    _resolve_local_pod_project,
 )
+from .models_metatables import _require_local_pod_project, _resolve_local_pod_project
 from .utils import make_request
 
 

@@ -13,7 +13,7 @@ def _load_models_helpers_module():
 
     for name in (
         "mainsequence.client.models_helpers",
-        "mainsequence.client.models_tdag",
+        "mainsequence.client.models_foundry",
         "mainsequence.client.base",
         "mainsequence.client.utils",
         "mainsequence.client",
@@ -227,8 +227,7 @@ def test_job_run_job_posts_command_args_as_json(monkeypatch):
 
     assert captured["r_type"] == "POST"
     assert captured["url"] == (
-        "https://backend.test/orm/api/pods/job/"
-        "7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run_job/"
+        "https://backend.test/orm/api/pods/job/7d0ab07c-d1c0-4b7f-9c69-3c1a41c0a4da/run_job/"
     )
     assert captured["timeout"] == 30
     assert captured["payload"] == {"json": {"command_args": ["--name", "demo-from-cli"]}}

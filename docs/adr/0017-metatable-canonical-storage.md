@@ -22,7 +22,7 @@ The SDK currently has two table-storage concepts that overlap:
 - `MetaTable`, exposed by `mainsequence.client.models_metatables.MetaTable`,
   is the SDK model for row-oriented relational table storage, table contracts,
   permissions, labels, UID lookup, introspection, and governed SQL operations.
-- `TimeIndexMetaData`, exposed by `mainsequence.client.models_tdag.TimeIndexMetaData`,
+- `TimeIndexMetaData`, exposed by `mainsequence.client.models_metatables.TimeIndexMetaData`,
   is the SDK projection of server `DynamicTableMetaData`. It is the storage
   table for DataNode writes and reads. It carries `storage_hash`, data source,
   labels, permissions, metadata, source-table configuration, and data access
@@ -66,8 +66,8 @@ make DataNode a pure update-process abstraction.
 The relevant client models are:
 
 - `MetaTable` in `mainsequence/client/models_metatables.py`
-- `TimeIndexMetaData` in `mainsequence/client/models_tdag.py`
-- `DataNodeUpdate` in `mainsequence/client/models_tdag.py`
+- `TimeIndexMetaData` in `mainsequence/client/models_metatables.py`
+- `DataNodeUpdate` in `mainsequence/client/models_metatables.py`
 - `DataNode` runtime class in `mainsequence/meta_tables/data_nodes/data_nodes.py`
 - `PersistManager` in `mainsequence/meta_tables/data_nodes/persist_managers.py`
 - `build_operations.create_config(...)` in
@@ -128,10 +128,11 @@ The current design creates these issues:
 - The existing client model name `DataNodeUpdate` is already used for the
   backend update record, so renaming the runtime class to `DataNodeUpdate`
   requires a deliberate compatibility plan.
-- `MetaTable` currently imports `DynamicTableDataSource` from `models_tdag.py`.
-  Making `TimeIndexMetaData` inherit from `MetaTable` inside `models_tdag.py`
-  creates a direct import-cycle risk unless shared data-source/storage models
-  are split first.
+- `TimeIndexMetaData`, DataNode update records, and shared data-source models
+  now live with `MetaTable` in `models_metatables.py`.
+- `models_foundry.py` keeps Project, Secret, Constant, Bucket, Artifact, and
+  other non-MetaTable client models. It must not publicly re-export the moved
+  MetaTable/update classes.
 
 ## Decision
 
@@ -232,7 +233,7 @@ and structural metadata in MetaTable registration/bootstrap contracts.
 
 ### TimeIndexMetaData Inventory Review
 
-Reviewed against `mainsequence/client/models_tdag.py` on 2026-05-29.
+Reviewed against `mainsequence/client/models_foundry.py` on 2026-05-29.
 
 This inventory is the current ownership line for the client model. It is not a
 new API promise; it is the cleanup checklist for finishing the MetaTable
@@ -286,7 +287,7 @@ that creates, resolves, mutates, or schedules an update record belongs on
 ### DataNodeUpdate Client Record
 
 The backend update record currently named
-`mainsequence.client.models_tdag.DataNodeUpdate` remains the persisted update
+`mainsequence.client.models_metatables.DataNodeUpdate` remains the persisted update
 process record in this ADR.
 
 A future naming ADR may rename or alias it if runtime naming is revisited.
@@ -576,25 +577,29 @@ Compatibility fields:
 
 ## Client Import And Inheritance Plan
 
-Before `TimeIndexMetaData(MetaTable)` can be implemented, the client model import
-cycle must be removed.
+Before `TimeIndexMetaData(MetaTable)` could be implemented, the client model
+import cycle had to be removed.
 
-Current cycle risk:
+Removed cycle risk:
 
-- `models_metatables.py` imports `DynamicTableDataSource` from `models_tdag.py`.
-- `models_tdag.py` would need to import `MetaTable` to make
+- `models_metatables.py` previously needed `DynamicTableDataSource` from
+  `models_foundry.py`.
+- `models_foundry.py` would then have needed `MetaTable` to make
   `TimeIndexMetaData` inherit from it.
 
 Implemented refactor:
 
-1. Move shared data-source client models from `models_tdag.py` into
+1. Move shared data-source client models from `models_foundry.py` into
    `models_metatables.py`, because MetaTable is the parent storage model.
-2. Make `models_tdag.py` import and re-export those data-source models from
-   `models_metatables.py`.
-3. Make `models_tdag.py` import `MetaTable` safely.
+2. Move `TimeIndexMetaData`, registration payloads, DataNode update records,
+   scheduler/run-configuration models, historical update models, and update
+   statistic payload builders into `models_metatables.py`.
+3. Keep public imports stable from `mainsequence.client`, but do not re-export
+   the moved classes from `models_foundry.py`.
 4. Rebuild Pydantic forward references in a deterministic order.
 
-Do not reintroduce a `models_metatables.py` runtime import from `models_tdag.py`.
+Do not reintroduce public `models_foundry.py` compatibility exports for the moved
+MetaTable/update classes.
 
 ## Backend Contract Implications
 
@@ -630,7 +635,7 @@ Required backend capabilities:
 
 ### Phase 1: Break Client Model Cycles
 
-- Move shared data-source models from `models_tdag.py` into `models_metatables.py`.
+- Move shared data-source models from `models_foundry.py` into `models_metatables.py`.
 - Keep public imports stable from `mainsequence.client`.
 - Add focused import tests for:
   `mainsequence.client.MetaTable`, `mainsequence.client.TimeIndexMetaData`,
@@ -753,7 +758,7 @@ Required backend capabilities:
 - [x] Inventory `TimeIndexMetaData` fields and classify their final owner.
 - [x] Inventory `TimeIndexMetaData` methods and classify as MetaTable method,
       DataNode table extension, update-process method, or compatibility wrapper.
-- [x] Move data-source client models from `models_tdag.py` into
+- [x] Move data-source client models from `models_foundry.py` into
       `models_metatables.py` to avoid import cycles.
 - [x] Make `TimeIndexMetaData` inherit from `MetaTable`.
 - [x] Add first-class `storage_table: PlatformTimeIndexMetaData` runtime argument.

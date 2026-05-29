@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client import models_tdag
+from mainsequence.client import models_metatables
 from mainsequence.meta_tables.data_nodes.models import RecordDefinition
 
 
@@ -25,17 +25,17 @@ def _minimal_update(**kwargs):
         "data_node_storage": "data-node-storage-44",
     }
     payload.update(kwargs)
-    return models_tdag.DataNodeUpdate(**payload)
+    return models_metatables.DataNodeUpdate(**payload)
 
 
 def _source_config(
     *,
     index_names: list[str],
     column_dtypes_map: dict[str, str],
-    columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
-    foreign_keys: list[models_tdag.MetaTableForeignKeyContract] | None = None,
-) -> models_tdag.TimeIndexedProfile:
-    return models_tdag.TimeIndexedProfile(
+    columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
+    foreign_keys: list[models_metatables.MetaTableForeignKeyContract] | None = None,
+) -> models_metatables.TimeIndexedProfile:
+    return models_metatables.TimeIndexedProfile(
         related_table_uid="data-node-storage-44",
         time_index_name="time_index",
         index_names=index_names,
@@ -56,10 +56,10 @@ def _storage_with_source_config(
     *,
     index_names: list[str],
     column_dtypes_map: dict[str, str],
-    columns_metadata: list[models_tdag.ColumnMetaData] | None = None,
-    foreign_keys: list[models_tdag.MetaTableForeignKeyContract] | None = None,
-) -> models_tdag.TimeIndexMetaData:
-    return models_tdag.TimeIndexMetaData.model_construct(
+    columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
+    foreign_keys: list[models_metatables.MetaTableForeignKeyContract] | None = None,
+) -> models_metatables.TimeIndexMetaData:
+    return models_metatables.TimeIndexMetaData.model_construct(
         uid="data-node-storage-44",
         storage_hash="storage-hash",
         time_indexed_profile=_source_config(
@@ -94,9 +94,9 @@ def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(mo
         captured["url"] = url
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeUpdate,
+        models_metatables.DataNodeUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -109,7 +109,7 @@ def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(mo
         }
     )
 
-    models_tdag.DataNodeUpdate.post_data_frame_in_chunks(
+    models_metatables.DataNodeUpdate.post_data_frame_in_chunks(
         serialized_data_frame=frame,
         data_node_update=_minimal_update(),
         index_names=["time_index"],
@@ -149,12 +149,8 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
                     "min": "2026-05-01T00:00:00Z",
                     "max": "2026-05-01T03:00:00Z",
                 },
-                "index_progress": {
-                    "account-a": {"asset-1": "2026-05-01T02:00:00Z"}
-                },
-                "index_min": {
-                    "account-a": {"asset-1": "2026-05-01T00:00:00Z"}
-                },
+                "index_progress": {"account-a": {"asset-1": "2026-05-01T02:00:00Z"}},
+                "index_min": {"account-a": {"asset-1": "2026-05-01T00:00:00Z"}},
                 "multi_index_column_stats": {},
                 "time_index_name": "time_index",
                 "index_names": ["time_index", "account_uid", "unique_identifier"],
@@ -162,9 +158,9 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
                 "direct_dependency_uids": ["dependency-1", "dependency-2"],
             }
 
-    monkeypatch.setattr(models_tdag, "make_request", lambda **_kwargs: FakeResponse())
+    monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
     monkeypatch.setattr(
-        models_tdag.DataNodeUpdate,
+        models_metatables.DataNodeUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -181,7 +177,7 @@ def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):
 
 
 def test_last_update_payload_model_accepts_top_level_and_nested_shapes():
-    top_level = models_tdag.LastUpdateIndexTimePayload.model_validate(
+    top_level = models_metatables.LastUpdateIndexTimePayload.model_validate(
         {
             "global_index_progress": {
                 "max": "2026-05-01 03:00:00+00:00",
@@ -204,7 +200,7 @@ def test_last_update_payload_model_accepts_top_level_and_nested_shapes():
         "multi_index_column_stats": {},
     }
 
-    nested = models_tdag.LastUpdateIndexTimePayload.model_validate(
+    nested = models_metatables.LastUpdateIndexTimePayload.model_validate(
         {
             "multi_index_stats": {
                 "_GLOBAL_": {
@@ -222,7 +218,7 @@ def test_last_update_payload_model_accepts_top_level_and_nested_shapes():
 
 def test_last_update_payload_model_rejects_unknown_keys_generically():
     with pytest.raises(ValidationError):
-        models_tdag.LastUpdateIndexTimePayload.model_validate(
+        models_metatables.LastUpdateIndexTimePayload.model_validate(
             {
                 "unexpected_key": "2026-05-01 03:00:00+00:00",
                 "global_index_progress": {
@@ -235,7 +231,7 @@ def test_last_update_payload_model_rejects_unknown_keys_generically():
         )
 
     with pytest.raises(ValidationError):
-        models_tdag.LastUpdateIndexTimePayload.model_validate(
+        models_metatables.LastUpdateIndexTimePayload.model_validate(
             {
                 "multi_index_stats": {
                     "_GLOBAL_": {
@@ -276,9 +272,9 @@ def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(mo
         captured["timeout"] = time_out
         return FakeResponse()
 
-    monkeypatch.setattr(models_tdag, "make_request", _fake_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_tdag.DataNodeUpdate,
+        models_metatables.DataNodeUpdate,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -323,7 +319,7 @@ def test_get_index_progress_chunk_stats_for_three_index_frame():
         }
     )
 
-    stats, grouped_dates = models_tdag.get_index_progress_chunk_stats(
+    stats, grouped_dates = models_metatables.get_index_progress_chunk_stats(
         df,
         time_index_name="time_index",
         index_names=["time_index", "account_uid", "unique_identifier"],
@@ -347,7 +343,7 @@ def test_set_last_update_index_time_rejects_legacy_per_asset_backend_payload(mon
     def _unexpected_make_request(**_kwargs):
         raise AssertionError("legacy backend payload should fail before make_request")
 
-    monkeypatch.setattr(models_tdag, "make_request", _unexpected_make_request)
+    monkeypatch.setattr(models_metatables, "make_request", _unexpected_make_request)
 
     update = _minimal_update()
     with pytest.raises(ValidationError):
@@ -376,7 +372,7 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
         def handle_time_indexed_profile_creation(self, **_kwargs):
             raise AssertionError("upsert should not create or validate source-table profile")
 
-    update = models_tdag.DataNodeUpdate.model_construct(
+    update = models_metatables.DataNodeUpdate.model_construct(
         id=77,
         update_hash="update-hash",
         build_configuration={},
@@ -442,7 +438,7 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
 
-    update = models_tdag.DataNodeUpdate.model_construct(
+    update = models_metatables.DataNodeUpdate.model_construct(
         id=77,
         update_hash="update-hash",
         build_configuration={},
@@ -510,7 +506,7 @@ def test_dynamic_table_data_source_delegates_direct_class_type_reads():
             calls["kwargs"] = kwargs
             return expected
 
-    data_source = models_tdag.DynamicTableDataSource.model_construct(
+    data_source = models_metatables.DynamicTableDataSource.model_construct(
         related_resource=FakeResource(),
         related_resource_class_type="direct",
     )
@@ -533,7 +529,7 @@ def test_dynamic_table_data_source_delegates_direct_class_type_reads():
 
 
 def test_upsert_data_into_table_rejects_full_index_duplicates():
-    update = models_tdag.DataNodeUpdate.model_construct(
+    update = models_metatables.DataNodeUpdate.model_construct(
         id=77,
         update_hash="update-hash",
         build_configuration={},
