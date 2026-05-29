@@ -168,6 +168,8 @@ def _normalize_backend_type(value: str | None) -> str | None:
     if value is None:
         return None
     raw = str(value)
+    if not raw.strip():
+        return None
     token = normalize_dtype_token(raw, remote=True)
     if token == TIMESTAMP_TZ:
         return "TIMESTAMP WITH TIME ZONE"
@@ -876,6 +878,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     physical_table_name: str
     table_contract: dict[str, Any] = Field(default_factory=dict)
     contract_version: str = "relational-table.v1"
+    table_kind: str | None = None
+    time_indexed: bool | None = None
     introspection_snapshot: dict[str, Any] = Field(default_factory=dict)
     protect_from_deletion: bool = False
     columns: list[MetaTableColumnPayload] = Field(default_factory=list)
@@ -1527,10 +1531,33 @@ def _column_dtype_map_from_contracts(
 
 class TimeIndexedProfileBase:
     column_dtypes_map: dict[str, Any] = Field(
-        ..., description="Derived dtype map projected from canonical MetaTable columns"
+        default_factory=dict,
+        description="Derived dtype map projected from canonical MetaTable columns",
     )
+    columns: list[MetaTableColumnPayload] = Field(default_factory=list)
     index_names: list
     foreign_keys: list[MetaTableForeignKeyContract] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _derive_column_dtypes_map_from_columns(cls, value: Any) -> Any:
+        if not isinstance(value, Mapping):
+            return value
+        data = dict(value)
+        if data.get("column_dtypes_map"):
+            return data
+        columns = data.get("columns")
+        if isinstance(columns, Sequence) and not isinstance(
+            columns, (str, bytes, bytearray)
+        ):
+            data["column_dtypes_map"] = {
+                str(_payload_get(column, "name") or _payload_get(column, "column_name")): (
+                    _payload_get(column, "data_type") or _payload_get(column, "dtype")
+                )
+                for column in columns
+                if _payload_get(column, "name") or _payload_get(column, "column_name")
+            }
+        return data
 
     @field_validator("column_dtypes_map")
     @classmethod
@@ -1553,6 +1580,7 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
         None, description="Public uid of the related TimeIndexMetaData"
     )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
+    partition_strategy: str | None = None
     last_time_index_value: datetime.datetime | None = Field(
         None, description="Last time index value"
     )
@@ -1631,6 +1659,8 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         ),
     )
     description: str | None = Field(None, description="Optional HTML description")
+    time_serie_source_code_git_hash: str | None = None
+    time_serie_source_code: str | None = None
     update_details: DataNodeUpdateDetails | None = None
     run_configuration: RunConfiguration | None = None
     open_for_everyone: bool = Field(

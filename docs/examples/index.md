@@ -1,6 +1,10 @@
 # Examples
 
-This repository contains a collection of independent Jupyter notebooks designed to clearly illustrate the functionality of the Main Sequence SDK. Each notebook demonstrates a specific use case, providing practical insights into the SDK's capabilities.
+This repository contains runnable Python examples that illustrate the current
+Main Sequence SDK model layout. MetaTable and DataNode examples use
+`mainsequence.meta_tables` authoring classes, MetaTable client models from
+`mainsequence.client.models_metatables` through the public `mainsequence.client`
+exports, and Foundry resources from `mainsequence.client.models_foundry`.
 
 You can explore the full set of examples here:  
 [Main Sequence SDK Examples Repository](https://github.com/mainsequence-sdk/mainsequence-sdk/tree/main/examples)

@@ -6,16 +6,20 @@ This guide translates the internal rules into practical, human-friendly guidance
 
 ## 1) Start with the right mental model
 
-A DataNode has two identities:
+A DataNode has two separate objects:
 
-- `storage_hash`: identifies the table (the dataset contract).
-- `update_hash`: identifies the updater job (the process writing into that table).
+- a registered `PlatformTimeIndexMetaData` storage class, backed by a MetaTable
+  UID, that owns the dataset contract
+- a DataNode update process, identified by `update_hash`, that writes into that
+  registered storage table
 
-This is what allows multiple jobs to write safely into the same dataset.
+This is what allows multiple update processes to write safely into the same
+dataset contract.
 
 !!! tip "Rule of thumb"
-    If a change modifies what the dataset means, it should affect `storage_hash`.
-    If a change only modifies how one job updates data, it should affect `update_hash`.
+    If a change modifies what the dataset means, change or migrate the
+    `PlatformTimeIndexMetaData` storage contract. If a change only modifies how
+    one job updates data, it should affect `update_hash`.
 
 ## 2) Guiding principles
 
@@ -53,14 +57,15 @@ That means:
 
 Important architectural point:
 
-- `identifier` is published metadata, not hash identity,
-- it is intentionally hash-excluded,
-- you can repoint an identifier from one backing table to another during a migration without rotating `storage_hash` or `update_hash`.
+- `identifier` is published metadata, not update identity,
+- it belongs to the registered MetaTable-backed storage contract,
+- you can repoint an identifier from one backing table to another during a migration without rotating update-process identity.
 
-There is no separate `portable_identifier` flag in the current SDK. Portability is
-the default meaning of `DataNodeMetaData.identifier`.
+There is no separate `portable_identifier` flag in the current SDK. Portability
+is the default meaning of the storage-table identifier.
 
-This is useful when you want a portable public handle like `daily_prices` while moving the actual storage implementation underneath it.
+This is useful when you want a portable public handle like `daily_prices` while
+moving the actual storage implementation underneath it.
 
 If you want to inspect existing DataNode table identifiers from the CLI, run:
 
@@ -87,14 +92,19 @@ Use them only for grouping and discovery.
 
 A simple and scalable pattern is:
 
-- one Pydantic config object for dataset and scope fields,
-- make the node constructor accept exactly that one config object,
+- one Pydantic config object for update-scope fields,
+- one registered `PlatformTimeIndexMetaData` class for storage,
+- make the node constructor accept both `config` and `storage_table`,
 - operational runtime knobs outside `__init__`.
 
 Preferred constructor shape:
 
 ```python
-from mainsequence.meta_tables import DataNode, DataNodeConfiguration
+from mainsequence.meta_tables import (
+    DataNode,
+    DataNodeConfiguration,
+    PlatformTimeIndexMetaData,
+)
 
 
 class MyNodeConfig(DataNodeConfiguration):
@@ -102,17 +112,23 @@ class MyNodeConfig(DataNodeConfiguration):
 
 
 class MyNode(DataNode):
-    def __init__(self, config: MyNodeConfig):
+    def __init__(
+        self,
+        config: MyNodeConfig,
+        storage_table: type[PlatformTimeIndexMetaData],
+    ):
         self.my_field = config.my_field
-        super().__init__(config=config)
+        super().__init__(config=config, storage_table=storage_table)
 ```
 
-`DataNode` is now strict about this contract. New nodes should not rely on raw
-constructor args being reflected back into hashed configuration automatically.
+`DataNode` is strict about this contract. New nodes should not rely on raw
+constructor args being reflected back into hashed configuration automatically,
+and they should not expect `DataNode` to create storage.
 
-### 4.1 Meaning fields (affect `storage_hash`)
+### 4.1 Storage meaning belongs to the storage table
 
-These define the dataset contract and table identity.
+These define the dataset contract and table identity and should be represented
+in the `PlatformTimeIndexMetaData` SQLAlchemy model:
 
 Examples:
 
@@ -120,8 +136,9 @@ Examples:
 - price type (`mid`, `close`)
 - transformation type (log return vs simple return)
 - source choice when it changes dataset meaning
+- index columns and foreign keys
 
-### 4.2 Scope fields (affect `update_hash`)
+### 4.2 Scope fields affect `update_hash`
 
 These define updater/job partitioning only.
 
@@ -164,19 +181,17 @@ Do not use `hash_excluded` for anything that changes:
 
 - output values
 - dependencies
-- `get_column_metadata()` structure
 - table meaning
 - table schema
 
-One explicit exception in this SDK is `DataNodeMetaData`, which is also
-hash-excluded. That is intentional: table metadata is treated as
-published/discovery information, not as build identity. In particular,
-`identifier` is hash-excluded so it can serve as a portable alias across backing
-tables.
+One explicit exception in this SDK is `DataNodeMetaData`, which is
+hash-excluded for older config-driven metadata paths. New code should put
+published table identity and schema on the registered storage class.
 
 ## 5) Hashing rules in plain English
 
-`storage_hash` should change only when downstream users should treat the result as a different dataset.
+The storage table should change only when downstream users should treat the
+result as a different dataset.
 
 `update_hash` can change for job-level differences while still writing to the same table.
 
@@ -185,10 +200,11 @@ Example:
 - `PricesBars(frequency="1m")` defines table meaning.
 - Updater A writes only BTC.
 - Updater B writes only ETH.
-- Both should share `storage_hash`, but have different `update_hash`.
+- Both should share one registered storage table, but have different `update_hash`.
 
 !!! note "Asset universe is usually scope, not table meaning"
-    For standard `(time_index, unique_identifier)` asset tables, do not include asset universe in `storage_hash`.
+    For standard `(time_index, unique_identifier)` asset tables, do not create a
+    new storage table for every asset universe.
 
 ## 5.1) Hash namespaces: what they actually do
 
@@ -351,20 +367,27 @@ Do not:
 
 ## 9) Records, foreign keys, and metadata
 
-For production nodes, implement:
+For production nodes, define the table contract on the registered
+`PlatformTimeIndexMetaData` SQLAlchemy model. That is the source of truth for:
 
-- `get_table_metadata()`
-- `get_column_metadata()`
+- index columns
+- value columns
+- foreign keys
+- table identifier, namespace, labels, and description
 
-For simple config-driven nodes, you can often avoid overriding these methods:
+Older config-driven metadata fields still exist for compatibility and simple
+cases, but new tutorials and examples should prefer the storage model.
+
+For simple config-driven nodes, you can still provide descriptive metadata:
 
 - put table metadata in `DataNodeConfiguration.node_metadata`
 - put column metadata in `DataNodeConfiguration.records`
 
 Those config blocks use the SDK models `DataNodeMetaData` and `RecordDefinition`.
 
-The base `DataNode` will build `TableMetaData` and `ColumnMetaData` from those
-config blocks when present.
+The base `DataNode` can build `TableMetaData` and `ColumnMetaData` from those
+config blocks when present, but storage validation is performed against the
+registered storage table contract.
 
 Use `DataNodeConfiguration.records` when a node has a stable output contract:
 
@@ -402,10 +425,10 @@ class PricesConfig(DataNodeConfiguration):
     )
 ```
 
-When a DataNode source table should reference a registered MetaTable, add
-`SourceTableForeignKey` declarations beside `records`. In this example,
-`Asset` is a registered MetaTable or `PlatformManagedMetaTable` SQLAlchemy
-model:
+When a DataNode source table should reference a registered MetaTable, prefer a
+SQLAlchemy `ForeignKey` on the `PlatformTimeIndexMetaData` storage model. Use
+`SourceTableForeignKey` declarations only for compatibility code that still
+builds contracts from config.
 
 ```python
 from mainsequence.meta_tables import SourceTableForeignKey
@@ -441,27 +464,10 @@ class PricesConfig(DataNodeConfiguration):
     )
 ```
 
-`SourceTableForeignKey` is the authoring model. The SDK resolves it to the
-backend `SourceTableForeignKeyContract` when the source table is initialized at:
-
-```http
-POST /orm/api/ts_manager/dynamic_table/<dynamic_table_uid>/initialize-source-table/
-```
-
-The first version supports only DataNode source-table foreign keys that target
-MetaTables. It does not support DataNode-to-DataNode or MetaTable-to-DataNode
-foreign keys.
-
-Foreign keys participate in the DataNode storage hash. The FK hash material is:
-
-- source column names resolved from `RecordDefinition` entries
-- target MetaTable public `uid`
-- target column names resolved from MetaTable column references such as `Asset.uid`
-- `on_delete`
-
-The hash does not include generated FK names, backend database primary keys,
-source-table FK row UIDs, backend enforcement/projection fields, target storage
-hashes, or Python object/class repr values.
+`SourceTableForeignKey` is the compatibility authoring model for config-derived
+contracts. New storage-table code should declare foreign keys directly on the
+SQLAlchemy `PlatformTimeIndexMetaData` model and pass registered target
+MetaTables to `register(..., target_meta_tables={...})` when needed.
 
 Log useful operational facts:
 
@@ -760,9 +766,10 @@ A practical pattern is to keep the production class unchanged, pass a narrow
 `offset_start` in the test config, and run the node inside a namespace:
 
 ```python
+import mainsequence.client as msc
 from mainsequence.meta_tables.data_nodes import hash_namespace
 
-from src.data_nodes.my_node import MyNode, MyNodeConfig
+from src.data_nodes.my_node import MyNode, MyNodeConfig, register_my_node_storage_table
 
 
 def test_my_node_smoke():
@@ -772,7 +779,10 @@ def test_my_node_smoke():
     )
 
     with hash_namespace("pytest_my_node_smoke"):
-        node = MyNode(config=config)
+        storage_table = register_my_node_storage_table(
+            msc.get_session_data_source().uid
+        )
+        node = MyNode(config=config, storage_table=storage_table)
         err, df = node.run(debug_mode=True, force_update=True)
 
     assert err is False
@@ -781,7 +791,8 @@ def test_my_node_smoke():
 
 Why this pattern works well:
 
-- the namespace isolates hashes from production-like tables
+- the namespace isolates update hashes from production-like update records
+- the registered storage table keeps the table contract explicit
 - the production node stays unchanged
 - the narrower `config.offset_start` prevents large first-run backfills during tests
 

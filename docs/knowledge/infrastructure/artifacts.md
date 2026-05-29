@@ -154,7 +154,11 @@ This is a common pattern when an upstream system gives you files, but your downs
 import pandas as pd
 
 from mainsequence.client import Artifact
-from mainsequence.meta_tables import DataNode, DataNodeConfiguration
+from mainsequence.meta_tables import (
+    DataNode,
+    DataNodeConfiguration,
+    PlatformTimeIndexMetaData,
+)
 
 
 class ExternalPricesConfig(DataNodeConfiguration):
@@ -163,10 +167,14 @@ class ExternalPricesConfig(DataNodeConfiguration):
 
 
 class ExternalPrices(DataNode):
-    def __init__(self, config: ExternalPricesConfig):
+    def __init__(
+        self,
+        config: ExternalPricesConfig,
+        storage_table: type[PlatformTimeIndexMetaData],
+    ):
         self.artifact_name = config.artifact_name
         self.bucket_name = config.bucket_name
-        super().__init__(config=config)
+        super().__init__(config=config, storage_table=storage_table)
 
     def update(self):
         source_artifact = Artifact.get(

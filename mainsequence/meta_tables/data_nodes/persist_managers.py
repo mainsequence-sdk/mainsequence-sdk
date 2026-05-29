@@ -176,7 +176,6 @@ class BasePersistManager:
         kwargs = dict(
             update_hash=self.update_hash,
             build_configuration=local_configuration,
-            data_source_uid=self.storage_table.get_data_source_uid(),
         )
         kwargs[self.UPDATE_CREATE_STORAGE_LOOKUP] = self.storage_table.get_meta_table_uid()
         return kwargs

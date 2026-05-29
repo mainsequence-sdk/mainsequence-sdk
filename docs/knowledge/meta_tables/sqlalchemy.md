@@ -13,7 +13,7 @@ Pydantic transport objects for the backend.
 import datetime
 import uuid
 
-from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import (
@@ -169,7 +169,10 @@ tail-delete scope, physical indexes, and the time-indexed profile.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
-    __table_args__ = {"schema": "public"}
+    __table_args__ = (
+        Index(None, "account_uid"),
+        {"schema": "public"},
+    )
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "AccountHoldings"
@@ -180,9 +183,16 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
         DateTime(timezone=True),
         nullable=False,
     )
-    account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    account_uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            f"{Account.__table__.fullname}.uid",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
     unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
-    quantity: Mapped[str] = mapped_column(String(64), nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
 
 
 request = AccountHoldings.build_registration_request()
@@ -194,7 +204,10 @@ assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
     "unique_identifier",
 ]
 
-holdings_storage = AccountHoldings.register()
+account_meta_table = Account.register()
+holdings_storage = AccountHoldings.register(
+    target_meta_tables={Account: account_meta_table},
+)
 ```
 
 Validation is intentionally strict:
