@@ -33,7 +33,6 @@ def _source_config(
     index_names: list[str],
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
-    foreign_keys: list[models_metatables.MetaTableForeignKeyContract] | None = None,
 ) -> models_metatables.TimeIndexedProfile:
     return models_metatables.TimeIndexedProfile(
         related_table_uid="data-node-storage-44",
@@ -48,7 +47,6 @@ def _source_config(
             "uniqueness": {"columns": index_names},
         },
         columns_metadata=columns_metadata,
-        foreign_keys=foreign_keys or [],
     )
 
 
@@ -57,7 +55,6 @@ def _storage_with_source_config(
     index_names: list[str],
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
-    foreign_keys: list[models_metatables.MetaTableForeignKeyContract] | None = None,
 ) -> models_metatables.TimeIndexMetaData:
     return models_metatables.TimeIndexMetaData.model_construct(
         uid="data-node-storage-44",
@@ -66,7 +63,6 @@ def _storage_with_source_config(
             index_names=index_names,
             column_dtypes_map=column_dtypes_map,
             columns_metadata=columns_metadata,
-            foreign_keys=foreign_keys,
         ),
     )
 

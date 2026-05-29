@@ -10,12 +10,9 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 import mainsequence.meta_tables.data_nodes.build_operations as build_operations
-from mainsequence.client.models_metatables import MetaTable
 from mainsequence.meta_tables import (
-    DataNode,
     DataNodeConfiguration,
     RecordDefinition,
-    SourceTableForeignKey,
 )
 
 
@@ -171,73 +168,6 @@ def test_offset_start_changes_update_hash(monkeypatch):
 
     assert update_hash_a != update_hash_b
     assert storage_hash_a != storage_hash_b
-
-
-def test_source_table_foreign_key_hash_uses_target_meta_table_uid(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
-    class ColumnRef:
-        def __init__(self, name: str):
-            self.name = name
-
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-    value = RecordDefinition(column_name="value", dtype="float64")
-
-    target_a = MetaTable(
-        uid="asset-meta-table-uid",
-        data_source_uid="data-source-1",
-        storage_hash="asset_storage_v1",
-        management_mode="platform_managed",
-        physical_table_name="asset_storage_v1",
-    )
-    target_b = MetaTable(
-        uid="asset-meta-table-uid",
-        data_source_uid="data-source-1",
-        storage_hash="asset_storage_v2",
-        management_mode="platform_managed",
-        physical_table_name="asset_storage_v2",
-    )
-    target_c = MetaTable(
-        uid="other-asset-meta-table-uid",
-        data_source_uid="data-source-1",
-        storage_hash="asset_storage_v1",
-        management_mode="platform_managed",
-        physical_table_name="asset_storage_v1",
-    )
-
-    config_a = DataNodeConfiguration(
-        records=[asset_uid, value],
-        foreign_keys=[
-            SourceTableForeignKey(
-                target=target_a,
-                source_columns=[asset_uid],
-                target_columns=[ColumnRef("uid")],
-            )
-        ],
-    )
-    config_b = DataNodeConfiguration(
-        records=[asset_uid, value],
-        foreign_keys=[
-            SourceTableForeignKey(
-                target=target_b,
-                source_columns=[asset_uid],
-                target_columns=[ColumnRef("uid")],
-            )
-        ],
-    )
-    config_c = DataNodeConfiguration(
-        records=[asset_uid, value],
-        foreign_keys=[
-            SourceTableForeignKey(
-                target=target_c,
-                source_columns=[asset_uid],
-                target_columns=[ColumnRef("uid")],
-            )
-        ],
-    )
-
-    assert _hashes(config_a) == _hashes(config_b)
-    assert _hashes(config_a) != _hashes(config_c)
 
 
 def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrapper(monkeypatch):

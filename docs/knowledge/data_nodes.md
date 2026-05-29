@@ -425,49 +425,9 @@ class PricesConfig(DataNodeConfiguration):
     )
 ```
 
-When a DataNode source table should reference a registered MetaTable, prefer a
-SQLAlchemy `ForeignKey` on the `PlatformTimeIndexMetaData` storage model. Use
-`SourceTableForeignKey` declarations only for compatibility code that still
-builds contracts from config.
-
-```python
-from mainsequence.meta_tables import SourceTableForeignKey
-
-
-class PricesConfig(DataNodeConfiguration):
-    records: list[RecordDefinition] = Field(
-        default_factory=lambda: [
-            RecordDefinition(
-                column_name="time_index",
-                dtype="datetime64[ns, UTC]",
-                label="Time",
-                description="UTC observation timestamp.",
-            ),
-            ASSET_UID,
-            RecordDefinition(
-                column_name="price",
-                dtype="float64",
-                label="Price",
-                description="Observed price.",
-            ),
-        ]
-    )
-    foreign_keys: list[SourceTableForeignKey] = Field(
-        default_factory=lambda: [
-            SourceTableForeignKey(
-                target=Asset,
-                source_columns=[ASSET_UID],
-                target_columns=[Asset.uid],
-                on_delete="restrict",
-            )
-        ]
-    )
-```
-
-`SourceTableForeignKey` is the compatibility authoring model for config-derived
-contracts. New storage-table code should declare foreign keys directly on the
-SQLAlchemy `PlatformTimeIndexMetaData` model and pass registered target
-MetaTables to `register(..., target_meta_tables={...})` when needed.
+When a DataNode source table should reference a registered MetaTable, declare the
+relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are
+part of the MetaTable contract, not `DataNodeConfiguration`.
 
 Log useful operational facts:
 
@@ -766,10 +726,9 @@ A practical pattern is to keep the production class unchanged, pass a narrow
 `offset_start` in the test config, and run the node inside a namespace:
 
 ```python
-import mainsequence.client as msc
 from mainsequence.meta_tables.data_nodes import hash_namespace
 
-from src.data_nodes.my_node import MyNode, MyNodeConfig, register_my_node_storage_table
+from src.data_nodes.my_node import MyNode, MyNodeConfig, MyNodeStorage
 
 
 def test_my_node_smoke():
@@ -779,10 +738,11 @@ def test_my_node_smoke():
     )
 
     with hash_namespace("pytest_my_node_smoke"):
-        storage_table = register_my_node_storage_table(
-            msc.get_session_data_source().uid
+        MyNodeStorage.register(
+            description="Test storage table for MyNode.",
+            labels=["test", "data-node"],
         )
-        node = MyNode(config=config, storage_table=storage_table)
+        node = MyNode(config=config, storage_table=MyNodeStorage)
         err, df = node.run(debug_mode=True, force_update=True)
 
     assert err is False

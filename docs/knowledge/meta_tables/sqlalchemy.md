@@ -160,12 +160,11 @@ The client sends only the explicit time-indexed table contract:
 - `namespace`
 - `description`
 - `time_index_name`
-- `index_names`
-- canonical `columns`
-- optional DynamicTable-to-MetaTable `foreign_keys`
+- `table_contract`, which owns columns, indexes, and foreign keys
 
 The backend derives identity dimensions, update progress grain, uniqueness,
-tail-delete scope, physical indexes, and the time-indexed profile.
+tail-delete scope, physical indexes, and the time-indexed profile from the
+MetaTable contract.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):

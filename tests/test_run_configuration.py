@@ -27,7 +27,6 @@ from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
     PlatformTimeIndexMetaData,
-    SourceTableForeignKey,
 )
 from mainsequence.meta_tables.data_nodes.models import RecordDefinition
 from mainsequence.meta_tables.data_nodes.persist_managers import BasePersistManager
@@ -303,7 +302,6 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
         {
             "update_hash": "prices-update-hash",
             "build_configuration": {"config": {"identifier": "prices"}},
-            "data_source_uid": "data-source-uid",
             "meta_table_uid": "meta-table-uid",
         }
     ]
@@ -360,7 +358,6 @@ def test_persist_manager_uses_platform_managed_storage_identity():
         {
             "update_hash": "prices-update-hash",
             "build_configuration": {"config": {"identifier": "prices"}},
-            "data_source_uid": "platform-data-source-uid",
             "meta_table_uid": "platform-meta-table-uid",
         }
     ]
@@ -782,73 +779,6 @@ def test_data_node_update_output_validates_against_storage_table_contract():
 
     with pytest.raises(TypeError, match="declared as float64"):
         node._validate_update_output(frame)
-
-
-def test_source_table_foreign_key_requires_records_for_contract():
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-    foreign_key = SourceTableForeignKey(
-        target=MetaTable.model_construct(uid="asset-meta-table-uid"),
-        source_columns=[asset_uid],
-        target_columns=["uid"],
-    )
-
-    with pytest.raises(ValueError, match="require DataNodeConfiguration.records"):
-        foreign_key.to_contract(records=None)
-
-
-def test_source_table_foreign_key_rejects_missing_source_columns():
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-    account_uid = RecordDefinition(column_name="account_uid", dtype="uuid")
-    foreign_key = SourceTableForeignKey(
-        target=MetaTable.model_construct(uid="asset-meta-table-uid"),
-        source_columns=[asset_uid],
-        target_columns=["uid"],
-    )
-
-    with pytest.raises(ValueError, match="Missing: \\['asset_uid'\\]"):
-        foreign_key.to_contract(records=[account_uid])
-
-
-def test_source_table_foreign_key_requires_target_columns():
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-
-    with pytest.raises(ValidationError, match="at least 1 item"):
-        SourceTableForeignKey(
-            target=MetaTable.model_construct(uid="asset-meta-table-uid"),
-            source_columns=[asset_uid],
-            target_columns=[],
-        )
-
-
-def test_source_table_foreign_key_rejects_incompatible_column_arity():
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-    foreign_key = SourceTableForeignKey(
-        target=MetaTable.model_construct(uid="asset-meta-table-uid"),
-        source_columns=[asset_uid],
-        target_columns=["uid", "other_uid"],
-    )
-
-    with pytest.raises(ValueError, match="same number of columns"):
-        foreign_key.to_contract(records=[asset_uid])
-
-
-def test_source_table_foreign_key_errors_for_unresolved_target(monkeypatch):
-    class TargetTable:
-        name = "asset"
-
-    class Target:
-        __table__ = TargetTable()
-
-    asset_uid = RecordDefinition(column_name="asset_uid", dtype="uuid")
-    foreign_key = SourceTableForeignKey(
-        target=Target,
-        source_columns=[asset_uid],
-        target_columns=["uid"],
-    )
-    monkeypatch.setattr(MetaTable, "filter", classmethod(lambda cls, **kwargs: []))
-
-    with pytest.raises(ValueError, match="Could not resolve registered MetaTable target"):
-        foreign_key.to_contract(records=[asset_uid], data_source_uid="data-source-uid")
 
 
 def test_data_node_update_returning_none_is_invalid():

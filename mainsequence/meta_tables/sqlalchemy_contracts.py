@@ -104,12 +104,20 @@ def metatable_configured_tablename(
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    resolved_hash_namespace = _resolve_hash_namespace(
+        model_or_table,
+        hash_namespace=hash_namespace,
+    )
+    resolved_extra_hash_components = _resolve_extra_hash_components(
+        model_or_table,
+        extra_hash_components=extra_hash_components,
+    )
     return _build_configured_storage_hash(
         namespace=resolved_namespace,
         schema=resolved_schema,
         table_storage_identity=_configured_table_storage_identity(model_or_table, table=table),
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
+        hash_namespace=resolved_hash_namespace,
+        extra_hash_components=resolved_extra_hash_components,
     )
 
 
@@ -578,6 +586,14 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    resolved_hash_namespace = _resolve_hash_namespace(
+        model_or_table,
+        hash_namespace=hash_namespace,
+    )
+    resolved_extra_hash_components = _resolve_extra_hash_components(
+        model_or_table,
+        extra_hash_components=extra_hash_components,
+    )
     resolved_time_index_name = _resolve_time_index_name(
         model_or_table,
         time_index_name=time_index_name,
@@ -608,8 +624,8 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             index_names=resolved_index_names,
             storage_layout=resolved_storage_layout,
         ),
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
+        hash_namespace=resolved_hash_namespace,
+        extra_hash_components=resolved_extra_hash_components,
     )
     table_name = _table_name(table)
     if enforce_storage_hash_name and table_name != configured_storage_hash:
@@ -628,7 +644,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         for position, column in enumerate(columns)
     ]
     foreign_key_contracts = [
-        _source_table_foreign_key_contract(
+        _time_indexed_meta_table_foreign_key_contract(
             foreign_key_constraint,
             target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
         ).model_dump(mode="json", exclude_none=True)
@@ -706,19 +722,27 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    resolved_hash_namespace = _resolve_hash_namespace(
+        model_or_table,
+        hash_namespace=hash_namespace,
+    )
+    resolved_extra_hash_components = _resolve_extra_hash_components(
+        model_or_table,
+        extra_hash_components=extra_hash_components,
+    )
     expected_storage_hash = build_meta_table_storage_hash(
         namespace=resolved_namespace,
         identifier=resolved_identifier,
         schema=resolved_schema,
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
+        hash_namespace=resolved_hash_namespace,
+        extra_hash_components=resolved_extra_hash_components,
     )
     configured_storage_hash = _build_configured_storage_hash(
         namespace=resolved_namespace,
         schema=resolved_schema,
         table_storage_identity=_table_storage_identity(table),
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
+        hash_namespace=resolved_hash_namespace,
+        extra_hash_components=resolved_extra_hash_components,
     )
     table_name = _table_name(table)
     if enforce_storage_hash_name and table_name not in {
@@ -778,12 +802,20 @@ def external_registered_registration_request_from_sqlalchemy_model(
     resolved_schema = _resolve_schema(table, schema=schema)
     resolved_identifier = _resolve_identifier(model_or_table, identifier=identifier)
     resolved_namespace = _resolve_namespace(model_or_table, namespace=namespace)
+    resolved_hash_namespace = _resolve_hash_namespace(
+        model_or_table,
+        hash_namespace=hash_namespace,
+    )
+    resolved_extra_hash_components = _resolve_extra_hash_components(
+        model_or_table,
+        extra_hash_components=extra_hash_components,
+    )
     resolved_storage_hash = storage_hash or build_meta_table_storage_hash(
         namespace=resolved_namespace,
         identifier=resolved_identifier,
         schema=resolved_schema,
-        hash_namespace=hash_namespace,
-        extra_hash_components=extra_hash_components,
+        hash_namespace=resolved_hash_namespace,
+        extra_hash_components=resolved_extra_hash_components,
     )
 
     return MetaTableRegistrationRequest(
@@ -1095,6 +1127,29 @@ def _resolve_namespace(model_or_table: Any, *, namespace: str | None) -> str:
             "MetaTable SQLAlchemy contracts require namespace or __metatable_namespace__."
         )
     return str(resolved_namespace)
+
+
+def _resolve_hash_namespace(model_or_table: Any, *, hash_namespace: str | None) -> str | None:
+    if hash_namespace is not None:
+        return hash_namespace
+    resolved_hash_namespace = getattr(model_or_table, "__metatable_hash_namespace__", None)
+    if resolved_hash_namespace in (None, ""):
+        return None
+    return str(resolved_hash_namespace)
+
+
+def _resolve_extra_hash_components(
+    model_or_table: Any,
+    *,
+    extra_hash_components: Mapping[str, Any] | None,
+) -> dict[str, Any] | None:
+    resolved: dict[str, Any] = {}
+    class_components = getattr(model_or_table, "__metatable_extra_hash_components__", None)
+    if isinstance(class_components, Mapping):
+        resolved.update(dict(class_components))
+    if isinstance(extra_hash_components, Mapping):
+        resolved.update(dict(extra_hash_components))
+    return resolved or None
 
 
 def _resolve_model_path(
@@ -1670,14 +1725,14 @@ def _foreign_key_contract(
     )
 
 
-def _source_table_foreign_key_contract(
+def _time_indexed_meta_table_foreign_key_contract(
     foreign_key_constraint: Any,
     *,
     target_meta_table_uid_by_fullname: Mapping[str, Any],
 ) -> MetaTableForeignKeyContract:
     elements = list(getattr(foreign_key_constraint, "elements", []) or [])
     if not elements:
-        raise ValueError("DynamicTable SQLAlchemy foreign keys must expose elements.")
+        raise ValueError("Time-indexed MetaTable SQLAlchemy foreign keys must expose elements.")
 
     target_tables = {
         _foreign_key_element_target_table(element)

@@ -16,7 +16,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-import mainsequence.client as msc
 from mainsequence.client import MetaTable
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
@@ -38,8 +37,9 @@ class Base(DeclarativeBase):
 
 
 class Account(PlatformManagedMetaTable, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.accounts"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -47,8 +47,9 @@ class Account(PlatformManagedMetaTable, Base):
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_number"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -60,8 +61,9 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_addition"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -74,8 +76,9 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     __table_args__ = (Index(None, "account_uid"),)
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.account_holdings"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 
@@ -96,14 +99,6 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
         nullable=False,
     )
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
-
-
-def register_account_table(data_source_uid: str) -> MetaTable:
-    return Account.register(
-        data_source_uid=data_source_uid,
-        description="Example platform-managed account table.",
-        labels=["example", "data-node"],
-    )
 
 
 def upsert_account(
@@ -142,49 +137,6 @@ def upsert_account(
         limits={"max_rows": 1, "statement_timeout_ms": 15000},
     )
     MetaTable.execute_operation(operation)
-
-
-def register_daily_random_number_storage_table(
-    data_source_uid: str,
-) -> type[PlatformTimeIndexMetaData]:
-    DailyRandomNumberStorage.register(
-        data_source_uid=data_source_uid,
-        description="Example DataNode storage table for daily random numbers.",
-        labels=["example", "data-node"],
-    )
-    return DailyRandomNumberStorage
-
-
-def register_daily_random_addition_storage_table(
-    data_source_uid: str,
-) -> type[PlatformTimeIndexMetaData]:
-    DailyRandomAdditionStorage.register(
-        data_source_uid=data_source_uid,
-        description="Example DataNode storage table for daily random additions.",
-        labels=["example", "data-node"],
-    )
-    return DailyRandomAdditionStorage
-
-
-def register_account_holdings_storage_table(
-    data_source_uid: str,
-    account_meta_table: MetaTable,
-) -> type[PlatformTimeIndexMetaData]:
-    AccountHoldingsStorage.register(
-        data_source_uid=data_source_uid,
-        description="Example DataNode storage table for account holdings.",
-        labels=["example", "data-node"],
-        target_meta_tables={Account: account_meta_table},
-    )
-    return AccountHoldingsStorage
-
-
-def active_project_data_source_uid() -> str:
-    data_source = msc.get_session_data_source()
-    data_source_uid = getattr(data_source, "uid", None)
-    if data_source_uid in (None, ""):
-        raise RuntimeError("The active project data source must expose a uid.")
-    return str(data_source_uid)
 
 
 class VolatilityConfig(BaseModel):
@@ -469,14 +421,23 @@ def run_account_holdings_example(
     node.run(debug_mode=True, force_update=True)
 
 
-def build_test_time_series():
-    data_source_uid = active_project_data_source_uid()
-    number_storage_table = register_daily_random_number_storage_table(data_source_uid)
-    addition_storage_table = register_daily_random_addition_storage_table(data_source_uid)
-    account_meta_table = register_account_table(data_source_uid)
-    account_holdings_storage_table = register_account_holdings_storage_table(
-        data_source_uid,
-        account_meta_table,
+def run_data_node_examples():
+    DailyRandomNumberStorage.register(
+        description="Example DataNode storage table for daily random numbers.",
+        labels=["example", "data-node"],
+    )
+    DailyRandomAdditionStorage.register(
+        description="Example DataNode storage table for daily random additions.",
+        labels=["example", "data-node"],
+    )
+    account_meta_table = Account.register(
+        description="Example platform-managed account table.",
+        labels=["example", "data-node"],
+    )
+    AccountHoldingsStorage.register(
+        description="Example DataNode storage table for account holdings.",
+        labels=["example", "data-node"],
+        target_meta_tables={Account: account_meta_table},
     )
 
     # -------------------------
@@ -484,26 +445,26 @@ def build_test_time_series():
     # -------------------------
     run_graph(
         "PROD(no namespace)",
-        number_storage_table=number_storage_table,
-        addition_storage_table=addition_storage_table,
+        number_storage_table=DailyRandomNumberStorage,
+        addition_storage_table=DailyRandomAdditionStorage,
     )
 
     # -------------------------
     # B) TEST / NAMESPACED
     # -------------------------
     # Everything created inside gets a different update_hash while writing to
-    # the same registered platform-managed table contract.
+    # the same registered MetaTable contracts.
     with hash_namespace("pytest"):
         run_graph(
             "TEST(namespace=pytest)",
-            number_storage_table=number_storage_table,
-            addition_storage_table=addition_storage_table,
+            number_storage_table=DailyRandomNumberStorage,
+            addition_storage_table=DailyRandomAdditionStorage,
         )
         run_account_holdings_example(
             account_meta_table=account_meta_table,
-            account_holdings_storage_table=account_holdings_storage_table,
+            account_holdings_storage_table=AccountHoldingsStorage,
         )
 
 
 if __name__ == "__main__":
-    build_test_time_series()
+    run_data_node_examples()

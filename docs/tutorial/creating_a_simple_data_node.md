@@ -64,8 +64,9 @@ class Base(DeclarativeBase):
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_number"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -77,8 +78,9 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_addition"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -87,29 +89,6 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
         nullable=False,
     )
     random_number: Mapped[float] = mapped_column(Float, nullable=False)
-
-
-def register_daily_random_number_storage_table(
-    data_source_uid: str,
-) -> type[PlatformTimeIndexMetaData]:
-    DailyRandomNumberStorage.register(
-        data_source_uid=data_source_uid,
-        description="Tutorial DataNode storage table for daily random numbers.",
-        labels=["tutorial", "data-node"],
-    )
-    return DailyRandomNumberStorage
-
-
-def register_daily_random_addition_storage_table(
-    data_source_uid: str,
-) -> type[PlatformTimeIndexMetaData]:
-    DailyRandomAdditionStorage.register(
-        data_source_uid=data_source_uid,
-        description="Tutorial DataNode storage table for daily random additions.",
-        labels=["tutorial", "data-node"],
-    )
-    return DailyRandomAdditionStorage
-
 
 class VolatilityConfig(BaseModel):
     center: float = Field(
@@ -179,9 +158,9 @@ class DailyRandomNumber(DataNode):
         return {}
 ```
 
-The storage helper registers a concrete `PlatformTimeIndexMetaData` model first.
-The `DataNode` constructor receives that registered model class as
-`storage_table`; it does not hide storage creation inside the update path.
+Register the concrete `PlatformTimeIndexMetaData` model before constructing the
+node. The `DataNode` constructor receives that registered model class as
+`storage_table`; it does not create or resolve storage inside the update path.
 
 The SQLAlchemy model is the first-class schema declaration for the table:
 `time_index` is the index column and `random_number` is the value column. The
@@ -189,14 +168,18 @@ The SQLAlchemy model is the first-class schema declaration for the table:
 table contract to the backend and binds the returned MetaTable UID to the class.
 The DataFrame returned by `update()` must match that table contract.
 
-DataNode foreign keys require a registered MetaTable target, so this first
+MetaTable foreign keys require a registered MetaTable target, so this first
 tutorial keeps the runnable example focused on a single table. For the FK
 authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
 
-    That is why this example includes `MAIN_SEQUENCE_PROJECT_UID` in the storage namespace and identifier. It gives each project a stable table identity while still keeping the identifier readable.
+    That is why this example includes `MAIN_SEQUENCE_PROJECT_UID` in the
+    identifier. It gives each project a stable table identity while keeping all
+    tutorial tables in the canonical `mainsequence.examples` namespace.
+    The explicit `storage_name` hash component gives each storage model its own
+    physical table name even when two storage models have the same column shape.
 
     `identifier` is published metadata, not hash identity. That means you can
     later repoint a published identifier to a different backing table during a migration
@@ -266,7 +249,7 @@ MetaTable and is identified by:
 That means `(2026-01-02, account-a, AAPL)` and `(2026-01-02, account-b, AAPL)`
 are different rows, even though they share the same timestamp and security.
 `Account` is the platform-managed parent table. `AccountHoldingsStorage` is the
-time-indexed DataNode storage table. The foreign key connects
+time-indexed storage MetaTable. The foreign key in that MetaTable contract connects
 `AccountHoldingsStorage.account_uid` to `Account.uid`, while
 `PlatformTimeIndexMetaData` still uses the full `__index_names__` tuple as the
 ORM identity and sends that tuple as `index_names`.
@@ -276,8 +259,9 @@ publishes account/security observations:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.accounts"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -286,8 +270,9 @@ class Account(PlatformManagedMetaTable, Base):
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     __table_args__ = (Index(None, "account_uid"),)
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.account_holdings"
+    __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
+    __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 
@@ -308,15 +293,6 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
         nullable=False,
     )
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
-
-
-def register_account_table(data_source_uid: str) -> MetaTable:
-    return Account.register(
-        data_source_uid=data_source_uid,
-        description="Tutorial platform-managed account table.",
-        labels=["tutorial", "data-node"],
-    )
-
 
 def upsert_account(
     account_meta_table: MetaTable,
@@ -355,18 +331,6 @@ def upsert_account(
     )
     MetaTable.execute_operation(operation)
 
-
-def register_account_holdings_storage_table(
-    data_source_uid: str,
-    account_meta_table: MetaTable,
-) -> type[PlatformTimeIndexMetaData]:
-    AccountHoldingsStorage.register(
-        data_source_uid=data_source_uid,
-        description="Tutorial DataNode storage table for account holdings.",
-        labels=["tutorial", "data-node"],
-        target_meta_tables={Account: account_meta_table},
-    )
-    return AccountHoldingsStorage
 ```
 
 Then return a `MultiIndex` DataFrame whose index names exactly match the storage
@@ -419,29 +383,31 @@ class AccountHoldingsSnapshot(DataNode):
 This node writes one account snapshot per UTC minute, so rerunning it after the
 minute changes produces a new timestamp and different quantities.
 
-Run it with the active project data source:
+Run it with the active project:
 
 ```python
 import uuid
 
-import mainsequence.client as msc
 from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
+    Account,
     AccountHoldingsConfig,
     AccountHoldingsSnapshot,
-    register_account_table,
-    register_account_holdings_storage_table,
+    AccountHoldingsStorage,
     upsert_account,
 )
 
 
 def main():
-    data_source_uid = msc.get_session_data_source().uid
-    account_meta_table = register_account_table(data_source_uid)
-    storage_table = register_account_holdings_storage_table(
-        data_source_uid,
-        account_meta_table,
+    account_meta_table = Account.register(
+        description="Tutorial platform-managed account table.",
+        labels=["tutorial", "data-node"],
+    )
+    AccountHoldingsStorage.register(
+        description="Tutorial DataNode storage table for account holdings.",
+        labels=["tutorial", "data-node"],
+        target_meta_tables={Account: account_meta_table},
     )
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     upsert_account(
@@ -454,7 +420,7 @@ def main():
     with hash_namespace("tutorial_account_holdings"):
         node = AccountHoldingsSnapshot(
             config=AccountHoldingsConfig(account_uid=account_uid),
-            storage_table=storage_table,
+            storage_table=AccountHoldingsStorage,
         )
         node.run(debug_mode=True, force_update=True)
 
@@ -467,23 +433,22 @@ if __name__ == "__main__":
 Next, create `scripts\random_number_launcher.py` to run the node:
 
 ```python
-import mainsequence.client as msc
-
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,
+    DailyRandomNumberStorage,
     RandomDataNodeConfig,
-    register_daily_random_number_storage_table,
 )
 
 
 def main():
-    storage_table = register_daily_random_number_storage_table(
-        msc.get_session_data_source().uid
+    DailyRandomNumberStorage.register(
+        description="Tutorial DataNode storage table for daily random numbers.",
+        labels=["tutorial", "data-node"],
     )
 
     daily_node = DailyRandomNumber(
         config=RandomDataNodeConfig(mean=0.0),
-        storage_table=storage_table,
+        storage_table=DailyRandomNumberStorage,
     )
     daily_node.run()
 
@@ -507,25 +472,25 @@ Register the storage model first, then use `hash_namespace(...)` while you are
 developing or testing:
 
 ```python
-import mainsequence.client as msc
 from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,
+    DailyRandomNumberStorage,
     RandomDataNodeConfig,
-    register_daily_random_number_storage_table,
 )
 
 
 def main():
-    storage_table = register_daily_random_number_storage_table(
-        msc.get_session_data_source().uid
+    DailyRandomNumberStorage.register(
+        description="Tutorial DataNode storage table for daily random numbers.",
+        labels=["tutorial", "data-node"],
     )
 
     with hash_namespace("tutorial_daily_random_number"):
         daily_node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
-            storage_table=storage_table,
+            storage_table=DailyRandomNumberStorage,
         )
         daily_node.run(debug_mode=True, force_update=True)
 
@@ -541,25 +506,25 @@ namespace isolates the update-process identity.
 For real projects, also keep a small smoke test under `tests/`, for example `tests/test_daily_random_number.py`:
 
 ```python
-import mainsequence.client as msc
 from mainsequence.meta_tables.data_nodes import hash_namespace
 
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,
+    DailyRandomNumberStorage,
     RandomDataNodeConfig,
-    register_daily_random_number_storage_table,
 )
 
 
 def test_daily_random_number_smoke():
-    storage_table = register_daily_random_number_storage_table(
-        msc.get_session_data_source().uid
+    DailyRandomNumberStorage.register(
+        description="Test storage table for daily random numbers.",
+        labels=["test", "data-node"],
     )
 
     with hash_namespace("pytest_daily_random_number_smoke"):
         node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
-            storage_table=storage_table,
+            storage_table=DailyRandomNumberStorage,
         )
         err, df = node.run(debug_mode=True, force_update=True)
 
@@ -668,25 +633,28 @@ This adds a **dependent** node, `DailyRandomAddition`, that reads the output of 
 Create a launcher at `scripts\random_daily_addition_launcher.py`:
 
 ```python
-import mainsequence.client as msc
-
 from src.data_nodes.example_nodes import (
     DailyRandomAddition,
     DailyRandomAdditionConfig,
-    register_daily_random_addition_storage_table,
-    register_daily_random_number_storage_table,
+    DailyRandomAdditionStorage,
+    DailyRandomNumberStorage,
 )
 
 
-data_source_uid = msc.get_session_data_source().uid
-number_storage_table = register_daily_random_number_storage_table(data_source_uid)
-addition_storage_table = register_daily_random_addition_storage_table(data_source_uid)
+DailyRandomNumberStorage.register(
+    description="Tutorial DataNode storage table for daily random numbers.",
+    labels=["tutorial", "data-node"],
+)
+DailyRandomAdditionStorage.register(
+    description="Tutorial DataNode storage table for daily random additions.",
+    labels=["tutorial", "data-node"],
+)
 
 
 daily_node = DailyRandomAddition(
     config=DailyRandomAdditionConfig(mean=0.0, std=1.0),
-    storage_table=addition_storage_table,
-    daily_random_number_storage_table=number_storage_table,
+    storage_table=DailyRandomAdditionStorage,
+    daily_random_number_storage_table=DailyRandomNumberStorage,
 )
 daily_node.run(debug_mode=True, force_update=True)
 ```
@@ -737,29 +705,28 @@ Now update your **daily random number launcher** to run two update processes wit
 To do this, modify `scripts\random_number_launcher.py` to be as follows:
 
 ```python
-import mainsequence.client as msc
-
 from src.data_nodes.example_nodes import (
     DailyRandomNumber,
+    DailyRandomNumberStorage,
     RandomDataNodeConfig,
     VolatilityConfig,
-    register_daily_random_number_storage_table,
 )
 
 low_vol = VolatilityConfig(center=0.5, skew=False)
 high_vol = VolatilityConfig(center=2.0, skew=True)
-storage_table = register_daily_random_number_storage_table(
-    msc.get_session_data_source().uid
+DailyRandomNumberStorage.register(
+    description="Tutorial DataNode storage table for daily random numbers.",
+    labels=["tutorial", "data-node"],
 )
 
 
 daily_node_low = DailyRandomNumber(
     config=RandomDataNodeConfig(mean=0.0, std=low_vol),
-    storage_table=storage_table,
+    storage_table=DailyRandomNumberStorage,
 )
 daily_node_high = DailyRandomNumber(
     config=RandomDataNodeConfig(mean=0.0, std=high_vol),
-    storage_table=storage_table,
+    storage_table=DailyRandomNumberStorage,
 )
 
 daily_node_low.run(debug_mode=True, force_update=True)

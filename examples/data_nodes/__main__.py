@@ -1,6 +1,6 @@
 import argparse
 
-from examples.data_nodes.simple_data_nodes import build_test_time_series
+from examples.data_nodes.simple_data_nodes import run_data_node_examples
 
 
 def main():
@@ -15,7 +15,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "random_data_nodes":
-        build_test_time_series()
+        run_data_node_examples()
 
 
 if __name__ == "__main__":

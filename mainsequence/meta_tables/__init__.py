@@ -22,7 +22,6 @@ _LAZY_IMPORTS = {
     "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
     "DataNodeMetaData": (".data_nodes", "DataNodeMetaData"),
     "RecordDefinition": (".data_nodes", "RecordDefinition"),
-    "SourceTableForeignKey": (".data_nodes", "SourceTableForeignKey"),
     "build_compiled_sql_v1_operation": (
         ".compiled_sql",
         "build_compiled_sql_v1_operation",

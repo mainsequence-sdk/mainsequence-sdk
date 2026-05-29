@@ -1292,10 +1292,6 @@ class LocalTimeSeriesDoesNotExist(Exception):
     pass
 
 
-class DynamicTableDoesNotExist(Exception):
-    pass
-
-
 class TimeIndexedProfileDoesNotExist(Exception):
     pass
 
@@ -1316,12 +1312,12 @@ def _require_public_uid(obj: Any, object_name: str) -> str:
 
 class BaseColumnMetaData(BasePydanticModel):
     column_name: str = Field(
-        ..., max_length=63, description="Name of the column in the DynamicTable column contract"
+        ..., max_length=63, description="Name of the column in the TimeIndexMetaData contract"
     )
     dtype: str = Field(
         ...,
         max_length=100,
-        description="Portable data type from the DynamicTable column contract",
+        description="Portable data type from the TimeIndexMetaData contract",
     )
     label: str | None = Field(None, max_length=250, description="Human‐readable label")
     description: str | None = Field(None, description="Longer description of the column")
@@ -1420,24 +1416,6 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         return data
 
 
-def _serialize_meta_table_foreign_key_contract(
-    foreign_key: MetaTableForeignKeyContract | MetaTableForeignKeyPayload | dict[str, Any],
-) -> dict[str, Any]:
-    if isinstance(foreign_key, BaseModel):
-        raw = foreign_key.model_dump(mode="json", exclude_none=True)
-    else:
-        raw = dict(foreign_key)
-    target_meta_table_uid = raw.get("target_meta_table_uid") or raw.get("target_table_uid")
-    serialized = {
-        "source_columns": list(raw.get("source_columns") or []),
-        "target_columns": list(raw.get("target_columns") or []),
-        "on_delete": raw.get("on_delete") or "restrict",
-    }
-    if target_meta_table_uid not in (None, ""):
-        serialized["target_meta_table_uid"] = str(target_meta_table_uid)
-    return serialized
-
-
 def _payload_get(obj: Any, key: str, default: Any = None) -> Any:
     if isinstance(obj, Mapping):
         return obj.get(key, default)
@@ -1490,9 +1468,9 @@ def _normalize_time_indexed_column_contracts(
         name = _payload_get(column, "name") or _payload_get(column, "column_name")
         data_type = _payload_get(column, "data_type") or _payload_get(column, "dtype")
         if name in (None, ""):
-            raise ValueError("DynamicTable column contracts require a non-empty name.")
+            raise ValueError("TimeIndexMetaData column contracts require a non-empty name.")
         if data_type in (None, ""):
-            raise ValueError(f"DynamicTable column {name!r} requires a data_type.")
+            raise ValueError(f"TimeIndexMetaData column {name!r} requires a data_type.")
         normalized.append(
             {
                 "name": str(name),
@@ -1536,7 +1514,6 @@ class TimeIndexedProfileBase:
     )
     columns: list[MetaTableColumnPayload] = Field(default_factory=list)
     index_names: list
-    foreign_keys: list[MetaTableForeignKeyContract] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -1547,9 +1524,7 @@ class TimeIndexedProfileBase:
         if data.get("column_dtypes_map"):
             return data
         columns = data.get("columns")
-        if isinstance(columns, Sequence) and not isinstance(
-            columns, (str, bytes, bytearray)
-        ):
+        if isinstance(columns, Sequence) and not isinstance(columns, (str, bytes, bytearray)):
             data["column_dtypes_map"] = {
                 str(_payload_get(column, "name") or _payload_get(column, "column_name")): (
                     _payload_get(column, "data_type") or _payload_get(column, "dtype")
@@ -1566,7 +1541,7 @@ class TimeIndexedProfileBase:
 
 
 class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
-    """Read-only DynamicTable time-indexed profile.
+    """Read-only TimeIndexMetaData profile.
 
     This is a value object returned by TimeIndexMetaData responses. It is not a
     public REST resource; operations such as stats reads and column metadata
@@ -1574,7 +1549,7 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     """
 
     dynamic_table_uid: str | None = Field(
-        None, description="Public uid of the related DynamicTable/TimeIndexMetaData"
+        None, description="Legacy response alias for the related TimeIndexMetaData uid"
     )
     related_table_uid: str | None = Field(
         None, description="Public uid of the related TimeIndexMetaData"
@@ -2249,7 +2224,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data_source: DynamicTableDataSource,
         overwrite: bool,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
-        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None = None,
         records: Sequence[Any] | None = None,
         source_table_schema: Mapping[str, Any] | None = None,
     ):
@@ -2306,7 +2280,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
         if missing_index_dtypes:
             raise ValueError(
-                "Every index column must exist in the DynamicTable column contract. "
+                "Every index column must exist in the TimeIndexMetaData column contract. "
                 f"Missing: {missing_index_dtypes}"
             )
 
@@ -2604,32 +2578,6 @@ class TimeIndexMetaData(MetaTable):
             )
         return {}
 
-    @property
-    def time_indexed_foreign_keys(
-        self,
-    ) -> list[MetaTableForeignKeyContract]:
-        profile = self.time_indexed_profile
-        if profile is not None:
-            return list(profile.foreign_keys or [])
-        if self.foreign_keys:
-            return [
-                MetaTableForeignKeyContract(
-                    source_columns=list(foreign_key.source_columns or []),
-                    target_meta_table_uid=str(
-                        foreign_key.target_table_uid
-                        or _payload_get(foreign_key, "target_meta_table_uid", "")
-                    ),
-                    target_columns=list(foreign_key.target_columns or []),
-                    on_delete=foreign_key.on_delete or "restrict",
-                )
-                for foreign_key in self.foreign_keys
-                if (
-                    foreign_key.target_table_uid
-                    or _payload_get(foreign_key, "target_meta_table_uid", None)
-                )
-            ]
-        return []
-
     def _require_time_indexed_table_contract(self) -> tuple[str, list[str], dict[str, str]]:
         time_index_name = self.time_index_name
         index_names = self.index_names
@@ -2724,7 +2672,7 @@ class TimeIndexMetaData(MetaTable):
         return cls(**response.json())
 
     def get_data_updates(self, *, timeout: int | None = None) -> UpdateStatistics:
-        """Fetch update-progress statistics through the DynamicTable endpoint."""
+        """Fetch update-progress statistics for this TimeIndexMetaData table."""
         if self.uid is None:
             raise ValueError("TimeIndexMetaData must have a uid before fetching update stats.")
 
@@ -2763,17 +2711,17 @@ class TimeIndexMetaData(MetaTable):
         timeout: int | None = None,
     ) -> dict[str, Any]:
         """
-        Delete rows at or after a cutoff timestamp from this dynamic table.
+        Delete rows at or after a cutoff timestamp from this TimeIndexMetaData table.
 
         This is a backend tail-delete operation:
 
-        - it hits `POST /orm/api/ts_manager/dynamic_table/{uid}/delete_after_date/`
+        - it hits the TimeIndexMetaData backend delete-after-date route
         - `after_date` is the inclusive cutoff
         - there is no `end_date`; this is not arbitrary range deletion
         - for multi-index tables, pass `dimension_filters` or
           `index_coordinates` to scope the tail delete
 
-        The authenticated user must have edit access to this DynamicTableMetaData.
+        The authenticated user must have edit access to this TimeIndexMetaData.
 
         The returned payload contains the authoritative post-delete table stats,
         including `deleted_count`, `table_empty`, and index metadata. Consumers
@@ -2847,7 +2795,6 @@ class TimeIndexMetaData(MetaTable):
         data,
         overwrite=False,
         columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
-        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None = None,
     ):
         """
         Legacy compatibility path for callers that still invoke the old hook.
@@ -2865,7 +2812,7 @@ class TimeIndexMetaData(MetaTable):
             or not configured_column_dtypes_map
         ):
             raise ValueError(
-                "DynamicTable time-indexed profile must already exist before DataNode writes. "
+                "TimeIndexMetaData profile must already exist before DataNode writes. "
                 "Register/bootstrap the storage table before running the DataNode update."
             )
 
@@ -2888,7 +2835,7 @@ class TimeIndexMetaData(MetaTable):
 
         if configured_time_index_name != time_index_name:
             raise ValueError(
-                "Existing DynamicTable time_index_name does not match "
+                "Existing TimeIndexMetaData time_index_name does not match "
                 f"DataNode output. Existing: {configured_time_index_name!r}; "
                 f"output: {time_index_name!r}."
             )
@@ -2896,7 +2843,7 @@ class TimeIndexMetaData(MetaTable):
         configured_index_names = [str(name) for name in configured_index_names]
         if configured_index_names != list(index_names):
             raise ValueError(
-                "Existing DynamicTable index_names do not match "
+                "Existing TimeIndexMetaData index_names do not match "
                 f"DataNode output. Existing: {configured_index_names}; "
                 f"output: {list(index_names)}."
             )
@@ -2904,7 +2851,7 @@ class TimeIndexMetaData(MetaTable):
         missing_columns = [name for name in expected_dtypes if name not in configured_dtypes]
         if missing_columns:
             raise ValueError(
-                "Existing DynamicTable column contract is missing DataNode output columns: "
+                "Existing TimeIndexMetaData column contract is missing DataNode output columns: "
                 f"{missing_columns}."
             )
 
@@ -2918,7 +2865,7 @@ class TimeIndexMetaData(MetaTable):
         }
         if dtype_mismatches:
             raise ValueError(
-                "Existing DynamicTable column contract does not match "
+                "Existing TimeIndexMetaData column contract does not match "
                 f"DataNode output: {dtype_mismatches}."
             )
 
@@ -2927,10 +2874,6 @@ class TimeIndexMetaData(MetaTable):
             columns_metadata=columns_metadata,
             remote=not is_local_storage,
             allow_naive_datetime=is_local_storage,
-        )
-        self._validate_existing_source_table_foreign_keys(
-            storage=self,
-            foreign_keys=foreign_keys,
         )
         return self.time_indexed_profile or self
 
@@ -3008,7 +2951,7 @@ class TimeIndexMetaData(MetaTable):
         if missing_metadata:
             raise ValueError(
                 "DataNode write path cannot create column metadata. Existing "
-                "DynamicTable column projection is missing metadata for columns: "
+                "TimeIndexMetaData column projection is missing metadata for columns: "
                 f"{missing_metadata}."
             )
 
@@ -3025,44 +2968,8 @@ class TimeIndexMetaData(MetaTable):
 
         if metadata_mismatches:
             raise ValueError(
-                "Existing DynamicTable column metadata does not "
+                "Existing TimeIndexMetaData column metadata does not "
                 f"match DataNode output: {metadata_mismatches}."
-            )
-
-    @staticmethod
-    def _normalize_meta_table_foreign_key_for_validation(
-        foreign_key: MetaTableForeignKeyContract | MetaTableForeignKeyPayload | dict[str, Any],
-    ) -> dict[str, Any]:
-        raw = _serialize_meta_table_foreign_key_contract(foreign_key)
-        return _serialize_meta_table_foreign_key_contract(MetaTableForeignKeyContract(**raw))
-
-    @classmethod
-    def _validate_existing_source_table_foreign_keys(
-        cls,
-        *,
-        storage: TimeIndexMetaData,
-        foreign_keys: list[MetaTableForeignKeyContract | dict[str, Any]] | None,
-    ) -> None:
-        if foreign_keys is None:
-            return
-
-        existing_foreign_keys = [
-            cls._normalize_meta_table_foreign_key_for_validation(foreign_key)
-            for foreign_key in storage.time_indexed_foreign_keys
-        ]
-        missing_foreign_keys = [
-            foreign_key
-            for foreign_key in (
-                cls._normalize_meta_table_foreign_key_for_validation(foreign_key)
-                for foreign_key in foreign_keys
-            )
-            if foreign_key not in existing_foreign_keys
-        ]
-        if missing_foreign_keys:
-            raise ValueError(
-                "DataNode write path cannot create foreign-key metadata. Existing "
-                "DynamicTable foreign-key projection is missing foreign keys: "
-                f"{missing_foreign_keys}."
             )
 
     @staticmethod

@@ -41,7 +41,7 @@ but it also means the DataNode class owns too much:
 - it defines update logic;
 - it computes table storage identity;
 - it carries table metadata intent;
-- it carries structural table records and foreign keys;
+- it carries structural table records;
 - it asks `PersistManager` to create storage;
 - it then writes through a `DataNodeUpdate` backend object.
 
@@ -118,9 +118,8 @@ The current design creates these issues:
 - A user cannot cleanly say "this update process writes into this existing
   table" without letting the DataNode compute a `storage_hash`.
 - Table schema and table metadata are split across
-  `DataNodeConfiguration.records`, `DataNodeConfiguration.foreign_keys`,
-  `DataNodeConfiguration.node_metadata`, `TimeIndexMetaData`, and
-  `SourceTableConfiguration`.
+  `DataNodeConfiguration.records`, `DataNodeConfiguration.node_metadata`,
+  `TimeIndexMetaData`, and `SourceTableConfiguration`.
 - `TimeIndexMetaData` and `MetaTable` duplicate storage-facing fields, filters,
   labels, sharing, UID identity, and data-source identity.
 - The name `DataNode` suggests a data product/storage object, but the runtime
@@ -258,7 +257,8 @@ Nested `time_indexed_profile` fields have the same ownership split:
 | Current profile field surface | Final owner | Direction |
 | --- | --- | --- |
 | `time_index_name`, `index_names`, `column_dtypes_map`, `storage_layout`, `physical_index_plan` | DataNode table extension backed by MetaTable contract | These describe timestamped table semantics; structural column truth still comes from `MetaTable.table_contract`. |
-| `foreign_keys`, `foreign_key_projections`, `columns_metadata` | MetaTable contract/projection | Canonical source is `MetaTable.table_contract`, `MetaTable.foreign_keys`, and `MetaTable.columns`; profile fields are projections. |
+| `foreign_keys`, `foreign_key_projections` | MetaTable contract/projection | Canonical source is `MetaTable.table_contract` and `MetaTable.foreign_keys`; remove them from the time-indexed profile. |
+| `columns_metadata` | MetaTable projection | Canonical source is `MetaTable.columns`; keep profile exposure only as a column metadata read projection while clients migrate. |
 | `multi_index_stats`, `multi_index_column_stats`, `last_time_index_value`, `earliest_index_value` | DataNode table extension/update progress projection | Keep as table-profile progress read models, not generic MetaTable fields. |
 | `dynamic_table_uid`, `related_table_uid` | Compatibility wrapper | These must resolve to MetaTable UID during transition. Do not introduce a second storage identity. |
 | `column_index_names` | Compatibility wrapper | Legacy projection; remove when callers use `index_names`. |
@@ -271,13 +271,13 @@ Nested `time_indexed_profile` fields have the same ownership split:
 | `register` | DataNode table extension/bootstrap wrapper | Intentional dynamic-table registration while backend routes remain split. It must stay out of DataNode runtime and PersistManager hot paths. |
 | `get_or_create` | Compatibility wrapper | Do not use from DataNode runtime. Storage creation belongs to MetaTable registration/bootstrap. |
 | `_fill_legacy_dynamic_table_metatable_fields` | Compatibility wrapper | Payload coercion for old dynamic-table responses that do not emit full MetaTable fields. Remove after backend serializers converge. |
-| `_time_indexed_dynamic_contract`, `_time_indexed_storage_layout`, `time_index_name`, `index_names`, `column_dtypes_map`, `time_indexed_foreign_keys`, `_require_time_indexed_table_contract` | DataNode table extension | Contract/profile readers for timestamped DataNode tables. Keep as extension helpers or move behind a dedicated profile object. |
+| `_time_indexed_dynamic_contract`, `_time_indexed_storage_layout`, `time_index_name`, `index_names`, `column_dtypes_map`, `_require_time_indexed_table_contract` | DataNode table extension | Contract/profile readers for timestamped DataNode tables. Keep as extension helpers or move behind a dedicated profile object. |
 | `_date_for_payload`, `_normalize_dimension_range_map`, `_build_dimension_payload` | DataNode table extension | Payload helpers for timestamped read/delete routes. |
 | `get_data_updates` | DataNode table extension/update progress projection | Reads update-progress/table-profile stats. Do not make it generic MetaTable state. |
 | `delete_after_date` | DataNode table extension | Timestamped tail delete. Keep distinct from generic MetaTable delete/drop operations. |
 | `_uses_session_duckdb_data_source`, `_uses_session_local_data_source`, `delete_table` | Compatibility wrapper around MetaTable/local storage operations | Generic table deletion belongs to MetaTable; local-session branching should move out of `TimeIndexMetaData`. |
 | `handle_time_indexed_profile_creation` | Compatibility wrapper | Legacy validation shim only. It must not create profile/storage and must not be called from the DataNode write hot path. |
-| `_serialize_column_metadata_for_validation`, `_validate_existing_source_table_columns_metadata`, `_normalize_source_table_foreign_key_for_validation`, `_validate_existing_source_table_foreign_keys` | Compatibility wrapper for MetaTable contract validation | Final owner is MetaTable registration/bootstrap validation. These should disappear when DataNode write paths stop carrying schema metadata. |
+| `_serialize_column_metadata_for_validation`, `_validate_existing_source_table_columns_metadata` | Compatibility wrapper for MetaTable column metadata validation | Final owner is MetaTable registration/bootstrap validation. These should disappear when DataNode write paths stop carrying schema metadata. |
 | `map_columns_to_df`, `get_last_observation`, `_get_data_between_dates_common`, `get_data_between_dates_from_api`, `get_data_between_dates_from_node_identifier` | DataNode table extension/read compatibility | Keep only for timestamped reads. `get_data_between_dates_from_node_identifier` is a compatibility class route; new factories should resolve MetaTable-backed storage first. |
 
 No `TimeIndexMetaData` method should be a final update-process method. Anything

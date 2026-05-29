@@ -60,19 +60,6 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
             description="Asset UID.",
         )
     ]
-    storage.time_indexed_profile.foreign_keys = [
-        models_metatables.MetaTableForeignKeyContract(
-            source_columns=["asset_uid"],
-            target_meta_table_uid="asset-meta-table-uid",
-            target_columns=["uid"],
-        )
-    ]
-    foreign_key = models_metatables.MetaTableForeignKeyContract(
-        source_columns=["asset_uid"],
-        target_meta_table_uid="asset-meta-table-uid",
-        target_columns=["uid"],
-    )
-
     result = storage.handle_time_indexed_profile_creation(
         column_dtypes_map={
             "time_index": "datetime64[ns, UTC]",
@@ -90,7 +77,6 @@ def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
                 description="Asset UID.",
             )
         ],
-        foreign_keys=[foreign_key],
     )
 
     assert result is storage.time_indexed_profile

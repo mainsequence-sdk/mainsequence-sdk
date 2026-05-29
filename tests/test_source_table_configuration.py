@@ -69,7 +69,7 @@ def test_time_indexed_profile_rejects_table_partition_typed_surface():
         models_metatables.TimeIndexedProfile(**payload)
 
 
-def test_time_indexed_profile_parses_metatable_foreign_keys():
+def test_time_indexed_profile_rejects_foreign_keys():
     payload = _source_config_payload()
     payload["foreign_keys"] = [
         {
@@ -81,16 +81,8 @@ def test_time_indexed_profile_parses_metatable_foreign_keys():
         }
     ]
 
-    config = models_metatables.TimeIndexedProfile(**payload)
-    foreign_key = config.foreign_keys[0]
-
-    assert foreign_key.name == "fk_prices_asset_uid_4f3a2b1c"
-    assert models_metatables._serialize_meta_table_foreign_key_contract(foreign_key) == {
-        "source_columns": ["account_uid"],
-        "target_meta_table_uid": "asset-meta-table-uid",
-        "target_columns": ["uid"],
-        "on_delete": "restrict",
-    }
+    with pytest.raises(ValidationError, match="foreign_keys"):
+        models_metatables.TimeIndexedProfile(**payload)
 
 
 def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypatch):
