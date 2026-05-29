@@ -17,6 +17,7 @@ from mainsequence.meta_tables import (
     metatable_tablename,
     platform_managed_registration_request_from_sqlalchemy_model,
     table_contract_from_sqlalchemy_model,
+    time_indexed_registration_request_from_sqlalchemy_model,
 )
 
 
@@ -770,7 +771,6 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
                         "account_uid": "uuid",
                         "unique_identifier": "string",
                     },
-                    "foreign_keys": [],
                 },
             }
 
@@ -804,6 +804,46 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
         "account_uid",
         "unique_identifier",
     ]
+
+
+def test_time_index_storage_name_hash_component_separates_identical_table_shapes():
+    columns_a = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("random_number", String(255), nullable=False),
+    ]
+    columns_b = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("random_number", String(255), nullable=False),
+    ]
+    table_a = FakeTable("placeholder_a", columns=columns_a)
+    table_b = FakeTable("placeholder_b", columns=columns_b)
+    RandomNumber = _time_index_model_class(
+        "RandomNumber",
+        table_a,
+        namespace="mainsequence.examples",
+        identifier="daily_random_number_project",
+    )
+    RandomAddition = _time_index_model_class(
+        "RandomAddition",
+        table_b,
+        namespace="mainsequence.examples",
+        identifier="daily_random_addition_project",
+    )
+    RandomNumber.__metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
+    RandomAddition.__metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
+
+    table_a.name = metatable_configured_tablename(RandomNumber)
+    table_b.name = metatable_configured_tablename(RandomAddition)
+
+    assert table_a.name != table_b.name
+
+    request = time_indexed_registration_request_from_sqlalchemy_model(
+        RandomNumber,
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+    assert request.storage_hash == table_a.name
+    assert request.identifier == "daily_random_number_project"
+    assert request.namespace == "mainsequence.examples"
 
 
 def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy():

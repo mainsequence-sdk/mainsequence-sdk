@@ -213,7 +213,11 @@ class DailyRandomNumber(DataNode):
             return pd.DataFrame()
         return pd.DataFrame(
             {"random_number": [np.random.normal(self.mean, self.std.center)]},
-            index=pd.DatetimeIndex([today], name="time_index", tz="UTC"),
+            index=pd.DatetimeIndex(
+                [today],
+                name="time_index",
+                dtype="datetime64[ns, UTC]",
+            ),
         )
 
     def dependencies(self) -> dict[str, Union["DataNode", "APIDataNode"]]:
@@ -263,7 +267,11 @@ class DailyRandomAddition(DataNode):
 
         return pd.DataFrame(
             {"random_number": [random_number + dependency_noise]},
-            index=pd.DatetimeIndex([today], name="time_index", tz="UTC"),
+            index=pd.DatetimeIndex(
+                [today],
+                name="time_index",
+                dtype="datetime64[ns, UTC]",
+            ),
         )
 
 
@@ -305,7 +313,11 @@ class DailyRandomAdditionAPI(DataNode):
 
         return pd.DataFrame(
             {"random_number": [random_number + dependency_noise]},
-            index=pd.DatetimeIndex([today], name="time_index", tz="UTC"),
+            index=pd.DatetimeIndex(
+                [today],
+                name="time_index",
+                dtype="datetime64[ns, UTC]",
+            ),
         )
 
 
@@ -338,8 +350,16 @@ class AccountHoldingsSnapshot(DataNode):
             (current_minute, self.account_uid, "AAPL", 12.0 + (minute_offset % 5)),
             (current_minute, self.account_uid, "MSFT", 8.0 + (minute_offset % 3)),
         ]
-        index = pd.MultiIndex.from_tuples(
-            [(row[0], row[1], row[2]) for row in rows],
+        time_index = pd.DatetimeIndex(
+            [row[0] for row in rows],
+            dtype="datetime64[ns, UTC]",
+        )
+        index = pd.MultiIndex.from_arrays(
+            [
+                time_index,
+                [row[1] for row in rows],
+                [row[2] for row in rows],
+            ],
             names=["time_index", "account_uid", "unique_identifier"],
         )
         return pd.DataFrame(

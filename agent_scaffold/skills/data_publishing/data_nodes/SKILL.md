@@ -68,9 +68,8 @@ If the task depends on one of those areas, route it explicitly instead of guessi
 
 ## Read First
 
-1. `docs/tutorial/creating_a_simple_data_node.md`
-2. `docs/knowledge/data_nodes.md`
-3. `docs/knowledge/meta_tables/sqlalchemy.md`
+1. `docs/knowledge/data_nodes.md`
+2. `docs/knowledge/meta_tables/sqlalchemy.md`
 
 ## Inputs This Skill Needs
 
@@ -129,8 +128,8 @@ class Base(DeclarativeBase):
 
 
 class PricesTable(PlatformTimeIndexMetaData, Base):
-    __metatable_namespace__ = "market_data"
-    __metatable_identifier__ = "prices_daily"
+    __metatable_namespace__ = "<domain_namespace>"
+    __metatable_identifier__ = "<table_identifier>"
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "unique_identifier"]
 
@@ -238,13 +237,59 @@ Use `UpdateStatistics`.
 Do not fetch or return full history every run unless there is a documented
 reason.
 
-### 6. Dependencies Must Be Deterministic
+### 6. `time_index` Must Be Nanosecond UTC
+
+Every non-empty DataFrame returned by `update()` must have its first index
+level named `time_index` with dtype exactly `datetime64[ns, UTC]`.
+
+Do not rely on `pd.Timestamp.now("UTC").normalize()` or
+`pd.Timestamp.now("UTC").floor(...)` alone. Some pandas versions preserve
+microsecond resolution and produce `datetime64[us, UTC]`, which the DataNode
+runtime rejects.
+
+For a single-index DataFrame, construct the index with an explicit dtype:
+
+```python
+time_index = pd.Timestamp.now("UTC").normalize()
+return pd.DataFrame(
+    {"close": [100.0]},
+    index=pd.DatetimeIndex(
+        [time_index],
+        name="time_index",
+        dtype="datetime64[ns, UTC]",
+    ),
+)
+```
+
+For a MultiIndex DataFrame, construct the time level separately:
+
+```python
+time_index = pd.DatetimeIndex(
+    [row[0] for row in rows],
+    dtype="datetime64[ns, UTC]",
+)
+index = pd.MultiIndex.from_arrays(
+    [
+        time_index,
+        [row[1] for row in rows],
+    ],
+    names=["time_index", "unique_identifier"],
+)
+```
+
+The validator error to prevent is:
+
+```text
+Time index must be datetime64[ns, UTC]
+```
+
+### 7. Dependencies Must Be Deterministic
 
 Dependencies belong in constructor setup and `dependencies()`.
 
 Do not construct dependency graphs dynamically inside `update()`.
 
-### 7. Asset-Scoped Updates Must Be Explicit
+### 8. Asset-Scoped Updates Must Be Explicit
 
 If the node emits `(time_index, unique_identifier)`:
 
@@ -254,14 +299,14 @@ If the node emits `(time_index, unique_identifier)`:
   workflow uses that hook
 - missing assets should be resolved or registered by the relevant workflow
 
-### 8. Foreign Keys Belong To The Storage Contract
+### 9. Foreign Keys Belong To The Storage Contract
 
 For new code, model foreign keys on the `PlatformTimeIndexMetaData` storage
 class or route the storage-contract work to the MetaTable skill.
 
 Do not add DataNode configuration fields just to mutate storage metadata.
 
-### 9. Metadata Belongs To Storage
+### 10. Metadata Belongs To Storage
 
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
@@ -284,6 +329,7 @@ When reviewing an existing DataNode, look for:
 - non-incremental `update()` behavior
 - hidden dependency creation inside `update()`
 - invalid asset-indexed output shape
+- `time_index` dtype that is not exactly `datetime64[ns, UTC]`
 - DataFrame columns that do not match the `PlatformTimeIndexMetaData` class
 
 ## Validation Checklist
@@ -299,6 +345,7 @@ Do not claim success until you have checked:
 - `dependencies()` is deterministic
 - `update()` is incremental
 - the DataFrame shape matches the storage class
+- non-empty outputs have first index level `time_index` with dtype `datetime64[ns, UTC]`
 - the first validation run uses explicit `hash_namespace(...)` when it touches a shared backend
 
 For asset-scoped updates, also check:
