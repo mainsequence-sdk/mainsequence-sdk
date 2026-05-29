@@ -308,24 +308,21 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
 def upsert_account(
     account_meta_table: MetaTable,
     *,
-    account_uid: uuid.UUID,
     account_code: str,
     name: str,
-) -> None:
+) -> uuid.UUID:
     operation = build_compiled_sql_v1_operation(
         operation="insert",
         sql=f"""
             INSERT INTO {account_meta_table.physical_table_name}
-                (uid, account_code, name)
+                (account_code, name)
             VALUES
-                (%(uid)s, %(account_code)s, %(name)s)
-            ON CONFLICT (uid) DO UPDATE SET
-                account_code = EXCLUDED.account_code,
+                (%(account_code)s, %(name)s)
+            ON CONFLICT (account_code) DO UPDATE SET
                 name = EXCLUDED.name
             RETURNING uid
         """,
         parameters={
-            "uid": str(account_uid),
             "account_code": account_code,
             "name": name,
         },
@@ -340,7 +337,11 @@ def upsert_account(
         },
         limits={"max_rows": 1, "statement_timeout_ms": 15000},
     )
-    MetaTable.execute_operation(operation)
+    result = MetaTable.execute_operation(operation)
+    rows = result.get("rows") if isinstance(result, dict) else None
+    if not rows:
+        raise RuntimeError("Account upsert did not return a backend-generated uid.")
+    return uuid.UUID(str(rows[0]["uid"]))
 
 ```
 

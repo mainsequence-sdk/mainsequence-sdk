@@ -310,6 +310,50 @@ def test_last_update_payload_model_rejects_unknown_keys_generically():
         )
 
 
+def test_last_update_payload_builder_normalizes_nested_coordinate_keys():
+    account_uid = UUID("00000000-0000-4000-8000-000000000001")
+    raw_payload = {
+        "global_index_progress": {
+            "max": _dt(3),
+            "min": _dt(0),
+        },
+        "index_progress": {account_uid: {101: _dt(2)}},
+        "index_min": {account_uid: {101: _dt(0)}},
+        "multi_index_column_stats": {
+            "quantity": {
+                account_uid: {
+                    101: {
+                        "min": _dt(0),
+                        "max": _dt(2),
+                    }
+                }
+            }
+        },
+    }
+
+    payload = models_metatables.LastUpdateIndexTimePayload.model_validate(
+        raw_payload
+    ).to_nested_payload()
+    builder_payload = models_metatables.build_last_update_index_time_payload(
+        **raw_payload,
+    )
+
+    account_key = str(account_uid)
+    assert payload["multi_index_stats"]["index_progress"] == {account_key: {"101": _dt(2)}}
+    assert payload["multi_index_stats"]["index_min"] == {account_key: {"101": _dt(0)}}
+    assert payload["multi_index_column_stats"] == {
+        "quantity": {
+            account_key: {
+                "101": {
+                    "min": _dt(0),
+                    "max": _dt(2),
+                }
+            }
+        }
+    }
+    assert builder_payload == payload
+
+
 def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(monkeypatch):
     captured = {}
 
@@ -399,6 +443,28 @@ def test_get_index_progress_chunk_stats_for_three_index_frame():
             "account-b": {"asset-1": _dt(1), "asset-2": _dt(3)},
         },
     }
+    assert grouped_dates is not None
+
+
+def test_get_index_progress_chunk_stats_normalizes_uuid_coordinate_keys():
+    account_uid = UUID("00000000-0000-4000-8000-000000000001")
+    df = pd.DataFrame(
+        {
+            "time_index": [_dt(0), _dt(2)],
+            "account_uid": [account_uid, account_uid],
+            "unique_identifier": ["asset-1", "asset-1"],
+            "value": [1, 2],
+        }
+    )
+
+    stats, grouped_dates = models_metatables.get_index_progress_chunk_stats(
+        df,
+        time_index_name="time_index",
+        index_names=["time_index", "account_uid", "unique_identifier"],
+    )
+
+    assert stats["index_progress"] == {str(account_uid): {"asset-1": _dt(2)}}
+    assert stats["index_min"] == {str(account_uid): {"asset-1": _dt(0)}}
     assert grouped_dates is not None
 
 

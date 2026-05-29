@@ -3970,10 +3970,70 @@ class UpdateStatistics(BaseUpdateStatistics):
 def _assign_nested_coordinate(root: dict[Any, Any], keys: list[Any], value: Any) -> None:
     if not keys:
         return
+    normalized_keys = [_normalize_update_stat_key(key) for key in keys]
     sub = root
-    for key in keys[:-1]:
-        sub = sub.setdefault(key, {})
-    sub[keys[-1]] = value
+    for key in normalized_keys[:-1]:
+        existing = sub.setdefault(key, {})
+        if not isinstance(existing, dict):
+            raise ValueError("Update statistics coordinate keys collide after JSON normalization.")
+        sub = existing
+    final_key = normalized_keys[-1]
+    if final_key in sub:
+        raise ValueError("Update statistics coordinate keys collide after JSON normalization.")
+    sub[final_key] = value
+
+
+def _normalize_update_stat_key(key: Any) -> str:
+    if isinstance(key, str):
+        return key
+    if isinstance(key, np.generic):
+        key = key.item()
+    if isinstance(key, datetime.datetime):
+        value = serialize_to_json({"_": key})["_"]
+        return str(value)
+    if isinstance(key, datetime.date):
+        return key.isoformat()
+    if key is None:
+        return "null"
+    if isinstance(key, bool):
+        return "true" if key else "false"
+    if isinstance(key, int | float):
+        try:
+            return json.dumps(key, allow_nan=False)
+        except (TypeError, ValueError):
+            return str(key)
+
+    normalized = serialize_to_json({key: None})
+    normalized_key = next(iter(normalized.keys()))
+    if normalized_key is None:
+        return "null"
+    if isinstance(normalized_key, bool):
+        return "true" if normalized_key else "false"
+    if isinstance(normalized_key, int | float):
+        try:
+            return json.dumps(normalized_key, allow_nan=False)
+        except (TypeError, ValueError):
+            return str(normalized_key)
+    return str(normalized_key)
+
+
+def _normalize_update_stat_mapping_keys(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            normalized_key = _normalize_update_stat_key(key)
+            if normalized_key in normalized:
+                raise ValueError(
+                    "Update statistics coordinate keys collide after JSON normalization: "
+                    f"{normalized_key!r}."
+                )
+            normalized[normalized_key] = _normalize_update_stat_mapping_keys(item)
+        return normalized
+    if isinstance(value, list):
+        return [_normalize_update_stat_mapping_keys(item) for item in value]
+    if isinstance(value, tuple):
+        return [_normalize_update_stat_mapping_keys(item) for item in value]
+    return value
 
 
 def get_index_progress_chunk_stats(chunk_df, time_index_name, index_names):
@@ -4081,6 +4141,11 @@ class LastUpdateMultiIndexStatsPayload(BaseModel):
     index_progress: dict[str, Any] = Field(default_factory=dict)
     index_min: dict[str, Any] = Field(default_factory=dict)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mapping_keys(cls, value: Any) -> Any:
+        return _normalize_update_stat_mapping_keys(value)
+
     def to_payload(self) -> dict[str, Any]:
         return {
             "_GLOBAL_": self.global_stats,
@@ -4098,6 +4163,11 @@ class LastUpdateIndexTimePayload(BaseModel):
     index_min: dict[str, Any] | None = None
     multi_index_stats: LastUpdateMultiIndexStatsPayload | None = None
     multi_index_column_stats: dict[str, Any] | None = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_mapping_keys(cls, value: Any) -> Any:
+        return _normalize_update_stat_mapping_keys(value)
 
     @model_validator(mode="after")
     def _validate_shape(self):
@@ -4164,7 +4234,8 @@ def build_last_update_index_time_payload(
             }
         )
 
-    return LastUpdateIndexTimePayload.model_validate(raw_payload).to_nested_payload()
+    normalized_payload = _normalize_update_stat_mapping_keys(raw_payload)
+    return LastUpdateIndexTimePayload.model_validate(normalized_payload).to_nested_payload()
 
 
 class HistoricalUpdateRecord:

@@ -191,8 +191,6 @@ declares:
 Example insert:
 
 ```python
-import uuid
-
 from mainsequence.client import MetaTable
 from mainsequence.meta_tables import build_compiled_sql_v1_operation
 
@@ -201,22 +199,19 @@ def qualified_name(meta_table: MetaTable) -> str:
     return meta_table.physical_table_name
 
 
-account_uid = str(uuid.uuid4())
 operation = build_compiled_sql_v1_operation(
     operation="insert",
     sql=f"""
         INSERT INTO {qualified_name(account_meta_table)}
-            (uid, account_code, name, region)
+            (account_code, name, region)
         VALUES
-            (%(uid)s, %(account_code)s, %(name)s, %(region)s)
-        ON CONFLICT (uid) DO UPDATE SET
-            account_code = EXCLUDED.account_code,
+            (%(account_code)s, %(name)s, %(region)s)
+        ON CONFLICT (account_code) DO UPDATE SET
             name = EXCLUDED.name,
             region = EXCLUDED.region
         RETURNING uid, account_code, name, region
     """,
     parameters={
-        "uid": account_uid,
         "account_code": "ACME",
         "name": "Acme Capital",
         "region": "US",
