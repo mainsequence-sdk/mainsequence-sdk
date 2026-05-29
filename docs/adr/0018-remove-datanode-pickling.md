@@ -176,7 +176,7 @@ The second major risk is runtime reattachment:
       creating local pickle files; that API is deleted by ADR 0019.
 - [x] Add tests proving dependency execution does not rebuild missing nodes from
       canonical configuration.
-- [ ] Add tests proving no data source sidecar pickle is required.
+- [x] Add tests proving no data source sidecar pickle is required.
 - [x] Remove tests that assert pickle marker emission and pickle path layout.
 - [x] Add targeted regression coverage around sequential debug execution and
       rejection of undeclared backend dependency rows.

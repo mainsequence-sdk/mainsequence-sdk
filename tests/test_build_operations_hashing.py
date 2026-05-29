@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import os
+import uuid
 
 import pytest
 from pydantic import BaseModel, Field
@@ -22,6 +23,10 @@ from mainsequence.meta_tables import (
 def _hashes(payload):
     serialized_payload = build_operations.serialize_argument(payload)
     return build_operations.hash_signature({"config": serialized_payload})
+
+
+class UUIDNodeConfig(BaseModel):
+    account_uid: uuid.UUID
 
 
 def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatch):
@@ -209,6 +214,35 @@ def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkey
         ]
         == "storage-uid-a"
     )
+
+
+def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
+    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
+
+    account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    other_account_uid = uuid.UUID("00000000-0000-4000-8000-000000000002")
+
+    serialized = build_operations.serialize_argument(UUIDNodeConfig(account_uid=account_uid))
+    assert serialized["serialized_model"]["account_uid"] == str(account_uid)
+
+    hashes_a = _hashes(UUIDNodeConfig(account_uid=account_uid))
+    hashes_b = _hashes(UUIDNodeConfig(account_uid=account_uid))
+    hashes_c = _hashes(UUIDNodeConfig(account_uid=other_account_uid))
+
+    assert hashes_a == hashes_b
+    assert hashes_a != hashes_c
+
+    config = build_operations.create_config(
+        ts_class_name="UUIDConfigNode",
+        kwargs={"config": UUIDNodeConfig(account_uid=account_uid)},
+    )
+    rebuilt = build_operations.DeserializerManager().rebuild_serialized_config(
+        config.local_initial_configuration,
+        time_serie_class_name="UUIDConfigNode",
+    )
+
+    assert rebuilt["config"].account_uid == account_uid
+    assert isinstance(rebuilt["config"].account_uid, uuid.UUID)
 
 
 def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrapper(monkeypatch):

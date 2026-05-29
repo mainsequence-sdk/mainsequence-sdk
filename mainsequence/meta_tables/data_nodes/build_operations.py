@@ -13,6 +13,7 @@ from enum import Enum
 from functools import singledispatch
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, Any
+from uuid import UUID
 
 from pydantic import BaseModel
 
@@ -109,6 +110,11 @@ def _(value: type[Any]) -> Any:
 @serialize_argument.register(datetime.datetime)
 def _(value: datetime.datetime) -> str:
     return value.isoformat()
+
+
+@serialize_argument.register(UUID)
+def _(value: UUID) -> str:
+    return str(value)
 
 
 @serialize_argument.register(BaseModel)

@@ -3,6 +3,7 @@ import datetime
 import gzip
 import json
 from types import SimpleNamespace
+from uuid import UUID
 
 import pandas as pd
 import pytest
@@ -125,6 +126,72 @@ def test_post_data_frame_in_chunks_serializes_remote_temporal_payload_columns(mo
             "event_time": "2026-05-01T12:30:00Z",
         }
     ]
+
+
+def test_post_data_frame_in_chunks_serializes_remote_uuid_payload_columns(monkeypatch):
+    captured = {}
+
+    class FakeResponse:
+        status_code = 200
+        text = ""
+        content = b'{"ok": true}'
+
+        @staticmethod
+        def json():
+            return {"ok": True}
+
+    def _fake_make_request(*, s, loaders, payload, r_type, url, time_out=None):
+        captured["payload"] = payload
+        captured["r_type"] = r_type
+        captured["url"] = url
+        return FakeResponse()
+
+    monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
+    monkeypatch.setattr(
+        models_metatables.DataNodeUpdate,
+        "build_session",
+        classmethod(lambda cls: object()),
+    )
+
+    account_uid = UUID("00000000-0000-4000-8000-000000000001")
+    frame = pd.DataFrame(
+        {
+            "time_index": [pd.Timestamp("2026-05-29T13:40:00Z")],
+            "account_uid": [account_uid],
+            "unique_identifier": ["AAPL"],
+            "quantity": [12.0],
+        }
+    )
+
+    models_metatables.DataNodeUpdate.post_data_frame_in_chunks(
+        serialized_data_frame=frame,
+        data_node_update=_minimal_update(),
+        index_names=["time_index", "account_uid", "unique_identifier"],
+        time_index_name="time_index",
+        column_dtypes_map={
+            "time_index": "timestamp with time zone",
+            "account_uid": "uuid",
+            "unique_identifier": "string",
+            "quantity": "float64",
+        },
+    )
+
+    decoded = _decode_compressed_payload(captured["payload"])
+    assert decoded == [
+        {
+            "time_index": "2026-05-29T13:40:00Z",
+            "account_uid": str(account_uid),
+            "unique_identifier": "AAPL",
+            "quantity": 12.0,
+        }
+    ]
+    json.dumps(captured["payload"]["json"], allow_nan=False)
+    assert captured["payload"]["json"]["chunk_stats"]["index_progress"] == {
+        str(account_uid): {"AAPL": "2026-05-29T13:40:00Z"}
+    }
+    assert captured["payload"]["json"]["chunk_stats"]["index_min"] == {
+        str(account_uid): {"AAPL": "2026-05-29T13:40:00Z"}
+    }
 
 
 def test_set_start_of_execution_prefers_canonical_update_stats(monkeypatch):

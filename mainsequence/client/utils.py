@@ -9,11 +9,11 @@ import socket
 import subprocess
 import threading
 import time
-import uuid
 from dataclasses import dataclass, field
 from decimal import Decimal
 from enum import Enum
 from typing import TypedDict
+from uuid import UUID, getnode
 
 import psutil
 import pytz
@@ -761,6 +761,9 @@ def serialize_to_json(kwargs):
         if isinstance(v, Decimal):
             return str(v)
 
+        if isinstance(v, UUID):
+            return str(v)
+
         if isinstance(v, datetime.datetime):
             dt = v
             if dt.tzinfo is None:
@@ -776,13 +779,19 @@ def serialize_to_json(kwargs):
                 return v.model_dump()
 
         if isinstance(v, dict):
-            return {k: to_jsonable(x) for k, x in v.items()}
+            return {to_json_key(k): to_jsonable(x) for k, x in v.items()}
         if isinstance(v, (list, tuple)):
             return [to_jsonable(x) for x in v]
 
         return v
 
-    return {k: to_jsonable(v) for k, v in kwargs.items()}
+    def to_json_key(value):
+        key = to_jsonable(value)
+        if key is None or isinstance(key, str | int | float | bool):
+            return key
+        return str(key)
+
+    return {to_json_key(k): to_jsonable(v) for k, v in kwargs.items()}
 
 
 def _linux_machine_id() -> str | None:
@@ -839,7 +848,7 @@ def bios_uuid() -> str:
         return mid
 
     # Tier 4 – MAC address (uuid.getnode). Always available.
-    return f"{uuid.getnode():012x}"
+    return f"{getnode():012x}"
 
 
 def _install_retry_adapters_in_place(

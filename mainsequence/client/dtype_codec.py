@@ -163,9 +163,7 @@ def record_definitions_to_column_dtypes_map(
         )
 
     if duplicate_columns:
-        raise ValueError(
-            f"Duplicate DataNode record column names: {sorted(duplicate_columns)}"
-        )
+        raise ValueError(f"Duplicate DataNode record column names: {sorted(duplicate_columns)}")
 
     return column_dtypes_map
 
@@ -247,10 +245,14 @@ def token_to_pandas_series(
     is_time_index: bool = False,
     nullable: bool = True,
 ) -> pd.Series:
-    normalized = TIMESTAMP_TZ if is_time_index else normalize_dtype_token(
-        token,
-        remote=False,
-        allow_naive_datetime=True,
+    normalized = (
+        TIMESTAMP_TZ
+        if is_time_index
+        else normalize_dtype_token(
+            token,
+            remote=False,
+            allow_naive_datetime=True,
+        )
     )
     if normalized == TIMESTAMP_TZ:
         return pd.to_datetime(series, errors="coerce", utc=True)
@@ -319,17 +321,15 @@ def _serialize_timestamp_tz_value(value: Any) -> str | None:
         raise ValueError(
             f"Remote datetime value {value!r} must include an explicit timezone offset or Z."
         )
-    if isinstance(value, (pd.Timestamp, datetime.datetime)) and not _timestamp_is_timezone_aware(value):
-        raise ValueError(
-            f"Remote datetime value {value!r} must be timezone-aware."
-        )
+    if isinstance(value, (pd.Timestamp, datetime.datetime)) and not _timestamp_is_timezone_aware(
+        value
+    ):
+        raise ValueError(f"Remote datetime value {value!r} must be timezone-aware.")
     timestamp = pd.to_datetime(value, errors="raise", utc=True)
     if not isinstance(timestamp, pd.Timestamp):
         timestamp = pd.Timestamp(timestamp).tz_convert("UTC")
     if timestamp.tzinfo is None:
-        raise ValueError(
-            f"Remote datetime value {value!r} must be timezone-aware."
-        )
+        raise ValueError(f"Remote datetime value {value!r} must be timezone-aware.")
     timestamp = timestamp.tz_convert("UTC")
     return timestamp.isoformat().replace("+00:00", "Z")
 
@@ -375,11 +375,8 @@ def prepare_dataframe_for_remote_write(
         if column_name not in prepared.columns:
             continue
         normalized = normalize_dtype_token(token, remote=True)
-        if normalized not in {DATE, TIMESTAMP_TZ}:
-            continue
         prepared[column_name] = [
-            serialize_remote_value(value, normalized)
-            for value in prepared[column_name].tolist()
+            serialize_remote_value(value, normalized) for value in prepared[column_name].tolist()
         ]
     return prepared
 
@@ -459,7 +456,11 @@ def sqlalchemy_type_to_token(column_type: Any, *, remote: bool = True) -> str:
                     "by the remote TS Manager contract."
                 )
             return LOCAL_DATETIME_NAIVE
-        if timezone is True or "with time zone" in normalized_backend or "timestamptz" in normalized_backend:
+        if (
+            timezone is True
+            or "with time zone" in normalized_backend
+            or "timestamptz" in normalized_backend
+        ):
             return TIMESTAMP_TZ
         if remote:
             raise ValueError(
