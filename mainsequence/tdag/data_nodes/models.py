@@ -311,17 +311,15 @@ class DataNodeConfiguration(BaseConfiguration):
     Base class for DataNode build configuration.
 
     Fields participate in the update hash by default. Mark a field with
-    ``json_schema_extra={"update_only": True}`` to exclude it from the
-    storage hash, or ``json_schema_extra={"hash_excluded": True}`` to
-    exclude descriptive metadata from both hashes.
+    ``json_schema_extra={"hash_excluded": True}`` only when it must not affect
+    update identity.
     """
     offset_start: datetime.datetime | None = Field(
         default=None,
         description=(
             "Optional first-run fallback start date. This affects updater bootstrap "
-            "behavior but should not rotate the storage hash."
+            "behavior and participates in update hashing."
         ),
-        json_schema_extra={"update_only": True},
     )
     records: list[RecordDefinition] | None = Field(
         default=None,

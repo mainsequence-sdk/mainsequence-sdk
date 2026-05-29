@@ -28,7 +28,7 @@ yet.
 
 Good examples:
 
-- customers
+- accounts
 - counterparties
 - account groups
 - mappings
@@ -61,7 +61,7 @@ This tutorial assumes SQLAlchemy is available in the project environment.
 
 ## 3. Define A Simple Backend-Managed MetaTable
 
-Create a small SQLAlchemy model for customer records:
+Create a small SQLAlchemy model for account records:
 
 ```python
 import uuid
@@ -86,17 +86,17 @@ class Base(DeclarativeBase):
     )
 
 
-class Customer(PlatformManagedMetaTable, Base):
+class Account(PlatformManagedMetaTable, Base):
     __table_args__ = (
         Index(None, "region"),
         {"schema": SCHEMA},
     )
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Customer"
+    __metatable_identifier__ = "Account"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    customer_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     region: Mapped[str] = mapped_column(String(32), nullable=False)
 ```
@@ -114,13 +114,13 @@ The important pieces are:
 Register the table through the class API:
 
 ```python
-customer_meta_table = Customer.register(
-    description="Tutorial backend-managed customer table.",
+account_meta_table = Account.register(
+    description="Tutorial backend-managed account table.",
     labels=["tutorial"],
 )
 
-print(customer_meta_table.uid)
-print(customer_meta_table.physical_table_name)
+print(account_meta_table.uid)
+print(account_meta_table.physical_table_name)
 ```
 
 The SDK extracts a neutral table contract from SQLAlchemy metadata and sends it
@@ -143,20 +143,20 @@ the same data source and physical table name.
 from sqlalchemy import ForeignKey
 
 
-class CustomerLimit(PlatformManagedMetaTable, Base):
+class AccountLimit(PlatformManagedMetaTable, Base):
     __table_args__ = (
-        Index(None, "customer_uid"),
+        Index(None, "account_uid"),
         {"schema": SCHEMA},
     )
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "CustomerLimit"
+    __metatable_identifier__ = "AccountLimit"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    customer_uid: Mapped[uuid.UUID] = mapped_column(
+    account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"{Customer.__table__.fullname}.uid",
+            f"{Account.__table__.fullname}.uid",
             ondelete="RESTRICT",
         ),
         nullable=False,
@@ -168,8 +168,8 @@ class CustomerLimit(PlatformManagedMetaTable, Base):
 Register the child after the parent is registered:
 
 ```python
-limit_meta_table = CustomerLimit.register(
-    description="Tutorial backend-managed customer limit table.",
+limit_meta_table = AccountLimit.register(
+    description="Tutorial backend-managed account limit table.",
     labels=["tutorial"],
 )
 ```
@@ -201,33 +201,33 @@ def qualified_name(meta_table: MetaTable) -> str:
     return meta_table.physical_table_name
 
 
-customer_uid = str(uuid.uuid4())
+account_uid = str(uuid.uuid4())
 operation = build_compiled_sql_v1_operation(
     operation="insert",
     sql=f"""
-        INSERT INTO {qualified_name(customer_meta_table)}
-            (uid, customer_code, name, region)
+        INSERT INTO {qualified_name(account_meta_table)}
+            (uid, account_code, name, region)
         VALUES
-            (%(uid)s, %(customer_code)s, %(name)s, %(region)s)
+            (%(uid)s, %(account_code)s, %(name)s, %(region)s)
         ON CONFLICT (uid) DO UPDATE SET
-            customer_code = EXCLUDED.customer_code,
+            account_code = EXCLUDED.account_code,
             name = EXCLUDED.name,
             region = EXCLUDED.region
-        RETURNING uid, customer_code, name, region
+        RETURNING uid, account_code, name, region
     """,
     parameters={
-        "uid": customer_uid,
-        "customer_code": "ACME",
+        "uid": account_uid,
+        "account_code": "ACME",
         "name": "Acme Capital",
         "region": "US",
     },
     scope={
         "tables": [
-            {
-                "meta_table_uid": customer_meta_table.uid,
-                "alias": "customers",
-                "access": "write",
-            }
+                {
+                    "meta_table_uid": account_meta_table.uid,
+                    "alias": "accounts",
+                    "access": "write",
+                }
         ]
     },
     limits={"max_rows": 100, "statement_timeout_ms": 15000},
@@ -247,20 +247,20 @@ Read operations use the same governed execution path with read scope:
 operation = build_compiled_sql_v1_operation(
     operation="select",
     sql=f"""
-        SELECT uid, customer_code, name, region
-        FROM {qualified_name(customer_meta_table)}
+        SELECT uid, account_code, name, region
+        FROM {qualified_name(account_meta_table)}
         WHERE (%(region)s IS NULL OR region = %(region)s)
-        ORDER BY customer_code
+        ORDER BY account_code
         LIMIT %(limit)s
     """,
     parameters={"region": "US", "limit": 50},
     scope={
         "tables": [
-            {
-                "meta_table_uid": customer_meta_table.uid,
-                "alias": "customers",
-                "access": "read",
-            }
+                {
+                    "meta_table_uid": account_meta_table.uid,
+                    "alias": "accounts",
+                    "access": "read",
+                }
         ]
     },
     limits={"max_rows": 50, "statement_timeout_ms": 15000},
@@ -282,7 +282,7 @@ Use them together:
 
 A common project shape is:
 
-- backend-managed `MetaTable` for customer, account, or mapping records
+- backend-managed `MetaTable` for account, counterparty, or mapping records
 - `DataNode` for daily metrics backed by a governed table contract
 - FastAPI route that combines both into a stable response
 

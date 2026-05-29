@@ -16,47 +16,40 @@ def serialize_pydantic_model(
         field_name: serialize_field(getattr(value, field_name))
         for field_name in value.__class__.model_fields
     }
-    update_only_fields: list[str] = []
-    runtime_only_fields: list[str] = []
+    hash_excluded_fields: list[str] = []
 
     for field_name, field_info in value.__class__.model_fields.items():
         extra = field_info.json_schema_extra or {}
         if "ignore_from_storage_hash" in extra:
             raise ValueError(
                 f"{value.__class__.__name__}.{field_name} uses removed metadata "
-                "'ignore_from_storage_hash'; use json_schema_extra={\"update_only\": True} instead."
+                "'ignore_from_storage_hash'. All configuration fields participate in "
+                'update hashing by default; use json_schema_extra={"hash_excluded": True} '
+                "only for fields that should not affect update identity."
+            )
+        if "update_only" in extra:
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} uses removed metadata "
+                "'update_only'. All configuration fields are update-scoped by default."
+            )
+        if "runtime_only" in extra:
+            raise ValueError(
+                f"{value.__class__.__name__}.{field_name} uses removed metadata "
+                "'runtime_only'; use json_schema_extra={\"hash_excluded\": True} instead."
             )
 
-        is_update_only = extra.get("update_only", False)
-        is_runtime_only = extra.get("runtime_only", False)
         is_hash_excluded = extra.get("hash_excluded", False)
-        if not isinstance(is_update_only, bool):
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} metadata 'update_only' must be bool"
-            )
-        if not isinstance(is_runtime_only, bool):
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} metadata 'runtime_only' must be bool"
-            )
         if not isinstance(is_hash_excluded, bool):
             raise ValueError(
                 f"{value.__class__.__name__}.{field_name} metadata 'hash_excluded' must be bool"
             )
-        if is_update_only and (is_runtime_only or is_hash_excluded):
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} cannot be both update_only "
-                "and hash-excluded metadata."
-            )
-        if is_runtime_only or is_hash_excluded:
-            runtime_only_fields.append(field_name)
-        elif is_update_only:
-            update_only_fields.append(field_name)
+        if is_hash_excluded:
+            hash_excluded_fields.append(field_name)
 
     return {
         "pydantic_model_import_path": import_path,
         "serialized_model": serialized_model,
-        "update_only": sorted(update_only_fields),
-        "runtime_only": sorted(runtime_only_fields),
+        "hash_excluded": sorted(hash_excluded_fields),
     }
 
 
@@ -64,7 +57,7 @@ def is_serialized_pydantic_model(value: Any) -> bool:
     if not isinstance(value, dict):
         return False
 
-    expected_keys = {"pydantic_model_import_path", "serialized_model", "update_only", "runtime_only"}
+    expected_keys = {"pydantic_model_import_path", "serialized_model", "hash_excluded"}
     if not {"pydantic_model_import_path", "serialized_model"}.issubset(value):
         return False
     if not set(value).issubset(expected_keys):
@@ -81,10 +74,9 @@ def is_serialized_pydantic_model(value: Any) -> bool:
     if not isinstance(value["serialized_model"], dict):
         return False
 
-    for meta_key in ("update_only", "runtime_only"):
-        meta_value = value.get(meta_key, [])
-        if not isinstance(meta_value, list) or not all(isinstance(item, str) for item in meta_value):
-            return False
+    meta_value = value.get("hash_excluded", [])
+    if not isinstance(meta_value, list) or not all(isinstance(item, str) for item in meta_value):
+        return False
 
     return True
 
@@ -106,10 +98,7 @@ def strip_pydantic_hash_exclusions(value: Any, *, for_storage_hash: bool) -> Any
         return value
 
     if is_serialized_pydantic_model(value):
-        runtime_only_fields = set(value.get("runtime_only", []))
-        fields_to_remove = set(runtime_only_fields)
-        if for_storage_hash:
-            fields_to_remove.update(value.get("update_only", []))
+        fields_to_remove = set(value.get("hash_excluded", []))
 
         serialized_model = {
             key: strip_pydantic_hash_exclusions(item, for_storage_hash=for_storage_hash)

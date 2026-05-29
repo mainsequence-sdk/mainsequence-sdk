@@ -13,7 +13,7 @@ import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypedDict, TypeVar
+from typing import Any, ClassVar, Generic, TypedDict, TypeVar
 from uuid import UUID
 
 import numpy as np
@@ -29,13 +29,11 @@ from mainsequence.logconf import logger
 from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
 from .dtype_codec import (
     TIMESTAMP_TZ,
-    is_temporal_token,
     normalize_column_dtypes_map,
     normalize_dtype_token,
     pandas_dtypes_to_column_map,
     prepare_dataframe_for_remote_write,
     record_definitions_to_column_dtypes_map,
-    token_to_pandas_dtype,
     token_to_pandas_series,
 )
 from .exceptions import raise_for_response
@@ -90,10 +88,6 @@ _POD_PROJECT_RESOLUTION_LOCK = RLock()
 _POD_PROJECT_RESOLUTION_CACHE = None
 _POD_PROJECT_LOGGED_STATES: set[tuple[str, str]] = set()
 POD_PROJECT = None
-
-if TYPE_CHECKING:
-    from mainsequence.tdag.data_nodes.filters import SearchRequest
-
 
 def _duckdb_interface():
     return _metatable_duckdb_interface()
@@ -2066,277 +2060,6 @@ class TimeIndexMetaData(MetaTable):
             column_range_descriptor=column_range_descriptor,
             node_identifier=node_identifier,
         )
-
-    @staticmethod
-    def _normalize_dtype_for_pandas(dtype_str: str) -> str:
-        """
-        Convert DynamicTable column-contract dtypes into pandas dtypes that can hold NULLs.
-        """
-        return token_to_pandas_dtype(dtype_str)
-
-    @staticmethod
-    def _get_search_meta_attr(obj: Any, attr: str, default: Any = None) -> Any:
-        if isinstance(obj, Mapping):
-            if attr == "column_dtypes_map" and "column_dtypes_map" not in obj:
-                columns = obj.get("columns")
-                if not columns and isinstance(obj.get("table_contract"), Mapping):
-                    columns = obj["table_contract"].get("columns")
-                if isinstance(columns, Sequence) and not isinstance(columns, (str, bytes, bytearray)):
-                    return _column_dtype_map_from_contracts(
-                        columns,
-                        remote=False,
-                        allow_naive_datetime=True,
-                    )
-            if attr in {"time_index_name", "index_names"} and attr not in obj:
-                dynamic_contract = _dynamic_table_contract_fragment(obj.get("table_contract"))
-                if attr in dynamic_contract:
-                    return dynamic_contract[attr]
-                storage_layout = dynamic_contract.get("storage_layout")
-                if not isinstance(storage_layout, Mapping) and isinstance(obj.get("table_contract"), Mapping):
-                    storage_layout = obj["table_contract"].get("storage_layout")
-                if attr == "time_index_name" and isinstance(storage_layout, Mapping):
-                    time_index = storage_layout.get("time_index")
-                    if isinstance(time_index, Mapping):
-                        return time_index.get("name", default)
-                if attr == "index_names" and isinstance(storage_layout, Mapping):
-                    uniqueness_columns = (storage_layout.get("uniqueness") or {}).get("columns")
-                    if uniqueness_columns:
-                        return uniqueness_columns
-            return obj.get(attr, default)
-        return getattr(obj, attr, default)
-
-    @staticmethod
-    def _coerce_search_index_names(value: Any) -> list[str]:
-        if value is None:
-            return []
-        if isinstance(value, str):
-            return [value]
-        if isinstance(value, Mapping):
-            try:
-                items = sorted(value.items(), key=lambda item: int(item[0]))
-            except (TypeError, ValueError):
-                items = value.items()
-            value = [item_value for _, item_value in items]
-        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
-            return [str(item) for item in value if item is not None and str(item).strip()]
-        return []
-
-    @classmethod
-    def _iter_search_source_configs(cls, data_node_storage_map: dict):
-        for meta in (data_node_storage_map or {}).values():
-            stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
-            yield stc if stc is not None else meta
-
-    @classmethod
-    def _resolve_search_response_index_names(
-        cls,
-        *,
-        data_node_storage_map: dict,
-        filter_request: SearchRequest,
-        response_index_names: Any = None,
-    ) -> list[str]:
-        explicit_index_names = cls._coerce_search_index_names(response_index_names)
-        if explicit_index_names:
-            return explicit_index_names
-
-        join_vectors = [
-            cls._coerce_search_index_names(getattr(join, "on", None))
-            for join in (getattr(filter_request, "joins", None) or [])
-        ]
-        join_vectors = [join_on for join_on in join_vectors if join_on]
-        if join_vectors:
-            first_join_vector = join_vectors[0]
-            if all(join_on == first_join_vector for join_on in join_vectors):
-                return first_join_vector
-            return []
-
-        for stc in cls._iter_search_source_configs(data_node_storage_map):
-            index_names = cls._coerce_search_index_names(
-                cls._get_search_meta_attr(stc, "index_names")
-            )
-            if index_names:
-                return index_names
-        return []
-
-    @classmethod
-    def _search_response_column_dtype(
-        cls,
-        *,
-        data_node_storage_map: dict,
-        column_name: str,
-    ) -> str | None:
-        for stc in cls._iter_search_source_configs(data_node_storage_map):
-            dtype_map = cls._get_search_meta_attr(stc, "column_dtypes_map", {}) or {}
-            if column_name in dtype_map:
-                return str(dtype_map[column_name])
-        return None
-
-    @classmethod
-    def _apply_dtypes_from_meta(
-            cls,
-            df: pd.DataFrame,
-            *,
-            data_node_storage_map: dict,
-            filter_request: SearchRequest,
-            response_index_names: Any = None,
-    ) -> pd.DataFrame:
-        """
-        df columns expected:
-          - unprefixed join/index key columns returned by the server
-          - base__<col>
-          - <join_alias>__<col>
-        """
-        if df.empty:
-            return df
-
-        index_names = cls._resolve_search_response_index_names(
-            data_node_storage_map=data_node_storage_map,
-            filter_request=filter_request,
-            response_index_names=response_index_names,
-        )
-        time_index_names = {"time_index"}
-        for stc in cls._iter_search_source_configs(data_node_storage_map):
-            time_index_name = cls._get_search_meta_attr(stc, "time_index_name")
-            if time_index_name:
-                time_index_names.add(str(time_index_name))
-
-        # 1) Parse unprefixed join/index keys. These exist even in FULL OUTER JOIN.
-        key_columns_to_cast = list(dict.fromkeys([*index_names, "time_index", "unique_identifier"]))
-        for key_col in key_columns_to_cast:
-            if key_col not in df.columns:
-                continue
-            dtype_str = cls._search_response_column_dtype(
-                data_node_storage_map=data_node_storage_map,
-                column_name=key_col,
-            )
-            if key_col in time_index_names:
-                df[key_col] = token_to_pandas_series(
-                    df[key_col],
-                    TIMESTAMP_TZ,
-                    is_time_index=True,
-                )
-                continue
-            if dtype_str is not None and is_temporal_token(dtype_str):
-                df[key_col] = token_to_pandas_series(df[key_col], dtype_str)
-                continue
-            try:
-                df[key_col] = token_to_pandas_series(df[key_col], dtype_str or "string")
-            except Exception:
-                pass
-
-        # 2) Cast prefixed columns using each table's time-indexed profile projection.
-        for prefix, meta in (data_node_storage_map or {}).items():
-            stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
-            if stc is None:
-                stc = cls._get_search_meta_attr(meta, "time_indexed_profile")
-            if stc is None:
-                continue
-
-            stc_index_names = set(
-                cls._coerce_search_index_names(cls._get_search_meta_attr(stc, "index_names"))
-            )
-            response_index_name_set = set(index_names)
-            dtype_map = cls._get_search_meta_attr(stc, "column_dtypes_map", {}) or {}
-
-            for col_name, col_type in dtype_map.items():
-                # The server returns join/index keys unprefixed; do not look for
-                # prefixed copies of any configured index dimension.
-                if col_name in stc_index_names or col_name in response_index_name_set:
-                    continue
-
-                df_col = f"{prefix}__{col_name}"
-                if df_col not in df.columns:
-                    continue
-
-                try:
-                    df[df_col] = token_to_pandas_series(df[df_col], col_type)
-                except Exception:
-                    # last resort: leave as object (do not crash on one bad cast)
-                    pass
-
-        # 3) Restore the server-declared index vector.
-        if index_names and set(index_names).issubset(df.columns):
-            df = df.set_index(index_names)
-
-        return df
-
-    @classmethod
-    def get_data_from_filter(
-            cls,
-            filter_request: SearchRequest,
-            *,
-            batch_limit: int = 14000,
-    ) -> pd.DataFrame:
-        url = cls.get_object_url() + "/get-data-from-filter/"
-        s = cls.build_session()
-
-        offset = int(filter_request.offset or 0)
-
-        all_results: list[dict] = []
-        data_node_storage_map_json: dict | None = None
-        response_index_names: Any = None
-
-        while True:
-            req = filter_request.model_copy(deep=True)
-            req.limit = int(batch_limit)
-            req.offset = int(offset)
-
-            payload_json = req.model_dump(mode="json", exclude_none=True)
-            payload = {"json": payload_json}
-
-            r = make_request(
-                s=s,
-                loaders=cls.LOADERS,
-                payload=payload,
-                r_type="POST",
-                url=url,
-            )
-
-            if r.status_code != 200:
-                logger.warning(f"Error in request: {r.text}")
-                return pd.DataFrame([])
-
-            response_data = r.json() or {}
-
-            # capture meta map once (same on every page)
-            if data_node_storage_map_json is None:
-                data_node_storage_map_json = response_data.get("data_node_storage_map") or {}
-            if response_index_names is None:
-                for key in ("index_names", "join_keys", "join_index_names", "index_columns"):
-                    if key in response_data and response_data[key] is not None:
-                        response_index_names = response_data[key]
-                        break
-
-            chunk = response_data.get("results", []) or []
-            all_results.extend(chunk)
-
-            next_offset = response_data.get("next_offset")
-            if not next_offset:
-                break
-            offset = int(next_offset)
-
-        # IMPORTANT: dtype=object prevents pandas from converting big ints to float when NULLs exist
-        df = pd.DataFrame(all_results, dtype=object)
-
-        # Build TimeIndexMetaData objects from serializer payloads
-        storage_objs = {}
-        for prefix, meta_json in (data_node_storage_map_json or {}).items():
-            try:
-                storage_objs[prefix] = cls(**meta_json)
-            except Exception:
-                # if instantiation fails, keep the raw dict so the method still works
-                storage_objs[prefix] = meta_json
-
-        # If instantiation failed and we only have dicts, dtype parsing would require dict access.
-        # Assuming cls(**meta_json) works in your client models (it should).
-        df = cls._apply_dtypes_from_meta(
-            df,
-            data_node_storage_map=storage_objs,
-            filter_request=filter_request,
-            response_index_names=response_index_names,
-        )
-
-        return df
 
 class Scheduler(BasePydanticModel, BaseObjectOrm):
     uid: str | None = Field(None, description="Public uid of this scheduler")

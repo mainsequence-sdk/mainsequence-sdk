@@ -329,6 +329,19 @@ def test_platform_managed_schema_resolves_from_sqlalchemy_table_args_only():
     assert sqlalchemy_contracts._resolve_class_schema(Account) == "table_args_schema"
 
 
+def test_time_index_optional_table_info_resolvers_allow_pending_declarative_class():
+    class PendingTimeIndexTable:
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "account_uid"]
+
+    assert sqlalchemy_contracts._resolve_time_index_storage_layout(PendingTimeIndexTable) is None
+    assert sqlalchemy_contracts._resolve_time_index_name(PendingTimeIndexTable) == "time_index"
+    assert sqlalchemy_contracts._resolve_time_index_names(
+        PendingTimeIndexTable,
+        time_index_name="time_index",
+    ) == ["time_index", "account_uid"]
+
+
 def test_platform_managed_accepts_configured_storage_hash_table_name():
     table = FakeTable(
         "placeholder",
@@ -657,9 +670,7 @@ def test_time_index_metadata_configured_tablename_changes_with_index_grain():
         index_names=["time_index", "account_uid", "unique_identifier"],
     )
 
-    assert metatable_configured_tablename(OneIndex) != metatable_configured_tablename(
-        ThreeIndex
-    )
+    assert metatable_configured_tablename(OneIndex) != metatable_configured_tablename(ThreeIndex)
 
 
 def test_time_index_metadata_rejects_first_index_not_time_index():
@@ -847,14 +858,25 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
     import datetime
     import uuid
 
-    from sqlalchemy import DateTime, MetaData, String, Uuid
+    from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
     class Base(DeclarativeBase):
         metadata = MetaData()
 
+    class Account(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+        name: Mapped[str] = mapped_column(String(255), nullable=False)
+
     class AccountHoldings(PlatformTimeIndexMetaData, Base):
-        __table_args__ = {"schema": "public"}
+        __table_args__ = (
+            Index(None, "account_uid"),
+            {"schema": "public"},
+        )
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "AccountHoldings"
         __time_index_name__ = "time_index"
@@ -864,18 +886,37 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
             DateTime(timezone=True),
             nullable=False,
         )
-        account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+        account_uid: Mapped[uuid.UUID] = mapped_column(
+            Uuid,
+            ForeignKey(f"{Account.__table__.fullname}.uid", ondelete="RESTRICT"),
+            nullable=False,
+        )
         unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
 
     assert AccountHoldings.__table__.name == metatable_configured_tablename(AccountHoldings)
+    assert list(AccountHoldings.__table__.primary_key.columns.keys()) == []
+    assert [column.name for column in AccountHoldings.__mapper__.primary_key] == [
+        "time_index",
+        "account_uid",
+        "unique_identifier",
+    ]
 
     request = AccountHoldings.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        target_meta_table_uid_by_fullname={
+            Account.__table__.fullname: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        },
     )
 
     assert request.storage_hash == AccountHoldings.__table__.name
     assert request.time_index_name == "time_index"
     assert request.index_names == ["time_index", "account_uid", "unique_identifier"]
+    assert [column.primary_key for column in request.columns] == [False, False, False]
+    assert len(request.foreign_keys) == 1
+    assert request.foreign_keys[0].source_columns == ["account_uid"]
+    assert request.foreign_keys[0].target_meta_table_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert request.foreign_keys[0].target_columns == ["uid"]
+    assert request.foreign_keys[0].on_delete == "restrict"
 
 
 def test_platform_managed_requires_storage_hash_table_name():

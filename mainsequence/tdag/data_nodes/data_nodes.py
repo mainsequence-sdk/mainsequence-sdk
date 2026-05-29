@@ -332,9 +332,8 @@ class DataNode(DataAccessMixin, ABC):
 
     1. explicit ``hash_namespace="..."`` passed at construction,
     2. subclass-declared aliases such as ``namespace="..."``,
-    3. ``test_node=True`` which becomes the namespace ``"test"``,
-    4. the active ``with hash_namespace("...")`` context manager,
-    5. otherwise, no namespace.
+    3. the active ``with hash_namespace("...")`` context manager,
+    4. otherwise, no namespace.
 
     A non-empty namespace is injected into the build configuration, which changes
     ``update_hash``. Storage identity stays on the explicit ``storage_table``.
@@ -359,7 +358,6 @@ class DataNode(DataAccessMixin, ABC):
         storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
-        test_node: bool = False,
     ):
         """
         Initialize framework-level state for the node.
@@ -380,8 +378,6 @@ class DataNode(DataAccessMixin, ABC):
             configuration payload.
         hash_namespace : str | None
             Optional hash isolation namespace.
-        test_node : bool
-            Convenience flag for the ``"test"`` namespace.
         """
         if not isinstance(config, BaseConfiguration):
             raise TypeError(
@@ -403,28 +399,23 @@ class DataNode(DataAccessMixin, ABC):
         self.config = config
         self._framework_initialized = True
 
-        explicit_namespace = hash_namespace
-        if explicit_namespace is None and test_node:
-            explicit_namespace = "test"
-        if explicit_namespace is not None:
-            self._hash_namespace = (explicit_namespace or "").strip()
+        if hash_namespace is not None:
+            self._hash_namespace = (hash_namespace or "").strip()
 
     def __init_subclass__(cls, **kwargs):
         """
         Wrap subclass construction so DataNode can capture config, compute hashes,
         and apply namespace/test controls consistently.
 
-        The wrapper consumes two special kwargs before the subclass ``__init__`` runs:
+        The wrapper consumes ``hash_namespace`` before the subclass ``__init__`` runs:
 
         - ``hash_namespace="..."``: explicit hash isolation namespace
-        - ``test_node=True``: shortcut for ``hash_namespace="test"``
 
         Namespace precedence is:
 
         1. explicit ``hash_namespace``
         2. subclass-declared aliases such as ``namespace``
-        3. ``test_node=True``
-        4. active namespacing context manager
+        3. active namespacing context manager
 
         Only a non-empty namespace is injected into the hashed build configuration.
         That preserves backward compatibility for normal runs while allowing isolated
@@ -435,8 +426,8 @@ class DataNode(DataAccessMixin, ABC):
         if "_ARGS_IGNORE_IN_STORAGE_HASH" in cls.__dict__:
             raise TypeError(
                 f"{cls.__name__} uses removed class attribute _ARGS_IGNORE_IN_STORAGE_HASH; "
-                "move those fields into DataNodeConfiguration and mark them with "
-                'json_schema_extra={"update_only": True}.'
+                "move those fields into DataNodeConfiguration. Configuration fields "
+                "participate in update hashing by default."
             )
 
         # Get the original __init__ from the new subclass
@@ -445,7 +436,11 @@ class DataNode(DataAccessMixin, ABC):
         @wraps(original_init)
         def wrapped_init(self, *args, **kwargs):
             # ---- hashing namespace controls (never forwarded to user __init__) ----
-            test_node_flag = bool(kwargs.pop("test_node", False))
+            if "test_node" in kwargs:
+                raise TypeError(
+                    "test_node has been removed from DataNode construction; use "
+                    'hash_namespace="..." or with hash_namespace("...") instead.'
+                )
             explicit_namespace = kwargs.pop("hash_namespace", None)
             namespace_aliases = tuple(
                 getattr(cls, "_HASH_NAMESPACE_ALIASES", ()) or ()
@@ -480,14 +475,11 @@ class DataNode(DataAccessMixin, ABC):
             # Determine namespace:
             # 1) explicit hash_namespace kwarg wins
             # 2) subclass-declared alias kwarg, such as namespace
-            # 3) test_node=True => "test"
-            # 4) else: context manager namespace
+            # 3) else: context manager namespace
             if explicit_namespace is not None:
                 namespace = explicit_namespace
             elif alias_namespace_provided:
                 namespace = alias_namespace
-            elif test_node_flag:
-                namespace = "test"
             else:
                 namespace = current_hash_namespace()
 
@@ -502,7 +494,7 @@ class DataNode(DataAccessMixin, ABC):
             if not getattr(self, "_framework_initialized", False):
                 raise TypeError(
                     f"{self.__class__.__name__} must call super().__init__(config=..., "
-                    "hash_namespace=..., test_node=...) from its constructor."
+                    "hash_namespace=...) from its constructor."
                 )
             if not isinstance(getattr(self, "config", None), BaseConfiguration):
                 raise TypeError(
@@ -613,7 +605,7 @@ class DataNode(DataAccessMixin, ABC):
 
             # ---- the surgical part: only change hashes when namespace is non-empty ----
             # Backward compatibility guarantee:
-            # - if no test_node + no context => namespace == "" => NOTHING added => hashes identical to old behavior
+            # - if no namespace => NOTHING added => hashes identical to normal behavior
             self._hash_namespace = namespace
             if self._hash_namespace:
                 final_kwargs["hash_namespace"] = self._hash_namespace
@@ -716,24 +708,10 @@ class DataNode(DataAccessMixin, ABC):
         """
         return getattr(self, "_hash_namespace", "") or ""
 
-    @property
-    def test_node(self) -> bool:
-        """
-        Return ``True`` when this node is running with any non-empty hash namespace.
-
-        In current behavior, ``test_node`` is just a convenience view over
-        ``bool(self.hash_namespace)``.
-        """
-        # “test node” = any non-empty namespace
-        return bool(self.hash_namespace)
-
     def get_offset_start(self) -> datetime.datetime:
         """
-        Hook to allow test nodes to change OFFSET_START without forking update logic.
-        Backward compatible: prod returns OFFSET_START exactly as before.
+        Return the configured first-run fallback start date.
         """
-        if self.test_node and hasattr(self, "TEST_OFFSET_START"):
-            return self.TEST_OFFSET_START
         config = self._get_data_node_configuration()
         offset_start = getattr(config, "offset_start", None) if config is not None else None
         if offset_start is not None:

@@ -136,7 +136,7 @@ main update lifecycle:
 - `set_dependencies_df()` filters the head node with
   `depth_df["update_node_id"] != self.data_node_update.id`.
 
-`mainsequence/tdag/base_persist_managers.py` still connects dependencies with
+`mainsequence/tdag/data_nodes/persist_managers.py` still connects dependencies with
 id-named arguments:
 
 - `depends_on_connect(target_time_serie_id=new_ts.data_node_update.id)`

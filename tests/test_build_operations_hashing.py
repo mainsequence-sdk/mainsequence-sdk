@@ -43,14 +43,14 @@ def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatc
     assert len(config.update_hash.rsplit("_", 1)[1]) == 32
 
 
-def test_nested_pydantic_runtime_only_fields_inside_lists_do_not_affect_hashes(monkeypatch):
+def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class RecordDefinition(BaseModel):
         column_name: str
         dtype: str
-        label: str | None = Field(default=None, json_schema_extra={"runtime_only": True})
-        description: str | None = Field(default=None, json_schema_extra={"runtime_only": True})
+        label: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
+        description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
 
     class NodeConfig(BaseModel):
         records: list[RecordDefinition]
@@ -83,56 +83,37 @@ def test_nested_pydantic_runtime_only_fields_inside_lists_do_not_affect_hashes(m
     assert hashes_a == hashes_b
 
 
-def test_update_only_value_changes_update_hash_but_not_storage_hash(monkeypatch):
+def test_normal_config_value_changes_update_hash(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class NodeConfig(BaseModel):
-        shard_id: str = Field(..., json_schema_extra={"update_only": True})
+        shard_id: str
         identifier: str
 
     update_hash_a, storage_hash_a = _hashes(NodeConfig(shard_id="A", identifier="prices"))
     update_hash_b, storage_hash_b = _hashes(NodeConfig(shard_id="B", identifier="prices"))
 
     assert update_hash_a != update_hash_b
-    assert storage_hash_a == storage_hash_b
+    assert storage_hash_a != storage_hash_b
 
 
-def test_update_only_metadata_changes_storage_hash_only(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
+def test_update_only_metadata_is_rejected():
     class NodeConfig(BaseModel):
-        scope: str
-        identifier: str
+        shard_id: str = Field(..., json_schema_extra={"update_only": True})
 
-    config = NodeConfig(scope="desk_a", identifier="prices")
-    field_info = NodeConfig.model_fields["scope"]
-    original_extra = field_info.json_schema_extra
-
-    try:
-        update_hash_normal, storage_hash_normal = _hashes(config)
-        field_info.json_schema_extra = {"update_only": True}
-        update_hash_update_only, storage_hash_update_only = _hashes(config)
-    finally:
-        field_info.json_schema_extra = original_extra
-
-    assert update_hash_normal == update_hash_update_only
-    assert storage_hash_normal != storage_hash_update_only
+    with pytest.raises(ValueError, match="update_only"):
+        build_operations.serialize_argument(NodeConfig(shard_id="desk_a"))
 
 
-def test_runtime_only_value_changes_neither_hash(monkeypatch):
-    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
-
+def test_runtime_only_metadata_is_rejected():
     class NodeConfig(BaseModel):
-        identifier: str
         label: str = Field(..., json_schema_extra={"runtime_only": True})
 
-    hashes_a = _hashes(NodeConfig(identifier="prices", label="Close"))
-    hashes_b = _hashes(NodeConfig(identifier="prices", label="Last"))
-
-    assert hashes_a == hashes_b
+    with pytest.raises(ValueError, match="runtime_only"):
+        build_operations.serialize_argument(NodeConfig(label="Close"))
 
 
-def test_hash_excluded_value_changes_neither_hash(monkeypatch):
+def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class NodeConfig(BaseModel):
@@ -145,19 +126,22 @@ def test_hash_excluded_value_changes_neither_hash(monkeypatch):
     assert hashes_a == hashes_b
 
 
-def test_runtime_only_node_metadata_does_not_affect_hashes(monkeypatch):
+def test_hash_excluded_node_metadata_does_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class DataNodeMetaData(BaseModel):
-        identifier: str | None = Field(default=None, json_schema_extra={"runtime_only": True})
-        description: str | None = Field(default=None, json_schema_extra={"runtime_only": True})
-        data_frequency_id: str | None = Field(default=None, json_schema_extra={"runtime_only": True})
+        identifier: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
+        description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
+        data_frequency_id: str | None = Field(
+            default=None,
+            json_schema_extra={"hash_excluded": True},
+        )
 
     class NodeConfig(BaseModel):
         identifier: str
         node_metadata: DataNodeMetaData | None = Field(
             default=None,
-            json_schema_extra={"runtime_only": True},
+            json_schema_extra={"hash_excluded": True},
         )
 
     hashes_a = _hashes(NodeConfig(identifier="prices"))
@@ -175,7 +159,7 @@ def test_runtime_only_node_metadata_does_not_affect_hashes(monkeypatch):
     assert hashes_a == hashes_b
 
 
-def test_offset_start_changes_update_hash_but_not_storage_hash(monkeypatch):
+def test_offset_start_changes_update_hash(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     update_hash_a, storage_hash_a = _hashes(
@@ -186,7 +170,7 @@ def test_offset_start_changes_update_hash_but_not_storage_hash(monkeypatch):
     )
 
     assert update_hash_a != update_hash_b
-    assert storage_hash_a == storage_hash_b
+    assert storage_hash_a != storage_hash_b
 
 
 def test_source_table_foreign_key_hash_uses_target_meta_table_uid(monkeypatch):
@@ -306,7 +290,6 @@ def test_data_node_configuration_overrides_offset_start():
 
     class ConfigurableDataNode(DataNode):
         OFFSET_START = datetime.datetime(2018, 1, 1, tzinfo=datetime.UTC)
-        TEST_OFFSET_START = datetime.datetime(2030, 1, 1, tzinfo=datetime.UTC)
 
         def __init__(self, node_config: NodeConfig, *args, **kwargs):
             self.node_config = node_config
@@ -326,7 +309,7 @@ def test_data_node_configuration_overrides_offset_start():
     assert node.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 
     node._hash_namespace = "test"
-    assert node.get_offset_start() == ConfigurableDataNode.TEST_OFFSET_START
+    assert node.get_offset_start() == datetime.datetime(2024, 1, 1, tzinfo=datetime.UTC)
 
 
 def test_subclass_missing_super_config_is_rejected():

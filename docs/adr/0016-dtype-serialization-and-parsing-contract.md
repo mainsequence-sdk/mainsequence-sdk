@@ -158,7 +158,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `DataNodeUpdate.upsert_data_into_table()` passes the resulting
     `column_dtypes_map` into source-table creation.
 
-- `mainsequence/tdag/base_persist_managers.py:556`
+- `mainsequence/tdag/data_nodes/persist_managers.py`
   - `BasePersistManager.persist_updated_data()` forwards records,
     `columns_metadata`, and `source_table_schema` into
     `DataNodeUpdate.upsert_data_into_table()`.
@@ -192,7 +192,7 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
   - `SourceTableConfiguration.set_or_update_columns_metadata()` sends
     `columns_metadata` to the backend.
 
-- `mainsequence/tdag/base_persist_managers.py:497`
+- `mainsequence/tdag/data_nodes/persist_managers.py`
   - `BasePersistManager.set_column_metadata()` decides whether to sync
     `ColumnMetaData` back to the backend.
 

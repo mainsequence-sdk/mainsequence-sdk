@@ -130,8 +130,8 @@ import os
 from mainsequence.tdag import APIDataNode
 
 
-PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
-RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}"
+PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
+RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_UID}"
 
 
 def get_random_numbers(*, start_date: dt.date, end_date: dt.date) -> dict[str, object]:

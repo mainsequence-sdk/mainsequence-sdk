@@ -69,7 +69,7 @@ The relevant client models are:
 - `TimeIndexMetaData` in `mainsequence/client/models_tdag.py`
 - `DataNodeUpdate` in `mainsequence/client/models_tdag.py`
 - `DataNode` runtime class in `mainsequence/tdag/data_nodes/data_nodes.py`
-- `PersistManager` in `mainsequence/tdag/base_persist_managers.py`
+- `PersistManager` in `mainsequence/tdag/data_nodes/persist_managers.py`
 - `build_operations.create_config(...)` in
   `mainsequence/tdag/data_nodes/build_operations.py`
 
@@ -230,6 +230,59 @@ Fields that should move away from `TimeIndexMetaData` over time:
 surface. New code should put source-table setup, column labels/descriptions,
 and structural metadata in MetaTable registration/bootstrap contracts.
 
+### TimeIndexMetaData Inventory Review
+
+Reviewed against `mainsequence/client/models_tdag.py` on 2026-05-29.
+
+This inventory is the current ownership line for the client model. It is not a
+new API promise; it is the cleanup checklist for finishing the MetaTable
+canonical storage migration.
+
+#### Field Ownership
+
+| Current field surface | Final owner | Direction |
+| --- | --- | --- |
+| Inherited MetaTable fields: `uid`, `data_source`, `data_source_uid`, `storage_hash`, `identifier`, `namespace`, `description`, `labels`, `management_mode`, `physical_table_name`, `table_contract`, `contract_version`, `introspection_snapshot`, `protect_from_deletion`, `columns`, `indexes_meta`, `foreign_keys`, `incoming_fks`, `creation_date`, `created_by_user_uid`, `organization_owner_uid`, `open_for_everyone`, `registration` | MetaTable | Canonical storage state. Keep on `MetaTable`; `TimeIndexMetaData` may expose them only through inheritance/projection. |
+| `ENDPOINT`, `FILTERSET_FIELDS`, `FILTER_VALUE_NORMALIZERS`, `READ_QUERY_PARAMS`, `READ_QUERY_PARAM_DESCRIPTIONS` | Compatibility wrapper | Dynamic-table endpoint and query compatibility. Keep only while backend routes still use `ts_manager/dynamic_table`. |
+| `build_configuration_json_schema` | Update process | Move to the update record/build configuration contract. It is not table storage metadata. |
+| `data_source_open_for_everyone` | DataSource or access policy | Compatibility projection only. Canonical access lives on DataSource/MetaTable permission fields. |
+| `source_class_name` | Update process provenance | Move to the update record or update provenance payload. It is not storage identity. |
+| `time_indexed_profile` | DataNode table extension | Keep as a MetaTable-backed timestamped-table profile projection until the backend exposes the equivalent extension directly from MetaTable. |
+| `table_index_names` | Compatibility wrapper | Derive from `time_indexed_profile` or `MetaTable.table_contract`; remove as a stored client concern. |
+| `compression_policy_config`, `retention_policy_config` | DataNode table extension | Timestamped-table storage policy. Keep out of update-process configuration. |
+| `_drop_indices`, `_rebuild_indices` | Update/write option | Do not persist as table metadata. If still needed, pass as an explicit write/bootstrap option. |
+
+Nested `time_indexed_profile` fields have the same ownership split:
+
+| Current profile field surface | Final owner | Direction |
+| --- | --- | --- |
+| `time_index_name`, `index_names`, `column_dtypes_map`, `storage_layout`, `physical_index_plan` | DataNode table extension backed by MetaTable contract | These describe timestamped table semantics; structural column truth still comes from `MetaTable.table_contract`. |
+| `foreign_keys`, `foreign_key_projections`, `columns_metadata` | MetaTable contract/projection | Canonical source is `MetaTable.table_contract`, `MetaTable.foreign_keys`, and `MetaTable.columns`; profile fields are projections. |
+| `multi_index_stats`, `multi_index_column_stats`, `last_time_index_value`, `earliest_index_value` | DataNode table extension/update progress projection | Keep as table-profile progress read models, not generic MetaTable fields. |
+| `dynamic_table_uid`, `related_table_uid` | Compatibility wrapper | These must resolve to MetaTable UID during transition. Do not introduce a second storage identity. |
+| `column_index_names` | Compatibility wrapper | Legacy projection; remove when callers use `index_names`. |
+
+#### Method Ownership
+
+| Current method surface | Classification | Direction |
+| --- | --- | --- |
+| Inherited `MetaTable` methods: `patch`, `patch_by_hash`, `delete`, `destroy_by_uid`, `validate_contract`, `validate_existing_contract`, `introspect`, `refresh_table_search_index`, `run_query`, `description_search`, `column_search`, `execute_operation` | MetaTable method | Canonical table operations. Prefer `MetaTable` where no DataNode timestamp semantics are required. |
+| `register` | DataNode table extension/bootstrap wrapper | Intentional dynamic-table registration while backend routes remain split. It must stay out of DataNode runtime and PersistManager hot paths. |
+| `get_or_create` | Compatibility wrapper | Do not use from DataNode runtime. Storage creation belongs to MetaTable registration/bootstrap. |
+| `_fill_legacy_dynamic_table_metatable_fields` | Compatibility wrapper | Payload coercion for old dynamic-table responses that do not emit full MetaTable fields. Remove after backend serializers converge. |
+| `_time_indexed_dynamic_contract`, `_time_indexed_storage_layout`, `time_index_name`, `index_names`, `column_dtypes_map`, `time_indexed_foreign_keys`, `_require_time_indexed_table_contract` | DataNode table extension | Contract/profile readers for timestamped DataNode tables. Keep as extension helpers or move behind a dedicated profile object. |
+| `_date_for_payload`, `_normalize_dimension_range_map`, `_build_dimension_payload` | DataNode table extension | Payload helpers for timestamped read/delete routes. |
+| `get_data_updates` | DataNode table extension/update progress projection | Reads update-progress/table-profile stats. Do not make it generic MetaTable state. |
+| `delete_after_date` | DataNode table extension | Timestamped tail delete. Keep distinct from generic MetaTable delete/drop operations. |
+| `_uses_session_duckdb_data_source`, `_uses_session_local_data_source`, `delete_table` | Compatibility wrapper around MetaTable/local storage operations | Generic table deletion belongs to MetaTable; local-session branching should move out of `TimeIndexMetaData`. |
+| `handle_time_indexed_profile_creation` | Compatibility wrapper | Legacy validation shim only. It must not create profile/storage and must not be called from the DataNode write hot path. |
+| `_serialize_column_metadata_for_validation`, `_validate_existing_source_table_columns_metadata`, `_normalize_source_table_foreign_key_for_validation`, `_validate_existing_source_table_foreign_keys` | Compatibility wrapper for MetaTable contract validation | Final owner is MetaTable registration/bootstrap validation. These should disappear when DataNode write paths stop carrying schema metadata. |
+| `map_columns_to_df`, `get_last_observation`, `_get_data_between_dates_common`, `get_data_between_dates_from_api`, `get_data_between_dates_from_node_identifier` | DataNode table extension/read compatibility | Keep only for timestamped reads. `get_data_between_dates_from_node_identifier` is a compatibility class route; new factories should resolve MetaTable-backed storage first. |
+
+No `TimeIndexMetaData` method should be a final update-process method. Anything
+that creates, resolves, mutates, or schedules an update record belongs on
+`DataNodeUpdate`, `PersistManager`, or the runtime `DataNode`, not on storage.
+
 ### DataNodeUpdate Client Record
 
 The backend update record currently named
@@ -264,7 +317,6 @@ class DataNode(DataAccessMixin, ABC):
         storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
-        test_node: bool = False,
     ):
         ...
 ```
@@ -284,7 +336,6 @@ from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
 
 
 class PricesTable(PlatformTimeIndexMetaData, Base):
-    __table_args__ = {"schema": "public"}
     __metatable_namespace__ = "market_data"
     __metatable_identifier__ = "prices_daily"
     __time_index_name__ = "time_index"
@@ -355,8 +406,8 @@ The final identity rules are:
 - It may continue to isolate update process hashes.
 - It must not silently create a different storage table.
 - If a caller wants namespaced storage, they must pass a namespaced MetaTable.
-- `test_node=True` must not auto-create storage; tests that need isolated
-  storage must pass an isolated MetaTable explicitly.
+- `test_node=True` is removed. Tests should use explicit `hash_namespace`
+  values and pass the intended storage table explicitly.
 
 ## Configuration Split
 
@@ -381,10 +432,7 @@ The migration should introduce a clearer configuration name:
 
 ```python
 class DataNodeUpdateConfiguration(BaseConfiguration):
-    offset_start: datetime.datetime | None = Field(
-        default=None,
-        json_schema_extra={"update_only": True},
-    )
+    offset_start: datetime.datetime | None = None
 ```
 
 `DataNodeConfiguration` can remain as a compatibility alias while docs migrate.
@@ -702,8 +750,8 @@ Required backend capabilities:
 
 ## Implementation Tasks
 
-- [ ] Inventory `TimeIndexMetaData` fields and classify their final owner.
-- [ ] Inventory `TimeIndexMetaData` methods and classify as MetaTable method,
+- [x] Inventory `TimeIndexMetaData` fields and classify their final owner.
+- [x] Inventory `TimeIndexMetaData` methods and classify as MetaTable method,
       DataNode table extension, update-process method, or compatibility wrapper.
 - [x] Move data-source client models from `models_tdag.py` into
       `models_metatables.py` to avoid import cycles.

@@ -11,7 +11,9 @@ In this part, you will:
 - run launcher scripts from the terminal and inspect persisted tables from the CLI
 - learn how DataNode update identity relates to the underlying table
 
-DataNodes created in this part: **`DailyRandomNumber`** and **`DailyRandomAddition`**.
+DataNodes created in this part: **`DailyRandomNumber`**, **`DailyRandomAddition`**,
+and **`AccountHoldingsSnapshot`**. Canonical platform-managed MetaTable example:
+**`Account`**.
 
 ## 1. Create Your First DataNode
 
@@ -33,22 +35,28 @@ Create a new file at `src\data_nodes\example_nodes.py` (Windows) or `src/data_no
 ```python
 import datetime
 import os
+import uuid
 from typing import Dict, Union
 
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, MetaData
+from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from mainsequence.client import MetaTable
 from mainsequence.tdag import (
     APIDataNode,
     DataNode,
     DataNodeConfiguration,
 )
-from mainsequence.tdag.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.tdag.meta_tables import (
+    PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
+    build_compiled_sql_v1_operation,
+)
 
-PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
+PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
 
 
 class Base(DeclarativeBase):
@@ -56,9 +64,8 @@ class Base(DeclarativeBase):
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
-    __table_args__ = {"schema": "public"}
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_ID}.daily_random_number"
-    __metatable_identifier__ = f"daily_random_number_{PROJECT_ID}"
+    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_number"
+    __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -70,9 +77,8 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
-    __table_args__ = {"schema": "public"}
-    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_ID}.daily_random_addition"
-    __metatable_identifier__ = f"daily_random_addition_{PROJECT_ID}"
+    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.daily_random_addition"
+    __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -128,7 +134,6 @@ class RandomDataNodeConfig(DataNodeConfiguration):
         VolatilityConfig(center=1, skew=True),
         title="Vol Config",
         description="Vol Configuration",
-        json_schema_extra={"update_only": True},
     )
 
 
@@ -143,7 +148,6 @@ class DailyRandomNumber(DataNode):
         storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
-        test_node: bool = False,
     ):
         """
         :param config: Configuration containing mean and volatility
@@ -155,7 +159,6 @@ class DailyRandomNumber(DataNode):
             config=config,
             storage_table=storage_table,
             hash_namespace=hash_namespace,
-            test_node=test_node,
         )
 
     def update(self) -> pd.DataFrame:
@@ -193,7 +196,7 @@ authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
 
-    That is why this example includes `MAIN_SEQUENCE_PROJECT_ID` in the storage namespace. It gives each project a stable table identity while still keeping the identifier readable.
+    That is why this example includes `MAIN_SEQUENCE_PROJECT_UID` in the storage namespace and identifier. It gives each project a stable table identity while still keeping the identifier readable.
 
     `identifier` is published metadata, not hash identity. That means you can
     later repoint a published identifier to a different backing table during a migration
@@ -209,14 +212,16 @@ authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
     The `Identifier` column lists table identifiers, not row-level `unique_identifier` values.
 
-In Pydantic v2, mark updater-scope fields with `json_schema_extra={"update_only": True}` when they should affect the update process without changing the storage-table contract.
+In Pydantic v2, every `DataNodeConfiguration` field is updater-scope by
+default and participates in `update_hash`.
 
 If a field should be kept only for UI or descriptive purposes and must not
 affect update identity, mark it with
 `json_schema_extra={"hash_excluded": True}`.
 
 Use `hash_excluded` only for descriptive metadata. If changing the field would
-change output values, dependencies, or schema, it should not be `hash_excluded`.
+change output values, dependencies, or schema, it must remain a normal
+configuration field.
 
 ### DataNode Recipe
 
@@ -246,6 +251,218 @@ The `update()` method has one hard requirement: it must return a `pandas.DataFra
 - for bar data, `time_index` should usually be the right edge of the bar, not the bar start; for example, daily bars should typically use the session-close timestamp
 - if dates are stored in columns, they should be represented as timestamps
 
+#### Entity tables with more than one index
+
+The simple node above writes one row per day, so its storage contract uses only
+`["time_index"]`. Entity tables must include every column that identifies a row.
+
+For example, an account holding row belongs to a canonical `Account`
+MetaTable and is identified by:
+
+```python
+["time_index", "account_uid", "unique_identifier"]
+```
+
+That means `(2026-01-02, account-a, AAPL)` and `(2026-01-02, account-b, AAPL)`
+are different rows, even though they share the same timestamp and security.
+`Account` is the platform-managed parent table. `AccountHoldingsStorage` is the
+time-indexed DataNode storage table. The foreign key connects
+`AccountHoldingsStorage.account_uid` to `Account.uid`, while
+`PlatformTimeIndexMetaData` still uses the full `__index_names__` tuple as the
+ORM identity and sends that tuple as `index_names`.
+
+Add these models to `src/data_nodes/example_nodes.py` when your DataNode
+publishes account/security observations:
+
+```python
+class Account(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.accounts"
+    __metatable_identifier__ = f"account_{PROJECT_UID}"
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+
+class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
+    __table_args__ = (Index(None, "account_uid"),)
+    __metatable_namespace__ = f"mainsequence.examples.{PROJECT_UID}.account_holdings"
+    __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
+    __time_index_name__ = "time_index"
+    __index_names__ = ["time_index", "account_uid", "unique_identifier"]
+
+    time_index: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    account_uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        ForeignKey(
+            f"{Account.__table__.fullname}.uid",
+            ondelete="RESTRICT",
+        ),
+        nullable=False,
+    )
+    unique_identifier: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+
+
+def register_account_table(data_source_uid: str) -> MetaTable:
+    return Account.register(
+        data_source_uid=data_source_uid,
+        description="Tutorial platform-managed account table.",
+        labels=["tutorial", "data-node"],
+    )
+
+
+def upsert_account(
+    account_meta_table: MetaTable,
+    *,
+    account_uid: uuid.UUID,
+    account_code: str,
+    name: str,
+) -> None:
+    operation = build_compiled_sql_v1_operation(
+        operation="insert",
+        sql=f"""
+            INSERT INTO {account_meta_table.physical_table_name}
+                (uid, account_code, name)
+            VALUES
+                (%(uid)s, %(account_code)s, %(name)s)
+            ON CONFLICT (uid) DO UPDATE SET
+                account_code = EXCLUDED.account_code,
+                name = EXCLUDED.name
+            RETURNING uid
+        """,
+        parameters={
+            "uid": str(account_uid),
+            "account_code": account_code,
+            "name": name,
+        },
+        scope={
+            "tables": [
+                {
+                    "meta_table_uid": account_meta_table.uid,
+                    "alias": "account",
+                    "access": "write",
+                }
+            ]
+        },
+        limits={"max_rows": 1, "statement_timeout_ms": 15000},
+    )
+    MetaTable.execute_operation(operation)
+
+
+def register_account_holdings_storage_table(
+    data_source_uid: str,
+    account_meta_table: MetaTable,
+) -> type[PlatformTimeIndexMetaData]:
+    AccountHoldingsStorage.register(
+        data_source_uid=data_source_uid,
+        description="Tutorial DataNode storage table for account holdings.",
+        labels=["tutorial", "data-node"],
+        target_meta_tables={Account: account_meta_table},
+    )
+    return AccountHoldingsStorage
+```
+
+Then return a `MultiIndex` DataFrame whose index names exactly match the storage
+contract:
+
+```python
+class AccountHoldingsConfig(DataNodeConfiguration):
+    account_uid: uuid.UUID
+
+
+class AccountHoldingsSnapshot(DataNode):
+    def __init__(
+        self,
+        config: AccountHoldingsConfig,
+        storage_table: type[PlatformTimeIndexMetaData],
+        *,
+        hash_namespace: str | None = None,
+    ):
+        self.account_uid = config.account_uid
+        super().__init__(
+            config=config,
+            storage_table=storage_table,
+            hash_namespace=hash_namespace,
+        )
+
+    def dependencies(self):
+        return {}
+
+    def update(self) -> pd.DataFrame:
+        current_minute = pd.Timestamp.now("UTC").floor("min")
+        last = self.update_statistics.max_time_index_value
+        if last is not None and last >= current_minute:
+            return pd.DataFrame()
+
+        minute_offset = current_minute.hour * 60 + current_minute.minute
+        rows = [
+            (current_minute, self.account_uid, "AAPL", 12.0 + (minute_offset % 5)),
+            (current_minute, self.account_uid, "MSFT", 8.0 + (minute_offset % 3)),
+        ]
+        index = pd.MultiIndex.from_tuples(
+            [(row[0], row[1], row[2]) for row in rows],
+            names=["time_index", "account_uid", "unique_identifier"],
+        )
+        return pd.DataFrame(
+            {"quantity": [row[3] for row in rows]},
+            index=index,
+        )
+```
+
+This node writes one account snapshot per UTC minute, so rerunning it after the
+minute changes produces a new timestamp and different quantities.
+
+Run it with the active project data source:
+
+```python
+import uuid
+
+import mainsequence.client as msc
+from mainsequence.tdag.data_nodes import hash_namespace
+
+from src.data_nodes.example_nodes import (
+    AccountHoldingsConfig,
+    AccountHoldingsSnapshot,
+    register_account_table,
+    register_account_holdings_storage_table,
+    upsert_account,
+)
+
+
+def main():
+    data_source_uid = msc.get_session_data_source().uid
+    account_meta_table = register_account_table(data_source_uid)
+    storage_table = register_account_holdings_storage_table(
+        data_source_uid,
+        account_meta_table,
+    )
+    account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
+    upsert_account(
+        account_meta_table,
+        account_uid=account_uid,
+        account_code="TUTORIAL",
+        name="Tutorial Account",
+    )
+
+    with hash_namespace("tutorial_account_holdings"):
+        node = AccountHoldingsSnapshot(
+            config=AccountHoldingsConfig(account_uid=account_uid),
+            storage_table=storage_table,
+        )
+        node.run(debug_mode=True, force_update=True)
+
+
+if __name__ == "__main__":
+    main()
+```
+
 
 Next, create `scripts\random_number_launcher.py` to run the node:
 
@@ -260,9 +477,9 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    data_source = msc.DataSource.create_duckdb()
-    dynamic_data_source = msc.DynamicTableDataSource.create_duckdb(data_source=data_source)
-    storage_table = register_daily_random_number_storage_table(dynamic_data_source.uid)
+    storage_table = register_daily_random_number_storage_table(
+        msc.get_session_data_source().uid
+    )
 
     daily_node = DailyRandomNumber(
         config=RandomDataNodeConfig(mean=0.0),
@@ -301,9 +518,9 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    data_source = msc.DataSource.create_duckdb()
-    dynamic_data_source = msc.DynamicTableDataSource.create_duckdb(data_source=data_source)
-    storage_table = register_daily_random_number_storage_table(dynamic_data_source.uid)
+    storage_table = register_daily_random_number_storage_table(
+        msc.get_session_data_source().uid
+    )
 
     with hash_namespace("tutorial_daily_random_number"):
         daily_node = DailyRandomNumber(
@@ -335,9 +552,9 @@ from src.data_nodes.example_nodes import (
 
 
 def test_daily_random_number_smoke():
-    data_source = msc.DataSource.create_duckdb()
-    dynamic_data_source = msc.DynamicTableDataSource.create_duckdb(data_source=data_source)
-    storage_table = register_daily_random_number_storage_table(dynamic_data_source.uid)
+    storage_table = register_daily_random_number_storage_table(
+        msc.get_session_data_source().uid
+    )
 
     with hash_namespace("pytest_daily_random_number_smoke"):
         node = DailyRandomNumber(
@@ -411,7 +628,6 @@ class DailyRandomAddition(DataNode):
         daily_random_number_storage_table: type[PlatformTimeIndexMetaData],
         *,
         hash_namespace: str | None = None,
-        test_node: bool = False,
     ):
         self.mean = config.mean
         self.std = config.std
@@ -419,13 +635,11 @@ class DailyRandomAddition(DataNode):
             config=RandomDataNodeConfig(mean=0.0),
             storage_table=daily_random_number_storage_table,
             hash_namespace=hash_namespace,
-            test_node=test_node,
         )
         super().__init__(
             config=config,
             storage_table=storage_table,
             hash_namespace=hash_namespace,
-            test_node=test_node,
         )
 
     def dependencies(self):
@@ -464,10 +678,9 @@ from src.data_nodes.example_nodes import (
 )
 
 
-data_source = msc.DataSource.create_duckdb()
-dynamic_data_source = msc.DynamicTableDataSource.create_duckdb(data_source=data_source)
-number_storage_table = register_daily_random_number_storage_table(dynamic_data_source.uid)
-addition_storage_table = register_daily_random_addition_storage_table(dynamic_data_source.uid)
+data_source_uid = msc.get_session_data_source().uid
+number_storage_table = register_daily_random_number_storage_table(data_source_uid)
+addition_storage_table = register_daily_random_addition_storage_table(data_source_uid)
 
 
 daily_node = DailyRandomAddition(
@@ -535,9 +748,9 @@ from src.data_nodes.example_nodes import (
 
 low_vol = VolatilityConfig(center=0.5, skew=False)
 high_vol = VolatilityConfig(center=2.0, skew=True)
-data_source = msc.DataSource.create_duckdb()
-dynamic_data_source = msc.DynamicTableDataSource.create_duckdb(data_source=data_source)
-storage_table = register_daily_random_number_storage_table(dynamic_data_source.uid)
+storage_table = register_daily_random_number_storage_table(
+    msc.get_session_data_source().uid
+)
 
 
 daily_node_low = DailyRandomNumber(

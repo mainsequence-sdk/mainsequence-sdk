@@ -23,11 +23,10 @@ class RecordDefinition(BaseModel):
     description: str | None = None
 ```
 
-In the current implementation, descriptive metadata is excluded from hashing
-through `json_schema_extra={"runtime_only": True}`. That marker name is
-misleading for these fields: they are not runtime controls. They are
-publication, discovery, and UI metadata. The behavior we need is hash exclusion
-for descriptive metadata, not "runtime-only" semantics.
+Descriptive metadata is excluded from hashing through
+`json_schema_extra={"hash_excluded": True}`. Older `runtime_only` metadata is
+removed because these fields are not runtime controls. They are publication,
+discovery, and UI metadata.
 
 This applies to both column metadata and table metadata:
 
@@ -496,8 +495,8 @@ foreign_keys = [
       column names, and delete behavior.
 - [x] Reuse existing `DataNodeConfiguration.records` as the record declaration
       for FK-enabled DataNodes.
-- [x] Replace or alias the misleading `runtime_only` marker for descriptive
-      metadata fields with a metadata-specific hash exclusion concept.
+- [x] Replace the misleading `runtime_only` marker for descriptive metadata
+      fields with `hash_excluded`.
 - [x] Confirm `RecordDefinition.label` and `RecordDefinition.description` do
       not affect `update_hash` or `storage_hash`.
 - [x] Confirm `DataNodeMetaData.identifier`,

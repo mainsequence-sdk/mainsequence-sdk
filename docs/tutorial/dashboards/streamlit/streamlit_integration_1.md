@@ -69,32 +69,6 @@ It is a good fit for dashboards because:
 
 In other words, this is the "I know which table I want, now give me a reader" entry point.
 
-### When should you switch to `mainsequence.tdag.data_nodes.filters`?
-
-`APIDataNode.build_from_identifier(...)` is the right tool for straightforward reads of one table.
-
-When the dashboard starts building ad-hoc filters dynamically, or when it needs joins across dynamic tables, move to the structured filter DSL from `mainsequence.tdag.data_nodes.filters`.
-
-For example:
-
-```python
-import datetime as dt
-
-from mainsequence.tdag.data_nodes.filters import F, SearchRequest, and_
-
-request = SearchRequest(
-    node_unique_identifier=SIMULATED_PRICES_TABLE,
-    filter=and_(
-        F.between("time_index", start_date, end_date),
-        F.in_("unique_identifier", unique_identifiers),
-    ),
-)
-
-history = msc.TimeIndexMetaData.get_data_from_filter(request)
-```
-
-That is the better path when the UI is assembling filters at runtime, because it gives you a safe, structured request format instead of hard-coding one read shape into dashboard code.
-
 ## 2) Landing page
 
 Create `dashboards/tutorial_fixed_income_dashboard/app.py`.

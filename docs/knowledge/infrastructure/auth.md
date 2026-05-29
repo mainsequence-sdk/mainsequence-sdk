@@ -151,7 +151,7 @@ eval "$(mainsequence login --export)"
 Local project provisioning is also runtime-credential aware:
 
 ```bash
-mainsequence project set-up-locally <PROJECT_ID>
+mainsequence project set-up-locally <PROJECT_UID>
 mainsequence project refresh_token --path .
 ```
 
@@ -163,7 +163,7 @@ MAINSEQUENCE_ACCESS_TOKEN=<exchanged short-lived access token>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_ID=<credential id>
 MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET=<credential secret>
 MAINSEQUENCE_ENDPOINT=<platform API origin>
-MAIN_SEQUENCE_PROJECT_ID=<project id>
+MAIN_SEQUENCE_PROJECT_UID=<project UID>
 ```
 
 They do not require or write `MAINSEQUENCE_REFRESH_TOKEN` in runtime credential mode.

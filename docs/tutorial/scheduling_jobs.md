@@ -30,7 +30,7 @@ mainsequence project current
 mainsequence project jobs --help
 ```
 
-- `mainsequence project current` should show the expected project id and local path.
+- `mainsequence project current` should show the expected project UID and local path.
 - All CLI examples below assume your current working directory is the repository root for the tutorial project.
 - If you are running commands from another directory, add `--path /path/to/project` where needed.
 - If a command says you are not logged in, run `mainsequence login` again.
@@ -53,10 +53,10 @@ Before scheduling anything, make sure your environment is consistent and your la
    mainsequence project sync -m "Tutorial files"
    ```
 
-   You can also target by project id:
+   You can also target by project UID:
 
    ```bash
-   mainsequence project sync [PROJECT_ID] -m "Tutorial files"
+   mainsequence project sync [PROJECT_UID] -m "Tutorial files"
    ```
 
 3. **What `mainsequence project sync` does for you**
@@ -210,10 +210,10 @@ Each entry under `jobs` is validated with the same rules used for individual job
 If you want to follow the same signed-terminal flow used earlier in the tutorial, commit and push this file with a signed terminal:
 
 ```bash
-mainsequence project open-signed-terminal [PROJECT_ID]
+mainsequence project open-signed-terminal [PROJECT_UID]
 ```
 
-**Note:** Replace `[PROJECT_ID]` with your actual project id (for example, `60`).
+**Note:** Replace `[PROJECT_UID]` with your actual project UID (for example, `60`).
 
 Then, in the new terminal window that opens, run:
 

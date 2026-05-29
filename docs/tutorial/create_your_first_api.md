@@ -78,8 +78,8 @@ from mainsequence.tdag import APIDataNode
 from mainsequence.tdag.meta_tables import build_compiled_sql_v1_operation
 
 
-PROJECT_ID = os.getenv("MAIN_SEQUENCE_PROJECT_ID", "local").strip() or "local"
-RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_ID}"
+PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
+RANDOM_NODE_IDENTIFIER = f"example_random_number_{PROJECT_UID}"
 CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
 CUSTOMER_META_TABLE_NAME = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_NAME"]
 CUSTOMER_META_TABLE_SCHEMA = os.getenv("MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA", "public")

@@ -396,6 +396,36 @@ def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
     assert "storage_table" not in node.remote_initial_configuration
 
 
+def test_data_node_rejects_test_node_constructor_shortcut():
+    class Config(DataNodeConfiguration):
+        identifier: str
+
+    class StorageTableNode(DataNode):
+        def __init__(
+            self,
+            config: Config,
+            storage_table: type[PlatformTimeIndexMetaData],
+        ):
+            super().__init__(config=config, storage_table=storage_table)
+
+        def dependencies(self):
+            return {}
+
+        def update(self):
+            return pd.DataFrame()
+
+    storage_table = _platform_storage_model(
+        _meta_table(storage_hash="canonical_prices_table")
+    )
+
+    with pytest.raises(TypeError, match="test_node has been removed"):
+        StorageTableNode(
+            Config(identifier="prices"),
+            storage_table=storage_table,
+            test_node=True,
+        )
+
+
 def test_data_node_requires_storage_table_constructor_argument():
     class Config(DataNodeConfiguration):
         identifier: str

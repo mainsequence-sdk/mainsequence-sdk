@@ -74,6 +74,23 @@ def _metatable_declared_tablename(cls: type[Any]) -> str:
     return f"metatable_{cls.__name__.lower()}"
 
 
+def _time_index_mapper_args(cls: type[Any]) -> dict[str, list[Any]]:
+    table = getattr(cls, "__table__", None)
+    columns = getattr(table, "c", None)
+    index_names = getattr(cls, "__index_names__", None)
+    time_index_name = getattr(cls, "__time_index_name__", None) or "time_index"
+    resolved_index_names = list(index_names or [time_index_name])
+    if columns is None or not resolved_index_names:
+        return {}
+
+    mapper_primary_key = []
+    for name in resolved_index_names:
+        if name not in columns:
+            return {}
+        mapper_primary_key.append(columns[name])
+    return {"primary_key": mapper_primary_key}
+
+
 class PlatformManagedMetaTable:
     """SQLAlchemy declarative base mixin for platform-managed MetaTables.
 
@@ -238,9 +255,8 @@ class PlatformManagedMetaTable:
 
     @classmethod
     def get_data_source_uid(cls) -> str | None:
-        data_source_uid = (
-            getattr(cls, "__metatable_data_source_uid__", None)
-            or getattr(cls, "data_source_uid", None)
+        data_source_uid = getattr(cls, "__metatable_data_source_uid__", None) or getattr(
+            cls, "data_source_uid", None
         )
         return _coerce_optional_uid(data_source_uid)
 
@@ -285,6 +301,9 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     """
 
     __time_index_metadata__: ClassVar[Any | None] = None
+
+    if _sqlalchemy_declared_attr is not None:
+        __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
     @classmethod
     def bind_meta_table(cls, meta_table: Any) -> Any:
@@ -832,7 +851,7 @@ def _resolve_target_meta_table_uid_by_fullname(
         target_uid = _target_meta_table_uid(target_uid)
         if target_fullname in resolved and resolved[target_fullname] != target_uid:
             raise ValueError(
-                "Conflicting target MetaTable UIDs for foreign key target " f"{target_fullname!r}."
+                f"Conflicting target MetaTable UIDs for foreign key target {target_fullname!r}."
             )
         resolved[target_fullname] = target_uid
 
@@ -965,9 +984,8 @@ def _meta_table_data_source_uid(meta_table: Any) -> str | None:
         data_source_uid = meta_table.get("data_source_uid")
         data_source = meta_table.get("data_source")
     else:
-        data_source_uid = (
-            getattr(meta_table, "data_source_uid", None)
-            or getattr(meta_table, "__metatable_data_source_uid__", None)
+        data_source_uid = getattr(meta_table, "data_source_uid", None) or getattr(
+            meta_table, "__metatable_data_source_uid__", None
         )
         data_source = getattr(meta_table, "data_source", None)
 
@@ -1026,7 +1044,10 @@ def _resolve_model_path(
 
 
 def _table_info_value(model_or_table: Any, key: str) -> Any:
-    table = _resolve_table(model_or_table)
+    try:
+        table = _resolve_table(model_or_table)
+    except TypeError:
+        return None
     info = getattr(table, "info", None)
     if isinstance(info, Mapping):
         return info.get(key)
@@ -1273,7 +1294,9 @@ def _resolve_time_index_names(
 
     names = [str(name) for name in list(resolved or [])]
     if not names:
-        raise ValueError("PlatformTimeIndexMetaData requires at least the time index in index_names.")
+        raise ValueError(
+            "PlatformTimeIndexMetaData requires at least the time index in index_names."
+        )
     return names
 
 
@@ -1292,7 +1315,9 @@ def _resolve_time_index_storage_layout(
     if resolved is None:
         return None
     if not isinstance(resolved, Mapping):
-        raise ValueError("PlatformTimeIndexMetaData storage_layout must be a mapping when provided.")
+        raise ValueError(
+            "PlatformTimeIndexMetaData storage_layout must be a mapping when provided."
+        )
     return resolved
 
 

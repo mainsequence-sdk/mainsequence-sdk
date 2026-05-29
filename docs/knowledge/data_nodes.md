@@ -121,7 +121,7 @@ Examples:
 - transformation type (log return vs simple return)
 - source choice when it changes dataset meaning
 
-### 4.2 Scope fields (affect `update_hash`, ignored from `storage_hash`)
+### 4.2 Scope fields (affect `update_hash`)
 
 These define updater/job partitioning only.
 
@@ -131,15 +131,9 @@ Examples:
 - `shard_id`
 - partition keys
 
-For Pydantic v2, mark these fields with:
-
-```python
-Field(..., json_schema_extra={"update_only": True})
-```
-
 Legacy `ignore_from_storage_hash` field metadata and the older
-`_ARGS_IGNORE_IN_STORAGE_HASH` class attribute are removed. New code should use
-`DataNodeConfiguration` fields plus `update_only` / `hash_excluded` explicitly.
+`_ARGS_IGNORE_IN_STORAGE_HASH` class attribute are removed. `update_only` is
+also removed: all `DataNodeConfiguration` fields are update-scoped by default.
 
 ### 4.3 Operational knobs (affect neither hash)
 
@@ -161,9 +155,9 @@ display-only metadata, mark it with:
 Field(..., json_schema_extra={"hash_excluded": True})
 ```
 
-`hash_excluded` fields are excluded from both `update_hash` and `storage_hash`.
-The older `runtime_only` marker is still accepted for compatibility, but new
-descriptive metadata should use `hash_excluded`.
+`hash_excluded` fields are excluded from update identity. The older
+`runtime_only` marker is removed; descriptive metadata should use
+`hash_excluded`.
 
 Use this only for descriptive fields such as labels or long-form documentation.
 Do not use `hash_excluded` for anything that changes:
@@ -215,20 +209,19 @@ Use `hash_namespace` when you want:
 The code resolves namespace in this order:
 
 1. explicit `hash_namespace="..."`
-2. `test_node=True`, which becomes the namespace `"test"`
-3. the active `with hash_namespace("..."):` context manager
-4. otherwise, an empty namespace
+2. the active `with hash_namespace("..."):` context manager
+3. otherwise, an empty namespace
 
 ### What changes when the namespace is non-empty
 
 If the namespace is empty, nothing changes and hashes behave exactly as they do in normal production-style runs.
 
-If the namespace is non-empty, `DataNode` injects `hash_namespace` into the build configuration. That changes both:
+If the namespace is non-empty, `DataNode` injects `hash_namespace` into the
+build configuration. That changes `update_hash`.
 
-- `storage_hash`
-- `update_hash`
-
-That is why namespaced runs are isolated from non-namespaced runs.
+Storage identity is not created by `DataNode`. If a test needs isolated
+storage, pass a separately registered or bound `PlatformTimeIndexMetaData`
+storage class.
 
 ### What happens during `run()`
 
@@ -249,8 +242,6 @@ with hash_namespace("pytest_case_123"):
     node = MyNode(...)
     node.run(debug_mode=True, force_update=True)
 ```
-
-`test_node=True` is a shortcut and simply uses the namespace `"test"`.
 
 ### What not to use it for
 
@@ -744,14 +735,14 @@ Use `stats` to update visible table metadata, or refetch the table detail after 
 
 ## 11) Testing safely
 
-When tests hit shared backends, isolate hashes/tables.
+When tests hit shared backends, isolate update hashes and use the intended
+storage table explicitly.
 
-Use:
+Use `with hash_namespace("..."):` with an explicit, collision-resistant
+namespace.
 
-- `with hash_namespace("..."):` (preferred), or
-- `test_node=True` (quick shortcut).
-
-This intentionally changes both `storage_hash` and `update_hash` so tests do not collide with production-like tables.
+This intentionally changes `update_hash` so tests do not collide with
+production-like update records. It does not create or select storage for you.
 
 Keep test runs bounded:
 
@@ -797,8 +788,6 @@ Why this pattern works well:
 If you already have older nodes that still use class-level `OFFSET_START`, that
 fallback remains supported, but config-driven `offset_start` is the preferred
 pattern for new code and new documentation.
-
-If you want the shortcut form, `test_node=True` is equivalent to using the namespace `"test"`, but explicit namespaces are usually better for parallel test runs.
 
 ## 12) Schema evolution policy
 
@@ -857,59 +846,7 @@ Use it when:
 
 This is especially useful in dashboards, notebooks, and integration code where the table already exists and you are not constructing a dependency graph.
 
-## 14) Client-side filters and joins (B14 summary)
-
-For dynamic table reads, clients send a structured filter payload instead of raw SQL.
-
-Why this matters:
-
-- safer execution (no free-form SQL from clients),
-- stable paging (`limit/offset/next_offset`),
-- deterministic dtype restoration on the client.
-
-Use this approach when building:
-
-- UI filter builders,
-- notebook analysis with ad-hoc slices,
-- joins between dynamic tables (for example prices + fundamentals).
-
-The main entry point is `mainsequence.tdag.data_nodes.filters.SearchRequest`, which you submit through `TimeIndexMetaData.get_data_from_filter(...)`.
-
-```python
-import datetime as dt
-
-import mainsequence.client as msc
-from mainsequence.tdag.data_nodes.filters import F, SearchRequest, and_
-
-request = SearchRequest(
-    node_unique_identifier="simulated_prices_tutorial",
-    filter=and_(
-        F.between(
-            "time_index",
-            dt.datetime(2026, 1, 1, tzinfo=dt.UTC),
-            dt.datetime(2026, 1, 31, 23, 59, 59, tzinfo=dt.UTC),
-        ),
-        F.in_("unique_identifier", ["NVDA", "AAPL"]),
-    ),
-)
-
-df = msc.TimeIndexMetaData.get_data_from_filter(request)
-```
-
-Use `APIDataNode.build_from_identifier(...)` and `get_df_between_dates(...)` when you are reading one table in a fixed way.
-
-Use `SearchRequest` when:
-
-- filters are assembled dynamically by a UI or notebook,
-- you need paging and server-side filter execution,
-- you need joins between dynamic tables.
-
-They are complementary APIs:
-
-- `APIDataNode.build_from_identifier(...)` is the fixed-table reader
-- `SearchRequest` is the structured query layer for more flexible reads
-
-## 15) Quick pre-ship checklist
+## 14) Quick pre-ship checklist
 
 Before shipping a DataNode, verify:
 

@@ -61,7 +61,7 @@ The relevant client-side model surface is concentrated in:
 
 - `mainsequence/client/models_tdag.py`
 - `mainsequence/tdag/data_nodes/`
-- `mainsequence/tdag/base_persist_managers.py`
+- `mainsequence/tdag/data_nodes/persist_managers.py`
 - `mainsequence/client/data_sources_interfaces/`
 
 The update flow today is:
@@ -602,23 +602,6 @@ These adapter changes are part of the same architecture migration because
 client-side local execution and direct data source paths must observe the same
 coordinate contract as the server.
 
-## SearchRequest And Joins
-
-The existing structured filter API in `mainsequence.tdag.data_nodes.filters`
-currently restricts joins to:
-
-```python
-["time_index", "unique_identifier"]
-```
-
-That is correct only for legacy two-index asset tables. The long-term contract
-should allow joins over arbitrary configured index names.
-
-This ADR does not require the first raw-model PR to fully generalize joins, but
-the current restriction must be marked as a known follow-up. Any new
-three-index table cannot be joined correctly through `SearchRequest` until this
-validator and response dtype/index restoration are generalized.
-
 ## Compatibility Policy
 
 Backward compatibility means existing two-index asset workflows keep working.
@@ -712,8 +695,6 @@ Affected files:
 
 - `mainsequence/tdag/data_nodes/data_nodes.py`
 - `mainsequence/tdag/data_nodes/persist_managers.py`
-- `mainsequence/tdag/base_persist_managers.py`
-- `mainsequence/tdag/data_nodes/filters.py`
 
 The `DataAccessMixin.get_df_between_dates()` API is user-facing and currently
 documents and forwards `unique_identifier_list` and `unique_identifier_range_map`.
@@ -893,19 +874,10 @@ runtime callers are migrated around backend-bound API payloads.
 ### Phase 6: Downstream Runtime Audit
 
 - [x] Audit and migrate `mainsequence/tdag/data_nodes/`.
-- [x] Audit and migrate `mainsequence/tdag/base_persist_managers.py`.
+- [x] Audit and migrate `mainsequence/tdag/data_nodes/persist_managers.py`.
 - [x] Audit downstream callers for the shared chunk stats helper dependency.
 - [x] Replace direct reads of `asset_time_statistics` with canonical helper calls
    or clearly marked `LEGACY_COMPAT` projections.
-
-### Phase 7: Search And Joins
-
-- [x] Generalize `mainsequence.tdag.data_nodes.filters.JoinKey` beyond the
-   hardcoded enum if joins need to support higher-dimensional tables.
-- [x] Relax `SearchRequest` validation so `JoinSpec.on` can match arbitrary
-   configured index dimensions.
-- [x] Update client response dtype/index restoration to set indexes according to
-   the join keys returned by the server.
 - [x] Add tests for two-index and three-index joins once server support is exposed.
 
 ### Phase 8: CLI And Documentation
@@ -935,7 +907,5 @@ runtime callers are migrated around backend-bound API payloads.
    tutorial path.
 - [x] Update examples and generated snippets that say DataNode MultiIndex tables
    can only have two levels.
-- [x] Add a final tutorial document called `DataNode Migrations` that explains
-   this multidimensional DataNode migration and the concrete user code changes
-   required in update-statistics handling, table reads, latest reads, tail
-   delete calls, and join/search methods.
+- [x] Fold multidimensional DataNode guidance into the primary DataNode tutorial
+   instead of keeping a separate migration tutorial.

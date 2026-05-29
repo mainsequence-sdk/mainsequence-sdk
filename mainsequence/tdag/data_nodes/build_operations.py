@@ -95,8 +95,7 @@ def _(value: SourceTableForeignKey) -> dict[str, Any]:
             "target_columns": value.target_column_names(),
             "on_delete": value.on_delete.lower(),
         },
-        "update_only": [],
-        "runtime_only": [],
+        "hash_excluded": [],
     }
 
 
