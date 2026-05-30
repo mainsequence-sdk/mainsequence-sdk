@@ -30,12 +30,12 @@ SQLAlchemy helpers:
 ```python
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    compile_sqlalchemy_statement,
     external_registered_registration_request_from_sqlalchemy_model,
     metatable_configured_tablename,
     metatable_tablename,
     register_external_sqlalchemy_model,
 )
+from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
 The SQLAlchemy helpers are lazy. Importing `mainsequence.meta_tables` does

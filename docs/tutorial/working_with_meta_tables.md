@@ -191,14 +191,14 @@ Example insert:
 
 ```python
 from mainsequence.client import MetaTable
-from mainsequence.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 
 def qualified_name(meta_table: MetaTable) -> str:
     return meta_table.physical_table_name
 
 
-operation = build_compiled_sql_v1_operation(
+operation = build_operation(
     operation="insert",
     sql=f"""
         INSERT INTO {qualified_name(account_meta_table)}
@@ -238,7 +238,7 @@ building SQL strings. User input belongs in bound parameters, not SQL text.
 Read operations use the same governed execution path with read scope:
 
 ```python
-operation = build_compiled_sql_v1_operation(
+operation = build_operation(
     operation="select",
     sql=f"""
         SELECT uid, account_code, name, region

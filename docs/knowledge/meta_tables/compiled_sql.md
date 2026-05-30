@@ -64,10 +64,10 @@ scope.
 Use this when you already have SQL text and parameters:
 
 ```python
-from mainsequence.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 
-operation = build_compiled_sql_v1_operation(
+operation = build_operation(
     operation="select",
     sql="SELECT asset.uid, asset.symbol FROM public.asset AS asset WHERE asset.symbol ILIKE %(symbol_1)s",
     parameters={"symbol_1": "%BTC%"},
@@ -108,7 +108,7 @@ The SDK imports SQLAlchemy lazily only when this helper is called.
 ```python
 from sqlalchemy import select
 
-from mainsequence.meta_tables import compile_sqlalchemy_statement
+from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 
 
 stmt = (
@@ -206,7 +206,7 @@ when the backend data source allows those operations.
 Example shape:
 
 ```python
-operation = build_compiled_sql_v1_operation(
+operation = build_operation(
     operation="upsert",
     sql=(
         "INSERT INTO public.asset (uid, symbol) "

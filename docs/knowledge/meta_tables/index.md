@@ -44,8 +44,8 @@ from mainsequence.meta_tables import (
     metatable_tablename,
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
-    compile_sqlalchemy_statement,
 )
+from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
 ## Management Modes

@@ -77,7 +77,7 @@ Example service:
 import os
 
 from mainsequence.client import MetaTable
-from mainsequence.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 
 CUSTOMER_META_TABLE_UID = os.environ["MAINSEQUENCE_CUSTOMER_META_TABLE_UID"]
@@ -86,7 +86,7 @@ CUSTOMER_META_TABLE_SCHEMA = os.getenv("MAINSEQUENCE_CUSTOMER_META_TABLE_SCHEMA"
 
 
 def get_customers(*, region: str | None, limit: int) -> list[dict[str, object]]:
-    operation = build_compiled_sql_v1_operation(
+    operation = build_operation(
         operation="select",
         sql=f"""
             SELECT uid, customer_code, name, region

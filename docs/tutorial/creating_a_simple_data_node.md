@@ -53,8 +53,8 @@ from mainsequence.meta_tables import (
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
-    build_compiled_sql_v1_operation,
 )
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
 
@@ -311,7 +311,7 @@ def upsert_account(
     account_code: str,
     name: str,
 ) -> uuid.UUID:
-    operation = build_compiled_sql_v1_operation(
+    operation = build_operation(
         operation="insert",
         sql=f"""
             INSERT INTO {account_meta_table.physical_table_name}

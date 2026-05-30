@@ -23,6 +23,7 @@ from ..dtype_codec import (
     token_to_pandas_series,
 )
 from ..utils import DataFrequency
+from .local_paths import local_data_path
 
 
 def get_logger():
@@ -53,12 +54,10 @@ class DuckDBInterface:
                                              environment variable or 'analytics.duckdb'
                                              in the current directory if the variable is not set.
         """
-        from mainsequence.meta_tables.config import META_TABLES_DATA_PATH
-
         # ── choose default & normalise to string ───────────────────────────
         default_path = os.getenv(
             "DUCKDB_PATH",
-            os.path.join(f"{META_TABLES_DATA_PATH}", "duck_db"),
+            os.fspath(local_data_path() / "duck_db"),
         )
         db_uri = str(db_path or default_path).rstrip("/")
 

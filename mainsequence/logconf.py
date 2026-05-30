@@ -71,7 +71,7 @@ class CustomConsoleRenderer(ConsoleRenderer):
 
 def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
     """
-    Fetch startup state from backend using current env vars (JWT auth, endpoint, job_run_id, command_id).
+    Fetch startup state from backend using current env vars (JWT auth, endpoint, job_run_uid).
     Safe to call later after auth when access/refresh tokens become available.
     """
     if not is_running_in_pod():
@@ -183,16 +183,12 @@ def _request_job_startup_state(*, timeout_s: float = 10.0) -> dict[str, Any]:
 
     headers, using_jwt = _auth_headers()
 
-    job_run_id = (os.getenv("JOB_RUN_ID") or "").strip()
-    if not job_run_id:
+    job_run_uid = (os.getenv("JOB_RUN_UID") or "").strip()
+    if not job_run_uid:
         return {}
 
-    endpoint = f"{_backend_base_url()}/orm/api/pods/job-run/{job_run_id}/startup-state/"
-
-    command_id = os.getenv("COMMAND_ID")
+    endpoint = f"{_backend_base_url()}/orm/api/pods/job-run/{job_run_uid}/startup-state/"
     params: dict[str, Any] = {}
-    if command_id:
-        params["command_id"] = command_id
 
     resp = requests.get(endpoint, headers=headers, params=params, timeout=timeout_s)
     if resp.status_code in {401, 403} and using_jwt and _refresh_access_token():
@@ -225,8 +221,6 @@ def _apply_additional_environment(startup_state: Mapping[str, Any]) -> None:
 
 def _build_backend_bindings(
     startup_state: Mapping[str, Any],
-    *,
-    command_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Pure function: compute the keys you want to bind on the logger
@@ -243,10 +237,8 @@ def _build_backend_bindings(
         bindings["project_id"] = project_id
         bindings["data_source_id"] = startup_state.get("data_source_id")
         bindings["job_run_id"] = startup_state.get("job_run_id")
-
-        if command_id is None:
-            command_id = os.getenv("COMMAND_ID")
-        bindings["command_id"] = int(command_id) if command_id else None
+        bindings["job_run_uid"] = startup_state.get("job_run_uid")
+        bindings["command_id"] = startup_state.get("command_id")
     else:
         # your existing behavior: bind job_run_id to user_id in local-ish mode
         if "user_id" in startup_state:
@@ -276,14 +268,12 @@ def _bind_runtime(logger_: BoundLogger, **bindings: Any) -> BoundLogger:
 def apply_startup_state_bindings(
     logger_: BoundLogger,
     startup_state: Mapping[str, Any],
-    *,
-    command_id: str | None = None,
 ) -> BoundLogger:
     """
     Apply env + bindings derived from startup_state to the given logger.
     """
     _apply_additional_environment(startup_state)
-    binds = _build_backend_bindings(startup_state, command_id=command_id)
+    binds = _build_backend_bindings(startup_state)
     return _bind_runtime(logger_, **binds)
 
 
@@ -295,7 +285,6 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     """
 
     # do initial request when on logger initialization
-    command_id = os.getenv("COMMAND_ID")
     json_response = _request_job_startup_state()
 
     # set additional args from backend
@@ -341,22 +330,22 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
         }
     else:
         handlers["console"] = {
-                "class": "logging.StreamHandler",
-                "formatter": "colored",
-                "level": os.getenv("LOG_LEVEL", "DEBUG"),
+            "class": "logging.StreamHandler",
+            "formatter": "colored",
+            "level": os.getenv("LOG_LEVEL", "DEBUG"),
         }
 
     if logger_file is not None:
         ensure_dir(logger_file)  # Ensure the directory for the log file exists
         handlers["file"] = {
-                        "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
-                        "formatter": "plain",
-                        "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
-                        "filename": logger_file,
-                        "mode": "a",
-                        "delay": True,
-                        "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
-                        "backupCount": 5,  # Keep up to 5 backup files
+            "class": "concurrent_log_handler.ConcurrentRotatingFileHandler",
+            "formatter": "plain",
+            "level": os.getenv("LOG_LEVEL_FILE", "DEBUG"),
+            "filename": logger_file,
+            "mode": "a",
+            "delay": True,
+            "maxBytes": 5 * 1024 * 1024,  # Rotate after 5 MB
+            "backupCount": 5,  # Keep up to 5 backup files
         }
 
     logging_config = {
@@ -421,19 +410,16 @@ def build_application_logger(application_name: str = "ms-sdk", **metadata):
     )
 
     try:
-
-        backend_binds = _build_backend_bindings(json_response, command_id=command_id)
+        backend_binds = _build_backend_bindings(json_response)
         logger = _bind_runtime(logger, **backend_binds)
 
-
-
     except Exception:
-
         logger.exception("Logger could not be binded running in local mode")
         logger = logger.bind(local_mode="no_app", **metadata)
 
     logger = logger.bind()
     return logger
+
 
 def refresh_application_logger_bindings(*, timeout_s: float = 10.0) -> BoundLogger:
     """
@@ -442,13 +428,12 @@ def refresh_application_logger_bindings(*, timeout_s: float = 10.0) -> BoundLogg
     """
     global logger
 
-    command_id = os.getenv("COMMAND_ID")
     json_response = _request_job_startup_state(timeout_s=timeout_s)
 
     # set additional args from backend
     _apply_additional_environment(json_response)
 
-    backend_binds = _build_backend_bindings(json_response, command_id=command_id)
+    backend_binds = _build_backend_bindings(json_response)
 
     # if somebody calls this super early
     if logger is None:
@@ -457,6 +442,7 @@ def refresh_application_logger_bindings(*, timeout_s: float = 10.0) -> BoundLogg
 
     logger = _bind_runtime(logger, **backend_binds)
     return logger
+
 
 def dump_structlog_bound_logger(logger: BoundLogger) -> dict[str, Any]:
     """

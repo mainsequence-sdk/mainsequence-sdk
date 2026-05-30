@@ -114,7 +114,9 @@ def parse_gpu_request(value: Any, *, field_name: str = "gpu_request") -> int | N
         raise ValueError(f"{field_name} must be a valid integer.") from exc
 
 
-def format_cpu_request(value: Decimal | None, *, output_format: Literal["decimal", "k8s"] = "decimal") -> str | None:
+def format_cpu_request(
+    value: Decimal | None, *, output_format: Literal["decimal", "k8s"] = "decimal"
+) -> str | None:
     if value is None:
         return None
     if output_format == "decimal":
@@ -129,7 +131,9 @@ def format_cpu_request(value: Decimal | None, *, output_format: Literal["decimal
     return decimal_to_storage(value)
 
 
-def format_memory_request(value: Decimal | None, *, output_format: Literal["decimal", "k8s"] = "decimal") -> str | None:
+def format_memory_request(
+    value: Decimal | None, *, output_format: Literal["decimal", "k8s"] = "decimal"
+) -> str | None:
     if value is None:
         return None
     if output_format == "decimal":

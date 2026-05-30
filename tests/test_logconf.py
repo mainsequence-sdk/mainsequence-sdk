@@ -23,18 +23,21 @@ def _load_mainsequence_submodule(module_name: str):
     return importlib.import_module(module_name)
 
 
-def test_is_running_in_pod_uses_execution_markers(monkeypatch):
+def test_is_running_in_pod_uses_job_run_uid(monkeypatch):
     runtime_flags = _load_mainsequence_submodule("mainsequence.runtime_flags")
 
     monkeypatch.delenv("COMMAND_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_ID", raising=False)
+    monkeypatch.delenv("JOB_RUN_UID", raising=False)
     assert runtime_flags.is_running_in_pod() is False
 
     monkeypatch.setenv("COMMAND_ID", "12")
-    assert runtime_flags.is_running_in_pod() is True
+    assert runtime_flags.is_running_in_pod() is False
 
-    monkeypatch.delenv("COMMAND_ID", raising=False)
     monkeypatch.setenv("JOB_RUN_ID", "34")
+    assert runtime_flags.is_running_in_pod() is False
+
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     assert runtime_flags.is_running_in_pod() is True
 
 
@@ -43,6 +46,7 @@ def test_logconf_import_skips_job_startup_state_request_outside_pod(monkeypatch)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.delenv("COMMAND_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_ID", raising=False)
+    monkeypatch.delenv("JOB_RUN_UID", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "123")
 
     calls: list[tuple[tuple, dict]] = []
@@ -64,6 +68,7 @@ def test_logconf_binds_sdk_version(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.delenv("COMMAND_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_ID", raising=False)
+    monkeypatch.delenv("JOB_RUN_UID", raising=False)
 
     logconf = _load_mainsequence_submodule("mainsequence.logconf")
 
@@ -73,17 +78,18 @@ def test_logconf_binds_sdk_version(monkeypatch):
     assert bound_context["sdk_version"] == logconf._get_sdk_version()
 
 
-def test_logconf_import_skips_job_startup_state_request_without_job_run_id(monkeypatch):
+def test_logconf_import_skips_job_startup_state_request_without_job_run_uid(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("COMMAND_ID", "12")
-    monkeypatch.delenv("JOB_RUN_ID", raising=False)
+    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.delenv("JOB_RUN_UID", raising=False)
 
     calls: list[tuple[tuple, dict]] = []
 
     def _fake_get(*args, **kwargs):
         calls.append((args, kwargs))
-        raise AssertionError("requests.get should not be called without JOB_RUN_ID")
+        raise AssertionError("requests.get should not be called without JOB_RUN_UID")
 
     monkeypatch.setattr(requests, "get", _fake_get)
 
@@ -96,7 +102,7 @@ def test_logconf_import_skips_job_startup_state_request_without_job_run_id(monke
 def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "access-token")
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
-    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("COMMAND_ID", "12")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
@@ -104,10 +110,16 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
 
     class _FakeResponse:
         status_code = 200
-        text = "{\"job_run_id\": 34}"
+        text = '{"job_run_id": 34}'
 
         def json(self):
-            return {"job_run_id": 34, "project_id": 123, "data_source_id": 456}
+            return {
+                "job_run_id": 34,
+                "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "project_id": 123,
+                "data_source_id": 456,
+                "command_id": 12,
+            }
 
     def _fake_get(url, *, headers, params, timeout):
         captured.append(
@@ -125,6 +137,9 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
     _load_mainsequence_submodule("mainsequence.logconf")
 
     assert captured
-    assert captured[0]["url"] == "https://backend.example/orm/api/pods/job-run/34/startup-state/"
-    assert captured[0]["params"] == {"command_id": "12"}
+    assert (
+        captured[0]["url"]
+        == "https://backend.example/orm/api/pods/job-run/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/startup-state/"
+    )
+    assert captured[0]["params"] == {}
     assert captured[0]["headers"]["Authorization"] == "Bearer access-token"

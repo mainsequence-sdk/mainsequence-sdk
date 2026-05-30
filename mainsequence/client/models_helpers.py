@@ -13,12 +13,12 @@ from uuid import UUID
 import yaml
 from pydantic import BaseModel, Field, PositiveInt
 
-from ..compute_validation import (
+from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
+from .compute_validation import (
     decimal_to_storage,
     normalize_string,
     validate_and_normalize_compute_fields,
 )
-from .base import BaseObjectOrm, BasePydanticModel, ShareableObjectMixin
 from .exceptions import raise_for_response
 from .models_foundry import (
     Project,

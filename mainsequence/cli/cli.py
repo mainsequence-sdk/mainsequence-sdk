@@ -45,7 +45,7 @@ import click
 import typer
 import yaml
 
-from ..compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
+from ..client.compute_validation import decimal_to_storage, parse_cpu_request, parse_memory_request
 from . import config as cfg
 from .api import (
     ApiError,

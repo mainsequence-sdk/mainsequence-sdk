@@ -75,7 +75,7 @@ from fastapi import FastAPI, Query, Request
 from mainsequence.client import MetaTable
 from mainsequence.client.fastapi import LoggedUserContextMiddleware
 from mainsequence.meta_tables import APIDataNode
-from mainsequence.meta_tables import build_compiled_sql_v1_operation
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation
 
 
 PROJECT_UID = os.getenv("MAIN_SEQUENCE_PROJECT_UID", "local").strip() or "local"
@@ -113,7 +113,7 @@ def list_customers(
     region: str | None = None,
     limit: int = Query(50, ge=1, le=500),
 ) -> list[dict[str, object]]:
-    operation = build_compiled_sql_v1_operation(
+    operation = build_operation(
         operation="select",
         sql=f"""
             SELECT uid, customer_code, name, region

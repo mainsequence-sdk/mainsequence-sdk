@@ -88,8 +88,7 @@ def test_auth_loaders_build_headers_from_env_jwt(monkeypatch):
 def test_logconf_refreshes_jwt_before_startup_state_request(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "jwt-refresh")
-    monkeypatch.setenv("COMMAND_ID", "77")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
     get_calls: list[dict] = []
@@ -119,8 +118,7 @@ def test_logconf_runtime_credential_exchanges_before_startup_state_request(monke
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
-    monkeypatch.setenv("COMMAND_ID", "77")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
     get_calls: list[dict] = []
@@ -161,8 +159,7 @@ def test_logconf_runtime_credential_retries_after_auth_failure(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "runtime_credential")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_ID", "cred-id")
     monkeypatch.setenv("MAINSEQUENCE_RUNTIME_CREDENTIAL_SECRET", "cred-secret")
-    monkeypatch.setenv("COMMAND_ID", "77")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
     get_calls: list[dict] = []
@@ -499,8 +496,7 @@ def test_logconf_session_jwt_does_not_refresh(monkeypatch):
     monkeypatch.setenv("MAINSEQUENCE_ACCESS_TOKEN", "runtime-access")
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
-    monkeypatch.setenv("COMMAND_ID", "12")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
     monkeypatch.setenv("MAINSEQUENCE_ENDPOINT", "https://backend.example")
 
     get_calls: list[dict] = []
@@ -528,7 +524,7 @@ def test_logconf_session_jwt_rejects_refresh_token(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.setenv("MAINSEQUENCE_REFRESH_TOKEN", "bad-refresh")
     monkeypatch.setenv("MAINSEQUENCE_AUTH_MODE", "session_jwt")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
+    monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 
     try:
         _load_mainsequence_submodule("mainsequence.logconf")

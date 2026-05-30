@@ -7,10 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import mainsequence.client.models_metatables as meta_table_models
-from mainsequence.meta_tables import (
-    build_compiled_sql_v1_operation,
-    compile_sqlalchemy_statement,
-)
+from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
 
 
 class _Response:
@@ -184,7 +181,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
 
 
 def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
-    operation = build_compiled_sql_v1_operation(
+    operation = build_operation(
         operation="select",
         sql="SELECT asset.symbol FROM public.asset AS asset",
         parameters={"symbol_1": "%BTC%"},
@@ -228,7 +225,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
 
 
 def test_compiled_sql_v1_serializes_typed_temporal_parameters():
-    operation = build_compiled_sql_v1_operation(
+    operation = build_operation(
         operation="select",
         sql="SELECT * FROM asset WHERE as_of = %(as_of)s AND seen_at = %(seen_at)s",
         parameters={
@@ -261,7 +258,7 @@ def test_compiled_sql_v1_serializes_typed_temporal_parameters():
 
 def test_compiled_sql_v1_rejects_untyped_temporal_parameters():
     with pytest.raises(ValidationError, match="parameter_types"):
-        build_compiled_sql_v1_operation(
+        build_operation(
             operation="select",
             sql="SELECT * FROM asset WHERE as_of = %(as_of)s",
             parameters={"as_of": datetime.date(2026, 5, 28)},

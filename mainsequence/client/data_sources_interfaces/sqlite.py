@@ -16,6 +16,7 @@ from ..dtype_codec import (
     token_to_backend_type,
     token_to_pandas_series,
 )
+from .local_paths import local_data_path
 
 
 def get_logger():
@@ -32,11 +33,9 @@ class SQLiteInterface:
     """
 
     def __init__(self, db_path: str | Path | None = None):
-        from mainsequence.meta_tables.config import META_TABLES_DATA_PATH
-
         default_path = os.getenv(
             "SQLITE_PATH",
-            os.path.join(f"{META_TABLES_DATA_PATH}", "sqlite"),
+            os.fspath(local_data_path() / "sqlite"),
         )
         raw_path = Path(str(db_path or default_path)).expanduser()
         if raw_path.suffix in {".db", ".sqlite", ".sqlite3"}:

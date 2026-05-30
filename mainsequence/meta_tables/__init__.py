@@ -5,10 +5,6 @@ from importlib import import_module
 from mainsequence.instrumentation import TracerInstrumentator
 
 _LAZY_IMPORTS = {
-    "TIME_SERIES_SOURCE_TIMESCALE": (".config", "TIME_SERIES_SOURCE_TIMESCALE"),
-    "RunningMode": (".config", "RunningMode"),
-    "configuration": (".config", "configuration"),
-    "ogm": (".config", "ogm"),
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING": (
         ".sqlalchemy_contracts",
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
@@ -20,16 +16,11 @@ _LAZY_IMPORTS = {
     "APIDataNode": (".data_nodes", "APIDataNode"),
     "DataNode": (".data_nodes", "DataNode"),
     "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
-    "build_compiled_sql_v1_operation": (
-        ".compiled_sql",
-        "build_compiled_sql_v1_operation",
-    ),
     "build_meta_table_configured_storage_hash": (
         ".hashing",
         "build_meta_table_configured_storage_hash",
     ),
     "build_meta_table_storage_hash": (".hashing", "build_meta_table_storage_hash"),
-    "compile_sqlalchemy_statement": (".compiled_sql", "compile_sqlalchemy_statement"),
     "external_registered_registration_request_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "external_registered_registration_request_from_sqlalchemy_model",

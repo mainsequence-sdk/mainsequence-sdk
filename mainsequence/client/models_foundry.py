@@ -760,10 +760,11 @@ def add_created_object_to_jobrun(
     Returns:
         A dictionary representing the created record.
     """
-    url = (
-        MAINSEQUENCE_ENDPOINT
-        + f"/orm/api/pods/job-run/{os.getenv('JOB_RUN_ID')}/add_created_object/"
-    )
+    job_run_uid = (os.getenv("JOB_RUN_UID") or "").strip()
+    if not job_run_uid:
+        raise RuntimeError("JOB_RUN_UID is required to attach created objects to a job run.")
+
+    url = MAINSEQUENCE_ENDPOINT + f"/orm/api/pods/job-run/{job_run_uid}/add_created_object/"
     payload = {"json": {"app_label": app_label, "model_name": model_name, "object_id": object_id}}
 
     r = make_request(

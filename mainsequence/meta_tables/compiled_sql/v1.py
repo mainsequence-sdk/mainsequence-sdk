@@ -17,7 +17,7 @@ from mainsequence.client.models_metatables import (
 )
 
 
-def build_compiled_sql_v1_operation(
+def build_operation(
     *,
     operation: MetaTableOperation,
     sql: str,
@@ -115,7 +115,7 @@ def compile_sqlalchemy_statement(
             for table in scope_tables
         ]
     )
-    return build_compiled_sql_v1_operation(
+    return build_operation(
         operation=operation,
         sql=str(compiled),
         parameters=dict(compiled.params),
@@ -143,6 +143,6 @@ def _compiled_sqlalchemy_parameter_types(compiled: Any) -> dict[str, str]:
 
 
 __all__ = [
-    "build_compiled_sql_v1_operation",
+    "build_operation",
     "compile_sqlalchemy_statement",
 ]

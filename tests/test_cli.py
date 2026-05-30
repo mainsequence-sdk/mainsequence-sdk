@@ -1820,7 +1820,7 @@ def test_model_filter_parser_uses_filterset_metadata():
 
 
 def test_shared_compute_validation_supports_k8s_quantities(cli_mod):
-    compute_mod = importlib.import_module("mainsequence.compute_validation")
+    compute_mod = importlib.import_module("mainsequence.client.compute_validation")
 
     decimal_out = compute_mod.validate_and_normalize_compute_fields(
         cpu_request="500m",
