@@ -20,8 +20,6 @@ _LAZY_IMPORTS = {
     "APIDataNode": (".data_nodes", "APIDataNode"),
     "DataNode": (".data_nodes", "DataNode"),
     "DataNodeConfiguration": (".data_nodes", "DataNodeConfiguration"),
-    "DataNodeMetaData": (".data_nodes", "DataNodeMetaData"),
-    "RecordDefinition": (".data_nodes", "RecordDefinition"),
     "build_compiled_sql_v1_operation": (
         ".compiled_sql",
         "build_compiled_sql_v1_operation",

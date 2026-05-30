@@ -327,6 +327,8 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
@@ -396,6 +398,8 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
     storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
@@ -437,6 +441,8 @@ def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases(
     storage = TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
@@ -495,6 +501,8 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
@@ -549,6 +557,8 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
     storage = models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",

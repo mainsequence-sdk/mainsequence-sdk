@@ -28,7 +28,6 @@ from mainsequence.meta_tables import (
     DataNodeConfiguration,
     PlatformTimeIndexMetaData,
 )
-from mainsequence.meta_tables.data_nodes.models import RecordDefinition
 from mainsequence.meta_tables.data_nodes.persist_managers import BasePersistManager
 from mainsequence.meta_tables.data_nodes.run_operations import UpdateRunner
 
@@ -78,6 +77,8 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
     storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_storage_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
@@ -282,6 +283,7 @@ def test_data_node_storage_accepts_namespace():
     storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
+        management_mode="platform_managed",
         physical_table_name="prices_physical_table",
         namespace="pytest_case_123",
         data_source=1,
@@ -307,6 +309,8 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
     payload = {
         "uid": "data-node-storage-1",
         "storage_hash": "hash",
+        "management_mode": "platform_managed",
+        "physical_table_name": "hash",
         "source_class_name": "ExampleNode",
         "data_source": 1,
         "creation_date": "2026-04-13T00:00:00Z",
@@ -665,6 +669,8 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
     data_node_storage = TimeIndexMetaData(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_storage_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-13T00:00:00Z",
@@ -675,11 +681,15 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
     assert data_node_storage.labels == ["vendor-data"]
 
 
-def test_record_definition_rejects_column_names_longer_than_63_characters():
-    with pytest.raises(ValidationError, match="at most 63 characters"):
-        RecordDefinition(
-            column_name="a" * 64,
-            dtype="float64",
+def test_data_node_configuration_rejects_records_field():
+    with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+        DataNodeConfiguration(
+            records=[
+                {
+                    "column_name": "close",
+                    "dtype": "float64",
+                }
+            ]
         )
 
 

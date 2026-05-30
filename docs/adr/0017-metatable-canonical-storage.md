@@ -117,9 +117,8 @@ The current design creates these issues:
 
 - A user cannot cleanly say "this update process writes into this existing
   table" without letting the DataNode compute a `storage_hash`.
-- Table schema and table metadata are split across
-  `DataNodeConfiguration.records`, `DataNodeConfiguration.node_metadata`,
-  `TimeIndexMetaData`, and `SourceTableConfiguration`.
+- Table schema and table metadata used to be split across updater
+  configuration, `TimeIndexMetaData`, and `SourceTableConfiguration`.
 - `TimeIndexMetaData` and `MetaTable` duplicate storage-facing fields, filters,
   labels, sharing, UID identity, and data-source identity.
 - The name `DataNode` suggests a data product/storage object, but the runtime
@@ -145,19 +144,18 @@ class TimeIndexMetaData(MetaTable):
     ENDPOINT = "ts_manager/dynamic_table"
 
     source_table_configuration: SourceTableConfiguration | None = None
-    source_class_name: str | None = None  # compatibility only
+    source_class_name: str | None = None
 ```
 
 `TimeIndexMetaData` remains available during migration because many public SDK,
 CLI, tutorial, and backend paths still use that name. Its meaning changes:
 
 - final canonical table fields come from `MetaTable`;
-- DataNode-specific update/read extensions remain on `TimeIndexMetaData` only as
-  compatibility or typed extension fields;
+- DataNode-specific update/read extensions remain on `TimeIndexMetaData` as
+  typed extension fields;
 - new storage APIs should accept and return `MetaTable` wherever possible;
-- old `TimeIndexMetaData` read/write helpers delegate to MetaTable-backed routes
-  or continue to use legacy dynamic-table routes until the backend endpoint is
-  migrated.
+- `TimeIndexMetaData` read/write helpers delegate to MetaTable-backed routes
+  while backend endpoints remain split.
 
 The DataNode runtime no longer computes the storage table identity and does not
 resolve or register storage. It accepts the target platform-managed storage
@@ -205,16 +203,16 @@ multi-indexed, but the structural contract belongs to MetaTable.
 
 ### TimeIndexMetaData
 
-`TimeIndexMetaData` becomes a specialized MetaTable projection for legacy
-DataNode table operations.
+`TimeIndexMetaData` becomes a specialized MetaTable projection for DataNode
+table operations.
 
 It may keep DataNode-specific extension fields:
 
 - `sourcetableconfiguration` / `source_table_configuration`
 - update progress statistics
-- dynamic-table read helpers such as `get_last_observation(...)`,
+- time-indexed read helpers such as `get_last_observation(...)`,
   `get_data_between_dates_from_api(...)`, and tail delete
-- compatibility fields that existing serializers still send
+- projection fields that existing serializers still send
 
 It should not own generic storage metadata that MetaTable already owns.
 
@@ -243,12 +241,12 @@ canonical storage migration.
 | Current field surface | Final owner | Direction |
 | --- | --- | --- |
 | Inherited MetaTable fields: `uid`, `data_source`, `data_source_uid`, `storage_hash`, `identifier`, `namespace`, `description`, `labels`, `management_mode`, `physical_table_name`, `table_contract`, `contract_version`, `introspection_snapshot`, `protect_from_deletion`, `columns`, `indexes_meta`, `foreign_keys`, `incoming_fks`, `creation_date`, `created_by_user_uid`, `organization_owner_uid`, `open_for_everyone`, `registration` | MetaTable | Canonical storage state. Keep on `MetaTable`; `TimeIndexMetaData` may expose them only through inheritance/projection. |
-| `ENDPOINT`, `FILTERSET_FIELDS`, `FILTER_VALUE_NORMALIZERS`, `READ_QUERY_PARAMS`, `READ_QUERY_PARAM_DESCRIPTIONS` | Compatibility wrapper | Dynamic-table endpoint and query compatibility. Keep only while backend routes still use `ts_manager/dynamic_table`. |
+| `ENDPOINT`, `FILTERSET_FIELDS`, `FILTER_VALUE_NORMALIZERS`, `READ_QUERY_PARAMS`, `READ_QUERY_PARAM_DESCRIPTIONS` | Time-indexed route/query surface | Keep only while backend routes remain split. |
 | `build_configuration_json_schema` | Update process | Move to the update record/build configuration contract. It is not table storage metadata. |
-| `data_source_open_for_everyone` | DataSource or access policy | Compatibility projection only. Canonical access lives on DataSource/MetaTable permission fields. |
+| `data_source_open_for_everyone` | DataSource or access policy | Projection only. Canonical access lives on DataSource/MetaTable permission fields. |
 | `source_class_name` | Update process provenance | Move to the update record or update provenance payload. It is not storage identity. |
 | `time_indexed_profile` | DataNode table extension | Keep as a MetaTable-backed timestamped-table profile projection until the backend exposes the equivalent extension directly from MetaTable. |
-| `table_index_names` | Compatibility wrapper | Derive from `time_indexed_profile` or `MetaTable.table_contract`; remove as a stored client concern. |
+| `table_index_names` | Projection wrapper | Derive from `time_indexed_profile` or `MetaTable.table_contract`; remove as a stored client concern. |
 | `compression_policy_config`, `retention_policy_config` | DataNode table extension | Timestamped-table storage policy. Keep out of update-process configuration. |
 | `_drop_indices`, `_rebuild_indices` | Update/write option | Do not persist as table metadata. If still needed, pass as an explicit write/bootstrap option. |
 
@@ -260,8 +258,8 @@ Nested `time_indexed_profile` fields have the same ownership split:
 | `foreign_keys`, `foreign_key_projections` | MetaTable contract/projection | Canonical source is `MetaTable.table_contract` and `MetaTable.foreign_keys`; remove them from the time-indexed profile. |
 | `columns_metadata` | MetaTable projection | Canonical source is `MetaTable.columns`; keep profile exposure only as a column metadata read projection while clients migrate. |
 | `multi_index_stats`, `multi_index_column_stats`, `last_time_index_value`, `earliest_index_value` | DataNode table extension/update progress projection | Keep as table-profile progress read models, not generic MetaTable fields. |
-| `dynamic_table_uid`, `related_table_uid` | Compatibility wrapper | These must resolve to MetaTable UID during transition. Do not introduce a second storage identity. |
-| `column_index_names` | Compatibility wrapper | Legacy projection; remove when callers use `index_names`. |
+| `dynamic_table_uid`, `related_table_uid` | Backend projection wrapper | These must resolve to MetaTable UID during transition. Do not introduce a second storage identity. |
+| `column_index_names` | Projection wrapper | Remove when callers use `index_names`. |
 
 #### Method Ownership
 
@@ -269,16 +267,16 @@ Nested `time_indexed_profile` fields have the same ownership split:
 | --- | --- | --- |
 | Inherited `MetaTable` methods: `patch`, `patch_by_hash`, `delete`, `destroy_by_uid`, `validate_contract`, `validate_existing_contract`, `introspect`, `refresh_table_search_index`, `run_query`, `description_search`, `column_search`, `execute_operation` | MetaTable method | Canonical table operations. Prefer `MetaTable` where no DataNode timestamp semantics are required. |
 | `register` | DataNode table extension/bootstrap wrapper | Intentional dynamic-table registration while backend routes remain split. It must stay out of DataNode runtime and PersistManager hot paths. |
-| `get_or_create` | Compatibility wrapper | Do not use from DataNode runtime. Storage creation belongs to MetaTable registration/bootstrap. |
-| `_fill_legacy_dynamic_table_metatable_fields` | Compatibility wrapper | Payload coercion for old dynamic-table responses that do not emit full MetaTable fields. Remove after backend serializers converge. |
+| `get_or_create` | Removed from DataNode runtime | Storage creation belongs to MetaTable registration/bootstrap. |
+| removed dynamic-table MetaTable field coercion validator | Removed wrapper | Time-indexed storage payloads must provide required MetaTable fields directly. |
 | `_time_indexed_dynamic_contract`, `_time_indexed_storage_layout`, `time_index_name`, `index_names`, `column_dtypes_map`, `_require_time_indexed_table_contract` | DataNode table extension | Contract/profile readers for timestamped DataNode tables. Keep as extension helpers or move behind a dedicated profile object. |
 | `_date_for_payload`, `_normalize_dimension_range_map`, `_build_dimension_payload` | DataNode table extension | Payload helpers for timestamped read/delete routes. |
 | `get_data_updates` | DataNode table extension/update progress projection | Reads update-progress/table-profile stats. Do not make it generic MetaTable state. |
 | `delete_after_date` | DataNode table extension | Timestamped tail delete. Keep distinct from generic MetaTable delete/drop operations. |
-| `_uses_session_duckdb_data_source`, `_uses_session_local_data_source`, `delete_table` | Compatibility wrapper around MetaTable/local storage operations | Generic table deletion belongs to MetaTable; local-session branching should move out of `TimeIndexMetaData`. |
-| `handle_time_indexed_profile_creation` | Compatibility wrapper | Legacy validation shim only. It must not create profile/storage and must not be called from the DataNode write hot path. |
-| `_serialize_column_metadata_for_validation`, `_validate_existing_source_table_columns_metadata` | Compatibility wrapper for MetaTable column metadata validation | Final owner is MetaTable registration/bootstrap validation. These should disappear when DataNode write paths stop carrying schema metadata. |
-| `map_columns_to_df`, `get_last_observation`, `_get_data_between_dates_common`, `get_data_between_dates_from_api`, `get_data_between_dates_from_node_identifier` | DataNode table extension/read compatibility | Keep only for timestamped reads. `get_data_between_dates_from_node_identifier` is a compatibility class route; new factories should resolve MetaTable-backed storage first. |
+| `_uses_session_duckdb_data_source`, `_uses_session_local_data_source`, `delete_table` | MetaTable/local storage operation wrappers | Generic table deletion belongs to MetaTable; local-session branching should move out of `TimeIndexMetaData`. |
+| removed profile-creation hook | Removed wrapper | DataNode writes must not create, initialize, or validate storage/profile state. |
+| removed write-path column metadata validation helpers | Removed wrapper for MetaTable column metadata validation | Final owner is MetaTable registration/bootstrap validation. |
+| `map_columns_to_df`, `get_last_observation`, `_get_data_between_dates_common`, `get_data_between_dates_from_api`, `get_data_between_dates_from_node_identifier` | DataNode table extension/read route | Keep only for timestamped reads. `get_data_between_dates_from_node_identifier` should resolve MetaTable-backed storage first. |
 
 No `TimeIndexMetaData` method should be a final update-process method. Anything
 that creates, resolves, mutates, or schedules an update record belongs on
@@ -412,13 +410,13 @@ The final identity rules are:
 
 ## Configuration Split
 
-`DataNodeConfiguration` currently mixes storage and update concerns. In the
+`DataNodeConfiguration` must not mix storage and update concerns. In the
 canonical model, storage concerns belong only to MetaTable:
 
-- `records`
+- output column contracts
 - `foreign_keys`
-- `node_metadata.identifier`
-- `node_metadata.description`
+- table identifiers
+- table descriptions
 - future table indexes and table constraints
 
 Update concerns should remain on the update configuration:
@@ -468,8 +466,8 @@ The following objects must be assumed to already exist before any DataNode
 update process runs:
 
 - the canonical storage `MetaTable`;
-- the compatibility `TimeIndexMetaData` / dynamic-table projection when legacy
-  dynamic-table routes are still used;
+- the `TimeIndexMetaData` / time-indexed table projection while backend routes
+  remain split;
 - the DataNode table profile exposed as `SourceTableConfiguration` or its
   MetaTable-backed replacement.
 
@@ -478,24 +476,9 @@ create them. This applies to every relation of the DataNode runtime: constructor
 setup, persist manager registration, update-record creation, write bootstrap,
 DataFrame upsert, local database setup, and foreign-key/schema metadata paths.
 
-The old hot path violated this boundary:
-
-```python
-metadata.handle_time_indexed_profile_creation(
-    column_dtypes_map=column_dtypes_map,
-    index_names=index_names,
-    time_index_name=time_index_name,
-    data=data,
-    overwrite=overwrite,
-    columns_metadata=columns_metadata,
-    foreign_keys=foreign_keys,
-)
-```
-
-`handle_time_indexed_profile_creation(...)` could call
-`initialize_source_table(...)`, which creates or validates
-`TimeIndexedProfile` and may create the physical backing table. In the
-canonical model, this is not allowed in the update hot path.
+The old hot path called a storage/profile creation hook that could initialize
+the physical backing table. In the canonical model, this is not allowed in the
+update hot path.
 
 The replacement behavior is:
 
@@ -644,9 +627,8 @@ Required backend capabilities:
 ### Phase 2: Make TimeIndexMetaData Inherit MetaTable
 
 - Change `TimeIndexMetaData` to inherit from `MetaTable`.
-- Override `ENDPOINT` to keep legacy dynamic-table routes during transition.
-- Override required MetaTable fields only where legacy backend payloads cannot
-  yet provide them.
+- Override `ENDPOINT` only while backend routes remain split.
+- Require backend payloads to provide MetaTable fields directly.
 - Add aliases for `sourcetableconfiguration` and
   `source_table_configuration`.
 - Prevent MetaTable registration class methods from accidentally becoming a
@@ -677,13 +659,10 @@ Required backend capabilities:
 
 ### Phase 4A: Remove Source-Table Creation From DataNode Runtime
 
-- Replace
-  `TimeIndexMetaData.handle_time_indexed_profile_creation(...)` calls from
+- Remove storage/profile creation-hook calls from
   `DataNodeUpdate.upsert_data_into_table(...)` without adding replacement
   write-path validation.
-- Remove or deprecate `handle_time_indexed_profile_creation(...)` as a
-  DataNode write-path helper. If kept temporarily, rename or split it so the
-  runtime path cannot call `initialize_source_table(...)`.
+- Remove storage/profile creation hooks from the DataNode write path.
 - Keep profile existence and compatibility checks in DataNode setup,
   MetaTable registration, or explicit bootstrap flows.
 - Remove all DataNode-runtime calls to:
@@ -694,8 +673,7 @@ Required backend capabilities:
   registration/bootstrap. Do not expose direct dynamic-table
   `initialize_source_table(...)` from `TimeIndexMetaData`.
 - Add regression tests proving `DataNodeUpdate.upsert_data_into_table(...)`
-  does not call `handle_time_indexed_profile_creation(...)` or
-  `initialize_source_table(...)`.
+  does not call storage/profile creation helpers.
 
 ### Phase 5: Validate Against MetaTable Contract
 
@@ -767,15 +745,15 @@ Required backend capabilities:
 - [x] Change update record creation to send `meta_table_uid`.
 - [x] Validate update output DataFrames against MetaTable contract.
 - [x] Remove `DataNodeUpdate.upsert_data_into_table(...)` calls to
-      `handle_time_indexed_profile_creation(...)`.
+      storage/profile creation helpers.
 - [x] Remove DataNode-runtime calls to
       `TimeIndexMetaData.initialize_source_table(...)`.
 - [x] Remove `TimeIndexMetaData.initialize_source_table(...)` from the SDK
       surface.
 - [x] Keep `DataNodeUpdate.upsert_data_into_table(...)` free of replacement
       storage/profile validation.
-- [x] Add tests proving the DataNode write path does not call the legacy
-      profile creation helper.
+- [x] Add tests proving the DataNode write path does not call profile creation
+      helpers.
 - [ ] Add tests proving foreign-key and column metadata in the DataNode write
       path are not used to mutate/create storage metadata.
 - [x] Update `APIDataNode` factories to resolve MetaTable-backed storage.
@@ -798,9 +776,8 @@ Not allowed as final behavior:
 - PersistManager creates storage as a hidden side effect of updater creation.
 - DataNode runtime creates or initializes `TimeIndexMetaData`.
 - DataNode runtime creates or initializes `TimeIndexedProfile`.
-- `DataNodeUpdate.upsert_data_into_table(...)` calls
-  `handle_time_indexed_profile_creation(...)` or any helper that can
-  create storage/profile state.
+- `DataNodeUpdate.upsert_data_into_table(...)` calls any helper that can create
+  storage/profile state.
 - Table schema is split between DataNode config and TimeIndexedProfile.
 - New docs teach users to put table storage concerns inside update config.
 - Public code requires integer resource IDs.

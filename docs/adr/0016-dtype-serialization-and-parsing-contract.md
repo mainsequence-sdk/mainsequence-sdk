@@ -9,7 +9,7 @@ Status: Proposed
 - ADR 0002: Multidimensional DataNode Update Contract
 - ADR 0011: DuckDB N-Dimensional Row Identity
 - ADR 0013: Local SQLite DataSource Support
-- ADR 0014: DataNode Records and Foreign Keys
+- ADR 0014: Legacy DataNode Records and Foreign Keys
 - Server ADR 008: Date And DateTime Write Contracts For MetaTables And
   DynamicTables
 
@@ -48,7 +48,7 @@ serialization/deserialization through it.
 
 The codec must support:
 
-- canonical dtype normalization for DataNode `RecordDefinition.dtype`;
+- canonical dtype normalization for direct write `records` payloads;
 - canonical dtype normalization for `column_dtypes_map`;
 - canonical dtype normalization for `ColumnMetaData.dtype`;
 - MetaTable `data_type` normalization;
@@ -93,11 +93,11 @@ Do not keep adding one-off `str(dtype)`, substring checks, or direct
 Every item below is a current dtype serialization or deserialization boundary
 that must be migrated or explicitly left as a thin wrapper around the new codec.
 
-### DataNode Authoring and Metadata
+### Direct Write Records and Metadata
 
-- `mainsequence/meta_tables/data_nodes/models.py:28`
-  - `RecordDefinition.dtype` is an unconstrained string authored by users.
-  - This is a structural dtype declaration and participates in hashing.
+- `mainsequence/client/models_metatables.py`
+  - direct `records` payload entries carry `column_name` and `dtype`.
+  - this is a client write contract, not a `DataNodeConfiguration` field.
 
 - `mainsequence/client/models_foundry.py:167`
   - `BaseColumnMetaData.dtype` is an unconstrained string sent as column
@@ -456,7 +456,7 @@ The codec must expose at least these operations:
 - [ ] Treat `datetime64[ns]` as local-only unless a future remote
       `TIMESTAMP WITHOUT TIME ZONE` contract is added.
 - [ ] Replace both `_records_to_column_dtypes_map()` implementations with a
-      shared helper that normalizes `RecordDefinition.dtype`.
+      shared helper that normalizes direct write records payload dtypes.
 - [ ] Update `DataNode.get_source_table_initialization_schema()` to normalize
       record dtypes before building `column_dtypes_map`.
 - [ ] Update `DataNode.get_column_metadata()` so `ColumnMetaData.dtype` matches

@@ -42,8 +42,8 @@ def disable_hash_namespace():
     Internal safety guard: temporarily disables the active namespace.
 
     We use this around "rebuild from stored config" so that ambient pytest namespace
-    does NOT accidentally change hashes for legacy/prod nodes that were stored without
-    'hash_namespace' in their config.
+    does NOT accidentally change stored hashes when the saved config has no
+    'hash_namespace' field.
     """
     token = _META_TABLES_HASH_NAMESPACE.set("")
     try:

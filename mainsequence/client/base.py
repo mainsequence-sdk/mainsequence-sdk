@@ -1,6 +1,5 @@
 import inspect
 import os
-import warnings
 from collections.abc import Callable, Iterable
 from datetime import datetime
 from typing import Any, ClassVar
@@ -98,13 +97,12 @@ class BaseObjectOrm:
         "JobRun": "pods/job-run",
         "Constant": "pods/constant",
         "Secret": "pods/secret",
-        "ProjectBaseImage":"pods/project-base-image",
-        "ProjectImage":"pods/project-image",
+        "ProjectBaseImage": "pods/project-base-image",
+        "ProjectImage": "pods/project-image",
         "GithubOrganization": "pods/github-organization",
-        "ProjectResource":"pods/project-resource",
-        "ResourceRelease":"pods/resource-release",
-        "Bucket":"pods/bucket",
-
+        "ProjectResource": "pods/project-resource",
+        "ResourceRelease": "pods/resource-release",
+        "Bucket": "pods/bucket",
     }
     ROOT_URL = API_ENDPOINT
     LOADERS = loaders
@@ -527,7 +525,6 @@ class BaseObjectOrm:
             )
             raise_for_response(r)
 
-
             data = r.json()
             data["orm_class"] = cls.__name__
             return cls(**data)
@@ -539,7 +536,6 @@ class BaseObjectOrm:
 
         if len(candidates) > 1:
             raise ApiError(f"Multiple objects returned for {cls.__name__} with filters={filters}")
-
 
         return candidates[0]
 
@@ -556,8 +552,6 @@ class BaseObjectOrm:
 
     @staticmethod
     def serialize_for_json(kwargs):
-
-
         return serialize_to_json(kwargs)
 
     @classmethod
@@ -599,15 +593,6 @@ class BaseObjectOrm:
         return cls(**r.json())
 
     @classmethod
-    def _warn_internal_id_compatibility(cls, method_name: str, replacement_name: str) -> None:
-        warnings.warn(
-            f"{cls.__name__}.{method_name}() is an internal-only compatibility shim; "
-            f"use {cls.__name__}.{replacement_name}() with uid instead.",
-            DeprecationWarning,
-            stacklevel=3,
-        )
-
-    @classmethod
     def _destroy_by_reference(cls, public_reference, *args, timeout=None, **kwargs):
         base_url = cls.get_object_url()
         payload: dict[str, Any] = {}
@@ -631,11 +616,6 @@ class BaseObjectOrm:
         )
         if r.status_code != 204:
             raise_for_response(r)
-
-    @classmethod
-    def _destroy_by_id_compat(cls, instance_id, *args, timeout=None, **kwargs):
-        cls._warn_internal_id_compatibility("_destroy_by_id_compat", "destroy_by_uid")
-        return cls._destroy_by_reference(instance_id, *args, timeout=timeout, **kwargs)
 
     @classmethod
     def destroy_by_uid(cls, uid: str, *args, timeout=None, **kwargs):
@@ -679,7 +659,11 @@ class BaseObjectOrm:
                             aliases.add(choice)
                 else:
                     path = getattr(validation_alias, "path", None)
-                    if isinstance(path, (list, tuple)) and len(path) == 1 and isinstance(path[0], str):
+                    if (
+                        isinstance(path, (list, tuple))
+                        and len(path) == 1
+                        and isinstance(path[0], str)
+                    ):
                         aliases.add(path[0])
 
             return aliases
@@ -733,11 +717,6 @@ class BaseObjectOrm:
 
         # Otherwise return a new instance
         return cls(**body)
-
-    @classmethod
-    def _patch_by_id_compat(cls, instance_id, *args, _into=None, **kwargs):
-        cls._warn_internal_id_compatibility("_patch_by_id_compat", "patch_by_uid")
-        return cls._patch_by_reference(instance_id, *args, _into=_into, **kwargs)
 
     @classmethod
     def patch_by_uid(cls, uid: str, *args, _into=None, **kwargs):

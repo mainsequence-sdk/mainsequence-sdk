@@ -26,7 +26,7 @@ The SDK public resource identity is `uid`.
 
 Public SDK lookup, patch, delete, label, share, CLI resource arguments, tutorials, and examples must use UID references for SDK resources.
 
-Integer `id` is not a public compatibility path for SDK resources. If an endpoint still requires integer resource ID, that endpoint is not migrated and must be tracked as a blocker or hidden behind an internal adapter. It must not be documented as a public SDK lookup contract.
+Integer `id` is not a public lookup path for SDK resources. If an endpoint still requires integer resource ID, that endpoint is not migrated and must be tracked as a blocker or hidden behind an internal adapter. It must not be documented as a public SDK lookup contract.
 
 The final SDK contract is:
 
@@ -91,7 +91,7 @@ Out of scope:
 - [x] Generic instance `delete()` uses the public detail reference helper.
 - [x] `DetailActionObjectMixin.get_detail_url()` uses the public detail reference helper.
 - [x] Base UID-named wrappers exist for `get_by_uid()`, `patch_by_uid()`, and `destroy_by_uid()`.
-- [x] Public id-named base aliases are removed; internal-only `_patch_by_id_compat()` and `_destroy_by_id_compat()` shims emit `DeprecationWarning`.
+- [x] Public id-named base aliases and internal id fallback helpers are removed.
 - [x] Id-only migrated resource instances fail before making patch, delete, and generic detail-action requests.
 - [x] UID filter normalization exists for resource-reference filters.
 - [x] CLI share output prefers `object_uid` over `object_id`.
@@ -110,14 +110,14 @@ Out of scope:
 - [ ] Replace remaining public CLI/docs wording that still teaches ID lookup for resource references.
 - [x] Remove public documentation for `patch_by_id()` and `destroy_by_id()` as resource APIs.
 - [x] Decide whether id-named methods remain temporarily as UID-taking aliases or are removed.
-- [x] Add deprecation notices for internal id-compatibility shims that remain during transition.
+- [x] Remove internal id fallback helpers from the base client.
 - [x] Add a failure path for migrated resource models that have no `uid`.
 - [x] Add tests proving id-only migrated resource objects do not silently route by integer ID.
 
 Base decision:
 
 - Public `patch_by_id()` and `destroy_by_id()` are not retained as public base APIs.
-- Internal `_patch_by_id_compat()` and `_destroy_by_id_compat()` route through public-reference internals and emit `DeprecationWarning`.
+- Internal id fallback helpers are not retained in the base client.
 - Normal instance methods use UID helpers and do not call deprecated aliases.
 - Remaining model-specific direct URL builders are not accepted as final state; they are tracked in the relevant model-group sections below.
 

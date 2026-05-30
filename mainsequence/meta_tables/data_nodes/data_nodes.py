@@ -3,7 +3,6 @@ import inspect
 import json
 import logging
 import os
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -418,8 +417,6 @@ class DataNode(DataAccessMixin, ABC):
         3. active namespacing context manager
 
         Only a non-empty namespace is injected into the hashed build configuration.
-        That preserves backward compatibility for normal runs while allowing isolated
-        test tables when needed.
         """
         super().__init_subclass__(**kwargs)
 
@@ -598,9 +595,6 @@ class DataNode(DataAccessMixin, ABC):
             if not final_kwargs:
                 final_kwargs["config"] = self.config
 
-            # ---- the surgical part: only change hashes when namespace is non-empty ----
-            # Backward compatibility guarantee:
-            # - if no namespace => NOTHING added => hashes identical to normal behavior
             self._hash_namespace = namespace
             if self._hash_namespace:
                 final_kwargs["hash_namespace"] = self._hash_namespace
@@ -956,32 +950,15 @@ class DataNode(DataAccessMixin, ABC):
         """Should be overwritten by subclass"""
         pass
 
-    def _resolve_latest_persisted_time_index(
-        self,
+    @staticmethod
+    def _max_time_index_from_update_statistics(
         historical_update: Any,
     ) -> datetime.datetime | None:
-        if hasattr(self, "latest_persisted_time_index"):
-            return self.latest_persisted_time_index
-        if hasattr(self, "overwrite_latest_value"):
-            return self.overwrite_latest_value
         update_statistics = getattr(historical_update, "update_statistics", None)
         max_time_index_value = getattr(update_statistics, "max_time_index_value", None)
         if max_time_index_value is not None:
             return max_time_index_value
-
-        legacy_last_time_index_value = getattr(historical_update, "last_time_index_value", None)
-        if legacy_last_time_index_value is not None:
-            # LEGACY_COMPAT: historical_update.last_time_index_value is a scalar
-            # projection kept for older SDK surfaces. Runtime logic should prefer
-            # update_statistics.max_time_index_value from global_index_progress.
-            warnings.warn(
-                "Deprecated DataNode compatibility path: "
-                "historical_update.last_time_index_value was read. Use "
-                "historical_update.update_statistics.max_time_index_value instead.",
-                FutureWarning,
-                stacklevel=2,
-            )
-        return legacy_last_time_index_value
+        return None
 
     def _validate_update_output(self, temp_df: pd.DataFrame) -> None:
         storage_data_source = getattr(self.storage_metadata, "data_source", None)
@@ -1013,7 +990,9 @@ class DataNode(DataAccessMixin, ABC):
         self.logger.debug(f"Calculating update for {self}...")
 
         temp_df = self.update()
-        latest_persisted_time_index = self._resolve_latest_persisted_time_index(historical_update)
+        update_statistics_max_time_index = self._max_time_index_from_update_statistics(
+            historical_update
+        )
 
         if temp_df is None:
             raise Exception(f" {self} update(...) method needs to return a data frame")
@@ -1022,7 +1001,7 @@ class DataNode(DataAccessMixin, ABC):
             self.logger.warning(f"{self} produced no new data in this update round.")
             return temp_df
 
-        if latest_persisted_time_index is None and not SessionDataSource.is_local_db:
+        if update_statistics_max_time_index is None and not SessionDataSource.is_local_db:
             temp_df = self.update_statistics.filter_df_by_latest_value(temp_df)
 
         if temp_df.empty:
@@ -1034,7 +1013,7 @@ class DataNode(DataAccessMixin, ABC):
         self.logger.info(f"Persisting {len(temp_df)} new rows for {self}.")
         self.local_persist_manager.persist_updated_data(
             temp_df=temp_df,
-            overwrite=(latest_persisted_time_index is not None),
+            overwrite=(update_statistics_max_time_index is not None),
         )
         self.logger.info(f"Successfully updated {self}.")
         return temp_df

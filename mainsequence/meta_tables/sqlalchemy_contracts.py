@@ -345,11 +345,11 @@ class PlatformManagedMetaTable:
 
 
 class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
-    """SQLAlchemy declarative base mixin for platform-managed DynamicTableMetaData.
+    """SQLAlchemy declarative base mixin for platform-managed TimeIndexMetaData.
 
     This is the SDK authoring surface for time-indexed DataNode storage. It
     reuses the MetaTable column/type/FK projection, but registers through the
-    DynamicTable endpoint and validates the opinionated table shape:
+    time-indexed MetaTable endpoint and validates the opinionated table shape:
     the first index must be the time index, and any extra index dimensions are
     ordinary non-null table columns.
     """
@@ -936,7 +936,7 @@ def _resolve_data_source_uid(
     uid = getattr(resolved_data_source, "uid", None)
     if not uid:
         raise ValueError(
-            "Could not resolve a DynamicTableDataSource uid. Run inside a configured "
+            "Could not resolve a time-indexed data source uid. Run inside a configured "
             "Main Sequence project/session, or pass data_source=... / data_source_uid=... "
             "explicitly."
         )

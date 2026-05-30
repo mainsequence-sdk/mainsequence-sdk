@@ -196,9 +196,8 @@ Do not use `hash_excluded` for anything that changes:
 - table meaning
 - table schema
 
-One explicit exception in this SDK is `DataNodeMetaData`, which is
-hash-excluded for older config-driven metadata paths. New code should put
-published table identity and schema on the registered storage class.
+Published table identity and schema belong on the registered storage class,
+not on `DataNodeConfiguration`.
 
 ## 5) Hashing rules in plain English
 
@@ -389,55 +388,9 @@ For production nodes, define the table contract on the registered
 - foreign keys
 - table identifier, namespace, labels, and description
 
-Older config-driven metadata fields still exist for compatibility and simple
-cases, but new tutorials and examples should prefer the storage model.
-
-For simple config-driven nodes, you can still provide descriptive metadata:
-
-- put table metadata in `DataNodeConfiguration.node_metadata`
-- put column metadata in `DataNodeConfiguration.records`
-
-Those config blocks use the SDK models `DataNodeMetaData` and `RecordDefinition`.
-
-The base `DataNode` can build `TableMetaData` and `ColumnMetaData` from those
-config blocks when present, but storage validation is performed against the
-registered storage table contract.
-
-Use `DataNodeConfiguration.records` when a node has a stable output contract:
-
-```python
-from pydantic import Field
-
-from mainsequence.meta_tables import DataNodeConfiguration, RecordDefinition
-
-
-ASSET_UID = RecordDefinition(
-    column_name="asset_uid",
-    dtype="uuid",
-    label="Asset",
-    description="Asset UID.",
-)
-
-
-class PricesConfig(DataNodeConfiguration):
-    records: list[RecordDefinition] = Field(
-        default_factory=lambda: [
-            RecordDefinition(
-                column_name="time_index",
-                dtype="datetime64[ns, UTC]",
-                label="Time",
-                description="UTC observation timestamp.",
-            ),
-            ASSET_UID,
-            RecordDefinition(
-                column_name="price",
-                dtype="float64",
-                label="Price",
-                description="Observed price.",
-            ),
-        ]
-    )
-```
+`DataNodeConfiguration` no longer accepts table metadata or output records.
+Stable output contracts are declared on the registered `PlatformTimeIndexMetaData`
+storage model and exposed through the MetaTable time-indexed profile/contract.
 
 When a DataNode source table should reference a registered MetaTable, declare the
 relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are

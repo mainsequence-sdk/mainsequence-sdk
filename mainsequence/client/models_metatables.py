@@ -9,7 +9,6 @@ import json
 import math
 import os
 import time
-import warnings
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
@@ -49,7 +48,6 @@ from .utils import (
     TDAG_CONSTANTS,
     DateInfo,
     DoesNotExist,
-    UniqueIdentifierRangeMap,
     bios_uuid,
     get_network_ip,
     is_process_running,
@@ -220,9 +218,7 @@ class MetaTablePhysicalContract(BasePydanticModel):
         alias="schema",
         serialization_alias="schema",
         exclude=True,
-        description=(
-            "Deprecated input-only schema alias. MetaTable uses the data source default schema."
-        ),
+        description=("Input-only schema alias. MetaTable uses the data source default schema."),
     )
     table_name: str = Field(..., description="Physical database table name.")
 
@@ -614,7 +610,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
     ) -> pd.DataFrame:
         if self.class_type in LOCAL_DATA_SOURCE_CLASS_TYPES:
             db_interface = _local_data_interface(self.class_type)
@@ -650,8 +645,6 @@ class DataSource(BasePydanticModel, BaseObjectOrm):
             )
 
         else:
-            if column_range_descriptor is not None:
-                raise Exception("On this data source do not use column_range_descriptor")
             df = data_node_update.get_data_between_dates_from_api(
                 start_date=start_date,
                 end_date=end_date,
@@ -718,7 +711,7 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
     )
     id: int | None = Field(
         None,
-        description="Legacy numeric identifier of the dynamic table data source.",
+        description="Backend numeric row identifier of the time-indexed data source.",
     )
     related_resource: DataSource
     related_resource_class_type: str
@@ -1244,14 +1237,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         )
 
 
-def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
-    warnings.warn(
-        f"Deprecated TDAG compatibility path: {message}",
-        FutureWarning,
-        stacklevel=stacklevel,
-    )
-
-
 # Global executor (or you could define one on your class)
 _executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
 
@@ -1342,7 +1327,7 @@ class BaseColumnMetaData(BasePydanticModel):
 class ColumnMetaData(BaseColumnMetaData, BaseObjectOrm):
     source_config_id: int | None = Field(
         None,
-        description="Legacy backend primary key for the time-indexed profile projection",
+        description="Backend primary key for the time-indexed profile projection",
     )
 
 
@@ -1393,15 +1378,15 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
                 "Time-indexed MetaTable storage fields are first-class fields; do not nest "
                 "dynamic_table inside table_contract."
             )
-        legacy_contract_fields = [
+        forbidden_contract_fields = [
             field
             for field in ("index_names", "storage_layout", "physical_index_plan")
             if field in table_contract
         ]
-        if legacy_contract_fields:
+        if forbidden_contract_fields:
             raise ValueError(
-                "table_contract must be a MetaTable contract. Remove legacy "
-                f"time-indexed storage fields: {legacy_contract_fields}."
+                "table_contract must be a MetaTable contract. Remove "
+                f"time-indexed storage fields: {forbidden_contract_fields}."
             )
         normalized_contract = dict(table_contract)
         normalized_contract["table_kind"] = "time_indexed"
@@ -1546,7 +1531,7 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     """
 
     dynamic_table_uid: str | None = Field(
-        None, description="Legacy response alias for the related TimeIndexMetaData uid"
+        None, description="Backend response alias for the related TimeIndexMetaData uid"
     )
     related_table_uid: str | None = Field(
         None, description="Public uid of the related TimeIndexMetaData"
@@ -1571,7 +1556,6 @@ class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
     )
     columns_metadata: list[ColumnMetaData] | None = None
 
-    # todo remove
     column_index_names: list | None = [None]
 
 
@@ -2064,7 +2048,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         """
         {'local_hash_id__in': [{'update_hash': 'alpacaequitybarstest_97018e7280c1bad321b3f4153cc7e986', 'data_source_uid': '...'},
         :param local_hash_id__in:
-        :param multi_index_asset_symbols_filter:
         :param update_details_kwargs:
         :param update_priority_dict:
         :return:
@@ -2185,7 +2168,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         data: pd.DataFrame,
         data_source: DynamicTableDataSource,
         overwrite: bool,
-        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
         records: Sequence[Any] | None = None,
         source_table_schema: Mapping[str, Any] | None = None,
     ):
@@ -2421,18 +2403,6 @@ class TimeIndexMetaData(MetaTable):
 
     _drop_indices: bool = False  # for direct incertion we can pass this values
     _rebuild_indices: bool = False  # for direct incertion we can pass this values
-
-    @model_validator(mode="before")
-    @classmethod
-    def _fill_legacy_dynamic_table_metatable_fields(cls, value: Any) -> Any:
-        if not isinstance(value, Mapping):
-            return value
-
-        data = dict(value)
-        data.setdefault("management_mode", "platform_managed")
-        if data.get("physical_table_name") in (None, ""):
-            data["physical_table_name"] = data.get("storage_hash")
-        return data
 
     def _time_indexed_dynamic_contract(self) -> dict[str, Any]:
         return _dynamic_table_contract_fragment(self.table_contract)
@@ -2749,191 +2719,6 @@ class TimeIndexMetaData(MetaTable):
 
         self.delete()
 
-    def handle_time_indexed_profile_creation(
-        self,
-        column_dtypes_map: dict,
-        index_names: list[str],
-        time_index_name,
-        data,
-        overwrite=False,
-        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None = None,
-    ):
-        """
-        Legacy compatibility path for callers that still invoke the old hook.
-
-        DataNode runtime must not create or mutate TimeIndexedProfile records.
-        Storage must be registered/bootstraped before writes.
-        """
-        del data, overwrite
-        configured_time_index_name = self.time_index_name
-        configured_index_names = self.index_names
-        configured_column_dtypes_map = self.column_dtypes_map
-        if (
-            not configured_time_index_name
-            or not configured_index_names
-            or not configured_column_dtypes_map
-        ):
-            raise ValueError(
-                "TimeIndexMetaData profile must already exist before DataNode writes. "
-                "Register/bootstrap the storage table before running the DataNode update."
-            )
-
-        storage_class_type = getattr(
-            getattr(getattr(self, "data_source", None), "related_resource", None),
-            "class_type",
-            None,
-        )
-        is_local_storage = storage_class_type in LOCAL_DATA_SOURCE_CLASS_TYPES
-        expected_dtypes = normalize_column_dtypes_map(
-            column_dtypes_map,
-            remote=not is_local_storage,
-            allow_naive_datetime=is_local_storage,
-        )
-        configured_dtypes = normalize_column_dtypes_map(
-            configured_column_dtypes_map,
-            remote=not is_local_storage,
-            allow_naive_datetime=is_local_storage,
-        )
-
-        if configured_time_index_name != time_index_name:
-            raise ValueError(
-                "Existing TimeIndexMetaData time_index_name does not match "
-                f"DataNode output. Existing: {configured_time_index_name!r}; "
-                f"output: {time_index_name!r}."
-            )
-
-        configured_index_names = [str(name) for name in configured_index_names]
-        if configured_index_names != list(index_names):
-            raise ValueError(
-                "Existing TimeIndexMetaData index_names do not match "
-                f"DataNode output. Existing: {configured_index_names}; "
-                f"output: {list(index_names)}."
-            )
-
-        missing_columns = [name for name in expected_dtypes if name not in configured_dtypes]
-        if missing_columns:
-            raise ValueError(
-                "Existing TimeIndexMetaData column contract is missing DataNode output columns: "
-                f"{missing_columns}."
-            )
-
-        dtype_mismatches = {
-            name: {
-                "existing": configured_dtypes[name],
-                "output": expected_dtype,
-            }
-            for name, expected_dtype in expected_dtypes.items()
-            if configured_dtypes[name] != expected_dtype
-        }
-        if dtype_mismatches:
-            raise ValueError(
-                "Existing TimeIndexMetaData column contract does not match "
-                f"DataNode output: {dtype_mismatches}."
-            )
-
-        self._validate_existing_source_table_columns_metadata(
-            storage=self,
-            columns_metadata=columns_metadata,
-            remote=not is_local_storage,
-            allow_naive_datetime=is_local_storage,
-        )
-        return self.time_indexed_profile or self
-
-    @staticmethod
-    def _serialize_column_metadata_for_validation(
-        column_metadata: BaseColumnMetaData | dict[str, Any],
-        *,
-        remote: bool,
-        allow_naive_datetime: bool,
-    ) -> dict[str, Any]:
-        if isinstance(column_metadata, BaseModel):
-            raw = column_metadata.model_dump(mode="json", exclude_none=True)
-        else:
-            raw = dict(column_metadata)
-        if raw.get("column_name") in (None, "") and raw.get("name") not in (None, ""):
-            raw["column_name"] = raw["name"]
-        if raw.get("dtype") in (None, "") and raw.get("data_type") not in (None, ""):
-            raw["dtype"] = raw["data_type"]
-        raw.pop("orm_class", None)
-        raw.pop("source_config_id", None)
-        raw.pop("name", None)
-        raw.pop("data_type", None)
-        if "dtype" in raw:
-            raw["dtype"] = normalize_dtype_token(
-                raw["dtype"],
-                remote=remote,
-                allow_naive_datetime=allow_naive_datetime,
-            )
-        return raw
-
-    @classmethod
-    def _validate_existing_source_table_columns_metadata(
-        cls,
-        *,
-        storage: TimeIndexMetaData,
-        columns_metadata: list[BaseColumnMetaData | dict[str, Any]] | None,
-        remote: bool,
-        allow_naive_datetime: bool,
-    ) -> None:
-        if columns_metadata is None:
-            return
-
-        existing_metadata = {
-            item["column_name"]: item
-            for item in (
-                cls._serialize_column_metadata_for_validation(
-                    column_metadata,
-                    remote=remote,
-                    allow_naive_datetime=allow_naive_datetime,
-                )
-                for column_metadata in (
-                    (storage.time_indexed_profile.columns_metadata or [])
-                    if storage.time_indexed_profile is not None
-                    else storage.columns
-                )
-            )
-        }
-        requested_metadata = {
-            item["column_name"]: item
-            for item in (
-                cls._serialize_column_metadata_for_validation(
-                    column_metadata,
-                    remote=remote,
-                    allow_naive_datetime=allow_naive_datetime,
-                )
-                for column_metadata in columns_metadata
-            )
-        }
-
-        missing_metadata = [
-            column_name
-            for column_name in requested_metadata
-            if column_name not in existing_metadata
-        ]
-        if missing_metadata:
-            raise ValueError(
-                "DataNode write path cannot create column metadata. Existing "
-                "TimeIndexMetaData column projection is missing metadata for columns: "
-                f"{missing_metadata}."
-            )
-
-        metadata_mismatches = {}
-        for column_name, requested in requested_metadata.items():
-            existing = existing_metadata[column_name]
-            mismatched_fields = {
-                key: {"existing": existing.get(key), "output": value}
-                for key, value in requested.items()
-                if existing.get(key) != value
-            }
-            if mismatched_fields:
-                metadata_mismatches[column_name] = mismatched_fields
-
-        if metadata_mismatches:
-            raise ValueError(
-                "Existing TimeIndexMetaData column metadata does not "
-                f"match DataNode output: {metadata_mismatches}."
-            )
-
     @staticmethod
     def map_columns_to_df(
         df,
@@ -3014,7 +2799,6 @@ class TimeIndexMetaData(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
         node_identifier: str | None = None,
     ) -> pd.DataFrame:
         """Internal shared implementation for fetching data between dates."""
@@ -3034,7 +2818,6 @@ class TimeIndexMetaData(MetaTable):
                     "less_or_equal": less_or_equal,
                     "columns": columns,
                     "offset": offset,  # pagination offset
-                    # "column_range_descriptor": column_range_descriptor,  # if/when needed
                 }
                 if dimension_filters is not None:
                     payload_json["dimension_filters"] = dimension_filters
@@ -3109,7 +2892,6 @@ class TimeIndexMetaData(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
     ):
         """Public helper for /{uid}/get_data_between_dates_from_remote/."""
         url = self.get_object_url() + f"/{self._public_uid()}/get_data_between_dates_from_remote/"
@@ -3129,7 +2911,6 @@ class TimeIndexMetaData(MetaTable):
             index_coordinates=dimension_payload.get("index_coordinates"),
             dimension_range_map=dimension_payload.get("dimension_range_map"),
             columns=columns,
-            column_range_descriptor=column_range_descriptor,
             node_identifier=None,
         )
 
@@ -3145,7 +2926,6 @@ class TimeIndexMetaData(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-        column_range_descriptor: None | UniqueIdentifierRangeMap = None,
     ) -> [pd.DataFrame, TimeIndexMetaData]:
         """
         Same behaviour as get_data_between_dates_from_api,
@@ -3164,7 +2944,6 @@ class TimeIndexMetaData(MetaTable):
             index_coordinates=index_coordinates,
             dimension_range_map=dimension_range_map,
             columns=columns,
-            column_range_descriptor=column_range_descriptor,
             node_identifier=node_identifier,
         )
 
@@ -4043,57 +3822,8 @@ def combine_index_min_max_stats(index_min: dict[str, Any], index_progress: dict[
     return combined
 
 
-def _to_timestamp(value: Any):
-    value = UpdateStatistics._to_utc_datetime(value)
-    if isinstance(value, datetime.datetime):
-        return value.timestamp()
-    return value
-
-
 def request_to_datetime(value: Any):
     return UpdateStatistics._to_utc_datetime(value)
-
-
-def _combine_index_min_max_stats_as_timestamps(
-    index_min: dict[str, Any], index_progress: dict[str, Any]
-):
-    combined = combine_index_min_max_stats(index_min=index_min, index_progress=index_progress)
-
-    def _recurse(node):
-        if isinstance(node, dict) and set(node.keys()) == {"min", "max"}:
-            return {"min": _to_timestamp(node["min"]), "max": _to_timestamp(node["max"])}
-        if isinstance(node, dict):
-            return {k: _recurse(v) for k, v in node.items()}
-        return _to_timestamp(node)
-
-    return _recurse(combined)
-
-
-def get_chunk_stats(chunk_df, time_index_name, index_names):
-    # LEGACY_COMPAT: older SDK paths still import get_chunk_stats
-    # and expect _PER_ASSET_ leaves with min/max timestamps. DataNodeUpdate uses
-    # get_index_progress_chunk_stats() as the canonical helper.
-    _warn_legacy_compat(
-        "get_chunk_stats() returns the legacy '_PER_ASSET_' shape. Use "
-        "get_index_progress_chunk_stats() and send '_GLOBAL_', "
-        "'index_progress', and 'index_min' instead.",
-    )
-    canonical_stats, grouped_dates = get_index_progress_chunk_stats(
-        chunk_df=chunk_df,
-        time_index_name=time_index_name,
-        index_names=index_names,
-    )
-    legacy_stats = {
-        "_GLOBAL_": {
-            "max": _to_timestamp(canonical_stats["_GLOBAL_"]["max"]),
-            "min": _to_timestamp(canonical_stats["_GLOBAL_"]["min"]),
-        },
-        "_PER_ASSET_": _combine_index_min_max_stats_as_timestamps(
-            index_min=canonical_stats["index_min"],
-            index_progress=canonical_stats["index_progress"],
-        ),
-    }
-    return legacy_stats, grouped_dates
 
 
 class LastUpdateMultiIndexStatsPayload(BaseModel):
@@ -4509,7 +4239,6 @@ __all__ = [
     "UpdateStatistics",
     "build_last_update_index_time_payload",
     "combine_index_min_max_stats",
-    "get_chunk_stats",
     "get_index_progress_chunk_stats",
     "get_session_data_source",
     "request_to_datetime",

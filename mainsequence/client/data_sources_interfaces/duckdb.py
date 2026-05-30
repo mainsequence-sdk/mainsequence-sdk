@@ -22,7 +22,7 @@ from ..dtype_codec import (
     token_to_pandas_dtype,
     token_to_pandas_series,
 )
-from ..utils import DataFrequency, UniqueIdentifierRangeMap
+from ..utils import DataFrequency
 
 
 def get_logger():
@@ -711,8 +711,6 @@ class DuckDBInterface:
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        ids: list[str] | None = None,
-        unique_identifier_range_map: dict[str, dict[str, Any]] | None = None,
         max_rows: int | None = None,
         now: datetime.datetime | None = None,
     ) -> tuple[
@@ -971,45 +969,6 @@ class DuckDBInterface:
                 f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
             )
 
-        identity_dimensions = [name for name in index_names if name != time_index_name]
-        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
-
-        if ids is not None and unique_identifier_range_map is not None:
-            raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
-        if ids is not None and not uses_legacy_unique_identifier:
-            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
-        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
-            raise ValueError(
-                "Legacy 'unique_identifier_range_map' reads are valid only for "
-                "unique_identifier tables."
-            )
-        if unique_identifier_range_map is not None and normalized_dimension_range_map is not None:
-            raise ValueError(
-                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
-            )
-
-        # If ids are given without a range map, create a simple one from start/end
-        if ids and (normalized_dimension_range_map is None):
-            normalized_dimension_range_map = [
-                {
-                    "coordinate": {"unique_identifier": uid},
-                    "start_date": start_ts.to_pydatetime() if start_ts is not None else None,
-                    "start_date_operand": ">=",
-                    "end_date": (
-                        (end_ts or _to_utc_ts(now)).to_pydatetime()
-                        if (end_ts or now) is not None
-                        else None
-                    ),
-                    "end_date_operand": "<=",
-                }
-                for uid in ids
-            ]
-        if unique_identifier_range_map is not None:
-            normalized_dimension_range_map = [
-                {"coordinate": {"unique_identifier": uid}, **dict(info)}
-                for uid, info in unique_identifier_range_map.items()
-            ]
-
         # Compute global window from inputs
         if normalized_dimension_range_map:
             eff_start = _effective_start_from_range_map(normalized_dimension_range_map)
@@ -1192,10 +1151,7 @@ class DuckDBInterface:
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        ids: list[str] | None = None,
         columns: list[str] | None = None,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
-        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
     ) -> pd.DataFrame:
         """
         Reads data from the specified table, with optional filtering.
@@ -1207,18 +1163,10 @@ class DuckDBInterface:
             end (Optional[datetime.datetime]): Maximum temporal-column filter.
             great_or_equal (bool): If True, use >= for start date comparison. Defaults to True.
             less_or_equal (bool): If True, use <= for end date comparison. Defaults to True.
-            ids (Optional[List[str]]): List of specific unique_identifiers to include.
             columns (Optional[List[str]]): Specific columns to select. Reads all if None.
-            unique_identifier_range_map (Optional[UniqueIdentifierRangeMap]):
-                A map where keys are unique_identifiers and values are dicts specifying
-                date ranges (start_date, end_date, start_date_operand, end_date_operand)
-                for that identifier. Mutually exclusive with 'ids'.
 
         Returns:
             pd.DataFrame: The queried data, or an empty DataFrame if the table doesn't exist.
-
-        Raises:
-            ValueError: If both `ids` and `unique_identifier_range_map` are provided.
         """
 
         def qident(name: str) -> str:
@@ -1248,39 +1196,10 @@ class DuckDBInterface:
                 f"time_index_name {time_index_name!r} must be present in index_names {index_names!r}"
             )
         identity_dimensions = [name for name in index_names if name != time_index_name]
-        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
-
-        if ids is not None and unique_identifier_range_map is not None:
-            raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
-        if ids is not None and not uses_legacy_unique_identifier:
-            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
-        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
-            raise ValueError(
-                "Legacy 'unique_identifier_range_map' reads are valid only for "
-                "unique_identifier tables."
-            )
-        if unique_identifier_range_map is not None and dimension_range_map is not None:
-            raise ValueError(
-                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
-            )
-        if column_range_descriptor is not None:
-            raise NotImplementedError("DuckDB column_range_descriptor reads are not supported.")
-
-        if ids:
-            dimension_filters = dict(dimension_filters or {})
-            if "unique_identifier" in dimension_filters:
-                raise ValueError("Cannot provide both 'ids' and a unique_identifier filter.")
-            dimension_filters["unique_identifier"] = list(ids)
-
-        if unique_identifier_range_map is not None:
-            dimension_range_map = [
-                {"coordinate": {"unique_identifier": uid}, **dict(info)}
-                for uid, info in unique_identifier_range_map.items()
-            ]
 
         logger.debug(
             f"Duck DB: Reading from table '{table}' with filters: start={start}, end={end}, "
-            f"ids={ids is not None}, columns={columns}, range_map={dimension_range_map is not None}"
+            f"columns={columns}, range_map={dimension_range_map is not None}"
         )
 
         if not self.table_exists(table):

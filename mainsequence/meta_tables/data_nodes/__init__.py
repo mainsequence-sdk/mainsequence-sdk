@@ -7,8 +7,6 @@ _LAZY_IMPORTS = {
     "APIDataNode": (".data_nodes", "APIDataNode"),
     "DataNode": (".data_nodes", "DataNode"),
     "DataNodeConfiguration": (".models", "DataNodeConfiguration"),
-    "DataNodeMetaData": (".models", "DataNodeMetaData"),
-    "RecordDefinition": (".models", "RecordDefinition"),
     "hash_namespace": (".namespacing", "hash_namespace"),
 }
 

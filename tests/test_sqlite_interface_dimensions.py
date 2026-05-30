@@ -3,7 +3,6 @@ import os
 from types import SimpleNamespace
 
 import pandas as pd
-import pytest
 
 from mainsequence.client import models_metatables
 from mainsequence.client.data_sources_interfaces.sqlite import SQLiteInterface
@@ -168,21 +167,6 @@ def test_sqlite_read_supports_dimension_range_map(tmp_path):
     )
 
     assert df["value"].tolist() == [30.0]
-
-
-def test_sqlite_rejects_legacy_unique_identifier_range_map_for_n_dimensional_tables(
-    tmp_path,
-):
-    interface = _interface(tmp_path)
-    _seed_n_dimensional_table(interface)
-
-    with pytest.raises(ValueError, match="unique_identifier_range_map"):
-        interface.read(
-            table="node",
-            index_names=INDEX_NAMES,
-            time_index_name="time_index",
-            unique_identifier_range_map={"asset-1": {}},
-        )
 
 
 def test_sqlite_time_index_minima_groups_by_identity_coordinates(tmp_path):

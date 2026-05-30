@@ -59,9 +59,6 @@ class DateInfo(TypedDict, total=False):
     end_date_operand: str | None
 
 
-UniqueIdentifierRangeMap = dict[str, DateInfo]
-
-
 class AuthError(Exception):
     pass
 

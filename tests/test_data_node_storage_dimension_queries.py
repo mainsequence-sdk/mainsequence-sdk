@@ -31,6 +31,8 @@ def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaData:
     return models_metatables.TimeIndexMetaData(
         uid="714",
         storage_hash="prices_hash",
+        management_mode="platform_managed",
+        physical_table_name="prices_hash",
         data_source=1,
         source_class_name="PricesNode",
         creation_date="2026-04-01T00:00:00Z",
@@ -40,46 +42,6 @@ def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaData:
 
 def test_data_node_storage_has_no_initialize_source_table_method():
     assert not hasattr(models_metatables.TimeIndexMetaData, "initialize_source_table")
-
-
-def test_source_table_legacy_helper_does_not_initialize_or_mutate(monkeypatch):
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
-        "initialize_source_table",
-        lambda self, **kwargs: pytest.fail("initialize_source_table was called"),
-        raising=False,
-    )
-
-    storage = _storage(["time_index", "asset_uid"])
-    storage.time_indexed_profile.column_dtypes_map["asset_uid"] = "uuid"
-    storage.time_indexed_profile.columns_metadata = [
-        models_metatables.ColumnMetaData(
-            column_name="asset_uid",
-            dtype="uuid",
-            label="Asset",
-            description="Asset UID.",
-        )
-    ]
-    result = storage.handle_time_indexed_profile_creation(
-        column_dtypes_map={
-            "time_index": "datetime64[ns, UTC]",
-            "asset_uid": "uuid",
-            "value": "float64",
-        },
-        index_names=["time_index", "asset_uid"],
-        time_index_name="time_index",
-        data=pd.DataFrame(),
-        columns_metadata=[
-            models_metatables.BaseColumnMetaData(
-                column_name="asset_uid",
-                dtype="uuid",
-                label="Asset",
-                description="Asset UID.",
-            )
-        ],
-    )
-
-    assert result is storage.time_indexed_profile
 
 
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):

@@ -416,7 +416,7 @@ def test_platform_managed_metatable_does_not_use_physical_data_source_uid(monkey
         ),
     )
 
-    with pytest.raises(ValueError, match="DynamicTableDataSource uid"):
+    with pytest.raises(ValueError, match="time-indexed data source uid"):
         Account.build_registration_request()
 
 

@@ -16,7 +16,6 @@ from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
     PlatformTimeIndexMetaData,
-    RecordDefinition,
 )
 
 
@@ -51,19 +50,19 @@ def test_create_config_crops_hash_prefix_to_postgres_identifier_limit(monkeypatc
 def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
-    class RecordDefinition(BaseModel):
+    class ColumnContract(BaseModel):
         column_name: str
         dtype: str
         label: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
         description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
 
     class NodeConfig(BaseModel):
-        records: list[RecordDefinition]
+        records: list[ColumnContract]
 
     hashes_a = _hashes(
         NodeConfig(
             records=[
-                RecordDefinition(
+                ColumnContract(
                     column_name="close",
                     dtype="float64",
                     label="Close",
@@ -75,7 +74,7 @@ def test_nested_pydantic_hash_excluded_fields_inside_lists_do_not_affect_hashes(
     hashes_b = _hashes(
         NodeConfig(
             records=[
-                RecordDefinition(
+                ColumnContract(
                     column_name="close",
                     dtype="float64",
                     label="Last",
@@ -131,10 +130,10 @@ def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
     assert hashes_a == hashes_b
 
 
-def test_hash_excluded_node_metadata_does_not_affect_hashes(monkeypatch):
+def test_hash_excluded_nested_metadata_does_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
-    class DataNodeMetaData(BaseModel):
+    class PublishedMetadata(BaseModel):
         identifier: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
         description: str | None = Field(default=None, json_schema_extra={"hash_excluded": True})
         data_frequency_id: str | None = Field(
@@ -144,7 +143,7 @@ def test_hash_excluded_node_metadata_does_not_affect_hashes(monkeypatch):
 
     class NodeConfig(BaseModel):
         identifier: str
-        node_metadata: DataNodeMetaData | None = Field(
+        published_metadata: PublishedMetadata | None = Field(
             default=None,
             json_schema_extra={"hash_excluded": True},
         )
@@ -153,7 +152,7 @@ def test_hash_excluded_node_metadata_does_not_affect_hashes(monkeypatch):
     hashes_b = _hashes(
         NodeConfig(
             identifier="prices",
-            node_metadata=DataNodeMetaData(
+            published_metadata=PublishedMetadata(
                 identifier="daily_prices",
                 description="Published alias",
                 data_frequency_id="one_d",

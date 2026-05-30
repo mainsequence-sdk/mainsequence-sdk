@@ -10,7 +10,6 @@ import pytest
 from pydantic import ValidationError
 
 from mainsequence.client import models_metatables
-from mainsequence.meta_tables.data_nodes.models import RecordDefinition
 
 
 def _dt(hour: int) -> datetime.datetime:
@@ -468,28 +467,6 @@ def test_get_index_progress_chunk_stats_normalizes_uuid_coordinate_keys():
     assert grouped_dates is not None
 
 
-def test_set_last_update_index_time_rejects_legacy_per_asset_backend_payload(monkeypatch):
-    def _unexpected_make_request(**_kwargs):
-        raise AssertionError("legacy backend payload should fail before make_request")
-
-    monkeypatch.setattr(models_metatables, "make_request", _unexpected_make_request)
-
-    update = _minimal_update()
-    with pytest.raises(ValidationError):
-        update.set_last_update_index_time_from_update_stats(
-            multi_index_stats={
-                "_GLOBAL_": {
-                    "min": "2026-05-01 00:00:00+00:00",
-                    "max": "2026-05-01 03:00:00+00:00",
-                },
-                "_PER_ASSET_": {
-                    "asset-1": "2026-05-01 03:00:00+00:00",
-                },
-            },
-            multi_index_column_stats={},
-        )
-
-
 def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
     calls = {}
 
@@ -497,16 +474,12 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
         def insert_data_into_table(self, **kwargs):
             calls["insert"] = kwargs
 
-    class FakeStorage:
-        def handle_time_indexed_profile_creation(self, **_kwargs):
-            raise AssertionError("upsert should not create or validate source-table profile")
-
     update = models_metatables.DataNodeUpdate.model_construct(
         id=77,
         update_hash="update-hash",
         build_configuration={},
         ogm_dependencies_linked=False,
-        data_node_storage=FakeStorage(),
+        data_node_storage=object(),
     )
 
     def _fake_set_last(**kwargs):
@@ -601,18 +574,18 @@ def test_upsert_data_into_table_uses_declared_record_dtype_for_payload_columns()
         data_source=SimpleNamespace(related_resource=FakeResource()),
         overwrite=True,
         records=[
-            RecordDefinition(
-                column_name="venue_specific_properties",
-                dtype="jsonb",
-                label="Venue Specific Properties",
-                description="JSON payload for exchange-specific metadata.",
-            ),
-            RecordDefinition(
-                column_name="venue_event_time",
-                dtype="datetime64[ns, UTC]",
-                label="Venue Event Time",
-                description="Timezone-aware event timestamp from the venue payload.",
-            ),
+            {
+                "column_name": "venue_specific_properties",
+                "dtype": "jsonb",
+                "label": "Venue Specific Properties",
+                "description": "JSON payload for exchange-specific metadata.",
+            },
+            {
+                "column_name": "venue_event_time",
+                "dtype": "datetime64[ns, UTC]",
+                "label": "Venue Event Time",
+                "description": "Timezone-aware event timestamp from the venue payload.",
+            },
         ],
     )
 

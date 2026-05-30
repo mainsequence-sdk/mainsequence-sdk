@@ -16,7 +16,6 @@ from ..dtype_codec import (
     token_to_backend_type,
     token_to_pandas_series,
 )
-from ..utils import UniqueIdentifierRangeMap
 
 
 def get_logger():
@@ -192,7 +191,6 @@ class SQLiteInterface:
         *,
         index_names: list[str],
         time_index_name: str,
-        **_: Any,
     ) -> None:
         self._validate_index(index_names, time_index_name)
         if df.empty:
@@ -254,8 +252,6 @@ class SQLiteInterface:
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        ids: list[str] | None = None,
-        unique_identifier_range_map: dict[str, dict[str, Any]] | None = None,
         max_rows: int | None = None,
         now: datetime.datetime | None = None,
     ) -> tuple[
@@ -265,42 +261,9 @@ class SQLiteInterface:
         dict[str, Any],
     ]:
         self._validate_index(index_names, time_index_name)
-        identity_dimensions = [name for name in index_names if name != time_index_name]
-        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
-
-        if ids is not None and unique_identifier_range_map is not None:
-            raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
-        if ids is not None and not uses_legacy_unique_identifier:
-            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
-        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
-            raise ValueError(
-                "Legacy 'unique_identifier_range_map' reads are valid only for "
-                "unique_identifier tables."
-            )
-        if unique_identifier_range_map is not None and dimension_range_map is not None:
-            raise ValueError(
-                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
-            )
-
         normalized_dimension_range_map = (
             None if dimension_range_map is None else [dict(item) for item in dimension_range_map]
         )
-        if ids and normalized_dimension_range_map is None:
-            normalized_dimension_range_map = [
-                {
-                    "coordinate": {"unique_identifier": uid},
-                    "start_date": start,
-                    "start_date_operand": ">=",
-                    "end_date": end or now,
-                    "end_date_operand": "<=",
-                }
-                for uid in ids
-            ]
-        if unique_identifier_range_map is not None:
-            normalized_dimension_range_map = [
-                {"coordinate": {"unique_identifier": uid}, **dict(info)}
-                for uid, info in unique_identifier_range_map.items()
-            ]
 
         diagnostics = {
             "limited": False,
@@ -324,42 +287,9 @@ class SQLiteInterface:
         dimension_filters: dict[str, list[Any]] | None = None,
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
-        ids: list[str] | None = None,
         columns: list[str] | None = None,
-        unique_identifier_range_map: UniqueIdentifierRangeMap | None = None,
-        column_range_descriptor: dict[str, UniqueIdentifierRangeMap] | None = None,
-        **_: Any,
     ) -> pd.DataFrame:
         self._validate_index(index_names, time_index_name)
-        identity_dimensions = [name for name in index_names if name != time_index_name]
-        uses_legacy_unique_identifier = identity_dimensions == ["unique_identifier"]
-
-        if ids is not None and unique_identifier_range_map is not None:
-            raise ValueError("Cannot provide both 'ids' and 'unique_identifier_range_map'.")
-        if ids is not None and not uses_legacy_unique_identifier:
-            raise ValueError("Legacy 'ids' reads are valid only for unique_identifier tables.")
-        if unique_identifier_range_map is not None and not uses_legacy_unique_identifier:
-            raise ValueError(
-                "Legacy 'unique_identifier_range_map' reads are valid only for "
-                "unique_identifier tables."
-            )
-        if unique_identifier_range_map is not None and dimension_range_map is not None:
-            raise ValueError(
-                "Cannot provide both 'unique_identifier_range_map' and 'dimension_range_map'."
-            )
-        if column_range_descriptor is not None:
-            raise NotImplementedError("SQLite column_range_descriptor reads are not supported.")
-
-        if ids:
-            dimension_filters = dict(dimension_filters or {})
-            if "unique_identifier" in dimension_filters:
-                raise ValueError("Cannot provide both 'ids' and a unique_identifier filter.")
-            dimension_filters["unique_identifier"] = list(ids)
-        if unique_identifier_range_map is not None:
-            dimension_range_map = [
-                {"coordinate": {"unique_identifier": uid}, **dict(info)}
-                for uid, info in unique_identifier_range_map.items()
-            ]
 
         if not self.table_exists(table):
             logger.warning(f"Table '{table}' does not exist in {self.db_path}.")
@@ -382,6 +312,7 @@ class SQLiteInterface:
         sql_parts = [f"SELECT {select_sql} FROM {self._qident(table)}"]
         where_clauses: list[str] = []
         params: list[Any] = []
+        identity_dimensions = [name for name in index_names if name != time_index_name]
 
         def validate_dimension_name(name: str) -> None:
             if name not in identity_dimensions:
