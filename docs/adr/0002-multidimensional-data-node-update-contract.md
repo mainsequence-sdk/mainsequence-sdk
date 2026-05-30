@@ -91,4 +91,3 @@ Positive:
 Negative:
 
 - Downstream code must use the canonical dimension API.
-- Generated reference docs must be regenerated after this migration.

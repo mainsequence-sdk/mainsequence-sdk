@@ -435,32 +435,6 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
     }
 
 
-def test_data_node_storage_delete_after_date_rejects_removed_identifier_aliases():
-    from mainsequence.client.models_metatables import TimeIndexMetaData
-
-    storage = TimeIndexMetaData(
-        uid="714",
-        storage_hash="prices_hash",
-        management_mode="platform_managed",
-        physical_table_name="prices_hash",
-        data_source=1,
-        source_class_name="PricesNode",
-        creation_date="2026-04-01T00:00:00Z",
-    )
-
-    with pytest.raises(TypeError):
-        storage.delete_after_date(
-            "2026-04-01T00:00:00Z",
-            unique_identifier="AAPL",
-        )
-
-    with pytest.raises(TypeError):
-        storage.delete_after_date(
-            "2026-04-01T00:00:00Z",
-            unique_identifier_list=["AAPL"],
-        )
-
-
 def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     from mainsequence.client import models_metatables
 

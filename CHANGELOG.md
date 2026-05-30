@@ -8,15 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [4.0.2] - 2026-05-25
 
-### Added
-
-- Added ADR `0009-cli-public-resource-identity` to define CLI-wide canonical public identifier rules by object family and to record that `Workspace` and `AgentSession` remain numeric until their client contracts migrate.
-
 ### Changed
 
-- Migrated project-facing CLI arguments, local env write-paths, and current-project detection to prefer `project_uid` and `MAIN_SEQUENCE_PROJECT_UID`.
-- Updated local project setup, token refresh, sync, and project resolution helpers to operate on public project references while keeping internal numeric compatibility adapters only where older client filters still require backend row ids.
-- Aligned `Project` client helpers and quick-search models with the public UID contract used by the CLI migration.
+- Updated project-facing CLI arguments, local env write-paths, and current-project detection to prefer `project_uid` and `MAIN_SEQUENCE_PROJECT_UID`.
+- Updated local project setup, token refresh, sync, and project resolution helpers to operate on public project references while keeping internal numeric adapters only where backend filters still require row ids.
+- Aligned `Project` client helpers and quick-search models with the public UID contract.
 
 ## [4.0.1] - 2026-05-25
 
@@ -46,17 +42,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Runtime credential auth writes exchanged access tokens to `MAINSEQUENCE_ACCESS_TOKEN` for the current process environment and does not use `MAINSEQUENCE_REFRESH_TOKEN`.
 - Made `mainsequence login` runtime-credential-aware: when `MAINSEQUENCE_AUTH_MODE=runtime_credential`, it exchanges the configured runtime credential instead of opening browser login or persisting CLI JWT refresh tokens.
 - Made `mainsequence project set-up-locally` and `mainsequence project refresh_token` runtime-credential-aware so local project `.env` files no longer require JWT refresh tokens in runtime credential mode.
-- Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth instead of the removed legacy token path.
+- Updated pod/runtime detection and startup-state bootstrap to use execution markers plus JWT auth.
 - Stopped treating `MAINSEQUENCE_TOKEN=` as a managed project `.env` key during CLI auth refresh and project setup flows.
 - Added label fields to update metadata models so backend responses containing `labels` deserialize correctly for local time-series update payloads.
 - Bound the installed SDK version into structured logs as `sdk_version` to make deployed-image/version drift easier to diagnose.
 - Preserved registry detail-only fields on `RegisteredWidgetType` responses and surfaced schema, IO, default presentation, and extra fields in the CLI detail view.
-- Migrated DataNode source-configuration docs and CLI detail output to the multidimensional layout contract: use backend-derived `storage_layout` and `physical_index_plan` instead of the removed `table_partition` field.
+- Updated DataNode source-configuration docs and CLI detail output to the multidimensional layout contract using backend-derived `storage_layout` and `physical_index_plan`.
 
 ### Removed
 
-- Removed the legacy domain application packages from the core SDK tree so this repository stays focused on platform client primitives.
-- Removed deprecated row-oriented table APIs, examples, tutorials, and scaffold guidance in favor of MetaTables.
+- Removed domain application packages from the core SDK tree so this repository stays focused on platform client primitives.
+- Removed row-oriented table APIs, examples, tutorials, and scaffold guidance in favor of MetaTables.
 
 ## [3.19.17] - 2026-05-17
 
@@ -82,7 +78,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Fixed
 
-- Made `mainsequence logout` perform a hard CLI logout for browser-login JWT sessions by calling `/auth/cli/revoke/`, with a legacy fallback to `/auth/jwt-token/logout/` on older backends and local-only clearing for runtime credential mode or other no-refresh-token sessions.
+- Made `mainsequence logout` perform a hard CLI logout for browser-login JWT sessions by calling `/auth/cli/revoke/`, with fallback local-only clearing for runtime credential mode or other no-refresh-token sessions.
 
 ## [3.17.48] - 2026-04-14
 

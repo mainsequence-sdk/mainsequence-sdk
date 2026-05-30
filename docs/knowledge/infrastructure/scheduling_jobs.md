@@ -89,7 +89,11 @@ jobs:
 
 Each entry is validated with the same rules used by individual job creation. That means the job still needs a related image id, valid compute settings, and a valid target. If one definition is invalid, the batch submission fails before anything is sent.
 
-Set `spot` explicitly in repository-managed job files. `spot: true` means the job is allowed to prefer lower-cost interruptible capacity, conceptually similar to GCP Spot capacity or legacy preemptible VMs. `spot: false` means the job should stay on standard capacity. For long-lived reviewed schedules, make that choice explicit in the YAML instead of leaving it implicit.
+Set `spot` explicitly in repository-managed job files. `spot: true` means the
+job is allowed to prefer lower-cost interruptible capacity, conceptually similar
+to GCP Spot capacity. `spot: false` means the job should stay on standard
+capacity. For long-lived reviewed schedules, make that choice explicit in the
+YAML instead of leaving it implicit.
 
 This approach is easier to review, easier to reproduce, and much easier to reason about later.
 

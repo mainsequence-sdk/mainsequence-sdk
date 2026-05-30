@@ -47,7 +47,7 @@ from mainsequence.client.models_foundry import Project
 
 project = Project.get(123)
 project.add_label(["rates", "research"])
-project.remove_label("legacy")
+project.remove_label("archive")
 ```
 
 ## CLI Usage
@@ -56,10 +56,10 @@ The CLI exposes the same verbs on the object groups that support labels:
 
 ```bash
 mainsequence project add-label 123 --label rates --label research
-mainsequence project remove-label 123 --label legacy
+mainsequence project remove-label 123 --label archive
 
 mainsequence data-node add-label <DATA_NODE_STORAGE_UID> --label curated
-mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label legacy
+mainsequence data-node remove-label <DATA_NODE_STORAGE_UID> --label archive
 
 mainsequence cc workspace add-label 11111111-1111-4111-8111-111111111111 --label trading --label desk
 mainsequence cc workspace remove-label 11111111-1111-4111-8111-111111111111 --label old-layout

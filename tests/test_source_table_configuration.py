@@ -43,11 +43,9 @@ def _source_config_payload():
     }
 
 
-def test_time_indexed_profile_parses_canonical_response_without_table_partition():
+def test_time_indexed_profile_parses_canonical_response():
     config = models_metatables.TimeIndexedProfile(**_source_config_payload())
 
-    assert "table_partition" not in models_metatables.TimeIndexedProfile.model_fields
-    assert not hasattr(config, "table_partition")
     assert config.storage_layout == {
         "time_index": "time_index",
         "identity_dimensions": ["account_uid", "unique_identifier"],
@@ -59,14 +57,6 @@ def test_time_indexed_profile_parses_canonical_response_without_table_partition(
     assert config.multi_index_stats["_GLOBAL_"]["max"] == "2026-05-01T03:00:00Z"
     assert config.last_time_index_value == datetime.datetime(2026, 5, 1, 3, tzinfo=datetime.UTC)
     assert config.earliest_index_value == datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)
-
-
-def test_time_indexed_profile_rejects_table_partition_typed_surface():
-    payload = _source_config_payload()
-    payload["table_partition"] = {"kind": "legacy"}
-
-    with pytest.raises(ValidationError, match="table_partition"):
-        models_metatables.TimeIndexedProfile(**payload)
 
 
 def test_time_indexed_profile_rejects_foreign_keys():
@@ -104,9 +94,6 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
                     },
                     "index_min": {
                         "account-a": {"BTC": "2026-05-01T00:00:00Z"},
-                    },
-                    "max_per_asset_symbol": {
-                        "legacy-asset": "2026-04-01T00:00:00Z",
                     },
                 },
                 "multi_index_column_stats": {
@@ -160,7 +147,6 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
     assert update_stats.index_min == {
         "account-a": {"BTC": datetime.datetime(2026, 5, 1, tzinfo=datetime.UTC)}
     }
-    assert "legacy-asset" not in update_stats.index_progress
     assert update_stats.multi_index_column_stats == {
         "value": {
             "account-a": {
@@ -175,59 +161,3 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
 def test_time_indexed_profile_column_metadata_mutation_helper_is_removed():
     assert not hasattr(models_metatables.TimeIndexMetaData, "set_or_update_columns_metadata")
-
-
-def test_time_indexed_profile_get_data_updates_ignores_removed_legacy_asset_stats(
-    monkeypatch,
-):
-    class FakeResponse:
-        status_code = 200
-
-        @staticmethod
-        def json():
-            return {
-                "multi_index_stats": {
-                    "max_per_asset_symbol": {
-                        "AAPL": "2026-05-01T01:00:00Z",
-                        "MSFT": "2026-05-01T03:00:00Z",
-                    },
-                    "min_per_asset_symbol": {
-                        "AAPL": "2026-05-01T00:00:00Z",
-                        "MSFT": "2026-05-01T02:00:00Z",
-                    },
-                },
-                "multi_index_column_stats": None,
-            }
-
-    monkeypatch.setattr(
-        models_metatables,
-        "make_request",
-        lambda **_kwargs: FakeResponse(),
-    )
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
-        "build_session",
-        classmethod(lambda cls: object()),
-    )
-
-    payload = _source_config_payload()
-    payload["index_names"] = ["time_index", "unique_identifier"]
-    payload["storage_layout"] = {
-        "time_index": "time_index",
-        "identity_dimensions": ["unique_identifier"],
-    }
-    payload["physical_index_plan"] = {
-        "uniqueness": {"columns": ["time_index", "unique_identifier"]},
-    }
-    config = models_metatables.TimeIndexedProfile(**payload)
-    storage = models_metatables.TimeIndexMetaData.model_construct(
-        uid="storage-uid-44",
-        time_indexed_profile=config,
-    )
-
-    update_stats = storage.get_data_updates()
-
-    assert update_stats.global_index_progress is None
-    assert update_stats.max_time_index_value is None
-    assert update_stats.index_progress is None
-    assert update_stats.index_min is None

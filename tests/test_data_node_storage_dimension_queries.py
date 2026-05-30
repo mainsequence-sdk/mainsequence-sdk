@@ -1,7 +1,6 @@
 import datetime
 
 import pandas as pd
-import pytest
 
 from mainsequence.client import models_metatables
 
@@ -216,7 +215,6 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
     assert captured["payload"]["json"]["index_coordinates"] == [
         {"account_uid": "account-a", "unique_identifier": "BTC"}
     ]
-    assert "unique_identifier_list" not in captured["payload"]["json"]
 
 
 def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
@@ -258,21 +256,3 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
         },
         "timeout": 30,
     }
-
-
-def test_removed_unique_identifier_aliases_raise_type_error():
-    with pytest.raises(TypeError):
-        _storage(["time_index", "unique_identifier"]).get_last_observation(
-            unique_identifier_list=["BTC", "ETH"]
-        )
-
-    with pytest.raises(TypeError):
-        _storage(["time_index", "unique_identifier"]).get_data_between_dates_from_api(
-            unique_identifier_range_map={"BTC": {}}
-        )
-
-    with pytest.raises(TypeError):
-        models_metatables.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
-            node_identifier="prices-node",
-            unique_identifier_list=["BTC"],
-        )

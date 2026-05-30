@@ -45,10 +45,7 @@ def test_update_statistics_public_contract_is_generic():
     }
 
     with pytest.raises(ValidationError):
-        UpdateStatistics(asset_list=[])
-
-    with pytest.raises(ValidationError):
-        UpdateStatistics(asset_time_statistics={})
+        UpdateStatistics(unexpected_field=[])
 
 
 def test_update_statistics_two_index_normalizes_progress():

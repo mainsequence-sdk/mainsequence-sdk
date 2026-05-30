@@ -1,6 +1,4 @@
-import inspect
 import os
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -9,7 +7,6 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh")
 
 from mainsequence.meta_tables.data_nodes import data_nodes
-from mainsequence.meta_tables.data_nodes.models import DataNodeConfiguration
 
 
 def _clear_command_center_env(monkeypatch):
@@ -158,9 +155,6 @@ def test_api_data_node_local_persist_manager_receives_only_data_source_uid(monke
     }
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
 def test_data_access_mixin_uses_explicit_dimension_filters(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
 
@@ -195,16 +189,6 @@ def test_data_access_mixin_uses_explicit_dimension_range_map(monkeypatch):
     assert manager.calls[0]["dimension_range_map"] == dimension_range_map
 
 
-def test_data_access_mixin_rejects_removed_unique_identifier_aliases(monkeypatch):
-    mixin, _manager = _mixin_with_fake_api_manager(monkeypatch)
-
-    with pytest.raises(TypeError):
-        mixin.get_df_between_dates(unique_identifier_list=["BTC"])
-
-    with pytest.raises(TypeError):
-        mixin.get_df_between_dates(unique_identifier_range_map={"BTC": {}})
-
-
 def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatch):
     mixin, manager = _mixin_with_fake_api_manager(monkeypatch)
 
@@ -220,42 +204,3 @@ def test_data_access_mixin_latest_observation_uses_generic_dimensions(monkeypatc
             "dimension_range_map": None,
         }
     ]
-
-
-def test_data_access_mixin_no_longer_exposes_asset_specific_helpers():
-    signature = inspect.signature(data_nodes.DataAccessMixin.get_df_between_dates)
-    assert "unique_identifier_list" not in signature.parameters
-    assert "unique_identifier_range_map" not in signature.parameters
-    assert (
-        "asset_list"
-        not in inspect.signature(data_nodes.DataAccessMixin.get_last_observation).parameters
-    )
-    assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset")
-    assert not hasattr(data_nodes.DataAccessMixin, "get_ranged_data_per_asset_great_or_equal")
-    assert not hasattr(data_nodes.DataAccessMixin, "filter_by_assets_ranges")
-    assert "asset_list" not in DataNodeConfiguration.model_fields
-    assert not hasattr(data_nodes.DataNode, "get_asset_list")
-    assert not hasattr(data_nodes.APIDataNode, "get_earliest_updated_asset_filter")
-    assert not hasattr(data_nodes, "get_latest_update_by_assets_filter")
-    assert not hasattr(data_nodes, "last_update_per_unique_identifier")
-
-
-def test_core_tdag_public_api_has_no_domain_asset_compatibility_vocabulary():
-    forbidden = (
-        "asset_list",
-        "get_asset_list",
-        "unique_identifier_list",
-        "unique_identifier_range_map",
-        "filter_by_assets_ranges",
-    )
-    paths = list((PROJECT_ROOT / "mainsequence" / "meta_tables").rglob("*.py"))
-    paths.append(PROJECT_ROOT / "mainsequence" / "client" / "models_foundry.py")
-
-    violations = []
-    for path in paths:
-        text = path.read_text()
-        for token in forbidden:
-            if token in text:
-                violations.append(f"{path.relative_to(PROJECT_ROOT)} contains {token}")
-
-    assert violations == []

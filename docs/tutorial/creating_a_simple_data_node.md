@@ -186,7 +186,7 @@ authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
     physical table name even when two storage models have the same column shape.
 
     `identifier` is published metadata, not hash identity. That means you can
-    later repoint a published identifier to a different backing table during a migration
+    later repoint a published identifier to a different backing table
     without changing the table contract or the update identity.
 
     This is different from the `unique_identifier` field used later in MultiIndex entity tables. Here, you are naming the table itself, not an individual row entity.
@@ -722,10 +722,8 @@ Those concerns are intentionally separate:
 - the table contract says where data lives, what columns exist, and who can read or write it
 - the update process says which code and updater-scope configuration produced a particular run
 
-During the migration to MetaTable-owned storage, some CLI and API fields still
-surface legacy names such as `update_hash` and `storage_hash`. Treat
-`update_hash` as the update-process identity, and treat storage identity as the
-MetaTable-backed table contract.
+Treat `update_hash` as the update-process identity, and treat storage identity
+as the MetaTable-backed table contract.
 
 Why separate them? Sometimes you want multiple updater configurations to publish
 into the same table contract. While the simple example here is contrived, this

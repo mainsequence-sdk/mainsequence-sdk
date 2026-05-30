@@ -59,8 +59,7 @@ You can think of these as different layers of collaboration:
 ## The important detail for DataNodes
 
 When people say "share a DataNode", the platform object you are really sharing
-is the MetaTable-backed storage table. During the compatibility transition,
-some CLI output still names that DataNode-produced table `TimeIndexMetaData`.
+is the MetaTable-backed storage table.
 
 That distinction matters:
 

@@ -216,12 +216,11 @@ Validation is intentionally strict:
 - every index column must be non-nullable
 - the time-index column must be temporal and timezone-aware for remote storage
 - the client must not send derived backend fields such as `identity_dimensions`,
-  `index_progress`, `tail_delete`, `uniqueness`, `table_partition`, or
-  `physical_index_plan`
+  `index_progress`, `tail_delete`, `uniqueness`, or `physical_index_plan`
 
 ## External Registration
 
-Use `external_registered` when your app or migration framework creates the
+Use `external_registered` when your app or schema-management framework creates the
 physical table.
 
 ```python

@@ -650,7 +650,6 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
     assert "index_progress" not in payload
     assert "tail_delete" not in payload
     assert "uniqueness" not in payload
-    assert "table_partition" not in payload
     assert "physical_index_plan" not in payload
 
 

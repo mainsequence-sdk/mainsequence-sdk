@@ -59,7 +59,7 @@ Important architectural point:
 
 - `identifier` is published metadata, not update identity,
 - it belongs to the registered MetaTable-backed storage contract,
-- you can repoint an identifier from one backing table to another during a migration without rotating update-process identity.
+- you can repoint an identifier from one backing table to another without rotating update-process identity.
 
 There is no separate `portable_identifier` flag in the current SDK. Portability
 is the default meaning of the storage-table identifier.
@@ -73,7 +73,8 @@ If you want to inspect existing DataNode table identifiers from the CLI, run:
 mainsequence data-node list
 ```
 
-The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaData`. It does not list asset `unique_identifier` values.
+The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaData`.
+It does not list row-level identity dimension values.
 
 ### 3.2 Labels are organization metadata only
 
@@ -160,9 +161,9 @@ Examples:
 - `shard_id`
 - partition keys
 
-Legacy `ignore_from_storage_hash` field metadata and the older
-`_ARGS_IGNORE_IN_STORAGE_HASH` class attribute are removed. `update_only` is
-also removed: all `DataNodeConfiguration` fields are update-scoped by default.
+All `DataNodeConfiguration` fields are update-scoped by default. Descriptive
+fields that must not affect update identity should use
+`json_schema_extra={"hash_excluded": True}`.
 
 ### 4.3 Operational knobs (affect neither hash)
 
@@ -209,19 +210,17 @@ result as a different dataset.
 Example:
 
 - `PricesBars(frequency="1m")` defines table meaning.
-- Updater A writes only BTC.
-- Updater B writes only ETH.
+- Updater A writes one configured row subset.
+- Updater B writes another configured row subset.
 - Both should share one registered storage table, but have different `update_hash`.
-
-!!! note "Asset universe is usually scope, not table meaning"
-    For standard `(time_index, unique_identifier)` asset tables, do not create a
-    new storage table for every asset universe.
 
 ## 5.1) Hash namespaces: what they actually do
 
 `DataNode` also supports a separate testing and isolation mechanism called `hash_namespace`.
 
-This is not the same thing as table identity, asset identity, or business meaning. It is an extra namespace added to hashing so you can safely isolate runs on a shared backend.
+This is not the same thing as table identity, row identity, or business meaning.
+It is an extra namespace added to hashing so you can safely isolate runs on a
+shared backend.
 
 ### When to use it
 
@@ -276,7 +275,7 @@ Do not use `hash_namespace` to represent business meaning such as:
 
 - frequency
 - venue
-- asset universe
+- row subset
 - transformation logic
 
 Those belong in the actual constructor/config fields and should be reflected through the normal hashing rules.
@@ -289,7 +288,7 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 
 ### 6.1 Single-index pattern
 
-- first run: start at `config.offset_start` when provided, otherwise legacy `OFFSET_START`
+- first run: start at `config.offset_start` when provided
 - subsequent runs: start at `last_time + frequency_step`
 - daily datasets typically end at yesterday 00:00 UTC
 
@@ -301,16 +300,16 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 - compute incremental start points from canonical `UpdateStatistics`
 - return only new rows, or as close as practical
 
-For an asset price table, the index is usually:
+For a two-dimensional table, the index may be:
 
 ```python
-["time_index", "unique_identifier"]
+["time_index", "entity_uid"]
 ```
 
-For account holdings, the index includes the account and the asset:
+For a three-dimensional table, include each identity dimension explicitly:
 
 ```python
-["time_index", "account_uid", "unique_identifier"]
+["time_index", "portfolio_uid", "entity_uid"]
 ```
 
 The nested `UpdateStatistics.index_progress` shape follows the identity
@@ -530,9 +529,10 @@ CLI equivalent:
 mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
 ```
 
-#### Running read-only SQL against a dynamic table
+#### Running Read-Only SQL Against A Time-Indexed Table
 
-`TimeIndexMetaData.run_query(...)` executes a raw SQL query directly against one published dynamic table.
+`TimeIndexMetaData.run_query(...)` executes a raw SQL query directly against one
+published time-indexed table.
 
 This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `DataNode` API contract.
 
@@ -562,7 +562,7 @@ Expected success envelope:
 {
     "ok": True,
     "query_id": "abc123",
-    "dynamic_table_uid": "<DATA_NODE_STORAGE_UID>",
+    "meta_table_uid": "<DATA_NODE_STORAGE_UID>",
     "results": [
         {
             "column_a": "value",
@@ -587,14 +587,15 @@ mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM my_table
 
 #### Tail deleting rows after a cutoff
 
-`TimeIndexMetaData.delete_after_date(...)` removes the tail of a dynamic table starting at an inclusive cutoff timestamp.
+`TimeIndexMetaData.delete_after_date(...)` removes the tail of a time-indexed
+table starting at an inclusive cutoff timestamp.
 
 This is not arbitrary range deletion:
 
 - there is no `end_date`
 - the cutoff is inclusive
 - rows at or after `after_date` are deleted
-- the caller must be authenticated and have edit access to the `DynamicTableMetaData`
+- the caller must be authenticated and have edit access to the storage table
 
 The SDK uses:
 
@@ -611,21 +612,21 @@ storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 
-For an asset table, scope the delete to one asset identity:
+For a multidimensional table, scope the delete to one identity coordinate:
 
 ```python
 result = storage.delete_after_date(
     "2026-04-01T00:00:00Z",
-    dimension_filters={"unique_identifier": ["AAPL"]},
+    dimension_filters={"entity_uid": ["entity-a"]},
 )
 ```
 
-Or scope it to multiple asset identities:
+Or scope it to multiple identity coordinates:
 
 ```python
 result = storage.delete_after_date(
     "2026-04-01T00:00:00Z",
-    dimension_filters={"unique_identifier": ["AAPL", "MSFT"]},
+    dimension_filters={"entity_uid": ["entity-a", "entity-b"]},
 )
 ```
 
@@ -636,8 +637,8 @@ result = storage.delete_after_date(
     "2026-04-01T00:00:00Z",
     index_coordinates=[
         {
-            "account_uid": "00000000-0000-0000-0000-000000000001",
-            "unique_identifier": "AAPL",
+            "portfolio_uid": "00000000-0000-0000-0000-000000000001",
+            "entity_uid": "entity-a",
         }
     ],
 )
@@ -648,7 +649,7 @@ The response contains the authoritative post-delete table state:
 ```python
 {
     "ok": True,
-    "dynamic_table_uid": "<DATA_NODE_STORAGE_UID>",
+    "meta_table_uid": "<DATA_NODE_STORAGE_UID>",
     "deleted_count": 123,
     "table_empty": False,
     "dimension_filters": {"unique_identifier": ["AAPL", "MSFT"]},

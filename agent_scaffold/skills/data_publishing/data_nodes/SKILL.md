@@ -30,8 +30,7 @@ Canonical workflow:
   - `dependencies()`
   - `update()`
   - `prepare_update_statistics()`
-  - `get_asset_list()` when the update is asset scoped
-- design single-index or `(time_index, unique_identifier)` DataFrame outputs
+- design single-index or multidimensional time-first DataFrame outputs
 - validate output shape against a `PlatformTimeIndexMetaData` storage contract
 - define explicit `hash_namespace(...)` validation strategy
 - write or review DataNode smoke tests
@@ -80,7 +79,6 @@ Before changing code, collect or infer:
 - expected time index and identity index shape
 - expected columns and dtypes from the storage class
 - upstream dependencies
-- whether the update is asset scoped
 - first-run or backfill bounds
 - whether the change must preserve the existing table contract
 
@@ -302,30 +300,19 @@ changing it changes the dependency graph and update identity.
 
 Do not construct dependency graphs dynamically inside `update()`.
 
-### 8. Asset-Scoped Updates Must Be Explicit
-
-If the node emits `(time_index, unique_identifier)`:
-
-- `unique_identifier` should represent an Asset identity
-- asset scope should live in update configuration when it affects the updater
-- `get_asset_list()` must reflect the effective updater asset scope when the
-  workflow uses that hook
-- missing assets should be resolved or registered by the relevant workflow
-
-### 9. Foreign Keys Belong To The Storage Contract
+### 8. Foreign Keys Belong To The Storage Contract
 
 For new code, model foreign keys on the `PlatformTimeIndexMetaData` storage
 class or route the storage-contract work to the MetaTable skill.
 
 Do not add DataNode configuration fields just to mutate storage metadata.
 
-### 10. Metadata Belongs To Storage
+### 9. Metadata Belongs To Storage
 
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
 
-Do not use `DataNodeMetaData` or `RecordDefinition` as the canonical schema
-surface for new DataNode work.
+Do not put schema or published table metadata on the DataNode configuration.
 
 ## Review Rules
 
@@ -333,7 +320,7 @@ When reviewing an existing DataNode, look for:
 
 - output storage contract hidden in `DataNodeConfiguration`
 - dependency storage table passed as an ad hoc constructor argument
-- old `RecordDefinition` or `DataNodeMetaData` schema patterns
+- schema or published table metadata hidden in DataNode configuration
 - `update_only`, `runtime_only`, or `ignore_from_storage_hash`
 - `test_node=True`
 - missing explicit `storage_table`
@@ -342,7 +329,7 @@ When reviewing an existing DataNode, look for:
 - misuse of `hash_namespace`
 - non-incremental `update()` behavior
 - hidden dependency creation inside `update()`
-- invalid asset-indexed output shape
+- invalid identity-indexed output shape
 - `time_index` dtype that is not exactly `datetime64[ns, UTC]`
 - DataFrame columns that do not match the `PlatformTimeIndexMetaData` class
 
@@ -363,17 +350,11 @@ Do not claim success until you have checked:
 - non-empty outputs have first index level `time_index` with dtype `datetime64[ns, UTC]`
 - the first validation run uses explicit `hash_namespace(...)` when it touches a shared backend
 
-For asset-scoped updates, also check:
-
-- `get_asset_list()` is correct when used
-- no duplicate `(time_index, unique_identifier)` rows are emitted
-- assets exist or are registered idempotently when needed
-
 ## This Skill Must Stop And Escalate When
 
 - the change may break an existing published table contract and the versioning decision is unclear
 - the intended storage class or MetaTable registration path is unclear
-- the node needs asset identities but the asset-resolution strategy is unclear
+- the node needs identity dimensions but the coordinate strategy is unclear
 - the task is actually an API, MetaTable, orchestration, or sharing problem
 - docs, skill instructions, and code disagree on hashing or runtime behavior
 

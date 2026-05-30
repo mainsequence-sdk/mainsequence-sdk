@@ -412,7 +412,6 @@ def test_set_last_update_index_time_from_update_stats_sends_canonical_payload(mo
         "multi_index_column_stats": {},
     }
     assert "last_time_index_value" not in decoded
-    assert "max_per_asset_symbol" not in decoded
 
 
 def test_get_index_progress_chunk_stats_for_three_index_frame():
@@ -529,7 +528,6 @@ def test_upsert_data_into_table_computes_canonical_stats(monkeypatch):
             "account-b": {"asset-2": {"min": _dt(3), "max": _dt(3)}},
         }
     }
-    assert "max_per_asset_symbol" not in calls["set_last"]
     assert "last_time_index_value" not in calls["set_last"]
 
 

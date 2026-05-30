@@ -264,18 +264,18 @@ def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrappe
     assert build_operations.hash_signature(payload_a) != build_operations.hash_signature(payload_b)
 
 
-def test_legacy_ignore_from_storage_hash_metadata_is_rejected():
-    class LegacyConfig(BaseModel):
+def test_removed_storage_hash_metadata_is_rejected():
+    class RemovedStorageHashConfig(BaseModel):
         shard_id: str = Field(..., json_schema_extra={"ignore_from_storage_hash": True})
 
     with pytest.raises(ValueError, match="ignore_from_storage_hash"):
-        build_operations.serialize_argument(LegacyConfig(shard_id="desk_a"))
+        build_operations.serialize_argument(RemovedStorageHashConfig(shard_id="desk_a"))
 
 
-def test_legacy_args_ignore_in_storage_hash_class_attribute_is_rejected():
+def test_removed_storage_hash_class_attribute_is_rejected():
     with pytest.raises(TypeError, match="_ARGS_IGNORE_IN_STORAGE_HASH"):
 
-        class LegacyDataNode(DataNode):
+        class RemovedStorageHashDataNode(DataNode):
             _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list"]
 
             def __init__(self, *args, **kwargs):

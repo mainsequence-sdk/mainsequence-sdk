@@ -150,10 +150,10 @@ class Asset(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "Asset"
 ```
 
-For time-indexed DynamicTable/DataNode storage, use `PlatformTimeIndexMetaData` instead
-of the generic `PlatformManagedMetaTable`. It uses the same storage-hash
-machinery, but also includes `time_index_name` and `index_names` in the stable
-identity and registers through the DynamicTable/TimeIndexMetaData endpoint.
+For time-indexed DataNode storage, use `PlatformTimeIndexMetaData` instead of
+the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
+but also includes `time_index_name` and `index_names` in the stable identity and
+registers through the TimeIndexMetaData endpoint.
 
 For explicit low-level naming, use the helper as the SQLAlchemy table name:
 

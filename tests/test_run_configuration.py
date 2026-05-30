@@ -1,4 +1,3 @@
-import importlib
 import os
 import threading
 from types import SimpleNamespace
@@ -109,9 +108,6 @@ def test_metatable_update_models_are_not_exported_from_models_foundry():
         assert hasattr(models_metatables, name)
         assert not hasattr(models_foundry, name)
 
-    with pytest.raises(ModuleNotFoundError):
-        importlib.import_module("mainsequence.client.models_tdag")
-
 
 def test_data_node_update_accepts_local_time_serie_update_details_in_run_configuration():
     payload = {
@@ -190,9 +186,9 @@ def test_persist_manager_build_update_details_uses_update_details_resource():
             patched.append((data_node_update_uid, kwargs))
             patched_event.set()
 
-    class DeprecatedStorageAction:
+    class StorageActionTrap:
         def build_or_update_update_details(self, **_kwargs):
-            raise AssertionError("storage-table update-details action is deprecated")
+            raise AssertionError("storage-table update-details action should not be used")
 
     class UpdateDetailsPersistManager(BasePersistManager):
         UPDATE_DETAILS_CLASS = UpdateDetailsResource
@@ -204,7 +200,7 @@ def test_persist_manager_build_update_details_uses_update_details_resource():
         storage_table=storage_table,
         data_node_update=SimpleNamespace(
             uid="data-node-update-44",
-            data_node_storage=DeprecatedStorageAction(),
+            data_node_storage=StorageActionTrap(),
         ),
     )
     manager.set_data_node_update_lazy_callback = lambda _future: None

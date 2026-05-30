@@ -39,8 +39,7 @@ update workflow. Use a `DataNode` when the table should be produced or refreshed
 by SDK update logic, dependencies, and scheduling. Use `MetaTable` directly when
 you need the table contract and governed operations without that update layer.
 
-Legacy row-table authoring helpers are deprecated. New tutorial code should use
-`MetaTable`.
+New tutorial code should use `MetaTable` for governed tables.
 
 ## 2. Backend-Managed Means `platform_managed`
 

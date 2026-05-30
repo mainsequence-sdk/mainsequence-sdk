@@ -6,8 +6,8 @@ description: Use this skill when a Main Sequence project needs financial markets
 # Main Sequence ms-markets
 
 `ms-markets` is the Main Sequence supported library for financial markets workflows.
-Use it for market assets, market MetaTables, asset-indexed DataNodes, portfolios,
-orders, trades, and related market-domain APIs.
+Use it for market assets, market MetaTables, portfolios, orders, trades, and
+related market-domain APIs.
 
 This SDK scaffold skill is intentionally tiny. It does not own market-domain
 implementation rules. Install `ms-markets` and copy its packaged skills into the
