@@ -1244,9 +1244,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         )
 
 
-LOGICAL_COLUMN_DTYPES_ATTR = "mainsequence_column_dtypes_map"
-
-
 def _warn_legacy_compat(message: str, *, stacklevel: int = 3) -> None:
     warnings.warn(
         f"Deprecated TDAG compatibility path: {message}",
@@ -2143,7 +2140,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         remote_dtypes: bool = True,
         allow_naive_datetime: bool = False,
     ):
-        logical_column_dtypes_map = data_frame.attrs.get(LOGICAL_COLUMN_DTYPES_ATTR)
         record_column_dtypes_map = record_definitions_to_column_dtypes_map(
             records,
             remote=remote_dtypes,
@@ -2178,40 +2174,6 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
                 "DataNode records declare columns not present in the DataFrame: "
                 f"{missing_record_columns}"
             )
-        if logical_column_dtypes_map is not None:
-            logical_column_dtypes_map = normalize_column_dtypes_map(
-                logical_column_dtypes_map,
-                remote=remote_dtypes,
-                allow_naive_datetime=allow_naive_datetime,
-            )
-            missing_logical_columns = [
-                column_name
-                for column_name in logical_column_dtypes_map
-                if column_name not in data_frame.columns
-            ]
-            if missing_logical_columns:
-                raise ValueError(
-                    "Logical column dtype contract contains columns not present "
-                    f"in the DataFrame: {missing_logical_columns}"
-                )
-            conflicting_declared_dtypes = {
-                column_name: {
-                    "record_dtype": record_column_dtypes_map[column_name],
-                    "logical_dtype": logical_column_dtypes_map[column_name],
-                }
-                for column_name in logical_column_dtypes_map
-                if (
-                    column_name in record_column_dtypes_map
-                    and logical_column_dtypes_map[column_name]
-                    != record_column_dtypes_map[column_name]
-                )
-            }
-            if conflicting_declared_dtypes:
-                raise ValueError(
-                    "Logical column dtype contract conflicts with DataNode records: "
-                    f"{conflicting_declared_dtypes}"
-                )
-            column_dtypes_map.update(logical_column_dtypes_map)
         column_dtypes_map.update(record_column_dtypes_map)
 
         data_frame = data_frame.replace({np.nan: None})

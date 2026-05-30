@@ -438,10 +438,21 @@ class BasePersistManager:
                 data=temp_df,
                 data_source=self.data_source,
                 overwrite=overwrite,
+                source_table_schema=self._source_table_schema(),
             )
 
             persisted = True
         return persisted
+
+    def _source_table_schema(self) -> dict[str, Any]:
+        time_index_name, index_names, column_dtypes_map = (
+            self.storage_metadata._require_time_indexed_table_contract()
+        )
+        return {
+            "time_index_name": time_index_name,
+            "index_names": list(index_names),
+            "column_dtypes_map": dict(column_dtypes_map),
+        }
 
     def get_update_statistics_for_table(self) -> UpdateStatistics:
         return self.storage_metadata.get_data_updates()

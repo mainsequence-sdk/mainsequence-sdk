@@ -214,6 +214,70 @@ def test_persist_manager_build_update_details_uses_update_details_resource():
     assert patched == [("data-node-update-44", {})]
 
 
+def test_persist_manager_passes_storage_contract_schema_to_update():
+    captured = {}
+
+    class UpdateResource:
+        build_configuration = {}
+
+        def upsert_data_into_table(self, **kwargs):
+            captured.update(kwargs)
+            return self
+
+    storage_metadata = TimeIndexMetaData.model_construct(
+        uid="data-node-storage-44",
+        data_source_uid="data-source-uid",
+        data_source=SimpleNamespace(
+            related_resource=SimpleNamespace(class_type="postgres"),
+        ),
+        time_indexed_profile=models_metatables.TimeIndexedProfile(
+            related_table_uid="data-node-storage-44",
+            time_index_name="time_index",
+            index_names=["time_index", "account_uid", "unique_identifier"],
+            column_dtypes_map={
+                "time_index": "timestamp with time zone",
+                "account_uid": "uuid",
+                "unique_identifier": "string",
+                "quantity": "float64",
+            },
+            storage_layout={
+                "time_index": "time_index",
+                "identity_dimensions": ["account_uid", "unique_identifier"],
+            },
+            physical_index_plan={
+                "uniqueness": {
+                    "columns": ["time_index", "account_uid", "unique_identifier"],
+                },
+            },
+        ),
+    )
+    storage_table = _platform_storage_model(storage_metadata)
+    manager = BasePersistManager(
+        update_hash="account-holdings-update-hash",
+        storage_table=storage_table,
+        data_node_update=UpdateResource(),
+    )
+    df = pd.DataFrame(
+        {"quantity": [12.0]},
+        index=pd.MultiIndex.from_tuples(
+            [("2026-05-30T12:00:00Z", "account-a", "AAPL")],
+            names=["time_index", "account_uid", "unique_identifier"],
+        ),
+    )
+
+    assert manager.persist_updated_data(df) is True
+    assert captured["source_table_schema"] == {
+        "time_index_name": "time_index",
+        "index_names": ["time_index", "account_uid", "unique_identifier"],
+        "column_dtypes_map": {
+            "time_index": "timestamp with time zone",
+            "account_uid": "uuid",
+            "unique_identifier": "string",
+            "quantity": "float64",
+        },
+    }
+
+
 def test_data_node_storage_accepts_namespace():
     storage = TimeIndexMetaData(
         uid="data-node-storage-12",

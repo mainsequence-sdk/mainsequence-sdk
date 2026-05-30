@@ -127,20 +127,9 @@ that must be migrated or explicitly left as a thin wrapper around the new codec.
 
 ### DataFrame-to-SourceTable Serialization
 
-- `mainsequence/client/models_foundry.py:940`
-  - `_break_pandas_dataframe()` reads `data_frame.attrs[LOGICAL_COLUMN_DTYPES_ATTR]`.
-
 - `mainsequence/client/models_foundry.py:956`
   - `_break_pandas_dataframe()` serializes pandas dtypes as
     `{column: str(dtype)}` from `data_frame.dtypes`.
-
-- `mainsequence/client/models_foundry.py:967`
-  - `_break_pandas_dataframe()` normalizes logical dtype attrs with
-    `str(key)` and `str(value)`.
-
-- `mainsequence/client/models_foundry.py:998`
-  - `_break_pandas_dataframe()` lets logical dtype attrs override inferred
-    pandas dtype strings.
 
 - `mainsequence/client/models_foundry.py:999`
   - `_break_pandas_dataframe()` lets declared records override inferred dtype
@@ -474,8 +463,6 @@ The codec must expose at least these operations:
       the normalized dtype used in `column_dtypes_map`.
 - [ ] Update `_break_pandas_dataframe()` to serialize inferred pandas dtypes
       through the codec.
-- [ ] Update logical dtype attr handling for `LOGICAL_COLUMN_DTYPES_ATTR` to
-      normalize through the codec.
 - [ ] Update `source_table_schema["column_dtypes_map"]` handling to parse and
       normalize through the codec before sending it to the backend.
 - [ ] Update `SourceTableConfiguration.set_or_update_columns_metadata()` to
