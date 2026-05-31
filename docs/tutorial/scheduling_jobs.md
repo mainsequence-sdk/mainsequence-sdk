@@ -123,7 +123,7 @@ You can create the same manual job from the terminal.
 5. Stream logs for a specific run:
 
    ```bash
-   mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+   mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
    ```
 
 ### 2.2 Frozen Jobs with Images
@@ -266,14 +266,14 @@ mainsequence project jobs run <JOB_ID>
 mainsequence project jobs run <JOB_ID> --arg demo-from-cli
 mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 Once the scheduler has triggered the job, inspect runs and logs:
 
 ```bash
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 #### CLI direct-create alternative

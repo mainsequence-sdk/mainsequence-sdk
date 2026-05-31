@@ -15,7 +15,7 @@ is defined by a registered `PlatformTimeIndexMetaData` SQLAlchemy model.
 Canonical workflow:
 
 1. Define a `PlatformTimeIndexMetaData` storage class.
-2. Register or bind that storage class before constructing the DataNode.
+2. Register that storage class before constructing the DataNode.
 3. Construct the DataNode with `config=...` and `storage_table=StorageClass`.
 4. Return a DataFrame from `update()` that matches the storage class contract.
 
@@ -91,7 +91,7 @@ For every non-trivial DataNode task, make these decisions explicitly:
 
 1. Is this a new dataset or the same dataset?
 2. Is this change storage-contract work or update-process work?
-3. Is the storage class already registered or should the MetaTable skill handle it?
+3. Is the storage class registered through its MetaTable path, or should the MetaTable skill handle it?
 4. Is the node single-index or MultiIndex?
 5. Does the first validation run happen under an explicit `hash_namespace(...)`?
 
@@ -139,17 +139,17 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
     close: Mapped[float] = mapped_column(Float, nullable=False)
 ```
 
-Register or bind storage before constructing the DataNode:
+Register storage before constructing the DataNode:
 
 ```python
 PricesTable.register(data_source_uid=data_source_uid)
 ```
 
-or:
-
-```python
-PricesTable.bind_meta_table(existing_meta_table)
-```
+`PlatformTimeIndexMetaData.register(...)` is the storage lifecycle path. Treat it
+as an idempotent get-or-create operation: the platform returns the registered
+metadata and UID, and the SDK records that metadata on the class. Do not manually
+attach an existing UID, reconstruct a generic `MetaTable`, or use manual bind
+helpers as an authoring step.
 
 ### 2. Keep DataNode As Update Logic
 
@@ -167,7 +167,7 @@ dependency, put that dependency storage reference in the config as
 `type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
 `TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`, so the class
-must be registered or bound before DataNode construction.
+must be registered before DataNode construction.
 
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.
@@ -338,9 +338,9 @@ When reviewing an existing DataNode, look for:
 Do not claim success until you have checked:
 
 - the relevant docs were read first
-- storage is a registered or bound `PlatformTimeIndexMetaData` class
+- storage is a registered `PlatformTimeIndexMetaData` class
 - the DataNode constructor requires `storage_table`
-- dependency storage-table references live in config and are registered or bound
+- dependency storage-table references live in config and are registered
 - config fields are updater-scoped by default
 - no removed hash metadata markers remain
 - no `test_node` usage remains

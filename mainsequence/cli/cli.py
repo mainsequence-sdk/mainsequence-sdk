@@ -10196,7 +10196,7 @@ def project_jobs_run_cmd(
     if payload:
         preferred_keys = [
             ("Job ID", str(payload.get("job") or payload.get("job_id") or job_id)),
-            ("Job Run ID", str(payload.get("id") or payload.get("job_run_id") or "-")),
+            ("Job Run UID", str(payload.get("uid") or payload.get("job_run_uid") or "-")),
             ("Name", str(payload.get("name") or payload.get("job_name") or "-")),
             ("Unique Identifier", str(payload.get("unique_identifier") or "-")),
             ("Status", str(payload.get("status") or "-")),
@@ -10208,7 +10208,8 @@ def project_jobs_run_cmd(
                 "job",
                 "job_id",
                 "id",
-                "job_run_id",
+                "uid",
+                "job_run_uid",
                 "name",
                 "job_name",
                 "unique_identifier",
@@ -10254,8 +10255,8 @@ def project_job_runs_list_cmd(
 
 @project_job_runs_group.command("logs")
 def project_job_runs_logs_cmd(
-    job_run_id: int = pydantic_argument(
-        JOB_RUN_MODEL_REF, "id", ..., help="Job run ID whose logs will be shown."
+    job_run_uid: str = pydantic_argument(
+        JOB_RUN_MODEL_REF, "uid", ..., help="Job run UID whose logs will be shown."
     ),
     poll_interval: int = typer.Option(
         30,
@@ -10279,10 +10280,10 @@ def project_job_runs_logs_cmd(
     Examples
     --------
     ```bash
-    mainsequence project jobs runs logs 501
-    mainsequence project jobs runs logs 501 --poll-interval 10
-    mainsequence project jobs runs logs 501 --max-wait-seconds 900
-    mainsequence project jobs runs logs 501 --poll-interval 0
+    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d
+    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 10
+    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --max-wait-seconds 900
+    mainsequence project jobs runs logs 4c1d77c8-8a42-42b8-a9c1-06be9a336e5d --poll-interval 0
     ```
     """
     _require_login()
@@ -10296,7 +10297,7 @@ def project_job_runs_logs_cmd(
 
     while True:
         try:
-            payload = get_project_job_run_logs(job_run_id=job_run_id, timeout=timeout)
+            payload = get_project_job_run_logs(job_run_uid=job_run_uid, timeout=timeout)
         except ApiError as e:
             error(f"Project job run logs fetch failed: {e}")
             raise typer.Exit(1) from e
@@ -10313,7 +10314,7 @@ def project_job_runs_logs_cmd(
             print_kv(
                 "Job Run Logs",
                 [
-                    ("Job Run ID", str(payload.get("job_run_id") or job_run_id)),
+                    ("Job Run UID", str(payload.get("job_run_uid") or payload.get("uid") or job_run_uid)),
                     ("Status", status_value),
                 ],
             )

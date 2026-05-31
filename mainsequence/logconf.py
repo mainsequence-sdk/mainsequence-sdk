@@ -236,13 +236,11 @@ def _build_backend_bindings(
     if project_id is not None:
         bindings["project_id"] = project_id
         bindings["data_source_id"] = startup_state.get("data_source_id")
-        bindings["job_run_id"] = startup_state.get("job_run_id")
         bindings["job_run_uid"] = startup_state.get("job_run_uid")
         bindings["command_id"] = startup_state.get("command_id")
     else:
-        # your existing behavior: bind job_run_id to user_id in local-ish mode
         if "user_id" in startup_state:
-            bindings["job_run_id"] = startup_state.get("user_id")
+            bindings["user_id"] = startup_state.get("user_id")
         else:
             bindings["local_mode"] = "no_app"
 

@@ -155,7 +155,7 @@ mainsequence project jobs run <JOB_ID>
 mainsequence project jobs run <JOB_ID> --arg demo-from-cli
 mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 ### Create a manual job
@@ -177,7 +177,7 @@ mainsequence project jobs run <JOB_ID>
 mainsequence project jobs run <JOB_ID> --arg demo-from-cli
 mainsequence project jobs run <JOB_ID> -- --name demo-from-cli
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 ### Create an interval schedule
@@ -227,7 +227,7 @@ Once the job exists, the basic operational loop is:
 ```bash
 mainsequence project jobs list
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 The logs command polls while the run is still `PENDING` or `RUNNING`, so it works well as a simple live tail for operational checks.
@@ -442,7 +442,7 @@ Creating a schedule is only half of the work. Always verify:
 ```bash
 mainsequence project jobs list
 mainsequence project jobs runs list <JOB_ID>
-mainsequence project jobs runs logs <JOB_RUN_ID>
+mainsequence project jobs runs logs <JOB_RUN_UID>
 ```
 
 That simple loop catches most configuration mistakes quickly.
@@ -470,7 +470,7 @@ Make sure you are using five fields, not six.
 Use a larger wait window:
 
 ```bash
-mainsequence project jobs runs logs <JOB_RUN_ID> --max-wait-seconds 900
+mainsequence project jobs runs logs <JOB_RUN_UID> --max-wait-seconds 900
 ```
 
 or disable polling control if you want to handle it yourself.

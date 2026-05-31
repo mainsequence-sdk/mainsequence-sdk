@@ -647,7 +647,7 @@ class DataNode(DataAccessMixin, ABC):
             )
         if value.get_time_index_metadata() is None:
             raise ValueError(
-                "DataNode storage_table must be registered or bound before construction."
+                "DataNode storage_table must be registered before construction."
             )
         if value.get_meta_table_uid() in (None, ""):
             raise ValueError("DataNode storage_table must provide a MetaTable UID.")
@@ -659,7 +659,7 @@ class DataNode(DataAccessMixin, ABC):
     def storage_metadata(self) -> Any:
         storage_metadata = self.storage_table.get_time_index_metadata()
         if storage_metadata is None:
-            raise ValueError("DataNode storage_table must be registered or bound before use.")
+            raise ValueError("DataNode storage_table must be registered before use.")
         return storage_metadata
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:

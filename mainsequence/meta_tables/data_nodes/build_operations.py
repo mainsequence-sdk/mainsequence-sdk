@@ -96,7 +96,7 @@ def _(value: type[Any]) -> Any:
     uid = getattr(time_index_metadata, "uid", None)
     if uid in (None, ""):
         raise ValueError(
-            "PlatformTimeIndexMetaData config values must be registered or bound "
+            "PlatformTimeIndexMetaData config values must be registered "
             "before they can be hashed."
         )
     return {

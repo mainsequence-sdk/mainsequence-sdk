@@ -377,7 +377,7 @@ def test_persist_manager_rejects_unbound_platform_time_index_storage_table():
     class UnboundStorageTable(PlatformTimeIndexMetaData):
         pass
 
-    with pytest.raises(ValueError, match="registered or bound"):
+    with pytest.raises(ValueError, match="registered"):
         BasePersistManager(
             update_hash="prices-update-hash",
             storage_table=UnboundStorageTable,
@@ -616,7 +616,7 @@ def test_data_node_rejects_unbound_platform_time_index_storage_table():
 
     node = StorageTableNode.__new__(StorageTableNode)
 
-    with pytest.raises(ValueError, match="registered or bound"):
+    with pytest.raises(ValueError, match="registered"):
         node.storage_table = UnboundStorageTable
 
 

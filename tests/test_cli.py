@@ -6277,10 +6277,10 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
 
         @classmethod
         def get(cls, pk, timeout=None):
-            captured["job_run_id_arg"] = pk
+            captured["job_run_uid_arg"] = pk
             return types.SimpleNamespace(
                 get_logs=lambda timeout=None: {
-                    "job_run_id": pk,
+                    "job_run_uid": pk,
                     "status": "RUNNING",
                     "rows": ["first line"],
                 }
@@ -6295,11 +6295,11 @@ def test_get_project_job_run_logs_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
     monkeypatch.setitem(sys.modules, "mainsequence.client.models_helpers", fake_helpers)
 
-    out = api_mod.get_project_job_run_logs(501)
-    assert captured["job_run_id_arg"] == 501
+    out = api_mod.get_project_job_run_logs("4c1d77c8-8a42-42b8-a9c1-06be9a336e5d")
+    assert captured["job_run_uid_arg"] == "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"
     assert captured["jwt"] == ("acc", "ref")
     assert out == {
-        "job_run_id": 501,
+        "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
         "status": "RUNNING",
         "rows": ["first line"],
     }
@@ -8714,8 +8714,8 @@ def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
     monkeypatch.setattr(
         cli_mod,
         "get_project_job_run_logs",
-        lambda job_run_id, timeout=None: {
-            "job_run_id": job_run_id,
+        lambda job_run_uid, timeout=None: {
+            "job_run_uid": job_run_uid,
             "status": "COMPLETED",
             "rows": [
                 {"timestamp": "2026-03-14T09:00:00Z", "level": "info", "event": "job started"},
@@ -8724,7 +8724,10 @@ def test_project_job_runs_logs(cli_mod, runner, monkeypatch):
         },
     )
 
-    result = runner.invoke(cli_mod.app, ["project", "jobs", "runs", "logs", "501"])
+    result = runner.invoke(
+        cli_mod.app,
+        ["project", "jobs", "runs", "logs", "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d"],
+    )
     assert result.exit_code == 0
     assert "Job Run Logs" in result.output
     assert "job started" in result.output
@@ -8736,10 +8739,10 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
-            {"job_run_id": 501, "status": "PENDING", "rows": ["first line"]},
-            {"job_run_id": 501, "status": "RUNNING", "rows": ["first line", "second line"]},
+            {"job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d", "status": "PENDING", "rows": ["first line"]},
+            {"job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d", "status": "RUNNING", "rows": ["first line", "second line"]},
             {
-                "job_run_id": 501,
+                "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
                 "status": "COMPLETED",
                 "rows": ["first line", "second line", "third line"],
             },
@@ -8748,12 +8751,21 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     sleeps = []
 
     monkeypatch.setattr(
-        cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses)
+        cli_mod, "get_project_job_run_logs", lambda job_run_uid, timeout=None: next(responses)
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
 
     result = runner.invoke(
-        cli_mod.app, ["project", "jobs", "runs", "logs", "501", "--poll-interval", "3"]
+        cli_mod.app,
+        [
+            "project",
+            "jobs",
+            "runs",
+            "logs",
+            "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+            "--poll-interval",
+            "3",
+        ],
     )
     assert result.exit_code == 0
     assert result.output.count("first line") == 1
@@ -8767,15 +8779,15 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
-            {"job_run_id": 742, "status": "PENDING", "rows": ["first line"]},
-            {"job_run_id": 742, "status": "RUNNING", "rows": ["first line", "second line"]},
+            {"job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a", "status": "PENDING", "rows": ["first line"]},
+            {"job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a", "status": "RUNNING", "rows": ["first line", "second line"]},
         ]
     )
     sleeps = []
     monotonic_values = iter([100.0, 100.0, 106.0])
 
     monkeypatch.setattr(
-        cli_mod, "get_project_job_run_logs", lambda job_run_id, timeout=None: next(responses)
+        cli_mod, "get_project_job_run_logs", lambda job_run_uid, timeout=None: next(responses)
     )
     monkeypatch.setattr(cli_mod.time, "sleep", lambda seconds: sleeps.append(seconds))
     monkeypatch.setattr(cli_mod.time, "monotonic", lambda: next(monotonic_values))
@@ -8787,7 +8799,7 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
             "jobs",
             "runs",
             "logs",
-            "742",
+            "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a",
             "--poll-interval",
             "3",
             "--max-wait-seconds",

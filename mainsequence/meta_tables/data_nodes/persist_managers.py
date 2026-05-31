@@ -130,7 +130,7 @@ class BasePersistManager:
         storage_metadata = storage_table.get_time_index_metadata()
         if storage_metadata is None:
             raise ValueError(
-                "PersistManager storage_table must be registered or bound before "
+                "PersistManager storage_table must be registered before "
                 "constructing the DataNode."
             )
         if storage_table.get_meta_table_uid() in (None, ""):
@@ -143,7 +143,7 @@ class BasePersistManager:
     def storage_metadata(self) -> Any:
         storage_metadata = self.storage_table.get_time_index_metadata()
         if storage_metadata is None:
-            raise ValueError("PersistManager storage_table must be registered or bound before use.")
+            raise ValueError("PersistManager storage_table must be registered before use.")
         return storage_metadata
 
     @property

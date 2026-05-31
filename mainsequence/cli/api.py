@@ -5136,7 +5136,7 @@ def list_project_job_runs(
 
 
 def get_project_job_run_logs(
-    job_run_id: int | str,
+    job_run_uid: str,
     *,
     timeout: int | None = None,
 ) -> dict[str, Any]:
@@ -5191,20 +5191,20 @@ def get_project_job_run_logs(
         BaseObjectOrm.ROOT_URL = root_url
         ClientJobRun.ROOT_URL = root_url
 
-        job_run = ClientJobRun.get(pk=int(job_run_id), timeout=timeout)
+        job_run = ClientJobRun.get(pk=job_run_uid, timeout=timeout)
         payload = job_run.get_logs(timeout=timeout)
         if isinstance(payload, dict):
             return payload
         if hasattr(payload, "model_dump"):
             return payload.model_dump()
-        return {"job_run_id": int(job_run_id), "rows": []}
+        return {"job_run_uid": job_run_uid, "rows": []}
 
     except Exception as e:
         err_name = type(e).__name__
         if err_name in {"AuthenticationError", "PermissionDeniedError"}:
             raise NotLoggedIn(str(e) or "Not logged in.") from e
         if err_name == "NotFoundError":
-            raise ApiError(f"Job run not found: {job_run_id}") from e
+            raise ApiError(f"Job run not found: {job_run_uid}") from e
         raise ApiError(f"Project job run logs fetch failed: {e}") from e
     finally:
         if client_utils is not None:

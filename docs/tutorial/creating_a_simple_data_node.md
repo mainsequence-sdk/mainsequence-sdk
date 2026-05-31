@@ -213,9 +213,9 @@ configuration field.
 If a DataNode depends on another DataNode and needs to select that dependency's
 storage model, put that dependency storage reference in the config, not as an
 extra constructor argument. A config field typed as
-`type[PlatformTimeIndexMetaData]` is hashed by the registered or bound
-`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. Register or
-bind that storage class before constructing the DataNode.
+`type[PlatformTimeIndexMetaData]` is hashed by the registered
+`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. Register
+that storage class before constructing the DataNode.
 
 ### DataNode Recipe
 

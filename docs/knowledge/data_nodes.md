@@ -134,9 +134,9 @@ the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
 
 When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
 hashes it by the bound `TimeIndexMetaData.uid` available through
-`StorageClass.__time_index_metadata__`. Register or bind the class before
-constructing the DataNode. Do not pass dependency storage classes as extra
-constructor arguments.
+`StorageClass.__time_index_metadata__`. Register the class before constructing
+the DataNode. Do not pass dependency storage classes as extra constructor
+arguments, manually attach an existing UID, or reconstruct a generic `MetaTable`.
 
 ### 4.1 Storage meaning belongs to the storage table
 
@@ -246,8 +246,7 @@ If the namespace is non-empty, `DataNode` injects `hash_namespace` into the
 build configuration. That changes `update_hash`.
 
 Storage identity is not created by `DataNode`. If a test needs isolated
-storage, pass a separately registered or bound `PlatformTimeIndexMetaData`
-storage class.
+storage, pass a separately registered `PlatformTimeIndexMetaData` storage class.
 
 ### What happens during `run()`
 

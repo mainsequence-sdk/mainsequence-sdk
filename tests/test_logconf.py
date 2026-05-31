@@ -26,15 +26,7 @@ def _load_mainsequence_submodule(module_name: str):
 def test_is_running_in_pod_uses_job_run_uid(monkeypatch):
     runtime_flags = _load_mainsequence_submodule("mainsequence.runtime_flags")
 
-    monkeypatch.delenv("COMMAND_ID", raising=False)
-    monkeypatch.delenv("JOB_RUN_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_UID", raising=False)
-    assert runtime_flags.is_running_in_pod() is False
-
-    monkeypatch.setenv("COMMAND_ID", "12")
-    assert runtime_flags.is_running_in_pod() is False
-
-    monkeypatch.setenv("JOB_RUN_ID", "34")
     assert runtime_flags.is_running_in_pod() is False
 
     monkeypatch.setenv("JOB_RUN_UID", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
@@ -44,8 +36,6 @@ def test_is_running_in_pod_uses_job_run_uid(monkeypatch):
 def test_logconf_import_skips_job_startup_state_request_outside_pod(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
-    monkeypatch.delenv("COMMAND_ID", raising=False)
-    monkeypatch.delenv("JOB_RUN_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_UID", raising=False)
     monkeypatch.setenv("MAIN_SEQUENCE_PROJECT_ID", "123")
 
@@ -66,8 +56,6 @@ def test_logconf_import_skips_job_startup_state_request_outside_pod(monkeypatch)
 def test_logconf_binds_sdk_version(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
-    monkeypatch.delenv("COMMAND_ID", raising=False)
-    monkeypatch.delenv("JOB_RUN_ID", raising=False)
     monkeypatch.delenv("JOB_RUN_UID", raising=False)
 
     logconf = _load_mainsequence_submodule("mainsequence.logconf")
@@ -81,8 +69,6 @@ def test_logconf_binds_sdk_version(monkeypatch):
 def test_logconf_import_skips_job_startup_state_request_without_job_run_uid(monkeypatch):
     monkeypatch.delenv("MAINSEQUENCE_ACCESS_TOKEN", raising=False)
     monkeypatch.delenv("MAINSEQUENCE_REFRESH_TOKEN", raising=False)
-    monkeypatch.setenv("COMMAND_ID", "12")
-    monkeypatch.setenv("JOB_RUN_ID", "34")
     monkeypatch.delenv("JOB_RUN_UID", raising=False)
 
     calls: list[tuple[tuple, dict]] = []
@@ -110,11 +96,10 @@ def test_logconf_import_requests_job_run_detail_startup_state(monkeypatch):
 
     class _FakeResponse:
         status_code = 200
-        text = '{"job_run_id": 34}'
+        text = '{"job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}'
 
         def json(self):
             return {
-                "job_run_id": 34,
                 "job_run_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "project_id": 123,
                 "data_source_id": 456,
