@@ -199,6 +199,39 @@ def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkey
     )
 
 
+def test_platform_time_index_metadata_config_auto_registers_before_hashing(monkeypatch):
+    monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
+
+    class AutoStorage(PlatformTimeIndexMetaData):
+        pass
+
+    register_calls = []
+
+    def fake_register(cls):
+        register_calls.append(cls)
+        metadata = TimeIndexMetaData.model_construct(uid="auto-storage-uid")
+        cls._bind_meta_table(metadata)
+        return metadata
+
+    monkeypatch.setattr(AutoStorage, "register", classmethod(fake_register))
+
+    class NodeConfig(BaseModel):
+        dependency_storage: type[PlatformTimeIndexMetaData]
+
+    config = build_operations.create_config(
+        ts_class_name="AutoStorageConfigNode",
+        kwargs={"config": NodeConfig(dependency_storage=AutoStorage)},
+    )
+
+    assert register_calls == [AutoStorage]
+    assert (
+        config.local_initial_configuration["config"]["serialized_model"]["dependency_storage"][
+            "uid"
+        ]
+        == "auto-storage-uid"
+    )
+
+
 def test_uuid_config_values_serialize_hash_and_rebuild(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 

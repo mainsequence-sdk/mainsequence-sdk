@@ -227,7 +227,8 @@ When reviewing an existing MetaTable workflow, look for:
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
 - external tables registered with unstable physical names
-- platform-managed child tables that are registered before parent tables
+- platform-managed examples that manually sequence parent registration instead
+  of relying on `MetaTableForeignKey(...)` recursive registration
 - external child registrations that do not map foreign-key targets to registered parent `MetaTable.uid` values
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
@@ -249,7 +250,8 @@ Do not claim success until you have checked:
 For related tables, also check:
 
 - aliases are readable
-- platform-managed parent tables are registered before child tables
+- platform-managed child registration recursively resolves parent
+  `MetaTableForeignKey(...)` targets
 - external child registration requests map FK targets to the registered parent UIDs
 - query results still match the expected response contract
 

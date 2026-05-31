@@ -22,8 +22,8 @@ while the backend had created a different physical table.
 Registration is the only supported binding path for platform-managed
 SQLAlchemy MetaTable models.
 
-`PlatformManagedMetaTable.register(...)` and
-`PlatformTimeIndexMetaData.register(...)` will:
+`PlatformManagedMetaTable.register()` and
+`PlatformTimeIndexMetaData.register()` will:
 
 1. Build a registration request using the SQLAlchemy table name as
    `storage_hash`.
@@ -39,8 +39,8 @@ can make a model compile SQL against a table it did not register.
 
 The old free-function platform-managed registration helper is removed from the
 public SDK export surface. Platform-managed SQLAlchemy models must register
-through `PlatformManagedMetaTable.register(...)` or
-`PlatformTimeIndexMetaData.register(...)` so the backend response can be bound
+through `PlatformManagedMetaTable.register()` or
+`PlatformTimeIndexMetaData.register()` so the backend response can be bound
 back onto the declaring model.
 
 ## Consequences

@@ -124,7 +124,7 @@ class MyNode(DataNode):
 
 `DataNode` is strict about this contract. New nodes should not rely on raw
 constructor args being reflected back into hashed configuration automatically,
-and they should not expect `DataNode` to create storage.
+and they should not create storage manually inside `update()`.
 
 The output storage table itself is not config. It remains the explicit
 `storage_table: type[PlatformTimeIndexMetaData]` constructor argument. If a node
@@ -134,9 +134,10 @@ the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
 
 When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
 hashes it by the bound `TimeIndexMetaData.uid` available through
-`StorageClass.__time_index_metadata__`. Register the class before constructing
-the DataNode. Do not pass dependency storage classes as extra constructor
-arguments, manually attach an existing UID, or reconstruct a generic `MetaTable`.
+`StorageClass.__time_index_metadata__`. If the class is not yet bound, config
+serialization calls `StorageClass.register()` before reading the UID. Do not
+pass dependency storage classes as extra constructor arguments, manually attach
+an existing UID, or reconstruct a generic `MetaTable`.
 
 ### 4.1 Storage meaning belongs to the storage table
 
@@ -721,7 +722,6 @@ def test_my_node_smoke():
     )
 
     with hash_namespace("pytest_my_node_smoke"):
-        MyNodeStorage.register()
         node = MyNode(config=config, storage_table=MyNodeStorage)
         err, df = node.run(debug_mode=True, force_update=True)
 

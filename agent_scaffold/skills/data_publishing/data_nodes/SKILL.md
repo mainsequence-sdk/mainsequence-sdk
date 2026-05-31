@@ -10,13 +10,13 @@ description: Use this skill when the task is about producing, changing, validati
 Use this skill when the task changes a DataNode producer.
 
 A DataNode is an update process. It is not the canonical storage model. Storage
-is defined by a registered `PlatformTimeIndexMetaData` SQLAlchemy model.
+is defined by a `PlatformTimeIndexMetaData` SQLAlchemy model.
 
 Canonical workflow:
 
 1. Define a `PlatformTimeIndexMetaData` storage class.
-2. Register that storage class before constructing the DataNode.
-3. Construct the DataNode with `config=...` and `storage_table=StorageClass`.
+2. Construct the DataNode with `config=...` and `storage_table=StorageClass`.
+3. Let the SDK register the output storage class automatically when needed.
 4. Return a DataFrame from `update()` that matches the storage class contract.
 
 ## This Skill Can Do
@@ -41,12 +41,13 @@ Canonical workflow:
 This skill must not claim ownership of:
 
 - generic MetaTable registration or governed operation semantics
-- storage creation inside `DataNode` or `PersistManager`
+- storage registration internals beyond the SDK lifecycle call
 - HTTP route design or FastAPI response contracts
 - workspace/widget layout payloads
 - job creation, scheduling, image pinning, or release creation
 - RBAC or sharing policy
 - domain strategy semantics
+- ad hoc storage creation or registration inside `update()`
 
 If the task depends on one of those areas, route it explicitly instead of guessing.
 
@@ -75,7 +76,7 @@ If the task depends on one of those areas, route it explicitly instead of guessi
 Before changing code, collect or infer:
 
 - dataset meaning
-- registered `PlatformTimeIndexMetaData` storage class or the class to create
+- `PlatformTimeIndexMetaData` output storage class or the class to create
 - expected time index and identity index shape
 - expected columns and dtypes from the storage class
 - upstream dependencies
@@ -91,7 +92,7 @@ For every non-trivial DataNode task, make these decisions explicitly:
 
 1. Is this a new dataset or the same dataset?
 2. Is this change storage-contract work or update-process work?
-3. Is the storage class registered through its MetaTable path, or should the MetaTable skill handle it?
+3. Is the storage class contract correct, or should the MetaTable skill handle it?
 4. Is the node single-index or MultiIndex?
 5. Does the first validation run happen under an explicit `hash_namespace(...)`?
 
@@ -159,7 +160,9 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
 ```
 
 Storage registration is inferred from the class metadata and active Main
-Sequence project/session. You may call it explicitly during bootstrap:
+Sequence project/session. The DataNode constructor ensures the output
+`storage_table` is registered when needed. You may still call it explicitly
+during bootstrap when code needs the returned metadata object:
 
 ```python
 PricesTable.register()
@@ -180,14 +183,17 @@ The DataNode constructor should accept:
 - optional `hash_namespace`
 
 The constructor `storage_table` is the output storage contract. Keep it out of
-`DataNodeConfiguration`.
+`DataNodeConfiguration`. Do not pre-register this output storage class just to
+construct the node; `DataNode` and `PersistManager` call the SDK registration
+lifecycle automatically when the class is not yet bound.
 
 If the DataNode needs to select another DataNode's storage table as a
 dependency, put that dependency storage reference in the config as
 `type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
-`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`, so the class
-is registered by the SDK through `storage_table.register()` when needed.
+`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`; if the
+class is not yet bound, the config serializer calls `StorageClass.register()`
+before reading the UID.
 
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.
@@ -388,7 +394,8 @@ When reviewing an existing DataNode, look for:
 - schema or published table metadata hidden in DataNode configuration
 - `test_node=True`
 - missing explicit `storage_table`
-- accidental storage registration inside the DataNode
+- manual pre-registration of the output `storage_table` when no returned
+  metadata object is needed
 - wrong split between hashed config fields and non-config class/runtime values
 - misuse of `hash_namespace`
 - non-incremental `update()` behavior
@@ -402,10 +409,11 @@ When reviewing an existing DataNode, look for:
 Do not claim success until you have checked:
 
 - the relevant docs were read first
-- storage is a registered `PlatformTimeIndexMetaData` class
+- output storage is a `PlatformTimeIndexMetaData` class that the SDK can register
 - storage has an intention-rich `__metatable_description__`
 - the DataNode constructor requires `storage_table`
-- dependency storage-table references live in config and are registered
+- dependency storage-table references live in config and rely on SDK
+  registration during config serialization
 - config fields are updater-scoped by default
 - no removed hash metadata markers remain
 - no `test_node` usage remains

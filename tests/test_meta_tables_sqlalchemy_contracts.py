@@ -20,6 +20,7 @@ from mainsequence.meta_tables import (
     table_contract_from_sqlalchemy_model,
     time_indexed_registration_request_from_sqlalchemy_model,
 )
+from mainsequence.meta_tables.data_nodes.persist_managers import ensure_registered_storage_table
 
 
 @pytest.fixture(autouse=True)
@@ -300,9 +301,7 @@ def test_external_registration_request_uses_class_metatable_description():
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _model_class("Account", account_table)
-    Account.__metatable_description__ = (
-        "External account rows imported from the warehouse."
-    )
+    Account.__metatable_description__ = "External account rows imported from the warehouse."
 
     request = external_registered_registration_request_from_sqlalchemy_model(
         Account,
@@ -943,9 +942,7 @@ def test_time_index_metadata_registration_request_uses_class_metatable_descripti
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.description == (
-        "Account holdings history used to reconstruct portfolio state."
-    )
+    assert request.description == ("Account holdings history used to reconstruct portfolio state.")
 
 
 def test_time_index_metadata_configured_tablename_changes_with_index_grain():
@@ -1098,6 +1095,45 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
         "account_uid",
         "unique_identifier",
     ]
+
+
+def test_ensure_registered_storage_table_registers_unbound_storage(monkeypatch):
+    import mainsequence.client.models_metatables as models_metatables
+
+    columns = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("asset_uid", Uuid(), nullable=False),
+    ]
+    table = FakeTable("placeholder", columns=columns)
+    AssetSnapshots = _time_index_model_class(
+        "AssetSnapshots",
+        table,
+        index_names=["time_index", "asset_uid"],
+    )
+    table.name = metatable_configured_tablename(AssetSnapshots)
+    captured = {}
+
+    def fake_register(cls, request, timeout=None):
+        captured["request"] = request
+        return SimpleNamespace(
+            uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            data_source_uid=request.data_source_uid,
+            storage_hash=request.storage_hash,
+        )
+
+    monkeypatch.setattr(
+        models_metatables.TimeIndexMetaData,
+        "register",
+        classmethod(fake_register),
+    )
+
+    ensured = ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+
+    assert ensured is AssetSnapshots
+    assert AssetSnapshots.get_time_index_metadata().uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert AssetSnapshots.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    assert captured["request"].identifier == "AssetSnapshots"
 
 
 def test_time_index_storage_name_hash_component_separates_identical_table_shapes():
@@ -1365,9 +1401,10 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
     foreign_key = next(iter(Asset.__table__.foreign_keys))
-    assert foreign_key.info[sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY][
-        "target_model"
-    ] is Account
+    assert (
+        foreign_key.info[sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY]["target_model"]
+        is Account
+    )
     assert Asset.__table__.name == metatable_configured_tablename(Asset)
 
     request = Asset.build_registration_request(

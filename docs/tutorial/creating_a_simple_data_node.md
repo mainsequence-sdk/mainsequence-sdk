@@ -6,7 +6,7 @@ In this part, you will:
 
 - create your first DataNode and run it locally
 - understand a DataNode as an opinionated MetaTable-backed update workflow
-- register the canonical MetaTable contract used by the DataNode
+- define the canonical MetaTable contract used by the DataNode
 - add a second DataNode that depends on the first one
 - run launcher scripts from the terminal and inspect persisted tables from the CLI
 - learn how DataNode update identity relates to the underlying table
@@ -135,7 +135,7 @@ class DailyRandomNumber(DataNode):
     ):
         """
         :param config: Configuration containing mean and volatility
-        :param storage_table: Registered PlatformTimeIndexMetaData model used as storage
+        :param storage_table: PlatformTimeIndexMetaData model used as output storage
         """
         self.mean = config.mean
         self.std = config.std
@@ -167,9 +167,11 @@ class DailyRandomNumber(DataNode):
         return {}
 ```
 
-The concrete `PlatformTimeIndexMetaData` model is the storage contract. You can
-call `register()` explicitly during bootstrap, and `DataNode` construction will
-also ensure that the storage class is registered when needed.
+The concrete `PlatformTimeIndexMetaData` model is the storage contract.
+`DataNode` construction ensures the output `storage_table` is registered when
+needed, so you do not need to pre-register the storage table just to construct
+or run the node. You can still call `register()` explicitly during bootstrap
+when code needs the returned metadata object.
 
 The SQLAlchemy model is the first-class schema declaration for the table:
 `time_index` is the index column and `random_number` is the value column. The
@@ -234,15 +236,17 @@ If a DataNode depends on another DataNode and needs to select that dependency's
 storage model, put that dependency storage reference in the config, not as an
 extra constructor argument. A config field typed as
 `type[PlatformTimeIndexMetaData]` is hashed by the registered
-`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. Register
-that storage class before constructing the DataNode.
+`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. If that
+class is not yet bound, config serialization calls `StorageClass.register()`
+before reading the UID, so dependency storage classes do not need manual
+pre-registration either.
 
 ### DataNode Recipe
 
 Every `DataNode` follows the same basic recipe:
 
 1. Extend the base class `mainsequence.meta_tables.DataNode`
-2. Implement the constructor method `__init__()` and accept a registered `storage_table`
+2. Implement the constructor method `__init__()` and accept `storage_table`
 3. Implement the `dependencies()` method
 4. Implement the `update()` method
 
@@ -442,7 +446,6 @@ from src.data_nodes.example_nodes import (
 
 def main():
     account_meta_table = Account.register()
-    AccountHoldingsStorage.register()
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     upsert_account(
         account_meta_table,
@@ -475,8 +478,6 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    DailyRandomNumberStorage.register()
-
     daily_node = DailyRandomNumber(
         config=RandomDataNodeConfig(mean=0.0),
         storage_table=DailyRandomNumberStorage,
@@ -499,8 +500,8 @@ Why this matters:
 - it gives you a safe way to validate schema and update behavior
 - it keeps experimentation separate from production-like update identity
 
-Register the storage model first, then use `hash_namespace(...)` while you are
-developing or testing:
+Use `hash_namespace(...)` while you are developing or testing. The SDK will
+register the output storage table when `DataNode` construction needs it:
 
 ```python
 from mainsequence.meta_tables.data_nodes import hash_namespace
@@ -513,8 +514,6 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    DailyRandomNumberStorage.register()
-
     with hash_namespace("tutorial_daily_random_number"):
         daily_node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
@@ -544,8 +543,6 @@ from src.data_nodes.example_nodes import (
 
 
 def test_daily_random_number_smoke():
-    DailyRandomNumberStorage.register()
-
     with hash_namespace("pytest_daily_random_number_smoke"):
         node = DailyRandomNumber(
             config=RandomDataNodeConfig(mean=0.0),
@@ -663,7 +660,9 @@ table is part of `DailyRandomAdditionConfig` because changing it changes the
 dependency graph and therefore the update identity. The constructor keeps only
 the output `storage_table` argument.
 
-Create a launcher at `scripts\random_daily_addition_launcher.py`:
+Create a launcher at `scripts\random_daily_addition_launcher.py`. The dependency
+storage class inside config and the output `storage_table` are both registered
+through the SDK lifecycle when needed:
 
 ```python
 from src.data_nodes.example_nodes import (
@@ -672,11 +671,6 @@ from src.data_nodes.example_nodes import (
     DailyRandomAdditionStorage,
     DailyRandomNumberStorage,
 )
-
-
-DailyRandomNumberStorage.register()
-DailyRandomAdditionStorage.register()
-
 
 daily_node = DailyRandomAddition(
     config=DailyRandomAdditionConfig(
@@ -742,7 +736,6 @@ from src.data_nodes.example_nodes import (
 
 low_vol = VolatilityConfig(center=0.5, skew=False)
 high_vol = VolatilityConfig(center=2.0, skew=True)
-DailyRandomNumberStorage.register()
 
 
 daily_node_low = DailyRandomNumber(
@@ -761,8 +754,8 @@ daily_node_high.run(debug_mode=True, force_update=True)
 Here we create two `DailyRandomNumber` nodes with different `std` (Volatility)
 configurations but the same `storage_table`. Both nodes write to the same table
 contract while keeping separate update-process identities. The tutorial table
-identifier stays stable because it comes from the registered
-`PlatformTimeIndexMetaData` class, not from `std`.
+identifier stays stable because it comes from the `PlatformTimeIndexMetaData`
+class metadata, not from `std`.
 
 Run the updated launcher from the terminal as before:
 

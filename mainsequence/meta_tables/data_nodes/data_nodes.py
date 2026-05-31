@@ -635,7 +635,9 @@ class DataNode(DataAccessMixin, ABC):
     def storage_metadata(self) -> Any:
         storage_metadata = self.storage_table.get_time_index_metadata()
         if storage_metadata is None:
-            raise ValueError("DataNode storage_table must be registered before use.")
+            raise ValueError(
+                "DataNode storage_table registration metadata is unavailable after register()."
+            )
         return storage_metadata
 
     def _initialize_configuration(self, init_kwargs: dict) -> None:

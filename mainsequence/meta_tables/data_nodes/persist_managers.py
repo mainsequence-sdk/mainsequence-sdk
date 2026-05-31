@@ -154,7 +154,9 @@ class BasePersistManager:
     def storage_metadata(self) -> Any:
         storage_metadata = self.storage_table.get_time_index_metadata()
         if storage_metadata is None:
-            raise ValueError("PersistManager storage_table must be registered before use.")
+            raise ValueError(
+                "PersistManager storage_table registration metadata is unavailable after register()."
+            )
         return storage_metadata
 
     @property

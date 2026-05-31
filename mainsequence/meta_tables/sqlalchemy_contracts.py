@@ -372,7 +372,9 @@ class PlatformManagedMetaTable:
             )
             meta_table = MetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(meta_table)
-            _complete_local_registration(storage_hash=storage_hash, model=cls, meta_table=meta_table)
+            _complete_local_registration(
+                storage_hash=storage_hash, model=cls, meta_table=meta_table
+            )
             return meta_table
         except Exception:
             _clear_failed_local_registration(storage_hash=storage_hash, model=cls)
@@ -1161,8 +1163,7 @@ def _begin_local_registration(
         if state.status == "in_progress":
             cycle_path = (*state.stack, _registration_stack_label(model, storage_hash))
             raise ValueError(
-                "MetaTable recursive registration cycle detected: "
-                + " -> ".join(cycle_path)
+                "MetaTable recursive registration cycle detected: " + " -> ".join(cycle_path)
             )
 
     bound_meta_table = model.get_meta_table()
@@ -1232,7 +1233,9 @@ def _register_metatable_foreign_key_targets(
     return target_meta_tables
 
 
-def _metatable_foreign_key_target_models(model_or_table: Any) -> list[type[PlatformManagedMetaTable]]:
+def _metatable_foreign_key_target_models(
+    model_or_table: Any,
+) -> list[type[PlatformManagedMetaTable]]:
     table = _resolve_table(model_or_table)
     targets: list[type[PlatformManagedMetaTable]] = []
     seen: set[type[PlatformManagedMetaTable]] = set()
