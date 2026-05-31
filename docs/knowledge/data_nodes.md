@@ -407,6 +407,9 @@ local process registry keyed by `storage_hash`, and writes the target
 `Target.__table__.c.<column>`, or explicit target UID maps for platform-managed
 DataNode storage FKs.
 
+Do not require users to provide foreign-key names for `MetaTableForeignKey(...)`.
+The SDK derives a stable contract name when `name` is omitted.
+
 Log useful operational facts:
 
 - chosen update window,
@@ -718,9 +721,7 @@ def test_my_node_smoke():
     )
 
     with hash_namespace("pytest_my_node_smoke"):
-        MyNodeStorage.register(
-            labels=["test", "data-node"],
-        )
+        MyNodeStorage.register()
         node = MyNode(config=config, storage_table=MyNodeStorage)
         err, df = node.run(debug_mode=True, force_update=True)
 

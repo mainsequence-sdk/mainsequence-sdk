@@ -23,7 +23,18 @@ from mainsequence.meta_tables import (
 
 
 @pytest.fixture(autouse=True)
-def _clear_metatable_registration_registry():
+def _clear_metatable_registration_registry(monkeypatch):
+    monkeypatch.setattr(
+        "mainsequence.client.models_metatables.SessionDataSource.data_source",
+        SimpleNamespace(
+            uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            related_resource=SimpleNamespace(
+                uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                status="AVAILABLE",
+            ),
+        ),
+    )
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
     yield
     sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY.clear()
@@ -635,12 +646,11 @@ def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch
         classmethod(fake_register),
     )
 
-    Asset.register(
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        identifier="ChildOverride",
-        description="Child-specific description.",
-        labels=["child"],
-    )
+    Asset.__metatable_identifier__ = "ChildOverride"
+    Asset.__metatable_description__ = "Child-specific description."
+    Asset.__metatable_labels__ = ["child"]
+
+    Asset.register()
 
     assert [request.identifier for request in captured_requests] == ["Account", "ChildOverride"]
     assert captured_requests[0].description is None
@@ -676,8 +686,8 @@ def test_platform_managed_register_reuses_local_registry(monkeypatch):
         classmethod(fake_register),
     )
 
-    first = Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
-    second = Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    first = Account.register()
+    second = Account.register()
 
     assert first is second
     assert len(captured_requests) == 1
@@ -701,7 +711,7 @@ def test_platform_managed_register_clears_failed_registry_entry(monkeypatch):
     )
 
     with pytest.raises(RuntimeError, match="registration failed"):
-        Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+        Account.register()
 
     assert table.name not in sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY
 
@@ -733,7 +743,7 @@ def test_platform_managed_register_detects_recursive_registration_cycle():
     ]
 
     with pytest.raises(ValueError, match="recursive registration cycle"):
-        Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+        Account.register()
 
 
 def test_platform_managed_derives_name_for_metatable_foreign_key():
@@ -831,10 +841,7 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
         classmethod(fake_register),
     )
 
-    registered = Account.register(
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        timeout=15,
-    )
+    registered = Account.register(timeout=15)
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_meta_table() is registered
@@ -1070,10 +1077,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
 
     monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
 
-    registered = AccountHoldings.register(
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        timeout=15,
-    )
+    registered = AccountHoldings.register(timeout=15)
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_meta_table() is registered
@@ -1295,7 +1299,7 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
         classmethod(fake_register),
     )
 
-    Account.register(data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd")
+    Account.register()
 
     assert captured["request"].storage_hash == storage_hash
     assert captured["request"].table_contract.physical.table_name is None

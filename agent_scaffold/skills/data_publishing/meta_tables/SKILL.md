@@ -124,13 +124,15 @@ class Account(PlatformManagedMetaTable, Base):
         "Customer account master records used to scope balances, holdings, and "
         "account-level limits."
     )
+    __metatable_labels__ = ["sdk-example"]
 
 
-account_meta_table = Account.register(labels=["sdk-example"])
+account_meta_table = Account.register()
 ```
 
-Pass `description=...` only when the call intentionally overrides the class
-default.
+Registration metadata belongs on the class. Do not pass description, labels,
+provisioning, data-source UID, hash namespace, time-index fields, or storage
+layout into `register()`.
 
 For platform-managed registration, the data source is resolved from the active Main Sequence project/session, the same way DataNode does. Do not require or thread a `data_source_uid` through normal platform-managed example code.
 
@@ -160,6 +162,11 @@ maps in the platform-managed path. Registration is the lifecycle path:
 returned `MetaTable` in a local process registry keyed by `storage_hash`, and
 uses the target `MetaTable.uid` in the child FK contract.
 
+Do not require users to provide foreign-key names. `MetaTableForeignKey(...)`
+accepts `name=...` only as an override; when omitted, the SDK derives a stable
+PostgreSQL-safe contract name from the child table and source column after the
+column is attached to the SQLAlchemy table.
+
 Use this pattern:
 
 ```python
@@ -176,7 +183,7 @@ both the schema and the table's intention.
 Example registration order:
 
 ```python
-asset_meta_table = Asset.register(...)
+asset_meta_table = Asset.register()
 ```
 
 The child registration registers `Account` first if it has not already been

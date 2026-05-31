@@ -77,6 +77,40 @@ def get_data_node_source_code_git_hash(DataNodeClass: type[Any]) -> str:
     return hash_object.hexdigest()
 
 
+def ensure_registered_storage_table(
+    storage_table: type[PlatformTimeIndexMetaData],
+    *,
+    context: str,
+) -> type[PlatformTimeIndexMetaData]:
+    if storage_table is None:
+        raise TypeError(
+            f"{context} storage_table is required and must be a "
+            "PlatformTimeIndexMetaData model class."
+        )
+    if not isinstance(storage_table, type) or not issubclass(
+        storage_table,
+        PlatformTimeIndexMetaData,
+    ):
+        raise TypeError(
+            f"{context} storage_table must be a PlatformTimeIndexMetaData "
+            f"model class; got {type(storage_table).__name__}."
+        )
+
+    if storage_table.get_time_index_metadata() is None:
+        storage_table.register()
+
+    storage_metadata = storage_table.get_time_index_metadata()
+    if storage_metadata is None:
+        raise ValueError(
+            f"{context} storage_table.register() did not bind TimeIndexMetaData metadata."
+        )
+    if storage_table.get_meta_table_uid() in (None, ""):
+        raise ValueError(f"{context} storage_table must provide a MetaTable UID.")
+    if storage_table.get_data_source_uid() in (None, ""):
+        raise ValueError(f"{context} storage_table must provide a data-source UID.")
+    return storage_table
+
+
 class BasePersistManager:
     UPDATE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_DETAILS_CLASS: ClassVar[type[Any] | None] = None
@@ -114,30 +148,7 @@ class BasePersistManager:
     def _validate_storage_table(
         storage_table: type[PlatformTimeIndexMetaData],
     ) -> type[PlatformTimeIndexMetaData]:
-        if storage_table is None:
-            raise TypeError(
-                "PersistManager storage_table is required and must be a "
-                "PlatformTimeIndexMetaData model class."
-            )
-        if not isinstance(storage_table, type) or not issubclass(
-            storage_table,
-            PlatformTimeIndexMetaData,
-        ):
-            raise TypeError(
-                "PersistManager storage_table must be a PlatformTimeIndexMetaData "
-                f"model class; got {type(storage_table).__name__}."
-            )
-        storage_metadata = storage_table.get_time_index_metadata()
-        if storage_metadata is None:
-            raise ValueError(
-                "PersistManager storage_table must be registered before "
-                "constructing the DataNode."
-            )
-        if storage_table.get_meta_table_uid() in (None, ""):
-            raise ValueError("PersistManager storage_table must provide a MetaTable UID.")
-        if storage_table.get_data_source_uid() in (None, ""):
-            raise ValueError("PersistManager storage_table must provide a data-source UID.")
-        return storage_table
+        return ensure_registered_storage_table(storage_table, context="PersistManager")
 
     @property
     def storage_metadata(self) -> Any:

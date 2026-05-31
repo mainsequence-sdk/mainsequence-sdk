@@ -96,6 +96,7 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "Account"
     __metatable_description__ = "Tutorial accounts used as parent rows for governed related tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
+    __metatable_labels__ = ["tutorial"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -122,10 +123,7 @@ options, backend UIDs, data-source UIDs, or test-specific values there.
 Register the table through the class API:
 
 ```python
-account_meta_table = Account.register(
-    description="Tutorial backend-managed account table.",
-    labels=["tutorial"],
-)
+account_meta_table = Account.register()
 
 print(account_meta_table.uid)
 print(account_meta_table.physical_table_name)
@@ -155,6 +153,10 @@ physical table name. `MetaTableForeignKey` keeps the target model and target
 column as SDK metadata so `register()` can recursively register parent targets
 and resolve the target `MetaTable.uid`.
 
+Do not add `name=...` unless you intentionally need to override the generated
+constraint name. The SDK derives a stable foreign-key contract name from the
+child table and source column when `name` is omitted.
+
 ```python
 class AccountLimit(PlatformManagedMetaTable, Base):
     __table_args__ = (
@@ -166,6 +168,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "AccountLimit"
     __metatable_description__ = "Account limit records keyed to the owning tutorial account."
     __metatable_extra_hash_components__ = {"storage_name": "account_limit"}
+    __metatable_labels__ = ["tutorial"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
@@ -182,10 +185,7 @@ process, `register()` registers it first and reuses the local `storage_hash`
 registry if another relationship has already registered the same table:
 
 ```python
-limit_meta_table = AccountLimit.register(
-    description="Tutorial backend-managed account limit table.",
-    labels=["tutorial"],
-)
+limit_meta_table = AccountLimit.register()
 ```
 
 The SDK extracts the foreign key source columns, target MetaTable UID, target

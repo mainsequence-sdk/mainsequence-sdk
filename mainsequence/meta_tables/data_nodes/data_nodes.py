@@ -29,7 +29,11 @@ from mainsequence.client.utils import META_TABLES_CONSTANTS as CONSTANTS
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
 from mainsequence.meta_tables import PlatformTimeIndexMetaData
-from mainsequence.meta_tables.data_nodes.persist_managers import APIPersistManager, PersistManager
+from mainsequence.meta_tables.data_nodes.persist_managers import (
+    APIPersistManager,
+    PersistManager,
+    ensure_registered_storage_table,
+)
 
 from .models import BaseConfiguration
 from .namespacing import current_hash_namespace
@@ -625,28 +629,7 @@ class DataNode(DataAccessMixin, ABC):
 
     @storage_table.setter
     def storage_table(self, value: type[PlatformTimeIndexMetaData]) -> None:
-        if value is None:
-            raise TypeError(
-                "DataNode storage_table is required and must be a "
-                "PlatformTimeIndexMetaData model class."
-            )
-        is_time_index_model_class = isinstance(value, type) and issubclass(
-            value, PlatformTimeIndexMetaData
-        )
-        if not is_time_index_model_class:
-            raise TypeError(
-                "DataNode storage_table must be a PlatformTimeIndexMetaData model class; "
-                f"got {type(value).__name__}."
-            )
-        if value.get_time_index_metadata() is None:
-            raise ValueError(
-                "DataNode storage_table must be registered before construction."
-            )
-        if value.get_meta_table_uid() in (None, ""):
-            raise ValueError("DataNode storage_table must provide a MetaTable UID.")
-        if value.get_data_source_uid() in (None, ""):
-            raise ValueError("DataNode storage_table must provide a data-source UID.")
-        self._storage_table = value
+        self._storage_table = ensure_registered_storage_table(value, context="DataNode")
 
     @property
     def storage_metadata(self) -> Any:

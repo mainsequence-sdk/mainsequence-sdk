@@ -266,6 +266,13 @@ class PlatformManagedMetaTable:
     __metatable_storage_hash__: ClassVar[str | None] = None
     __metatable_physical_table_name__: ClassVar[str | None] = None
     __metatable_description__: ClassVar[str | None] = None
+    __metatable_labels__: ClassVar[Sequence[str] | None] = None
+    __metatable_provisioning__: ClassVar[Mapping[str, Any] | None] = None
+    __metatable_protect_from_deletion__: ClassVar[bool | None] = None
+    __metatable_open_for_everyone__: ClassVar[bool | None] = None
+    __metatable_introspect__: ClassVar[bool | None] = None
+    __metatable_hash_namespace__: ClassVar[str | None] = None
+    __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = None
 
     if _sqlalchemy_declared_attr is not None:
         __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
@@ -307,16 +314,17 @@ class PlatformManagedMetaTable:
         namespace: str | None = None,
         description: str | None = None,
         labels: Sequence[str] | None = None,
-        protect_from_deletion: bool = False,
-        open_for_everyone: bool = False,
+        protect_from_deletion: bool | None = None,
+        open_for_everyone: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
-        introspect: bool = False,
+        introspect: bool | None = None,
         _target_meta_tables: Mapping[Any, Any] | None = None,
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
     ) -> MetaTableRegistrationRequest:
-        resolved_data_source_uid = _resolve_data_source_uid(
+        resolved_data_source_uid = _resolve_model_data_source_uid(
+            cls,
             data_source=data_source,
             data_source_uid=data_source_uid,
         )
@@ -342,25 +350,8 @@ class PlatformManagedMetaTable:
         cls,
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        data_source: Any | None = None,
-        data_source_uid: str | None = None,
-        identifier: str | None = None,
-        namespace: str | None = None,
-        description: str | None = None,
-        labels: Sequence[str] | None = None,
-        protect_from_deletion: bool = False,
-        open_for_everyone: bool = False,
-        provisioning: Mapping[str, Any] | None = None,
-        introspect: bool = False,
-        hash_namespace: str | None = None,
-        extra_hash_components: Mapping[str, Any] | None = None,
-        enforce_storage_hash_name: bool = True,
         _registration_stack: tuple[str, ...] = (),
     ) -> MetaTable:
-        resolved_data_source_uid = _resolve_data_source_uid(
-            data_source=data_source,
-            data_source_uid=data_source_uid,
-        )
         storage_hash = cls.get_storage_hash()
         registry_meta_table = _begin_local_registration(
             cls,
@@ -373,25 +364,11 @@ class PlatformManagedMetaTable:
         try:
             target_meta_tables = _register_metatable_foreign_key_targets(
                 cls,
-                data_source_uid=resolved_data_source_uid,
                 timeout=timeout,
-                provisioning=provisioning,
                 stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
             )
             request = cls.build_registration_request(
-                data_source_uid=resolved_data_source_uid,
-                identifier=identifier,
-                namespace=namespace,
-                description=description,
-                labels=labels,
-                protect_from_deletion=protect_from_deletion,
-                open_for_everyone=open_for_everyone,
-                provisioning=provisioning,
-                introspect=introspect,
                 _target_meta_tables=target_meta_tables,
-                hash_namespace=hash_namespace,
-                extra_hash_components=extra_hash_components,
-                enforce_storage_hash_name=enforce_storage_hash_name,
             )
             meta_table = MetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(meta_table)
@@ -558,7 +535,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         namespace: str | None = None,
         description: str | None = None,
         labels: Sequence[str] | None = None,
-        protect_from_deletion: bool = False,
+        protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
         _target_meta_tables: Mapping[Any, Any] | None = None,
         hash_namespace: str | None = None,
@@ -568,7 +545,8 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         index_names: Sequence[str] | None = None,
         storage_layout: Mapping[str, Any] | None = None,
     ) -> Any:
-        resolved_data_source_uid = _resolve_data_source_uid(
+        resolved_data_source_uid = _resolve_model_data_source_uid(
+            cls,
             data_source=data_source,
             data_source_uid=data_source_uid,
         )
@@ -595,28 +573,10 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         cls,
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        data_source: Any | None = None,
-        data_source_uid: str | None = None,
-        identifier: str | None = None,
-        namespace: str | None = None,
-        description: str | None = None,
-        labels: Sequence[str] | None = None,
-        protect_from_deletion: bool = False,
-        provisioning: Mapping[str, Any] | None = None,
-        hash_namespace: str | None = None,
-        extra_hash_components: Mapping[str, Any] | None = None,
-        enforce_storage_hash_name: bool = True,
-        time_index_name: str | None = None,
-        index_names: Sequence[str] | None = None,
-        storage_layout: Mapping[str, Any] | None = None,
         _registration_stack: tuple[str, ...] = (),
     ) -> Any:
         from mainsequence.client.models_metatables import TimeIndexMetaData
 
-        resolved_data_source_uid = _resolve_data_source_uid(
-            data_source=data_source,
-            data_source_uid=data_source_uid,
-        )
         storage_hash = cls.get_storage_hash()
         registry_meta_table = _begin_local_registration(
             cls,
@@ -629,26 +589,11 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         try:
             target_meta_tables = _register_metatable_foreign_key_targets(
                 cls,
-                data_source_uid=resolved_data_source_uid,
                 timeout=timeout,
-                provisioning=provisioning,
                 stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
             )
             request = cls.build_registration_request(
-                data_source_uid=resolved_data_source_uid,
-                identifier=identifier,
-                namespace=namespace,
-                description=description,
-                labels=labels,
-                protect_from_deletion=protect_from_deletion,
-                provisioning=provisioning,
                 _target_meta_tables=target_meta_tables,
-                hash_namespace=hash_namespace,
-                extra_hash_components=extra_hash_components,
-                enforce_storage_hash_name=enforce_storage_hash_name,
-                time_index_name=time_index_name,
-                index_names=index_names,
-                storage_layout=storage_layout,
             )
             time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
             cls._bind_meta_table(time_index_metadata)
@@ -735,7 +680,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     namespace: str | None = None,
     description: str | None = None,
     labels: Sequence[str] | None = None,
-    protect_from_deletion: bool = False,
+    protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
     _target_meta_tables: Mapping[Any, Any] | None = None,
     schema: str | None = None,
@@ -839,7 +784,8 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     )
 
     return TimeIndexMetaTableRegistrationRequest(
-        data_source_uid=_resolve_data_source_uid(
+        data_source_uid=_resolve_model_data_source_uid(
+            model_or_table,
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
@@ -847,9 +793,15 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
-        protect_from_deletion=protect_from_deletion,
-        labels=list(labels or []),
-        provisioning=dict(provisioning or DEFAULT_PLATFORM_MANAGED_PROVISIONING),
+        protect_from_deletion=_resolve_bool_metadata(
+            model_or_table,
+            value=protect_from_deletion,
+            attr_name="__metatable_protect_from_deletion__",
+            info_key="protect_from_deletion",
+            default=False,
+        ),
+        labels=_resolve_labels(model_or_table, labels=labels),
+        provisioning=_resolve_provisioning(model_or_table, provisioning=provisioning),
         time_index_name=resolved_time_index_name,
         table_contract={
             "version": "relational-table.v1",
@@ -887,10 +839,10 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     namespace: str | None = None,
     description: str | None = None,
     labels: Sequence[str] | None = None,
-    protect_from_deletion: bool = False,
-    open_for_everyone: bool = False,
+    protect_from_deletion: bool | None = None,
+    open_for_everyone: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
-    introspect: bool = False,
+    introspect: bool | None = None,
     _target_meta_tables: Mapping[Any, Any] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
@@ -952,7 +904,8 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         require_metatable_foreign_keys=True,
     )
     return MetaTableRegistrationRequest(
-        data_source_uid=_resolve_data_source_uid(
+        data_source_uid=_resolve_model_data_source_uid(
+            model_or_table,
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
@@ -961,11 +914,29 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
-        protect_from_deletion=protect_from_deletion,
-        open_for_everyone=open_for_everyone,
-        labels=list(labels or []),
-        provisioning=dict(provisioning or DEFAULT_PLATFORM_MANAGED_PROVISIONING),
-        introspect=introspect,
+        protect_from_deletion=_resolve_bool_metadata(
+            model_or_table,
+            value=protect_from_deletion,
+            attr_name="__metatable_protect_from_deletion__",
+            info_key="protect_from_deletion",
+            default=False,
+        ),
+        open_for_everyone=_resolve_bool_metadata(
+            model_or_table,
+            value=open_for_everyone,
+            attr_name="__metatable_open_for_everyone__",
+            info_key="open_for_everyone",
+            default=False,
+        ),
+        labels=_resolve_labels(model_or_table, labels=labels),
+        provisioning=_resolve_provisioning(model_or_table, provisioning=provisioning),
+        introspect=_resolve_bool_metadata(
+            model_or_table,
+            value=introspect,
+            attr_name="__metatable_introspect__",
+            info_key="introspect",
+            default=False,
+        ),
         table_contract=table_contract,
     )
 
@@ -1115,6 +1086,24 @@ def _resolve_data_source_uid(
     return str(uid)
 
 
+def _resolve_model_data_source_uid(
+    model_or_table: Any,
+    *,
+    data_source: Any | None = None,
+    data_source_uid: str | None = None,
+) -> str:
+    resolved_data_source_uid = (
+        data_source_uid
+        or getattr(model_or_table, "__metatable_data_source_uid__", None)
+        or getattr(model_or_table, "data_source_uid", None)
+        or _table_info_value(model_or_table, "data_source_uid")
+    )
+    return _resolve_data_source_uid(
+        data_source=data_source,
+        data_source_uid=_coerce_optional_uid(resolved_data_source_uid),
+    )
+
+
 def _resolve_target_meta_table_uid_by_fullname(
     *,
     target_meta_tables: Mapping[Any, Any] | None = None,
@@ -1230,17 +1219,13 @@ def _registration_stack_label(model: type[Any], storage_hash: str) -> str:
 def _register_metatable_foreign_key_targets(
     model_or_table: Any,
     *,
-    data_source_uid: str,
     timeout: int | float | tuple[float, float] | None,
-    provisioning: Mapping[str, Any] | None,
     stack: tuple[str, ...],
 ) -> dict[type[Any], Any]:
     target_meta_tables: dict[type[Any], Any] = {}
     for target_model in _metatable_foreign_key_target_models(model_or_table):
         target_meta_table = target_model.register(
             timeout=timeout,
-            data_source_uid=data_source_uid,
-            provisioning=provisioning,
             _registration_stack=stack,
         )
         target_meta_tables[target_model] = target_meta_table
@@ -1491,6 +1476,60 @@ def _resolve_description(model_or_table: Any, *, description: str | None) -> str
     if resolved_description in (None, ""):
         return None
     return str(resolved_description)
+
+
+def _resolve_labels(
+    model_or_table: Any,
+    *,
+    labels: Sequence[str] | None,
+) -> list[str]:
+    resolved_labels = (
+        labels
+        if labels is not None
+        else getattr(model_or_table, "__metatable_labels__", None)
+        or _table_info_value(model_or_table, "labels")
+    )
+    if resolved_labels in (None, ""):
+        return []
+    if isinstance(resolved_labels, str):
+        return [resolved_labels]
+    return [str(label) for label in list(resolved_labels)]
+
+
+def _resolve_provisioning(
+    model_or_table: Any,
+    *,
+    provisioning: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    resolved_provisioning = (
+        provisioning
+        if provisioning is not None
+        else getattr(model_or_table, "__metatable_provisioning__", None)
+        or _table_info_value(model_or_table, "provisioning")
+    )
+    if resolved_provisioning is None:
+        return dict(DEFAULT_PLATFORM_MANAGED_PROVISIONING)
+    if not isinstance(resolved_provisioning, Mapping):
+        raise ValueError("MetaTable provisioning metadata must be a mapping when provided.")
+    return dict(resolved_provisioning)
+
+
+def _resolve_bool_metadata(
+    model_or_table: Any,
+    *,
+    value: bool | None,
+    attr_name: str,
+    info_key: str,
+    default: bool,
+) -> bool:
+    if value is not None:
+        return bool(value)
+    resolved_value = getattr(model_or_table, attr_name, None)
+    if resolved_value is None:
+        resolved_value = _table_info_value(model_or_table, info_key)
+    if resolved_value is None:
+        return default
+    return bool(resolved_value)
 
 
 def _resolve_hash_namespace(model_or_table: Any, *, hash_namespace: str | None) -> str | None:

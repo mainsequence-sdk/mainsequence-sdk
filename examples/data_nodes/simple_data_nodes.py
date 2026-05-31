@@ -13,11 +13,12 @@ from typing import Any, Union
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client import MetaTable
 from mainsequence.meta_tables import (
+    MetaTableForeignKey,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -88,10 +89,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            f"{Account.__table__.fullname}.uid",
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(

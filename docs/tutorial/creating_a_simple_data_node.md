@@ -69,6 +69,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
     __metatable_description__ = "Daily random number observations produced by the tutorial node."
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
+    __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -84,6 +85,7 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
     __metatable_description__ = "Daily random additions produced from the tutorial dependency node."
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
+    __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
 
@@ -165,13 +167,13 @@ class DailyRandomNumber(DataNode):
         return {}
 ```
 
-Register the concrete `PlatformTimeIndexMetaData` model before constructing the
-node. The `DataNode` constructor receives that registered model class as
-`storage_table`; it does not create or resolve storage inside the update path.
+The concrete `PlatformTimeIndexMetaData` model is the storage contract. You can
+call `register()` explicitly during bootstrap, and `DataNode` construction will
+also ensure that the storage class is registered when needed.
 
 The SQLAlchemy model is the first-class schema declaration for the table:
 `time_index` is the index column and `random_number` is the value column. The
-`PlatformTimeIndexMetaData.register(...)` call sends the canonical time-indexed
+`PlatformTimeIndexMetaData.register()` call sends the canonical time-indexed
 table contract to the backend, binds the returned MetaTable UID to the class,
 and retargets the SQLAlchemy table to the backend-owned physical table name.
 The DataFrame returned by `update()` must match that table contract.
@@ -188,6 +190,10 @@ storage, declare the FK with `MetaTableForeignKey(TargetModel, column=...)` and
 let `register()` recursively register unresolved parent targets. This first
 tutorial keeps the runnable example focused on a single table; the FK authoring
 surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
+
+Foreign-key names are optional for this SDK helper. Omit `name=...` unless the
+application intentionally needs a custom constraint name; the SDK derives a
+stable contract name from the child table and source column.
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
@@ -288,6 +294,7 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = f"account_{PROJECT_UID}"
     __metatable_description__ = "Tutorial account rows used as the parent for holdings storage."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
+    __metatable_labels__ = ["tutorial", "data-node"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -300,6 +307,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
     __metatable_description__ = "Time-indexed tutorial account holdings by account and unique identifier."
     __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
+    __metatable_labels__ = ["tutorial", "data-node"]
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 
@@ -433,14 +441,8 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    account_meta_table = Account.register(
-        description="Tutorial platform-managed account table.",
-        labels=["tutorial", "data-node"],
-    )
-    AccountHoldingsStorage.register(
-        description="Tutorial DataNode storage table for account holdings.",
-        labels=["tutorial", "data-node"],
-    )
+    account_meta_table = Account.register()
+    AccountHoldingsStorage.register()
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     upsert_account(
         account_meta_table,
@@ -473,10 +475,7 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    DailyRandomNumberStorage.register(
-        description="Tutorial DataNode storage table for daily random numbers.",
-        labels=["tutorial", "data-node"],
-    )
+    DailyRandomNumberStorage.register()
 
     daily_node = DailyRandomNumber(
         config=RandomDataNodeConfig(mean=0.0),
@@ -514,10 +513,7 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    DailyRandomNumberStorage.register(
-        description="Tutorial DataNode storage table for daily random numbers.",
-        labels=["tutorial", "data-node"],
-    )
+    DailyRandomNumberStorage.register()
 
     with hash_namespace("tutorial_daily_random_number"):
         daily_node = DailyRandomNumber(
@@ -548,10 +544,7 @@ from src.data_nodes.example_nodes import (
 
 
 def test_daily_random_number_smoke():
-    DailyRandomNumberStorage.register(
-        description="Test storage table for daily random numbers.",
-        labels=["test", "data-node"],
-    )
+    DailyRandomNumberStorage.register()
 
     with hash_namespace("pytest_daily_random_number_smoke"):
         node = DailyRandomNumber(
@@ -681,14 +674,8 @@ from src.data_nodes.example_nodes import (
 )
 
 
-DailyRandomNumberStorage.register(
-    description="Tutorial DataNode storage table for daily random numbers.",
-    labels=["tutorial", "data-node"],
-)
-DailyRandomAdditionStorage.register(
-    description="Tutorial DataNode storage table for daily random additions.",
-    labels=["tutorial", "data-node"],
-)
+DailyRandomNumberStorage.register()
+DailyRandomAdditionStorage.register()
 
 
 daily_node = DailyRandomAddition(
@@ -715,8 +702,8 @@ python3 scripts/random_daily_addition_launcher.py
 ```
 
 Both tutorial storage tables have friendly identifiers because their
-`PlatformTimeIndexMetaData` classes were registered before the DataNodes were
-constructed. Use
+`PlatformTimeIndexMetaData` classes declare stable class metadata and register
+through the SDK storage lifecycle. Use
 `mainsequence project data-node-updates list` for update records and
 `mainsequence meta-table list --filter identifier__contains=daily_random`
 for the backing tables.
@@ -755,10 +742,7 @@ from src.data_nodes.example_nodes import (
 
 low_vol = VolatilityConfig(center=0.5, skew=False)
 high_vol = VolatilityConfig(center=2.0, skew=True)
-DailyRandomNumberStorage.register(
-    description="Tutorial DataNode storage table for daily random numbers.",
-    labels=["tutorial", "data-node"],
-)
+DailyRandomNumberStorage.register()
 
 
 daily_node_low = DailyRandomNumber(

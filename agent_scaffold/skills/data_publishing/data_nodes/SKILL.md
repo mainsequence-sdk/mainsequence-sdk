@@ -158,13 +158,14 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
     close: Mapped[float] = mapped_column(Float, nullable=False)
 ```
 
-Register storage before constructing the DataNode:
+Storage registration is inferred from the class metadata and active Main
+Sequence project/session. You may call it explicitly during bootstrap:
 
 ```python
-PricesTable.register(data_source_uid=data_source_uid)
+PricesTable.register()
 ```
 
-`PlatformTimeIndexMetaData.register(...)` is the storage lifecycle path. Treat it
+`PlatformTimeIndexMetaData.register()` is the storage lifecycle path. Treat it
 as an idempotent get-or-create operation: the platform returns the registered
 metadata and UID, and the SDK records that metadata on the class. Do not manually
 attach an existing UID, reconstruct a generic `MetaTable`, or use manual bind
@@ -175,7 +176,7 @@ helpers as an authoring step.
 The DataNode constructor should accept:
 
 - a `DataNodeConfiguration`
-- a registered `storage_table: type[PlatformTimeIndexMetaData]`
+- a `storage_table: type[PlatformTimeIndexMetaData]`
 - optional `hash_namespace`
 
 The constructor `storage_table` is the output storage contract. Keep it out of
@@ -186,7 +187,7 @@ dependency, put that dependency storage reference in the config as
 `type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
 `TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`, so the class
-must be registered before DataNode construction.
+is registered by the SDK through `storage_table.register()` when needed.
 
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.
@@ -358,6 +359,10 @@ DataNode storage table needs a platform-managed FK, use
 `MetaTableForeignKey(TargetModel, column=...)` on the storage class. Do not use
 `ForeignKey(Target.__table__.c.uid)`, table fullnames, or explicit target UID
 maps in DataNode examples.
+
+Do not ask users to name these foreign keys. `MetaTableForeignKey(...)` derives
+a stable contract name when `name` is omitted; `name=...` is only for deliberate
+overrides.
 
 Registration of the storage class follows the MetaTable lifecycle:
 `register()` recursively registers unresolved FK target model classes, uses the

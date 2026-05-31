@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from examples.meta_tables.common import (
@@ -10,7 +10,7 @@ from examples.meta_tables.common import (
     DEFAULT_TIMEOUT,
     print_json,
 )
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
 
 NAMESPACE = "sdk-examples"
 
@@ -47,10 +47,7 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            f"{Account.__table__.fullname}.uid",
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)

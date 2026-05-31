@@ -53,6 +53,7 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "Account"
     __metatable_description__ = "Accounts used as the parent entity for asset and holdings tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
+    __metatable_labels__ = ["sdk-example"]
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -86,10 +87,7 @@ UIDs, or per-run updater scope.
 Build the request first when you want to inspect the payload:
 
 ```python
-request = Account.build_registration_request(
-    description="Example account table.",
-    labels=["sdk-example"],
-)
+request = Account.build_registration_request()
 
 assert request.management_mode == "platform_managed"
 assert request.storage_hash == Account.__table__.name
@@ -97,16 +95,12 @@ assert request.table_contract.physical.table_name is None
 ```
 
 The data source is resolved from the active Main Sequence project/session, like
-DataNode. Pass `data_source=...` or `data_source_uid=...` only for advanced
-scripts and tests outside that context.
+DataNode. Registration metadata belongs on the model class.
 
 Then send it:
 
 ```python
-account_meta_table = Account.register(
-    description="Example account table.",
-    labels=["sdk-example"],
-)
+account_meta_table = Account.register()
 account_meta_table_uid = account_meta_table.uid
 ```
 
@@ -128,6 +122,11 @@ public SDK declaration. Registration may rebind `Account.__table__.name` to the
 backend physical table name. `MetaTableForeignKey` stores the target model class
 and target column as SDK metadata, then `register()` recursively registers
 parent targets and resolves the backend `MetaTable.uid`.
+
+You do not need to provide a foreign-key name. `MetaTableForeignKey(...)`
+derives a stable PostgreSQL-safe contract name from the child table and source
+column once SQLAlchemy attaches the column to the table. Pass `name=...` only
+when intentionally overriding that derived name.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
@@ -164,7 +163,7 @@ The SDK contract serializer extracts:
 - primary-key flags
 - unique flags
 - indexes named by SQLAlchemy's naming convention
-- foreign keys named by SQLAlchemy's naming convention
+- foreign keys named by explicit `name=...` or the SDK's deterministic derived name
 - FK source columns
 - FK target MetaTable UID
 - FK target columns
