@@ -148,12 +148,25 @@ with the SQLAlchemy table shape:
 class Asset(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Asset"
+    __metatable_extra_hash_components__ = {"storage_name": "asset"}
 ```
 
 For time-indexed DataNode storage, use `PlatformTimeIndexMetaData` instead of
 the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
 but also includes `time_index_name` and `index_names` in the stable identity and
 registers through the TimeIndexMetaData endpoint.
+
+When two backend-managed tables could otherwise have the same storage-relevant
+shape, add `__metatable_extra_hash_components__` with stable deterministic
+values:
+
+```python
+__metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
+```
+
+This attribute is part of storage identity. Changing it creates a different
+table. It is not for labels, descriptions, runtime options, test isolation,
+backend UIDs, data-source UIDs, or updater scope.
 
 For explicit low-level naming, use the helper as the SQLAlchemy table name:
 

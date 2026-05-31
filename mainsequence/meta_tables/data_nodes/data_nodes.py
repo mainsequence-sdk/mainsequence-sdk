@@ -420,13 +420,6 @@ class DataNode(DataAccessMixin, ABC):
         """
         super().__init_subclass__(**kwargs)
 
-        if "_ARGS_IGNORE_IN_STORAGE_HASH" in cls.__dict__:
-            raise TypeError(
-                f"{cls.__name__} uses removed class attribute _ARGS_IGNORE_IN_STORAGE_HASH; "
-                "move those fields into DataNodeConfiguration. Configuration fields "
-                "participate in update hashing by default."
-            )
-
         # Get the original __init__ from the new subclass
         original_init = cls.__init__
 

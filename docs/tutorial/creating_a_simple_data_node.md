@@ -173,6 +173,13 @@ table contract to the backend, binds the returned MetaTable UID to the class,
 and retargets the SQLAlchemy table to the backend-owned physical table name.
 The DataFrame returned by `update()` must match that table contract.
 
+`__metatable_extra_hash_components__` is part of the storage-table identity. The
+two storage classes above have the same simple shape, so each class adds a
+stable `storage_name` component to prevent storage-hash collisions. Use this for
+deterministic storage disambiguation only. Do not put labels, descriptions,
+runtime parameters, backend UIDs, data-source UIDs, updater scope, or
+test-specific values in this mapping.
+
 MetaTable foreign keys require a registered MetaTable target, so this first
 tutorial keeps the runnable example focused on a single table. For the FK
 authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).

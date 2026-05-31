@@ -94,6 +94,7 @@ class Account(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = "Account"
+    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
@@ -107,7 +108,13 @@ The important pieces are:
 - `__table_args__` declares the SQLAlchemy table schema used for storage-hash derivation
 - `NAMESPACE` is a plain logical grouping for these SDK examples
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
+- `__metatable_extra_hash_components__` adds a stable storage-identity component so similarly shaped tables cannot collide
 - `uid` is an application-level primary key, not a backend row id
+
+`__metatable_extra_hash_components__` is part of storage identity. Use stable
+values such as `{"storage_name": "account"}` or
+`{"storage_name": "account_limit"}`. Do not use labels, descriptions, runtime
+options, backend UIDs, data-source UIDs, or test-specific values there.
 
 ## 4. Register The Parent MetaTable
 
@@ -154,6 +161,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = "AccountLimit"
+    __metatable_extra_hash_components__ = {"storage_name": "account_limit"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(

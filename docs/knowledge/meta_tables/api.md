@@ -85,6 +85,11 @@ table name to the backend physical table name. The lower-level
 `metatable_tablename(...)` helper remains available when callers need to set an
 initial logical `__tablename__` explicitly.
 
+`__metatable_extra_hash_components__` adds deterministic fields to the
+`storage_hash` payload before registration. Use it only to disambiguate storage
+identity for tables that could otherwise share the same storage-relevant shape;
+changing it points at a different logical table.
+
 ## Contract Validation
 
 Validate a new contract before registration:

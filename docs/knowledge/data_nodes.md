@@ -151,9 +151,11 @@ Examples:
 - source choice when it changes dataset meaning
 - index columns and foreign keys
 
-### 4.2 Scope fields affect `update_hash`
+### 4.2 Config fields affect `update_hash`
 
-These define updater/job partitioning only.
+Every `DataNodeConfiguration` field participates in `update_hash`. Declare a
+normal config field when a value changes output values, dependencies, source
+choice, or updater scope.
 
 Examples:
 
@@ -161,11 +163,30 @@ Examples:
 - `shard_id`
 - partition keys
 
-All `DataNodeConfiguration` fields are update-scoped by default. Descriptive
-fields that must not affect update identity should use
-`json_schema_extra={"hash_excluded": True}`.
+Use `Field(...)` for config fields and include a useful `description` plus
+`examples=[...]` when possible:
 
-### 4.3 Operational knobs (affect neither hash)
+```python
+from typing import ClassVar
+
+from pydantic import Field
+
+from mainsequence.meta_tables import DataNodeConfiguration
+
+
+class PricesConfig(DataNodeConfiguration):
+    shard_id: str = Field(
+        ...,
+        description="Stable updater partition for this price job.",
+        examples=["us_equities_daily"],
+    )
+    reference_dimension: ClassVar[str] = "unique_identifier"
+```
+
+Class-level invariants and implementation constants should be `ClassVar[...]`
+so they are not Pydantic fields and do not enter `update_hash`.
+
+### 4.3 Runtime values stay out of config
 
 Do not put these in `__init__` args.
 
@@ -177,25 +198,6 @@ Examples:
 - secrets/credentials
 
 Keep them in env vars or runtime config read inside `update()`.
-
-If you absolutely must keep a Pydantic field on a config/helper model for
-display-only metadata, mark it with:
-
-```python
-Field(..., json_schema_extra={"hash_excluded": True})
-```
-
-`hash_excluded` fields are excluded from update identity. The older
-`runtime_only` marker is removed; descriptive metadata should use
-`hash_excluded`.
-
-Use this only for descriptive fields such as labels or long-form documentation.
-Do not use `hash_excluded` for anything that changes:
-
-- output values
-- dependencies
-- table meaning
-- table schema
 
 Published table identity and schema belong on the registered storage class,
 not on `DataNodeConfiguration`.

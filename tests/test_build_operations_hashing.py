@@ -101,22 +101,6 @@ def test_normal_config_value_changes_update_hash(monkeypatch):
     assert storage_hash_a != storage_hash_b
 
 
-def test_update_only_metadata_is_rejected():
-    class NodeConfig(BaseModel):
-        shard_id: str = Field(..., json_schema_extra={"update_only": True})
-
-    with pytest.raises(ValueError, match="update_only"):
-        build_operations.serialize_argument(NodeConfig(shard_id="desk_a"))
-
-
-def test_runtime_only_metadata_is_rejected():
-    class NodeConfig(BaseModel):
-        label: str = Field(..., json_schema_extra={"runtime_only": True})
-
-    with pytest.raises(ValueError, match="runtime_only"):
-        build_operations.serialize_argument(NodeConfig(label="Close"))
-
-
 def test_hash_excluded_metadata_does_not_affect_hashes(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
@@ -262,30 +246,6 @@ def test_plain_dict_with_pydantic_model_import_path_key_is_not_treated_as_wrappe
 
     assert build_operations._is_serialized_pydantic_model(payload_a["config"]) is False
     assert build_operations.hash_signature(payload_a) != build_operations.hash_signature(payload_b)
-
-
-def test_removed_storage_hash_metadata_is_rejected():
-    class RemovedStorageHashConfig(BaseModel):
-        shard_id: str = Field(..., json_schema_extra={"ignore_from_storage_hash": True})
-
-    with pytest.raises(ValueError, match="ignore_from_storage_hash"):
-        build_operations.serialize_argument(RemovedStorageHashConfig(shard_id="desk_a"))
-
-
-def test_removed_storage_hash_class_attribute_is_rejected():
-    with pytest.raises(TypeError, match="_ARGS_IGNORE_IN_STORAGE_HASH"):
-
-        class RemovedStorageHashDataNode(DataNode):
-            _ARGS_IGNORE_IN_STORAGE_HASH = ["asset_list"]
-
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-
-            def dependencies(self):
-                return {}
-
-            def update(self):
-                return None
 
 
 def test_data_node_configuration_overrides_offset_start():

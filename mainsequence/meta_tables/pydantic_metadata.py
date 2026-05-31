@@ -20,24 +20,6 @@ def serialize_pydantic_model(
 
     for field_name, field_info in value.__class__.model_fields.items():
         extra = field_info.json_schema_extra or {}
-        if "ignore_from_storage_hash" in extra:
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} uses removed metadata "
-                "'ignore_from_storage_hash'. All configuration fields participate in "
-                'update hashing by default; use json_schema_extra={"hash_excluded": True} '
-                "only for fields that should not affect update identity."
-            )
-        if "update_only" in extra:
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} uses removed metadata "
-                "'update_only'. All configuration fields are update-scoped by default."
-            )
-        if "runtime_only" in extra:
-            raise ValueError(
-                f"{value.__class__.__name__}.{field_name} uses removed metadata "
-                "'runtime_only'; use json_schema_extra={\"hash_excluded\": True} instead."
-            )
-
         is_hash_excluded = extra.get("hash_excluded", False)
         if not isinstance(is_hash_excluded, bool):
             raise ValueError(

@@ -103,12 +103,23 @@ Always declare `__metatable_description__` on the model. The description must
 explain the table's business intention, row grain, and expected use, not only
 the schema. Column-level descriptions stay in `mapped_column(info={...})`.
 
+Use `__metatable_extra_hash_components__` when two backend-managed tables could
+otherwise produce the same storage hash because their storage-relevant shape is
+identical or intentionally generic. The value must be stable and deterministic,
+usually a small mapping such as `{"storage_name": "account_holdings"}`.
+
+This attribute is part of storage identity. Changing it defines a different
+table. Do not use it for labels, descriptions, runtime options, test isolation,
+backend UIDs, data-source UIDs, or updater scope. Use `hash_namespace` for test
+or experiment isolation.
+
 Register through the class API:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Account"
+    __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_description__ = (
         "Customer account master records used to scope balances, holdings, and "
         "account-level limits."

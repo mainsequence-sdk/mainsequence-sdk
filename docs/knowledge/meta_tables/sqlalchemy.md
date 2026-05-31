@@ -50,6 +50,7 @@ class Account(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Account"
+    __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -59,6 +60,23 @@ The `__metatable_identifier__` attribute is logical backend metadata. It is
 sent during registration but does not contribute to the configured
 `storage_hash`. The mapped columns, indexes, and foreign keys do contribute to
 the configured storage identity.
+
+Use `__metatable_extra_hash_components__` to add stable, deterministic
+storage-identity components when two table classes could otherwise hash to the
+same storage name. This is common for generic or repeated storage shapes, such
+as several one-index time-series tables with the same column types.
+
+```python
+class DailyReturns(PlatformTimeIndexMetaData, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "DailyReturns"
+    __metatable_extra_hash_components__ = {"storage_name": "daily_returns"}
+```
+
+Changing `__metatable_extra_hash_components__` changes the logical storage
+identity and therefore points at a different table. Do not use it for labels,
+descriptions, runtime parameters, test isolation, backend UIDs, data-source
+UIDs, or per-run updater scope.
 
 ## Register A Platform-Managed Table
 
