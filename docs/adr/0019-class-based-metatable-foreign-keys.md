@@ -1,0 +1,242 @@
+# ADR 0019: Class-Based MetaTable Foreign Keys
+
+Date: 2026-05-31
+
+Status: Proposed
+
+## Context
+
+Platform-managed MetaTable registration has a lifecycle boundary that ordinary
+SQLAlchemy foreign keys do not understand.
+
+SQLAlchemy accepts foreign-key targets as strings or column objects, for example:
+
+```python
+ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT")
+```
+
+That is a valid SQLAlchemy declaration, but it is the wrong public abstraction
+for platform-managed MetaTables. It exposes the SQLAlchemy table object as if it
+were the platform storage identity. In this SDK, the platform storage identity is
+the registered `MetaTable.uid`; `Model.__table__` is local authoring state that
+registration may rebind to a backend-owned physical table name.
+
+The SDK currently needs a target `MetaTable.uid` in the foreign-key contract.
+Using SQLAlchemy table fullnames or table column objects in public examples has
+three problems:
+
+- table names and fullnames can change after platform registration binds the
+  model to the backend physical table name
+- column objects do not prove that the target MetaTable model has been
+  registered
+- callers are forced into manual sequential registration and manual target UID
+  mapping, even though `register()` is already the SDK lifecycle method
+
+The backend already supports the required contract shape. No new backend
+endpoint is needed. The missing piece is an SDK-owned foreign-key declaration
+that captures target MetaTable model intent and lets `register()` resolve the
+target `MetaTable.uid`.
+
+## Decision
+
+Add an SDK-owned SQLAlchemy-compatible helper named `MetaTableForeignKey`.
+
+Public usage:
+
+```python
+from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
+
+
+class Account(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = "tutorial"
+    __metatable_identifier__ = "account"
+    __metatable_description__ = "Accounts that own asset positions."
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+
+class AccountPosition(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = "tutorial"
+    __metatable_identifier__ = "account_position"
+    __metatable_description__ = "Positions keyed by owning account."
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    account_uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
+        nullable=False,
+    )
+```
+
+`MetaTableForeignKey(Account, column="uid", ...)` declares:
+
+- the target is the `Account` MetaTable authoring model class
+- the target column is `uid`
+- SQLAlchemy should still see a normal local foreign-key relationship
+- the MetaTable registration contract must use the registered `Account`
+  `MetaTable.uid`, not `Account.__table__.fullname`
+
+`MetaTableForeignKey` may be implemented as a function or constructor-style
+class, but it must return a SQLAlchemy-compatible `ForeignKey` object for use in
+`mapped_column(...)`. It must not monkey-patch or shadow `sqlalchemy.ForeignKey`.
+The explicit SDK name is important because this is platform MetaTable behavior,
+not generic SQLAlchemy behavior.
+
+## Target Type
+
+The target argument is a MetaTable authoring model class, not a backend
+`MetaTable` client object.
+
+The cached registration object on authoring models is typed as:
+
+```python
+__metatable__: ClassVar[MetaTable | None]
+```
+
+`MetaTableForeignKey` targets the class that owns that cache and registration
+method, for example `Account`, not `Account.__metatable__`.
+
+The public type should be compatible with `PlatformManagedMetaTable` subclasses,
+including `PlatformTimeIndexMetaData` because it inherits the same registration
+path.
+
+## Registration Semantics
+
+`PlatformManagedMetaTable.register()` remains the only public lifecycle path.
+
+When registering a model, the SDK should:
+
+1. inspect the model for `MetaTableForeignKey(...)` declarations
+2. collect the target authoring model classes and target columns
+3. recursively register unregistered target models before building the child
+   contract
+4. use each returned target `MetaTable.uid` in the child foreign-key contract
+5. register the child model
+6. bind each model only from the backend `MetaTable` returned by registration
+
+Recursive registration must be get-or-create safe because platform registration
+is keyed by the stable logical storage identity. Calling `Account.register()`
+from `AccountPosition.register()` should be safe when `Account` already exists.
+
+Recursive registration must not propagate child-specific identity fields to the
+parent. The parent must resolve its own class-level namespace, identifier,
+description, hash namespace, and extra hash components. Shared runtime inputs
+such as `data_source`, `data_source_uid`, timeout, and compatible provisioning
+options may be propagated.
+
+If a target model is already bound, the SDK should use its cached
+`MetaTable.uid`. If it is not bound, the SDK should call the target model's
+registration method. If the target cannot be registered or resolved, child
+registration must fail before sending a malformed contract.
+
+Circular dependencies are not part of this decision. The first implementation
+should detect registration cycles and raise a clear error instead of attempting
+partial two-phase registration.
+
+## Contract Extraction
+
+The SDK foreign-key contract builder must prefer SDK metadata captured by
+`MetaTableForeignKey`.
+
+The contract source of truth is:
+
+- target authoring model class
+- target column name
+- registered target `MetaTable.uid`
+- local SQLAlchemy constraint metadata such as local columns, `ondelete`,
+  `onupdate`, and the constraint name
+
+The contract source of truth is not:
+
+- `Account.__table__.fullname`
+- `Account.__table__.name`
+- a manually constructed string such as `"public.account.uid"`
+- the post-registration physical table name
+
+Internally, `MetaTableForeignKey` may use `Account.__table__.c["uid"]` to satisfy
+SQLAlchemy's local relationship machinery. That use is private implementation
+detail. Public docs, tutorials, and skills should not teach users to write it.
+
+Foreign-key contracts require a stable name. `MetaTableForeignKey` should accept
+an optional `name=...`. If omitted, the SDK should derive a deterministic
+PostgreSQL-safe contract name after the local column is attached to a table. The
+derived name must be stable across processes and independent of backend physical
+table binding.
+
+## Existing Low-Level Paths
+
+The SDK may keep low-level raw SQLAlchemy foreign-key support and explicit target
+UID maps for compatibility, especially for external-registered tables and old
+callers.
+
+Those paths are not the preferred public API for platform-managed MetaTables and
+must not be used in skills or tutorials.
+
+## Non-Goals
+
+This ADR does not add a backend endpoint.
+
+This ADR does not make `ForeignKey(Account)` valid by patching SQLAlchemy.
+
+This ADR does not make manual binding public. Registration remains the only
+public lifecycle path.
+
+This ADR does not solve circular foreign-key registration. Cycles should be
+detected and rejected until a deliberate two-phase contract flow exists.
+
+## Implementation Tasks
+
+- Add `MetaTableForeignKey` to `mainsequence.meta_tables`.
+- Type the helper target as a platform-managed MetaTable authoring model class,
+  not as a backend `MetaTable` object.
+- Have the helper validate that `column` exists on the target model table at
+  declaration or contract-build time with a clear error.
+- Have the helper attach SDK metadata to the SQLAlchemy FK object or constraint:
+  target model class, target column name, and any SDK-resolved naming metadata.
+- Keep the returned object compatible with `mapped_column(..., ForeignKey-like)`.
+- Preserve normal SQLAlchemy relationship behavior by internally constructing a
+  valid SQLAlchemy foreign-key target column.
+- Update foreign-key contract extraction to prefer `MetaTableForeignKey`
+  metadata over table fullname lookup.
+- Update registration to recursively resolve and register target model classes
+  discovered from `MetaTableForeignKey`.
+- Add cycle detection for recursive registration.
+- Ensure recursive registration does not pass child namespace, identifier,
+  description, hash namespace, or extra hash components to parent models.
+- Resolve target `MetaTable.uid` from the target model's returned or cached
+  `MetaTable`.
+- Keep raw `target_meta_table_uid_by_fullname` support as a compatibility path,
+  but remove it from primary public examples.
+- Make missing target registration, missing target column, unresolved target UID,
+  and registration cycles fail with direct errors.
+- Add tests showing parent registration is invoked before child registration.
+- Add tests showing child FK contracts contain the parent `MetaTable.uid`.
+- Add tests showing parent table physical-name mutation after registration does
+  not break child FK contract generation.
+- Add tests showing `MetaTableForeignKey(Account, column="uid")` works without
+  the caller touching `Account.__table__.fullname` or `Account.__table__.c.uid`.
+- Add tests for deterministic FK name derivation when `name` is omitted.
+- Add tests for explicit `name=...` passthrough.
+- Add tests for cycle detection.
+- Add tests preserving the low-level explicit target UID mapping compatibility
+  path.
+- Update `docs/knowledge/meta_tables/sqlalchemy.md` to teach
+  `MetaTableForeignKey(Account, column="uid", ...)`.
+- Update `docs/tutorial/working_with_meta_tables.md` with a complete parent and
+  child registration example.
+- Update `docs/tutorial/creating_a_simple_data_node.md` anywhere it shows
+  MetaTable-backed FK storage.
+- Update `agent_scaffold/skills/data_publishing/meta_tables/SKILL.md` to state
+  that platform-managed FKs must use `MetaTableForeignKey(TargetModel, ...)`.
+- Update `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md` to point
+  storage-schema FK work to the MetaTable skill and use the same language when a
+  DataNode example includes MetaTable storage.
+- Remove public skill/tutorial examples that use
+  `ForeignKey(f"{Account.__table__.fullname}.uid")`.
+- Remove public skill/tutorial examples that use
+  `ForeignKey(Account.__table__.c.uid)`.
+- Document that FK declarations should include table descriptions through
+  `__metatable_description__` on every participating table.
+- Document that `MetaTable.uid` is the platform FK target identifier and that
+  `storage_hash`, data source UID, table fullname, and physical table name must
+  not be used as public FK identifiers.

@@ -303,7 +303,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"{Account.__table__.fullname}.uid",
+            Account.__table__.c.uid,
             ondelete="RESTRICT",
         ),
         nullable=False,

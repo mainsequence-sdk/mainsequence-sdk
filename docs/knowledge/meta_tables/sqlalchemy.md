@@ -121,6 +121,11 @@ backend contract. In normal platform-managed use, register parent tables first;
 the SDK inspects the SQLAlchemy foreign key and resolves the target MetaTable
 from the same data source and logical `storage_hash`.
 
+Use parent column objects in `ForeignKey(...)`, not mutable table fullname
+strings. Registration may rebind `Account.__table__.name` to the backend
+physical table name; a column-object FK still points to the parent table object
+and lets the SDK resolve the stable logical identity.
+
 ```python
 class Asset(PlatformManagedMetaTable, Base):
     __table_args__ = (
@@ -135,7 +140,7 @@ class Asset(PlatformManagedMetaTable, Base):
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"{Account.__table__.fullname}.uid",
+            Account.__table__.c.uid,
             ondelete="RESTRICT",
         ),
         nullable=False,
@@ -207,7 +212,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"{Account.__table__.fullname}.uid",
+            Account.__table__.c.uid,
             ondelete="RESTRICT",
         ),
         nullable=False,
@@ -286,7 +291,7 @@ The SDK intentionally fails early for ambiguous metadata:
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions
-- foreign-key targets must be registered first, or supplied explicitly through `target_meta_tables` or `target_meta_table_uid_by_fullname` for edge cases
+- foreign-key targets must be registered first, or supplied explicitly through `target_meta_tables` for edge cases
 - unsupported SQLAlchemy column types raise before registration
 
 This is deliberate. TS Manager should receive a deterministic table contract,

@@ -157,7 +157,7 @@ class PlatformManagedMetaTable:
     """
 
     __metatable_use_configured_table_name__ = True
-    __metatable__: ClassVar[Any | None] = None
+    __metatable__: ClassVar[MetaTable | None] = None
     __metatable_uid__: ClassVar[str | None] = None
     __metatable_data_source_uid__: ClassVar[str | None] = None
     __metatable_storage_hash__: ClassVar[str | None] = None
@@ -555,12 +555,17 @@ def table_contract_from_sqlalchemy_model(
     *,
     table_model_module: str | None = None,
     table_model_qualname: str | None = None,
+    target_meta_tables: Mapping[Any, Any] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     include_physical_table_name: bool = True,
 ) -> MetaTableContract:
     table = _resolve_table(model_or_table)
     _resolve_schema(table, schema=schema)
+    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
+        target_meta_tables=target_meta_tables,
+        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+    )
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=table_model_module,
@@ -591,7 +596,7 @@ def table_contract_from_sqlalchemy_model(
         foreign_keys=[
             _foreign_key_contract(
                 foreign_key_constraint,
-                target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
+                target_meta_table_uid_by_fullname=resolved_targets,
             )
             for foreign_key_constraint in sorted(
                 _iter_foreign_key_constraints(table),
@@ -612,6 +617,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool = False,
     provisioning: Mapping[str, Any] | None = None,
+    target_meta_tables: Mapping[Any, Any] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
@@ -648,6 +654,10 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     resolved_storage_layout = _resolve_time_index_storage_layout(
         model_or_table,
         storage_layout=storage_layout,
+    )
+    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
+        target_meta_tables=target_meta_tables,
+        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
     )
 
     columns = _iter_columns(table)
@@ -694,7 +704,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     foreign_key_contracts = [
         _time_indexed_meta_table_foreign_key_contract(
             foreign_key_constraint,
-            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname or {},
+            target_meta_table_uid_by_fullname=resolved_targets,
         ).model_dump(mode="json", exclude_none=True)
         for foreign_key_constraint in sorted(
             _iter_foreign_key_constraints(table),
@@ -760,6 +770,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     open_for_everyone: bool = False,
     provisioning: Mapping[str, Any] | None = None,
     introspect: bool = False,
+    target_meta_tables: Mapping[Any, Any] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
@@ -778,6 +789,10 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     resolved_extra_hash_components = _resolve_extra_hash_components(
         model_or_table,
         extra_hash_components=extra_hash_components,
+    )
+    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
+        target_meta_tables=target_meta_tables,
+        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
     )
     expected_storage_hash = build_meta_table_storage_hash(
         namespace=resolved_namespace,
@@ -815,7 +830,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
 
     table_contract = table_contract_from_sqlalchemy_model(
         model_or_table,
-        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+        target_meta_table_uid_by_fullname=resolved_targets,
         schema=resolved_schema,
         include_physical_table_name=False,
     )
@@ -850,6 +865,7 @@ def external_registered_registration_request_from_sqlalchemy_model(
     protect_from_deletion: bool = False,
     open_for_everyone: bool = False,
     introspect: bool = True,
+    target_meta_tables: Mapping[Any, Any] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
@@ -867,6 +883,10 @@ def external_registered_registration_request_from_sqlalchemy_model(
     resolved_extra_hash_components = _resolve_extra_hash_components(
         model_or_table,
         extra_hash_components=extra_hash_components,
+    )
+    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
+        target_meta_tables=target_meta_tables,
+        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
     )
     resolved_storage_hash = storage_hash or build_meta_table_storage_hash(
         namespace=resolved_namespace,
@@ -889,7 +909,7 @@ def external_registered_registration_request_from_sqlalchemy_model(
         introspect=introspect,
         table_contract=table_contract_from_sqlalchemy_model(
             model_or_table,
-            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+            target_meta_table_uid_by_fullname=resolved_targets,
             schema=resolved_schema,
         ),
     )

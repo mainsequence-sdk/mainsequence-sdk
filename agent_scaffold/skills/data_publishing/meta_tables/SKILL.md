@@ -152,7 +152,26 @@ Do not add a `MAINSEQUENCE_META_TABLE_REGISTER` toggle in registration examples.
 
 Foreign-key contracts reference the target `MetaTable` UID.
 
-For `PlatformManagedMetaTable`, register parent tables first and then register child tables normally. The SDK inspects SQLAlchemy foreign-key constraints and resolves each target `MetaTable` by looking up the already registered table in the same data source, schema, and physical table name.
+For `PlatformManagedMetaTable`, register parent tables first and then register
+child tables normally. Define SQLAlchemy foreign keys with parent column
+objects, not stringified table fullnames, because platform registration may
+rebind `Parent.__table__.name` to the backend physical table name.
+
+Use this pattern:
+
+```python
+account_uid: Mapped[uuid.UUID] = mapped_column(
+    Uuid,
+    ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT"),
+    nullable=False,
+)
+```
+
+Do not use `ForeignKey(f"{Account.__table__.fullname}.uid")`.
+
+The SDK inspects SQLAlchemy foreign-key constraints and resolves each target
+`MetaTable` by looking up the already registered parent table by stable logical
+storage identity in the same data source.
 
 Example registration order:
 
@@ -163,18 +182,27 @@ asset_meta_table = Asset.register(...)
 
 The child registration will fail if the parent table has not already been registered, because there is no target `MetaTable.uid` for the backend FK contract.
 
-Do not pass `target_meta_tables` or `target_meta_table_uid_by_fullname` in the normal platform-managed path. Use explicit FK target mappings only for edge cases where automatic lookup is ambiguous or impossible.
+Do not pass `target_meta_tables` in the normal platform-managed path. Use
+explicit FK target mappings only for edge cases where automatic lookup is
+ambiguous or impossible. When you need an explicit mapping, key it by the parent
+model class, not a mutable table fullname:
 
-For `external_registered`, there is no platform-managed parent lookup through the model class. Register the parent first, then build the child registration request with the parent UID mapped by target table fullname:
+```python
+asset_meta_table = Asset.register(
+    target_meta_tables={Account: account_meta_table},
+)
+```
+
+For `external_registered`, there is no platform-managed parent lookup. Register
+the parent first, then build the child registration request with
+`target_meta_tables={Account: account_meta_table}`:
 
 ```python
 account_meta_table = MetaTable.register(account_request)
 asset_request = external_registered_registration_request_from_sqlalchemy_model(
     Asset,
     data_source_uid=data_source_uid,
-    target_meta_table_uid_by_fullname={
-        Account.__table__.fullname: account_meta_table.uid,
-    },
+    target_meta_tables={Account: account_meta_table},
 )
 asset_meta_table = MetaTable.register(asset_request)
 ```

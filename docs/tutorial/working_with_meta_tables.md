@@ -149,6 +149,10 @@ contract. In normal platform-managed use, register parent tables first; the SDK
 then inspects the SQLAlchemy foreign key and resolves the target MetaTable from
 the same data source and logical storage identity.
 
+Use the parent column object in the SQLAlchemy `ForeignKey`. Do not build the
+target from `Account.__table__.fullname`; registration can rebind that fullname
+to the backend physical table name.
+
 ```python
 from sqlalchemy import ForeignKey
 
@@ -167,7 +171,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         ForeignKey(
-            f"{Account.__table__.fullname}.uid",
+            Account.__table__.c.uid,
             ondelete="RESTRICT",
         ),
         nullable=False,

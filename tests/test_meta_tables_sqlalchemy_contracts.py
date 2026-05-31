@@ -322,6 +322,7 @@ def test_sqlalchemy_contract_includes_indexes_and_foreign_keys():
     account_table_name = metatable_tablename(namespace="example.assets", identifier="Account")
     account_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
     account_table = FakeTable(account_table_name, columns=[account_uid])
+    Account = _model_class("Account", account_table)
 
     asset_table_name = metatable_tablename(namespace="example.assets", identifier="Asset")
     asset_uid = FakeColumn("uid", Uuid(), nullable=False, primary_key=True)
@@ -348,8 +349,8 @@ def test_sqlalchemy_contract_includes_indexes_and_foreign_keys():
 
     contract = table_contract_from_sqlalchemy_model(
         Asset,
-        target_meta_table_uid_by_fullname={
-            account_table.fullname: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        target_meta_tables={
+            Account: SimpleNamespace(uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
         },
     )
 
@@ -1007,7 +1008,7 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            ForeignKey(f"{Account.__table__.fullname}.uid", ondelete="RESTRICT"),
+            ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -1018,8 +1019,8 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
     request = platform_managed_registration_request_from_sqlalchemy_model(
         Asset,
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        target_meta_table_uid_by_fullname={
-            Account.__table__.fullname: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        target_meta_tables={
+            Account: SimpleNamespace(uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
         },
     )
 
@@ -1125,7 +1126,7 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
             ForeignKey(
-                f"{Account.__table__.fullname}.uid",
+                Account.__table__.c.uid,
                 name="asset_account_uid_fkey",
                 ondelete="RESTRICT",
             ),
@@ -1185,7 +1186,7 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         )
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            ForeignKey(f"{Account.__table__.fullname}.uid", ondelete="RESTRICT"),
+            ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT"),
             nullable=False,
         )
         unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -1200,8 +1201,8 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
 
     request = AccountHoldings.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        target_meta_table_uid_by_fullname={
-            Account.__table__.fullname: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        target_meta_tables={
+            Account: SimpleNamespace(uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"),
         },
     )
 
