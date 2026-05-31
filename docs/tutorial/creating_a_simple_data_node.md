@@ -41,7 +41,7 @@ from typing import Dict, Union
 import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
-from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client import MetaTable
@@ -51,6 +51,7 @@ from mainsequence.meta_tables import (
     DataNodeConfiguration,
 )
 from mainsequence.meta_tables import (
+    MetaTableForeignKey,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -66,6 +67,7 @@ class Base(DeclarativeBase):
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
+    __metatable_description__ = "Daily random number observations produced by the tutorial node."
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -80,6 +82,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
+    __metatable_description__ = "Daily random additions produced from the tutorial dependency node."
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -180,9 +183,11 @@ deterministic storage disambiguation only. Do not put labels, descriptions,
 runtime parameters, backend UIDs, data-source UIDs, updater scope, or
 test-specific values in this mapping.
 
-MetaTable foreign keys require a registered MetaTable target, so this first
-tutorial keeps the runnable example focused on a single table. For the FK
-authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
+MetaTable foreign keys target a registered `MetaTable.uid`. For platform-managed
+storage, declare the FK with `MetaTableForeignKey(TargetModel, column=...)` and
+let `register()` recursively register unresolved parent targets. This first
+tutorial keeps the runnable example focused on a single table; the FK authoring
+surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
@@ -281,6 +286,7 @@ publishes account/security observations:
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
+    __metatable_description__ = "Tutorial account rows used as the parent for holdings storage."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -292,6 +298,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
+    __metatable_description__ = "Time-indexed tutorial account holdings by account and unique identifier."
     __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
@@ -302,10 +309,7 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            Account.__table__.c.uid,
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(
@@ -436,7 +440,6 @@ def main():
     AccountHoldingsStorage.register(
         description="Tutorial DataNode storage table for account holdings.",
         labels=["tutorial", "data-node"],
-        target_meta_tables={Account: account_meta_table},
     )
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     upsert_account(

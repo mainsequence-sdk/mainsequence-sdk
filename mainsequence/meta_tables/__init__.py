@@ -9,6 +9,7 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
+    "MetaTableForeignKey": (".sqlalchemy_contracts", "MetaTableForeignKey"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),

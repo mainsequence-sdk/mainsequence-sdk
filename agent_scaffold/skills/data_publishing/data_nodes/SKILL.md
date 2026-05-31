@@ -353,7 +353,16 @@ Do not construct dependency graphs dynamically inside `update()`.
 ### 8. Foreign Keys Belong To The Storage Contract
 
 For new code, model foreign keys on the `PlatformTimeIndexMetaData` storage
-class or route the storage-contract work to the MetaTable skill.
+class or route the storage-contract work to the MetaTable skill. When a
+DataNode storage table needs a platform-managed FK, use
+`MetaTableForeignKey(TargetModel, column=...)` on the storage class. Do not use
+`ForeignKey(Target.__table__.c.uid)`, table fullnames, or explicit target UID
+maps in DataNode examples.
+
+Registration of the storage class follows the MetaTable lifecycle:
+`register()` recursively registers unresolved FK target model classes, uses the
+local process registry keyed by `storage_hash`, and writes the target
+`MetaTable.uid` into the FK contract.
 
 Do not add DataNode configuration fields just to mutate storage metadata.
 

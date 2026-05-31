@@ -399,7 +399,13 @@ storage model and exposed through the MetaTable time-indexed profile/contract.
 
 When a DataNode source table should reference a registered MetaTable, declare the
 relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are
-part of the MetaTable contract, not `DataNodeConfiguration`.
+part of the MetaTable contract, not `DataNodeConfiguration`. For
+platform-managed storage, use `MetaTableForeignKey(TargetModel, column=...)`;
+`register()` recursively registers unresolved target model classes, reuses the
+local process registry keyed by `storage_hash`, and writes the target
+`MetaTable.uid` into the FK contract. Do not use table fullnames,
+`Target.__table__.c.<column>`, or explicit target UID maps for platform-managed
+DataNode storage FKs.
 
 Log useful operational facts:
 

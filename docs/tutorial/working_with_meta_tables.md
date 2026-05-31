@@ -69,7 +69,7 @@ import uuid
 from sqlalchemy import Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
 
 
 NAMESPACE = "sdk-examples"
@@ -94,6 +94,7 @@ class Account(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = "Account"
+    __metatable_description__ = "Tutorial accounts used as parent rows for governed related tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -145,18 +146,16 @@ table later.
 ## 5. Add A Simple Related Table
 
 Foreign keys reference a registered target `MetaTable` by UID in the backend
-contract. In normal platform-managed use, register parent tables first; the SDK
-then inspects the SQLAlchemy foreign key and resolves the target MetaTable from
-the same data source and logical storage identity.
+contract. For platform-managed tables, declare the target model class with
+`MetaTableForeignKey(TargetModel, column=...)`.
 
-Use the parent column object in the SQLAlchemy `ForeignKey`. Do not build the
-target from `Account.__table__.fullname`; registration can rebind that fullname
-to the backend physical table name.
+Do not build FK targets from SQLAlchemy table fullnames or parent table column
+objects. Registration can rebind `Account.__table__.name` to the backend
+physical table name. `MetaTableForeignKey` keeps the target model and target
+column as SDK metadata so `register()` can recursively register parent targets
+and resolve the target `MetaTable.uid`.
 
 ```python
-from sqlalchemy import ForeignKey
-
-
 class AccountLimit(PlatformManagedMetaTable, Base):
     __table_args__ = (
         Index(None, "account_uid"),
@@ -165,22 +164,22 @@ class AccountLimit(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = "AccountLimit"
+    __metatable_description__ = "Account limit records keyed to the owning tutorial account."
     __metatable_extra_hash_components__ = {"storage_name": "account_limit"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            Account.__table__.c.uid,
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     limit_type: Mapped[str] = mapped_column(String(64), nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 ```
 
-Register the child after the parent is registered:
+Register the child normally. If the parent has not been registered in this
+process, `register()` registers it first and reuses the local `storage_hash`
+registry if another relationship has already registered the same table:
 
 ```python
 limit_meta_table = AccountLimit.register(

@@ -152,46 +152,37 @@ Do not add a `MAINSEQUENCE_META_TABLE_REGISTER` toggle in registration examples.
 
 Foreign-key contracts reference the target `MetaTable` UID.
 
-For `PlatformManagedMetaTable`, register parent tables first and then register
-child tables normally. Define SQLAlchemy foreign keys with parent column
-objects, not stringified table fullnames, because platform registration may
-rebind `Parent.__table__.name` to the backend physical table name.
+For `PlatformManagedMetaTable`, define foreign keys with
+`MetaTableForeignKey(TargetModel, column=...)`. Do not write raw SQLAlchemy
+table fullnames, `Parent.__table__.c.<column>` targets, or explicit target UID
+maps in the platform-managed path. Registration is the lifecycle path:
+`register()` recursively registers unresolved target model classes, stores each
+returned `MetaTable` in a local process registry keyed by `storage_hash`, and
+uses the target `MetaTable.uid` in the child FK contract.
 
 Use this pattern:
 
 ```python
 account_uid: Mapped[uuid.UUID] = mapped_column(
     Uuid,
-    ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT"),
+    MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
     nullable=False,
 )
 ```
 
-Do not use `ForeignKey(f"{Account.__table__.fullname}.uid")`.
-
-The SDK inspects SQLAlchemy foreign-key constraints and resolves each target
-`MetaTable` by looking up the already registered parent table by stable logical
-storage identity in the same data source.
+Every participating table must include `__metatable_description__` describing
+both the schema and the table's intention.
 
 Example registration order:
 
 ```python
-account_meta_table = Account.register(...)
 asset_meta_table = Asset.register(...)
 ```
 
-The child registration will fail if the parent table has not already been registered, because there is no target `MetaTable.uid` for the backend FK contract.
-
-Do not pass `target_meta_tables` in the normal platform-managed path. Use
-explicit FK target mappings only for edge cases where automatic lookup is
-ambiguous or impossible. When you need an explicit mapping, key it by the parent
-model class, not a mutable table fullname:
-
-```python
-asset_meta_table = Asset.register(
-    target_meta_tables={Account: account_meta_table},
-)
-```
+The child registration registers `Account` first if it has not already been
+registered in the current process. The local registry prevents duplicate backend
+registration attempts for the same `storage_hash` and raises a clear error for
+recursive registration cycles.
 
 For `external_registered`, there is no platform-managed parent lookup. Register
 the parent first, then build the child registration request with

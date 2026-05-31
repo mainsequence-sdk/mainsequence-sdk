@@ -13,10 +13,11 @@ Pydantic transport objects for the backend.
 import datetime
 import uuid
 
-from sqlalchemy import DateTime, Float, ForeignKey, Index, MetaData, String, Uuid
+from sqlalchemy import DateTime, Float, Index, MetaData, String, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import (
+    MetaTableForeignKey,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -50,6 +51,7 @@ class Account(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Account"
+    __metatable_description__ = "Accounts used as the parent entity for asset and holdings tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -70,6 +72,7 @@ as several one-index time-series tables with the same column types.
 class DailyReturns(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "DailyReturns"
+    __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
     __metatable_extra_hash_components__ = {"storage_name": "daily_returns"}
 ```
 
@@ -117,14 +120,14 @@ against the real table.
 ## Foreign Keys
 
 Foreign keys must reference registered target MetaTables by platform UID in the
-backend contract. In normal platform-managed use, register parent tables first;
-the SDK inspects the SQLAlchemy foreign key and resolves the target MetaTable
-from the same data source and logical `storage_hash`.
+backend contract. For platform-managed tables, declare the target model class
+with `MetaTableForeignKey(TargetModel, column=...)`.
 
-Use parent column objects in `ForeignKey(...)`, not mutable table fullname
-strings. Registration may rebind `Account.__table__.name` to the backend
-physical table name; a column-object FK still points to the parent table object
-and lets the SDK resolve the stable logical identity.
+Do not use SQLAlchemy table fullnames or parent table column objects as the
+public SDK declaration. Registration may rebind `Account.__table__.name` to the
+backend physical table name. `MetaTableForeignKey` stores the target model class
+and target column as SDK metadata, then `register()` recursively registers
+parent targets and resolves the backend `MetaTable.uid`.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
@@ -135,24 +138,22 @@ class Asset(PlatformManagedMetaTable, Base):
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Asset"
+    __metatable_description__ = "Assets associated with an owning account."
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            Account.__table__.c.uid,
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 ```
 
-After registering `Account`, build or register `Asset` normally:
+Register `Asset` normally. The SDK registers unresolved parent targets first in
+the same process and keeps a local `storage_hash -> MetaTable` registry so the
+same table is not registered twice during recursive FK registration:
 
 ```python
-asset_request = Asset.build_registration_request()
-
 asset_meta_table = Asset.register()
 ```
 
@@ -202,6 +203,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "AccountHoldings"
+    __metatable_description__ = "Time-indexed account holdings by account and unique instrument identifier."
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
 
@@ -211,10 +213,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(
-            Account.__table__.c.uid,
-            ondelete="RESTRICT",
-        ),
+        MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -230,10 +229,7 @@ assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
     "unique_identifier",
 ]
 
-account_meta_table = Account.register()
-holdings_storage = AccountHoldings.register(
-    target_meta_tables={Account: account_meta_table},
-)
+holdings_storage = AccountHoldings.register()
 ```
 
 Validation is intentionally strict:
@@ -291,7 +287,8 @@ The SDK intentionally fails early for ambiguous metadata:
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions
-- foreign-key targets must be registered first, or supplied explicitly through `target_meta_tables` for edge cases
+- platform-managed foreign keys must use `MetaTableForeignKey(TargetModel, column=...)`
+- `register()` recursively registers `MetaTableForeignKey` target models and resolves `MetaTable.uid`
 - unsupported SQLAlchemy column types raise before registration
 
 This is deliberate. TS Manager should receive a deterministic table contract,
@@ -329,6 +326,7 @@ Use:
 class Asset(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "Asset"
+    __metatable_description__ = "Externally managed asset table registered as a governed MetaTable."
 ```
 
 Do not put `data_source_uid` inside `table_contract`. It belongs to the

@@ -2,7 +2,7 @@
 
 Date: 2026-05-31
 
-Status: Proposed
+Status: Accepted
 
 ## Context
 
@@ -129,9 +129,48 @@ If a target model is already bound, the SDK should use its cached
 registration method. If the target cannot be registered or resolved, child
 registration must fail before sending a malformed contract.
 
-Circular dependencies are not part of this decision. The first implementation
-should detect registration cycles and raise a clear error instead of attempting
-partial two-phase registration.
+## Local Process Registration Registry
+
+Recursive registration must use a process-local registry keyed by
+`storage_hash`.
+
+The registry shape should be conceptually:
+
+```python
+{
+    storage_hash: RegistrationState(
+        status="in_progress" | "registered",
+        model=TargetModel,
+        meta_table=MetaTable | None,
+        stack=[...],
+    )
+}
+```
+
+Before `register()` sends a backend registration request, it must compute the
+model's `storage_hash` and check the local registry:
+
+- if the storage hash is already `registered`, reuse the cached `MetaTable`,
+  bind the current authoring model to it if needed, and return it
+- if the storage hash is `in_progress` in the current recursive stack, raise a
+  clear cycle error with the model/storage path
+- if the storage hash is absent, insert an `in_progress` entry, recursively
+  resolve/register FK target models, register the current model through the
+  backend get-or-create path, then replace the entry with the returned
+  `MetaTable`
+
+This registry prevents duplicate registration work inside one Python process.
+It also gives recursive registration a precise place to distinguish "already
+registered locally" from "currently being registered and therefore cyclic".
+
+The registry is only a local optimization and recursion guard. It is not a
+persistent cache and must not replace the backend's get-or-create semantics.
+Failed registrations must remove their `in_progress` entry so later attempts are
+not poisoned by stale state.
+
+Circular dependencies are not part of this decision. The implementation should
+detect registration cycles through the local registry and raise a clear error
+instead of attempting partial two-phase registration.
 
 ## Contract Extraction
 
@@ -163,14 +202,12 @@ PostgreSQL-safe contract name after the local column is attached to a table. The
 derived name must be stable across processes and independent of backend physical
 table binding.
 
-## Existing Low-Level Paths
+## Legacy Raw Target Paths
 
-The SDK may keep low-level raw SQLAlchemy foreign-key support and explicit target
-UID maps for compatibility, especially for external-registered tables and old
-callers.
-
-Those paths are not the preferred public API for platform-managed MetaTables and
-must not be used in skills or tutorials.
+Platform-managed MetaTable foreign-key registration should not keep a second raw
+target path based on SQLAlchemy table fullnames or caller-supplied target UID
+maps. The SDK-owned path is `MetaTableForeignKey(TargetModel, column=...)`, and
+registration resolves the target `MetaTable.uid` from the target model class.
 
 ## Non-Goals
 
@@ -186,57 +223,65 @@ detected and rejected until a deliberate two-phase contract flow exists.
 
 ## Implementation Tasks
 
-- Add `MetaTableForeignKey` to `mainsequence.meta_tables`.
-- Type the helper target as a platform-managed MetaTable authoring model class,
+- [x] Add `MetaTableForeignKey` to `mainsequence.meta_tables`.
+- [x] Type the helper target as a platform-managed MetaTable authoring model class,
   not as a backend `MetaTable` object.
-- Have the helper validate that `column` exists on the target model table at
+- [x] Have the helper validate that `column` exists on the target model table at
   declaration or contract-build time with a clear error.
-- Have the helper attach SDK metadata to the SQLAlchemy FK object or constraint:
+- [x] Have the helper attach SDK metadata to the SQLAlchemy FK object or constraint:
   target model class, target column name, and any SDK-resolved naming metadata.
-- Keep the returned object compatible with `mapped_column(..., ForeignKey-like)`.
-- Preserve normal SQLAlchemy relationship behavior by internally constructing a
+- [x] Keep the returned object compatible with `mapped_column(..., ForeignKey-like)`.
+- [x] Preserve normal SQLAlchemy relationship behavior by internally constructing a
   valid SQLAlchemy foreign-key target column.
-- Update foreign-key contract extraction to prefer `MetaTableForeignKey`
+- [x] Update foreign-key contract extraction to prefer `MetaTableForeignKey`
   metadata over table fullname lookup.
-- Update registration to recursively resolve and register target model classes
+- [x] Update registration to recursively resolve and register target model classes
   discovered from `MetaTableForeignKey`.
-- Add cycle detection for recursive registration.
-- Ensure recursive registration does not pass child namespace, identifier,
+- [x] Add a process-local registration registry keyed by `storage_hash`.
+- [x] Have `register()` check the local registry before calling backend
+  registration.
+- [x] Reuse locally registered `MetaTable` objects for repeated registrations of
+  the same storage hash.
+- [x] Track `in_progress` registration states in the local registry.
+- [x] Remove failed `in_progress` entries so failed registrations do not poison
+  later attempts.
+- [x] Add cycle detection for recursive registration using the local registry.
+- [x] Ensure recursive registration does not pass child namespace, identifier,
   description, hash namespace, or extra hash components to parent models.
-- Resolve target `MetaTable.uid` from the target model's returned or cached
+- [x] Resolve target `MetaTable.uid` from the target model's returned or cached
   `MetaTable`.
-- Keep raw `target_meta_table_uid_by_fullname` support as a compatibility path,
-  but remove it from primary public examples.
-- Make missing target registration, missing target column, unresolved target UID,
+- [x] Remove raw `target_meta_table_uid_by_fullname` from the platform-managed
+  FK registration path.
+- [x] Make missing target registration, missing target column, unresolved target UID,
   and registration cycles fail with direct errors.
-- Add tests showing parent registration is invoked before child registration.
-- Add tests showing child FK contracts contain the parent `MetaTable.uid`.
-- Add tests showing parent table physical-name mutation after registration does
+- [x] Add tests showing parent registration is invoked before child registration.
+- [x] Add tests showing child FK contracts contain the parent `MetaTable.uid`.
+- [x] Add tests showing parent table physical-name mutation after registration does
   not break child FK contract generation.
-- Add tests showing `MetaTableForeignKey(Account, column="uid")` works without
+- [x] Add tests showing `MetaTableForeignKey(Account, column="uid")` works without
   the caller touching `Account.__table__.fullname` or `Account.__table__.c.uid`.
-- Add tests for deterministic FK name derivation when `name` is omitted.
-- Add tests for explicit `name=...` passthrough.
-- Add tests for cycle detection.
-- Add tests preserving the low-level explicit target UID mapping compatibility
-  path.
-- Update `docs/knowledge/meta_tables/sqlalchemy.md` to teach
+- [x] Add tests for deterministic FK name derivation when `name` is omitted.
+- [x] Add tests for explicit `name=...` passthrough.
+- [x] Add tests for cycle detection.
+- [x] Add tests proving platform-managed FK registration does not require an
+  explicit target UID mapping.
+- [x] Update `docs/knowledge/meta_tables/sqlalchemy.md` to teach
   `MetaTableForeignKey(Account, column="uid", ...)`.
-- Update `docs/tutorial/working_with_meta_tables.md` with a complete parent and
+- [x] Update `docs/tutorial/working_with_meta_tables.md` with a complete parent and
   child registration example.
-- Update `docs/tutorial/creating_a_simple_data_node.md` anywhere it shows
+- [x] Update `docs/tutorial/creating_a_simple_data_node.md` anywhere it shows
   MetaTable-backed FK storage.
-- Update `agent_scaffold/skills/data_publishing/meta_tables/SKILL.md` to state
+- [x] Update `agent_scaffold/skills/data_publishing/meta_tables/SKILL.md` to state
   that platform-managed FKs must use `MetaTableForeignKey(TargetModel, ...)`.
-- Update `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md` to point
+- [x] Update `agent_scaffold/skills/data_publishing/data_nodes/SKILL.md` to point
   storage-schema FK work to the MetaTable skill and use the same language when a
   DataNode example includes MetaTable storage.
-- Remove public skill/tutorial examples that use
+- [x] Remove public skill/tutorial examples that use
   `ForeignKey(f"{Account.__table__.fullname}.uid")`.
-- Remove public skill/tutorial examples that use
+- [x] Remove public skill/tutorial examples that use
   `ForeignKey(Account.__table__.c.uid)`.
-- Document that FK declarations should include table descriptions through
+- [x] Document that FK declarations should include table descriptions through
   `__metatable_description__` on every participating table.
-- Document that `MetaTable.uid` is the platform FK target identifier and that
+- [x] Document that `MetaTable.uid` is the platform FK target identifier and that
   `storage_hash`, data source UID, table fullname, and physical table name must
   not be used as public FK identifiers.
