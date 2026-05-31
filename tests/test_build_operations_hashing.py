@@ -189,9 +189,9 @@ def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkey
     class StorageC(PlatformTimeIndexMetaData):
         pass
 
-    StorageA.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
-    StorageB.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
-    StorageC.bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-c"))
+    StorageA._bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
+    StorageB._bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-a"))
+    StorageC._bind_meta_table(TimeIndexMetaData.model_construct(uid="storage-uid-c"))
 
     class NodeConfig(BaseModel):
         dependency_storage: type[PlatformTimeIndexMetaData]

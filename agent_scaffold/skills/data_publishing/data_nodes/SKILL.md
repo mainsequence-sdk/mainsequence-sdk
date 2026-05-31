@@ -108,6 +108,10 @@ The following are storage-contract decisions:
 - foreign keys
 - table description and labels
 
+Every storage class must include `__metatable_description__`. The description
+should explain the table's intention, row grain, and downstream use, not only
+list columns or schema mechanics.
+
 Do not put those concerns in `DataNodeConfiguration`.
 
 Minimal pattern:
@@ -128,6 +132,10 @@ class Base(DeclarativeBase):
 class PricesTable(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "<domain_namespace>"
     __metatable_identifier__ = "<table_identifier>"
+    __metatable_description__ = (
+        "Daily close prices keyed by asset unique identifier for portfolio and "
+        "risk analytics."
+    )
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "unique_identifier"]
 
@@ -319,6 +327,7 @@ Do not put schema or published table metadata on the DataNode configuration.
 When reviewing an existing DataNode, look for:
 
 - output storage contract hidden in `DataNodeConfiguration`
+- missing `__metatable_description__` on the storage table
 - dependency storage table passed as an ad hoc constructor argument
 - schema or published table metadata hidden in DataNode configuration
 - `update_only`, `runtime_only`, or `ignore_from_storage_hash`
@@ -339,6 +348,7 @@ Do not claim success until you have checked:
 
 - the relevant docs were read first
 - storage is a registered `PlatformTimeIndexMetaData` class
+- storage has an intention-rich `__metatable_description__`
 - the DataNode constructor requires `storage_table`
 - dependency storage-table references live in config and are registered
 - config fields are updater-scoped by default

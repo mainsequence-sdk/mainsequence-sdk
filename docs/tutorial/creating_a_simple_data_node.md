@@ -169,7 +169,8 @@ node. The `DataNode` constructor receives that registered model class as
 The SQLAlchemy model is the first-class schema declaration for the table:
 `time_index` is the index column and `random_number` is the value column. The
 `PlatformTimeIndexMetaData.register(...)` call sends the canonical time-indexed
-table contract to the backend and binds the returned MetaTable UID to the class.
+table contract to the backend, binds the returned MetaTable UID to the class,
+and retargets the SQLAlchemy table to the backend-owned physical table name.
 The DataFrame returned by `update()` must match that table contract.
 
 MetaTable foreign keys require a registered MetaTable target, so this first
@@ -183,7 +184,8 @@ authoring surface, see [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
     identifier. It gives each project a stable table identity while keeping all
     tutorial tables in the canonical `mainsequence.examples` namespace.
     The explicit `storage_name` hash component gives each storage model its own
-    physical table name even when two storage models have the same column shape.
+    logical storage identity even when two storage models have the same column
+    shape. TS Manager still owns the physical table name.
 
     `identifier` is published metadata, not hash identity. That means you can
     later repoint a published identifier to a different backing table

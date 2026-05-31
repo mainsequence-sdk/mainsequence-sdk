@@ -38,10 +38,6 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "register_external_sqlalchemy_model",
     ),
-    "register_platform_managed_sqlalchemy_model": (
-        ".sqlalchemy_contracts",
-        "register_platform_managed_sqlalchemy_model",
-    ),
     "slugify_identifier": (".hashing", "slugify_identifier"),
     "table_contract_from_sqlalchemy_model": (
         ".sqlalchemy_contracts",

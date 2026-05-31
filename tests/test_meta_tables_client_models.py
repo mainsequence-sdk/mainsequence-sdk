@@ -180,6 +180,52 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     }
 
 
+def test_meta_table_get_schema_graph_requests_incoming_edges(monkeypatch):
+    captured = {}
+    graph_payload = {
+        "root_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "depth": 2,
+        "include_incoming": True,
+        "nodes": [],
+        "edges": [
+            {
+                "name": "fk_account_asset",
+                "source_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                "target_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "source_columns": ["asset_uid"],
+                "target_columns": ["uid"],
+                "on_delete": "restrict",
+                "relationship_type": "meta_table_to_meta_table",
+            }
+        ],
+    }
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(graph_payload)
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    table = meta_table_models.MetaTable(**_meta_table_response())
+    result = table.get_schema_graph(depth=2, include_incoming=True, timeout=15)
+
+    assert result == graph_payload
+    assert captured["r_type"] == "GET"
+    assert captured["url"].endswith(
+        "/ts_manager/meta_table/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/schema-graph/"
+    )
+    assert captured["payload"]["params"] == {
+        "depth": 2,
+        "include_incoming": True,
+    }
+    assert captured["time_out"] == 15
+
+
 def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
     operation = build_operation(
         operation="select",

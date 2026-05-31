@@ -58,7 +58,7 @@ def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMeta
     class RuntimeStorageTable(PlatformTimeIndexMetaData):
         pass
 
-    RuntimeStorageTable.bind_meta_table(meta_table)
+    RuntimeStorageTable._bind_meta_table(meta_table)
     return RuntimeStorageTable
 
 

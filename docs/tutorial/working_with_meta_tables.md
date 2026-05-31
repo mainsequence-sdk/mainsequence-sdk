@@ -52,8 +52,9 @@ In this mode:
 - the application does not need direct DDL credentials
 - table permissions and governed execution go through the platform
 
-For backend-managed tables, the physical table name must be the SDK-derived
-storage hash. Use `PlatformManagedMetaTable` when the table name should be
+For backend-managed tables, the SDK-derived `storage_hash` is the logical table
+identity. TS Manager owns the physical table name and returns it during
+registration. Use `PlatformManagedMetaTable` when the logical identity should be
 derived from the SQLAlchemy table shape.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
@@ -102,10 +103,10 @@ class Account(PlatformManagedMetaTable, Base):
 
 The important pieces are:
 
-- `PlatformManagedMetaTable` derives `__tablename__` from storage-relevant configuration and table shape
-- `__table_args__` declares the SQLAlchemy table schema used for table-name derivation
+- `PlatformManagedMetaTable` derives the initial `__tablename__` / `storage_hash` from storage-relevant configuration and table shape
+- `__table_args__` declares the SQLAlchemy table schema used for storage-hash derivation
 - `NAMESPACE` is a plain logical grouping for these SDK examples
-- `__metatable_identifier__` is logical backend metadata and does not rotate the configured physical name
+- `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
 - `uid` is an application-level primary key, not a backend row id
 
 ## 4. Register The Parent MetaTable
@@ -127,7 +128,10 @@ to TS Manager. The backend does not import your SQLAlchemy model.
 The data source is resolved from the active Main Sequence project/session, like
 DataNode.
 
-The returned `uid` is the public platform reference for this table. Keep it in
+The returned `uid` is the public platform reference for this table. After
+registration, the SDK privately rebinds `Account.__table__.name` to the returned
+`physical_table_name`, so SQLAlchemy statements compile against the backend
+physical table. Keep the returned `uid` in
 configuration if another API, dashboard, or job needs to read or write the
 table later.
 
@@ -136,7 +140,7 @@ table later.
 Foreign keys reference a registered target `MetaTable` by UID in the backend
 contract. In normal platform-managed use, register parent tables first; the SDK
 then inspects the SQLAlchemy foreign key and resolves the target MetaTable from
-the same data source and physical table name.
+the same data source and logical storage identity.
 
 ```python
 from sqlalchemy import ForeignKey

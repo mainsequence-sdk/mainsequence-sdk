@@ -386,6 +386,11 @@ For production nodes, define the table contract on the registered
 - foreign keys
 - table identifier, namespace, labels, and description
 
+Declare durable table-level discovery text with `__metatable_description__`.
+The description should explain the table's intention, row grain, and analytical
+use, not only list its columns. Column-level descriptions still belong in
+`mapped_column(info={"description": ...})`.
+
 `DataNodeConfiguration` no longer accepts table metadata or output records.
 Stable output contracts are declared on the registered `PlatformTimeIndexMetaData`
 storage model and exposed through the MetaTable time-indexed profile/contract.
@@ -706,7 +711,6 @@ def test_my_node_smoke():
 
     with hash_namespace("pytest_my_node_smoke"):
         MyNodeStorage.register(
-            description="Test storage table for MyNode.",
             labels=["test", "data-node"],
         )
         node = MyNode(config=config, storage_table=MyNodeStorage)

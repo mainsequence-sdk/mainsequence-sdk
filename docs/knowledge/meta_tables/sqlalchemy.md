@@ -40,8 +40,9 @@ class Base(DeclarativeBase):
 ```
 
 For platform-managed tables, inherit `PlatformManagedMetaTable`. It derives the
-physical table name from storage-relevant configuration and the SQLAlchemy table
-shape, and exposes registration helpers on the model class.
+logical `storage_hash` from storage-relevant configuration and the SQLAlchemy
+table shape, and exposes registration helpers on the model class. The backend
+owns the physical table name.
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
@@ -55,9 +56,9 @@ class Account(PlatformManagedMetaTable, Base):
 ```
 
 The `__metatable_identifier__` attribute is logical backend metadata. It is
-sent during registration but does not contribute to the configured physical
-table name. The mapped columns, indexes, and foreign keys do contribute to the
-configured table name.
+sent during registration but does not contribute to the configured
+`storage_hash`. The mapped columns, indexes, and foreign keys do contribute to
+the configured storage identity.
 
 ## Register A Platform-Managed Table
 
@@ -71,7 +72,7 @@ request = Account.build_registration_request(
 
 assert request.management_mode == "platform_managed"
 assert request.storage_hash == Account.__table__.name
-assert request.table_contract.physical.table_name == Account.__table__.name
+assert request.table_contract.physical.table_name is None
 ```
 
 The data source is resolved from the active Main Sequence project/session, like
@@ -90,14 +91,17 @@ account_meta_table_uid = account_meta_table.uid
 
 The backend validates the table contract, creates the physical table when the
 data source supports DDL, stores the MetaTable row, synchronizes column/index/FK
-projections, and returns a platform `uid`.
+projections, and returns a platform `uid` plus `physical_table_name`. After
+successful registration, the SDK privately binds `Account.__table__.name` to
+that backend physical table name so ordinary SQLAlchemy statements compile
+against the real table.
 
 ## Foreign Keys
 
 Foreign keys must reference registered target MetaTables by platform UID in the
 backend contract. In normal platform-managed use, register parent tables first;
 the SDK inspects the SQLAlchemy foreign key and resolves the target MetaTable
-from the same data source, schema, and physical table name.
+from the same data source and logical `storage_hash`.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
@@ -260,7 +264,7 @@ prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1
 
 The SDK intentionally fails early for ambiguous metadata:
 
-- platform-managed tables must use `PlatformManagedMetaTable` or `metatable_tablename(...)` as the physical table name
+- platform-managed tables must use `PlatformManagedMetaTable` or `metatable_tablename(...)` to derive the logical `storage_hash`
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions

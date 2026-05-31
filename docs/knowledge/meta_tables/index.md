@@ -80,16 +80,15 @@ Typical flow:
 3. TS Manager receives a neutral registration contract extracted from SQLAlchemy metadata.
 4. TS Manager validates the contract, applies supported DDL, stores projections, and returns a MetaTable `uid`.
 
-For `platform_managed`, the backend requires:
-
-```text
-storage_hash == table_contract.physical.table_name
-```
+For `platform_managed`, `storage_hash` is the logical table identity and
+`table_contract.physical.table_name` is omitted from client requests. The
+backend allocates the physical table name and returns it on the `MetaTable`.
 
 That is why the SDK exposes `PlatformManagedMetaTable` and `metatable_tablename(...)`.
-The platform-managed class computes the physical table name from storage-relevant
-configuration, including the SQLAlchemy table shape. The logical `identifier`
-is sent to the backend but does not rotate the configured physical table name.
+The platform-managed class computes the logical storage identity from
+storage-relevant configuration, including the SQLAlchemy table shape. After
+registration the SDK privately rebinds the SQLAlchemy table name to the backend
+physical table name so compiled SQL targets the real table.
 
 ## Why Choose Platform-Managed
 
@@ -100,8 +99,8 @@ The practical benefits are:
 
 - TS Manager uses the configured `DynamicTableDataSource` connection, so client
   code does not need direct database credentials.
-- Table names come from `storage_hash`, which avoids collisions between users
-  registering common names like `asset`, `account`, or `orders`.
+- Logical storage identities come from `storage_hash`, while backend physical
+  table names are allocated by TS Manager.
 - Creation, permission checks, introspection, search-document refresh, and
   Command Center discovery happen through one platform path.
 - Hosted or restricted environments can create relational tables without giving
@@ -120,7 +119,8 @@ The table contract is neutral JSON. It is not a SQLAlchemy object.
 It contains:
 
 - `version`: currently `relational-table.v1`
-- `physical.table_name`
+- `physical.table_name` for external-registered tables. Platform-managed client
+  requests leave this empty because the backend owns the physical name.
 - `columns`
 - `indexes`
 - `foreign_keys`
@@ -133,7 +133,7 @@ way DataNode resolves its data source.
 ```python
 request = Asset.build_registration_request()
 
-assert request.table_contract.physical.table_name == request.storage_hash
+assert request.table_contract.physical.table_name is None
 ```
 
 ## Storage Hashes
@@ -173,6 +173,37 @@ stays within PostgreSQL's 63-character identifier limit.
 After registration, TS Manager stores a `MetaTable` row plus projection rows for
 columns, indexes, and foreign keys. Those projections power serializers, search
 documents, discovery, and query validation.
+
+## Finding Foreign-Key Dependents
+
+Use the schema graph when you need to know which MetaTables depend on another
+MetaTable. The graph includes source and target table UIDs on every FK edge,
+which is the information needed for dependency analysis.
+
+```python
+from mainsequence.client import MetaTable
+
+asset_table = MetaTable.get("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+graph = asset_table.get_schema_graph(depth=1, include_incoming=True)
+
+incoming_edges = [
+    edge for edge in graph["edges"]
+    if edge["target_uid"] == asset_table.uid
+]
+
+dependent_table_uids = [edge["source_uid"] for edge in incoming_edges]
+```
+
+Each inbound edge describes one FK dependency:
+
+```python
+for edge in incoming_edges:
+    print(edge["source_uid"], edge["source_columns"], "->", edge["target_columns"])
+```
+
+Do not use `incoming_fks` as the main dependency API. It is a serialized FK
+projection on the table response. `get_schema_graph(include_incoming=True)` is
+the graph API because its edges include both `source_uid` and `target_uid`.
 
 For compiled execution, TS Manager:
 

@@ -220,7 +220,13 @@ class MetaTablePhysicalContract(BasePydanticModel):
         exclude=True,
         description=("Input-only schema alias. MetaTable uses the data source default schema."),
     )
-    table_name: str = Field(..., description="Physical database table name.")
+    table_name: str | None = Field(
+        default=None,
+        description=(
+            "Physical database table name. Required for external_registered tables; "
+            "omitted by platform_managed client requests because the backend owns it."
+        ),
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -1090,6 +1096,55 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             self.introspection_snapshot = snapshot
         return response_json
 
+    def get_schema_graph(
+        self,
+        *,
+        depth: int = 1,
+        include_incoming: bool = False,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> dict[str, Any]:
+        """
+        Return the MetaTable foreign-key schema graph rooted at this table.
+
+        The graph is the client API for dependency analysis. Outgoing edges are
+        foreign keys declared by this table. When ``include_incoming`` is true,
+        the response also includes visible tables that depend on this table.
+
+        Args:
+            depth: Relationship traversal depth. The backend clamps this to its
+                supported range.
+            include_incoming: Include inbound relationships where another
+                visible MetaTable has a foreign key targeting this table.
+            timeout: Optional request timeout in seconds or ``requests`` timeout
+                tuple form.
+
+        Returns:
+            A dictionary with ``root_uid``, ``depth``, ``include_incoming``,
+            ``nodes``, and ``edges``. Inbound dependencies are edges where
+            ``edge["target_uid"] == self.uid``; the dependent table UID is
+            ``edge["source_uid"]``.
+        """
+        url = f"{type(self).get_object_url().rstrip('/')}/{self._public_uid()}/schema-graph/"
+        payload = {
+            "params": serialize_to_json(
+                {
+                    "depth": depth,
+                    "include_incoming": include_incoming,
+                }
+            )
+        }
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="GET",
+            url=url,
+            payload=payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=payload)
+        return response.json()
+
     def refresh_table_search_index(
         self,
         *,
@@ -1335,7 +1390,11 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     model_config = ConfigDict(extra="forbid")
 
     data_source_uid: str = Field(..., description="Public uid of the storage data source")
-    storage_hash: str = Field(..., max_length=63, description="Canonical physical table name")
+    storage_hash: str = Field(
+        ...,
+        max_length=63,
+        description="Canonical logical storage identity for the time-indexed MetaTable",
+    )
     identifier: str | None = Field(None, description="Optional published storage identifier")
     namespace: str | None = Field(None, description="Optional published storage namespace")
     description: str | None = Field(None, description="Optional storage description")

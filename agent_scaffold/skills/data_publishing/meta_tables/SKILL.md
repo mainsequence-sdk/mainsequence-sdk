@@ -99,14 +99,27 @@ The mixin derives the SQLAlchemy physical table name from storage-relevant confi
 
 Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"schema": "public"}` or the tuple form ending in `{"schema": ...}`. Do not add a separate MetaTable-specific schema attribute.
 
+Always declare `__metatable_description__` on the model. The description must
+explain the table's business intention, row grain, and expected use, not only
+the schema. Column-level descriptions stay in `mapped_column(info={...})`.
+
 Register through the class API:
 
 ```python
-account_meta_table = Account.register(
-    description="Example account table.",
-    labels=["sdk-example"],
-)
+class Account(PlatformManagedMetaTable, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "Account"
+    __metatable_description__ = (
+        "Customer account master records used to scope balances, holdings, and "
+        "account-level limits."
+    )
+
+
+account_meta_table = Account.register(labels=["sdk-example"])
 ```
+
+Pass `description=...` only when the call intentionally overrides the class
+default.
 
 For platform-managed registration, the data source is resolved from the active Main Sequence project/session, the same way DataNode does. Do not require or thread a `data_source_uid` through normal platform-managed example code.
 
@@ -172,6 +185,7 @@ Do not hardcode platform-managed physical names manually.
 When reviewing an existing MetaTable workflow, look for:
 
 - missing namespace or identifier
+- missing `__metatable_description__`, or a description that only repeats column names instead of table intention
 - backend-managed models that do not inherit `PlatformManagedMetaTable`
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
@@ -187,6 +201,7 @@ When reviewing an existing MetaTable workflow, look for:
 Do not claim success until you have checked:
 
 - the table contract matches the intended row contract
+- the table has an intention-rich `__metatable_description__`
 - indexes are intentional
 - foreign keys resolve to the correct dependency targets
 - management mode is correct

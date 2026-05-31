@@ -74,17 +74,16 @@ Request fields:
 | `introspect` | Ask the backend to refresh the physical metadata snapshot during registration. |
 | `table_contract` | Neutral relational contract. It does not include `data_source_uid`. |
 
-For `platform_managed`, the backend requires:
-
-```text
-storage_hash == table_contract.physical.table_name
-```
+For `platform_managed`, `storage_hash` is the logical table identity and the
+client omits `table_contract.physical.table_name`. The backend owns physical
+name allocation and returns `physical_table_name` on the registered `MetaTable`.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
-registration derive the same configured `storage_hash` from storage-relevant configuration.
-The logical `identifier` is sent to the backend but does not rotate the
-configured physical table name. The lower-level `metatable_tablename(...)`
-helper remains available when callers need to set `__tablename__` explicitly.
+registration derive the same configured `storage_hash` from storage-relevant
+configuration. After registration the SDK privately rebinds the SQLAlchemy
+table name to the backend physical table name. The lower-level
+`metatable_tablename(...)` helper remains available when callers need to set an
+initial logical `__tablename__` explicitly.
 
 ## Contract Validation
 
@@ -120,6 +119,64 @@ POST /orm/api/ts_manager/meta_table/<uid>/validate-contract/
 
 Validation normalizes column, index, and foreign-key fragments and returns the
 normalized contract. It does not import application code.
+
+## Schema Graph
+
+SDK call for outgoing relationships:
+
+```python
+graph = meta_table.get_schema_graph(depth=1)
+```
+
+SDK call for outgoing and incoming relationships:
+
+```python
+graph = meta_table.get_schema_graph(depth=1, include_incoming=True)
+```
+
+Backend route:
+
+```text
+GET /orm/api/ts_manager/meta_table/<uid>/schema-graph/?depth=<n>&include_incoming=<bool>
+```
+
+Use this graph for dependency analysis. `MetaTable.incoming_fks` is a direct FK
+projection on the table response; graph edges include both `source_uid` and
+`target_uid`, which is the shape needed to identify dependent MetaTables.
+
+Return shape:
+
+```python
+{
+    "root_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "depth": 1,
+    "include_incoming": True,
+    "nodes": [...],
+    "edges": [
+        {
+            "name": "fk_account_holdings_asset",
+            "source_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+            "target_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "source_columns": ["asset_uid"],
+            "target_columns": ["uid"],
+            "on_delete": "restrict",
+            "relationship_type": "meta_table_to_meta_table",
+        }
+    ],
+}
+```
+
+For inbound dependencies:
+
+```python
+incoming_edges = [
+    edge for edge in graph["edges"] if edge["target_uid"] == meta_table.uid
+]
+dependent_table_uids = [edge["source_uid"] for edge in incoming_edges]
+```
+
+Use `depth=1` when you only need direct dependents. Increase `depth` when you
+need transitive relationship context; the backend enforces its supported maximum.
 
 ## Introspection
 
