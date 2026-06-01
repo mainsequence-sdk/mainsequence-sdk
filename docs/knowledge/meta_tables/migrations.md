@@ -123,16 +123,19 @@ The affected table is addressed by stable `identifier`. The contract hash is
 allowed to rotate; the logical table identifier is not.
 
 This example uses SQLAlchemy classes only to compute old and new contract
-payloads for the migration row. Do not apply the changed declaration through
-normal shape-addressed `PlatformManagedMetaTable.register(...)`; in-place schema
-changes must go through the migration apply endpoint so the backend can resolve
-the existing table, run SQL, and refresh the MetaTable contract.
+payloads for the migration row. In-place migration targets must inherit from
+`MigrationManagedMetaTable`, or from `MigrationManagedTimeIndexMetaData` for
+time-indexed storage. Do not apply the changed declaration through normal
+shape-addressed `PlatformManagedMetaTable.register(...)` or
+`PlatformTimeIndexMetaData.register(...)`; in-place schema changes must go
+through the migration apply endpoint so the backend can resolve the existing
+table, run SQL, and refresh the MetaTable contract.
 
 For a simple migration that adds a `status` column to `Asset`, model the two
 contract versions explicitly:
 
 ```python
-class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
+class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -140,7 +143,7 @@ class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class AssetAfterMigration(PlatformManagedMetaTable, AfterBase):
+class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -181,6 +184,30 @@ In a real package release, the same import path usually represents the table
 before and after the code update. The example keeps both versions in one file,
 so it pins the same `__metatable_identifier__` on both classes to model the
 same logical MetaTable.
+
+For time-indexed storage, use the time-indexed migration base so the class still
+builds a `TimeIndexMetaTableRegistrationRequest` and keeps the existing
+time-index/index validation:
+
+```python
+class HoldingsAfterMigration(MigrationManagedTimeIndexMetaData, AfterBase):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "sdk-examples.AccountHoldings"
+    __time_index_name__ = "time_index"
+    __index_names__ = ["time_index", "account_uid"]
+
+    time_index: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str | None] = mapped_column(String(32), nullable=True)
+```
+
+`MigrationManagedTimeIndexMetaData` is still accepted by migration packaging as
+a `MigrationManagedMetaTable` target, but it registers through the
+`TimeIndexMetaData` endpoint and produces `table_kind: time_indexed` contracts.
 
 ## Backend Contract
 

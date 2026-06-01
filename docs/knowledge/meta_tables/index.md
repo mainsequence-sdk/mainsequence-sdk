@@ -39,6 +39,8 @@ Higher-level SDK helpers live in:
 
 ```python
 from mainsequence.meta_tables import (
+    MigrationManagedMetaTable,
+    MigrationManagedTimeIndexMetaData,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     metatable_tablename,
@@ -161,6 +163,14 @@ For time-indexed DataNode storage, use `PlatformTimeIndexMetaData` instead of
 the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
 but also includes `time_index_name` and `index_names` in the stable identity and
 registers through the TimeIndexMetaData endpoint.
+
+For in-place schema migrations, use the migration-managed bases from the first
+version of the table. `MigrationManagedMetaTable` and
+`MigrationManagedTimeIndexMetaData` use stable identifier-addressed storage
+identity, while the contract hash still rotates as columns, indexes, foreign
+keys, and types change. `MigrationManagedTimeIndexMetaData` keeps the
+TimeIndexMetaData endpoint and time-index validation; it only changes the
+storage identity rule.
 
 When two backend-managed tables could otherwise have the same storage-relevant
 shape, add `__metatable_extra_hash_components__` with stable deterministic

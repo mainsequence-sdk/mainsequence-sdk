@@ -33,6 +33,7 @@ from .compiled_sql.v1 import build_operation
 from .sqlalchemy_contracts import (
     MigrationManagedMetaTable,
     PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
     table_contract_from_sqlalchemy_model,
 )
 
@@ -599,6 +600,13 @@ def _contract_payload(
     *,
     target_meta_tables: Mapping[Any, Any] | None = None,
 ) -> dict[str, Any]:
+    if isinstance(model, type) and issubclass(model, PlatformTimeIndexMetaData):
+        request = model.build_registration_request(
+            data_source_uid="00000000-0000-4000-8000-000000000000",
+            _target_meta_tables=target_meta_tables,
+        )
+        return _strip_client_metadata(serialize_to_json(request.table_contract))
+
     contract = table_contract_from_sqlalchemy_model(
         model,
         target_meta_tables=target_meta_tables,

@@ -15,6 +15,7 @@ from mainsequence.client.models_metatables import (
 from mainsequence.meta_tables import (
     MetaTableForeignKey,
     MigrationManagedMetaTable,
+    MigrationManagedTimeIndexMetaData,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
@@ -1544,6 +1545,75 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
     assert foreign_key["target_meta_table_uid"] == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     assert foreign_key["target_columns"] == ["uid"]
     assert foreign_key["on_delete"] == "restrict"
+
+
+def test_migration_managed_time_index_metadata_uses_identifier_storage_identity():
+    pytest.importorskip("sqlalchemy")
+
+    from sqlalchemy import DateTime, MetaData, String
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class BeforeBase(DeclarativeBase):
+        metadata = MetaData()
+
+    class AfterBase(DeclarativeBase):
+        metadata = MetaData()
+
+    class HoldingsBefore(MigrationManagedTimeIndexMetaData, BeforeBase):
+        __table_args__ = ({"schema": "public"},)
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "example.assets.AccountHoldings"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "account_code"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        account_code: Mapped[str] = mapped_column(String(64), nullable=False)
+        symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    class HoldingsAfter(MigrationManagedTimeIndexMetaData, AfterBase):
+        __table_args__ = ({"schema": "public"},)
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "example.assets.AccountHoldings"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "account_code"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        account_code: Mapped[str] = mapped_column(String(64), nullable=False)
+        symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+        display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    expected_storage_hash = metatable_tablename(
+        namespace="example.assets",
+        identifier="example.assets.AccountHoldings",
+        schema="public",
+    )
+
+    assert issubclass(MigrationManagedTimeIndexMetaData, MigrationManagedMetaTable)
+    assert issubclass(MigrationManagedTimeIndexMetaData, PlatformTimeIndexMetaData)
+    assert HoldingsBefore.__table__.name == expected_storage_hash
+    assert HoldingsAfter.__table__.name == expected_storage_hash
+    assert HoldingsBefore.__table__.name != metatable_configured_tablename(HoldingsBefore)
+    assert HoldingsAfter.__table__.name != metatable_configured_tablename(HoldingsAfter)
+
+    request = HoldingsAfter.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
+    assert request.storage_hash == expected_storage_hash
+    assert request.identifier == "example.assets.AccountHoldings"
+    assert request.time_index_name == "time_index"
+    assert request.table_contract["table_kind"] == "time_indexed"
+    assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
+        "time_index",
+        "account_code",
+    ]
 
 
 def test_platform_managed_requires_storage_hash_table_name():

@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import datetime
 import importlib
 
 import pytest
-from sqlalchemy import String
+from sqlalchemy import DateTime, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client.models_metatables import MetaTable
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import MigrationManagedTimeIndexMetaData, PlatformManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     METATABLE_MIGRATION_V1,
     MIGRATION_MANIFEST_V1,
@@ -198,6 +199,60 @@ def test_load_packaged_migration_rejects_shape_addressed_contract_models(tmp_pat
             "migrations/001.json",
             new_contract_models={"sample.Asset": ShapeAddressedAsset},
         )
+
+
+def test_load_packaged_migration_accepts_migration_managed_time_index_models(
+    tmp_path,
+    monkeypatch,
+):
+    package_name = "sample_migrations_time_index_accept"
+    package_dir = tmp_path / package_name
+    migrations_dir = package_dir / "migrations"
+    migrations_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (migrations_dir / "001.json").write_text(
+        """
+{
+  "version": "metatable-migration-manifest.v1",
+  "migration_namespace": "markets",
+  "revision": "001",
+  "direction": "upgrade",
+  "affected_tables": [{"identifier": "sample.Holdings"}],
+  "operations": [
+    {"op": "add_column", "table_identifier": "sample.Holdings", "column": "display_name"}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    class Base(DeclarativeBase):
+        pass
+
+    class Holdings(MigrationManagedTimeIndexMetaData, Base):
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "sample"
+        __metatable_identifier__ = "sample.Holdings"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "asset_uid"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        asset_uid: Mapped[str] = mapped_column(String(64), nullable=False)
+        value: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    packaged = load_packaged_migration(
+        package_name,
+        "migrations/001.json",
+        new_contract_models={"sample.Holdings": Holdings},
+    )
+
+    assert "sample.Holdings" in packaged.manifest.new_contracts
+    assert packaged.manifest.new_contracts["sample.Holdings"]["table_kind"] == "time_indexed"
 
 
 def test_create_default_migration_registry_model_builds_metatable_contract(monkeypatch):

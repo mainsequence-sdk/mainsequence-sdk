@@ -155,6 +155,17 @@ migration-managed SQLAlchemy MetaTables. That mode uses the resolver rule above
 when constructing the registration payload. It must not call the current
 table-shape storage identity builder for migration-managed tables.
 
+The SDK exposes this as two authoring bases:
+
+- `MigrationManagedMetaTable` for generic platform-managed MetaTables.
+- `MigrationManagedTimeIndexMetaData` for time-indexed DataNode storage that
+  still needs the TimeIndexMetaData endpoint and time-index/index validation.
+
+`MigrationManagedTimeIndexMetaData` is accepted anywhere the migration packaging
+path requires `MigrationManagedMetaTable`, but it emits a
+`TimeIndexMetaTableRegistrationRequest` and a `table_kind: time_indexed`
+contract.
+
 Migration-managed tables should use that identifier-addressed registration mode
 from their first version. A table already created with a shape-derived
 `storage_hash` is not automatically recoverable from the new code after its
@@ -673,6 +684,9 @@ general migration engine.
 - [x] Add an identifier-addressed registration mode for migration-managed
   SQLAlchemy MetaTables so registration resolves by scoped `identifier`, not by
   SQLAlchemy table shape.
+- [x] Add `MigrationManagedTimeIndexMetaData` so in-place migrations can target
+  time-indexed storage without falling back to shape-addressed
+  `PlatformTimeIndexMetaData`.
 - [x] Add canonical class-path identifier derivation for migration-managed
   MetaTables: explicit `__metatable_identifier__`, else `model.__module__ +
   "." + model.__qualname__`.

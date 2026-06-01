@@ -17,6 +17,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import (
     MetaTableForeignKey,
+    MigrationManagedMetaTable,
+    MigrationManagedTimeIndexMetaData,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -237,6 +239,48 @@ Validation is intentionally strict:
 - the time-index column must be temporal and timezone-aware for remote storage
 - the client must not send derived backend fields such as `identity_dimensions`,
   `index_progress`, `tail_delete`, `uniqueness`, or `physical_index_plan`
+
+## Migration-Managed Tables
+
+Use the migration-managed bases when a platform-managed table must evolve
+in-place through the MetaTable migration endpoint. These classes use stable
+identifier-addressed storage identity from the first version of the table, so a
+column/index/FK change rotates the contract hash without making the SDK lose the
+existing table.
+
+For generic MetaTables:
+
+```python
+class Account(MigrationManagedMetaTable, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "sdk-examples.Account"
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+```
+
+For time-indexed DataNode storage:
+
+```python
+class AccountHoldings(MigrationManagedTimeIndexMetaData, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "sdk-examples.AccountHoldings"
+    __time_index_name__ = "time_index"
+    __index_names__ = ["time_index", "account_uid"]
+
+    time_index: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    account_uid: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+```
+
+`MigrationManagedTimeIndexMetaData` is the time-indexed counterpart to
+`MigrationManagedMetaTable`: it still registers through
+`/orm/api/ts_manager/dynamic_table/register/` and still emits
+`table_kind: time_indexed`, but it does not use the time-index shape as the
+storage identity.
 
 ## External Registration
 

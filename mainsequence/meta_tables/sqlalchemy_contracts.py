@@ -689,6 +689,89 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             raise
 
 
+class MigrationManagedTimeIndexMetaData(PlatformTimeIndexMetaData, MigrationManagedMetaTable):
+    """Migration-managed TimeIndexMetaData with stable identifier storage identity.
+
+    This mixin keeps the time-indexed registration endpoint and validation from
+    ``PlatformTimeIndexMetaData`` while using the migration-managed identifier
+    as the logical storage identity. It is the time-indexed counterpart to
+    ``MigrationManagedMetaTable`` for in-place schema migrations.
+    """
+
+    __abstract__ = True
+    __metatable_migration_managed__: ClassVar[bool] = True
+
+    @classmethod
+    def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
+        if len(args) < 2:
+            raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
+
+        _name, metadata, *table_items = args
+        kwargs = dict(kwargs)
+        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
+        if not kwargs.get("schema"):
+            kwargs["schema"] = schema
+
+        columns = [item for item in table_items if _looks_like_column(item)]
+        time_index_name = _resolve_time_index_name(cls)
+        index_names = _resolve_time_index_names(cls, time_index_name=time_index_name)
+        _validate_time_index_contract(
+            columns=columns,
+            time_index_name=time_index_name,
+            index_names=index_names,
+        )
+
+        table_name = build_meta_table_storage_hash(
+            namespace=_resolve_class_namespace(cls),
+            identifier=metatable_migration_identifier(cls),
+            schema=schema,
+            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
+            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
+        )
+
+        from sqlalchemy import Table
+
+        return Table(table_name, metadata, *table_items, **kwargs)
+
+    @classmethod
+    def build_registration_request(
+        cls,
+        *,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool | None = None,
+        provisioning: Mapping[str, Any] | None = None,
+        _target_meta_tables: Mapping[Any, Any] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+        time_index_name: str | None = None,
+        index_names: Sequence[str] | None = None,
+        storage_layout: Mapping[str, Any] | None = None,
+    ) -> Any:
+        return super().build_registration_request(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            identifier=metatable_migration_identifier(cls, identifier=identifier),
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            provisioning=provisioning,
+            _target_meta_tables=_target_meta_tables,
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=False,
+            time_index_name=time_index_name,
+            index_names=index_names,
+            storage_layout=storage_layout,
+        )
+
+
 def table_contract_from_sqlalchemy_model(
     model_or_table: Any,
     *,
@@ -2411,6 +2494,7 @@ def _column_names(columns: Any) -> list[str]:
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     "MigrationManagedMetaTable",
+    "MigrationManagedTimeIndexMetaData",
     "MetaTableForeignKey",
     "PlatformManagedMetaTable",
     "PlatformTimeIndexMetaData",
