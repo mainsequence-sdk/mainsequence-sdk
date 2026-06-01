@@ -164,7 +164,7 @@ the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
 but also includes `time_index_name` and `index_names` in the stable identity and
 registers through the TimeIndexMetaData endpoint.
 
-For in-place schema migrations, use the migration-managed bases from the first
+For in-place contract migrations, use the migration-managed bases from the first
 version of the table. `MigrationManagedMetaTable` and
 `MigrationManagedTimeIndexMetaData` use stable identifier-addressed storage
 identity, while the contract hash still rotates as columns, indexes, foreign

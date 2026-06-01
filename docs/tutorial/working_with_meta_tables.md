@@ -56,7 +56,8 @@ In this mode:
 For backend-managed tables, the SDK-derived `storage_hash` is the logical table
 identity. TS Manager owns the physical table name and returns it during
 registration. Use `PlatformManagedMetaTable` when the logical identity should be
-derived from the SQLAlchemy table shape.
+derived from the SQLAlchemy table shape. Use `MigrationManagedMetaTable` from
+the first version when the table must support in-place contract migrations.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
 
@@ -283,12 +284,12 @@ the same: compiled SQL plus declared MetaTable scope.
 
 ## 8. Evolve A MetaTable With A Migration Registry
 
-Do not apply an in-place schema change by simply changing the SQLAlchemy class
+Do not apply an in-place contract change by simply changing the SQLAlchemy class
 and calling normal registration again. For shape-addressed
 `PlatformManagedMetaTable`, adding or removing columns changes the
 storage-relevant shape before the SDK can recover the previous table identity.
 
-For schema evolution, use a migration registry:
+For contract evolution, use a migration registry:
 
 - declare a project-owned `MigrationMetaTable`
 - package SQL in the installed Python package
@@ -306,7 +307,7 @@ from mainsequence.meta_tables.migrations import MigrationMetaTable
 class TutorialMigration(MigrationMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "tutorial_migrations"
-    __metatable_description__ = "Tutorial schema migrations."
+    __metatable_description__ = "Tutorial contract migrations."
 ```
 
 The apply request contains `migration_meta_table_uid`, which is the UID of this
@@ -330,7 +331,10 @@ versions represent the same logical MetaTable, so they use the same stable
 identifier:
 
 ```python
-class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
+from mainsequence.meta_tables import MigrationManagedMetaTable
+
+
+class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -338,7 +342,7 @@ class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class AssetAfterMigration(PlatformManagedMetaTable, AfterBase):
+class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -377,10 +381,16 @@ row.new_contract_hashes["sdk-examples.Asset"]
 row.new_contracts["sdk-examples.Asset"]
 ```
 
-The old and new hashes must differ for a real schema change. During apply, TS
+The old and new hashes must differ for a real contract change. During apply, TS
 Manager checks the old hash before running SQL, executes the packaged SQL under
 the migration lock, introspects the affected table, refreshes the MetaTable
 contract, and validates the new hash.
+
+For time-indexed DataNode storage, use `MigrationManagedTimeIndexMetaData`
+instead of `MigrationManagedMetaTable`. It keeps the TimeIndexMetaData
+registration endpoint, `time_index_name`, `index_names`, and time-index
+validation, but uses identifier-addressed storage identity so value-column
+changes can be migrated in place.
 
 Preview the full tutorial migration payload:
 

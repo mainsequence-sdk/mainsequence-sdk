@@ -185,6 +185,10 @@ class ExternalPrices(DataNode):
         return prices_source
 ```
 
+Import and use `MigrationManagedTimeIndexMetaData` instead of
+`PlatformTimeIndexMetaData` for the storage class when the artifact-backed
+table must support in-place MetaTable contract migrations.
+
 This is one of the cleanest ways to bridge external operational files into the `DataNode` layer.
 
 ## How Artifacts fit with jobs

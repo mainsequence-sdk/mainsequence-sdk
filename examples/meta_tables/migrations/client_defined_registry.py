@@ -40,7 +40,7 @@ class ExampleMigrationRegistry(MigrationMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = "ExampleMigrationRegistry"
     __metatable_description__ = (
-        "Example client-defined MetaTable registry for packaged schema migrations."
+        "Example client-defined MetaTable registry for packaged contract migrations."
     )
     __metatable_extra_hash_components__ = {"storage_name": "example_migrations"}
 

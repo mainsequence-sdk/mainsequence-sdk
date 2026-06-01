@@ -8,8 +8,10 @@ This guide translates the internal rules into practical, human-friendly guidance
 
 A DataNode has two separate objects:
 
-- a registered `PlatformTimeIndexMetaData` storage class, backed by a MetaTable
-  UID, that owns the dataset contract
+- a registered `PlatformTimeIndexMetaData` storage class, or
+  `MigrationManagedTimeIndexMetaData` when the storage table must support
+  in-place contract migrations, backed by a MetaTable UID, that owns the dataset
+  contract
 - a DataNode update process, identified by `update_hash`, that writes into that
   registered storage table
 
@@ -18,8 +20,16 @@ dataset contract.
 
 !!! tip "Rule of thumb"
     If a change modifies what the dataset means, change or migrate the
-    `PlatformTimeIndexMetaData` storage contract. If a change only modifies how
-    one job updates data, it should affect `update_hash`.
+    storage contract. Use `MigrationManagedTimeIndexMetaData` when that
+    contract must evolve in place. If a change only modifies how one job
+    updates data, it should affect `update_hash`.
+
+Use `MigrationManagedTimeIndexMetaData` from the first version of a DataNode
+storage table when value columns or other table contract fields are expected to
+evolve through the MetaTable migration endpoint. It keeps the same DataNode
+storage lifecycle and TimeIndexMetaData endpoint as `PlatformTimeIndexMetaData`,
+but uses stable identifier-addressed storage identity so contract hashes can
+rotate without losing the existing table.
 
 ## 2) Guiding principles
 
@@ -94,7 +104,9 @@ Use them only for grouping and discovery.
 A simple and scalable pattern is:
 
 - one Pydantic config object for update-scope fields,
-- one registered `PlatformTimeIndexMetaData` class for storage,
+- one registered `PlatformTimeIndexMetaData` class for storage, or
+  `MigrationManagedTimeIndexMetaData` when the storage contract is expected to
+  evolve in place,
 - make the node constructor accept both `config` and `storage_table`,
 - operational runtime knobs outside `__init__`.
 
@@ -131,18 +143,22 @@ The output storage table itself is not config. It remains the explicit
 needs to select another DataNode's storage model as a dependency, that
 dependency storage reference is update-scope config because changing it changes
 the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
+`MigrationManagedTimeIndexMetaData` subclasses `PlatformTimeIndexMetaData`, so
+it is accepted anywhere this guide says `type[PlatformTimeIndexMetaData]`.
 
-When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
-hashes it by the bound `TimeIndexMetaData.uid` available through
-`StorageClass.__time_index_metadata__`. If the class is not yet bound, config
-serialization calls `StorageClass.register()` before reading the UID. Do not
-pass dependency storage classes as extra constructor arguments, manually attach
-an existing UID, or reconstruct a generic `MetaTable`.
+When a `PlatformTimeIndexMetaData` or `MigrationManagedTimeIndexMetaData` class
+appears inside a config model, the SDK hashes it by the bound
+`TimeIndexMetaData.uid` available through `StorageClass.__time_index_metadata__`.
+If the class is not yet bound, config serialization calls
+`StorageClass.register()` before reading the UID. Do not pass dependency storage
+classes as extra constructor arguments, manually attach an existing UID, or
+reconstruct a generic `MetaTable`.
 
 ### 4.1 Storage meaning belongs to the storage table
 
 These define the dataset contract and table identity and should be represented
-in the `PlatformTimeIndexMetaData` SQLAlchemy model:
+in the `PlatformTimeIndexMetaData` or `MigrationManagedTimeIndexMetaData`
+SQLAlchemy model:
 
 Examples:
 
@@ -249,7 +265,9 @@ If the namespace is non-empty, `DataNode` injects `hash_namespace` into the
 build configuration. That changes `update_hash`.
 
 Storage identity is not created by `DataNode`. If a test needs isolated
-storage, pass a separately registered `PlatformTimeIndexMetaData` storage class.
+storage, pass a separately registered `PlatformTimeIndexMetaData` storage class,
+or `MigrationManagedTimeIndexMetaData` when the test exercises
+migration-managed storage.
 
 ### What happens during `run()`
 
@@ -382,7 +400,10 @@ Do not:
 ## 9) Records, foreign keys, and metadata
 
 For production nodes, define the table contract on the registered
-`PlatformTimeIndexMetaData` SQLAlchemy model. That is the source of truth for:
+`PlatformTimeIndexMetaData` SQLAlchemy model, or on
+`MigrationManagedTimeIndexMetaData` when the table needs in-place contract
+migrations.
+That is the source of truth for:
 
 - index columns
 - value columns
@@ -396,17 +417,18 @@ use, not only list its columns. Column-level descriptions still belong in
 
 `DataNodeConfiguration` no longer accepts table metadata or output records.
 Stable output contracts are declared on the registered `PlatformTimeIndexMetaData`
-storage model and exposed through the MetaTable time-indexed profile/contract.
+storage model, or `MigrationManagedTimeIndexMetaData` storage model, and exposed
+through the MetaTable time-indexed profile/contract.
 
 When a DataNode source table should reference a registered MetaTable, declare the
-relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are
-part of the MetaTable contract, not `DataNodeConfiguration`. For
-platform-managed storage, use `MetaTableForeignKey(TargetModel, column=...)`;
-`register()` recursively registers unresolved target model classes, reuses the
-local process registry keyed by `storage_hash`, and writes the target
-`MetaTable.uid` into the FK contract. Do not use table fullnames,
-`Target.__table__.c.<column>`, or explicit target UID maps for platform-managed
-DataNode storage FKs.
+relationship on the `PlatformTimeIndexMetaData` or
+`MigrationManagedTimeIndexMetaData` storage model. Foreign keys are part of the
+MetaTable contract, not `DataNodeConfiguration`. For platform-managed storage,
+use `MetaTableForeignKey(TargetModel, column=...)`; `register()` recursively
+registers unresolved target model classes, reuses the local process registry
+keyed by `storage_hash`, and writes the target `MetaTable.uid` into the FK
+contract. Do not use table fullnames, `Target.__table__.c.<column>`, or explicit
+target UID maps for platform-managed DataNode storage FKs.
 
 Do not provide foreign-key names for `MetaTableForeignKey(...)`. Platform-managed
 contracts omit FK names; the backend generates physical constraint names.
@@ -757,8 +779,10 @@ Breaking changes (create a new table identifier instead):
 - changing index shape,
 - changing meaning of existing fields.
 
-!!! warning "Never make breaking schema changes in place"
-    If semantics or schema change, publish a new table identifier and migrate consumers.
+!!! warning "Never make breaking contract changes in place"
+    If semantics or the table contract changes, publish a new table identifier
+    or use a migration-managed storage class with an explicit registry-backed
+    migration.
 
 ## 13) Security basics
 

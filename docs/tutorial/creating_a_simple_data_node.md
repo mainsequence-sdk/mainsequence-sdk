@@ -697,7 +697,10 @@ python3 scripts/random_daily_addition_launcher.py
 
 Both tutorial storage tables have friendly identifiers because their
 `PlatformTimeIndexMetaData` classes declare stable class metadata and register
-through the SDK storage lifecycle. Use
+through the SDK storage lifecycle. If a storage table must support in-place
+contract migrations, import `MigrationManagedTimeIndexMetaData` from
+`mainsequence.meta_tables` and use it from the first version instead of
+`PlatformTimeIndexMetaData`. Use
 `mainsequence project data-node-updates list` for update records and
 `mainsequence meta-table list --filter identifier__contains=daily_random`
 for the backing tables.
@@ -707,8 +710,9 @@ The important thing to verify here is that the dependent node ran successfully a
 ## 4. DataNode Update Identity And MetaTable Storage
 
 A `PlatformTimeIndexMetaData` class is the storage contract for a DataNode
-table. A `DataNode` is the update process that produces or refreshes data for
-that MetaTable-backed table.
+table. `MigrationManagedTimeIndexMetaData` is the equivalent storage contract
+when the table needs in-place MetaTable contract migrations. A `DataNode` is the
+update process that produces or refreshes data for that MetaTable-backed table.
 
 Those concerns are intentionally separate:
 
@@ -756,6 +760,12 @@ configurations but the same `storage_table`. Both nodes write to the same table
 contract while keeping separate update-process identities. The tutorial table
 identifier stays stable because it comes from the `PlatformTimeIndexMetaData`
 class metadata, not from `std`.
+
+For migration-managed storage, the identifier is even more important:
+`MigrationManagedTimeIndexMetaData` derives storage identity from the stable
+identifier while contract hashes rotate as value columns, indexes, foreign
+keys, or dtypes change. It still uses the TimeIndexMetaData registration path
+and validates `time_index_name` plus `index_names`.
 
 Run the updated launcher from the terminal as before:
 

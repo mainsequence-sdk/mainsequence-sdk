@@ -1,6 +1,6 @@
 # MetaTable Migrations
 
-MetaTable migrations are a small packaged-SQL workflow for schema changes that
+MetaTable migrations are a small packaged-SQL workflow for contract changes that
 need backend execution but client-owned migration state.
 
 The protocol version is:
@@ -24,7 +24,7 @@ from mainsequence.meta_tables.migrations import MigrationMetaTable
 class MarketsMigration(MigrationMetaTable, Base):
     __metatable_namespace__ = "msm"
     __metatable_identifier__ = "markets_migrations"
-    __metatable_description__ = "Packaged ms-markets schema migrations."
+    __metatable_description__ = "Packaged ms-markets contract migrations."
 
     release_channel: Mapped[str | None] = mapped_column(String(64))
 ```
@@ -110,7 +110,7 @@ from the referenced registry row.
 
 ## Contract Hash Rotation
 
-A schema migration changes the MetaTable contract. The SDK must send both sides
+A contract migration changes the MetaTable contract. The SDK must send both sides
 of that change:
 
 - `old_contract_hashes`: what the backend must see before running SQL.
@@ -127,7 +127,7 @@ payloads for the migration row. In-place migration targets must inherit from
 `MigrationManagedMetaTable`, or from `MigrationManagedTimeIndexMetaData` for
 time-indexed storage. Do not apply the changed declaration through normal
 shape-addressed `PlatformManagedMetaTable.register(...)` or
-`PlatformTimeIndexMetaData.register(...)`; in-place schema changes must go
+`PlatformTimeIndexMetaData.register(...)`; in-place contract changes must go
 through the migration apply endpoint so the backend can resolve the existing
 table, run SQL, and refresh the MetaTable contract.
 
@@ -176,7 +176,7 @@ row.new_contract_hashes["sdk-examples.Asset"]
 row.new_contracts["sdk-examples.Asset"]
 ```
 
-Those two hashes must be different for a real schema change. At apply time, the
+Those two hashes must be different for a real contract change. At apply time, the
 backend validates the old hash before execution and the new hash after it
 refreshes the affected MetaTable.
 

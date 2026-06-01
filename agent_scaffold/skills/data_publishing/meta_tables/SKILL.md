@@ -19,7 +19,7 @@ This skill is for schema-driven application tables registered through TS Manager
 - build registration requests from resolved SQLAlchemy metadata when inspection is useful
 - define indexes and foreign keys in the table contract
 - design governed compiled SQL read and write operations
-- design client-defined `MigrationMetaTable` registries for schema evolution
+- design client-defined `MigrationMetaTable` registries for contract evolution
 - package SQL migrations and old/new contract hashes for backend apply
 - review table contracts for physical-name, namespace, and identifier issues
 - review whether a task should be a `MetaTable` or a `DataNode`
@@ -72,8 +72,8 @@ Before changing code, collect or infer:
 - expected mutation patterns
 - whether TS Manager should create the physical table
 - for `external_registered`, the target `DynamicTableDataSource` UID
-- for schema changes, the target migration registry MetaTable or registry class
-- for schema changes, the package, migration namespace, revision, parent revision, SQL file, affected table identifiers, and old/new SQLAlchemy contract declarations
+- for contract changes, the target migration registry MetaTable or registry class
+- for contract changes, the package, migration namespace, revision, parent revision, SQL file, affected table identifiers, and old/new SQLAlchemy contract declarations
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
 
@@ -87,7 +87,7 @@ For every non-trivial task, decide:
 4. What namespace and identifier define the logical table identity?
 5. Are foreign-key dependencies aligned with registration order?
 6. What governed operations should be allowed by the declared table scope?
-7. If the table already exists and its schema changes, is this a migration through a registry row rather than normal registration?
+7. If the table already exists and its contract changes, is this a migration through a registry row rather than normal registration?
 8. For a migration, what stable affected-table identifiers and old/new contract hashes will the backend validate?
 
 ## Build Rules
@@ -103,6 +103,11 @@ Do not hand-build contract fragments when the SQLAlchemy helper can derive them.
 For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 
 The mixin derives the SQLAlchemy physical table name from storage-relevant configuration and table shape. Do not hand-write `__tablename__` for normal backend-managed tables.
+
+When a platform-managed table must support in-place contract migrations from its
+first version, use `MigrationManagedMetaTable` instead. For time-indexed
+DataNode storage that must support in-place contract migrations, use
+`MigrationManagedTimeIndexMetaData`.
 
 Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"schema": "public"}` or the tuple form ending in `{"schema": ...}`. Do not add a separate MetaTable-specific schema attribute.
 
@@ -234,13 +239,13 @@ asset_meta_table = MetaTable.register(asset_request)
 
 ### 4. Schema changes use a migration registry
 
-Do not apply in-place schema changes by changing a `PlatformManagedMetaTable`
+Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`
 SQLAlchemy class and calling normal registration again. Shape-addressed
 `PlatformManagedMetaTable` storage identity changes when columns, indexes,
 foreign keys, or constraints change, so new code cannot reliably recover the
 previous shape-derived table.
 
-For schema evolution, use `mainsequence.meta_tables.migrations`:
+For contract evolution, use `mainsequence.meta_tables.migrations`:
 
 - declare a client-owned `MigrationMetaTable` registry
 - load SQL and manifest files from the installed Python package
@@ -264,7 +269,10 @@ For a changed table, model the old and new contracts explicitly and keep the
 same `__metatable_identifier__` on both declarations:
 
 ```python
-class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
+from mainsequence.meta_tables import MigrationManagedMetaTable
+
+
+class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -272,7 +280,7 @@ class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class AssetAfterMigration(PlatformManagedMetaTable, AfterBase):
+class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -297,6 +305,11 @@ new hash after introspection/MetaTable refresh. The SDK must not send executable
 SQL directly in the apply request body; the backend reads SQL from the
 referenced registry row.
 
+For time-indexed DataNode storage, use `MigrationManagedTimeIndexMetaData`. It
+is a `MigrationManagedMetaTable` target for packaging and validation, but it
+keeps the `TimeIndexMetaData` registration endpoint, `time_index_name`,
+`index_names`, and time-indexed table contract.
+
 Use `examples/meta_tables/migrations/contract_hash_rotation.py` as the canonical
 example for a MetaTable contract change.
 
@@ -320,13 +333,15 @@ When reviewing an existing MetaTable workflow, look for:
 - missing `__metatable_description__`, or a description that only repeats column names instead of table intention
 - mapped columns without `info.label` and `info.description`
 - backend-managed models that do not inherit `PlatformManagedMetaTable`
+- migration-managed tables that should use `MigrationManagedMetaTable` or
+  `MigrationManagedTimeIndexMetaData` from their first version
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
 - external tables registered with unstable physical names
 - platform-managed examples that manually sequence parent registration instead
   of relying on `MetaTableForeignKey(...)` recursive registration
 - external child registrations that do not map foreign-key targets to registered parent `MetaTable.uid` values
-- schema changes attempted through normal registration instead of a `MigrationMetaTable` registry row
+- contract changes attempted through normal registration instead of a `MigrationMetaTable` registry row
 - migration apply requests that confuse `migration_meta_table_uid` with an affected table UID
 - migration rows missing old/new contract hashes for affected in-place tables
 - migration rows that include arbitrary SQL in the request body instead of packaged SQL in the registry row
@@ -366,7 +381,7 @@ For related tables, also check:
 - the target data source is unknown for an `external_registered` workflow
 - the task really requires a time-series published table
 - the workflow requires direct database credentials outside TS Manager governance
-- a requested schema change lacks a stable affected table identifier or old contract anchor
+- a requested contract change lacks a stable affected table identifier or old contract anchor
 - the user expects the SDK to autogenerate migrations or parse arbitrary request-body SQL
 - the task is actually an API or orchestration problem
 
