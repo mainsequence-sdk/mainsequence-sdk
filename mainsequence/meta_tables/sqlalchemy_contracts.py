@@ -107,6 +107,32 @@ def metatable_tablename(
     )
 
 
+def metatable_migration_identifier(
+    model_or_table: Any,
+    *,
+    identifier: str | None = None,
+) -> str:
+    """Return the stable identifier used by migration-managed MetaTables."""
+
+    resolved_identifier = (
+        identifier
+        or getattr(model_or_table, "__metatable_identifier__", None)
+        or _table_info_value(model_or_table, "identifier")
+    )
+    if resolved_identifier not in (None, ""):
+        return str(resolved_identifier)
+    module = getattr(model_or_table, "__module__", "__main__")
+    qualname = getattr(
+        model_or_table,
+        "__qualname__",
+        getattr(model_or_table, "__name__", None),
+    )
+    if qualname in (None, ""):
+        table = _resolve_table(model_or_table)
+        qualname = _table_name(table)
+    return f"{module}.{qualname}"
+
+
 class MetaTableForeignKey:
     """Factory for SQLAlchemy foreign keys that target MetaTable model classes."""
 
@@ -446,6 +472,77 @@ class PlatformManagedMetaTable:
         if physical_table_name not in (None, ""):
             return str(physical_table_name)
         return None
+
+
+class MigrationManagedMetaTable(PlatformManagedMetaTable):
+    """Platform-managed MetaTable whose storage identity is stable by identifier.
+
+    This mixin is for in-place schema migration targets. Its logical table
+    identity is based on ``__metatable_identifier__`` or, when omitted, the
+    importable Python class path. Schema shape changes rotate contract hashes,
+    not the storage hash used to resolve the existing MetaTable.
+    """
+
+    __abstract__ = True
+    __metatable_migration_managed__: ClassVar[bool] = True
+
+    @classmethod
+    def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
+        if len(args) < 2:
+            raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
+
+        _name, metadata, *table_items = args
+        kwargs = dict(kwargs)
+        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
+        if not kwargs.get("schema"):
+            kwargs["schema"] = schema
+        table_name = build_meta_table_storage_hash(
+            namespace=_resolve_class_namespace(cls),
+            identifier=metatable_migration_identifier(cls),
+            schema=schema,
+            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
+            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
+        )
+
+        from sqlalchemy import Table
+
+        return Table(table_name, metadata, *table_items, **kwargs)
+
+    @classmethod
+    def build_registration_request(
+        cls,
+        *,
+        data_source: Any | None = None,
+        data_source_uid: str | None = None,
+        identifier: str | None = None,
+        namespace: str | None = None,
+        description: str | None = None,
+        labels: Sequence[str] | None = None,
+        protect_from_deletion: bool | None = None,
+        open_for_everyone: bool | None = None,
+        provisioning: Mapping[str, Any] | None = None,
+        introspect: bool | None = None,
+        _target_meta_tables: Mapping[Any, Any] | None = None,
+        hash_namespace: str | None = None,
+        extra_hash_components: Mapping[str, Any] | None = None,
+        enforce_storage_hash_name: bool = True,
+    ) -> MetaTableRegistrationRequest:
+        return super().build_registration_request(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            identifier=metatable_migration_identifier(cls, identifier=identifier),
+            namespace=namespace,
+            description=description,
+            labels=labels,
+            protect_from_deletion=protect_from_deletion,
+            open_for_everyone=open_for_everyone,
+            provisioning=provisioning,
+            introspect=introspect,
+            _target_meta_tables=_target_meta_tables,
+            hash_namespace=hash_namespace,
+            extra_hash_components=extra_hash_components,
+            enforce_storage_hash_name=enforce_storage_hash_name,
+        )
 
 
 class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
@@ -2313,10 +2410,12 @@ def _column_names(columns: Any) -> list[str]:
 
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
+    "MigrationManagedMetaTable",
     "MetaTableForeignKey",
     "PlatformManagedMetaTable",
     "PlatformTimeIndexMetaData",
     "external_registered_registration_request_from_sqlalchemy_model",
+    "metatable_migration_identifier",
     "metatable_configured_tablename",
     "metatable_tablename",
     "platform_managed_registration_request_from_sqlalchemy_model",

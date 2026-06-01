@@ -14,10 +14,12 @@ from mainsequence.client.models_metatables import (
 )
 from mainsequence.meta_tables import (
     MetaTableForeignKey,
+    MigrationManagedMetaTable,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     external_registered_registration_request_from_sqlalchemy_model,
     metatable_configured_tablename,
+    metatable_migration_identifier,
     metatable_tablename,
     platform_managed_registration_request_from_sqlalchemy_model,
     table_contract_from_sqlalchemy_model,
@@ -447,6 +449,41 @@ def test_configured_metatable_tablename_ignores_logical_identifier():
     RenamedAccount = _model_class("RenamedAccount", renamed_table, identifier="CustomerAccount")
 
     assert metatable_configured_tablename(Account) == metatable_configured_tablename(RenamedAccount)
+
+
+def test_migration_managed_metatable_uses_identifier_addressed_storage_with_sqlalchemy():
+    sqlalchemy = pytest.importorskip("sqlalchemy")
+
+    class BeforeBase(sqlalchemy.orm.DeclarativeBase):
+        pass
+
+    class AfterBase(sqlalchemy.orm.DeclarativeBase):
+        pass
+
+    class AssetBefore(MigrationManagedMetaTable, BeforeBase):
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "example.assets.Asset"
+
+        uid: Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.String(64), primary_key=True)
+
+    class AssetAfter(MigrationManagedMetaTable, AfterBase):
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "example.assets.Asset"
+
+        uid: Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.String(64), primary_key=True)
+        status: Mapped[str] = sqlalchemy.orm.mapped_column(sqlalchemy.String(32), nullable=True)
+
+    assert metatable_migration_identifier(AssetBefore) == "example.assets.Asset"
+    assert AssetBefore.__table__.name == AssetAfter.__table__.name
+    assert metatable_configured_tablename(AssetBefore) != metatable_configured_tablename(AssetAfter)
+
+    request = AssetAfter.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    )
+    assert request.identifier == "example.assets.Asset"
+    assert request.storage_hash == AssetAfter.__table__.name
 
 
 def test_platform_managed_schema_resolves_from_sqlalchemy_table_args_only():
@@ -1187,7 +1224,6 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
 def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
-
     from sqlalchemy import Index, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column
 
@@ -1321,7 +1357,6 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
 ):
     pytest.importorskip("sqlalchemy")
 
-
     from sqlalchemy import MetaData, String, Uuid, select
     from sqlalchemy.dialects import postgresql
     from sqlalchemy.orm import DeclarativeBase, mapped_column
@@ -1375,7 +1410,6 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
 
 def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_target():
     pytest.importorskip("sqlalchemy")
-
 
     from sqlalchemy import MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column
@@ -1437,7 +1471,6 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
 
 def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
-
 
     from sqlalchemy import DateTime, Index, MetaData, String, Uuid
     from sqlalchemy.orm import DeclarativeBase, mapped_column

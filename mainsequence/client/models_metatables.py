@@ -127,6 +127,27 @@ MetaTableCompiledSQLDialect = Literal["postgresql"]
 MetaTableCompiledSQLParamstyle = Literal["pyformat"]
 MetaTableMigrationVersion = Literal["metatable-migration.v1"]
 MetaTableMigrationDirection = Literal["upgrade", "downgrade"]
+MetaTableMigrationStatus = Literal[
+    "pending",
+    "validating",
+    "validated",
+    "running",
+    "applied",
+    "failed_before_execution",
+    "failed_after_execution",
+    "metadata_refresh_failed",
+    "out_of_sync",
+]
+MetaTableMigrationOperationName = Literal[
+    "add_column",
+    "drop_column",
+    "alter_column",
+    "rename_column",
+    "create_index",
+    "drop_index",
+    "add_foreign_key",
+    "drop_foreign_key",
+]
 MetaTableMigrationSha256 = Annotated[
     str,
     Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"),
@@ -501,9 +522,21 @@ class MetaTableMigrationRegistryUpdate(BasePydanticModel):
         ...,
         validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
     )
-    status: Literal["pending", "validated", "applying", "applied", "failed"]
+    status: MetaTableMigrationStatus
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+
+class MetaTableMigrationSchemaOperation(BasePydanticModel):
+    op: MetaTableMigrationOperationName
+    table_identifier: str
+    allow_destructive: bool = False
+    column: str | dict[str, Any] | None = None
+    index: str | dict[str, Any] | None = None
+    foreign_key: str | dict[str, Any] | None = None
+    contract: dict[str, Any] | None = None
+
+    model_config = ConfigDict(extra="allow")
 
 
 class MetaTableMigrationOperation(BasePydanticModel):
@@ -525,9 +558,6 @@ class MetaTableMigrationOperation(BasePydanticModel):
     expected_current_revision: str | None = None
     manifest_sha256: MetaTableMigrationSha256
     sql_sha256: MetaTableMigrationSha256
-    affected_tables: list[MetaTableMigrationAffectedTable] = Field(default_factory=list)
-    old_contract_hashes: dict[str, MetaTableMigrationSha256] = Field(default_factory=dict)
-    new_contract_hashes: dict[str, MetaTableMigrationSha256] = Field(default_factory=dict)
     idempotency_key: str
     lock_key: str
     dry_run: bool = False
@@ -550,7 +580,12 @@ class MetaTableMigrationStatusRequest(BasePydanticModel):
 class MetaTableMigrationApplyResponse(BasePydanticModel):
     ok: bool
     version: MetaTableMigrationVersion = METATABLE_MIGRATION_V1
-    dry_run: bool
+    status: MetaTableMigrationStatus | None = None
+    migration_run_uid: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("migration_run_uid", "migrationRunUid"),
+    )
+    dry_run: bool = False
     migration_meta_table_uid: str = Field(
         ...,
         validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
@@ -566,19 +601,24 @@ class MetaTableMigrationApplyResponse(BasePydanticModel):
     direction: MetaTableMigrationDirection
     previous_revision: str | None = None
     applied_revision: str | None = None
-    executed_statement_count: int = Field(..., ge=0)
+    executed_statement_count: int = Field(default=0, ge=0)
     affected_tables: list[MetaTableMigrationAffectedTableResult] = Field(default_factory=list)
+    affected_meta_table_uids: list[str] = Field(default_factory=list)
     created_meta_table_uids: list[str] = Field(default_factory=list)
     imported_meta_table_uids: list[str] = Field(default_factory=list)
     refreshed_meta_table_uids: list[str] = Field(default_factory=list)
     introspection_snapshots: dict[str, Any] = Field(default_factory=dict)
-    registry_update: MetaTableMigrationRegistryUpdate
+    registry_update: MetaTableMigrationRegistryUpdate | None = None
     error: MetaTableMigrationError | None = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 
 
 class MetaTableMigrationStatusRow(BasePydanticModel):
+    migration_run_uid: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("migration_run_uid", "migrationRunUid"),
+    )
     migration_row_uid: str = Field(
         ...,
         validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
@@ -586,7 +626,7 @@ class MetaTableMigrationStatusRow(BasePydanticModel):
     revision: str
     down_revision: str | None = None
     direction: MetaTableMigrationDirection
-    status: Literal["pending", "validated", "applying", "applied", "failed"]
+    status: MetaTableMigrationStatus
     previous_revision: str | None = None
     applied_revision: str | None = None
     executed_statement_count: int | None = Field(default=None, ge=0)
@@ -601,6 +641,7 @@ class MetaTableMigrationStatusRow(BasePydanticModel):
 
 class MetaTableMigrationStatusResponse(BasePydanticModel):
     ok: bool
+    version: MetaTableMigrationVersion = METATABLE_MIGRATION_V1
     migration_meta_table_uid: str = Field(
         ...,
         validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
@@ -611,10 +652,17 @@ class MetaTableMigrationStatusResponse(BasePydanticModel):
     current_revision: str | None = None
     latest_successful_revision: str | None = None
     latest_attempted_revision: str | None = None
-    rows: list[MetaTableMigrationStatusRow] = Field(default_factory=list)
+    runs: list[MetaTableMigrationStatusRow] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("runs", "rows"),
+    )
     error: MetaTableMigrationError | None = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
+
+    @property
+    def rows(self) -> list[MetaTableMigrationStatusRow]:
+        return self.runs
 
 
 class MetaTableRegistrationRequest(BasePydanticModel):

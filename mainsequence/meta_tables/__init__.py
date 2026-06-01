@@ -11,6 +11,7 @@ _LAZY_IMPORTS = {
     ),
     "MetaTableForeignKey": (".sqlalchemy_contracts", "MetaTableForeignKey"),
     "MigrationMetaTable": (".migrations", "MigrationMetaTable"),
+    "MigrationManagedMetaTable": (".sqlalchemy_contracts", "MigrationManagedMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
@@ -30,6 +31,10 @@ _LAZY_IMPORTS = {
     "metatable_configured_tablename": (
         ".sqlalchemy_contracts",
         "metatable_configured_tablename",
+    ),
+    "metatable_migration_identifier": (
+        ".sqlalchemy_contracts",
+        "metatable_migration_identifier",
     ),
     "create_default_migration_registry_model": (
         ".migrations",

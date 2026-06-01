@@ -4,6 +4,11 @@ Date: 2026-06-01
 
 Status: Proposed
 
+Backend alignment: this ADR is implemented against the TS Manager backend
+decision in `docs/tdag/ts_manager/adr/adr-011-metatable-migration-execution-ledger.md`.
+The SDK migration registry is the artifact source. The backend
+`MetaTableMigrationRun` ledger is the execution source of truth.
+
 ## Context
 
 SQLAlchemy MetaTable declarations are now the SDK authoring source for
@@ -70,12 +75,17 @@ SDK MetaTable operation machinery.
 The backend apply endpoint does not own or pre-register migration artifacts. It
 receives a reference to a migration registry MetaTable row, reads the migration
 payload from that row, validates it, locks the target migration stream, executes
-the migration when requested, refreshes affected MetaTables, and writes or
-returns run metadata.
+the migration when requested, refreshes affected MetaTables, and writes the
+authoritative backend migration run ledger.
 
 The main migration resolver is the MetaTable `identifier`. `identifier` is
-global and unique. Migratable tables are identifier-addressed, not
-shape-addressed.
+stable within the backend migration resolution scope:
+
+```text
+organization_owner + data_source + management_mode + identifier
+```
+
+Migratable tables are identifier-addressed, not shape-addressed.
 
 When a model does not define `__metatable_identifier__`, the SDK derives a
 stable default from the importable Python class path:
@@ -112,7 +122,7 @@ identity:
 - physical table name is backend-owned
 
 They may appear in validation and execution payloads, but they do not replace
-the globally unique `identifier` resolver.
+the scoped stable `identifier` resolver.
 
 ## Identifier-Based Migration Resolution
 
@@ -151,7 +161,7 @@ from their first version. A table already created with a shape-derived
 shape changes.
 Adopting such a table requires an explicit anchor, such as the old
 `MetaTable.uid`, old `storage_hash`, or an unambiguous backend lookup by the
-global `identifier`.
+scoped `identifier`.
 
 Class moves and renames are handled by pinning the old identifier:
 
@@ -184,16 +194,18 @@ direction. Required columns include:
 - `expected_current_revision`
 - `manifest`
 - `manifest_sha256`
+- `operations`
 - `sql`
 - `sql_sha256`
 - `statement_boundaries`
 - `affected_tables`
+- `old_contracts`
 - `old_contract_hashes`
 - `new_contract_hashes`
 - `new_contracts`
 - `idempotency_key`
 - `lock_key`
-- `status`
+- `status` as a convenience mirror only
 - `previous_revision`
 - `applied_revision`
 - `executed_statement_count`
@@ -227,7 +239,8 @@ class MarketsMigration(MigrationMetaTable, Base):
 
 Extension fields are client/package-owned metadata. They can support release
 channels, diagnostics, compatibility checks, rollback notes, or domain-specific
-validation. They are not a separate backend approval mechanism.
+validation. They are not a separate backend approval mechanism and they are not
+authoritative execution state.
 
 The only hard requirement is that the subclass preserves the required migration
 contract columns. Backend execution logic reads the migration operation through
@@ -375,13 +388,14 @@ The backend must:
 1. Resolve `migration_meta_table_uid`.
 2. Read the migration row identified by `migration_row_uid`.
 3. Verify that the row fields match the request identity and checksums.
-4. Recompute `manifest_sha256` and `sql_sha256` from the row content.
+4. Recompute `manifest_sha256`, operation checksums, and `sql_sha256` from the
+   row content.
 5. Acquire a migration lock for
    `(data_source_uid, package, migration_namespace)`.
-6. Check the current revision from successful registry rows after the lock is
-   acquired.
+6. Check the current revision from successful backend ledger rows after the
+   lock is acquired.
 7. Validate `expected_current_revision`.
-8. Resolve affected existing MetaTables by global `identifier`.
+8. Resolve affected existing MetaTables by scoped `identifier`.
 9. Validate that resolved in-place tables keep the same stable `storage_hash`.
 10. Validate old contract hashes for affected existing tables.
 11. If `dry_run` is true, stop after validation and return the planned result.
@@ -389,11 +403,11 @@ The backend must:
     transactional DDL.
 13. Introspect affected physical tables.
 14. Create, import, or refresh affected platform MetaTable resources.
-15. Validate new contract hashes.
+15. Validate new contract hashes using backend-normalized contracts.
 16. Update existing MetaTable contract/projection rows without changing the
     stable `storage_hash` for in-place migrated tables.
-17. Update the migration registry row, or append a run row if the registry
-    subclass uses append-only run records.
+17. Update the backend `MetaTableMigrationRun` ledger and optionally mirror
+    status to the registry row.
 18. Release the lock after success or failure.
 
 The apply response body is:
@@ -410,6 +424,8 @@ The apply response body is:
   "migration_namespace": "markets",
   "revision": "001_create_asset_tag",
   "direction": "upgrade",
+  "migration_run_uid": "uuid",
+  "status": "applied",
   "previous_revision": null,
   "applied_revision": "001_create_asset_tag",
   "executed_statement_count": 3,
@@ -443,10 +459,10 @@ The apply response body is:
 For `dry_run: true`, `ok` is true when validation succeeds, `dry_run` remains
 true, `executed_statement_count` is `0`, `applied_revision` is the planned
 revision, affected table `action` values may be `planned`, and
-`registry_update.status` is `validated`.
+backend ledger status is `validated`.
 
 For validation or execution failure, the backend should return the same shape
-with `ok: false`, `registry_update.status: "failed"`, and:
+with `ok: false`, a backend ledger failure status, and:
 
 ```json
 {
@@ -484,7 +500,7 @@ The status request body is:
 `data_source_uid` may be `null` only when the caller wants package/namespace
 status across all data sources visible to the caller.
 
-The status response body is:
+The status response body is backed by the backend migration run ledger:
 
 ```json
 {
@@ -496,8 +512,9 @@ The status response body is:
   "current_revision": "001_create_asset_tag",
   "latest_successful_revision": "001_create_asset_tag",
   "latest_attempted_revision": "001_create_asset_tag",
-  "rows": [
+  "runs": [
     {
+      "migration_run_uid": "uuid",
       "migration_row_uid": "uuid",
       "revision": "001_create_asset_tag",
       "down_revision": null,
@@ -523,6 +540,7 @@ The SDK owns packaging, registry management, and local validation:
 
 - define `MigrationMetaTable`
 - allow projects to subclass `MigrationMetaTable`
+- store migration artifacts in the registry, not authoritative execution state
 - define the identifier-addressed registration mode for migration-managed
   MetaTables
 - derive default table identifiers from canonical class import paths
@@ -532,7 +550,10 @@ The SDK owns packaging, registry management, and local validation:
 - compute artifact checksums
 - validate revision lineage
 - split SQL using explicit statement boundary metadata
+- serialize structured operation plans for standard schema changes
 - compute old and new contract hashes from SQLAlchemy MetaTable declarations
+- include full old and new contracts so the backend can recompute
+  authoritative hashes
 - reject in-place migration packaging for shape-addressed table declarations
 - insert packaged migration rows into the registry MetaTable
 - construct typed `metatable-migration.v1` requests
@@ -551,16 +572,17 @@ The SDK does not:
 The backend owns authority and side effects during apply:
 
 - permission checks for schema migration execution
+- backend-owned `MetaTableMigrationRun` execution ledger
 - migration locks
-- affected table resolution by global `identifier`
-- current revision checks against registry rows
+- affected table resolution by scoped `identifier`
+- current revision checks against backend ledger rows
 - idempotency
 - transactional execution when supported
 - table introspection
 - MetaTable create/import/refresh
 - stable `storage_hash` preservation for in-place migrated tables
 - old and new contract hash validation
-- registry row status updates or run-row appends
+- optional registry row status mirroring
 
 The backend must reject apply requests for unknown registry tables, unknown
 migration rows, checksum mismatches, revision mismatches, lock conflicts,
@@ -570,6 +592,9 @@ mismatches.
 
 The backend must not require migrations to be stored in a server-side artifact
 table. The registry is supplied by the client as a normal MetaTable.
+
+The backend ledger, not the registry row, is authoritative for current
+revision, idempotency, status, recovery state, and audit metadata.
 
 ## Trust Boundary
 
@@ -596,13 +621,13 @@ track migrations across many logical MetaTables.
 
 The migration registry benefits from the same SQLAlchemy declaration,
 registration, search, labels, governed operations, and extension model as any
-other MetaTable.
+other MetaTable, while execution truth lives in the backend ledger.
 
 Project-specific extension fields are first-class. A package can extend
 `MigrationMetaTable` with release, compatibility, ownership, or diagnostics
 metadata without waiting for backend schema changes.
 
-Migratable data tables are resolved by global `identifier`, using explicit
+Migratable data tables are resolved by scoped `identifier`, using explicit
 `__metatable_identifier__` when present and canonical class import path
 otherwise. This makes schema changes recoverable from the new code because the
 resolver does not depend on columns, indexes, foreign keys, or constraints.
@@ -625,9 +650,13 @@ general migration engine.
 - [x] Allow projects to subclass `MigrationMetaTable` with extension columns.
 - [x] Add Pydantic models for `metatable-migration.v1` apply requests.
 - [x] Add typed Pydantic response models for migration apply/status responses.
+- [x] Add backend-ledger status fields to migration apply/status response
+  models.
 - [x] Add package manifest and SQL loading helpers.
 - [x] Add checksum helpers for manifests and SQL artifacts.
+- [x] Add structured operation-plan serialization for registry artifacts.
 - [x] Add contract hash helpers based on SQLAlchemy MetaTable declarations.
+- [x] Include full old/new contracts in registry artifacts.
 - [x] Add registry row construction helpers.
 - [x] Add registry upsert operation helpers for inserting packaged migrations
   into a registered `MigrationMetaTable`.
@@ -641,13 +670,13 @@ general migration engine.
   SQL, and dry-run apply operation construction.
 - [x] Add SDK tests for migration request payloads, registry helpers, package
   loading, checksums, contract hashes, and example operation construction.
-- [ ] Add an identifier-addressed registration mode for migration-managed
-  SQLAlchemy MetaTables so registration resolves by global `identifier`, not by
+- [x] Add an identifier-addressed registration mode for migration-managed
+  SQLAlchemy MetaTables so registration resolves by scoped `identifier`, not by
   SQLAlchemy table shape.
-- [ ] Add canonical class-path identifier derivation for migration-managed
+- [x] Add canonical class-path identifier derivation for migration-managed
   MetaTables: explicit `__metatable_identifier__`, else `model.__module__ +
   "." + model.__qualname__`.
-- [ ] Add validation that in-place affected tables use the
+- [x] Add validation that in-place affected tables use the
   identifier-addressed migration registration mode.
 - [ ] Add backend apply endpoint with registry-row loading, locking,
   idempotency, identifier-based table resolution, stable storage-hash

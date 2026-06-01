@@ -7,6 +7,7 @@ from sqlalchemy import String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client.models_metatables import MetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     METATABLE_MIGRATION_V1,
     MIGRATION_MANIFEST_V1,
@@ -115,9 +116,88 @@ def test_contract_hash_rotation_example_builds_old_and_new_hashes():
     assert summary["rotated"] is True
     assert row.old_contract_hashes[ASSET_IDENTIFIER] == summary["old_contract_hash"]
     assert row.new_contract_hashes[ASSET_IDENTIFIER] == summary["new_contract_hash"]
-    assert row.affected_tables == [
-        {"identifier": ASSET_IDENTIFIER, "namespace": "sdk-examples"}
-    ]
+    assert row.old_contracts[ASSET_IDENTIFIER]["columns"]
+    assert row.new_contracts[ASSET_IDENTIFIER]["columns"]
+    assert row.affected_tables == [{"identifier": ASSET_IDENTIFIER, "namespace": "sdk-examples"}]
+
+
+def test_load_packaged_migration_accepts_operation_plan_without_sql(tmp_path, monkeypatch):
+    package_name = "sample_migrations_operations"
+    package_dir = tmp_path / package_name
+    migrations_dir = package_dir / "migrations"
+    migrations_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (migrations_dir / "001.json").write_text(
+        """
+{
+  "version": "metatable-migration-manifest.v1",
+  "migration_namespace": "markets",
+  "revision": "001",
+  "direction": "upgrade",
+  "operations": [
+    {
+      "op": "add_column",
+      "table_identifier": "sample.Asset",
+      "column": {"name": "display_name", "data_type": "str", "nullable": true}
+    }
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    packaged = load_packaged_migration(package_name, "migrations/001.json")
+    row = build_migration_registry_row(
+        packaged,
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert packaged.sql == ""
+    assert row.operations[0]["op"] == "add_column"
+    assert len(packaged.operations_sha256) == 64
+
+
+def test_load_packaged_migration_rejects_shape_addressed_contract_models(tmp_path, monkeypatch):
+    package_name = "sample_migrations_shape_reject"
+    package_dir = tmp_path / package_name
+    migrations_dir = package_dir / "migrations"
+    migrations_dir.mkdir(parents=True)
+    (package_dir / "__init__.py").write_text("", encoding="utf-8")
+    (migrations_dir / "001.json").write_text(
+        """
+{
+  "version": "metatable-migration-manifest.v1",
+  "migration_namespace": "markets",
+  "revision": "001",
+  "direction": "upgrade",
+  "operations": [
+    {"op": "add_column", "table_identifier": "sample.Asset", "column": "display_name"}
+  ]
+}
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    class Base(DeclarativeBase):
+        pass
+
+    class ShapeAddressedAsset(PlatformManagedMetaTable, Base):
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "sample"
+        __metatable_identifier__ = "sample.Asset"
+
+        uid: Mapped[str] = mapped_column(String(64), primary_key=True)
+
+    with pytest.raises(ValueError, match="MigrationManagedMetaTable"):
+        load_packaged_migration(
+            package_name,
+            "migrations/001.json",
+            new_contract_models={"sample.Asset": ShapeAddressedAsset},
+        )
 
 
 def test_create_default_migration_registry_model_builds_metatable_contract(monkeypatch):
@@ -140,7 +220,9 @@ def test_create_default_migration_registry_model_builds_metatable_contract(monke
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     )
     column_names = {column.name for column in request.table_contract.columns}
-    assert {"uid", "package", "migration_namespace", "sql", "sql_sha256"} <= column_names
+    assert {"uid", "package", "migration_namespace", "operations", "sql", "sql_sha256"} <= (
+        column_names
+    )
     assert request.management_mode == "platform_managed"
     assert request.table_contract.physical.table_name is None
 
@@ -166,7 +248,7 @@ def test_project_can_extend_migration_metatable_with_extra_columns():
     )
 
     column_names = {column.name for column in request.table_contract.columns}
-    assert {"uid", "sql", "sql_sha256", "release_channel"} <= column_names
+    assert {"uid", "operations", "sql", "sql_sha256", "release_channel"} <= column_names
     sqlalchemy.inspect(ProjectMigration)
 
 

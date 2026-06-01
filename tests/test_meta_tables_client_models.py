@@ -112,7 +112,7 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
                     name="account_uid",
                     data_type="uuid",
                     nullable=False,
-                )
+                ),
             ],
             foreign_keys=[
                 meta_table_models.MetaTableForeignKeyContract(
@@ -264,14 +264,6 @@ def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
             expected_current_revision=None,
             manifest_sha256="a" * 64,
             sql_sha256="b" * 64,
-            affected_tables=[
-                {
-                    "identifier": "msm.markets.models.Asset",
-                    "meta_table_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-                }
-            ],
-            old_contract_hashes={"msm.markets.models.Asset": "c" * 64},
-            new_contract_hashes={"msm.markets.models.Asset": "d" * 64},
             idempotency_key="migration:001",
             lock_key="dddddddd-dddd-4ddd-8ddd-dddddddddddd:msm:markets",
             dry_run=True,
@@ -293,6 +285,9 @@ def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     )
     assert captured["payload"]["json"]["dry_run"] is True
+    assert "affected_tables" not in captured["payload"]["json"]
+    assert "old_contract_hashes" not in captured["payload"]["json"]
+    assert "new_contract_hashes" not in captured["payload"]["json"]
 
 
 def test_meta_table_migration_operation_requires_lowercase_sha256():

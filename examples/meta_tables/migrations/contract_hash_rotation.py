@@ -15,7 +15,7 @@ from examples.meta_tables.common import (
     required_env,
 )
 from mainsequence.client import MetaTable
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.meta_tables import MigrationManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     PackagedMetaTableMigration,
     apply_migration,
@@ -45,7 +45,7 @@ class AfterBase(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
 
 
-class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
+class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
     __table_args__ = {"schema": "public"}
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = ASSET_IDENTIFIER
@@ -54,7 +54,7 @@ class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class AssetAfterMigration(PlatformManagedMetaTable, AfterBase):
+class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
     __table_args__ = {"schema": "public"}
     __metatable_namespace__ = NAMESPACE
     __metatable_identifier__ = ASSET_IDENTIFIER

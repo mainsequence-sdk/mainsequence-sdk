@@ -23,13 +23,18 @@ from mainsequence.client.models_metatables import (
     MetaTableMigrationApplyResponse,
     MetaTableMigrationDirection,
     MetaTableMigrationOperation,
+    MetaTableMigrationSchemaOperation,
     MetaTableMigrationStatusRequest,
     MetaTableMigrationStatusResponse,
 )
 from mainsequence.client.utils import serialize_to_json
 
 from .compiled_sql.v1 import build_operation
-from .sqlalchemy_contracts import PlatformManagedMetaTable, table_contract_from_sqlalchemy_model
+from .sqlalchemy_contracts import (
+    MigrationManagedMetaTable,
+    PlatformManagedMetaTable,
+    table_contract_from_sqlalchemy_model,
+)
 
 MIGRATION_MANIFEST_V1 = "metatable-migration-manifest.v1"
 DEFAULT_MIGRATION_REGISTRY_IDENTIFIER = "metatable_migrations"
@@ -53,7 +58,7 @@ class MigrationMetaTable(PlatformManagedMetaTable):
     __metatable_namespace__: ClassVar[str | None] = DEFAULT_MIGRATION_REGISTRY_NAMESPACE
     __metatable_identifier__: ClassVar[str | None] = DEFAULT_MIGRATION_REGISTRY_IDENTIFIER
     __metatable_description__: ClassVar[str | None] = (
-        "Client-defined registry of packaged MetaTable schema migrations and run state."
+        "Client-defined registry of packaged MetaTable schema migration artifacts."
     )
     __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = {
         "storage_name": DEFAULT_MIGRATION_REGISTRY_IDENTIFIER,
@@ -70,10 +75,12 @@ class MigrationMetaTable(PlatformManagedMetaTable):
     expected_current_revision: Mapped[str | None] = mapped_column(String(128), nullable=True)
     manifest: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     manifest_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    operations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     sql: Mapped[str] = mapped_column(Text, nullable=False)
     sql_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     statement_boundaries: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     affected_tables: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    old_contracts: Mapped[dict[str, dict[str, Any]]] = mapped_column(JSON, nullable=False)
     old_contract_hashes: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     new_contract_hashes: Mapped[dict[str, str]] = mapped_column(JSON, nullable=False)
     new_contracts: Mapped[dict[str, dict[str, Any]]] = mapped_column(JSON, nullable=False)
@@ -108,9 +115,11 @@ class MetaTableMigrationManifest(BasePydanticModel):
     down_revision: str | None = None
     direction: MetaTableMigrationDirection = "upgrade"
     expected_current_revision: str | None = None
-    sql_path: str
+    sql_path: str | None = None
+    operations: list[MetaTableMigrationSchemaOperation] = Field(default_factory=list)
     statement_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     affected_tables: list[MetaTableMigrationAffectedTable] = Field(default_factory=list)
+    old_contracts: dict[str, dict[str, Any]] = Field(default_factory=dict)
     old_contract_hashes: dict[str, str] = Field(default_factory=dict)
     new_contract_hashes: dict[str, str] = Field(default_factory=dict)
     new_contracts: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -124,8 +133,10 @@ class MetaTableMigrationManifest(BasePydanticModel):
             raise ValueError(f"Unsupported MetaTable migration manifest version: {self.version!r}")
         if self.direction not in {"upgrade", "downgrade"}:
             raise ValueError("direction must be 'upgrade' or 'downgrade'.")
-        if not self.sql_path.strip():
-            raise ValueError("sql_path is required.")
+        if self.sql_path is not None and not self.sql_path.strip():
+            raise ValueError("sql_path must be non-empty when provided.")
+        if not self.sql_path and not self.operations:
+            raise ValueError("MetaTable migrations require operations or sql_path.")
         return self
 
 
@@ -137,6 +148,7 @@ class PackagedMetaTableMigration(BasePydanticModel):
     manifest_sha256: str
     sql: str
     sql_sha256: str
+    operations_sha256: str
 
     @property
     def revision(self) -> str:
@@ -161,8 +173,10 @@ class MetaTableMigrationRegistryRow(BasePydanticModel):
     manifest_sha256: str
     sql: str
     sql_sha256: str
+    operations: list[dict[str, Any]] = Field(default_factory=list)
     statement_boundaries: list[dict[str, Any]] = Field(default_factory=list)
     affected_tables: list[dict[str, Any]] = Field(default_factory=list)
+    old_contracts: dict[str, dict[str, Any]] = Field(default_factory=dict)
     old_contract_hashes: dict[str, str] = Field(default_factory=dict)
     new_contract_hashes: dict[str, str] = Field(default_factory=dict)
     new_contracts: dict[str, dict[str, Any]] = Field(default_factory=dict)
@@ -214,7 +228,7 @@ def create_default_migration_registry_model(
         "__metatable_namespace__": namespace,
         "__metatable_identifier__": identifier,
         "__metatable_description__": (
-            "Client-defined registry of packaged MetaTable schema migrations and run state."
+            "Client-defined registry of packaged MetaTable schema migration artifacts."
         ),
         "__metatable_extra_hash_components__": {"storage_name": identifier},
     }
@@ -235,22 +249,24 @@ def load_packaged_migration(
     manifest_payload.setdefault("package", package)
     manifest = MetaTableMigrationManifest(**manifest_payload)
 
-    sql_bytes = _read_package_bytes(package, manifest.sql_path)
-    sql = sql_bytes.decode("utf-8")
+    sql = ""
+    if manifest.sql_path:
+        sql_bytes = _read_package_bytes(package, manifest.sql_path)
+        sql = sql_bytes.decode("utf-8")
 
-    old_hashes = dict(manifest.old_contract_hashes)
-    old_hashes.update(
-        contract_hashes_from_models(
+    _validate_migration_managed_models(old_contract_models or {})
+    _validate_migration_managed_models(new_contract_models or {})
+
+    old_contracts = dict(manifest.old_contracts)
+    old_contracts.update(
+        contracts_from_models(
             old_contract_models or {},
             target_meta_tables=target_meta_tables,
         )
     )
-    new_hashes = dict(manifest.new_contract_hashes)
-    new_hashes.update(
-        contract_hashes_from_models(
-            new_contract_models or {},
-            target_meta_tables=target_meta_tables,
-        )
+    old_hashes = dict(manifest.old_contract_hashes)
+    old_hashes.update(
+        {identifier: contract_hash(contract) for identifier, contract in old_contracts.items()}
     )
     new_contracts = dict(manifest.new_contracts)
     new_contracts.update(
@@ -259,8 +275,13 @@ def load_packaged_migration(
             target_meta_tables=target_meta_tables,
         )
     )
-    manifest.old_contract_hashes = old_hashes
+    new_hashes = dict(manifest.new_contract_hashes)
+    new_hashes.update(
+        {identifier: contract_hash(contract) for identifier, contract in new_contracts.items()}
+    )
+    manifest.old_contracts = old_contracts
     manifest.new_contract_hashes = new_hashes
+    manifest.old_contract_hashes = old_hashes
     manifest.new_contracts = new_contracts
 
     return PackagedMetaTableMigration(
@@ -271,6 +292,12 @@ def load_packaged_migration(
         manifest_sha256=sha256_text(manifest_text),
         sql=sql,
         sql_sha256=sha256_text(sql),
+        operations_sha256=sha256_payload(
+            [
+                _strip_client_metadata(operation.model_dump(mode="json", exclude_none=True))
+                for operation in manifest.operations
+            ]
+        ),
     )
 
 
@@ -302,6 +329,10 @@ def build_migration_registry_row(
         "expected_current_revision": manifest.expected_current_revision,
         "manifest": _strip_client_metadata(manifest.model_dump(mode="json", exclude_none=True)),
         "manifest_sha256": packaged_migration.manifest_sha256,
+        "operations": [
+            _strip_client_metadata(operation.model_dump(mode="json", exclude_none=True))
+            for operation in manifest.operations
+        ],
         "sql": packaged_migration.sql,
         "sql_sha256": packaged_migration.sql_sha256,
         "statement_boundaries": list(manifest.statement_boundaries),
@@ -309,12 +340,17 @@ def build_migration_registry_row(
             _strip_client_metadata(table.model_dump(mode="json", by_alias=True, exclude_none=True))
             for table in manifest.affected_tables
         ],
+        "old_contracts": dict(manifest.old_contracts),
         "old_contract_hashes": dict(manifest.old_contract_hashes),
         "new_contract_hashes": dict(manifest.new_contract_hashes),
         "new_contracts": dict(manifest.new_contracts),
         "idempotency_key": migration_idempotency_key(
             row_uid=row_uid,
-            sql_sha256=packaged_migration.sql_sha256,
+            artifact_sha256=migration_artifact_hash(
+                manifest_sha256=packaged_migration.manifest_sha256,
+                operations_sha256=packaged_migration.operations_sha256,
+                sql_sha256=packaged_migration.sql_sha256,
+            ),
         ),
         "lock_key": migration_lock_key(
             data_source_uid=data_source_uid,
@@ -408,9 +444,6 @@ def build_migration_operation(
         expected_current_revision=row_payload.get("expected_current_revision"),
         manifest_sha256=str(row_payload["manifest_sha256"]),
         sql_sha256=str(row_payload["sql_sha256"]),
-        affected_tables=row_payload.get("affected_tables") or [],
-        old_contract_hashes=row_payload.get("old_contract_hashes") or {},
-        new_contract_hashes=row_payload.get("new_contract_hashes") or {},
         idempotency_key=str(row_payload["idempotency_key"]),
         lock_key=str(row_payload["lock_key"]),
         dry_run=dry_run,
@@ -474,6 +507,10 @@ def contract_hashes_from_models(
     }
 
 
+def validate_migration_managed_models(models: Mapping[str, Any]) -> None:
+    _validate_migration_managed_models(models)
+
+
 def contract_hash(contract: Mapping[str, Any] | Any) -> str:
     if hasattr(contract, "model_dump"):
         payload = contract.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -481,6 +518,16 @@ def contract_hash(contract: Mapping[str, Any] | Any) -> str:
         payload = dict(contract)
     encoded = json.dumps(
         _strip_client_metadata(serialize_to_json(payload)),
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def sha256_payload(value: Any) -> str:
+    jsonable = serialize_to_json({"value": value})["value"]
+    encoded = json.dumps(
+        _strip_client_metadata(jsonable),
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
@@ -520,8 +567,31 @@ def migration_lock_key(
     return f"{data_source_uid}:{package}:{migration_namespace}"
 
 
-def migration_idempotency_key(*, row_uid: str, sql_sha256: str) -> str:
-    return f"metatable-migration:{row_uid}:{sql_sha256}"
+def migration_artifact_hash(
+    *,
+    manifest_sha256: str,
+    operations_sha256: str,
+    sql_sha256: str,
+) -> str:
+    return sha256_payload(
+        {
+            "manifest_sha256": manifest_sha256,
+            "operations_sha256": operations_sha256,
+            "sql_sha256": sql_sha256,
+        }
+    )
+
+
+def migration_idempotency_key(
+    *,
+    row_uid: str,
+    artifact_sha256: str | None = None,
+    sql_sha256: str | None = None,
+) -> str:
+    artifact = artifact_sha256 or sql_sha256
+    if artifact in (None, ""):
+        raise ValueError("artifact_sha256 is required.")
+    return f"metatable-migration:{row_uid}:{artifact}"
 
 
 def _contract_payload(
@@ -538,6 +608,17 @@ def _contract_payload(
     return _strip_client_metadata(
         contract.model_dump(mode="json", by_alias=True, exclude_none=True)
     )
+
+
+def _validate_migration_managed_models(models: Mapping[str, Any]) -> None:
+    for identifier, model in dict(models).items():
+        if not isinstance(model, type) or not issubclass(model, MigrationManagedMetaTable):
+            model_name = getattr(model, "__qualname__", repr(model))
+            raise ValueError(
+                "In-place MetaTable migration contract models must inherit "
+                "MigrationManagedMetaTable so storage identity is stable by identifier. "
+                f"{identifier!r} uses {model_name}."
+            )
 
 
 def _read_package_bytes(package: str, path: str) -> bytes:
@@ -557,9 +638,7 @@ def _parse_manifest(manifest_text: str, *, manifest_path: str) -> dict[str, Any]
 def _strip_client_metadata(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {
-            key: _strip_client_metadata(item)
-            for key, item in value.items()
-            if key != "orm_class"
+            key: _strip_client_metadata(item) for key, item in value.items() if key != "orm_class"
         }
     if isinstance(value, list):
         return [_strip_client_metadata(item) for item in value]
@@ -634,8 +713,11 @@ __all__ = [
     "get_migration_status",
     "load_packaged_migration",
     "migration_idempotency_key",
+    "migration_artifact_hash",
     "migration_lock_key",
     "migration_row_uid",
+    "sha256_payload",
     "sha256_text",
     "sync_packaged_migration",
+    "validate_migration_managed_models",
 ]
