@@ -14,6 +14,7 @@ from mainsequence.client.dtype_codec import (
     sqlalchemy_type_to_token,
 )
 from mainsequence.client.models_metatables import (
+    DynamicTableDataSource,
     MetaTable,
     MetaTableColumnContract,
     MetaTableContract,
@@ -322,7 +323,7 @@ class PlatformManagedMetaTable:
     def build_registration_request(
         cls,
         *,
-        data_source: Any | None = None,
+        data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -363,6 +364,8 @@ class PlatformManagedMetaTable:
     def register(
         cls,
         *,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
     ) -> MetaTable:
@@ -378,10 +381,14 @@ class PlatformManagedMetaTable:
         try:
             target_meta_tables = _register_metatable_foreign_key_targets(
                 cls,
+                data_source=data_source,
+                data_source_uid=data_source_uid,
                 timeout=timeout,
                 stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
             )
             request = cls.build_registration_request(
+                data_source=data_source,
+                data_source_uid=data_source_uid,
                 _target_meta_tables=target_meta_tables,
             )
             meta_table = MetaTable.register(request, timeout=timeout)
@@ -512,7 +519,7 @@ class MigrationManagedMetaTable(PlatformManagedMetaTable):
     def build_registration_request(
         cls,
         *,
-        data_source: Any | None = None,
+        data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -610,7 +617,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     def build_registration_request(
         cls,
         *,
-        data_source: Any | None = None,
+        data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -653,6 +660,8 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     def register(
         cls,
         *,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
     ) -> Any:
@@ -670,10 +679,14 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         try:
             target_meta_tables = _register_metatable_foreign_key_targets(
                 cls,
+                data_source=data_source,
+                data_source_uid=data_source_uid,
                 timeout=timeout,
                 stack=_METATABLE_REGISTRATION_REGISTRY[storage_hash].stack,
             )
             request = cls.build_registration_request(
+                data_source=data_source,
+                data_source_uid=data_source_uid,
                 _target_meta_tables=target_meta_tables,
             )
             time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
@@ -737,7 +750,7 @@ class MigrationManagedTimeIndexMetaData(PlatformTimeIndexMetaData, MigrationMana
     def build_registration_request(
         cls,
         *,
-        data_source: Any | None = None,
+        data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
@@ -838,7 +851,7 @@ def table_contract_from_sqlalchemy_model(
 def time_indexed_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source: Any | None = None,
+    data_source: DynamicTableDataSource | None = None,
     data_source_uid: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
@@ -997,7 +1010,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
 def platform_managed_registration_request_from_sqlalchemy_model(
     model_or_table: Any,
     *,
-    data_source: Any | None = None,
+    data_source: DynamicTableDataSource | None = None,
     data_source_uid: str | None = None,
     identifier: str | None = None,
     namespace: str | None = None,
@@ -1226,9 +1239,14 @@ def _resolve_class_schema(cls: type[Any], *, metadata: Any | None = None) -> str
 
 def _resolve_data_source_uid(
     *,
-    data_source: Any | None = None,
+    data_source: DynamicTableDataSource | None = None,
     data_source_uid: str | None = None,
 ) -> str:
+    if data_source is not None and not isinstance(data_source, DynamicTableDataSource):
+        raise TypeError(
+            "data_source must be a DynamicTableDataSource. Pass data_source_uid=... "
+            "when only the uid is available."
+        )
     if data_source_uid:
         return str(data_source_uid)
 
@@ -1253,7 +1271,7 @@ def _resolve_data_source_uid(
 def _resolve_model_data_source_uid(
     model_or_table: Any,
     *,
-    data_source: Any | None = None,
+    data_source: DynamicTableDataSource | None = None,
     data_source_uid: str | None = None,
 ) -> str:
     resolved_data_source_uid = (
@@ -1382,12 +1400,16 @@ def _registration_stack_label(model: type[Any], storage_hash: str) -> str:
 def _register_metatable_foreign_key_targets(
     model_or_table: Any,
     *,
+    data_source: DynamicTableDataSource | None = None,
+    data_source_uid: str | None = None,
     timeout: int | float | tuple[float, float] | None,
     stack: tuple[str, ...],
 ) -> dict[type[Any], Any]:
     target_meta_tables: dict[type[Any], Any] = {}
     for target_model in _metatable_foreign_key_target_models(model_or_table):
         target_meta_table = target_model.register(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
             timeout=timeout,
             _registration_stack=stack,
         )

@@ -72,8 +72,9 @@ packaged = load_packaged_migration(
     new_contract_models={"AssetTag": AssetTag},
 )
 
+registry_meta_table = MarketsMigration.register(data_source_uid=DATA_SOURCE_UID)
 sync_result = sync_packaged_migration(
-    MarketsMigration,
+    registry_meta_table,
     packaged,
     extension_fields={"release_channel": "stable"},
 )
@@ -85,10 +86,10 @@ result = apply_migration(
 )
 ```
 
-`sync_packaged_migration(...)` registers the registry MetaTable if needed and
-upserts the packaged migration row using `compiled-sql.v1`. The target
-`data_source_uid` is derived from the resolved registry MetaTable; callers do
-not pass it separately.
+`sync_packaged_migration(...)` upserts the packaged migration row using
+`compiled-sql.v1`. The target `data_source_uid` is derived from the resolved
+registry MetaTable; callers do not pass it separately to sync. Bind the data
+source when the registry MetaTable is registered.
 
 `apply_migration(...)` sends a `metatable-migration.v1` request and returns a
 typed `MetaTableMigrationApplyResponse`.
@@ -163,7 +164,8 @@ packaged = load_packaged_migration(
     new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
 )
 
-sync_result = sync_packaged_migration(MarketsMigration, packaged)
+registry_meta_table = MarketsMigration.register(data_source_uid=DATA_SOURCE_UID)
+sync_result = sync_packaged_migration(registry_meta_table, packaged)
 row = sync_result["row"]
 ```
 

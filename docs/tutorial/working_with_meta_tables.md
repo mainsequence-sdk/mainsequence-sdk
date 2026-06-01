@@ -367,7 +367,8 @@ packaged = load_packaged_migration(
     new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
 )
 
-sync_result = sync_packaged_migration(TutorialMigration, packaged)
+registry_meta_table = TutorialMigration.register(data_source_uid=DATA_SOURCE_UID)
+sync_result = sync_packaged_migration(registry_meta_table, packaged)
 row = sync_result["row"]
 ```
 

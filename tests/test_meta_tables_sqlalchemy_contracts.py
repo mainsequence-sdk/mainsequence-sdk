@@ -9,6 +9,8 @@ from sqlalchemy.orm import Mapped
 
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.models_metatables import (
+    DataSource,
+    DynamicTableDataSource,
     MetaTableRegistrationRequest,
     TimeIndexMetaTableRegistrationRequest,
 )
@@ -225,6 +227,21 @@ def _fake_metatable_fk_element(
     return element
 
 
+def _dynamic_table_data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"):
+    physical = DataSource.model_construct(
+        uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        display_name="Local DuckDB",
+        class_type="DUCK_DB",
+        status="AVAILABLE",
+    )
+    return DynamicTableDataSource.model_construct(
+        uid=uid,
+        related_resource=physical,
+        related_resource_class_type="DUCK_DB",
+    )
+
+
 def test_platform_managed_registration_request_from_sqlalchemy_metadata():
     table_name = metatable_tablename(namespace="example.assets", identifier="Account")
     account_table = FakeTable(
@@ -260,6 +277,37 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
     assert request.table_contract.columns[1].data_type == "string"
     assert request.table_contract.columns[1].backend_type == "VARCHAR(255)"
     assert request.table_contract.columns[1].description == "Display name"
+
+
+def test_registration_request_accepts_dynamic_table_data_source():
+    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    account_table = FakeTable(
+        table_name,
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    Account = _model_class("Account", account_table)
+
+    request = platform_managed_registration_request_from_sqlalchemy_model(
+        Account,
+        data_source=_dynamic_table_data_source(),
+    )
+
+    assert request.data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
+
+def test_registration_request_rejects_non_dynamic_table_data_source():
+    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    account_table = FakeTable(
+        table_name,
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    Account = _model_class("Account", account_table)
+
+    with pytest.raises(TypeError, match="DynamicTableDataSource"):
+        platform_managed_registration_request_from_sqlalchemy_model(
+            Account,
+            data_source=SimpleNamespace(uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd"),
+        )
 
 
 def test_registration_request_uses_class_metatable_description():
@@ -690,9 +738,13 @@ def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch
     Asset.__metatable_description__ = "Child-specific description."
     Asset.__metatable_labels__ = ["child"]
 
-    Asset.register()
+    Asset.register(data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
 
     assert [request.identifier for request in captured_requests] == ["Account", "ChildOverride"]
+    assert [request.data_source_uid for request in captured_requests] == [
+        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    ]
     assert captured_requests[0].description is None
     assert captured_requests[0].labels == []
     assert captured_requests[1].identifier == "ChildOverride"
@@ -885,7 +937,10 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
         classmethod(fake_register),
     )
 
-    registered = Account.register(timeout=15)
+    registered = Account.register(
+        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        timeout=15,
+    )
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_meta_table() is registered
@@ -895,6 +950,7 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     assert Account.get_physical_table_name() == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     assert Account.__table__.name == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     assert captured["timeout"] == 15
+    assert captured["request"].data_source_uid == "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     assert captured["request"].storage_hash != Account.__table__.name
     assert captured["request"].table_contract.physical.table_name is None
     assert not hasattr(Account, "bind_meta_table")
@@ -1120,7 +1176,10 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
 
     monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
 
-    registered = AccountHoldings.register(timeout=15)
+    registered = AccountHoldings.register(
+        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+        timeout=15,
+    )
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_meta_table() is registered
@@ -1132,6 +1191,9 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/dynamic_table/register/")
     assert captured["timeout"] == 15
+    assert captured["payload"]["json"]["data_source_uid"] == (
+        "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+    )
     assert captured["payload"]["json"]["time_index_name"] == "time_index"
     assert "index_names" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["table_contract"]["authoring"]["time_indexed"][

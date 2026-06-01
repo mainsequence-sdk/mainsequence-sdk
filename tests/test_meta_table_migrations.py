@@ -339,6 +339,11 @@ def test_build_registry_upsert_operation_uses_registry_metatable_scope(tmp_path,
     assert operation.operation == "upsert"
     assert 'INSERT INTO "mt_migrations_registry"' in operation.statement.sql
     assert 'ON CONFLICT ("uid") DO UPDATE SET' in operation.statement.sql
+    assert "%(manifest)s::json" in operation.statement.sql
+    assert "%(operations)s::json" in operation.statement.sql
+    assert operation.statement.parameter_types["manifest"] == "json"
+    assert operation.statement.parameter_types["operations"] == "json"
+    assert operation.statement.parameter_types["affected_tables"] == "json"
     assert operation.scope.tables[0].meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert operation.scope.tables[0].access == "write"
     assert operation.statement.parameters["revision"] == "001"

@@ -14,6 +14,7 @@ from sqlalchemy import JSON, DateTime, Index, Integer, String, Text, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from mainsequence.client.base import BasePydanticModel
+from mainsequence.client.dtype_codec import JSON as JSON_DTYPE
 from mainsequence.client.dtype_codec import TIMESTAMP_TZ
 from mainsequence.client.models_metatables import (
     METATABLE_MIGRATION_V1,
@@ -374,7 +375,7 @@ def build_registry_upsert_operation(
     columns = list(row_payload.keys())
     sql = (
         f"INSERT INTO {table_name} ({', '.join(_quote_identifier(column) for column in columns)}) "
-        f"VALUES ({', '.join(f'%({column})s' for column in columns)}) "
+        f"VALUES ({', '.join(_registry_upsert_value_placeholder(column, row_payload[column]) for column in columns)}) "
         'ON CONFLICT ("uid") DO UPDATE SET '
         + ", ".join(
             f"{_quote_identifier(column)} = EXCLUDED.{_quote_identifier(column)}"
@@ -386,7 +387,7 @@ def build_registry_upsert_operation(
         operation="upsert",
         sql=sql,
         parameters=row_payload,
-        parameter_types=_temporal_parameter_types(row_payload),
+        parameter_types=_registry_parameter_types(row_payload),
         scope={
             "tables": [
                 {
@@ -689,6 +690,40 @@ def _temporal_parameter_types(row_payload: Mapping[str, Any]) -> dict[str, str] 
         if field in row_payload and row_payload[field] is not None
     }
     return temporal_fields or None
+
+
+_REGISTRY_JSON_FIELDS = {
+    "manifest",
+    "operations",
+    "statement_boundaries",
+    "affected_tables",
+    "old_contracts",
+    "old_contract_hashes",
+    "new_contract_hashes",
+    "new_contracts",
+    "affected_table_uids",
+    "introspection_snapshots",
+    "error",
+}
+
+
+def _registry_parameter_types(row_payload: Mapping[str, Any]) -> dict[str, str] | None:
+    parameter_types = _temporal_parameter_types(row_payload) or {}
+    for field, value in row_payload.items():
+        if _registry_parameter_requires_json_cast(field, value):
+            parameter_types[field] = JSON_DTYPE
+    return parameter_types or None
+
+
+def _registry_upsert_value_placeholder(field: str, value: Any) -> str:
+    placeholder = f"%({field})s"
+    if _registry_parameter_requires_json_cast(field, value):
+        return f"{placeholder}::json"
+    return placeholder
+
+
+def _registry_parameter_requires_json_cast(field: str, value: Any) -> bool:
+    return field in _REGISTRY_JSON_FIELDS or isinstance(value, (dict, list))
 
 
 def _registry_physical_table_name(migration_meta_table: MetaTable) -> str:

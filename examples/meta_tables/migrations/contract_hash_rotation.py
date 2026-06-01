@@ -131,8 +131,12 @@ def main() -> None:
         print("\nSet MAINSEQUENCE_META_TABLE_MIGRATION_SYNC=1 to register and write the row.")
         return
 
+    registry_meta_table = ExampleMigrationRegistry.register(
+        data_source_uid=data_source_uid,
+        timeout=DEFAULT_TIMEOUT,
+    )
     sync_result = sync_packaged_migration(
-        ExampleMigrationRegistry,
+        registry_meta_table,
         packaged,
         timeout=DEFAULT_TIMEOUT,
     )
