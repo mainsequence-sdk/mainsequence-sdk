@@ -40,16 +40,42 @@ class Base(DeclarativeBase):
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_{PROJECT_UID}"
+    __metatable_description__ = "Tutorial account master rows used to scope account holdings."
+    __metatable_labels__ = ["example", "data-node"]
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
-    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        info={
+            "label": "Account UID",
+            "description": "Stable account identifier referenced by holdings examples.",
+        },
+    )
+    account_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        info={
+            "label": "Account Code",
+            "description": "Human-readable account code used to upsert tutorial account rows.",
+        },
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        info={
+            "label": "Name",
+            "description": "Display name for the tutorial account.",
+        },
+    )
 
 
 class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
+    __metatable_description__ = "Daily random number observations produced by the tutorial node."
+    __metatable_labels__ = ["example", "data-node"]
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_number"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -57,13 +83,29 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     time_index: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+        info={
+            "label": "Time Index",
+            "description": "UTC day for the generated random observation.",
+        },
     )
-    random_number: Mapped[float] = mapped_column(Float, nullable=False)
+    random_number: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        info={
+            "label": "Random Number",
+            "description": "Random value generated for this UTC day.",
+        },
+    )
 
 
 class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
+    __metatable_description__ = (
+        "Daily random addition observations combining local noise with the random-number "
+        "dependency."
+    )
+    __metatable_labels__ = ["example", "data-node"]
     __metatable_extra_hash_components__ = {"storage_name": "daily_random_addition"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index"]
@@ -71,14 +113,29 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
     time_index: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+        info={
+            "label": "Time Index",
+            "description": "UTC day for the dependent random-addition observation.",
+        },
     )
-    random_number: Mapped[float] = mapped_column(Float, nullable=False)
+    random_number: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        info={
+            "label": "Random Number",
+            "description": "Random value after adding dependency noise for this UTC day.",
+        },
+    )
 
 
 class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"account_holdings_{PROJECT_UID}"
+    __metatable_description__ = (
+        "Time-indexed tutorial holdings by account and instrument identifier."
+    )
+    __metatable_labels__ = ["example", "data-node"]
     __metatable_extra_hash_components__ = {"storage_name": "account_holdings"}
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "account_uid", "unique_identifier"]
@@ -86,17 +143,36 @@ class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
     time_index: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+        info={
+            "label": "Time Index",
+            "description": "UTC minute for the holdings snapshot.",
+        },
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
         MetaTableForeignKey(Account, column="uid", ondelete="RESTRICT"),
         nullable=False,
+        info={
+            "label": "Account UID",
+            "description": "Account identifier that scopes this holdings snapshot.",
+        },
     )
     unique_identifier: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+        info={
+            "label": "Unique Identifier",
+            "description": "Instrument identifier held by the account.",
+        },
     )
-    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    quantity: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        info={
+            "label": "Quantity",
+            "description": "Position quantity held for the instrument at the snapshot time.",
+        },
+    )
 
 
 def upsert_account(
@@ -149,36 +225,68 @@ class VolatilityConfig(BaseModel):
         le=1e6,  # example upper bound (optional)
         multiple_of=0.0001,  # example precision step (optional)
     )
-    skew: bool
+    skew: bool = Field(
+        ...,
+        description="Whether to skew the generated volatility profile.",
+        examples=[True, False],
+    )
 
 
 class RandomDataNodeConfig(DataNodeConfiguration):
     mean: float = Field(
         ...,
         title="Mean",
-        description="Mean for the random normal distribution generator",
+        description="Mean for the random normal distribution generator.",
+        examples=[0.0, 1.0],
     )
     std: VolatilityConfig = Field(
         VolatilityConfig(center=1, skew=True),
         title="Vol Config",
-        description="Vol Configuration",
+        description="Volatility configuration for the random normal distribution.",
     )
 
 
 class DailyRandomAdditionConfig(DataNodeConfiguration):
-    mean: float
-    std: float
-    daily_random_number_storage_table: type[PlatformTimeIndexMetaData]
+    mean: float = Field(
+        ...,
+        description="Mean for the random normal distribution used by the addition node.",
+        examples=[0.0],
+    )
+    std: float = Field(
+        ...,
+        description="Standard deviation for the random normal distribution.",
+        examples=[1.0],
+    )
+    daily_random_number_storage_table: type[PlatformTimeIndexMetaData] = Field(
+        ...,
+        description="Storage table for the upstream daily random-number dependency.",
+    )
 
 
 class DailyRandomAdditionAPIConfig(DataNodeConfiguration):
-    mean: float
-    std: float
-    dependency_identifier: str
+    mean: float = Field(
+        ...,
+        description="Mean for the random normal distribution used by the API dependency node.",
+        examples=[0.0],
+    )
+    std: float = Field(
+        ...,
+        description="Standard deviation for the random normal distribution.",
+        examples=[1.0],
+    )
+    dependency_identifier: str = Field(
+        ...,
+        description="Published storage identifier used to resolve the upstream APIDataNode.",
+        examples=[f"daily_random_number_{PROJECT_UID}"],
+    )
 
 
 class AccountHoldingsConfig(DataNodeConfiguration):
-    account_uid: uuid.UUID
+    account_uid: uuid.UUID = Field(
+        ...,
+        description="Account UID whose holdings snapshot should be produced.",
+        examples=["00000000-0000-4000-8000-000000000001"],
+    )
 
 
 class DailyRandomNumber(DataNode):
@@ -443,23 +551,7 @@ def run_account_holdings_example(
 
 
 def run_data_node_examples():
-    DailyRandomNumberStorage.register(
-        description="Example DataNode storage table for daily random numbers.",
-        labels=["example", "data-node"],
-    )
-    DailyRandomAdditionStorage.register(
-        description="Example DataNode storage table for daily random additions.",
-        labels=["example", "data-node"],
-    )
-    account_meta_table = Account.register(
-        description="Example platform-managed account table.",
-        labels=["example", "data-node"],
-    )
-    AccountHoldingsStorage.register(
-        description="Example DataNode storage table for account holdings.",
-        labels=["example", "data-node"],
-        target_meta_tables={Account: account_meta_table},
-    )
+    account_meta_table = Account.register()
 
     # -------------------------
     # A) NORMAL / PRODUCTION

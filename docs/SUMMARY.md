@@ -24,6 +24,8 @@
         - [SDK API And Backend Contract](knowledge/meta_tables/api.md)
         - [Registering SQLAlchemy Tables](knowledge/meta_tables/sqlalchemy.md)
         - [Compiled SQL Execution](knowledge/meta_tables/compiled_sql.md)
+    - Migrations
+        - [DataNodes To MetaTable-Driven Storage](migrations/datanode_metatable_storage_migration.md)
     - [CLI Deep Dive](knowledge/cli.md)
     - Dashboards
         - Streamlit

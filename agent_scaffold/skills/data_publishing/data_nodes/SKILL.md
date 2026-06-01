@@ -113,6 +113,11 @@ Every storage class must include `__metatable_description__`. The description
 should explain the table's intention, row grain, and downstream use, not only
 list columns or schema mechanics.
 
+Every `mapped_column(...)` in a storage class must include
+`info={"label": ..., "description": ...}`. The column description must explain
+what the value means for this dataset and how downstream users should interpret
+it; do not merely repeat the column name or dtype.
+
 Use `__metatable_extra_hash_components__` on storage classes when distinct
 DataNode storage tables could otherwise have the same storage-relevant shape.
 For example, two one-index daily tables with one float column need a stable
@@ -154,9 +159,26 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
     time_index: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+        info={
+            "label": "Time Index",
+            "description": "UTC timestamp for the close-price observation.",
+        },
     )
-    unique_identifier: Mapped[str] = mapped_column(nullable=False)
-    close: Mapped[float] = mapped_column(Float, nullable=False)
+    unique_identifier: Mapped[str] = mapped_column(
+        nullable=False,
+        info={
+            "label": "Unique Identifier",
+            "description": "Stable asset identifier for the observed price.",
+        },
+    )
+    close: Mapped[float] = mapped_column(
+        Float,
+        nullable=False,
+        info={
+            "label": "Close",
+            "description": "Daily close price used by portfolio and risk analytics.",
+        },
+    )
 ```
 
 Storage registration is inferred from the class metadata and active Main
@@ -390,6 +412,7 @@ When reviewing an existing DataNode, look for:
 
 - output storage contract hidden in `DataNodeConfiguration`
 - missing `__metatable_description__` on the storage table
+- storage columns without `mapped_column(info={"label": ..., "description": ...})`
 - dependency storage table passed as an ad hoc constructor argument
 - schema or published table metadata hidden in DataNode configuration
 - `test_node=True`
@@ -411,6 +434,7 @@ Do not claim success until you have checked:
 - the relevant docs were read first
 - output storage is a `PlatformTimeIndexMetaData` class that the SDK can register
 - storage has an intention-rich `__metatable_description__`
+- every storage column has an intention-rich `info.description`
 - the DataNode constructor requires `storage_table`
 - dependency storage-table references live in config and rely on SDK
   registration during config serialization

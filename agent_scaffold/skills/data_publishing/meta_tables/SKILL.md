@@ -102,6 +102,9 @@ Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"sch
 Always declare `__metatable_description__` on the model. The description must
 explain the table's business intention, row grain, and expected use, not only
 the schema. Column-level descriptions stay in `mapped_column(info={...})`.
+Every mapped column must include `info={"label": ..., "description": ...}`.
+The column description must explain what the value means in this table and how
+it is used, not just restate the column name or dtype.
 
 Use `__metatable_extra_hash_components__` when two backend-managed tables could
 otherwise produce the same storage hash because their storage-relevant shape is
@@ -125,6 +128,23 @@ class Account(PlatformManagedMetaTable, Base):
         "account-level limits."
     )
     __metatable_labels__ = ["sdk-example"]
+
+    uid: Mapped[uuid.UUID] = mapped_column(
+        Uuid,
+        primary_key=True,
+        info={
+            "label": "Account UID",
+            "description": "Stable account identifier referenced by dependent tables.",
+        },
+    )
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        info={
+            "label": "Name",
+            "description": "Display name used to identify the account in examples.",
+        },
+    )
 
 
 account_meta_table = Account.register()
@@ -223,6 +243,7 @@ When reviewing an existing MetaTable workflow, look for:
 
 - missing namespace or identifier
 - missing `__metatable_description__`, or a description that only repeats column names instead of table intention
+- mapped columns without `info.label` and `info.description`
 - backend-managed models that do not inherit `PlatformManagedMetaTable`
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
@@ -240,6 +261,7 @@ Do not claim success until you have checked:
 
 - the table contract matches the intended row contract
 - the table has an intention-rich `__metatable_description__`
+- every mapped column has an intention-rich `info.description`
 - indexes are intentional
 - foreign keys resolve to the correct dependency targets
 - management mode is correct
