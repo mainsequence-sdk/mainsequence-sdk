@@ -9,7 +9,6 @@ from examples.meta_tables.common import (
     env_flag,
     optional_env,
     print_json,
-    required_env,
 )
 from mainsequence.meta_tables.migrations import (
     MigrationMetaTable,
@@ -105,7 +104,6 @@ def main() -> None:
     sync_result = sync_packaged_migration(
         ExampleMigrationRegistry,
         packaged,
-        data_source_uid=required_env("MAINSEQUENCE_META_TABLE_MIGRATION_DATA_SOURCE_UID"),
         timeout=DEFAULT_TIMEOUT,
         extension_fields={"release_channel": optional_env("MAINSEQUENCE_RELEASE_CHANNEL", "dev")},
     )

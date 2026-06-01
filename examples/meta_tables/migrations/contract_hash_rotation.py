@@ -12,7 +12,6 @@ from examples.meta_tables.common import (
     env_flag,
     optional_env,
     print_json,
-    required_env,
 )
 from mainsequence.client import MetaTable
 from mainsequence.meta_tables import MigrationManagedMetaTable
@@ -135,7 +134,6 @@ def main() -> None:
     sync_result = sync_packaged_migration(
         ExampleMigrationRegistry,
         packaged,
-        data_source_uid=required_env("MAINSEQUENCE_META_TABLE_MIGRATION_DATA_SOURCE_UID"),
         timeout=DEFAULT_TIMEOUT,
     )
     print_json("Registry sync result", sync_result["result"])

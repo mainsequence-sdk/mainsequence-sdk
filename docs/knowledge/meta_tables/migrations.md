@@ -75,7 +75,6 @@ packaged = load_packaged_migration(
 sync_result = sync_packaged_migration(
     MarketsMigration,
     packaged,
-    data_source_uid=DATA_SOURCE_UID,
     extension_fields={"release_channel": "stable"},
 )
 
@@ -87,7 +86,9 @@ result = apply_migration(
 ```
 
 `sync_packaged_migration(...)` registers the registry MetaTable if needed and
-upserts the packaged migration row using `compiled-sql.v1`.
+upserts the packaged migration row using `compiled-sql.v1`. The target
+`data_source_uid` is derived from the resolved registry MetaTable; callers do
+not pass it separately.
 
 `apply_migration(...)` sends a `metatable-migration.v1` request and returns a
 typed `MetaTableMigrationApplyResponse`.
@@ -162,10 +163,8 @@ packaged = load_packaged_migration(
     new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
 )
 
-row = build_migration_registry_row(
-    packaged,
-    data_source_uid=DATA_SOURCE_UID,
-)
+sync_result = sync_packaged_migration(MarketsMigration, packaged)
+row = sync_result["row"]
 ```
 
 The registry row now contains the contract rotation:

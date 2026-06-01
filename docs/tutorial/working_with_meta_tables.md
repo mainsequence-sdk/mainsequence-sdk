@@ -355,8 +355,8 @@ Load the packaged migration with both declarations:
 
 ```python
 from mainsequence.meta_tables.migrations import (
-    build_migration_registry_row,
     load_packaged_migration,
+    sync_packaged_migration,
 )
 
 
@@ -367,10 +367,8 @@ packaged = load_packaged_migration(
     new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
 )
 
-row = build_migration_registry_row(
-    packaged,
-    data_source_uid=DATA_SOURCE_UID,
-)
+sync_result = sync_packaged_migration(TutorialMigration, packaged)
+row = sync_result["row"]
 ```
 
 The registry row now carries the contract rotation:

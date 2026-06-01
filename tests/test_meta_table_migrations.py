@@ -424,12 +424,20 @@ def test_sync_packaged_migration_registers_registry_and_executes_upsert(tmp_path
     result = sync_packaged_migration(
         Registry,
         packaged,
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         timeout=10,
     )
 
     assert result["result"] == {"ok": True}
     assert result["meta_table"].uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert result["row"].revision == "001"
+    assert result["row"].target_data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert captured["operation"].operation == "upsert"
     assert captured["timeout"] == 10
+
+    class MissingDataSourceRegistry(MigrationMetaTable):
+        @classmethod
+        def register(cls, *, timeout=None, _registration_stack=()):
+            return _migration_meta_table(data_source_uid=None)
+
+    with pytest.raises(ValueError, match="MetaTable\\.data_source_uid"):
+        sync_packaged_migration(MissingDataSourceRegistry, packaged)

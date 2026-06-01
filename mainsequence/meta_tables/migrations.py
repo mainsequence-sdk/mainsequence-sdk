@@ -403,14 +403,21 @@ def sync_packaged_migration(
     migration_registry: MetaTable | type[MigrationMetaTable],
     packaged_migration: PackagedMetaTableMigration,
     *,
-    data_source_uid: str,
     timeout: int | float | tuple[float, float] | None = None,
     extension_fields: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """
+    Upsert a packaged migration row into its registry MetaTable.
+
+    The resolved registry MetaTable owns the target data source. Callers must not
+    pass a separate data_source_uid because that would allow the registry row and
+    target data source to disagree.
+    """
     migration_meta_table = _resolve_migration_registry(
         migration_registry,
         timeout=timeout,
     )
+    data_source_uid = _require_registry_data_source_uid(migration_meta_table)
     row = build_migration_registry_row(
         packaged_migration,
         data_source_uid=data_source_uid,
@@ -695,6 +702,13 @@ def _require_meta_table_uid(meta_table: MetaTable) -> str:
     if getattr(meta_table, "uid", None) in (None, ""):
         raise ValueError("MetaTable uid is required.")
     return str(meta_table.uid)
+
+
+def _require_registry_data_source_uid(migration_meta_table: MetaTable) -> str:
+    data_source_uid = getattr(migration_meta_table, "data_source_uid", None)
+    if data_source_uid in (None, ""):
+        raise ValueError("migration registry MetaTable.data_source_uid is required.")
+    return str(data_source_uid)
 
 
 def _quote_identifier(value: str) -> str:
