@@ -102,8 +102,8 @@ the field as `meta_table_uid`, which is the TS Manager server contract.
 
 ## Compile A SQLAlchemy Statement
 
-Use `compile_sqlalchemy_statement(...)` when your app has SQLAlchemy installed.
-The SDK imports SQLAlchemy lazily only when this helper is called.
+Use `compile_sqlalchemy_statement(...)` to turn a SQLAlchemy statement into the
+backend compiled SQL protocol.
 
 For platform-managed SQLAlchemy models, compile statements after
 `Model.register()` succeeds. Registration privately rebinds

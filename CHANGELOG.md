@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Added client-defined MetaTable migration registry helpers, `metatable-migration.v1`
+  client models, docs, and examples for syncing packaged SQL migrations into a
+  `MigrationMetaTable` and applying referenced registry rows through TS Manager.
+- Added typed SDK response models for MetaTable migration apply and status
+  endpoint responses.
+- Added a MetaTable migration example that changes a table contract and records
+  old/new contract hashes for backend validation.
+
+### Changed
+
+- Made SQLAlchemy a core SDK dependency for MetaTable declaration, compiled SQL,
+  and migration registry support.
+
 ## [4.0.2] - 2026-05-25
 
 ### Changed

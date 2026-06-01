@@ -1,0 +1,14 @@
+version: metatable-migration-manifest.v1
+migration_namespace: sdk-examples
+revision: "002"
+down_revision: "001"
+direction: upgrade
+expected_current_revision: "001"
+sql_path: packaged/002_add_asset_status.up.sql
+statement_boundaries:
+  - statement_index: 0
+    start_line: 1
+    end_line: 3
+affected_tables:
+  - identifier: sdk-examples.Asset
+    namespace: sdk-examples

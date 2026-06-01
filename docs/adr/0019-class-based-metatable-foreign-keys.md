@@ -196,11 +196,12 @@ Internally, `MetaTableForeignKey` may use `Account.__table__.c["uid"]` to satisf
 SQLAlchemy's local relationship machinery. That use is private implementation
 detail. Public docs, tutorials, and skills should not teach users to write it.
 
-Foreign-key contracts require a stable name. `MetaTableForeignKey` should accept
-an optional `name=...`. If omitted, the SDK should derive a deterministic
-PostgreSQL-safe contract name after the local column is attached to a table. The
-derived name must be stable across processes and independent of backend physical
-table binding.
+Platform-managed foreign-key contracts must not include physical constraint
+names. `MetaTableForeignKey` must reject `name=...`, and contract extraction
+must not derive names from local SQLAlchemy table or column names. The SDK sends
+logical relationship intent only: source columns, target MetaTable UID, target
+columns, and delete behavior. The backend owns the actual foreign-key constraint
+name, the same way it owns platform-managed physical table names.
 
 ## Legacy Raw Target Paths
 
@@ -229,7 +230,8 @@ detected and rejected until a deliberate two-phase contract flow exists.
 - [x] Have the helper validate that `column` exists on the target model table at
   declaration or contract-build time with a clear error.
 - [x] Have the helper attach SDK metadata to the SQLAlchemy FK object or constraint:
-  target model class, target column name, and any SDK-resolved naming metadata.
+  target model class and target column name, without SDK-resolved physical naming
+  metadata.
 - [x] Keep the returned object compatible with `mapped_column(..., ForeignKey-like)`.
 - [x] Preserve normal SQLAlchemy relationship behavior by internally constructing a
   valid SQLAlchemy foreign-key target column.
@@ -260,8 +262,8 @@ detected and rejected until a deliberate two-phase contract flow exists.
   not break child FK contract generation.
 - [x] Add tests showing `MetaTableForeignKey(Account, column="uid")` works without
   the caller touching `Account.__table__.fullname` or `Account.__table__.c.uid`.
-- [x] Add tests for deterministic FK name derivation when `name` is omitted.
-- [x] Add tests for explicit `name=...` passthrough.
+- [x] Add tests showing platform-managed FK contracts omit names.
+- [x] Add tests showing explicit `name=...` is rejected.
 - [x] Add tests for cycle detection.
 - [x] Add tests proving platform-managed FK registration does not require an
   explicit target UID mapping.

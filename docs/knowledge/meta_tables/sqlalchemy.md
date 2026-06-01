@@ -3,9 +3,8 @@
 This guide shows how to use SQLAlchemy models as the authoring layer while
 registering neutral `MetaTable` contracts with TS Manager.
 
-SQLAlchemy is optional for the SDK package itself. Your application installs and
-uses SQLAlchemy. The SDK helpers only inspect resolved table metadata and build
-Pydantic transport objects for the backend.
+SQLAlchemy is a core SDK dependency. The SDK uses it to inspect resolved table
+metadata and build Pydantic transport objects for the backend.
 
 ## Imports
 
@@ -123,10 +122,9 @@ backend physical table name. `MetaTableForeignKey` stores the target model class
 and target column as SDK metadata, then `register()` recursively registers
 parent targets and resolves the backend `MetaTable.uid`.
 
-You do not need to provide a foreign-key name. `MetaTableForeignKey(...)`
-derives a stable PostgreSQL-safe contract name from the child table and source
-column once SQLAlchemy attaches the column to the table. Pass `name=...` only
-when intentionally overriding that derived name.
+Do not provide a foreign-key name. `MetaTableForeignKey(...)` rejects `name=...`
+for platform-managed MetaTables because the backend generates physical
+constraint names.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
@@ -163,7 +161,7 @@ The SDK contract serializer extracts:
 - primary-key flags
 - unique flags
 - indexes named by SQLAlchemy's naming convention
-- foreign keys named by explicit `name=...` or the SDK's deterministic derived name
+- foreign-key relationships without physical constraint names
 - FK source columns
 - FK target MetaTable UID
 - FK target columns

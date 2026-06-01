@@ -107,6 +107,19 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
                     data_type="uuid",
                     nullable=False,
                     primary_key=True,
+                ),
+                meta_table_models.MetaTableColumnContract(
+                    name="account_uid",
+                    data_type="uuid",
+                    nullable=False,
+                )
+            ],
+            foreign_keys=[
+                meta_table_models.MetaTableForeignKeyContract(
+                    source_columns=["account_uid"],
+                    target_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    target_columns=["uid"],
+                    on_delete="restrict",
                 )
             ],
         ),
@@ -121,6 +134,14 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     assert captured["payload"]["json"]["table_contract"]["physical"] == {
         "table_name": "mt_example_assets_asset_80390fee13",
     }
+    assert captured["payload"]["json"]["table_contract"]["foreign_keys"] == [
+        {
+            "source_columns": ["account_uid"],
+            "target_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            "target_columns": ["uid"],
+            "on_delete": "restrict",
+        }
+    ]
     assert captured["payload"]["json"]["provisioning"] == {
         "create_table": True,
         "if_not_exists": True,
@@ -178,6 +199,178 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     assert captured["payload"]["json"]["statement"]["parameters"] == {
         "symbol_1": "%BTC%",
     }
+
+
+def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "ok": True,
+                "version": meta_table_models.METATABLE_MIGRATION_V1,
+                "dry_run": True,
+                "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "package": "msm",
+                "migration_namespace": "markets",
+                "revision": "001",
+                "direction": "upgrade",
+                "previous_revision": None,
+                "applied_revision": "001",
+                "executed_statement_count": 0,
+                "affected_tables": [
+                    {
+                        "identifier": "msm.markets.models.Asset",
+                        "meta_table_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                        "physical_table_name": "public.asset",
+                        "action": "planned",
+                        "storage_hash": "asset_storage",
+                        "previous_contract_hash": "c" * 64,
+                        "new_contract_hash": "d" * 64,
+                        "introspection": {},
+                    }
+                ],
+                "created_meta_table_uids": [],
+                "imported_meta_table_uids": [],
+                "refreshed_meta_table_uids": ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
+                "introspection_snapshots": {"msm.markets.models.Asset": {}},
+                "registry_update": {
+                    "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "status": "validated",
+                },
+                "error": None,
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    result = meta_table_models.MetaTable.apply_migration(
+        meta_table_models.MetaTableMigrationOperation(
+            migrationMetaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            migrationRowUid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            package="msm",
+            migration_namespace="markets",
+            revision="001",
+            expected_current_revision=None,
+            manifest_sha256="a" * 64,
+            sql_sha256="b" * 64,
+            affected_tables=[
+                {
+                    "identifier": "msm.markets.models.Asset",
+                    "meta_table_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                }
+            ],
+            old_contract_hashes={"msm.markets.models.Asset": "c" * 64},
+            new_contract_hashes={"msm.markets.models.Asset": "d" * 64},
+            idempotency_key="migration:001",
+            lock_key="dddddddd-dddd-4ddd-8ddd-dddddddddddd:msm:markets",
+            dry_run=True,
+        )
+    )
+
+    assert result.ok is True
+    assert result.migration_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert result.migration_row_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert result.registry_update.status == "validated"
+    assert result.affected_tables[0].identifier == "msm.markets.models.Asset"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/meta_table/apply-migration/")
+    assert captured["payload"]["json"]["version"] == meta_table_models.METATABLE_MIGRATION_V1
+    assert captured["payload"]["json"]["migration_meta_table_uid"] == (
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    )
+    assert captured["payload"]["json"]["migration_row_uid"] == (
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    )
+    assert captured["payload"]["json"]["dry_run"] is True
+
+
+def test_meta_table_migration_operation_requires_lowercase_sha256():
+    with pytest.raises(ValidationError):
+        meta_table_models.MetaTableMigrationOperation(
+            migrationMetaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            migrationRowUid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            package="msm",
+            migration_namespace="markets",
+            revision="001",
+            manifest_sha256="m" * 64,
+            sql_sha256="b" * 64,
+            idempotency_key="migration:001",
+            lock_key="dddddddd-dddd-4ddd-8ddd-dddddddddddd:msm:markets",
+        )
+
+
+def test_meta_table_get_migration_status_posts_registry_scope(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "ok": True,
+                "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "package": "msm",
+                "migration_namespace": "markets",
+                "current_revision": "001",
+                "latest_successful_revision": "001",
+                "latest_attempted_revision": "001",
+                "rows": [
+                    {
+                        "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                        "revision": "001",
+                        "down_revision": None,
+                        "direction": "upgrade",
+                        "status": "applied",
+                        "previous_revision": None,
+                        "applied_revision": "001",
+                        "executed_statement_count": 3,
+                        "manifest_sha256": "a" * 64,
+                        "sql_sha256": "b" * 64,
+                        "started_at": "2026-06-01T00:00:00Z",
+                        "finished_at": "2026-06-01T00:00:01Z",
+                        "error": None,
+                    }
+                ],
+                "error": None,
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    result = meta_table_models.MetaTable.get_migration_status(
+        {
+            "migrationMetaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            "package": "msm",
+            "migration_namespace": "markets",
+        }
+    )
+
+    assert result.current_revision == "001"
+    assert result.migration_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert result.rows[0].migration_row_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/meta_table/migration-status/")
+    assert captured["payload"]["json"]["migration_meta_table_uid"] == (
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    )
 
 
 def test_meta_table_get_schema_graph_requests_incoming_edges(monkeypatch):

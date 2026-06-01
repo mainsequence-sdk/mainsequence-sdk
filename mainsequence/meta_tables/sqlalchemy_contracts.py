@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
+from sqlalchemy import ForeignKey
+from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
+
 from mainsequence.client.dtype_codec import (
     is_temporal_token,
     sqlalchemy_backend_type,
@@ -87,12 +90,6 @@ def _default_time_indexed_meta_table_indexes(index_names: Sequence[str]) -> list
     return indexes
 
 
-try:
-    from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
-except ImportError:  # pragma: no cover - SQLAlchemy is optional for the SDK.
-    _sqlalchemy_declared_attr = None
-
-
 def metatable_tablename(
     *,
     namespace: str,
@@ -130,23 +127,20 @@ class MetaTableForeignKey:
         comment: str | None = None,
         **dialect_kw: Any,
     ) -> Any:
+        if name is not None:
+            raise ValueError(
+                "MetaTableForeignKey does not accept foreign-key names for "
+                "platform-managed MetaTables. The backend generates physical "
+                "constraint names."
+            )
         target_column = _resolve_metatable_foreign_key_target_column(
             target_model,
             column=column,
         )
-        try:
-            from sqlalchemy import ForeignKey
-        except ImportError as exc:  # pragma: no cover - SQLAlchemy is optional for the SDK.
-            raise ImportError(
-                "MetaTableForeignKey requires SQLAlchemy. Install SQLAlchemy in the "
-                "application environment before declaring MetaTable foreign keys."
-            ) from exc
-
         foreign_key_info = dict(info or {})
         foreign_key_info[_METATABLE_FOREIGN_KEY_INFO_KEY] = {
             "target_model": target_model,
             "target_column": str(column),
-            "name": name,
         }
         return ForeignKey(
             target_column,
@@ -274,16 +268,10 @@ class PlatformManagedMetaTable:
     __metatable_hash_namespace__: ClassVar[str | None] = None
     __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = None
 
-    if _sqlalchemy_declared_attr is not None:
-        __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
+    __tablename__ = _sqlalchemy_declared_attr.directive(_metatable_declared_tablename)
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
-        if _sqlalchemy_declared_attr is None:
-            raise ImportError(
-                "PlatformManagedMetaTable requires SQLAlchemy. Install SQLAlchemy in the "
-                "application environment before using this mixin."
-            )
         if len(args) < 2:
             raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
 
@@ -472,8 +460,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
     __time_index_metadata__: ClassVar[TimeIndexMetaData | None] = None
 
-    if _sqlalchemy_declared_attr is not None:
-        __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
+    __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
     @classmethod
     def _bind_meta_table(cls, meta_table: TimeIndexMetaData) -> TimeIndexMetaData:
@@ -487,11 +474,6 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
-        if _sqlalchemy_declared_attr is None:
-            raise ImportError(
-                "PlatformTimeIndexMetaData requires SQLAlchemy. Install SQLAlchemy in the "
-                "application environment before using this mixin."
-            )
         if len(args) < 2:
             raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
 
@@ -2146,11 +2128,13 @@ def _foreign_key_contract(
     else:
         target_meta_table_uid, target_columns = sdk_target
 
-    foreign_key_name = getattr(foreign_key_constraint, "name", None) or (
-        _derive_metatable_foreign_key_name(elements) if sdk_target is not None else None
-    )
-    if not foreign_key_name:
-        raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
+    foreign_key_name = None
+    if not require_metatable_foreign_keys:
+        foreign_key_name = getattr(foreign_key_constraint, "name", None) or (
+            _derive_metatable_foreign_key_name(elements) if sdk_target is not None else None
+        )
+        if not foreign_key_name:
+            raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
 
     on_delete = getattr(elements[0], "ondelete", None) or getattr(
         foreign_key_constraint,
@@ -2158,7 +2142,7 @@ def _foreign_key_contract(
         None,
     )
     return MetaTableForeignKeyContract(
-        name=str(foreign_key_name),
+        name=str(foreign_key_name) if foreign_key_name else None,
         source_columns=[str(element.parent.name) for element in elements],
         target_meta_table_uid=target_meta_table_uid,
         target_columns=target_columns,

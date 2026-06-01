@@ -38,10 +38,9 @@ from mainsequence.meta_tables import (
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
-The SQLAlchemy helpers are lazy. Importing `mainsequence.meta_tables` does
-not require SQLAlchemy to be installed. SQLAlchemy-specific behavior is used
-only when a helper or platform-managed class needs to compile, inspect, or
-construct SQLAlchemy objects.
+SQLAlchemy is a core SDK dependency for MetaTable declarations. The SDK uses it
+to inspect table contracts, bind platform-managed physical names, compile
+governed SQL operations, and declare client-defined migration registries.
 
 ## Registration
 
@@ -273,6 +272,64 @@ The response shape is:
 Rows are returned only for statements that produce rows. For result sets larger
 than `max_rows`, `truncated` is `true`.
 
+## Migration Execution
+
+SDK call:
+
+```python
+result = MetaTable.apply_migration(operation)
+```
+
+`result` is a `MetaTableMigrationApplyResponse`.
+
+Backend route:
+
+```text
+POST /orm/api/ts_manager/meta_table/apply-migration/
+```
+
+Execution expects a `metatable-migration.v1` operation. The operation references
+a row in a client-defined `MigrationMetaTable`; it does not include executable
+SQL directly in the request body.
+
+`migration_meta_table_uid` is the UID of the registry MetaTable that stores
+migration rows. It is not the UID of the table being migrated. Affected tables
+are resolved from the `affected_tables[*].identifier` values and optional
+`meta_table_uid` hints.
+
+```python
+from mainsequence.meta_tables.migrations import build_migration_operation
+
+
+operation = build_migration_operation(
+    migration_meta_table,
+    registry_row,
+    dry_run=True,
+)
+result = MetaTable.apply_migration(operation)
+```
+
+Status reads use:
+
+```python
+status = MetaTable.get_migration_status(
+    {
+        "migrationMetaTableUid": migration_meta_table.uid,
+        "data_source_uid": data_source_uid,
+        "package": "msm",
+        "migration_namespace": "markets",
+    }
+)
+```
+
+`status` is a `MetaTableMigrationStatusResponse`.
+
+Backend route:
+
+```text
+POST /orm/api/ts_manager/meta_table/migration-status/
+```
+
 ## Backend Capabilities
 
 The selected `DynamicTableDataSource` must expose the capability required by
@@ -288,6 +345,7 @@ the requested operation:
 | `supports_compiled_update` | `update` operations |
 | `supports_compiled_upsert` | `upsert` operations |
 | `supports_compiled_delete` | `delete` operations |
+| `supports_table_migration` | `metatable-migration.v1` apply operations |
 
 If a capability is missing, the backend returns a structured error instead of
 falling back to direct database access.

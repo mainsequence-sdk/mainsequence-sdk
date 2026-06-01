@@ -10,6 +10,7 @@ In this tutorial, you will:
 - let TS Manager create the physical tables through a configured data source
 - register a parent table before a child table with a foreign key
 - insert and read rows through governed MetaTable operations
+- evolve a MetaTable contract with a client-defined migration registry
 - understand how a `DataNode` later becomes an opinionated MetaTable-backed update workflow
 
 The concrete examples in this repository live under
@@ -153,9 +154,8 @@ physical table name. `MetaTableForeignKey` keeps the target model and target
 column as SDK metadata so `register()` can recursively register parent targets
 and resolve the target `MetaTable.uid`.
 
-Do not add `name=...` unless you intentionally need to override the generated
-constraint name. The SDK derives a stable foreign-key contract name from the
-child table and source column when `name` is omitted.
+Do not add `name=...`. Platform-managed FK contracts omit physical constraint
+names; the backend generates the actual foreign-key name.
 
 ```python
 class AccountLimit(PlatformManagedMetaTable, Base):
@@ -281,7 +281,124 @@ rows = MetaTable.execute_operation(operation)
 The exact response shape is backend-defined, but the request contract is always
 the same: compiled SQL plus declared MetaTable scope.
 
-## 8. How MetaTables Fit With DataNodes
+## 8. Evolve A MetaTable With A Migration Registry
+
+Do not apply an in-place schema change by simply changing the SQLAlchemy class
+and calling normal registration again. For shape-addressed
+`PlatformManagedMetaTable`, adding or removing columns changes the
+storage-relevant shape before the SDK can recover the previous table identity.
+
+For schema evolution, use a migration registry:
+
+- declare a project-owned `MigrationMetaTable`
+- package SQL in the installed Python package
+- store the migration row in the registry MetaTable
+- send a `metatable-migration.v1` apply request that references the registry
+  row
+- include old and new contract hashes for every affected MetaTable
+
+The registry MetaTable is just another platform-managed MetaTable:
+
+```python
+from mainsequence.meta_tables.migrations import MigrationMetaTable
+
+
+class TutorialMigration(MigrationMetaTable, Base):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "tutorial_migrations"
+    __metatable_description__ = "Tutorial schema migrations."
+```
+
+The apply request contains `migration_meta_table_uid`, which is the UID of this
+registry MetaTable. It is not the UID of the table being migrated. The affected
+table is listed by stable identifier:
+
+```json
+{
+  "migration_meta_table_uid": "registry-metatable-uid",
+  "migration_row_uid": "migration-row-uid",
+  "affected_tables": [
+    {
+      "identifier": "sdk-examples.Asset"
+    }
+  ]
+}
+```
+
+When a table changes, model the contract before and after the migration. Both
+versions represent the same logical MetaTable, so they use the same stable
+identifier:
+
+```python
+class AssetBeforeMigration(PlatformManagedMetaTable, BeforeBase):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "sdk-examples.Asset"
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
+class AssetAfterMigration(PlatformManagedMetaTable, AfterBase):
+    __metatable_namespace__ = "sdk-examples"
+    __metatable_identifier__ = "sdk-examples.Asset"
+
+    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+```
+
+Load the packaged migration with both declarations:
+
+```python
+from mainsequence.meta_tables.migrations import (
+    build_migration_registry_row,
+    load_packaged_migration,
+)
+
+
+packaged = load_packaged_migration(
+    "examples.meta_tables.migrations",
+    "packaged/002_add_asset_status.yaml",
+    old_contract_models={"sdk-examples.Asset": AssetBeforeMigration},
+    new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
+)
+
+row = build_migration_registry_row(
+    packaged,
+    data_source_uid=DATA_SOURCE_UID,
+)
+```
+
+The registry row now carries the contract rotation:
+
+```python
+row.old_contract_hashes["sdk-examples.Asset"]
+row.new_contract_hashes["sdk-examples.Asset"]
+row.new_contracts["sdk-examples.Asset"]
+```
+
+The old and new hashes must differ for a real schema change. During apply, TS
+Manager checks the old hash before running SQL, executes the packaged SQL under
+the migration lock, introspects the affected table, refreshes the MetaTable
+contract, and validates the new hash.
+
+Preview the full tutorial migration payload:
+
+```bash
+python -m examples.meta_tables.migrations.contract_hash_rotation
+```
+
+The example SQL is:
+
+```sql
+ALTER TABLE public.asset
+    ADD COLUMN IF NOT EXISTS status varchar(32) NOT NULL DEFAULT 'active';
+```
+
+For the full migration API contract, see
+[MetaTable Migrations](../knowledge/meta_tables/migrations.md).
+
+## 9. How MetaTables Fit With DataNodes
 
 Use them together:
 
@@ -295,10 +412,11 @@ A common project shape is:
 - `DataNode` for daily metrics backed by a governed table contract
 - FastAPI route that combines both into a stable response
 
-## 9. Further Reading
+## 10. Further Reading
 
 - [Creating a Data Node](creating_a_simple_data_node.md)
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Registering SQLAlchemy Tables](../knowledge/meta_tables/sqlalchemy.md)
 - [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)
+- [MetaTable Migrations](../knowledge/meta_tables/migrations.md)
 - [MetaTable Examples](../../examples/meta_tables/README.md)

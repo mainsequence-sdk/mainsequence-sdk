@@ -193,9 +193,9 @@ let `register()` recursively register unresolved parent targets. This first
 tutorial keeps the runnable example focused on a single table; the FK authoring
 surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
-Foreign-key names are optional for this SDK helper. Omit `name=...` unless the
-application intentionally needs a custom constraint name; the SDK derives a
-stable contract name from the child table and source column.
+Foreign-key names are not part of this SDK helper. Do not pass `name=...`;
+platform-managed FK contracts omit physical constraint names and let the backend
+generate them.
 
 !!! important
     `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.

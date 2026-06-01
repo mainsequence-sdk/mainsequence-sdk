@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from sqlalchemy.dialects import postgresql
+
 from mainsequence.client.dtype_codec import DATE, TIMESTAMP_TZ, sqlalchemy_type_to_token
 from mainsequence.client.models_metatables import (
     COMPILED_SQL_V1,
@@ -78,23 +80,12 @@ def compile_sqlalchemy_statement(
 ) -> MetaTableCompiledSQLOperation:
     """
     Compile a SQLAlchemy/Core statement into the TS Manager compiled-sql.v1 payload.
-
-    SQLAlchemy is an optional caller-side dependency. The SDK imports it only
-    when this helper is used.
     """
 
     if dialect != "postgresql":
         raise ValueError("Only the postgresql compiled-sql.v1 dialect is supported.")
     if paramstyle != "pyformat":
         raise ValueError("Only pyformat compiled-sql.v1 parameters are supported.")
-
-    try:
-        from sqlalchemy.dialects import postgresql
-    except ImportError as exc:
-        raise ImportError(
-            "compile_sqlalchemy_statement requires SQLAlchemy to be installed in the "
-            "client application environment."
-        ) from exc
 
     resolved_compile_kwargs = {"render_postcompile": True}
     if compile_kwargs:

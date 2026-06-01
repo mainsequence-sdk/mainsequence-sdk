@@ -48,6 +48,12 @@ from mainsequence.meta_tables import (
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
+Schema migrations use a client-defined registry MetaTable:
+
+```python
+from mainsequence.meta_tables.migrations import MigrationMetaTable
+```
+
 ## Management Modes
 
 MetaTables support two registration modes.

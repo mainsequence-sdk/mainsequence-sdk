@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import datetime
+import uuid
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.orm import Mapped
 
 import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.models_metatables import (
@@ -745,7 +748,7 @@ def test_platform_managed_register_detects_recursive_registration_cycle():
         Account.register()
 
 
-def test_platform_managed_derives_name_for_metatable_foreign_key():
+def test_platform_managed_omits_name_for_metatable_foreign_key():
     account_table = FakeTable(
         "placeholder",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
@@ -779,7 +782,11 @@ def test_platform_managed_derives_name_for_metatable_foreign_key():
         enforce_storage_hash_name=False,
     )
 
-    assert request.table_contract.foreign_keys[0].name == "asset_storage_account_uid_fkey"
+    assert request.table_contract.foreign_keys[0].name is None
+    assert "name" not in request.table_contract.foreign_keys[0].model_dump(
+        mode="json",
+        exclude_none=True,
+    )
 
 
 def test_platform_managed_metatable_requires_metatable_foreign_key():
@@ -860,8 +867,9 @@ def test_platform_managed_free_function_register_path_is_not_public():
 
     assert not hasattr(sqlalchemy_contracts, "register_platform_managed_sqlalchemy_model")
     assert "register_platform_managed_sqlalchemy_model" not in meta_tables.__all__
+    missing_name = "register_platform_managed_sqlalchemy_model"
     with pytest.raises(AttributeError):
-        meta_tables.register_platform_managed_sqlalchemy_model
+        getattr(meta_tables, missing_name)
 
 
 def test_time_index_metadata_registration_request_uses_dynamic_contract():
@@ -1179,10 +1187,9 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
 def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
-    import uuid
 
     from sqlalchemy import Index, MetaData, String, Uuid
-    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     naming_convention = {
         "ix": "%(table_name)s_%(column_0_name)s_idx",
@@ -1237,7 +1244,7 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
     assert request.storage_hash == Asset.__table__.name
     assert request.table_contract.physical.table_name is None
     assert request.table_contract.indexes[0].name
-    assert request.table_contract.foreign_keys[0].name
+    assert request.table_contract.foreign_keys[0].name is None
 
 
 def test_metatable_foreign_key_rejects_non_platform_target_before_sqlalchemy_import():
@@ -1253,6 +1260,20 @@ def test_metatable_foreign_key_validates_target_column_before_sqlalchemy_import(
 
     with pytest.raises(ValueError, match="has no column 'uid'"):
         sqlalchemy_contracts.MetaTableForeignKey(Account, column="uid")
+
+
+def test_metatable_foreign_key_rejects_names_before_sqlalchemy_import():
+    uid_column = FakeColumn("uid", Uuid(), primary_key=True)
+    account_table = FakeTable("account", columns=[uid_column])
+    account_table.c = {"uid": uid_column}
+    Account = _platform_model_class("Account", account_table)
+
+    with pytest.raises(ValueError, match="does not accept foreign-key names"):
+        sqlalchemy_contracts.MetaTableForeignKey(
+            Account,
+            column="uid",
+            name="asset_account_uid_fkey",
+        )
 
 
 def test_metatable_foreign_key_metadata_drives_fk_contract_target_resolution():
@@ -1300,11 +1321,10 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
 ):
     pytest.importorskip("sqlalchemy")
 
-    import uuid
 
     from sqlalchemy import MetaData, String, Uuid, select
     from sqlalchemy.dialects import postgresql
-    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     class Base(DeclarativeBase):
         metadata = MetaData()
@@ -1356,10 +1376,9 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
 def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_target():
     pytest.importorskip("sqlalchemy")
 
-    import uuid
 
     from sqlalchemy import MetaData, String, Uuid
-    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     class Base(DeclarativeBase):
         metadata = MetaData()
@@ -1393,7 +1412,6 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
             MetaTableForeignKey(
                 Account,
                 column="uid",
-                name="asset_account_uid_fkey",
                 ondelete="RESTRICT",
             ),
             nullable=False,
@@ -1414,16 +1432,15 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
     assert request.table_contract.foreign_keys[0].target_meta_table_uid == (
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
+    assert request.table_contract.foreign_keys[0].name is None
 
 
 def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
-    import datetime
-    import uuid
 
     from sqlalchemy import DateTime, Index, MetaData, String, Uuid
-    from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
 
     class Base(DeclarativeBase):
         metadata = MetaData()
