@@ -11,7 +11,9 @@ import mainsequence.meta_tables.sqlalchemy_contracts as sqlalchemy_contracts
 from mainsequence.client.metatables import (
     DataSource,
     DynamicTableDataSource,
+    MetaTable,
     MetaTableRegistrationRequest,
+    TimeIndexMetaData,
     TimeIndexMetaTableRegistrationRequest,
 )
 from mainsequence.meta_tables import (
@@ -1254,6 +1256,56 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
         "account_uid",
         "unique_identifier",
     ]
+
+
+def test_time_index_metadata_bind_rehydrates_flagged_generic_metatable(monkeypatch):
+    class AccountHoldings(PlatformTimeIndexMetaData):
+        pass
+
+    typed_meta_table = TimeIndexMetaData.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="holdings-storage-hash",
+        physical_table_name="mt_holdings",
+    )
+    generic_meta_table = MetaTable.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="holdings-storage-hash",
+        management_mode="platform_managed",
+        physical_table_name="mt_holdings",
+        time_indexed=True,
+        table_kind="time_indexed",
+    )
+
+    calls = []
+
+    def fake_get_by_uid(cls, uid, timeout=None, **filters):
+        calls.append((uid, timeout, filters))
+        return typed_meta_table
+
+    monkeypatch.setattr(TimeIndexMetaData, "get_by_uid", classmethod(fake_get_by_uid))
+
+    AccountHoldings._bind_meta_table(generic_meta_table)
+
+    assert calls == [("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", None, {})]
+    assert AccountHoldings.get_time_index_metadata() is typed_meta_table
+
+
+def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
+    class AccountHoldings(PlatformTimeIndexMetaData):
+        pass
+
+    generic_meta_table = MetaTable.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="holdings-storage-hash",
+        management_mode="platform_managed",
+        physical_table_name="mt_holdings",
+    )
+
+    with pytest.raises(TypeError, match="requires TimeIndexMetaData binding"):
+        AccountHoldings._bind_meta_table(generic_meta_table)
 
 
 def test_ensure_registered_storage_table_rejects_unbound_storage():

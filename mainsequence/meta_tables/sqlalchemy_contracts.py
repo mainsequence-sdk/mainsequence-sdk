@@ -506,6 +506,10 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
     @classmethod
     def _bind_meta_table(cls, meta_table: TimeIndexMetaData) -> TimeIndexMetaData:
+        from mainsequence.client.metatables import TimeIndexMetaData
+
+        if not isinstance(meta_table, TimeIndexMetaData):
+            meta_table = cls._resolve_time_index_metadata_for_bind(meta_table)
         bound = super()._bind_meta_table(meta_table)
         cls.__time_index_metadata__ = bound
         return bound
@@ -513,6 +517,19 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     @classmethod
     def get_time_index_metadata(cls) -> TimeIndexMetaData | None:
         return getattr(cls, "__time_index_metadata__", None)
+
+    @classmethod
+    def _resolve_time_index_metadata_for_bind(cls, meta_table: Any) -> TimeIndexMetaData:
+        from mainsequence.client.metatables import TimeIndexMetaData
+
+        meta_table_uid = _meta_table_uid(meta_table)
+        if meta_table_uid not in (None, "") and _meta_table_is_time_indexed(meta_table):
+            return TimeIndexMetaData.get_by_uid(str(meta_table_uid))
+        model_name = getattr(cls, "__qualname__", cls.__name__)
+        received_type = type(meta_table).__name__
+        raise TypeError(
+            f"{model_name} requires TimeIndexMetaData binding; got {received_type}."
+        )
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -1353,6 +1370,29 @@ def _meta_table_physical_table_name(meta_table: Any) -> str | None:
     if physical_table_name in (None, ""):
         return None
     return str(physical_table_name)
+
+
+def _meta_table_is_time_indexed(meta_table: Any) -> bool:
+    if isinstance(meta_table, Mapping):
+        time_indexed = meta_table.get("time_indexed")
+        table_kind = meta_table.get("table_kind")
+        table_contract = meta_table.get("table_contract")
+        time_indexed_profile = meta_table.get("time_indexed_profile")
+    else:
+        time_indexed = getattr(meta_table, "time_indexed", None)
+        table_kind = getattr(meta_table, "table_kind", None)
+        table_contract = getattr(meta_table, "table_contract", None)
+        time_indexed_profile = getattr(meta_table, "time_indexed_profile", None)
+
+    if time_indexed is True or table_kind == "time_indexed" or time_indexed_profile is not None:
+        return True
+    if isinstance(table_contract, Mapping):
+        return (
+            table_contract.get("table_kind") == "time_indexed"
+            or table_contract.get("dynamic_table") is not None
+            or table_contract.get("time_indexed") is not None
+        )
+    return False
 
 
 def _model_bound_storage_hash(model_or_table: Any) -> str | None:

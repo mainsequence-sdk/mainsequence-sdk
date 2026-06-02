@@ -108,6 +108,13 @@ def ensure_registered_storage_table(
         raise ValueError(
             f"{context} storage_table is missing TimeIndexMetaData metadata."
         )
+    from mainsequence.client.metatables import TimeIndexMetaData
+
+    if not isinstance(storage_metadata, TimeIndexMetaData):
+        raise TypeError(
+            f"{context} storage_table must bind TimeIndexMetaData metadata; "
+            f"got {type(storage_metadata).__name__}."
+        )
     if storage_table.get_meta_table_uid() in (None, ""):
         raise ValueError(f"{context} storage_table must provide a MetaTable UID.")
     if storage_table.get_data_source_uid() in (None, ""):

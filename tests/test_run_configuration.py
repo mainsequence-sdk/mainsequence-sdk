@@ -58,6 +58,8 @@ def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMeta
     class RuntimeStorageTable(PlatformTimeIndexMetaData):
         pass
 
+    if not isinstance(meta_table, TimeIndexMetaData):
+        meta_table = TimeIndexMetaData.model_construct(**meta_table.model_dump())
     RuntimeStorageTable._bind_meta_table(meta_table)
     return RuntimeStorageTable
 
@@ -370,7 +372,8 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
         }
     ]
     assert manager.storage_table is storage_table
-    assert manager.storage_metadata is meta_table
+    assert manager.storage_metadata.uid == meta_table.uid
+    assert isinstance(manager.storage_metadata, TimeIndexMetaData)
 
 
 def test_persist_manager_rejects_unbound_platform_time_index_storage_table():
@@ -481,7 +484,8 @@ def test_persist_manager_preserves_storage_table_during_update_lookup():
 
     assert manager.data_node_update.data_node_storage is stale_response_storage
     assert manager.storage_table is storage_table
-    assert manager.storage_metadata is meta_table
+    assert manager.storage_metadata.uid == meta_table.uid
+    assert isinstance(manager.storage_metadata, TimeIndexMetaData)
 
 
 def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():

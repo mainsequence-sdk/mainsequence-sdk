@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+import datetime
 import importlib
 import textwrap
 import types
 import uuid
 
 import pytest
-from sqlalchemy import Column, Integer, MetaData, Table, Uuid
+from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.client.metatables import MetaTable
-from mainsequence.meta_tables import PlatformManagedMetaTable
+from mainsequence.client.metatables import MetaTable, TimeIndexMetaData
+from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
     DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
@@ -402,6 +403,76 @@ def test_alembic_metatable_migration_bulk_resolves_existing_models(monkeypatch):
     ]
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
     assert Account.get_meta_table_uid() == "account-meta-table-uid"
+
+
+def test_alembic_metatable_migration_bulk_resolves_time_index_models_with_dynamic_client(
+    monkeypatch,
+):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class AccountHoldings(PlatformTimeIndexMetaData, Base):
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.AccountHoldings"
+        __metatable_data_source_uid__ = "data-source-uid"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "unique_identifier"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[AccountHoldings],
+    )
+
+    filter_calls = []
+
+    def fake_time_index_filter(**kwargs):
+        filter_calls.append(kwargs)
+        return [
+            TimeIndexMetaData.model_construct(
+                identifier="markets.AccountHoldings",
+                uid="holdings-meta-table-uid",
+                data_source_uid="data-source-uid",
+                storage_hash="holdings-storage-hash",
+                physical_table_name="mt_holdings",
+            )
+        ]
+
+    monkeypatch.setattr(
+        TimeIndexMetaData,
+        "filter",
+        staticmethod(fake_time_index_filter),
+    )
+    monkeypatch.setattr(
+        MetaTable,
+        "filter",
+        staticmethod(lambda **kwargs: (_ for _ in ()).throw(AssertionError())),
+    )
+
+    resolved = migration.resolve_or_register_metatable_models(timeout=25)
+
+    assert filter_calls == [
+        {
+            "identifier__in": ["markets.AccountHoldings"],
+            "include_relations_detail": True,
+            "timeout": 25,
+        }
+    ]
+    assert [meta_table.uid for meta_table in resolved] == ["holdings-meta-table-uid"]
+    assert AccountHoldings.get_time_index_metadata() is resolved[0]
+    assert isinstance(AccountHoldings.get_time_index_metadata(), TimeIndexMetaData)
 
 
 def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails(

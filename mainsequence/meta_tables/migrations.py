@@ -18,10 +18,12 @@ from mainsequence.client.metatables import (
     MetaTableContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
+    TimeIndexMetaData,
 )
 from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
     _resolve_model_data_source_uid,
     platform_managed_migration_registration_context,
     resolve_metatable_identifier,
@@ -268,8 +270,8 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[Any]:
         registered: list[Any] = []
-        existing_meta_tables = _get_metatables_by_identifier(
-            [resolve_metatable_identifier(model) for model in self.metatable_models],
+        existing_meta_tables = _get_metatables_by_model_identifier(
+            self.metatable_models,
             timeout=timeout,
         )
         with platform_managed_migration_registration_context():
@@ -298,8 +300,8 @@ class AlembicMetaTableMigration:
         """
 
         resolved: list[Any] = []
-        existing_meta_tables = _get_metatables_by_identifier(
-            [resolve_metatable_identifier(model) for model in self.metatable_models],
+        existing_meta_tables = _get_metatables_by_model_identifier(
+            self.metatable_models,
             timeout=timeout,
         )
         with platform_managed_migration_registration_context():
@@ -326,7 +328,7 @@ class AlembicMetaTableMigration:
         existing_meta_table = (
             existing_meta_tables_by_identifier.get(identifier)
             if existing_meta_tables_by_identifier is not None
-            else _get_metatable_by_identifier(identifier, timeout=timeout)
+            else _get_metatable_by_model_identifier(model, timeout=timeout)
         )
         if existing_meta_table is not None:
             _bind_model_to_existing_metatable(model, existing_meta_table)
@@ -603,25 +605,77 @@ def _get_metatable_by_identifier(
     identifier: str,
     *,
     timeout: int | float | tuple[float, float] | None = None,
+    meta_table_cls: type[Any] = MetaTable,
 ) -> MetaTable | None:
-    matches = _get_metatables_by_identifier([identifier], timeout=timeout)
+    matches = _get_metatables_by_identifier(
+        [identifier],
+        timeout=timeout,
+        meta_table_cls=meta_table_cls,
+    )
     return matches.get(identifier)
+
+
+def _get_metatable_by_model_identifier(
+    model: type[Any],
+    *,
+    timeout: int | float | tuple[float, float] | None = None,
+) -> Any | None:
+    identifier = resolve_metatable_identifier(model)
+    return _get_metatable_by_identifier(
+        identifier,
+        timeout=timeout,
+        meta_table_cls=_metatable_resource_class_for_model(model),
+    )
+
+
+def _get_metatables_by_model_identifier(
+    models: Sequence[type[Any]],
+    *,
+    timeout: int | float | tuple[float, float] | None = None,
+) -> dict[str, Any]:
+    identifiers_by_resource: dict[type[Any], list[str]] = {}
+    for model in models:
+        identifiers_by_resource.setdefault(
+            _metatable_resource_class_for_model(model),
+            [],
+        ).append(resolve_metatable_identifier(model))
+
+    resolved: dict[str, Any] = {}
+    for meta_table_cls, identifiers in identifiers_by_resource.items():
+        matches = _get_metatables_by_identifier(
+            identifiers,
+            timeout=timeout,
+            meta_table_cls=meta_table_cls,
+        )
+        duplicate_identifiers = set(resolved).intersection(matches)
+        if duplicate_identifiers:
+            duplicate_list = ", ".join(sorted(duplicate_identifiers))
+            raise ValueError(
+                "MetaTable identifiers are not globally unique across provider models: "
+                f"{duplicate_list}."
+            )
+        resolved.update(matches)
+    return resolved
 
 
 def _get_metatables_by_identifier(
     identifiers: Sequence[str],
     *,
     timeout: int | float | tuple[float, float] | None = None,
-) -> dict[str, MetaTable]:
+    meta_table_cls: type[Any] = MetaTable,
+) -> dict[str, Any]:
     unique_identifiers = list(dict.fromkeys(str(identifier) for identifier in identifiers))
     if not unique_identifiers:
         return {}
 
-    matches = MetaTable.filter(identifier__in=unique_identifiers, timeout=timeout)
+    filter_kwargs: dict[str, Any] = {"identifier__in": unique_identifiers}
+    if issubclass(meta_table_cls, TimeIndexMetaData):
+        filter_kwargs["include_relations_detail"] = True
+    matches = meta_table_cls.filter(timeout=timeout, **filter_kwargs)
     if not matches:
         return {}
 
-    matched_by_identifier: dict[str, MetaTable] = {}
+    matched_by_identifier: dict[str, Any] = {}
     for meta_table in matches:
         identifier = _meta_table_identifier(meta_table)
         if identifier is None:
@@ -629,8 +683,8 @@ def _get_metatables_by_identifier(
                 identifier = unique_identifiers[0]
             else:
                 raise ValueError(
-                    "Backend returned a MetaTable row without identifier while resolving "
-                    "migration provider models by identifier__in."
+                    f"Backend returned a {meta_table_cls.__name__} row without identifier "
+                    "while resolving migration provider models by identifier__in."
                 )
         if identifier in matched_by_identifier:
             raise ValueError(
@@ -651,6 +705,12 @@ def _meta_table_identifier(meta_table: Any) -> str | None:
     return str(identifier)
 
 
+def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:
+    if _is_platform_time_index_metatable_model(model):
+        return TimeIndexMetaData
+    return MetaTable
+
+
 def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None:
     bind = getattr(model, "_bind_meta_table", None)
     if not callable(bind):
@@ -663,6 +723,10 @@ def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None
 
 def _is_platform_managed_metatable_model(model: Any) -> bool:
     return isinstance(model, type) and issubclass(model, PlatformManagedMetaTable)
+
+
+def _is_platform_time_index_metatable_model(model: Any) -> bool:
+    return isinstance(model, type) and issubclass(model, PlatformTimeIndexMetaData)
 
 
 __all__ = [
