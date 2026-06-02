@@ -95,6 +95,29 @@ For every non-trivial task, decide:
 
 ## Build Rules
 
+### 0. Creation And Deletion Are SDK-Managed
+
+Do not build custom migrations for creating or deleting MetaTables.
+
+MetaTable creation and deletion are handled through `mainsequence-sdk` and the
+Main Sequence CLI. Assistants should define the SQLAlchemy MetaTable model,
+select the SDK migration provider when schema evolution is needed, and use the
+documented `mainsequence migrations ...` commands.
+
+Do not hand-author create/delete migration files, backend migration payloads,
+manifest rows, registry rows, or low-level SDK migration requests for MetaTable
+creation or deletion.
+
+The only migration workflow to recommend is the Main Sequence CLI lifecycle:
+
+```bash
+mainsequence migrations current --provider mainsequence_migrations:migration
+mainsequence migrations revision --provider mainsequence_migrations:migration
+mainsequence migrations render --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+```
+
 ### 1. SQLAlchemy metadata is the authoring source
 
 Keep the application table model as the authoring source for the neutral table contract.

@@ -1102,6 +1102,25 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         *,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> dict[str, Any]:
+        """
+        Refresh this MetaTable's physical database shape snapshot.
+
+        This calls the backend ``POST /meta_table/<uid>/introspect/`` action.
+        The backend reads the real physical table through the MetaTable's data
+        source, reflects columns, indexes, and constraints, stores that data on
+        ``MetaTable.introspection_snapshot``, and returns the full response.
+
+        This method is intended for admin, debugging, and reconciliation
+        workflows. Use it when a client needs to inspect what the database
+        currently has, diagnose catalog/physical drift, or refresh metadata
+        after an out-of-band DDL change. It is not required for normal reads,
+        writes, registration, or migration-first application startup.
+
+        Returns:
+            Backend response containing ``ok``, ``meta_table_uid``, and
+            ``introspection_snapshot``. When the snapshot is an object, this
+            instance's ``introspection_snapshot`` attribute is updated in place.
+        """
         response_json = self._post_detail_action("introspect", timeout=timeout)
         snapshot = response_json.get("introspection_snapshot")
         if isinstance(snapshot, dict):
