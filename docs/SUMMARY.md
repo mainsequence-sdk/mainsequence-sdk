@@ -2,6 +2,7 @@
 - Tutorial
     - [Part 1 — Setting a Project (CLI)](tutorial/setting_a_project.md)
     - [Part 2 — Working With MetaTables](tutorial/working_with_meta_tables.md)
+    - [Part 2.1 — MetaTable Migrations](tutorial/metatable_migrations.md)
     - [Part 3 — Creating a Data Node](tutorial/creating_a_simple_data_node.md)
     - [Part 3.1 — Role-Based Access Control](tutorial/role_based_access_control.md)
     - [Part 3.2 — Create Your First API](tutorial/create_your_first_api.md)

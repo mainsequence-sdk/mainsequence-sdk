@@ -29,6 +29,8 @@ SQLAlchemy helpers:
 
 ```python
 from mainsequence.meta_tables import (
+    AlembicMetaTableMigration,
+    AlembicVersionMetaTable,
     PlatformManagedMetaTable,
     external_registered_registration_request_from_sqlalchemy_model,
     metatable_configured_tablename,
@@ -40,7 +42,8 @@ from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statemen
 
 SQLAlchemy is a core SDK dependency for MetaTable declarations. The SDK uses it
 to inspect table contracts, bind platform-managed physical names, compile
-governed SQL operations, and declare client-defined migration registries.
+governed SQL operations, and define the provider-based Alembic migration scope
+used by MetaTable schema migrations.
 
 ## Registration
 
@@ -289,16 +292,53 @@ Backend route:
 POST /orm/api/ts_manager/meta_table/apply-migration/
 ```
 
-Execution expects a `metatable-migration.v1` operation. The operation references
-a verified Alembic-rendered SQL artifact plus manifest metadata. It does not
-reference a client-defined SDK artifact table and it does not accept SDK custom
-operation plans.
+Execution expects a `metatable-migration.v1` operation. The SDK builds that
+operation from the selected `AlembicMetaTableMigration` provider, which supplies
+the package, migration namespace, Alembic script location, target metadata, and
+`AlembicVersionMetaTable` binding.
+
+The operation carries an Alembic-rendered SQL artifact plus manifest metadata.
+It does not reference a client-defined SDK artifact table and it does not accept
+SDK custom operation plans.
+
+The request body contains the rendered SQL artifact directly:
+
+```json
+{
+  "version": "metatable-migration.v1",
+  "data_source_uid": "uuid",
+  "alembic_version_meta_table_uid": "uuid",
+  "package": "sdk_examples",
+  "migration_namespace": "sdk-examples",
+  "revision": "0002_add_account_status",
+  "down_revision": "0001_initial",
+  "direction": "upgrade",
+  "expected_current_revision": "0001_initial",
+  "manifest": {
+    "package": "sdk_examples",
+    "migration_namespace": "sdk-examples",
+    "revision": "0002_add_account_status",
+    "down_revision": "0001_initial",
+    "direction": "upgrade",
+    "alembic_version_table": "public.alembic_version"
+  },
+  "manifest_sha256": "64 lowercase hex chars",
+  "sql": "Alembic-rendered SQL text",
+  "sql_sha256": "64 lowercase hex chars",
+  "statement_boundaries": [],
+  "dry_run": false
+}
+```
 
 `alembic_version_meta_table_uid` is the UID of the registered
 `AlembicVersionMetaTable` catalog binding for Alembic's version table. It is not
 the UID of the table being migrated. The backend executes the SQL and updates
 Alembic's version table; MetaTable catalog registration or refresh happens in a
-separate project tooling step.
+separate project tooling step scoped by `migration.metatable_models`.
+
+The apply request does not include affected-table lists, old/new contract
+hashes, SDK migration-row UIDs, custom operation names, idempotency keys, or
+lock keys.
 
 Status reads use:
 
@@ -307,8 +347,8 @@ status = MetaTable.get_migration_status(
     {
         "alembic_version_meta_table_uid": alembic_version_meta_table.uid,
         "data_source_uid": data_source_uid,
-        "package": "msm",
-        "migration_namespace": "markets",
+        "package": migration.package,
+        "migration_namespace": migration.migration_namespace,
     }
 )
 ```

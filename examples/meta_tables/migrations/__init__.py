@@ -1,1 +1,5 @@
-"""Placeholder package for future Alembic-based MetaTable migration examples."""
+"""Provider-based Alembic migration example for MetaTables."""
+
+from .provider import ExampleAlembicVersion, migration
+
+__all__ = ["ExampleAlembicVersion", "migration"]

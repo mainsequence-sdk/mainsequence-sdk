@@ -117,10 +117,52 @@ TS Manager authorizes execution through the declared MetaTable scope.
 
 ## Migrations
 
-MetaTable schema migrations are Alembic-based. The old SDK migration examples
-were removed because the SDK no longer supports separate artifact tables or
-custom SDK schema-operation migrations.
+MetaTable schema migrations are provider-based and Alembic-backed. The old SDK
+migration examples were removed because the SDK no longer supports separate
+artifact tables or custom SDK schema-operation migrations.
 
-Use Alembic revisions, render SQL from those revisions, send the SQL artifact
-through the backend migration endpoint, and register `AlembicVersionMetaTable`
-as the external catalog binding for Alembic's version table.
+The provider example lives at:
+
+```text
+examples.meta_tables.migrations:migration
+```
+
+It defines:
+
+- `AlembicMetaTableMigration` for provider identity and Alembic configuration
+- `ExampleAlembicVersion` as the external catalog binding for Alembic's version table
+- `metatable_models=[Account, Asset]` as the post-apply catalog scope
+
+Run the lifecycle with the provider:
+
+```bash
+mainsequence migrations register-version-table \
+  --provider examples.meta_tables.migrations:migration
+
+mainsequence migrations revision \
+  --provider examples.meta_tables.migrations:migration \
+  --autogenerate \
+  -m "example migration"
+
+mainsequence migrations render \
+  --provider examples.meta_tables.migrations:migration \
+  --to head
+
+mainsequence migrations upgrade \
+  --provider examples.meta_tables.migrations:migration \
+  --to head \
+  --dry-run
+
+mainsequence migrations upgrade \
+  --provider examples.meta_tables.migrations:migration \
+  --to head \
+  --apply \
+  --register-metatables
+```
+
+When running the example outside an attached project context, set the data
+source binding explicitly:
+
+```bash
+export MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID="<dynamic-table-data-source-uid>"
+```

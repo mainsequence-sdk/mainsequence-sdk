@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib
 import textwrap
+import types
 
 import pytest
+from sqlalchemy import Column, Integer, MetaData, Table
 
 from mainsequence.client.metatables import MetaTable
 from mainsequence.meta_tables.migrations import (
@@ -12,8 +14,11 @@ from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_NAMESPACE,
     DEFAULT_ALEMBIC_VERSION_SCHEMA,
     DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
+    AlembicMetaTableMigration,
     AlembicVersionMetaTable,
+    load_alembic_metatable_migration_provider,
     render_packaged_alembic_migration,
+    render_packaged_alembic_migration_for_provider,
 )
 
 
@@ -89,6 +94,205 @@ def test_alembic_version_metatable_register_posts_registration_request(monkeypat
     assert captured["request"].table_contract.authoring["schema"] == "markets"
 
 
+def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = None
+
+    def fake_register(request, *, timeout=None):
+        return types.SimpleNamespace(
+            uid="metatable-uid",
+            data_source_uid=request.data_source_uid,
+        )
+
+    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+
+    ProjectAlembicVersion.register(data_source_uid="data-source-uid")
+
+    assert ProjectAlembicVersion.get_meta_table_uid() == "metatable-uid"
+    assert ProjectAlembicVersion.get_data_source_uid() == "data-source-uid"
+
+
+def test_alembic_metatable_migration_uses_registry_for_data_source_uid():
+    metadata = MetaData()
+    Table("asset", metadata, Column("uid", Integer, primary_key=True), schema="public")
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[],
+    )
+
+    assert migration.resolve_data_source_uid() == "data-source-uid"
+    assert migration.alembic_version_table == "public.alembic_version"
+    assert migration.include_name("asset", "table", {"schema_name": "public"}) is True
+    assert migration.include_name("ignored", "table", {"schema_name": "public"}) is False
+
+
+def test_alembic_metatable_migration_registers_registry_from_bound_data_source(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    captured = {}
+
+    def fake_register(request, *, timeout=None):
+        captured["request"] = request
+        return types.SimpleNamespace(uid="registry-uid", data_source_uid=request.data_source_uid)
+
+    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+
+    migration.register_alembic_registry()
+
+    assert captured["request"].data_source_uid == "data-source-uid"
+    assert ProjectAlembicVersion.get_meta_table_uid() == "registry-uid"
+
+
+def test_alembic_metatable_migration_requires_callable_after_register_hook():
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    with pytest.raises(TypeError, match="after_register_metatables must be callable"):
+        AlembicMetaTableMigration(
+            package="msm",
+            migration_namespace="markets",
+            script_location="msm:alembic",
+            target_metadata=MetaData(),
+            alembic_registry=ProjectAlembicVersion,
+            after_register_metatables="not-callable",
+        )
+
+
+def test_alembic_metatable_migration_calls_after_register_hook_after_all_models():
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    events = []
+
+    class FirstModel:
+        @classmethod
+        def register(cls, *, data_source_uid=None, timeout=None):
+            events.append(("first", data_source_uid, timeout))
+            return types.SimpleNamespace(uid="first-uid")
+
+    class SecondModel:
+        @classmethod
+        def register(cls, *, data_source_uid=None, timeout=None):
+            events.append(("second", data_source_uid, timeout))
+            return types.SimpleNamespace(uid="second-uid")
+
+    def after_register(registered):
+        events.append(("hook", [meta_table.uid for meta_table in registered]))
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[FirstModel, SecondModel],
+        after_register_metatables=after_register,
+    )
+
+    registered = migration.register_metatables(timeout=15)
+
+    assert [meta_table.uid for meta_table in registered] == ["first-uid", "second-uid"]
+    assert events == [
+        ("first", "data-source-uid", 15),
+        ("second", "data-source-uid", 15),
+        ("hook", ["first-uid", "second-uid"]),
+    ]
+
+
+def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails():
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    events = []
+
+    class FirstModel:
+        @classmethod
+        def register(cls, *, data_source_uid=None, timeout=None):
+            events.append(("first", data_source_uid, timeout))
+            return types.SimpleNamespace(uid="first-uid")
+
+    class FailingModel:
+        @classmethod
+        def register(cls, *, data_source_uid=None, timeout=None):
+            events.append(("failing", data_source_uid, timeout))
+            raise RuntimeError("registration failed")
+
+    def after_register(registered):
+        events.append(("hook", registered))
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[FirstModel, FailingModel],
+        after_register_metatables=after_register,
+    )
+
+    with pytest.raises(RuntimeError, match="registration failed"):
+        migration.register_metatables(timeout=15)
+
+    assert events == [
+        ("first", "data-source-uid", 15),
+        ("failing", "data-source-uid", 15),
+    ]
+
+
+def test_load_alembic_metatable_migration_provider_by_reference(tmp_path, monkeypatch):
+    provider_file = tmp_path / "mainsequence_migrations.py"
+    provider_file.write_text(
+        textwrap.dedent(
+            """
+            from sqlalchemy import MetaData
+            from mainsequence.meta_tables.migrations import (
+                AlembicMetaTableMigration,
+                AlembicVersionMetaTable,
+            )
+
+
+            class Registry(AlembicVersionMetaTable):
+                __metatable_data_source_uid__ = "data-source-uid"
+
+
+            migration = AlembicMetaTableMigration(
+                package="msm",
+                migration_namespace="markets",
+                script_location="msm:alembic",
+                target_metadata=MetaData(),
+                alembic_registry=Registry,
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    migration = load_alembic_metatable_migration_provider(cwd=tmp_path)
+
+    assert migration.package == "msm"
+    assert migration.resolve_data_source_uid() == "data-source-uid"
+
+
 def test_removed_registry_helpers_are_not_public():
     import mainsequence.meta_tables.migrations as migrations
 
@@ -150,6 +354,34 @@ def test_render_packaged_alembic_migration_requires_current_revision_for_downgra
             revision="base",
             direction="downgrade",
         )
+
+
+def test_render_packaged_alembic_migration_for_provider_resolves_head(tmp_path, monkeypatch):
+    package_name = "provider_alembic_package"
+    _write_alembic_package(tmp_path, package_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package=package_name,
+        migration_namespace="markets",
+        script_location=f"{package_name}:migrations",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+
+    artifact = render_packaged_alembic_migration_for_provider(
+        migration,
+        revision="head",
+        current_revision=None,
+    )
+
+    assert artifact.manifest["revision"] == "0001_initial"
+    assert artifact.manifest["alembic_version_table"] == "public.alembic_version"
+    assert "CREATE TABLE public.asset" in artifact.sql
 
 
 def _write_alembic_package(tmp_path, package_name: str) -> None:

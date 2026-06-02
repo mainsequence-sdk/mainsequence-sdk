@@ -10,6 +10,7 @@ _LAZY_IMPORTS = {
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
     "MetaTableForeignKey": (".sqlalchemy_contracts", "MetaTableForeignKey"),
+    "AlembicMetaTableMigration": (".migrations", "AlembicMetaTableMigration"),
     "AlembicVersionMetaTable": (".migrations", "AlembicVersionMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
@@ -39,6 +40,10 @@ _LAZY_IMPORTS = {
         ".migrations",
         "DEFAULT_ALEMBIC_VERSION_IDENTIFIER",
     ),
+    "DEFAULT_ALEMBIC_PROVIDER_REFERENCE": (
+        ".migrations",
+        "DEFAULT_ALEMBIC_PROVIDER_REFERENCE",
+    ),
     "DEFAULT_ALEMBIC_VERSION_NAMESPACE": (
         ".migrations",
         "DEFAULT_ALEMBIC_VERSION_NAMESPACE",
@@ -67,6 +72,18 @@ _LAZY_IMPORTS = {
     "render_packaged_alembic_migration": (
         ".migrations",
         "render_packaged_alembic_migration",
+    ),
+    "render_packaged_alembic_migration_for_provider": (
+        ".migrations",
+        "render_packaged_alembic_migration_for_provider",
+    ),
+    "load_alembic_metatable_migration_provider": (
+        ".migrations",
+        "load_alembic_metatable_migration_provider",
+    ),
+    "resolve_alembic_revision_metadata": (
+        ".migrations",
+        "resolve_alembic_revision_metadata",
     ),
     "slugify_identifier": (".hashing", "slugify_identifier"),
     "table_contract_from_sqlalchemy_model": (

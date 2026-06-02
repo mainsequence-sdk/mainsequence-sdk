@@ -10,7 +10,6 @@ In this tutorial, you will:
 - let TS Manager create the physical tables through a configured data source
 - register a parent table before a child table with a foreign key
 - insert and read rows through governed MetaTable operations
-- evolve a MetaTable contract with Alembic-rendered migrations
 - understand how a `DataNode` later becomes an opinionated MetaTable-backed update workflow
 
 The concrete examples in this repository live under
@@ -282,96 +281,7 @@ rows = MetaTable.execute_operation(operation)
 The exact response shape is backend-defined, but the request contract is always
 the same: compiled SQL plus declared MetaTable scope.
 
-## 8. Evolve A MetaTable With Alembic
-
-Do not apply an in-place contract change by simply changing the SQLAlchemy class
-and calling normal registration again. For shape-addressed
-`PlatformManagedMetaTable`, adding or removing columns changes the
-storage-relevant shape before the SDK can recover the previous table identity.
-
-For contract evolution, use Alembic:
-
-- generate an Alembic revision from SQLAlchemy metadata
-- render the Alembic revision to SQL without applying it locally
-- send the Alembic-rendered SQL artifact to TS Manager with
-  `metatable-migration.v1`
-- refresh project catalog state after SQL execution
-
-Register Alembic's version table as a catalog binding:
-
-```python
-from mainsequence.meta_tables.migrations import AlembicVersionMetaTable
-
-
-class TutorialAlembicVersion(AlembicVersionMetaTable):
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.alembic_version"
-    __alembic_version_schema__ = "public"
-```
-
-The apply request contains `alembic_version_meta_table_uid`, which is the UID of
-this catalog binding. It is not the UID of the table being migrated:
-
-```json
-{
-  "alembic_version_meta_table_uid": "alembic-version-metatable-uid",
-  "revision": "0002_add_asset_status"
-}
-```
-
-When a table changes, Alembic owns the DDL and the SDK sends the rendered SQL
-artifact to TS Manager. Use ordinary SQLAlchemy models in Alembic's target
-metadata:
-
-```python
-class AssetBeforeMigration(BeforeBase):
-    __tablename__ = "asset"
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.Asset"
-
-    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
-
-
-class AssetAfterMigration(AfterBase):
-    __tablename__ = "asset"
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.Asset"
-
-    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-```
-
-Alembic owns the DDL:
-
-```python
-def upgrade() -> None:
-    op.add_column(
-        "asset",
-        sa.Column("status", sa.String(length=32), nullable=False),
-        schema="public",
-    )
-```
-
-The backend apply payload carries the rendered SQL:
-
-```json
-{
-  "version": "metatable-migration.v1",
-  "sql": "ALTER TABLE public.asset ADD COLUMN status varchar(32) NOT NULL;",
-  "dry_run": false
-}
-```
-
-During apply, TS Manager verifies the Alembic version state and executes the
-Alembic-rendered SQL. MetaTable catalog registration or refresh is a separate
-project tooling step after the physical schema changes.
-
-For the full migration API contract, see
-[MetaTable Migrations](../knowledge/meta_tables/migrations.md).
-
-## 9. How MetaTables Fit With DataNodes
+## 8. How MetaTables Fit With DataNodes
 
 Use them together:
 
@@ -385,11 +295,11 @@ A common project shape is:
 - `DataNode` for daily metrics backed by a governed table contract
 - FastAPI route that combines both into a stable response
 
-## 10. Further Reading
+## 9. Further Reading
 
 - [Creating a Data Node](creating_a_simple_data_node.md)
+- [MetaTable Migrations](metatable_migrations.md)
 - [MetaTables Overview](../knowledge/meta_tables/index.md)
 - [Registering SQLAlchemy Tables](../knowledge/meta_tables/sqlalchemy.md)
 - [Compiled SQL Execution](../knowledge/meta_tables/compiled_sql.md)
-- [MetaTable Migrations](../knowledge/meta_tables/migrations.md)
 - [MetaTable Examples](../../examples/meta_tables/README.md)

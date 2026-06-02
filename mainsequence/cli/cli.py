@@ -222,6 +222,7 @@ from .local_ops import (
     run_uv,
     uv_export_requirements,
 )
+from .migrations import migrations as migrations_group
 from .model_filters import build_cli_model_filter_rows, parse_cli_model_filters
 from .project_status import detect_current_project
 from .pydantic_cli import (
@@ -336,6 +337,7 @@ connection = typer.Typer(help="Connection commands")
 organization = typer.Typer(help="Organization commands")
 organization_teams_group = typer.Typer(help="Organization team commands")
 meta_table_group = typer.Typer(help="MetaTable table-storage commands")
+migrations_root_group = migrations_group
 data_node_storage_group = typer.Typer(help="DataNode update/read-helper commands")
 project = typer.Typer(help="Project commands (remote + local operations)")
 project_list_group = typer.Typer(help="List-related project commands")
@@ -375,6 +377,7 @@ app.add_typer(organization, name="organization")
 app.add_typer(skills, name="skills")
 app.add_typer(meta_table_group, name="meta-table")
 app.add_typer(meta_table_group, name="meta_table")
+app.add_typer(migrations_root_group, name="migrations")
 app.add_typer(data_node_storage_group, name="data-node")
 app.add_typer(data_node_storage_group, name="data_node")
 app.add_typer(data_node_storage_group, name="data-node-storage", hidden=True)

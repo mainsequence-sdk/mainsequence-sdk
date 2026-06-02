@@ -19,8 +19,8 @@ This skill is for schema-driven application tables registered through TS Manager
 - build registration requests from resolved SQLAlchemy metadata when inspection is useful
 - define indexes and foreign keys in the table contract
 - design governed compiled SQL read and write operations
-- design Alembic-based contract evolution for MetaTables
-- package Alembic-rendered SQL artifacts for backend apply
+- design provider-based Alembic contract evolution for MetaTables
+- run the documented `mainsequence migrations ...` lifecycle for Alembic-backed MetaTable changes
 - review table contracts for physical-name, namespace, and identifier issues
 - review whether a task should be a `MetaTable` or a `DataNode`
 
@@ -55,11 +55,12 @@ If the user is still in the discovery process and does not yet know what data ex
 ## Read First
 
 1. `docs/tutorial/working_with_meta_tables.md`
-2. `docs/knowledge/meta_tables/index.md`
-3. `docs/knowledge/meta_tables/sqlalchemy.md`
-4. `docs/knowledge/meta_tables/compiled_sql.md`
-5. `docs/knowledge/meta_tables/migrations.md`
-6. `docs/knowledge/meta_tables/api.md`
+2. For migration work, `docs/tutorial/metatable_migrations.md`
+3. `docs/knowledge/meta_tables/index.md`
+4. `docs/knowledge/meta_tables/sqlalchemy.md`
+5. `docs/knowledge/meta_tables/compiled_sql.md`
+6. `docs/knowledge/meta_tables/migrations.md`
+7. `docs/knowledge/meta_tables/api.md`
 
 ## Inputs This Skill Needs
 
@@ -72,8 +73,9 @@ Before changing code, collect or infer:
 - expected mutation patterns
 - whether TS Manager should create the physical table
 - for `external_registered`, the target `DynamicTableDataSource` UID
-- for contract changes, the `AlembicVersionMetaTable` binding
-- for contract changes, the package, migration namespace, revision, parent revision, rendered SQL artifact, affected table identifiers, and old/new SQLAlchemy contract declarations
+- for contract changes, the selected `AlembicMetaTableMigration` provider or provider module path
+- for contract changes, the provider's `AlembicVersionMetaTable` binding and whether it has been registered
+- for contract changes, the intended Alembic revision, parent/current revision, target revision, and updated SQLAlchemy declarations
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
 
@@ -88,7 +90,8 @@ For every non-trivial task, decide:
 5. Are foreign-key dependencies aligned with registration order?
 6. What governed operations should be allowed by the declared table scope?
 7. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
-8. For a migration, what Alembic revision transition and version-table binding will the backend validate?
+8. For a migration, which provider object controls `target_metadata`, `script_location`, `alembic_registry`, and `metatable_models`?
+9. For a migration, has the provider's Alembic version-table binding been registered?
 
 ## Build Rules
 
@@ -239,40 +242,45 @@ asset_meta_table = MetaTable.register(asset_request)
 
 ### 4. Schema changes use Alembic
 
+When doing migration work, first read
+`docs/tutorial/metatable_migrations.md`. That document is the tutorial source
+for the provider-based Alembic lifecycle.
+
 Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`
 SQLAlchemy class and calling normal registration again. Shape-addressed
 `PlatformManagedMetaTable` storage identity changes when columns, indexes,
 foreign keys, or constraints change, so new code cannot reliably recover the
 previous shape-derived table.
 
-For contract evolution, use Alembic plus `mainsequence.meta_tables.migrations`:
+For contract evolution, define or update one selected
+`AlembicMetaTableMigration` provider:
 
-- declare/register an `AlembicVersionMetaTable` catalog binding
-- render SQL from Alembic revisions
-- call `MetaTable.apply_migration(...)` with a `metatable-migration.v1`
-  request containing the Alembic-rendered SQL artifact
+- put the provider in `mainsequence_migrations.py:migration` or pass
+  `--provider module.path:migration`
+- set `package`, `migration_namespace`, `script_location`, and `target_metadata`
+- set `alembic_registry` to an `AlembicVersionMetaTable` subclass
+- list the post-apply catalog scope in `metatable_models`
+- generate, render, dry-run, apply, and optionally refresh catalog bindings
+  through `mainsequence migrations ...` commands
 
 `alembic_version_meta_table_uid` is the UID of the catalog binding for Alembic's
 version table. It is not the UID of the table being migrated.
 
-Package the backend apply request with Alembic-rendered SQL:
+Do not ask users to construct backend migration payloads, call low-level
+migration request models, or use SDK helper functions directly. The backend
+request shape is reference material in the tutorial; the user-facing path is:
 
-```python
-operation = AlembicMigrationOperation(
-    data_source_uid=data_source_uid,
-    alembic_version_meta_table_uid=alembic_version_meta_table.uid,
-    package="sdk-examples",
-    migration_namespace="default",
-    revision="002_add_asset_status",
-    manifest=manifest,
-    sql=alembic_rendered_sql,
-    statement_boundaries=[],
-    dry_run=True,
-)
+```bash
+mainsequence migrations register-version-table --provider mainsequence_migrations:migration
+mainsequence migrations revision --provider mainsequence_migrations:migration --autogenerate -m "change"
+mainsequence migrations render --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --apply --register-metatables
 ```
 
-The SQL must be Alembic-rendered from the installed package. After SQL apply
-succeeds, register or refresh application MetaTable catalog bindings separately.
+The SQL must be Alembic-rendered from the selected provider. After SQL apply
+succeeds, register or refresh only the application MetaTable catalog bindings
+listed in `migration.metatable_models`.
 
 Do not use SDK-managed migration artifact tables, artifact sync helpers, or custom
 `operations()` migration modules.
@@ -298,6 +306,7 @@ When reviewing an existing MetaTable workflow, look for:
 - mapped columns without `info.label` and `info.description`
 - backend-managed models that do not inherit `PlatformManagedMetaTable`
 - schema changes that bypass Alembic or try to use SDK operation lists
+- migration work that lacks a selected `AlembicMetaTableMigration` provider
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
 - external tables registered with unstable physical names
@@ -305,8 +314,7 @@ When reviewing an existing MetaTable workflow, look for:
   of relying on `MetaTableForeignKey(...)` recursive registration
 - external child registrations that do not map foreign-key targets to registered parent `MetaTable.uid` values
 - contract changes attempted through normal registration instead of an Alembic migration
-- migration apply requests that confuse `alembic_version_meta_table_uid` with an affected table UID
-- migration requests that include arbitrary SQL instead of Alembic-rendered package SQL
+- migration work that asks users to define backend payloads, artifact rows, or SDK request objects
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
 - a table that should really be modeled as a DataNode instead
@@ -325,8 +333,10 @@ Do not claim success until you have checked:
 - registration returns a `MetaTable.uid`
 - compiled SQL operations declare table scope
 - migrations use Alembic-rendered SQL
-- migration requests reference the registered Alembic version-table binding
-- migration apply/status helpers use typed `metatable-migration.v1` request and response models
+- migrations are scoped by an `AlembicMetaTableMigration` provider
+- the provider's Alembic version-table binding is registered before apply/current
+- post-apply catalog registration is scoped to `migration.metatable_models`
+- user-facing migration instructions stay on the documented CLI/provider lifecycle
 
 For related tables, also check:
 
@@ -342,8 +352,8 @@ For related tables, also check:
 - the target data source is unknown for an `external_registered` workflow
 - the task really requires a time-series published table
 - the workflow requires direct database credentials outside TS Manager governance
-- a requested contract change lacks a stable affected table identifier or old contract anchor
-- the user expects the SDK to autogenerate migrations or parse arbitrary request-body SQL
+- a requested contract change lacks a selected provider or registered Alembic version-table binding
+- the user expects the SDK to invent schema changes without Alembic/provider metadata
 - the task is actually an API or orchestration problem
 
 Do not guess through registration or execution semantics.
