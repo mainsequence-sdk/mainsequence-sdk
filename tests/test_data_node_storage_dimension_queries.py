@@ -2,7 +2,7 @@ import datetime
 
 import pandas as pd
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 
 
 def _source_config(index_names: list[str]) -> models_metatables.TimeIndexedProfile:

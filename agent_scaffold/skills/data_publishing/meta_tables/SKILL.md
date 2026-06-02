@@ -1,6 +1,6 @@
 ---
 name: mainsequence-meta-tables
-description: Use this skill when the task is about defining, registering, querying, migrating, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table registration, external table registration, client-defined MetaTable migration registries, governed compiled SQL operations, foreign keys, indexes, and validation rules. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
+description: Use this skill when the task is about defining, registering, querying, migrating, or reviewing Main Sequence MetaTables. This skill owns SQLAlchemy table contracts, backend-managed table registration, external table registration, Alembic-based MetaTable migrations, governed compiled SQL operations, foreign keys, indexes, and validation rules. It does not own DataNode producers, API route contracts, scheduling, releases, or sharing policy.
 ---
 
 # Main Sequence MetaTables
@@ -19,8 +19,8 @@ This skill is for schema-driven application tables registered through TS Manager
 - build registration requests from resolved SQLAlchemy metadata when inspection is useful
 - define indexes and foreign keys in the table contract
 - design governed compiled SQL read and write operations
-- design client-defined `MigrationMetaTable` registries for contract evolution
-- package SQL migrations and old/new contract hashes for backend apply
+- design Alembic-based contract evolution for MetaTables
+- package Alembic-rendered SQL artifacts for backend apply
 - review table contracts for physical-name, namespace, and identifier issues
 - review whether a task should be a `MetaTable` or a `DataNode`
 
@@ -72,8 +72,8 @@ Before changing code, collect or infer:
 - expected mutation patterns
 - whether TS Manager should create the physical table
 - for `external_registered`, the target `DynamicTableDataSource` UID
-- for contract changes, the target migration registry MetaTable or registry class
-- for contract changes, the package, migration namespace, revision, parent revision, SQL file, affected table identifiers, and old/new SQLAlchemy contract declarations
+- for contract changes, the `AlembicVersionMetaTable` binding
+- for contract changes, the package, migration namespace, revision, parent revision, rendered SQL artifact, affected table identifiers, and old/new SQLAlchemy contract declarations
 
 If ownership of the physical table lifecycle is unclear, stop before choosing a management mode.
 
@@ -87,8 +87,8 @@ For every non-trivial task, decide:
 4. What namespace and identifier define the logical table identity?
 5. Are foreign-key dependencies aligned with registration order?
 6. What governed operations should be allowed by the declared table scope?
-7. If the table already exists and its contract changes, is this a migration through a registry row rather than normal registration?
-8. For a migration, what stable affected-table identifiers and old/new contract hashes will the backend validate?
+7. If the table already exists and its contract changes, is this an Alembic migration rather than normal registration?
+8. For a migration, what Alembic revision transition and version-table binding will the backend validate?
 
 ## Build Rules
 
@@ -105,9 +105,9 @@ For `platform_managed`, inherit from `PlatformManagedMetaTable`.
 The mixin derives the SQLAlchemy physical table name from storage-relevant configuration and table shape. Do not hand-write `__tablename__` for normal backend-managed tables.
 
 When a platform-managed table must support in-place contract migrations from its
-first version, use `MigrationManagedMetaTable` instead. For time-indexed
-DataNode storage that must support in-place contract migrations, use
-`MigrationManagedTimeIndexMetaData`.
+first version, use Alembic. Keep the SDK model as a normal
+`PlatformManagedMetaTable` or `PlatformTimeIndexMetaData` catalog contract, and
+apply physical schema changes through the Alembic migration workflow.
 
 Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"schema": "public"}` or the tuple form ending in `{"schema": ...}`. Do not add a separate MetaTable-specific schema attribute.
 
@@ -237,7 +237,7 @@ asset_request = external_registered_registration_request_from_sqlalchemy_model(
 asset_meta_table = MetaTable.register(asset_request)
 ```
 
-### 4. Schema changes use a migration registry
+### 4. Schema changes use Alembic
 
 Do not apply in-place contract changes by changing a `PlatformManagedMetaTable`
 SQLAlchemy class and calling normal registration again. Shape-addressed
@@ -245,73 +245,37 @@ SQLAlchemy class and calling normal registration again. Shape-addressed
 foreign keys, or constraints change, so new code cannot reliably recover the
 previous shape-derived table.
 
-For contract evolution, use `mainsequence.meta_tables.migrations`:
+For contract evolution, use Alembic plus `mainsequence.meta_tables.migrations`:
 
-- declare a client-owned `MigrationMetaTable` registry
-- load SQL and manifest files from the installed Python package
-- compute `manifest_sha256` and `sql_sha256`
-- compute `old_contract_hashes`, `new_contract_hashes`, and `new_contracts`
-  from SQLAlchemy model declarations
-- sync the migration row into the registry MetaTable
+- declare/register an `AlembicVersionMetaTable` catalog binding
+- render SQL from Alembic revisions
 - call `MetaTable.apply_migration(...)` with a `metatable-migration.v1`
-  request that references the registry row
+  request containing the Alembic-rendered SQL artifact
 
-`migration_meta_table_uid` is the UID of the registry MetaTable that stores
-migration rows. It is not the UID of the table being migrated.
+`alembic_version_meta_table_uid` is the UID of the catalog binding for Alembic's
+version table. It is not the UID of the table being migrated.
 
-Affected tables are resolved by stable logical identifiers:
-
-```python
-affected_tables = [{"identifier": "sdk-examples.Asset"}]
-```
-
-For a changed table, model the old and new contracts explicitly and keep the
-same `__metatable_identifier__` on both declarations:
+Package the backend apply request with Alembic-rendered SQL:
 
 ```python
-from mainsequence.meta_tables import MigrationManagedMetaTable
-
-
-class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.Asset"
-
-    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
-
-
-class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
-    __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.Asset"
-
-    uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-    symbol: Mapped[str] = mapped_column(String(64), nullable=False)
-    status: Mapped[str] = mapped_column(String(32), nullable=False)
-```
-
-Then package the migration row with both contract versions:
-
-```python
-packaged = load_packaged_migration(
-    "examples.meta_tables.migrations",
-    "packaged/002_add_asset_status.yaml",
-    old_contract_models={"sdk-examples.Asset": AssetBeforeMigration},
-    new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
+operation = AlembicMigrationOperation(
+    data_source_uid=data_source_uid,
+    alembic_version_meta_table_uid=alembic_version_meta_table.uid,
+    package="sdk-examples",
+    migration_namespace="default",
+    revision="002_add_asset_status",
+    manifest=manifest,
+    sql=alembic_rendered_sql,
+    statement_boundaries=[],
+    dry_run=True,
 )
 ```
 
-The backend apply endpoint validates the old hash before SQL execution and the
-new hash after introspection/MetaTable refresh. The SDK must not send executable
-SQL directly in the apply request body; the backend reads SQL from the
-referenced registry row.
+The SQL must be Alembic-rendered from the installed package. After SQL apply
+succeeds, register or refresh application MetaTable catalog bindings separately.
 
-For time-indexed DataNode storage, use `MigrationManagedTimeIndexMetaData`. It
-is a `MigrationManagedMetaTable` target for packaging and validation, but it
-keeps the `TimeIndexMetaData` registration endpoint, `time_index_name`,
-`index_names`, and time-indexed table contract.
-
-Use `examples/meta_tables/migrations/contract_hash_rotation.py` as the canonical
-example for a MetaTable contract change.
+Do not use SDK-managed migration artifact tables, artifact sync helpers, or custom
+`operations()` migration modules.
 
 ### 5. Governed operations declare scope
 
@@ -333,18 +297,16 @@ When reviewing an existing MetaTable workflow, look for:
 - missing `__metatable_description__`, or a description that only repeats column names instead of table intention
 - mapped columns without `info.label` and `info.description`
 - backend-managed models that do not inherit `PlatformManagedMetaTable`
-- migration-managed tables that should use `MigrationManagedMetaTable` or
-  `MigrationManagedTimeIndexMetaData` from their first version
+- schema changes that bypass Alembic or try to use SDK operation lists
 - backend-managed examples that use namespace environment variables instead of a plain `sdk-examples` namespace
 - duplicate schema sources outside SQLAlchemy table metadata
 - external tables registered with unstable physical names
 - platform-managed examples that manually sequence parent registration instead
   of relying on `MetaTableForeignKey(...)` recursive registration
 - external child registrations that do not map foreign-key targets to registered parent `MetaTable.uid` values
-- contract changes attempted through normal registration instead of a `MigrationMetaTable` registry row
-- migration apply requests that confuse `migration_meta_table_uid` with an affected table UID
-- migration rows missing old/new contract hashes for affected in-place tables
-- migration rows that include arbitrary SQL in the request body instead of packaged SQL in the registry row
+- contract changes attempted through normal registration instead of an Alembic migration
+- migration apply requests that confuse `alembic_version_meta_table_uid` with an affected table UID
+- migration requests that include arbitrary SQL instead of Alembic-rendered package SQL
 - compiled SQL operations without complete table scope
 - raw SQL that hardcodes stale physical names
 - a table that should really be modeled as a DataNode instead
@@ -362,9 +324,8 @@ Do not claim success until you have checked:
 - backend-managed physical names match the storage hash
 - registration returns a `MetaTable.uid`
 - compiled SQL operations declare table scope
-- migrations use a client-defined `MigrationMetaTable` registry
-- migration rows include stable affected table identifiers
-- migration rows include old/new contract hashes and post-migration contracts
+- migrations use Alembic-rendered SQL
+- migration requests reference the registered Alembic version-table binding
 - migration apply/status helpers use typed `metatable-migration.v1` request and response models
 
 For related tables, also check:

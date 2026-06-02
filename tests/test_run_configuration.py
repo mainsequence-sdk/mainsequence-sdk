@@ -9,18 +9,18 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
+import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
-import mainsequence.client.models_metatables as models_metatables
 import mainsequence.meta_tables.data_nodes.data_nodes as data_nodes_mod
 from mainsequence.client.command_center import Workspace
-from mainsequence.client.models_foundry import (
-    Project,
-)
-from mainsequence.client.models_metatables import (
+from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
     MetaTable,
     TimeIndexMetaData,
+)
+from mainsequence.client.models_foundry import (
+    Project,
 )
 from mainsequence.meta_tables import (
     DataNode,

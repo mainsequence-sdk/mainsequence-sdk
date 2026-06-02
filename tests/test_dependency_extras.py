@@ -45,7 +45,7 @@ def test_core_client_import_does_not_require_duckdb(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", _guarded_import)
 
     foundry_module = importlib.import_module("mainsequence.client.models_foundry")
-    metatables_module = importlib.import_module("mainsequence.client.models_metatables")
+    metatables_module = importlib.import_module("mainsequence.client.metatables")
 
     assert hasattr(foundry_module, "Project")
     assert hasattr(metatables_module, "DynamicTableDataSource")

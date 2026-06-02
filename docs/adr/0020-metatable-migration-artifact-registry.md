@@ -1,715 +1,615 @@
-# ADR 0020: Client-Defined MetaTable Migration Registry
+# ADR 0020: Alembic-Based MetaTable Migrations
 
 Date: 2026-06-01
 
 Status: Proposed
 
-Backend alignment: this ADR is implemented against the TS Manager backend
-decision in `docs/tdag/ts_manager/adr/adr-011-metatable-migration-execution-ledger.md`.
-The SDK migration registry is the artifact source. The backend
-`MetaTableMigrationRun` ledger is the execution source of truth.
-
 ## Context
 
-SQLAlchemy MetaTable declarations are now the SDK authoring source for
-backend-managed table contracts. Registration can create new physical tables,
-bind SDK models to backend physical names, and expose governed compiled SQL
-operations, but it does not yet provide a controlled way to apply schema
-changes after a table exists.
+SQLAlchemy MetaTable declarations are the SDK authoring source for table
+contracts. They are not a migration engine.
 
-Projects such as `ms-markets` need to evolve MetaTable-backed schemas with DDL
-operations such as adding columns, creating indexes, creating new related
-tables, importing existing physical tables, and refreshing platform MetaTable
-metadata. The platform should support those changes without turning the SDK
-into a full migration engine.
+The SDK custom migration operation format duplicated Alembic with a weaker
+language: fake schema operation plans and SDK-managed artifact rows. That path
+is not maintainable and must be removed.
 
-The SDK already has the machinery needed to declare and register governed
-tables. The migration registry should use that machinery. It should not be a
-server-side system table or a separate platform artifact store.
+The intended lifecycle is:
 
-The migration unit is not a single MetaTable. One migration revision can create,
-rename, split, or update several physical tables and several platform
-MetaTable resources. The revision stream is keyed by:
+```text
+SQLAlchemy models
+-> Alembic revision
+-> Alembic renders SQL
+-> SDK sends the Alembic-rendered SQL artifact to the backend
+-> backend executes SQL
+-> project finalizes MetaTable catalog state
+```
 
-- `data_source_uid`
-- `package`
-- `migration_namespace`
-
-The backend should remain the authority for DDL execution, locking,
-introspection, and MetaTable resource refresh. The SDK and client package should
-own migration packaging, registry table declaration, registry row insertion,
-and project-specific metadata.
-
-The migration system also needs a stable way to find the table being migrated
-after application code changes. The current shape-addressed
-`PlatformManagedMetaTable` storage hash is not sufficient for that. If
-`storage_hash` is derived from SQLAlchemy columns, indexes, foreign keys, or
-constraints, then adding or removing a column changes the hash before the SDK
-can find the existing table. A new model shape cannot recover the previous
-shape-derived hash unless the old code, old `storage_hash`, or old `MetaTable`
-UID was stored somewhere else.
+Alembic owns schema diffs, revision files, downgrade/upgrade semantics, and the
+physical `alembic_version` table. The SDK owns MetaTable registration/catalog
+bindings and typed backend requests.
 
 ## Decision
 
-Introduce a dedicated migration operation contract:
+Use Alembic as the only schema migration engine.
 
-```text
-metatable-migration.v1
+The SDK will not provide a migration artifact table. There is no SDK
+migration-row model and no SDK migration-row upsert path. The only MetaTable
+model the SDK provides for Alembic migration state is `AlembicVersionMetaTable`.
+
+`AlembicVersionMetaTable` is a catalog binding for Alembic's version table. It
+registers as a normal `external_registered` MetaTable with the minimal Alembic
+revision column the backend needs to read current state:
+
+```json
+{
+  "version": "relational-table.v1",
+  "physical": {"table_name": "alembic_version"},
+  "columns": [
+    {
+      "name": "version_num",
+      "data_type": "string",
+      "backend_type": "VARCHAR",
+      "nullable": false,
+      "primary_key": true
+    }
+  ],
+  "constraints": [],
+  "indexes": [],
+  "foreign_keys": [],
+  "authoring": {
+    "owner": "alembic",
+    "schema": "public",
+    "version_table": "alembic_version"
+  }
+}
 ```
 
-Add a small `mainsequence.meta_tables.migrations` module that exposes:
+That contract means:
 
-- a SQLAlchemy-compatible `MigrationMetaTable` base class
-- a default migration registry table declaration
-- Pydantic request and response models
-- package manifest and SQL loading helpers
-- checksum helpers
-- contract hash helpers based on SQLAlchemy MetaTable declarations
-- helper functions to sync packaged migration rows into the registry MetaTable
-- helper functions to dry-run and apply a migration from a registry row
+- Alembic owns the actual version-table DDL.
+- The SDK registers a stable pointer for catalog/discovery and current-revision
+  reads.
+- The `version_num` declaration is not an SDK-owned SQLAlchemy model. It is the
+  minimal metadata required by the existing MetaTable registration contract.
+- The backend does not use this contract to validate Alembic inserts or DDL.
+  PostgreSQL and Alembic remain the authority for the physical version table.
+- The binding is external-registered; it must not create or mutate the physical
+  Alembic version table.
 
-The client package registers the migration registry as a normal platform-managed
-MetaTable. It then stores packaged migrations in that MetaTable using ordinary
-SDK MetaTable operation machinery.
+## Alembic Version MetaTable Registration Contract
 
-The backend apply endpoint does not own or pre-register migration artifacts. It
-receives a reference to a migration registry MetaTable row, reads the migration
-payload from that row, validates it, locks the target migration stream, executes
-the migration when requested, refreshes affected MetaTables, and writes the
-authoritative backend migration run ledger.
+The SDK registration request for Alembic's version table is a normal
+`external_registered` MetaTable:
 
-The main migration resolver is the MetaTable `identifier`. `identifier` is
-stable within the backend migration resolution scope:
-
-```text
-organization_owner + data_source + management_mode + identifier
+```json
+{
+  "data_source_uid": "uuid",
+  "management_mode": "external_registered",
+  "storage_hash": "identifier-derived stable hash",
+  "identifier": "alembic_version",
+  "namespace": "mainsequence.migrations",
+  "description": "Alembic revision state table.",
+  "labels": [],
+  "introspect": false,
+  "table_contract": {
+    "version": "relational-table.v1",
+    "physical": {
+      "table_name": "alembic_version"
+    },
+    "columns": [
+      {
+        "name": "version_num",
+        "data_type": "string",
+        "backend_type": "VARCHAR",
+        "nullable": false,
+        "primary_key": true
+      }
+    ],
+    "constraints": [],
+    "indexes": [],
+    "foreign_keys": [],
+    "authoring": {
+      "owner": "alembic",
+      "schema": "public",
+      "version_table": "alembic_version"
+    }
+  }
+}
 ```
 
-Migratable tables are identifier-addressed, not shape-addressed.
+The request uses `introspect=false`, so initial migration setup does not require
+the physical `alembic_version` table to exist before Alembic SQL runs. The
+backend still enforces normal MetaTable permissions, data-source ownership,
+labels, namespace, identifier, physical table binding rules, and non-empty
+contract columns.
 
-When a model does not define `__metatable_identifier__`, the SDK derives a
-stable default from the importable Python class path:
+## Client Workflow
 
-```text
-<module>.<qualname>
-```
+The client workflow has two separate tracks:
 
-Example:
+1. Register a MetaTable catalog pointer to Alembic's version table.
+2. Render and apply Alembic SQL artifacts through the backend migration apply
+   endpoint.
 
-```text
-msm.markets.models.Asset
-```
+The client does not run a migration "on" a MetaTable. The registered
+`AlembicVersionMetaTable` only tells the backend where Alembic revision state
+lives for a data source. The migration SQL runs on the target data source and
+Alembic's own SQL updates the physical `alembic_version` table.
 
-If distribution metadata is available and stable, SDK tooling may display or
-record a distribution-qualified form:
+### 1. Register The Alembic Version MetaTable
 
-```text
-<distribution>:<module>.<qualname>
-```
-
-The canonical resolver remains the import path unless the user explicitly sets
-`__metatable_identifier__`.
-
-Filesystem paths such as `src/msm/markets/models.py:Asset` are not migration
-identity. They are not stable after packaging, Docker builds, editable installs,
-or repository layout changes.
-
-Schema, data source, and physical table name are also not public migration
-identity:
-
-- schema is SQLAlchemy/backend physical metadata
-- `data_source_uid` is the execution target and safety scope
-- physical table name is backend-owned
-
-They may appear in validation and execution payloads, but they do not replace
-the scoped stable `identifier` resolver.
-
-## Identifier-Based Migration Resolution
-
-In-place migrations require the SDK to resolve a MetaTable from a stable
-`identifier`, not from SQLAlchemy table shape.
-
-The resolver rule is:
-
-```text
-identifier = explicit __metatable_identifier__
-           else f"{model.__module__}.{model.__qualname__}"
-
-storage_hash = f(identifier)
-contract_hash = f(columns, indexes, foreign keys, constraints, dtypes, nullability, ...)
-```
-
-`identifier` is the public stable pointer. `storage_hash` is the backend storage
-identity value derived from that pointer for migration-managed MetaTables.
-`contract_hash` is the rotating schema contract pointer. Schema migrations
-change `contract_hash`; they must not change the stable `identifier` or the
-storage identity derived from it.
-
-The current shape-addressed `PlatformManagedMetaTable` behavior is create-only
-for schema evolution. It is valid for tables where changing storage-relevant
-shape should produce a new logical table. It is not a valid in-place migration
-resolver.
-
-The SDK must therefore add an identifier-addressed registration mode for
-migration-managed SQLAlchemy MetaTables. That mode uses the resolver rule above
-when constructing the registration payload. It must not call the current
-table-shape storage identity builder for migration-managed tables.
-
-The SDK exposes this as two authoring bases:
-
-- `MigrationManagedMetaTable` for generic platform-managed MetaTables.
-- `MigrationManagedTimeIndexMetaData` for time-indexed DataNode storage that
-  still needs the TimeIndexMetaData endpoint and time-index/index validation.
-
-`MigrationManagedTimeIndexMetaData` is accepted anywhere the migration packaging
-path requires `MigrationManagedMetaTable`, but it emits a
-`TimeIndexMetaTableRegistrationRequest` and a `table_kind: time_indexed`
-contract.
-
-Migration-managed tables should use that identifier-addressed registration mode
-from their first version. A table already created with a shape-derived
-`storage_hash` is not automatically recoverable from the new code after its
-shape changes.
-Adopting such a table requires an explicit anchor, such as the old
-`MetaTable.uid`, old `storage_hash`, or an unambiguous backend lookup by the
-scoped `identifier`.
-
-Class moves and renames are handled by pinning the old identifier:
+Every migration stream must first register an `AlembicVersionMetaTable` binding
+for the same `data_source_uid` that will receive DDL.
 
 ```python
-class Asset(PlatformManagedMetaTable, Base):
-    __metatable_identifier__ = "msm.markets.models.Asset"
-```
+from mainsequence.meta_tables.migrations import AlembicVersionMetaTable
 
-Users do not need to write identifiers for every table at initial creation. The
-default import path is sufficient until they intentionally move or rename a
-model and need to preserve the previous identity.
 
-## MigrationMetaTable
-
-`MigrationMetaTable` is the SDK base class for migration registry tables. A
-project can use the default registry model or subclass it for domain-specific
-release metadata.
-
-The default registry stores one row per packaged migration revision and
-direction. Required columns include:
-
-- `uid`
-- `package`
-- `migration_namespace`
-- `revision`
-- `down_revision`
-- `direction`
-- `version`
-- `target_data_source_uid`
-- `expected_current_revision`
-- `manifest`
-- `manifest_sha256`
-- `operations`
-- `sql`
-- `sql_sha256`
-- `statement_boundaries`
-- `affected_tables`
-- `old_contracts`
-- `old_contract_hashes`
-- `new_contract_hashes`
-- `new_contracts`
-- `idempotency_key`
-- `lock_key`
-- `status` as a convenience mirror only
-- `previous_revision`
-- `applied_revision`
-- `executed_statement_count`
-- `affected_table_uids`
-- `introspection_snapshots`
-- `error`
-- `created_at`
-- `started_at`
-- `finished_at`
-
-The registry table can contain migrations for many logical tables. It is keyed
-by package and namespace, not by the MetaTables that happen to be affected.
-
-The registry table itself is a MetaTable. It can be discovered, labeled,
-queried, and extended like any other platform-managed MetaTable.
-
-## Project Extensions
-
-Project packages may extend `MigrationMetaTable` directly:
-
-```python
-class MarketsMigration(MigrationMetaTable, Base):
+class MarketsAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "msm"
-    __metatable_identifier__ = "markets_migrations"
-    __metatable_description__ = "Packaged ms-markets schema migrations and run state."
+    __metatable_identifier__ = "msm.alembic_version"
+    __alembic_version_schema__ = "public"
+    __alembic_version_table_name__ = "alembic_version"
 
-    release_channel: Mapped[str | None] = mapped_column(String(64))
-    minimum_sdk_version: Mapped[str | None] = mapped_column(String(64))
-    domain_contract_version: Mapped[str | None] = mapped_column(String(64))
+
+alembic_version_meta_table = MarketsAlembicVersion.register(
+    data_source_uid=data_source_uid,
+)
 ```
 
-Extension fields are client/package-owned metadata. They can support release
-channels, diagnostics, compatibility checks, rollback notes, or domain-specific
-validation. They are not a separate backend approval mechanism and they are not
-authoritative execution state.
+The registration request generated by the SDK must have this shape:
 
-The only hard requirement is that the subclass preserves the required migration
-contract columns. Backend execution logic reads the migration operation through
-those required fields.
+```python
+request = MarketsAlembicVersion.build_registration_request(
+    data_source_uid=data_source_uid,
+)
+```
 
-## Registry Sync
+```json
+{
+  "data_source_uid": "uuid",
+  "management_mode": "external_registered",
+  "storage_hash": "computed-by-sdk",
+  "identifier": "msm.alembic_version",
+  "namespace": "msm",
+  "description": "Alembic revision state table.",
+  "protect_from_deletion": false,
+  "open_for_everyone": false,
+  "labels": [],
+  "introspect": false,
+  "table_contract": {
+    "version": "relational-table.v1",
+    "physical": {
+      "table_name": "alembic_version"
+    },
+    "columns": [
+      {
+        "name": "version_num",
+        "data_type": "string",
+        "backend_type": "VARCHAR",
+        "nullable": false,
+        "primary_key": true
+      }
+    ],
+    "constraints": [],
+    "indexes": [],
+    "foreign_keys": [],
+    "authoring": {
+      "owner": "alembic",
+      "schema": "public",
+      "version_table": "alembic_version"
+    }
+  }
+}
+```
 
-The SDK syncs migrations into the registry before apply:
+The `schema` and `version_table` must match the project's Alembic configuration
+for `version_table_schema` and `version_table`. For an initial migration, the
+physical `alembic_version` table may not exist yet. This registration is still
+valid because it is a catalog pointer, not an instruction for TS Manager to
+create or validate Alembic's table schema.
 
-1. Load the migration manifest from the installed package.
-2. Load SQL files from the installed package.
-3. Compute `manifest_sha256` and `sql_sha256`.
-4. Compute expected old and new contract hashes from SQLAlchemy MetaTable
-   declarations.
-5. Resolve affected table identifiers from explicit
-   `__metatable_identifier__` or canonical class paths.
-6. Verify that affected in-place tables use identifier-addressed migration
-   registration, not shape-addressed registration.
-7. Register the `MigrationMetaTable` subclass if needed.
-8. Insert or update the migration row in the registry MetaTable.
+### 2. Generate An Alembic Revision
 
-The sync path is client-side. It is equivalent to declaring any other
-platform-managed MetaTable and writing governed rows into it.
+The client project uses normal Alembic commands and configuration:
 
-This replaces a backend artifact registration endpoint. There is no separate
-server-side artifact registry.
+```bash
+alembic revision --autogenerate -m "initial"
+```
 
-## Migration Application
+The Alembic environment must point `target_metadata` at the same SQLAlchemy
+metadata used by the client models. Alembic owns `op.create_table(...)`,
+`op.add_column(...)`, downgrade bodies, branch labels, dependencies, and the
+physical `alembic_version` table.
 
-The SDK applies a migration through the backend MetaTable action endpoint:
+SDK migration files must not define custom `operations()` functions and must not
+emit SDK operation lists.
+
+### 3. Read Current Revision
+
+Before rendering a transition, client tooling should read the backend's current
+Alembic revision through the registered version-table binding:
+
+```python
+from mainsequence.client.metatables import AlembicMigrationStatusRequest, MetaTable
+
+
+status = MetaTable.get_migration_status(
+    AlembicMigrationStatusRequest(
+        alembic_version_meta_table_uid=alembic_version_meta_table.uid,
+        data_source_uid=data_source_uid,
+        package="msm",
+        migration_namespace="mainsequence.examples",
+    )
+)
+
+current_revision = status.current_revision
+```
+
+The returned `current_revision` is the source revision for the next Alembic
+render. For a never-migrated database it is `null`.
+
+### 4. Render Alembic SQL Client-Side
+
+Client tooling renders SQL from Alembic without applying it locally. The exact
+command can be CLI-based or programmatic, but the output must be the SQL for the
+intended transition:
+
+```bash
+alembic upgrade <current_revision_or_base>:<target_revision> --sql
+```
+
+For the first migration, `<current_revision_or_base>` is `base`. For a normal
+upgrade, it is the revision currently reported by
+`MetaTable.get_migration_status(...)`.
+
+The SDK packages the rendered SQL with a small manifest that describes the
+Alembic revision. The backend echoes this metadata for observability; it does
+not validate or approve the artifact.
+
+```python
+manifest = {
+    "package": "msm",
+    "migration_namespace": "mainsequence.examples",
+    "revision": "0001_initial",
+    "down_revision": None,
+    "direction": "upgrade",
+    "alembic_version_table": "public.alembic_version",
+}
+```
+
+`statement_boundaries` is optional diagnostic metadata. It can identify rendered
+statement positions for error reporting, but it is not executable migration
+logic.
+
+### 5. Dry-Run The Alembic SQL Artifact
+
+The client sends the rendered artifact to the backend with `dry_run=True` first:
+
+```python
+from mainsequence.client.metatables import AlembicMigrationOperation, MetaTable
+
+
+operation = AlembicMigrationOperation(
+    alembic_version_meta_table_uid=alembic_version_meta_table.uid,
+    data_source_uid=data_source_uid,
+    package="msm",
+    migration_namespace="mainsequence.examples",
+    revision="0001_initial",
+    down_revision=None,
+    direction="upgrade",
+    expected_current_revision=current_revision,
+    manifest=manifest,
+    sql=rendered_sql,
+    statement_boundaries=[],
+    dry_run=True,
+)
+
+validation = MetaTable.apply_migration(operation)
+assert validation.ok
+assert validation.status == "validated"
+```
+
+The exact JSON sent by the SDK is:
+
+```json
+{
+  "version": "metatable-migration.v1",
+  "alembic_version_meta_table_uid": "uuid",
+  "data_source_uid": "uuid",
+  "package": "msm",
+  "migration_namespace": "mainsequence.examples",
+  "revision": "0001_initial",
+  "down_revision": null,
+  "direction": "upgrade",
+  "expected_current_revision": null,
+  "manifest": {
+    "package": "msm",
+    "migration_namespace": "mainsequence.examples",
+    "revision": "0001_initial",
+    "down_revision": null,
+    "direction": "upgrade",
+    "alembic_version_table": "public.alembic_version"
+  },
+  "sql": "Alembic-rendered SQL text",
+  "statement_boundaries": [],
+  "dry_run": true
+}
+```
+
+The request must contain only the fields shown above. It must not carry
+extra SDK artifact references, affected-table plans, execution-run identifiers, or
+other catalog-reconciliation metadata.
+
+### 6. Apply The Same Artifact
+
+After dry-run validation, the client sends the same artifact with
+`dry_run=False`:
+
+```python
+apply_operation = operation.model_copy(update={"dry_run": False})
+result = MetaTable.apply_migration(apply_operation)
+
+assert result.ok
+assert result.status == "applied"
+assert result.current_revision == "0001_initial"
+```
+
+The backend executes the SQL on `data_source_uid`. The SQL itself is responsible
+for creating or updating the physical Alembic version table according to
+Alembic's offline output. The backend must not require application MetaTables to
+exist before the SQL runs, which is what makes initial `op.create_table(...)`
+migrations valid.
+
+### 7. Confirm Revision State
+
+After apply, the client can read the same version-table binding:
+
+```python
+status = MetaTable.get_migration_status(
+    {
+        "alembic_version_meta_table_uid": alembic_version_meta_table.uid,
+        "data_source_uid": data_source_uid,
+        "package": "msm",
+        "migration_namespace": "mainsequence.examples",
+    }
+)
+
+assert status.current_revision == "0001_initial"
+```
+
+The exact status request JSON is:
+
+```json
+{
+  "alembic_version_meta_table_uid": "uuid",
+  "data_source_uid": "uuid",
+  "package": "msm",
+  "migration_namespace": "mainsequence.examples"
+}
+```
+
+Status is read-only. It does not inspect, create, or refresh application
+MetaTables.
+
+### 8. Register Or Refresh Application MetaTables Separately
+
+After Alembic applies the physical schema change, project tooling registers or
+refreshes the affected application MetaTable catalog bindings separately:
+
+```python
+AssetTable.register(data_source_uid=data_source_uid)
+AccountHoldingsStorage.register(data_source_uid=data_source_uid)
+```
+
+That catalog step uses normal MetaTable registration and validation. It is not
+part of the Alembic migration apply request.
+
+## Request Contract
+
+The backend migration apply endpoint receives an Alembic-rendered SQL artifact,
+not a custom SDK operation plan and not an SDK artifact-table reference.
+
+Canonical endpoint:
 
 ```text
 POST /ts_manager/meta_table/apply-migration/
 ```
 
-The canonical wire payload uses `snake_case` field names. SDK helper APIs may
-accept selected camelCase aliases for caller convenience, but the backend
-contract is `snake_case`.
-
-The request body is:
+Canonical payload:
 
 ```json
 {
   "version": "metatable-migration.v1",
-  "migration_meta_table_uid": "uuid",
-  "migration_row_uid": "uuid",
   "data_source_uid": "uuid",
-  "package": "msm",
-  "migration_namespace": "markets",
-  "revision": "001_create_asset_tag",
+  "alembic_version_meta_table_uid": "uuid",
+  "package": "example-package",
+  "migration_namespace": "default",
+  "revision": "0001_initial",
   "down_revision": null,
   "direction": "upgrade",
   "expected_current_revision": null,
-  "manifest_sha256": "64 lowercase hex characters",
-  "sql_sha256": "64 lowercase hex characters",
-  "affected_tables": [
-    {
-      "identifier": "msm.markets.models.Asset",
-      "namespace": null,
-      "meta_table_uid": null,
-      "physical_table_name": null
-    }
-  ],
-  "old_contract_hashes": {
-    "msm.markets.models.Asset": "64 lowercase hex characters"
-  },
-  "new_contract_hashes": {
-    "msm.markets.models.Asset": "64 lowercase hex characters"
-  },
-  "idempotency_key": "metatable-migration:<migration_row_uid>:<sql_sha256>",
-  "lock_key": "<data_source_uid>:<package>:<migration_namespace>",
+  "manifest": {},
+  "sql": "Alembic-rendered SQL text",
+  "statement_boundaries": [],
   "dry_run": false
 }
 ```
 
-Field meanings:
+Field rules:
 
-- `version`: literal `metatable-migration.v1`.
-- `migration_meta_table_uid`: UID of the registered `MigrationMetaTable`.
-- `migration_row_uid`: UID of the registry row containing the manifest and SQL.
-- `data_source_uid`: target `DynamicTableDataSource` for DDL execution.
-- `package`: package or migration stream owner.
-- `migration_namespace`: package-local revision stream.
-- `revision`: target revision for this operation.
-- `down_revision`: expected parent revision, or `null` for bootstrap.
-- `direction`: `upgrade` or `downgrade`.
-- `expected_current_revision`: current revision required before execution, or
-  `null` for bootstrap.
-- `manifest_sha256`: checksum expected for the registry row manifest payload.
-- `sql_sha256`: checksum expected for the registry row SQL payload.
-- `affected_tables`: stable logical table identifiers and optional hints.
-- `old_contract_hashes`: expected pre-migration contract hashes by identifier.
-- `new_contract_hashes`: expected post-migration contract hashes by identifier.
-- `idempotency_key`: retry safety key for this exact row and SQL checksum.
-- `lock_key`: logical migration lock key.
-- `dry_run`: validate-only flag.
+- `version` is literal `metatable-migration.v1`.
+- `data_source_uid` is the target `DynamicTableDataSource`.
+- `alembic_version_meta_table_uid` identifies the registered
+  `AlembicVersionMetaTable` binding for the same data source.
+- `package` and `migration_namespace` identify the Alembic revision stream.
+- `revision`, `down_revision`, and `direction` come from the Alembic revision.
+- `expected_current_revision` is checked against the Alembic version table
+  immediately before SQL execution.
+- `manifest` is package metadata for the rendered artifact.
+- `sql` is generated by Alembic offline rendering from installed package
+  revisions.
+- `statement_boundaries` is diagnostic metadata; it is not a second migration
+  language.
+- Affected-table lists, execution-run identifiers, and catalog-reconciliation
+  metadata are not part of this request.
+- `dry_run` validates only and must not execute SQL.
 
-The apply request references a row in a registered `MigrationMetaTable`. It must
-not contain executable SQL statements, SQL statement arrays, manifest bodies, or
-backend-side Python hooks directly in the request body.
+The backend treats the SQL as an authorized Alembic migration request. It does
+not parse, validate, sign, checksum, or approve the artifact.
 
-The backend must load the registry row and validate that it contains at least:
+## Response Contract
 
-```json
-{
-  "uid": "uuid",
-  "version": "metatable-migration.v1",
-  "package": "msm",
-  "migration_namespace": "markets",
-  "revision": "001_create_asset_tag",
-  "down_revision": null,
-  "direction": "upgrade",
-  "target_data_source_uid": "uuid",
-  "expected_current_revision": null,
-  "manifest": {},
-  "manifest_sha256": "64 lowercase hex characters",
-  "sql": "SQL text loaded from the installed package by the SDK",
-  "sql_sha256": "64 lowercase hex characters",
-  "statement_boundaries": [],
-  "affected_tables": [],
-  "old_contract_hashes": {},
-  "new_contract_hashes": {},
-  "new_contracts": {},
-  "idempotency_key": "metatable-migration:<migration_row_uid>:<sql_sha256>",
-  "lock_key": "<data_source_uid>:<package>:<migration_namespace>",
-  "status": "pending"
-}
-```
-
-The backend validates the row against the request before it executes anything:
-
-- request `migration_row_uid` equals row `uid`
-- request `data_source_uid` equals row `target_data_source_uid`
-- request `package`, `migration_namespace`, `revision`, `down_revision`,
-  `direction`, and `expected_current_revision` equal the row values
-- request `manifest_sha256` equals row `manifest_sha256`
-- request `sql_sha256` equals row `sql_sha256`
-- recomputed SHA-256 of row `manifest` equals request `manifest_sha256`
-- recomputed SHA-256 of row `sql` equals request `sql_sha256`
-- request `idempotency_key` equals row `idempotency_key`
-- request `lock_key` equals row `lock_key`
-
-The backend must:
-
-1. Resolve `migration_meta_table_uid`.
-2. Read the migration row identified by `migration_row_uid`.
-3. Verify that the row fields match the request identity and checksums.
-4. Recompute `manifest_sha256`, operation checksums, and `sql_sha256` from the
-   row content.
-5. Acquire a migration lock for
-   `(data_source_uid, package, migration_namespace)`.
-6. Check the current revision from successful backend ledger rows after the
-   lock is acquired.
-7. Validate `expected_current_revision`.
-8. Resolve affected existing MetaTables by scoped `identifier`.
-9. Validate that resolved in-place tables keep the same stable `storage_hash`.
-10. Validate old contract hashes for affected existing tables.
-11. If `dry_run` is true, stop after validation and return the planned result.
-12. Execute the row's SQL in one transaction when the database supports
-    transactional DDL.
-13. Introspect affected physical tables.
-14. Create, import, or refresh affected platform MetaTable resources.
-15. Validate new contract hashes using backend-normalized contracts.
-16. Update existing MetaTable contract/projection rows without changing the
-    stable `storage_hash` for in-place migrated tables.
-17. Update the backend `MetaTableMigrationRun` ledger and optionally mirror
-    status to the registry row.
-18. Release the lock after success or failure.
-
-The apply response body is:
+Canonical success response:
 
 ```json
 {
   "ok": true,
   "version": "metatable-migration.v1",
   "dry_run": false,
-  "migration_meta_table_uid": "uuid",
-  "migration_row_uid": "uuid",
   "data_source_uid": "uuid",
-  "package": "msm",
-  "migration_namespace": "markets",
-  "revision": "001_create_asset_tag",
+  "alembic_version_meta_table_uid": "uuid",
+  "alembic_version_table": "public.alembic_version",
+  "package": "example-package",
+  "migration_namespace": "default",
+  "revision": "0001_initial",
   "direction": "upgrade",
-  "migration_run_uid": "uuid",
   "status": "applied",
   "previous_revision": null,
-  "applied_revision": "001_create_asset_tag",
+  "previous_revisions": [],
+  "current_revision": "0001_initial",
+  "current_revisions": ["0001_initial"],
   "executed_statement_count": 3,
-  "affected_tables": [
-    {
-      "identifier": "msm.markets.models.Asset",
-      "meta_table_uid": "uuid",
-      "physical_table_name": "backend.physical_table",
-      "action": "refreshed",
-      "storage_hash": "stable storage hash",
-      "previous_contract_hash": "64 lowercase hex characters",
-      "new_contract_hash": "64 lowercase hex characters",
-      "introspection": {}
-    }
-  ],
-  "created_meta_table_uids": [],
-  "imported_meta_table_uids": [],
-  "refreshed_meta_table_uids": ["uuid"],
-  "introspection_snapshots": {
-    "msm.markets.models.Asset": {}
-  },
-  "registry_update": {
-    "migration_meta_table_uid": "uuid",
-    "migration_row_uid": "uuid",
-    "status": "applied"
-  },
   "error": null
 }
 ```
 
-For `dry_run: true`, `ok` is true when validation succeeds, `dry_run` remains
-true, `executed_statement_count` is `0`, `applied_revision` is the planned
-revision, affected table `action` values may be `planned`, and
-backend ledger status is `validated`.
+For `dry_run: true`, `executed_statement_count` is `0`, `status` is
+`validated`, and no DDL is executed.
 
-For validation or execution failure, the backend should return the same shape
-with `ok: false`, a backend ledger failure status, and:
+For failure, the response keeps the same outer shape with `ok: false` and:
 
 ```json
 {
   "error": {
-    "code": "checksum_mismatch",
+    "code": "metatable_migration_sql_failed",
     "message": "Human-readable failure reason.",
     "details": {}
   }
 }
 ```
 
-The HTTP status should still reflect the failure class. Examples: `400` for
-malformed requests, `403` for missing permission, `404` for unknown registry
-tables or rows, `409` for revision, lock, idempotency, identifier, storage-hash,
-or contract-hash conflicts, and `500` for unexpected execution failures after
-the registry row is marked failed.
+## Backend Responsibilities
 
-The migration status endpoint is:
+The backend must:
 
-```text
-POST /ts_manager/meta_table/migration-status/
-```
+1. Verify caller permission to execute DDL on the target data source.
+2. Resolve the `AlembicVersionMetaTable` binding and ensure it belongs to the
+   request data source.
+3. Read current revision from the Alembic version table.
+4. Validate `expected_current_revision`.
+5. Execute Alembic-rendered SQL in one transaction when supported.
 
-The status request body is:
+The backend must not:
 
-```json
-{
-  "migration_meta_table_uid": "uuid",
-  "data_source_uid": "uuid",
-  "package": "msm",
-  "migration_namespace": "markets"
-}
-```
-
-`data_source_uid` may be `null` only when the caller wants package/namespace
-status across all data sources visible to the caller.
-
-The status response body is backed by the backend migration run ledger:
-
-```json
-{
-  "ok": true,
-  "migration_meta_table_uid": "uuid",
-  "data_source_uid": "uuid",
-  "package": "msm",
-  "migration_namespace": "markets",
-  "current_revision": "001_create_asset_tag",
-  "latest_successful_revision": "001_create_asset_tag",
-  "latest_attempted_revision": "001_create_asset_tag",
-  "runs": [
-    {
-      "migration_run_uid": "uuid",
-      "migration_row_uid": "uuid",
-      "revision": "001_create_asset_tag",
-      "down_revision": null,
-      "direction": "upgrade",
-      "status": "applied",
-      "previous_revision": null,
-      "applied_revision": "001_create_asset_tag",
-      "executed_statement_count": 3,
-      "manifest_sha256": "64 lowercase hex characters",
-      "sql_sha256": "64 lowercase hex characters",
-      "started_at": "2026-06-01T00:00:00Z",
-      "finished_at": "2026-06-01T00:00:01Z",
-      "error": null
-    }
-  ],
-  "error": null
-}
-```
+- execute SDK custom operation plans
+- require affected tables to exist before running initial `create_table` SQL
+- treat affected identifiers as proof that a physical table already exists
+- mutate Alembic's version table through SDK contract validation
+- maintain a separate SDK migration artifact table
+- maintain migration-run rows for Alembic execution
+- create, import, or refresh MetaTable records as part of SQL execution
 
 ## SDK Responsibilities
 
-The SDK owns packaging, registry management, and local validation:
+The SDK owns:
 
-- define `MigrationMetaTable`
-- allow projects to subclass `MigrationMetaTable`
-- store migration artifacts in the registry, not authoritative execution state
-- define the identifier-addressed registration mode for migration-managed
-  MetaTables
-- derive default table identifiers from canonical class import paths
-- register the migration registry MetaTable
-- load migration manifests from installed packages
-- load SQL files from installed packages
-- compute artifact checksums
-- validate revision lineage
-- split SQL using explicit statement boundary metadata
-- serialize structured operation plans for standard schema changes
-- compute old and new contract hashes from SQLAlchemy MetaTable declarations
-- include full old and new contracts so the backend can recompute
-  authoritative hashes
-- reject in-place migration packaging for shape-addressed table declarations
-- insert packaged migration rows into the registry MetaTable
-- construct typed `metatable-migration.v1` requests
-- expose helper methods for registry sync, status, dry run, and apply
+- `AlembicVersionMetaTable`
+- typed apply/status request and response models
+- helpers that package Alembic-rendered SQL into backend apply requests
+- docs and examples that show Alembic, not SDK operation lists
 
-The SDK does not:
+The SDK does not own:
 
-- autogenerate migrations
-- run Alembic environments
-- execute backend-side Python hooks
-- diff arbitrary database schemas
-- require a server-side artifact registry before a migration can be applied
+- Alembic revision generation
+- schema diffing outside Alembic
+- a migration artifact table
+- artifact sync/upsert helpers
+- custom `operations()` migration modules
+- execution of DDL locally
 
-## Backend Responsibilities
+## Catalog Binding
 
-The backend owns authority and side effects during apply:
+MetaTables are catalog metadata. The Alembic apply request points only to the
+registered `AlembicVersionMetaTable` binding so the backend can locate
+Alembic's version table on the target data source. Catalog registration or
+refresh for changed application tables is a separate SDK/project tooling step.
 
-- permission checks for schema migration execution
-- backend-owned `MetaTableMigrationRun` execution ledger
-- migration locks
-- affected table resolution by scoped `identifier`
-- current revision checks against backend ledger rows
-- idempotency
-- transactional execution when supported
-- table introspection
-- MetaTable create/import/refresh
-- stable `storage_hash` preservation for in-place migrated tables
-- old and new contract hash validation
-- optional registry row status mirroring
+## Removal Inventory
 
-The backend must reject apply requests for unknown registry tables, unknown
-migration rows, checksum mismatches, revision mismatches, lock conflicts,
-idempotency conflicts, identifier ambiguities, attempts to migrate
-shape-addressed tables in place, storage hash drift, and contract hash
-mismatches.
+Remove these concepts from SDK public behavior:
 
-The backend must not require migrations to be stored in a server-side artifact
-table. The registry is supplied by the client as a normal MetaTable.
+- SDK-managed migration artifact table models
+- default migration artifact table factories
+- migration artifact row Pydantic models
+- packaged migration artifact row builders
+- artifact table upsert SQL helpers
+- sync helpers that insert migrations into a MetaTable
+- `operations()` functions in migration files
+- custom SDK schema-operation names such as `add_column`, `drop_column`,
+  `alter_column`, and `create_index`
+- legacy SDK schema-migration SQLAlchemy base classes
+- operation-only manifests
+- SQL-or-operations fallbacks
+- custom schema-operation tests, examples, and docs
 
-The backend ledger, not the registry row, is authoritative for current
-revision, idempotency, status, recovery state, and audit metadata.
+Remove or rewrite these docs/examples:
 
-## Trust Boundary
+- `examples/meta_tables/migrations/*`
+- migration sections in `docs/tutorial/working_with_meta_tables.md`
+- stale artifact-table content in `docs/knowledge/meta_tables/migrations.md`
+- stale artifact-table content in `docs/knowledge/meta_tables/api.md`
 
-The migration registry is client-defined, but migration execution is still a
-privileged backend operation. The backend controls whether the caller may run
-DDL against the target data source.
-
-The apply endpoint should not accept direct SQL statements in the request body.
-It should execute only SQL loaded from the referenced `MigrationMetaTable` row
-after checksum, revision, lock, idempotency, and contract validation.
-
-The apply endpoint is also the only supported path for in-place schema changes
-to migratable platform-managed tables. Normal registration must not silently
-update an existing table contract when the SQLAlchemy shape changes.
-
-This keeps migration authoring extensible while preserving backend authority
-over execution.
+There is no compatibility alias and no fallback path.
 
 ## Consequences
 
-All migrations for a data source can live in one project-defined registry
-MetaTable. The registry is keyed by package and namespace, so a single table can
-track migrations across many logical MetaTables.
+Alembic is the single source of truth for DDL.
 
-The migration registry benefits from the same SQLAlchemy declaration,
-registration, search, labels, governed operations, and extension model as any
-other MetaTable, while execution truth lives in the backend ledger.
+The SDK surface is smaller: one Alembic version MetaTable binding plus typed
+backend migration requests.
 
-Project-specific extension fields are first-class. A package can extend
-`MigrationMetaTable` with release, compatibility, ownership, or diagnostics
-metadata without waiting for backend schema changes.
+Initial migrations are valid because the backend runs SQL before affected table
+introspection.
 
-Migratable data tables are resolved by scoped `identifier`, using explicit
-`__metatable_identifier__` when present and canonical class import path
-otherwise. This makes schema changes recoverable from the new code because the
-resolver does not depend on columns, indexes, foreign keys, or constraints.
-
-Shape-addressed `PlatformManagedMetaTable` remains useful for create-new table
-patterns, but it is not an in-place migration target. Once the SQLAlchemy shape
-changes, the previous shape-derived storage hash is not recoverable from the new
-class alone.
-
-The first implementation remains small. It is a packaged SQL migration runner
-with a client-defined MetaTable registry and backend DDL execution, not a
-general migration engine.
+Shape-addressed platform-managed tables remain useful for create-new table
+patterns, but they are not sufficient for in-place schema migration without a
+stable identifier.
 
 ## Implementation Tasks
 
 - [x] Make SQLAlchemy a required SDK dependency.
-- [x] Add `mainsequence.meta_tables.migrations`.
-- [x] Add a SQLAlchemy-compatible `MigrationMetaTable` base class.
-- [x] Add a default registry model with the required migration columns.
-- [x] Allow projects to subclass `MigrationMetaTable` with extension columns.
-- [x] Add Pydantic models for `metatable-migration.v1` apply requests.
-- [x] Add typed Pydantic response models for migration apply/status responses.
-- [x] Add backend-ledger status fields to migration apply/status response
-  models.
-- [x] Add package manifest and SQL loading helpers.
-- [x] Add checksum helpers for manifests and SQL artifacts.
-- [x] Add structured operation-plan serialization for registry artifacts.
-- [x] Add contract hash helpers based on SQLAlchemy MetaTable declarations.
-- [x] Include full old/new contracts in registry artifacts.
-- [x] Add registry row construction helpers.
-- [x] Add registry upsert operation helpers for inserting packaged migrations
-  into a registered `MigrationMetaTable`.
-- [x] Add SDK migration apply helper that sends a referenced registry row to
-  the backend apply endpoint.
-- [x] Add `MetaTable.apply_migration(...)`.
-- [x] Add SDK migration status helper.
-- [x] Add `MetaTable.get_migration_status(...)`.
-- [x] Add SDK documentation for client-defined MetaTable migrations.
-- [x] Add an SDK example with a registry subclass, bundled manifest, bundled
-  SQL, and dry-run apply operation construction.
-- [x] Add SDK tests for migration request payloads, registry helpers, package
-  loading, checksums, contract hashes, and example operation construction.
-- [x] Add an identifier-addressed registration mode for migration-managed
-  SQLAlchemy MetaTables so registration resolves by scoped `identifier`, not by
-  SQLAlchemy table shape.
-- [x] Add `MigrationManagedTimeIndexMetaData` so in-place migrations can target
-  time-indexed storage without falling back to shape-addressed
-  `PlatformTimeIndexMetaData`.
-- [x] Add canonical class-path identifier derivation for migration-managed
-  MetaTables: explicit `__metatable_identifier__`, else `model.__module__ +
-  "." + model.__qualname__`.
-- [x] Add validation that in-place affected tables use the
-  identifier-addressed migration registration mode.
-- [ ] Add backend apply endpoint with registry-row loading, locking,
-  idempotency, identifier-based table resolution, stable storage-hash
-  preservation, transaction handling, introspection, MetaTable refresh, and
-  registry status update.
-- [ ] Add backend migration-status endpoint or registry status read path.
-- [ ] Add an `ms-markets` migration registry subclass using bundled SQL,
-  manifests, and SQLAlchemy post-migration contracts.
+- [x] Remove SDK schema-operation models.
+- [x] Remove SDK-managed migration artifact table models.
+- [x] Remove default migration artifact table factory.
+- [x] Remove packaged migration manifest and registry helpers.
+- [x] Remove registry upsert and sync helpers.
+- [x] Remove custom schema-operation tests.
+- [x] Add `AlembicVersionMetaTable`.
+- [x] Make `AlembicVersionMetaTable` Alembic-owned with the minimal
+  `version_num` contract required for normal external registration.
+- [x] Add package Alembic offline SQL rendering helpers.
+- [x] Add apply helper that sends Alembic-rendered SQL plus manifest directly to
+  the backend.
+- [x] Add backend apply support for direct Alembic SQL artifacts.
+- [ ] Update tutorials and examples around the Alembic lifecycle.
 
 ## Non-Goals
 
-This ADR does not introduce automatic schema diffing.
+This ADR does not make the backend run Alembic.
 
-This ADR does not make Alembic the platform migration runtime.
+This ADR does not introduce a backend-owned migration artifact registry.
 
-This ADR does not introduce a server-side migration artifact registry.
+This ADR does not introduce an SDK migration artifact registry MetaTable.
 
-This ADR does not prevent projects from extending the migration registry
-MetaTable for their own release workflow metadata.
-
-This ADR does not make shape-addressed `PlatformManagedMetaTable` declarations
-in-place migratable.
+This ADR does not make arbitrary SQL request bodies acceptable.

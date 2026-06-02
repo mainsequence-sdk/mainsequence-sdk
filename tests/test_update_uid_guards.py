@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 
 
 def _data_node_update_without_uid() -> models_metatables.DataNodeUpdate:

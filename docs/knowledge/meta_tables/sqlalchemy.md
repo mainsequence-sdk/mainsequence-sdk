@@ -17,8 +17,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import (
     MetaTableForeignKey,
-    MigrationManagedMetaTable,
-    MigrationManagedTimeIndexMetaData,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
 )
@@ -242,16 +240,14 @@ Validation is intentionally strict:
 
 ## Migration-Managed Tables
 
-Use the migration-managed bases when a platform-managed table must evolve
-in-place through the MetaTable migration endpoint. These classes use stable
-identifier-addressed storage identity from the first version of the table, so a
-column/index/FK change rotates the contract hash without making the SDK lose the
-existing table.
+Use Alembic when a platform-managed table must evolve. The SDK no longer
+provides schema-migration SQLAlchemy base classes or a parallel operation-list
+migration language.
 
 For generic MetaTables:
 
 ```python
-class Account(MigrationManagedMetaTable, Base):
+class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Account"
 
@@ -262,7 +258,7 @@ class Account(MigrationManagedMetaTable, Base):
 For time-indexed DataNode storage:
 
 ```python
-class AccountHoldings(MigrationManagedTimeIndexMetaData, Base):
+class AccountHoldings(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.AccountHoldings"
     __time_index_name__ = "time_index"
@@ -276,11 +272,8 @@ class AccountHoldings(MigrationManagedTimeIndexMetaData, Base):
     quantity: Mapped[float] = mapped_column(Float, nullable=False)
 ```
 
-`MigrationManagedTimeIndexMetaData` is the time-indexed counterpart to
-`MigrationManagedMetaTable`: it still registers through
-`/orm/api/ts_manager/dynamic_table/register/` and still emits
-`table_kind: time_indexed`, but it does not use the time-index shape as the
-storage identity.
+Alembic owns physical DDL. MetaTable registration remains a catalog binding and
+can be refreshed after Alembic applies schema changes.
 
 ## External Registration
 

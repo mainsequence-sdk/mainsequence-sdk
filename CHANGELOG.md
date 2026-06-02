@@ -8,18 +8,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Added client-defined MetaTable migration registry helpers, `metatable-migration.v1`
-  client models, docs, and examples for syncing packaged SQL migrations into a
-  `MigrationMetaTable` and applying referenced registry rows through TS Manager.
-- Added typed SDK response models for MetaTable migration apply and status
-  endpoint responses.
-- Added a MetaTable migration example that changes a table contract and records
-  old/new contract hashes for backend validation.
+- Added `AlembicVersionMetaTable` as an external catalog binding for Alembic's
+  version table.
+- Added typed SDK request and response models for Alembic SQL migration apply
+  and status endpoints.
 
 ### Changed
 
-- Made SQLAlchemy a core SDK dependency for MetaTable declaration, compiled SQL,
-  and migration registry support.
+- Made SQLAlchemy a core SDK dependency for MetaTable declaration and compiled
+  SQL support.
+- Reworked MetaTable schema migration docs around Alembic-rendered SQL artifacts
+  instead of SDK-managed artifact tables or custom operation plans.
 
 ## [4.0.2] - 2026-05-25
 

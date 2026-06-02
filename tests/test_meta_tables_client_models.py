@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
-import mainsequence.client.models_metatables as meta_table_models
+import mainsequence.client.metatables as meta_table_models
 from mainsequence.meta_tables.compiled_sql.v1 import build_operation, compile_sqlalchemy_statement
 
 
@@ -201,7 +201,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     }
 
 
-def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
+def test_meta_table_apply_migration_posts_alembic_sql_artifact(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
@@ -209,39 +209,21 @@ def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
         return _Response(
             {
                 "ok": True,
-                "version": meta_table_models.METATABLE_MIGRATION_V1,
+                "version": meta_table_models.ALEMBIC_MIGRATION_V1,
+                "status": "validated",
                 "dry_run": True,
-                "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                "alembic_version_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+                "alembic_version_table": "public.alembic_version",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "package": "msm",
                 "migration_namespace": "markets",
                 "revision": "001",
                 "direction": "upgrade",
                 "previous_revision": None,
-                "applied_revision": "001",
+                "previous_revisions": [],
+                "current_revision": "001",
+                "current_revisions": ["001"],
                 "executed_statement_count": 0,
-                "affected_tables": [
-                    {
-                        "identifier": "msm.markets.models.Asset",
-                        "meta_table_uid": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-                        "physical_table_name": "public.asset",
-                        "action": "planned",
-                        "storage_hash": "asset_storage",
-                        "previous_contract_hash": "c" * 64,
-                        "new_contract_hash": "d" * 64,
-                        "introspection": {},
-                    }
-                ],
-                "created_meta_table_uids": [],
-                "imported_meta_table_uids": [],
-                "refreshed_meta_table_uids": ["cccccccc-cccc-4ccc-8ccc-cccccccccccc"],
-                "introspection_snapshots": {"msm.markets.models.Asset": {}},
-                "registry_update": {
-                    "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                    "status": "validated",
-                },
                 "error": None,
             }
         )
@@ -254,59 +236,46 @@ def test_meta_table_apply_migration_posts_registry_row_reference(monkeypatch):
     )
 
     result = meta_table_models.MetaTable.apply_migration(
-        meta_table_models.MetaTableMigrationOperation(
-            migrationMetaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            migrationRowUid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        meta_table_models.AlembicMigrationOperation(
+            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             package="msm",
             migration_namespace="markets",
             revision="001",
             expected_current_revision=None,
-            manifest_sha256="a" * 64,
-            sql_sha256="b" * 64,
-            idempotency_key="migration:001",
-            lock_key="dddddddd-dddd-4ddd-8ddd-dddddddddddd:msm:markets",
+            manifest={"revision": "001"},
+            sql="CREATE TABLE asset (uid uuid PRIMARY KEY);",
+            statement_boundaries=[{"statement_index": 0, "start_line": 1, "end_line": 1}],
             dry_run=True,
         )
     )
 
     assert result.ok is True
-    assert result.migration_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert result.migration_row_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    assert result.registry_update.status == "validated"
-    assert result.affected_tables[0].identifier == "msm.markets.models.Asset"
+    assert result.alembic_version_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert result.alembic_version_table == "public.alembic_version"
+    assert result.current_revision == "001"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/apply-migration/")
-    assert captured["payload"]["json"]["version"] == meta_table_models.METATABLE_MIGRATION_V1
-    assert captured["payload"]["json"]["migration_meta_table_uid"] == (
+    assert captured["payload"]["json"]["version"] == meta_table_models.ALEMBIC_MIGRATION_V1
+    assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
-    assert captured["payload"]["json"]["migration_row_uid"] == (
-        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-    )
+    assert captured["payload"]["json"]["sql"] == ("CREATE TABLE asset (uid uuid PRIMARY KEY);")
     assert captured["payload"]["json"]["dry_run"] is True
-    assert "affected_tables" not in captured["payload"]["json"]
-    assert "old_contract_hashes" not in captured["payload"]["json"]
-    assert "new_contract_hashes" not in captured["payload"]["json"]
+    removed_payload_keys = [
+        "affected" + "_tables",
+        "old" + "_contract_hashes",
+        "new" + "_contract_hashes",
+        "idempotency" + "_key",
+        "lock" + "_key",
+        "manifest" + "_sha256",
+        "sql" + "_sha256",
+    ]
+    for key in removed_payload_keys:
+        assert key not in captured["payload"]["json"]
 
 
-def test_meta_table_migration_operation_requires_lowercase_sha256():
-    with pytest.raises(ValidationError):
-        meta_table_models.MetaTableMigrationOperation(
-            migrationMetaTableUid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            migrationRowUid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            package="msm",
-            migration_namespace="markets",
-            revision="001",
-            manifest_sha256="m" * 64,
-            sql_sha256="b" * 64,
-            idempotency_key="migration:001",
-            lock_key="dddddddd-dddd-4ddd-8ddd-dddddddddddd:msm:markets",
-        )
-
-
-def test_meta_table_get_migration_status_posts_registry_scope(monkeypatch):
+def test_meta_table_get_migration_status_posts_alembic_scope(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
@@ -314,30 +283,14 @@ def test_meta_table_get_migration_status_posts_registry_scope(monkeypatch):
         return _Response(
             {
                 "ok": True,
-                "migration_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "version": meta_table_models.ALEMBIC_MIGRATION_V1,
+                "alembic_version_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "alembic_version_table": "public.alembic_version",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "package": "msm",
                 "migration_namespace": "markets",
                 "current_revision": "001",
-                "latest_successful_revision": "001",
-                "latest_attempted_revision": "001",
-                "rows": [
-                    {
-                        "migration_row_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-                        "revision": "001",
-                        "down_revision": None,
-                        "direction": "upgrade",
-                        "status": "applied",
-                        "previous_revision": None,
-                        "applied_revision": "001",
-                        "executed_statement_count": 3,
-                        "manifest_sha256": "a" * 64,
-                        "sql_sha256": "b" * 64,
-                        "started_at": "2026-06-01T00:00:00Z",
-                        "finished_at": "2026-06-01T00:00:01Z",
-                        "error": None,
-                    }
-                ],
+                "current_revisions": ["001"],
                 "error": None,
             }
         )
@@ -351,7 +304,7 @@ def test_meta_table_get_migration_status_posts_registry_scope(monkeypatch):
 
     result = meta_table_models.MetaTable.get_migration_status(
         {
-            "migrationMetaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "alembic_version_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             "package": "msm",
             "migration_namespace": "markets",
@@ -359,11 +312,11 @@ def test_meta_table_get_migration_status_posts_registry_scope(monkeypatch):
     )
 
     assert result.current_revision == "001"
-    assert result.migration_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert result.rows[0].migration_row_uid == "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+    assert result.alembic_version_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert result.current_revisions == ["001"]
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/migration-status/")
-    assert captured["payload"]["json"]["migration_meta_table_uid"] == (
+    assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
 

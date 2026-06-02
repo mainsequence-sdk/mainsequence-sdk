@@ -10,14 +10,13 @@ _LAZY_IMPORTS = {
         "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     ),
     "MetaTableForeignKey": (".sqlalchemy_contracts", "MetaTableForeignKey"),
-    "MigrationMetaTable": (".migrations", "MigrationMetaTable"),
-    "MigrationManagedMetaTable": (".sqlalchemy_contracts", "MigrationManagedMetaTable"),
-    "MigrationManagedTimeIndexMetaData": (
-        ".sqlalchemy_contracts",
-        "MigrationManagedTimeIndexMetaData",
-    ),
+    "AlembicVersionMetaTable": (".migrations", "AlembicVersionMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
+    "PackagedAlembicMigrationArtifact": (
+        ".migrations",
+        "PackagedAlembicMigrationArtifact",
+    ),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "BaseConfiguration": (".data_nodes", "BaseConfiguration"),
     "APIDataNode": (".data_nodes", "APIDataNode"),
@@ -36,13 +35,25 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "metatable_configured_tablename",
     ),
-    "metatable_migration_identifier": (
-        ".sqlalchemy_contracts",
-        "metatable_migration_identifier",
-    ),
-    "create_default_migration_registry_model": (
+    "DEFAULT_ALEMBIC_VERSION_IDENTIFIER": (
         ".migrations",
-        "create_default_migration_registry_model",
+        "DEFAULT_ALEMBIC_VERSION_IDENTIFIER",
+    ),
+    "DEFAULT_ALEMBIC_VERSION_NAMESPACE": (
+        ".migrations",
+        "DEFAULT_ALEMBIC_VERSION_NAMESPACE",
+    ),
+    "DEFAULT_ALEMBIC_VERSION_SCHEMA": (
+        ".migrations",
+        "DEFAULT_ALEMBIC_VERSION_SCHEMA",
+    ),
+    "DEFAULT_ALEMBIC_VERSION_TABLE_NAME": (
+        ".migrations",
+        "DEFAULT_ALEMBIC_VERSION_TABLE_NAME",
+    ),
+    "DEFAULT_ALEMBIC_VERSION_COLUMN_NAME": (
+        ".migrations",
+        "DEFAULT_ALEMBIC_VERSION_COLUMN_NAME",
     ),
     "metatable_tablename": (".sqlalchemy_contracts", "metatable_tablename"),
     "platform_managed_registration_request_from_sqlalchemy_model": (
@@ -52,6 +63,10 @@ _LAZY_IMPORTS = {
     "register_external_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "register_external_sqlalchemy_model",
+    ),
+    "render_packaged_alembic_migration": (
+        ".migrations",
+        "render_packaged_alembic_migration",
     ),
     "slugify_identifier": (".hashing", "slugify_identifier"),
     "table_contract_from_sqlalchemy_model": (

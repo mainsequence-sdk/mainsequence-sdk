@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client.models_metatables import UpdateStatistics
+from mainsequence.client.metatables import UpdateStatistics
 from mainsequence.meta_tables.data_nodes.data_nodes import DataNode
 
 

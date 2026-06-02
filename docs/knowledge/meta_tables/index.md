@@ -32,15 +32,14 @@ The SDK transport objects live in:
 
 ```python
 from mainsequence.client import MetaTable
-from mainsequence.client.models_metatables import MetaTableRegistrationRequest
+from mainsequence.client.metatables import MetaTableRegistrationRequest
 ```
 
 Higher-level SDK helpers live in:
 
 ```python
 from mainsequence.meta_tables import (
-    MigrationManagedMetaTable,
-    MigrationManagedTimeIndexMetaData,
+    AlembicVersionMetaTable,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
     metatable_tablename,
@@ -50,10 +49,11 @@ from mainsequence.meta_tables import (
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
-Schema migrations use a client-defined registry MetaTable:
+Schema migrations use Alembic. The SDK exposes a catalog binding for Alembic's
+version table:
 
 ```python
-from mainsequence.meta_tables.migrations import MigrationMetaTable
+from mainsequence.meta_tables.migrations import AlembicVersionMetaTable
 ```
 
 ## Management Modes
@@ -164,13 +164,11 @@ the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
 but also includes `time_index_name` and `index_names` in the stable identity and
 registers through the TimeIndexMetaData endpoint.
 
-For in-place contract migrations, use the migration-managed bases from the first
-version of the table. `MigrationManagedMetaTable` and
-`MigrationManagedTimeIndexMetaData` use stable identifier-addressed storage
-identity, while the contract hash still rotates as columns, indexes, foreign
-keys, and types change. `MigrationManagedTimeIndexMetaData` keeps the
-TimeIndexMetaData endpoint and time-index validation; it only changes the
-storage identity rule.
+For schema migrations, use Alembic with ordinary SQLAlchemy models. The SDK no
+longer provides schema-migration MetaTable bases or custom operation lists.
+Register `AlembicVersionMetaTable` as the catalog pointer to Alembic's version
+table, then register or refresh changed MetaTable catalog bindings separately
+after Alembic applies SQL.
 
 When two backend-managed tables could otherwise have the same storage-relevant
 shape, add `__metatable_extra_hash_components__` with stable deterministic

@@ -245,7 +245,7 @@ def test_project_image_accepts_creation_date():
 
 
 def test_data_node_storage_normalizes_namespace_filters():
-    from mainsequence.client.models_metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaData
 
     normalized = TimeIndexMetaData._normalize_filter_kwargs(
         {
@@ -263,7 +263,7 @@ def test_data_node_storage_normalizes_namespace_filters():
 
 
 def test_data_node_storage_normalizes_data_source_uid_filters():
-    from mainsequence.client.models_metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaData
 
     uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
@@ -281,14 +281,14 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
-    from mainsequence.client.models_metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaData
 
     with pytest.raises(ValueError, match="Unsupported TimeIndexMetaData filter"):
         TimeIndexMetaData._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
-    from mainsequence.client import models_metatables
+    from mainsequence.client import metatables as models_metatables
 
     captured = {}
 
@@ -373,7 +373,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
 
 
 def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypatch):
-    from mainsequence.client import models_metatables
+    from mainsequence.client import metatables as models_metatables
 
     captured = {}
 
@@ -436,7 +436,7 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
 
 
 def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
-    from mainsequence.client import models_metatables
+    from mainsequence.client import metatables as models_metatables
 
     captured = {}
     session = SimpleNamespace(headers={"Content-Type": "application/json"})
@@ -497,7 +497,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
 
 
 def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypatch):
-    from mainsequence.client import models_metatables
+    from mainsequence.client import metatables as models_metatables
 
     session = SimpleNamespace(headers={})
 
@@ -544,7 +544,7 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
 
 
 def test_data_node_update_normalizes_related_table_namespace_filters():
-    from mainsequence.client.models_metatables import DataNodeUpdate
+    from mainsequence.client.metatables import DataNodeUpdate
 
     normalized = DataNodeUpdate._normalize_filter_kwargs(
         {
@@ -562,7 +562,7 @@ def test_data_node_update_normalizes_related_table_namespace_filters():
 
 
 def test_data_node_update_accepts_uid_update_lookup_filters():
-    from mainsequence.client.models_metatables import DataNodeUpdate
+    from mainsequence.client.metatables import DataNodeUpdate
 
     uid = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 
@@ -580,14 +580,14 @@ def test_data_node_update_accepts_uid_update_lookup_filters():
 
 
 def test_data_node_update_rejects_data_source_id_filter():
-    from mainsequence.client.models_metatables import DataNodeUpdate
+    from mainsequence.client.metatables import DataNodeUpdate
 
     with pytest.raises(ValueError, match="Unsupported DataNodeUpdate filter"):
         DataNodeUpdate._normalize_filter_kwargs({"remote_table__data_source__id": {"id": 7}})
 
 
 def test_meta_table_normalizes_data_source_uid_filters():
-    from mainsequence.client.models_metatables import MetaTable
+    from mainsequence.client.metatables import MetaTable
 
     uid = "ffffffff-ffff-4fff-8fff-ffffffffffff"
 
@@ -605,7 +605,7 @@ def test_meta_table_normalizes_data_source_uid_filters():
 
 
 def test_meta_table_rejects_data_source_id_filter():
-    from mainsequence.client.models_metatables import MetaTable
+    from mainsequence.client.metatables import MetaTable
 
     with pytest.raises(ValueError, match="Unsupported MetaTable filter"):
         MetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})

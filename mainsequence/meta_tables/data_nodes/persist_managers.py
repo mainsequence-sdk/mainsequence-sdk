@@ -13,7 +13,7 @@ from mainsequence.client.dtype_codec import (
     sqlalchemy_type_to_token,
     token_to_pandas_series,
 )
-from mainsequence.client.models_metatables import (
+from mainsequence.client.metatables import (
     DUCK_DB,
     LOCAL_DATA_SOURCE_CLASS_TYPES,
     SQLITE,
@@ -97,6 +97,8 @@ def ensure_registered_storage_table(
         )
 
     if storage_table.get_time_index_metadata() is None:
+        if getattr(storage_table, "__table__", None) is None:
+            raise ValueError(f"{context} storage_table must be registered before use.")
         storage_table.register()
 
     storage_metadata = storage_table.get_time_index_metadata()

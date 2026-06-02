@@ -185,9 +185,9 @@ class ExternalPrices(DataNode):
         return prices_source
 ```
 
-Import and use `MigrationManagedTimeIndexMetaData` instead of
-`PlatformTimeIndexMetaData` for the storage class when the artifact-backed
-table must support in-place MetaTable contract migrations.
+Use Alembic for storage schema migrations. The SDK storage class can remain a
+normal `PlatformTimeIndexMetaData`; migration execution is handled by Alembic
+SQL, not an SDK schema-migration subclass.
 
 This is one of the cleanest ways to bridge external operational files into the `DataNode` layer.
 

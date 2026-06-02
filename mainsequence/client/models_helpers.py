@@ -20,11 +20,11 @@ from .compute_validation import (
     validate_and_normalize_compute_fields,
 )
 from .exceptions import raise_for_response
+from .metatables.core import _require_local_pod_project, _resolve_local_pod_project
 from .models_foundry import (
     Project,
     ProjectImage,
 )
-from .models_metatables import _require_local_pod_project, _resolve_local_pod_project
 from .utils import make_request
 
 

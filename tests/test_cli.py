@@ -4935,7 +4935,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -4991,7 +4991,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.list_data_node_storages(filters={"storage_hash__contains": "weights"})
     detail = api_mod.get_data_node_storage("data-node-storage-42")
@@ -5024,7 +5024,7 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5082,7 +5082,7 @@ def test_meta_table_api_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.list_meta_tables(filters={"namespace": "pytest"}, timeout=11)
     detail = api_mod.get_meta_table("meta-table-42", timeout=12)
@@ -5174,7 +5174,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5237,7 +5237,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.data_node_storage_description_search(
         "node weights",
@@ -5287,7 +5287,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5325,7 +5325,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.data_node_storage_column_search(
         "close", filters={"storage_hash__contains": "prices"}
@@ -5354,7 +5354,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5394,7 +5394,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.refresh_data_node_storage_search_index("data-node-storage-42", timeout=30)
 
@@ -5416,7 +5416,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5476,7 +5476,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.delete_data_node_storage(
         "data-node-storage-42",
@@ -5514,7 +5514,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5570,7 +5570,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.list_data_node_storage_users_can_view("data-node-storage-42", timeout=15)
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 15}
@@ -5591,7 +5591,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     fake_client_pkg = types.ModuleType("mainsequence.client")
     fake_utils = types.ModuleType("mainsequence.client.utils")
     fake_base = types.ModuleType("mainsequence.client.base")
-    fake_models = types.ModuleType("mainsequence.client.models_metatables")
+    fake_models = types.ModuleType("mainsequence.client.metatables")
 
     class FakeLoaders:
         provider = "orig"
@@ -5646,7 +5646,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
     monkeypatch.setitem(sys.modules, "mainsequence.client.utils", fake_utils)
     monkeypatch.setitem(sys.modules, "mainsequence.client.base", fake_base)
-    monkeypatch.setitem(sys.modules, "mainsequence.client.models_metatables", fake_models)
+    monkeypatch.setitem(sys.modules, "mainsequence.client.metatables", fake_models)
 
     out = api_mod.add_data_node_storage_user_to_edit("data-node-storage-42", 9, timeout=16)
     assert captured["get"] == {"uid": "data-node-storage-42", "filters": {}, "timeout": 16}
@@ -7811,7 +7811,7 @@ def test_meta_table_list_uses_canonical_command(cli_mod, runner, monkeypatch):
 
     assert result.exit_code == 0
     assert captured == {
-        "model_ref": "mainsequence.client.models_metatables.MetaTable",
+        "model_ref": "mainsequence.client.metatables.MetaTable",
         "entries": ["namespace=pytest_weights"],
         "timeout": 15,
         "filters": {"namespace": "pytest_weights", "data_source__uid": "data-source-1"},
@@ -8322,7 +8322,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
         "data-node-storage-42", "SELECT 1 AS value", timeout=14
     )
     assert captured == {
-        "module_name": "mainsequence.client.models_metatables",
+        "module_name": "mainsequence.client.metatables",
         "class_name": "TimeIndexMetaData",
         "uid": "data-node-storage-42",
         "timeout": 14,
@@ -8739,8 +8739,16 @@ def test_project_job_runs_logs_polls_and_prints_incrementally(cli_mod, runner, m
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
-            {"job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d", "status": "PENDING", "rows": ["first line"]},
-            {"job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d", "status": "RUNNING", "rows": ["first line", "second line"]},
+            {
+                "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+                "status": "PENDING",
+                "rows": ["first line"],
+            },
+            {
+                "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
+                "status": "RUNNING",
+                "rows": ["first line", "second line"],
+            },
             {
                 "job_run_uid": "4c1d77c8-8a42-42b8-a9c1-06be9a336e5d",
                 "status": "COMPLETED",
@@ -8779,8 +8787,16 @@ def test_project_job_runs_logs_stops_after_max_wait(cli_mod, runner, monkeypatch
     monkeypatch.setattr(cli_mod, "_require_login", lambda: {"username": "u"})
     responses = iter(
         [
-            {"job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a", "status": "PENDING", "rows": ["first line"]},
-            {"job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a", "status": "RUNNING", "rows": ["first line", "second line"]},
+            {
+                "job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a",
+                "status": "PENDING",
+                "rows": ["first line"],
+            },
+            {
+                "job_run_uid": "6d2f9e1a-7d5a-46d0-a01e-61c80f702c8a",
+                "status": "RUNNING",
+                "rows": ["first line", "second line"],
+            },
         ]
     )
     sleeps = []

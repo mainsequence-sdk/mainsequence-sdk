@@ -10,7 +10,7 @@ In this tutorial, you will:
 - let TS Manager create the physical tables through a configured data source
 - register a parent table before a child table with a foreign key
 - insert and read rows through governed MetaTable operations
-- evolve a MetaTable contract with a client-defined migration registry
+- evolve a MetaTable contract with Alembic-rendered migrations
 - understand how a `DataNode` later becomes an opinionated MetaTable-backed update workflow
 
 The concrete examples in this repository live under
@@ -56,8 +56,8 @@ In this mode:
 For backend-managed tables, the SDK-derived `storage_hash` is the logical table
 identity. TS Manager owns the physical table name and returns it during
 registration. Use `PlatformManagedMetaTable` when the logical identity should be
-derived from the SQLAlchemy table shape. Use `MigrationManagedMetaTable` from
-the first version when the table must support in-place contract migrations.
+derived from the SQLAlchemy table shape. Use Alembic for schema migrations; the
+SDK does not provide a separate schema-migration MetaTable base.
 
 This tutorial assumes SQLAlchemy is available in the project environment.
 
@@ -282,59 +282,50 @@ rows = MetaTable.execute_operation(operation)
 The exact response shape is backend-defined, but the request contract is always
 the same: compiled SQL plus declared MetaTable scope.
 
-## 8. Evolve A MetaTable With A Migration Registry
+## 8. Evolve A MetaTable With Alembic
 
 Do not apply an in-place contract change by simply changing the SQLAlchemy class
 and calling normal registration again. For shape-addressed
 `PlatformManagedMetaTable`, adding or removing columns changes the
 storage-relevant shape before the SDK can recover the previous table identity.
 
-For contract evolution, use a migration registry:
+For contract evolution, use Alembic:
 
-- declare a project-owned `MigrationMetaTable`
-- package SQL in the installed Python package
-- store the migration row in the registry MetaTable
-- send a `metatable-migration.v1` apply request that references the registry
-  row
-- include old and new contract hashes for every affected MetaTable
+- generate an Alembic revision from SQLAlchemy metadata
+- render the Alembic revision to SQL without applying it locally
+- send the Alembic-rendered SQL artifact to TS Manager with
+  `metatable-migration.v1`
+- refresh project catalog state after SQL execution
 
-The registry MetaTable is just another platform-managed MetaTable:
+Register Alembic's version table as a catalog binding:
 
 ```python
-from mainsequence.meta_tables.migrations import MigrationMetaTable
+from mainsequence.meta_tables.migrations import AlembicVersionMetaTable
 
 
-class TutorialMigration(MigrationMetaTable, Base):
+class TutorialAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "tutorial_migrations"
-    __metatable_description__ = "Tutorial contract migrations."
+    __metatable_identifier__ = "sdk-examples.alembic_version"
+    __alembic_version_schema__ = "public"
 ```
 
-The apply request contains `migration_meta_table_uid`, which is the UID of this
-registry MetaTable. It is not the UID of the table being migrated. The affected
-table is listed by stable identifier:
+The apply request contains `alembic_version_meta_table_uid`, which is the UID of
+this catalog binding. It is not the UID of the table being migrated:
 
 ```json
 {
-  "migration_meta_table_uid": "registry-metatable-uid",
-  "migration_row_uid": "migration-row-uid",
-  "affected_tables": [
-    {
-      "identifier": "sdk-examples.Asset"
-    }
-  ]
+  "alembic_version_meta_table_uid": "alembic-version-metatable-uid",
+  "revision": "0002_add_asset_status"
 }
 ```
 
-When a table changes, model the contract before and after the migration. Both
-versions represent the same logical MetaTable, so they use the same stable
-identifier:
+When a table changes, Alembic owns the DDL and the SDK sends the rendered SQL
+artifact to TS Manager. Use ordinary SQLAlchemy models in Alembic's target
+metadata:
 
 ```python
-from mainsequence.meta_tables import MigrationManagedMetaTable
-
-
-class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
+class AssetBeforeMigration(BeforeBase):
+    __tablename__ = "asset"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -342,7 +333,8 @@ class AssetBeforeMigration(MigrationManagedMetaTable, BeforeBase):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
 
-class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
+class AssetAfterMigration(AfterBase):
+    __tablename__ = "asset"
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.Asset"
 
@@ -351,58 +343,30 @@ class AssetAfterMigration(MigrationManagedMetaTable, AfterBase):
     status: Mapped[str] = mapped_column(String(32), nullable=False)
 ```
 
-Load the packaged migration with both declarations:
+Alembic owns the DDL:
 
 ```python
-from mainsequence.meta_tables.migrations import (
-    load_packaged_migration,
-    sync_packaged_migration,
-)
-
-
-packaged = load_packaged_migration(
-    "examples.meta_tables.migrations",
-    "packaged/002_add_asset_status.yaml",
-    old_contract_models={"sdk-examples.Asset": AssetBeforeMigration},
-    new_contract_models={"sdk-examples.Asset": AssetAfterMigration},
-)
-
-registry_meta_table = TutorialMigration.register(data_source_uid=DATA_SOURCE_UID)
-sync_result = sync_packaged_migration(registry_meta_table, packaged)
-row = sync_result["row"]
+def upgrade() -> None:
+    op.add_column(
+        "asset",
+        sa.Column("status", sa.String(length=32), nullable=False),
+        schema="public",
+    )
 ```
 
-The registry row now carries the contract rotation:
+The backend apply payload carries the rendered SQL:
 
-```python
-row.old_contract_hashes["sdk-examples.Asset"]
-row.new_contract_hashes["sdk-examples.Asset"]
-row.new_contracts["sdk-examples.Asset"]
+```json
+{
+  "version": "metatable-migration.v1",
+  "sql": "ALTER TABLE public.asset ADD COLUMN status varchar(32) NOT NULL;",
+  "dry_run": false
+}
 ```
 
-The old and new hashes must differ for a real contract change. During apply, TS
-Manager checks the old hash before running SQL, executes the packaged SQL under
-the migration lock, introspects the affected table, refreshes the MetaTable
-contract, and validates the new hash.
-
-For time-indexed DataNode storage, use `MigrationManagedTimeIndexMetaData`
-instead of `MigrationManagedMetaTable`. It keeps the TimeIndexMetaData
-registration endpoint, `time_index_name`, `index_names`, and time-index
-validation, but uses identifier-addressed storage identity so value-column
-changes can be migrated in place.
-
-Preview the full tutorial migration payload:
-
-```bash
-python -m examples.meta_tables.migrations.contract_hash_rotation
-```
-
-The example SQL is:
-
-```sql
-ALTER TABLE public.asset
-    ADD COLUMN IF NOT EXISTS status varchar(32) NOT NULL DEFAULT 'active';
-```
+During apply, TS Manager verifies the Alembic version state and executes the
+Alembic-rendered SQL. MetaTable catalog registration or refresh is a separate
+project tooling step after the physical schema changes.
 
 For the full migration API contract, see
 [MetaTable Migrations](../knowledge/meta_tables/migrations.md).

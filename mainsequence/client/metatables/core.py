@@ -12,7 +12,7 @@ import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
-from typing import Annotated, Any, ClassVar, Generic, Literal, TypedDict, TypeVar
+from typing import Any, ClassVar, Generic, Literal, TypedDict, TypeVar
 from uuid import UUID
 
 import numpy as np
@@ -30,9 +30,9 @@ from pydantic import (
 
 from mainsequence.logconf import logger
 
-from .base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
-from .data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
-from .dtype_codec import (
+from ..base import BaseObjectOrm, BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin
+from ..data_sources_interfaces import get_duckdb_interface_class, get_sqlite_interface_class
+from ..dtype_codec import (
     DATE,
     TIMESTAMP_TZ,
     normalize_column_dtypes_map,
@@ -43,8 +43,8 @@ from .dtype_codec import (
     serialize_remote_parameters,
     token_to_pandas_series,
 )
-from .exceptions import raise_for_response
-from .utils import (
+from ..exceptions import raise_for_response
+from ..utils import (
     TDAG_CONSTANTS,
     DateInfo,
     DoesNotExist,
@@ -121,38 +121,9 @@ def _storage_time_indexed_contract(storage: Any) -> tuple[str, list[str], dict[s
 MetaTableManagementMode = Literal["external_registered", "platform_managed"]
 MetaTableOperation = Literal["select", "insert", "update", "delete", "upsert"]
 COMPILED_SQL_V1 = "compiled-sql.v1"
-METATABLE_MIGRATION_V1 = "metatable-migration.v1"
 MetaTableCompiledSQLVersion = Literal["compiled-sql.v1"]
 MetaTableCompiledSQLDialect = Literal["postgresql"]
 MetaTableCompiledSQLParamstyle = Literal["pyformat"]
-MetaTableMigrationVersion = Literal["metatable-migration.v1"]
-MetaTableMigrationDirection = Literal["upgrade", "downgrade"]
-MetaTableMigrationStatus = Literal[
-    "pending",
-    "validating",
-    "validated",
-    "running",
-    "applied",
-    "failed_before_execution",
-    "failed_after_execution",
-    "metadata_refresh_failed",
-    "out_of_sync",
-]
-MetaTableMigrationOperationName = Literal[
-    "add_column",
-    "drop_column",
-    "alter_column",
-    "rename_column",
-    "create_index",
-    "drop_index",
-    "add_foreign_key",
-    "drop_foreign_key",
-]
-MetaTableMigrationSha256 = Annotated[
-    str,
-    Field(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"),
-]
-MetaTableMigrationAffectedAction = Literal["created", "imported", "refreshed", "planned"]
 
 
 def _strip_client_metadata(value: Any) -> Any:
@@ -475,194 +446,6 @@ class MetaTableCompiledSQLOperation(BasePydanticModel):
     statement: MetaTableStatementPayload
     scope: MetaTableOperationScope
     limits: MetaTableOperationLimits | None = None
-
-
-class MetaTableMigrationAffectedTable(BasePydanticModel):
-    identifier: str
-    namespace: str | None = None
-    meta_table_uid: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("meta_table_uid", "metaTableUid"),
-    )
-    physical_table_name: str | None = None
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class MetaTableMigrationError(BasePydanticModel):
-    code: str
-    message: str
-    details: dict[str, Any] = Field(default_factory=dict)
-
-    model_config = ConfigDict(extra="allow")
-
-
-class MetaTableMigrationAffectedTableResult(BasePydanticModel):
-    identifier: str
-    meta_table_uid: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("meta_table_uid", "metaTableUid"),
-    )
-    physical_table_name: str | None = None
-    action: MetaTableMigrationAffectedAction
-    storage_hash: str | None = None
-    previous_contract_hash: MetaTableMigrationSha256 | None = None
-    new_contract_hash: MetaTableMigrationSha256 | None = None
-    introspection: dict[str, Any] = Field(default_factory=dict)
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class MetaTableMigrationRegistryUpdate(BasePydanticModel):
-    migration_meta_table_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
-    )
-    migration_row_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
-    )
-    status: MetaTableMigrationStatus
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class MetaTableMigrationSchemaOperation(BasePydanticModel):
-    op: MetaTableMigrationOperationName
-    table_identifier: str
-    allow_destructive: bool = False
-    column: str | dict[str, Any] | None = None
-    index: str | dict[str, Any] | None = None
-    foreign_key: str | dict[str, Any] | None = None
-    contract: dict[str, Any] | None = None
-
-    model_config = ConfigDict(extra="allow")
-
-
-class MetaTableMigrationOperation(BasePydanticModel):
-    version: MetaTableMigrationVersion = METATABLE_MIGRATION_V1
-    migration_meta_table_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
-    )
-    migration_row_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
-    )
-    data_source_uid: str
-    package: str
-    migration_namespace: str
-    revision: str
-    down_revision: str | None = None
-    direction: MetaTableMigrationDirection = "upgrade"
-    expected_current_revision: str | None = None
-    manifest_sha256: MetaTableMigrationSha256
-    sql_sha256: MetaTableMigrationSha256
-    idempotency_key: str
-    lock_key: str
-    dry_run: bool = False
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class MetaTableMigrationStatusRequest(BasePydanticModel):
-    migration_meta_table_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
-    )
-    data_source_uid: str | None = None
-    package: str
-    migration_namespace: str
-
-    model_config = ConfigDict(populate_by_name=True)
-
-
-class MetaTableMigrationApplyResponse(BasePydanticModel):
-    ok: bool
-    version: MetaTableMigrationVersion = METATABLE_MIGRATION_V1
-    status: MetaTableMigrationStatus | None = None
-    migration_run_uid: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("migration_run_uid", "migrationRunUid"),
-    )
-    dry_run: bool = False
-    migration_meta_table_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
-    )
-    migration_row_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
-    )
-    data_source_uid: str
-    package: str
-    migration_namespace: str
-    revision: str
-    direction: MetaTableMigrationDirection
-    previous_revision: str | None = None
-    applied_revision: str | None = None
-    executed_statement_count: int = Field(default=0, ge=0)
-    affected_tables: list[MetaTableMigrationAffectedTableResult] = Field(default_factory=list)
-    affected_meta_table_uids: list[str] = Field(default_factory=list)
-    created_meta_table_uids: list[str] = Field(default_factory=list)
-    imported_meta_table_uids: list[str] = Field(default_factory=list)
-    refreshed_meta_table_uids: list[str] = Field(default_factory=list)
-    introspection_snapshots: dict[str, Any] = Field(default_factory=dict)
-    registry_update: MetaTableMigrationRegistryUpdate | None = None
-    error: MetaTableMigrationError | None = None
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class MetaTableMigrationStatusRow(BasePydanticModel):
-    migration_run_uid: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("migration_run_uid", "migrationRunUid"),
-    )
-    migration_row_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_row_uid", "migrationRowUid"),
-    )
-    revision: str
-    down_revision: str | None = None
-    direction: MetaTableMigrationDirection
-    status: MetaTableMigrationStatus
-    previous_revision: str | None = None
-    applied_revision: str | None = None
-    executed_statement_count: int | None = Field(default=None, ge=0)
-    manifest_sha256: MetaTableMigrationSha256
-    sql_sha256: MetaTableMigrationSha256
-    started_at: datetime.datetime | None = None
-    finished_at: datetime.datetime | None = None
-    error: MetaTableMigrationError | None = None
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-
-class MetaTableMigrationStatusResponse(BasePydanticModel):
-    ok: bool
-    version: MetaTableMigrationVersion = METATABLE_MIGRATION_V1
-    migration_meta_table_uid: str = Field(
-        ...,
-        validation_alias=AliasChoices("migration_meta_table_uid", "migrationMetaTableUid"),
-    )
-    data_source_uid: str | None = None
-    package: str
-    migration_namespace: str
-    current_revision: str | None = None
-    latest_successful_revision: str | None = None
-    latest_attempted_revision: str | None = None
-    runs: list[MetaTableMigrationStatusRow] = Field(
-        default_factory=list,
-        validation_alias=AliasChoices("runs", "rows"),
-    )
-    error: MetaTableMigrationError | None = None
-
-    model_config = ConfigDict(populate_by_name=True, extra="allow")
-
-    @property
-    def rows(self) -> list[MetaTableMigrationStatusRow]:
-        return self.runs
 
 
 class MetaTableRegistrationRequest(BasePydanticModel):
@@ -1507,46 +1290,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             timeout=timeout,
             expected_statuses=(200,),
         )
-
-    @classmethod
-    def apply_migration(
-        cls,
-        operation: MetaTableMigrationOperation | Mapping[str, Any],
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> MetaTableMigrationApplyResponse:
-        payload = (
-            operation
-            if isinstance(operation, MetaTableMigrationOperation)
-            else MetaTableMigrationOperation(**operation)
-        )
-        response_payload = cls._post_action(
-            "apply-migration",
-            payload,
-            timeout=timeout,
-            expected_statuses=(200,),
-        )
-        return MetaTableMigrationApplyResponse(**response_payload)
-
-    @classmethod
-    def get_migration_status(
-        cls,
-        request: MetaTableMigrationStatusRequest | Mapping[str, Any],
-        *,
-        timeout: int | float | tuple[float, float] | None = None,
-    ) -> MetaTableMigrationStatusResponse:
-        payload = (
-            request
-            if isinstance(request, MetaTableMigrationStatusRequest)
-            else MetaTableMigrationStatusRequest(**request)
-        )
-        response_payload = cls._post_action(
-            "migration-status",
-            payload,
-            timeout=timeout,
-            expected_statuses=(200,),
-        )
-        return MetaTableMigrationStatusResponse(**response_payload)
 
 
 # Global executor (or you could define one on your class)
@@ -4289,7 +4032,7 @@ def _reset_local_pod_project_resolution_cache() -> None:
 
 
 def _build_local_pod_project_resolution() -> _PodProjectResolution:
-    from .models_foundry import Project
+    from ..models_foundry import Project
 
     running_project_uid = (os.environ.get("MAIN_SEQUENCE_PROJECT_UID") or "").strip()
     if not running_project_uid:
@@ -4521,19 +4264,6 @@ __all__ = [
     "MetaTableIndexContract",
     "MetaTableIndexPayload",
     "MetaTableManagementMode",
-    "MetaTableMigrationAffectedAction",
-    "MetaTableMigrationAffectedTable",
-    "MetaTableMigrationAffectedTableResult",
-    "MetaTableMigrationApplyResponse",
-    "MetaTableMigrationDirection",
-    "MetaTableMigrationError",
-    "MetaTableMigrationOperation",
-    "MetaTableMigrationRegistryUpdate",
-    "MetaTableMigrationSha256",
-    "MetaTableMigrationStatusResponse",
-    "MetaTableMigrationStatusRow",
-    "MetaTableMigrationStatusRequest",
-    "MetaTableMigrationVersion",
     "MetaTableOperation",
     "MetaTableOperationLimits",
     "MetaTableOperationScope",
@@ -4549,7 +4279,6 @@ __all__ = [
     "SessionDataSource",
     "SQLITE",
     "COMPILED_SQL_V1",
-    "METATABLE_MIGRATION_V1",
     "TableMetaData",
     "TableUpdateNode",
     "TimeIndexMetaData",

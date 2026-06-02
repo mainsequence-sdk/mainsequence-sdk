@@ -4,7 +4,7 @@ import datetime
 import os
 from collections.abc import Mapping
 from threading import RLock
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
 import pandas as pd
@@ -20,10 +20,10 @@ from .dtype_codec import (
     token_to_pandas_series,
 )
 from .exceptions import raise_for_response
-from .models_metatables import (
+from .metatables import (
     DataSource as _DataSource,
 )
-from .models_metatables import (
+from .metatables import (
     DynamicTableDataSource as _DynamicTableDataSource,
 )
 from .utils import (
@@ -32,6 +32,9 @@ from .utils import (
     make_request,
     session,
 )
+
+if TYPE_CHECKING:
+    from .metatables import DataNodeUpdate
 
 _default_data_source = None  # Module-level cache
 
@@ -499,7 +502,7 @@ class Project(LabelableObjectMixin, ShareableObjectMixin, BasePydanticModel, Bas
 
         Returns a list of DataNodeUpdate objects for this project.
         """
-        from .models_metatables import DataNodeUpdate
+        from .metatables import DataNodeUpdate
 
         cls = type(self)
         url = f"{cls.get_object_url()}/{self._public_detail_reference()}/get-data-nodes-updates/"
@@ -652,7 +655,7 @@ class TimeScaleDB(_DataSource):
         grouped_dates: dict,
         column_dtypes_map: Mapping[str, Any] | None = None,
     ):
-        from .models_metatables import DataNodeUpdate
+        from .metatables import DataNodeUpdate
 
         DataNodeUpdate.post_data_frame_in_chunks(
             serialized_data_frame=serialized_data_frame,
@@ -1060,6 +1063,6 @@ class Constant(ShareableObjectMixin, BasePydanticModel, BaseObjectOrm):
         return created_constants
 
 
-from . import models_metatables as _models_metatables
+from . import metatables as _models_metatables  # noqa: E402
 
 _models_metatables.SessionDataSource.set_remote_db()

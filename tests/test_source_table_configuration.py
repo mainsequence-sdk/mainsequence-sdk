@@ -3,7 +3,7 @@ import datetime
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 
 
 def _source_config_payload():

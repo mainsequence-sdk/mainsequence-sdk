@@ -2,8 +2,8 @@ import types
 
 import pytest
 
+import mainsequence.client.metatables as models_metatables
 import mainsequence.client.models_foundry as models_foundry
-import mainsequence.client.models_metatables as models_metatables
 from mainsequence.meta_tables.data_nodes import build_operations
 
 PROJECT_UID = "1d0530c0-65d1-4db0-856b-dc29d8260a09"

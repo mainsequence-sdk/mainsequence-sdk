@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 
 
 def _dt(hour: int) -> datetime.datetime:

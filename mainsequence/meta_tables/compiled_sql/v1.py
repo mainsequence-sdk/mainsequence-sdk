@@ -6,7 +6,7 @@ from typing import Any
 from sqlalchemy.dialects import postgresql
 
 from mainsequence.client.dtype_codec import DATE, TIMESTAMP_TZ, sqlalchemy_type_to_token
-from mainsequence.client.models_metatables import (
+from mainsequence.client.metatables import (
     COMPILED_SQL_V1,
     MetaTableCompiledSQLDialect,
     MetaTableCompiledSQLOperation,

@@ -15,7 +15,7 @@ import structlog.contextvars as cvars
 
 import mainsequence.meta_tables.data_nodes.build_operations as build_operations
 import mainsequence.meta_tables.data_nodes.run_operations as run_operations
-from mainsequence.client.models_metatables import (
+from mainsequence.client.metatables import (
     BaseUpdateStatistics,
     DataNodeUpdate,
     DataSource,

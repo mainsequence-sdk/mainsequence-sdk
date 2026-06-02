@@ -1,1 +1,1 @@
-"""MetaTable migration registry examples."""
+"""Placeholder package for future Alembic-based MetaTable migration examples."""

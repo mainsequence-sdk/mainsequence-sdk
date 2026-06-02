@@ -11,7 +11,7 @@ os.environ.setdefault("MAINSEQUENCE_ACCESS_TOKEN", "test-access-token")
 os.environ.setdefault("MAINSEQUENCE_REFRESH_TOKEN", "test-refresh-token")
 
 import mainsequence.meta_tables.data_nodes.build_operations as build_operations
-from mainsequence.client.models_metatables import TimeIndexMetaData
+from mainsequence.client.metatables import TimeIndexMetaData
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,

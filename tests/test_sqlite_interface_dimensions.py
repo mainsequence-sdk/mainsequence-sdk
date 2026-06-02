@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pandas as pd
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 from mainsequence.client.data_sources_interfaces.sqlite import SQLiteInterface
 
 INDEX_NAMES = ["time_index", "account_uid", "asset_uid"]

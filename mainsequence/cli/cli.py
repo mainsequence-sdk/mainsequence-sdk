@@ -421,8 +421,8 @@ CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
-DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.models_metatables.TimeIndexMetaData"
-META_TABLE_MODEL_REF = "mainsequence.client.models_metatables.MetaTable"
+DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaData"
+META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
 WORKSPACE_MODEL_REF = "mainsequence.client.command_center.Workspace"
@@ -10314,7 +10314,10 @@ def project_job_runs_logs_cmd(
             print_kv(
                 "Job Run Logs",
                 [
-                    ("Job Run UID", str(payload.get("job_run_uid") or payload.get("uid") or job_run_uid)),
+                    (
+                        "Job Run UID",
+                        str(payload.get("job_run_uid") or payload.get("uid") or job_run_uid),
+                    ),
                     ("Status", status_value),
                 ],
             )

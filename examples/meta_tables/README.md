@@ -117,38 +117,10 @@ TS Manager authorizes execution through the declared MetaTable scope.
 
 ## Migrations
 
-The migration example declares a client-owned `MigrationMetaTable` registry,
-loads bundled SQL and a manifest, builds the registry upsert operation, and
-builds the `metatable-migration.v1` apply operation.
+MetaTable schema migrations are Alembic-based. The old SDK migration examples
+were removed because the SDK no longer supports separate artifact tables or
+custom SDK schema-operation migrations.
 
-Preview the payloads without touching TS Manager:
-
-```bash
-python -m examples.meta_tables.migrations.client_defined_registry
-```
-
-Preview a changed MetaTable contract and the old/new contract hashes that will
-be sent in the migration row:
-
-```bash
-python -m examples.meta_tables.migrations.contract_hash_rotation
-```
-
-Register the registry and sync the packaged migration row:
-
-```bash
-export MAINSEQUENCE_META_TABLE_MIGRATION_DATA_SOURCE_UID="<dynamic-data-source-uid>"
-export MAINSEQUENCE_META_TABLE_MIGRATION_SYNC=1
-python -m examples.meta_tables.migrations.client_defined_registry
-```
-
-Apply after the backend migration endpoint is available:
-
-```bash
-export MAINSEQUENCE_META_TABLE_MIGRATION_APPLY=1
-python -m examples.meta_tables.migrations.client_defined_registry
-```
-
-Use the same environment variables with
-`examples.meta_tables.migrations.contract_hash_rotation` to sync or apply the
-contract-rotation example.
+Use Alembic revisions, render SQL from those revisions, send the SQL artifact
+through the backend migration endpoint, and register `AlembicVersionMetaTable`
+as the external catalog binding for Alembic's version table.

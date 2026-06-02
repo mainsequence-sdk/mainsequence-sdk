@@ -17,7 +17,7 @@ Transport models:
 
 ```python
 from mainsequence.client import MetaTable
-from mainsequence.client.models_metatables import (
+from mainsequence.client.metatables import (
     MetaTableCompiledSQLOperation,
     MetaTableContract,
     MetaTableRegistrationRequest,
@@ -280,7 +280,8 @@ SDK call:
 result = MetaTable.apply_migration(operation)
 ```
 
-`result` is a `MetaTableMigrationApplyResponse`.
+`operation` is an `AlembicMigrationOperation`. `result` is an
+`AlembicMigrationApplyResponse`.
 
 Backend route:
 
@@ -289,32 +290,22 @@ POST /orm/api/ts_manager/meta_table/apply-migration/
 ```
 
 Execution expects a `metatable-migration.v1` operation. The operation references
-a row in a client-defined `MigrationMetaTable`; it does not include executable
-SQL directly in the request body.
+a verified Alembic-rendered SQL artifact plus manifest metadata. It does not
+reference a client-defined SDK artifact table and it does not accept SDK custom
+operation plans.
 
-`migration_meta_table_uid` is the UID of the registry MetaTable that stores
-migration rows. It is not the UID of the table being migrated. Affected tables
-are resolved from the `affected_tables[*].identifier` values and optional
-`meta_table_uid` hints.
-
-```python
-from mainsequence.meta_tables.migrations import build_migration_operation
-
-
-operation = build_migration_operation(
-    migration_meta_table,
-    registry_row,
-    dry_run=True,
-)
-result = MetaTable.apply_migration(operation)
-```
+`alembic_version_meta_table_uid` is the UID of the registered
+`AlembicVersionMetaTable` catalog binding for Alembic's version table. It is not
+the UID of the table being migrated. The backend executes the SQL and updates
+Alembic's version table; MetaTable catalog registration or refresh happens in a
+separate project tooling step.
 
 Status reads use:
 
 ```python
 status = MetaTable.get_migration_status(
     {
-        "migrationMetaTableUid": migration_meta_table.uid,
+        "alembic_version_meta_table_uid": alembic_version_meta_table.uid,
         "data_source_uid": data_source_uid,
         "package": "msm",
         "migration_namespace": "markets",
@@ -322,7 +313,7 @@ status = MetaTable.get_migration_status(
 )
 ```
 
-`status` is a `MetaTableMigrationStatusResponse`.
+`status` is an `AlembicMigrationStatusResponse`.
 
 Backend route:
 

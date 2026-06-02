@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pandas as pd
 
-from mainsequence.client import models_metatables
+from mainsequence.client import metatables as models_metatables
 from mainsequence.meta_tables.data_nodes import run_operations
 
 
