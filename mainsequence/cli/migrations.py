@@ -3,7 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import click
@@ -15,7 +15,6 @@ from mainsequence.client.metatables import (
     AlembicMigrationStatusRequest,
     MetaTable,
 )
-from mainsequence.logconf import logger
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     PackagedAlembicMigrationArtifact,
@@ -84,19 +83,39 @@ def _model_reference(model: type[Any]) -> str:
     return repr(model)
 
 
-def _log_metatable_registration_callback(
-    migration: AlembicMetaTableMigration,
-) -> Callable[[type[Any], str], None]:
-    def _log(model: type[Any], identifier: str) -> None:
-        logger.info(
-            "Registering migration MetaTable",
-            identifier=identifier,
-            model=_model_reference(model),
-            package=migration.package,
-            migration_namespace=migration.migration_namespace,
-        )
+def _meta_table_value(meta_table: Any, *names: str) -> Any:
+    if isinstance(meta_table, Mapping):
+        for name in names:
+            value = meta_table.get(name)
+            if value not in (None, ""):
+                return value
+        return None
+    for name in names:
+        value = getattr(meta_table, name, None)
+        if value not in (None, ""):
+            return value
+    return None
 
-    return _log
+
+def _print_metatable_resolution_callback(
+    migration: AlembicMetaTableMigration,
+) -> Callable[[type[Any], str, str, Any | None], None]:
+    def _print(model: type[Any], identifier: str, status: str, meta_table: Any | None) -> None:
+        fields = [
+            f"identifier={identifier}",
+            f"model={_model_reference(model)}",
+            f"package={migration.package}",
+            f"migration_namespace={migration.migration_namespace}",
+        ]
+        uid = _meta_table_value(meta_table, "uid", "meta_table_uid")
+        if uid is not None:
+            fields.append(f"uid={uid}")
+        physical_table_name = _meta_table_value(meta_table, "physical_table_name")
+        if physical_table_name is not None:
+            fields.append(f"physical_table_name={physical_table_name}")
+        typer.echo(f"migration MetaTable {status}: " + " ".join(fields), err=True)
+
+    return _print
 
 
 def _ensure_registry(
@@ -316,7 +335,7 @@ def render(
     if direction not in {"upgrade", "downgrade"}:
         raise typer.BadParameter("direction must be 'upgrade' or 'downgrade'.")
     migration.resolve_or_register_metatable_models(
-        on_register_metatable=_log_metatable_registration_callback(migration),
+        on_metatable_resolution=_print_metatable_resolution_callback(migration),
     )
     artifact = _render_artifact(
         migration,
@@ -354,7 +373,7 @@ def upgrade(
     _ensure_registry(migration, timeout=timeout)
     migration.resolve_or_register_metatable_models(
         timeout=timeout,
-        on_register_metatable=_log_metatable_registration_callback(migration),
+        on_metatable_resolution=_print_metatable_resolution_callback(migration),
     )
     status = MetaTable.get_migration_status(_status_request(migration), timeout=timeout)
     current_revision = status.current_revision

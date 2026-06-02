@@ -147,6 +147,10 @@ def _write_provider_with_register_hook(
     return f"{module_name}:migration"
 
 
+def _result_stdout(result) -> str:
+    return getattr(result, "stdout", result.output)
+
+
 def test_migrations_current_uses_provider_registry_binding(cli_mod, runner, monkeypatch, tmp_path):
     provider_ref = _write_provider(tmp_path)
     monkeypatch.syspath_prepend(str(tmp_path))
@@ -179,7 +183,7 @@ def test_migrations_current_uses_provider_registry_binding(cli_mod, runner, monk
     assert result.exit_code == 0
     assert captured["request"].alembic_version_meta_table_uid == "registry-meta-table-uid"
     assert not hasattr(captured["request"], "data_source_uid")
-    payload = json.loads(result.output)
+    payload = json.loads(_result_stdout(result))
     assert payload["current_revision"] == "0001_initial"
 
 
@@ -290,7 +294,7 @@ def test_next_sequential_revision_id(cli_mod, tmp_path):
     assert migration_cli._next_sequential_revision_id(migration) == "0002"
 
 
-def test_migrations_render_logs_metatable_registration(
+def test_migrations_render_prints_metatable_resolution(
     cli_mod,
     runner,
     monkeypatch,
@@ -300,14 +304,27 @@ def test_migrations_render_logs_metatable_registration(
     monkeypatch.syspath_prepend(str(tmp_path))
     importlib.invalidate_caches()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
-    logs = []
 
     class LoggedModel:
         pass
 
-    def fake_resolve(self, *, timeout=None, on_register_metatable=None):
+    def fake_resolve(self, *, timeout=None, on_metatable_resolution=None):
         assert timeout is None
-        on_register_metatable(LoggedModel, "global.logged_model")
+        on_metatable_resolution(
+            LoggedModel,
+            "global.logged_model",
+            "registered",
+            {
+                "uid": "logged-model-uid",
+                "physical_table_name": "mt_logged_model",
+            },
+        )
+        on_metatable_resolution(
+            LoggedModel,
+            "global.existing_model",
+            "exists",
+            {"uid": "existing-model-uid"},
+        )
         return []
 
     def fake_render(migration, **kwargs):
@@ -334,11 +351,6 @@ def test_migrations_render_logs_metatable_registration(
         "render_packaged_alembic_migration_for_provider",
         fake_render,
     )
-    monkeypatch.setattr(
-        migration_cli.logger,
-        "info",
-        lambda event, **fields: logs.append((event, fields)),
-    )
 
     result = runner.invoke(
         cli_mod.app,
@@ -346,18 +358,14 @@ def test_migrations_render_logs_metatable_registration(
     )
 
     assert result.exit_code == 0
-    assert logs == [
-        (
-            "Registering migration MetaTable",
-            {
-                "identifier": "global.logged_model",
-                "model": f"{LoggedModel.__module__}.{LoggedModel.__qualname__}",
-                "package": "msm",
-                "migration_namespace": "markets",
-            },
-        )
-    ]
-    payload = json.loads(result.output)
+    assert "migration MetaTable registered:" in result.stderr
+    assert "identifier=global.logged_model" in result.stderr
+    assert "uid=logged-model-uid" in result.stderr
+    assert "physical_table_name=mt_logged_model" in result.stderr
+    assert "migration MetaTable exists:" in result.stderr
+    assert "identifier=global.existing_model" in result.stderr
+    assert "uid=existing-model-uid" in result.stderr
+    payload = json.loads(_result_stdout(result))
     assert payload["sql"] == "CREATE TABLE logged_model (uid integer);"
 
 
@@ -375,7 +383,6 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
     operations = []
     status_calls = []
     order = []
-    logs = []
 
     class LoggedModel:
         pass
@@ -430,10 +437,15 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
     monkeypatch.setattr(migration_cli.MetaTable, "get_migration_status", staticmethod(fake_status))
     monkeypatch.setattr(migration_cli.MetaTable, "apply_migration", staticmethod(fake_apply))
 
-    def fake_resolve(self, *, timeout=None, on_register_metatable=None):
+    def fake_resolve(self, *, timeout=None, on_metatable_resolution=None):
         order.append("resolve")
         assert timeout is None
-        on_register_metatable(LoggedModel, "global.logged_model")
+        on_metatable_resolution(
+            LoggedModel,
+            "global.logged_model",
+            "exists",
+            {"uid": "logged-model-uid"},
+        )
         return []
 
     monkeypatch.setattr(
@@ -445,11 +457,6 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
         migration_cli,
         "render_packaged_alembic_migration_for_provider",
         fake_render,
-    )
-    monkeypatch.setattr(
-        migration_cli.logger,
-        "info",
-        lambda event, **fields: logs.append((event, fields)),
     )
 
     result = runner.invoke(
@@ -465,18 +472,10 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
     assert {operation.alembic_version_meta_table_uid for operation in operations} == {
         "registry-meta-table-uid"
     }
-    assert logs == [
-        (
-            "Registering migration MetaTable",
-            {
-                "identifier": "global.logged_model",
-                "model": f"{LoggedModel.__module__}.{LoggedModel.__qualname__}",
-                "package": "msm",
-                "migration_namespace": "markets",
-            },
-        )
-    ]
-    payload = json.loads(result.output)
+    assert "migration MetaTable exists:" in result.stderr
+    assert "identifier=global.logged_model" in result.stderr
+    assert "uid=logged-model-uid" in result.stderr
+    payload = json.loads(_result_stdout(result))
     assert payload["validation"]["status"] == "validated"
     assert payload["apply"]["status"] == "applied"
     assert payload["registered"] == []
@@ -641,5 +640,5 @@ def test_migrations_upgrade_syncs_catalog_and_runs_provider_hook(
         ("register", "account", None),
         ("hook", ["account-meta-table-uid"]),
     ]
-    payload = json.loads(result.output)
+    payload = json.loads(_result_stdout(result))
     assert payload["registered"] == [{"uid": "account-meta-table-uid"}]

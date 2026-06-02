@@ -4,7 +4,7 @@ import importlib
 import io
 import pathlib
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
@@ -268,9 +268,17 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[Any]:
         registered: list[Any] = []
+        existing_meta_tables = _get_metatables_by_identifier(
+            [resolve_metatable_identifier(model) for model in self.metatable_models],
+            timeout=timeout,
+        )
         with platform_managed_migration_registration_context():
             for model in self.metatable_models:
-                self.resolve_or_register_metatable_model(model, timeout=timeout)
+                self.resolve_or_register_metatable_model(
+                    model,
+                    timeout=timeout,
+                    existing_meta_tables_by_identifier=existing_meta_tables,
+                )
                 registered.append(model.register(timeout=timeout))
         if self.after_register_metatables is not None:
             self.after_register_metatables(registered)
@@ -280,7 +288,7 @@ class AlembicMetaTableMigration:
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        on_register_metatable: Callable[[type[Any], str], Any] | None = None,
+        on_metatable_resolution: Callable[[type[Any], str, str, Any | None], Any] | None = None,
     ) -> list[Any]:
         """Resolve provider-scoped models before SQL rendering.
 
@@ -290,12 +298,17 @@ class AlembicMetaTableMigration:
         """
 
         resolved: list[Any] = []
+        existing_meta_tables = _get_metatables_by_identifier(
+            [resolve_metatable_identifier(model) for model in self.metatable_models],
+            timeout=timeout,
+        )
         with platform_managed_migration_registration_context():
             for model in self.metatable_models:
                 meta_table = self.resolve_or_register_metatable_model(
                     model,
                     timeout=timeout,
-                    on_register_metatable=on_register_metatable,
+                    existing_meta_tables_by_identifier=existing_meta_tables,
+                    on_metatable_resolution=on_metatable_resolution,
                 )
                 if meta_table is not None:
                     resolved.append(meta_table)
@@ -306,17 +319,25 @@ class AlembicMetaTableMigration:
         model: type[Any],
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        on_register_metatable: Callable[[type[Any], str], Any] | None = None,
+        existing_meta_tables_by_identifier: Mapping[str, Any] | None = None,
+        on_metatable_resolution: Callable[[type[Any], str, str, Any | None], Any] | None = None,
     ) -> Any | None:
         identifier = resolve_metatable_identifier(model)
-        existing_meta_table = _get_metatable_by_identifier(identifier, timeout=timeout)
+        existing_meta_table = (
+            existing_meta_tables_by_identifier.get(identifier)
+            if existing_meta_tables_by_identifier is not None
+            else _get_metatable_by_identifier(identifier, timeout=timeout)
+        )
         if existing_meta_table is not None:
             _bind_model_to_existing_metatable(model, existing_meta_table)
+            if on_metatable_resolution is not None:
+                on_metatable_resolution(model, identifier, "exists", existing_meta_table)
             return existing_meta_table
         if _is_platform_managed_metatable_model(model):
-            if on_register_metatable is not None:
-                on_register_metatable(model, identifier)
-            return model.register(timeout=timeout)
+            meta_table = model.register(timeout=timeout)
+            if on_metatable_resolution is not None:
+                on_metatable_resolution(model, identifier, "registered", meta_table)
+            return meta_table
         return None
 
 
@@ -583,15 +604,51 @@ def _get_metatable_by_identifier(
     *,
     timeout: int | float | tuple[float, float] | None = None,
 ) -> MetaTable | None:
-    matches = MetaTable.filter(identifier=identifier, timeout=timeout)
+    matches = _get_metatables_by_identifier([identifier], timeout=timeout)
+    return matches.get(identifier)
+
+
+def _get_metatables_by_identifier(
+    identifiers: Sequence[str],
+    *,
+    timeout: int | float | tuple[float, float] | None = None,
+) -> dict[str, MetaTable]:
+    unique_identifiers = list(dict.fromkeys(str(identifier) for identifier in identifiers))
+    if not unique_identifiers:
+        return {}
+
+    matches = MetaTable.filter(identifier__in=unique_identifiers, timeout=timeout)
     if not matches:
+        return {}
+
+    matched_by_identifier: dict[str, MetaTable] = {}
+    for meta_table in matches:
+        identifier = _meta_table_identifier(meta_table)
+        if identifier is None:
+            if len(unique_identifiers) == 1:
+                identifier = unique_identifiers[0]
+            else:
+                raise ValueError(
+                    "Backend returned a MetaTable row without identifier while resolving "
+                    "migration provider models by identifier__in."
+                )
+        if identifier in matched_by_identifier:
+            raise ValueError(
+                f"MetaTable identifier {identifier!r} is not globally unique; "
+                "found multiple catalog rows."
+            )
+        matched_by_identifier[identifier] = meta_table
+    return matched_by_identifier
+
+
+def _meta_table_identifier(meta_table: Any) -> str | None:
+    if isinstance(meta_table, Mapping):
+        identifier = meta_table.get("identifier")
+    else:
+        identifier = getattr(meta_table, "identifier", None)
+    if identifier in (None, ""):
         return None
-    if len(matches) > 1:
-        raise ValueError(
-            f"MetaTable identifier {identifier!r} is not globally unique; "
-            f"found {len(matches)} catalog rows."
-        )
-    return matches[0]
+    return str(identifier)
 
 
 def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None:
