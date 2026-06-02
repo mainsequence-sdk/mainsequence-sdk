@@ -182,20 +182,14 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
     )
 ```
 
-Storage registration is inferred from the class metadata and active Main
-Sequence project/session. The DataNode constructor ensures the output
-`storage_table` is registered when needed. You may still call it explicitly
-during bootstrap when code needs the returned metadata object:
+Storage registration is migration-first. Add the storage model to the
+MetaTable migration provider and run `mainsequence migrations upgrade --provider
+... --to head`. Do not call `PricesTable.register()` directly and do not rely on
+DataNode construction to register storage tables.
 
-```python
-PricesTable.register()
-```
-
-`PlatformTimeIndexMetaData.register()` is the storage lifecycle path.
-Treat them as idempotent get-or-create operations: the platform returns the
-registered metadata and UID, and the SDK records that metadata on the class. Do
-not manually attach an existing UID, reconstruct a generic `MetaTable`, or use
-manual bind helpers as an authoring step.
+`PlatformTimeIndexMetaData.register()` remains SDK plumbing for the migration
+workflow. Do not manually attach an existing UID, reconstruct a generic
+`MetaTable`, or use manual bind helpers as an authoring step.
 
 ### 2. Keep DataNode As Update Logic
 
@@ -206,17 +200,16 @@ The DataNode constructor should accept:
 - optional `hash_namespace`
 
 The constructor `storage_table` is the output storage contract. Keep it out of
-`DataNodeConfiguration`. Do not pre-register this output storage class just to
-construct the node; `DataNode` and `PersistManager` call the SDK registration
-lifecycle automatically when the class is not yet bound.
+`DataNodeConfiguration`. The storage class must already be registered by the
+migration workflow before the node is constructed or run.
 
 If the DataNode needs to select another DataNode's storage table as a
 dependency, put that dependency storage reference in the config as
 `type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
 `TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. If the
-class is not yet bound, the config serializer calls `StorageClass.register()`
-before reading the UID.
+class is not yet bound, config serialization must fail and tell the user to run
+the migration workflow.
 
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.
@@ -398,10 +391,10 @@ Do not ask users to name these foreign keys. `MetaTableForeignKey(...)` derives
 a stable contract name when `name` is omitted; `name=...` is only for deliberate
 overrides.
 
-Registration of the storage class follows the MetaTable lifecycle:
-`register()` recursively registers unresolved FK target model classes, uses the
-local process registry keyed by `storage_hash`, and writes the target
-`MetaTable.uid` into the FK contract.
+Registration of the storage class follows the MetaTable migration lifecycle.
+Migration tooling recursively resolves/registers unresolved FK target model
+classes, uses the local process registry keyed by `storage_hash`, and writes the
+target `MetaTable.uid` into the FK contract.
 
 Do not add DataNode configuration fields just to mutate storage metadata.
 

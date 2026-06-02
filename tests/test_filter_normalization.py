@@ -569,12 +569,14 @@ def test_data_node_update_accepts_uid_update_lookup_filters():
     normalized = DataNodeUpdate._normalize_filter_kwargs(
         {
             "update_hash": " weights_daily ",
+            "remote_table__uid": {"uid": uid},
             "remote_table__data_source__uid": {"uid": uid},
         }
     )
 
     assert normalized == {
         "update_hash": "weights_daily",
+        "remote_table__uid": uid,
         "remote_table__data_source__uid": uid,
     }
 

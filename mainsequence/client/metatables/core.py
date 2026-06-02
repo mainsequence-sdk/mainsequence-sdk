@@ -1653,12 +1653,15 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "uid": ["in", "exact"],
         "update_hash": ["exact"],
+        "remote_table__uid": ["exact", "in"],
         "remote_table__data_source__uid": ["exact", "in"],
         "related_table__namespace": ["contains", "in", "isnull"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {
         "uid": "uid",
         "uid__in": "uid",
+        "remote_table__uid": "uid",
+        "remote_table__uid__in": "uid",
         "remote_table__data_source__uid": "uid",
         "remote_table__data_source__uid__in": "uid",
     }

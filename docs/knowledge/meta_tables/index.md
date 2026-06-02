@@ -84,9 +84,11 @@ Use this when TS Manager should create the physical table through the selected
 Typical flow:
 
 1. Define SQLAlchemy models with `PlatformManagedMetaTable` or `__tablename__ = metatable_tablename(...)`.
-2. Build or register through the model class.
-3. TS Manager receives a neutral registration contract extracted from SQLAlchemy metadata.
-4. TS Manager validates the contract, applies supported DDL, stores projections, and returns a MetaTable `uid`.
+2. Add those models to `AlembicMetaTableMigration.metatable_models`.
+3. Run `mainsequence migrations upgrade --provider ... --to head`.
+4. Migration tooling calls the existing registration path for missing models,
+   TS Manager creates the initial physical tables, and Alembic applies schema
+   evolution SQL.
 
 For `platform_managed`, `storage_hash` is the logical table identity and
 `table_contract.physical.table_name` is omitted from client requests. The
@@ -95,8 +97,8 @@ backend allocates the physical table name and returns it on the `MetaTable`.
 That is why the SDK exposes `PlatformManagedMetaTable` and `metatable_tablename(...)`.
 The platform-managed class computes the logical storage identity from
 storage-relevant configuration, including the SQLAlchemy table shape. After
-registration the SDK privately rebinds the SQLAlchemy table name to the backend
-physical table name so compiled SQL targets the real table.
+migration-managed registration the SDK privately rebinds the SQLAlchemy table
+name to the backend physical table name so compiled SQL targets the real table.
 
 ## Why Choose Platform-Managed
 

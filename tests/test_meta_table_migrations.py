@@ -3,11 +3,14 @@ from __future__ import annotations
 import importlib
 import textwrap
 import types
+import uuid
 
 import pytest
-from sqlalchemy import Column, Integer, MetaData, Table
+from sqlalchemy import Column, Integer, MetaData, Table, Uuid
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.client.metatables import MetaTable
+from mainsequence.meta_tables import PlatformManagedMetaTable
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
     DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
@@ -72,22 +75,27 @@ def test_project_can_scope_alembic_version_metatable():
 
 
 def test_alembic_version_metatable_register_posts_registration_request(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+
     captured = {}
 
     def fake_register(request, *, timeout=None):
         captured["request"] = request
         captured["timeout"] = timeout
-        return "registered"
+        return types.SimpleNamespace(
+            uid="registered-uid",
+            data_source_uid=request.data_source_uid,
+        )
 
     monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
 
-    result = AlembicVersionMetaTable.register(
-        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    result = ProjectAlembicVersion.register(
         timeout=10,
         schema="markets",
     )
 
-    assert result == "registered"
+    assert result.uid == "registered-uid"
     assert captured["timeout"] == 10
     assert captured["request"].data_source_uid == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert captured["request"].table_contract.columns[0].name == "version_num"
@@ -97,7 +105,7 @@ def test_alembic_version_metatable_register_posts_registration_request(monkeypat
 def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_uid__ = None
-        __metatable_data_source_uid__ = None
+        __metatable_data_source_uid__ = "data-source-uid"
 
     def fake_register(request, *, timeout=None):
         return types.SimpleNamespace(
@@ -107,13 +115,13 @@ def test_alembic_version_metatable_binds_uid_and_data_source_uid(monkeypatch):
 
     monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
 
-    ProjectAlembicVersion.register(data_source_uid="data-source-uid")
+    ProjectAlembicVersion.register()
 
     assert ProjectAlembicVersion.get_meta_table_uid() == "metatable-uid"
     assert ProjectAlembicVersion.get_data_source_uid() == "data-source-uid"
 
 
-def test_alembic_metatable_migration_uses_registry_for_data_source_uid():
+def test_alembic_metatable_migration_uses_registry_for_version_table_config():
     metadata = MetaData()
     Table("asset", metadata, Column("uid", Integer, primary_key=True), schema="public")
 
@@ -129,7 +137,6 @@ def test_alembic_metatable_migration_uses_registry_for_data_source_uid():
         metatable_models=[],
     )
 
-    assert migration.resolve_data_source_uid() == "data-source-uid"
     assert migration.alembic_version_table == "public.alembic_version"
     assert migration.include_name("asset", "table", {"schema_name": "public"}) is True
     assert migration.include_name("ignored", "table", {"schema_name": "public"}) is False
@@ -190,8 +197,8 @@ def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook
             events.append(("bind", "first", meta_table.uid))
 
         @classmethod
-        def register(cls, *, data_source_uid=None, timeout=None):
-            events.append(("first", data_source_uid, timeout))
+        def register(cls, *, timeout=None):
+            events.append(("first", timeout))
             return types.SimpleNamespace(uid="first-uid")
 
     class SecondModel:
@@ -202,8 +209,8 @@ def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook
             events.append(("bind", "second", meta_table.uid))
 
         @classmethod
-        def register(cls, *, data_source_uid=None, timeout=None):
-            events.append(("second", data_source_uid, timeout))
+        def register(cls, *, timeout=None):
+            events.append(("second", timeout))
             return types.SimpleNamespace(uid="second-uid")
 
     def after_register(registered):
@@ -235,10 +242,61 @@ def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook
     assert filter_calls == [("global.first", 15), ("global.second", 15)]
     assert events == [
         ("bind", "first", "existing-first-uid"),
-        ("first", "data-source-uid", 15),
-        ("second", "data-source-uid", 15),
+        ("first", 15),
+        ("second", 15),
         ("hook", ["first-uid", "second-uid"]),
     ]
+
+
+def test_alembic_metatable_migration_registers_missing_platform_managed_model(
+    monkeypatch,
+):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset],
+    )
+
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(lambda **kwargs: []))
+
+    captured = {}
+
+    def fake_register(request, *, timeout=None):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return types.SimpleNamespace(
+            uid="asset-meta-table-uid",
+            data_source_uid=request.data_source_uid,
+            storage_hash=request.storage_hash,
+            physical_table_name="mt_asset",
+        )
+
+    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+
+    resolved = migration.resolve_or_register_metatable_models(timeout=20)
+
+    assert [meta_table.uid for meta_table in resolved] == ["asset-meta-table-uid"]
+    assert captured["request"].identifier == "markets.Asset"
+    assert captured["timeout"] == 20
+    assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
+    assert Asset.get_physical_table_name() == "mt_asset"
+    assert Asset.__table__.name == "mt_asset"
 
 
 def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails(
@@ -253,16 +311,16 @@ def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_
         __metatable_identifier__ = "global.first"
 
         @classmethod
-        def register(cls, *, data_source_uid=None, timeout=None):
-            events.append(("first", data_source_uid, timeout))
+        def register(cls, *, timeout=None):
+            events.append(("first", timeout))
             return types.SimpleNamespace(uid="first-uid")
 
     class FailingModel:
         __metatable_identifier__ = "global.failing"
 
         @classmethod
-        def register(cls, *, data_source_uid=None, timeout=None):
-            events.append(("failing", data_source_uid, timeout))
+        def register(cls, *, timeout=None):
+            events.append(("failing", timeout))
             raise RuntimeError("registration failed")
 
     def after_register(registered):
@@ -284,8 +342,8 @@ def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_
         migration.sync_metatable_catalog(timeout=15)
 
     assert events == [
-        ("first", "data-source-uid", 15),
-        ("failing", "data-source-uid", 15),
+        ("first", 15),
+        ("failing", 15),
     ]
 
 
@@ -297,7 +355,7 @@ def test_alembic_metatable_migration_fails_on_duplicate_identifier(monkeypatch):
         __metatable_identifier__ = "global.asset"
 
         @classmethod
-        def register(cls, *, data_source_uid=None, timeout=None):
+        def register(cls, *, timeout=None):
             raise AssertionError("register should not run for duplicate identifiers")
 
     migration = AlembicMetaTableMigration(
@@ -357,7 +415,7 @@ def test_load_alembic_metatable_migration_provider_by_reference(tmp_path, monkey
     migration = load_alembic_metatable_migration_provider(cwd=tmp_path)
 
     assert migration.package == "msm"
-    assert migration.resolve_data_source_uid() == "data-source-uid"
+    assert migration.alembic_registry.get_data_source_uid() == "data-source-uid"
 
 
 def test_removed_registry_helpers_are_not_public():

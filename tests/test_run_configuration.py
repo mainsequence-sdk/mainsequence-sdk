@@ -427,6 +427,33 @@ def test_persist_manager_uses_platform_managed_storage_identity():
     ]
 
 
+def test_persist_manager_update_lookup_uses_storage_uid_not_data_source_uid():
+    meta_table = _meta_table(
+        uid="platform-meta-table-uid",
+        data_source_uid="platform-data-source-uid",
+        storage_hash="canonical_prices_table",
+    )
+    storage_table = _platform_storage_model(meta_table)
+
+    class ExplicitStoragePersistManager(BasePersistManager):
+        UPDATE_CLASS = object
+
+    manager = ExplicitStoragePersistManager(
+        update_hash=None,
+        storage_table=storage_table,
+    )
+    manager.update_hash = "prices-update-hash"
+
+    lookup = manager._build_update_get_or_none_kwargs(include_relations_detail=True)
+
+    assert lookup == {
+        "update_hash": "prices-update-hash",
+        "include_relations_detail": True,
+        "remote_table__uid": "platform-meta-table-uid",
+    }
+    assert "remote_table__data_source__uid" not in lookup
+
+
 def test_persist_manager_preserves_storage_table_during_update_lookup():
     stale_response_storage = _meta_table(
         uid="stale-meta-table-uid",

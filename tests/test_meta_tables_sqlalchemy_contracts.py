@@ -21,6 +21,7 @@ from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
     metatable_configured_tablename,
     metatable_tablename,
+    platform_managed_migration_registration_context,
     platform_managed_registration_request_from_sqlalchemy_model,
     table_contract_from_sqlalchemy_model,
     time_indexed_registration_request_from_sqlalchemy_model,
@@ -770,7 +771,8 @@ def test_platform_managed_metatable_registers_fk_targets_recursively(monkeypatch
     Asset.__metatable_description__ = "Child-specific description."
     Asset.__metatable_labels__ = ["child"]
 
-    Asset.register(data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
+    with platform_managed_migration_registration_context():
+        Asset.register(data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee")
 
     assert [request.identifier for request in captured_requests] == ["Account", "ChildOverride"]
     assert [request.data_source_uid for request in captured_requests] == [
@@ -810,8 +812,9 @@ def test_platform_managed_register_reuses_local_registry(monkeypatch):
         classmethod(fake_register),
     )
 
-    first = Account.register()
-    second = Account.register()
+    with platform_managed_migration_registration_context():
+        first = Account.register()
+        second = Account.register()
 
     assert first is second
     assert len(captured_requests) == 1
@@ -834,8 +837,9 @@ def test_platform_managed_register_clears_failed_registry_entry(monkeypatch):
         classmethod(fake_register),
     )
 
-    with pytest.raises(RuntimeError, match="registration failed"):
-        Account.register()
+    with platform_managed_migration_registration_context():
+        with pytest.raises(RuntimeError, match="registration failed"):
+            Account.register()
 
     assert table.name not in sqlalchemy_contracts._METATABLE_REGISTRATION_REGISTRY
 
@@ -866,8 +870,9 @@ def test_platform_managed_register_detects_recursive_registration_cycle():
         )
     ]
 
-    with pytest.raises(ValueError, match="recursive registration cycle"):
-        Account.register()
+    with platform_managed_migration_registration_context():
+        with pytest.raises(ValueError, match="recursive registration cycle"):
+            Account.register()
 
 
 def test_platform_managed_omits_name_for_metatable_foreign_key():
@@ -969,10 +974,11 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
         classmethod(fake_register),
     )
 
-    registered = Account.register(
-        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        timeout=15,
-    )
+    with platform_managed_migration_registration_context():
+        registered = Account.register(
+            data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            timeout=15,
+        )
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_meta_table() is registered
@@ -986,6 +992,18 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     assert captured["request"].storage_hash != Account.__table__.name
     assert captured["request"].table_contract.physical.table_name is None
     assert not hasattr(Account, "bind_meta_table")
+
+
+def test_platform_managed_register_requires_migration_context():
+    table = FakeTable(
+        "placeholder",
+        columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
+    )
+    Account = _platform_model_class("Account", table)
+    table.name = metatable_configured_tablename(Account)
+
+    with pytest.raises(ValueError, match="migration-managed"):
+        Account.register()
 
 
 def test_platform_managed_free_function_register_path_is_not_public():
@@ -1208,10 +1226,11 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
 
     monkeypatch.setattr(models_metatables, "make_request", fake_make_request)
 
-    registered = AccountHoldings.register(
-        data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
-        timeout=15,
-    )
+    with platform_managed_migration_registration_context():
+        registered = AccountHoldings.register(
+            data_source_uid="eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+            timeout=15,
+        )
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_meta_table() is registered
@@ -1237,9 +1256,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     ]
 
 
-def test_ensure_registered_storage_table_registers_unbound_storage(monkeypatch):
-    import mainsequence.client.metatables as models_metatables
-
+def test_ensure_registered_storage_table_rejects_unbound_storage():
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1251,29 +1268,9 @@ def test_ensure_registered_storage_table_registers_unbound_storage(monkeypatch):
         index_names=["time_index", "asset_uid"],
     )
     table.name = metatable_configured_tablename(AssetSnapshots)
-    captured = {}
 
-    def fake_register(cls, request, timeout=None):
-        captured["request"] = request
-        return SimpleNamespace(
-            uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
-        )
-
-    monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
-        "register",
-        classmethod(fake_register),
-    )
-
-    ensured = ensure_registered_storage_table(AssetSnapshots, context="DataNode")
-
-    assert ensured is AssetSnapshots
-    assert AssetSnapshots.get_time_index_metadata().uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert AssetSnapshots.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    assert captured["request"].identifier == "AssetSnapshots"
+    with pytest.raises(ValueError, match="migrations upgrade"):
+        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
 
 
 def test_time_index_storage_name_hash_component_separates_identical_table_shapes():
@@ -1485,7 +1482,8 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
         classmethod(fake_register),
     )
 
-    Account.register()
+    with platform_managed_migration_registration_context():
+        Account.register()
 
     assert captured["request"].storage_hash == storage_hash
     assert captured["request"].table_contract.physical.table_name is None

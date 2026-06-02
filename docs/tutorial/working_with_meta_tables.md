@@ -119,15 +119,13 @@ values such as `{"storage_name": "account"}` or
 `{"storage_name": "account_limit"}`. Do not use labels, descriptions, runtime
 options, backend UIDs, data-source UIDs, or test-specific values there.
 
-## 4. Register The Parent MetaTable
+## 4. Add The Parent MetaTable To Migrations
 
-Register the table through the class API:
+Platform-managed tables are migration-first. Add the table to the selected
+`AlembicMetaTableMigration.metatable_models` list and run migrations:
 
-```python
-account_meta_table = Account.register()
-
-print(account_meta_table.uid)
-print(account_meta_table.physical_table_name)
+```bash
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
 ```
 
 The SDK extracts a neutral table contract from SQLAlchemy metadata and sends it
@@ -151,7 +149,7 @@ contract. For platform-managed tables, declare the target model class with
 Do not build FK targets from SQLAlchemy table fullnames or parent table column
 objects. Registration can rebind `Account.__table__.name` to the backend
 physical table name. `MetaTableForeignKey` keeps the target model and target
-column as SDK metadata so `register()` can recursively register parent targets
+column as SDK metadata so migration tooling can resolve/register parent targets
 and resolve the target `MetaTable.uid`.
 
 Do not add `name=...`. Platform-managed FK contracts omit physical constraint
@@ -180,12 +178,16 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     currency: Mapped[str] = mapped_column(String(3), nullable=False)
 ```
 
-Register the child normally. If the parent has not been registered in this
-process, `register()` registers it first and reuses the local `storage_hash`
-registry if another relationship has already registered the same table:
+Add the child to the same migration provider. If the parent has not been
+registered in this process, migration tooling registers it first and reuses the
+local `storage_hash` registry if another relationship has already registered
+the same table:
 
 ```python
-limit_meta_table = AccountLimit.register()
+migration = AlembicMetaTableMigration(
+    ...,
+    metatable_models=[Account, AccountLimit],
+)
 ```
 
 The SDK extracts the foreign key source columns, target MetaTable UID, target

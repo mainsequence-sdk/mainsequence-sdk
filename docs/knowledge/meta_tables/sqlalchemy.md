@@ -83,7 +83,7 @@ identity and therefore points at a different table. Do not use it for labels,
 descriptions, runtime parameters, test isolation, backend UIDs, data-source
 UIDs, or per-run updater scope.
 
-## Register A Platform-Managed Table
+## Migration-Manage A Platform-Managed Table
 
 Build the request first when you want to inspect the payload:
 
@@ -96,21 +96,32 @@ assert request.table_contract.physical.table_name is None
 ```
 
 The data source is resolved from the active Main Sequence project/session, like
-DataNode. Registration metadata belongs on the model class.
+DataNode. Registration metadata belongs on the model class, but users should
+not call `Account.register()` directly for platform-managed tables.
 
-Then send it:
+Put platform-managed models in the selected migration provider:
 
 ```python
-account_meta_table = Account.register()
-account_meta_table_uid = account_meta_table.uid
+migration = AlembicMetaTableMigration(
+    package="sdk_examples",
+    migration_namespace="sdk-examples",
+    script_location="sdk_examples:migrations",
+    target_metadata=Base.metadata,
+    alembic_registry=ProjectAlembicVersion,
+    metatable_models=[Account],
+)
 ```
 
-The backend validates the table contract, creates the physical table when the
-data source supports DDL, stores the MetaTable row, synchronizes column/index/FK
-projections, and returns a platform `uid` plus `physical_table_name`. After
-successful registration, the SDK privately binds `Account.__table__.name` to
-that backend physical table name so ordinary SQLAlchemy statements compile
-against the real table.
+Then run:
+
+```bash
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+```
+
+Migration tooling calls the existing platform-managed registration path for
+missing provider-scoped models, lets the backend create the initial physical
+table, binds `Account.__table__.name` to the returned physical table name, and
+then renders/applies Alembic SQL for schema evolution.
 
 ## Foreign Keys
 
@@ -119,10 +130,11 @@ backend contract. For platform-managed tables, declare the target model class
 with `MetaTableForeignKey(TargetModel, column=...)`.
 
 Do not use SQLAlchemy table fullnames or parent table column objects as the
-public SDK declaration. Registration may rebind `Account.__table__.name` to the
-backend physical table name. `MetaTableForeignKey` stores the target model class
-and target column as SDK metadata, then `register()` recursively registers
-parent targets and resolves the backend `MetaTable.uid`.
+public SDK declaration. Migration-managed registration may rebind
+`Account.__table__.name` to the backend physical table name.
+`MetaTableForeignKey` stores the target model class and target column as SDK
+metadata. Migration tooling resolves parent targets and backend
+`MetaTable.uid` values before rendering SQL.
 
 Do not provide a foreign-key name. `MetaTableForeignKey(...)` rejects `name=...`
 for platform-managed MetaTables because the backend generates physical
@@ -148,13 +160,10 @@ class Asset(PlatformManagedMetaTable, Base):
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 ```
 
-Register `Asset` normally. The SDK registers unresolved parent targets first in
-the same process and keeps a local `storage_hash -> MetaTable` registry so the
-same table is not registered twice during recursive FK registration:
-
-```python
-asset_meta_table = Asset.register()
-```
+Include `Asset` in the provider's `metatable_models`. The migration workflow
+resolves unresolved parent targets first and keeps a local
+`storage_hash -> MetaTable` registry so the same table is not registered twice
+during migration-managed registration.
 
 The SDK contract serializer extracts:
 
@@ -227,8 +236,6 @@ assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
     "account_uid",
     "unique_identifier",
 ]
-
-holdings_storage = AccountHoldings.register()
 ```
 
 Validation is intentionally strict:
@@ -312,7 +319,8 @@ The SDK repository includes complete Account/Asset examples:
 - [external_managed/account_asset.py](../../../examples/meta_tables/external_managed/account_asset.py)
 - [compiled_sql_account_asset_query.py](../../../examples/meta_tables/compiled_sql_account_asset_query.py)
 
-The registration examples call TS Manager by default. The compiled query example
+The platform-managed example is migration-first. The external-managed example
+uses the low-level TS Manager registration primitive. The compiled query example
 prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1`.
 
 ## Validation Rules
@@ -324,7 +332,7 @@ The SDK intentionally fails early for ambiguous metadata:
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - platform-managed foreign keys must use `MetaTableForeignKey(TargetModel, column=...)`
-- `register()` recursively registers `MetaTableForeignKey` target models and resolves `MetaTable.uid`
+- the migration workflow resolves `MetaTableForeignKey` target models through their stable identifiers and binds their `MetaTable.uid`
 - unsupported SQLAlchemy column types raise before registration
 
 This is deliberate. TS Manager should receive a deterministic table contract,

@@ -97,14 +97,16 @@ def ensure_registered_storage_table(
         )
 
     if storage_table.get_time_index_metadata() is None:
-        if getattr(storage_table, "__table__", None) is None:
-            raise ValueError(f"{context} storage_table must be registered before use.")
-        storage_table.register()
+        raise ValueError(
+            f"{context} storage_table is not registered. Run "
+            "`mainsequence migrations upgrade --provider <provider> --to head` "
+            "before using this DataNode storage table."
+        )
 
     storage_metadata = storage_table.get_time_index_metadata()
     if storage_metadata is None:
         raise ValueError(
-            f"{context} storage_table.register() did not bind TimeIndexMetaData metadata."
+            f"{context} storage_table is missing TimeIndexMetaData metadata."
         )
     if storage_table.get_meta_table_uid() in (None, ""):
         raise ValueError(f"{context} storage_table must provide a MetaTable UID.")
@@ -117,7 +119,7 @@ class BasePersistManager:
     UPDATE_CLASS: ClassVar[type[Any] | None] = None
     UPDATE_DETAILS_CLASS: ClassVar[type[Any] | None] = None
 
-    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP: ClassVar[str] = "remote_table__data_source__uid"
+    UPDATE_GET_OR_NONE_STORAGE_LOOKUP: ClassVar[str] = "remote_table__uid"
     UPDATE_CREATE_STORAGE_LOOKUP: ClassVar[str] = "meta_table_uid"
     TIME_INDEXED_PROFILE_ATTR: ClassVar[str] = "time_indexed_profile"
 
@@ -180,7 +182,7 @@ class BasePersistManager:
             "update_hash": self.update_hash,
             "include_relations_detail": include_relations_detail,
         }
-        kwargs[self.UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP] = self.storage_table.get_data_source_uid()
+        kwargs[self.UPDATE_GET_OR_NONE_STORAGE_LOOKUP] = self.storage_table.get_meta_table_uid()
         return kwargs
 
     def _build_update_get_or_create_kwargs(
@@ -573,7 +575,7 @@ class APIPersistManager:
 class PersistManager(BasePersistManager):
     UPDATE_CLASS = DataNodeUpdate
     UPDATE_DETAILS_CLASS = DataNodeUpdateDetails
-    UPDATE_GET_OR_NONE_DATASOURCE_LOOKUP = "remote_table__data_source__uid"
+    UPDATE_GET_OR_NONE_STORAGE_LOOKUP = "remote_table__uid"
     UPDATE_CREATE_STORAGE_LOOKUP = "meta_table_uid"
 
     @classmethod

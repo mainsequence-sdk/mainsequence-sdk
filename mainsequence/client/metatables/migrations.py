@@ -25,7 +25,6 @@ class AlembicMigrationError(BasePydanticModel):
 class AlembicMigrationOperation(BasePydanticModel):
     version: AlembicMigrationVersion = ALEMBIC_MIGRATION_V1
     alembic_version_meta_table_uid: str
-    data_source_uid: str
     package: str = ""
     migration_namespace: str = ""
     revision: str
@@ -42,7 +41,6 @@ class AlembicMigrationOperation(BasePydanticModel):
 
 class AlembicMigrationStatusRequest(BasePydanticModel):
     alembic_version_meta_table_uid: str
-    data_source_uid: str
     package: str = ""
     migration_namespace: str = ""
 
@@ -56,7 +54,7 @@ class AlembicMigrationApplyResponse(BasePydanticModel):
     dry_run: bool = False
     alembic_version_meta_table_uid: str
     alembic_version_table: str
-    data_source_uid: str
+    data_source_uid: str | None = None
     package: str = ""
     migration_namespace: str = ""
     revision: str
@@ -76,7 +74,7 @@ class AlembicMigrationStatusResponse(BasePydanticModel):
     version: AlembicMigrationVersion = ALEMBIC_MIGRATION_V1
     alembic_version_meta_table_uid: str
     alembic_version_table: str
-    data_source_uid: str
+    data_source_uid: str | None = None
     package: str = ""
     migration_namespace: str = ""
     current_revision: str | None = None
@@ -127,7 +125,6 @@ def _get_migration_status(
         "alembic_version_meta_table_uid",
         payload.alembic_version_meta_table_uid,
     )
-    response_payload.setdefault("data_source_uid", payload.data_source_uid)
     response_payload.setdefault("package", payload.package)
     response_payload.setdefault("migration_namespace", payload.migration_namespace)
     return AlembicMigrationStatusResponse(**response_payload)

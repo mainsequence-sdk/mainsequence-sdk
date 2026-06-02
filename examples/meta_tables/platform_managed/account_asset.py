@@ -7,7 +7,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from examples.meta_tables.common import (
     DEFAULT_SCHEMA,
-    DEFAULT_TIMEOUT,
     print_json,
 )
 from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
@@ -54,18 +53,21 @@ class Asset(PlatformManagedMetaTable, Base):
 
 
 def main() -> None:
-    account_meta_table = Account.register(
-        timeout=DEFAULT_TIMEOUT,
-        description="Example platform-managed account table.",
-        labels=["sdk-example"],
+    print_json(
+        "Migration-managed platform MetaTables",
+        {
+            "provider": "examples.meta_tables.migrations:migration",
+            "models": [
+                Account.__metatable_identifier__,
+                Asset.__metatable_identifier__,
+            ],
+            "workflow": [
+                "mainsequence migrations revision --provider examples.meta_tables.migrations:migration",
+                "mainsequence migrations render --provider examples.meta_tables.migrations:migration --to head",
+                "mainsequence migrations upgrade --provider examples.meta_tables.migrations:migration --to head",
+            ],
+        },
     )
-    asset_meta_table = Asset.register(
-        timeout=DEFAULT_TIMEOUT,
-        description="Example platform-managed asset table.",
-        labels=["sdk-example"],
-    )
-    print_json("Registered Account MetaTable", account_meta_table)
-    print_json("Registered Asset MetaTable", asset_meta_table)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import pathlib
 import sys
 from collections.abc import Mapping, MutableMapping, Sequence
@@ -39,6 +41,12 @@ SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
 POSTGRESQL_MAX_IDENTIFIER_LENGTH = 63
 _BOUND_PHYSICAL_TO_LOGICAL_FULLNAMES: dict[str, str] = {}
 _METATABLE_FOREIGN_KEY_INFO_KEY = "mainsequence_metatable_foreign_key"
+_PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] = (
+    contextvars.ContextVar(
+        "mainsequence_platform_managed_migration_registration_context",
+        default=False,
+    )
+)
 
 
 @dataclass
@@ -50,6 +58,30 @@ class _MetaTableRegistrationState:
 
 
 _METATABLE_REGISTRATION_REGISTRY: dict[str, _MetaTableRegistrationState] = {}
+
+
+@contextlib.contextmanager
+def platform_managed_migration_registration_context() -> Any:
+    token = _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT.set(True)
+    try:
+        yield
+    finally:
+        _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT.reset(token)
+
+
+def _require_platform_managed_migration_registration_context(model: type[Any]) -> None:
+    if _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT.get():
+        return
+    model_name = getattr(model, "__qualname__", repr(model))
+    try:
+        identifier = resolve_metatable_identifier(model)
+    except Exception:
+        identifier = model_name
+    raise ValueError(
+        "Platform-managed MetaTable "
+        f"{identifier!r} is migration-managed and cannot be registered directly. "
+        "Run `mainsequence migrations upgrade --provider <provider> --to head`."
+    )
 
 
 def _truncate_postgresql_identifier(value: str) -> str:
@@ -345,6 +377,7 @@ class PlatformManagedMetaTable:
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
     ) -> MetaTable:
+        _require_platform_managed_migration_registration_context(cls)
         storage_hash = cls.get_storage_hash()
         registry_meta_table = _begin_local_registration(
             cls,
@@ -572,6 +605,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     ) -> Any:
         from mainsequence.client.metatables import TimeIndexMetaData
 
+        _require_platform_managed_migration_registration_context(cls)
         storage_hash = cls.get_storage_hash()
         registry_meta_table = _begin_local_registration(
             cls,
@@ -2414,6 +2448,7 @@ __all__ = [
     "external_registered_registration_request_from_sqlalchemy_model",
     "metatable_configured_tablename",
     "metatable_tablename",
+    "platform_managed_migration_registration_context",
     "platform_managed_registration_request_from_sqlalchemy_model",
     "register_external_sqlalchemy_model",
     "resolve_metatable_identifier",

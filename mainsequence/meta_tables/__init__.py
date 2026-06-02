@@ -65,6 +65,10 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "platform_managed_registration_request_from_sqlalchemy_model",
     ),
+    "platform_managed_migration_registration_context": (
+        ".sqlalchemy_contracts",
+        "platform_managed_migration_registration_context",
+    ),
     "register_external_sqlalchemy_model": (
         ".sqlalchemy_contracts",
         "register_external_sqlalchemy_model",

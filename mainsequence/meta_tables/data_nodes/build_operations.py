@@ -95,14 +95,15 @@ def _(value: type[Any]) -> Any:
     time_index_metadata = value.get_time_index_metadata()
     uid = getattr(time_index_metadata, "uid", None)
     if uid in (None, ""):
-        value.register()
-        time_index_metadata = value.get_time_index_metadata()
-        uid = getattr(time_index_metadata, "uid", None)
+        raise ValueError(
+            "PlatformTimeIndexMetaData config value is not registered. Run "
+            "`mainsequence migrations upgrade --provider <provider> --to head` "
+            "before using it in DataNode configuration."
+        )
 
     if uid in (None, ""):
         raise ValueError(
-            "PlatformTimeIndexMetaData config value register() did not bind "
-            "TimeIndexMetaData metadata before hashing."
+            "PlatformTimeIndexMetaData config value is missing TimeIndexMetaData metadata."
         )
     return {
         "__type__": "platform_time_index_metadata",

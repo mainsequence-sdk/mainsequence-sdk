@@ -20,7 +20,12 @@ from mainsequence.client.metatables import (
     MetaTableRegistrationRequest,
 )
 from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
-from mainsequence.meta_tables.sqlalchemy_contracts import resolve_metatable_identifier
+from mainsequence.meta_tables.sqlalchemy_contracts import (
+    PlatformManagedMetaTable,
+    _resolve_model_data_source_uid,
+    platform_managed_migration_registration_context,
+    resolve_metatable_identifier,
+)
 
 DEFAULT_ALEMBIC_VERSION_IDENTIFIER = "alembic_version"
 DEFAULT_ALEMBIC_VERSION_NAMESPACE = "mainsequence.migrations"
@@ -138,12 +143,12 @@ class AlembicVersionMetaTable:
     def register(
         cls,
         *,
-        data_source_uid: str,
         timeout: int | float | tuple[float, float] | None = None,
         **kwargs: Any,
     ) -> MetaTable:
+        resolved_data_source_uid = _resolve_model_data_source_uid(cls)
         request = cls.build_registration_request(
-            data_source_uid=data_source_uid,
+            data_source_uid=resolved_data_source_uid,
             **kwargs,
         )
         meta_table = MetaTable.register(request, timeout=timeout)
@@ -152,16 +157,9 @@ class AlembicVersionMetaTable:
 
     @classmethod
     def _bind_meta_table(cls, meta_table: Any) -> Any:
-        uid = _object_value(meta_table, "uid", "meta_table_uid", "__metatable_uid__")
-        if uid not in (None, ""):
-            cls.__metatable_uid__ = str(uid)
-            cls.__metatable__ = meta_table
-
-        data_source_uid = _object_value(
-            meta_table, "data_source_uid", "__metatable_data_source_uid__"
-        )
-        if data_source_uid not in (None, ""):
-            cls.__metatable_data_source_uid__ = str(data_source_uid)
+        cls.__metatable_uid__ = str(meta_table.uid)
+        cls.__metatable__ = meta_table
+        cls.__metatable_data_source_uid__ = str(meta_table.data_source_uid)
         return meta_table
 
     @classmethod
@@ -170,13 +168,11 @@ class AlembicVersionMetaTable:
 
     @classmethod
     def get_meta_table_uid(cls) -> str | None:
-        uid = cls.__metatable_uid__ or getattr(cls, "meta_table_uid", None)
-        return str(uid) if uid not in (None, "") else None
+        return cls.__metatable_uid__
 
     @classmethod
     def get_data_source_uid(cls) -> str | None:
-        data_source_uid = cls.__metatable_data_source_uid__ or getattr(cls, "data_source_uid", None)
-        return str(data_source_uid) if data_source_uid not in (None, "") else None
+        return cls.__metatable_data_source_uid__
 
     @classmethod
     def alembic_table_path(cls) -> str:
@@ -249,68 +245,79 @@ class AlembicMetaTableMigration:
             return bool(self.include_object_hook(object_, name, type_, reflected, compare_to))
         return self.include_name(name, type_, {"schema_name": getattr(object_, "schema", None)})
 
-    def resolve_data_source_uid(self, data_source_uid: str | None = None) -> str:
-        resolved = data_source_uid or self.alembic_registry.get_data_source_uid()
-        if resolved in (None, ""):
-            raise ValueError(
-                "Alembic migration data_source_uid is not bound. Register the "
-                "AlembicVersionMetaTable with a data_source_uid, set "
-                "__metatable_data_source_uid__ on the registry class, or pass "
-                "data_source_uid explicitly."
-            )
-        return str(resolved)
-
     def register_alembic_registry(
         self,
         *,
-        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTable:
-        return self.alembic_registry.register(
-            data_source_uid=self.resolve_data_source_uid(data_source_uid),
-            timeout=timeout,
-        )
+        return self.alembic_registry.register(timeout=timeout)
 
     def ensure_alembic_registry(
         self,
         *,
-        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTable:
-        if data_source_uid:
-            self.alembic_registry.__metatable_data_source_uid__ = str(data_source_uid)
         meta_table = self.alembic_registry.get_meta_table()
-        if self.alembic_registry.get_meta_table_uid():
-            self.resolve_data_source_uid(data_source_uid)
-            if meta_table is None:
-                return {
-                    "uid": self.alembic_registry.get_meta_table_uid(),
-                    "data_source_uid": self.alembic_registry.get_data_source_uid(),
-                }
+        if meta_table is not None:
             return meta_table
-        return self.register_alembic_registry(data_source_uid=data_source_uid, timeout=timeout)
+        return self.register_alembic_registry(timeout=timeout)
 
     def sync_metatable_catalog(
         self,
         *,
-        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> list[Any]:
-        resolved_data_source_uid = self.resolve_data_source_uid(data_source_uid)
         registered: list[Any] = []
-        for model in self.metatable_models:
-            identifier = resolve_metatable_identifier(model)
-            existing_meta_table = _get_metatable_by_identifier(identifier, timeout=timeout)
-            if existing_meta_table is not None:
-                _bind_model_to_existing_metatable(model, existing_meta_table)
-            register = getattr(model, "register", None)
-            if not callable(register):
-                model_name = getattr(model, "__qualname__", repr(model))
-                raise TypeError(f"Migration MetaTable model {model_name} must define register().")
-            registered.append(register(data_source_uid=resolved_data_source_uid, timeout=timeout))
+        with platform_managed_migration_registration_context():
+            for model in self.metatable_models:
+                self.resolve_or_register_metatable_model(model, timeout=timeout)
+                registered.append(model.register(timeout=timeout))
         if self.after_register_metatables is not None:
             self.after_register_metatables(registered)
         return registered
+
+    def resolve_or_register_metatable_models(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_register_metatable: Callable[[type[Any], str], Any] | None = None,
+    ) -> list[Any]:
+        """Resolve provider-scoped models before SQL rendering.
+
+        Platform-managed models are migration-first: missing catalog rows are
+        created through the existing backend registration path inside the
+        migration workflow, then bound to the returned physical table names.
+        """
+
+        resolved: list[Any] = []
+        with platform_managed_migration_registration_context():
+            for model in self.metatable_models:
+                meta_table = self.resolve_or_register_metatable_model(
+                    model,
+                    timeout=timeout,
+                    on_register_metatable=on_register_metatable,
+                )
+                if meta_table is not None:
+                    resolved.append(meta_table)
+        return resolved
+
+    def resolve_or_register_metatable_model(
+        self,
+        model: type[Any],
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_register_metatable: Callable[[type[Any], str], Any] | None = None,
+    ) -> Any | None:
+        identifier = resolve_metatable_identifier(model)
+        existing_meta_table = _get_metatable_by_identifier(identifier, timeout=timeout)
+        if existing_meta_table is not None:
+            _bind_model_to_existing_metatable(model, existing_meta_table)
+            return existing_meta_table
+        if _is_platform_managed_metatable_model(model):
+            if on_register_metatable is not None:
+                on_register_metatable(model, identifier)
+            return model.register(timeout=timeout)
+        return None
 
 
 def load_alembic_metatable_migration_provider(
@@ -571,19 +578,6 @@ def _normalize_down_revision(value: Any) -> str | None:
     return str(value)
 
 
-def _object_value(obj: Any, *names: str) -> Any:
-    if isinstance(obj, dict):
-        for name in names:
-            if name in obj:
-                return obj[name]
-        return None
-    for name in names:
-        value = getattr(obj, name, None)
-        if value not in (None, ""):
-            return value
-    return None
-
-
 def _get_metatable_by_identifier(
     identifier: str,
     *,
@@ -608,6 +602,10 @@ def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None
             f"Migration MetaTable model {model_name} cannot bind an existing MetaTable row."
         )
     bind(meta_table)
+
+
+def _is_platform_managed_metatable_model(model: Any) -> bool:
+    return isinstance(model, type) and issubclass(model, PlatformManagedMetaTable)
 
 
 __all__ = [

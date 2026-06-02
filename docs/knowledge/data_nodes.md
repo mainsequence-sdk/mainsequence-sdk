@@ -139,10 +139,10 @@ the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
 When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
 hashes it by the bound
 `TimeIndexMetaData.uid` available through `StorageClass.__time_index_metadata__`.
-If the class is not yet bound, config serialization calls
-`StorageClass.register()` before reading the UID. Do not pass dependency storage
-classes as extra constructor arguments, manually attach an existing UID, or
-reconstruct a generic `MetaTable`.
+If the class is not yet bound, config serialization fails and tells the user to
+run the MetaTable migration workflow. Do not pass dependency storage classes as
+extra constructor arguments, manually attach an existing UID, reconstruct a
+generic `MetaTable`, or call `StorageClass.register()` directly.
 
 ### 4.1 Storage meaning belongs to the storage table
 
@@ -409,11 +409,11 @@ When a DataNode source table should reference a registered MetaTable, declare th
 relationship on the `PlatformTimeIndexMetaData` storage model. Foreign keys are
 part of the MetaTable contract, not `DataNodeConfiguration`. For
 platform-managed storage, use `MetaTableForeignKey(TargetModel, column=...)`;
-`register()` recursively
-registers unresolved target model classes, reuses the local process registry
-keyed by `storage_hash`, and writes the target `MetaTable.uid` into the FK
-contract. Do not use table fullnames, `Target.__table__.c.<column>`, or explicit
-target UID maps for platform-managed DataNode storage FKs.
+the migration workflow resolves unresolved target model classes by stable
+identifier, reuses the bound MetaTable metadata, and writes the target
+`MetaTable.uid` into the FK contract. Do not use table fullnames,
+`Target.__table__.c.<column>`, or explicit target UID maps for
+platform-managed DataNode storage FKs.
 
 Do not provide foreign-key names for `MetaTableForeignKey(...)`. Platform-managed
 contracts omit FK names; the backend generates physical constraint names.

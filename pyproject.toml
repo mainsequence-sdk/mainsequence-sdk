@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mainsequence"
-version = "4.1.19"
+version = "4.2.1"
 description = "Main Sequence SDK "
 readme = "README.md"
 requires-python = ">=3.11"
@@ -32,6 +32,7 @@ dependencies = [
   "opentelemetry-sdk",
   "pandas",
   "psutil",
+  "psycopg2>=2.9.12",
   "pydantic",
   "pytz",
   "pyyaml",

@@ -168,16 +168,16 @@ class DailyRandomNumber(DataNode):
 ```
 
 The concrete `PlatformTimeIndexMetaData` model is the storage contract.
-`DataNode` construction ensures the output `storage_table` is registered when
-needed, so you do not need to pre-register the storage table just to construct
-or run the node. You can still call `register()` explicitly during bootstrap
-when code needs the returned metadata object.
+MetaTable registration is migration-first. Add storage models to the selected
+MetaTable migration provider and run `mainsequence migrations upgrade --provider
+... --to head` before constructing or running nodes. Do not call
+`StorageClass.register()` directly in bootstrap code.
 
 The SQLAlchemy model is the first-class schema declaration for the table:
 `time_index` is the index column and `random_number` is the value column. The
-`PlatformTimeIndexMetaData.register()` call sends the canonical time-indexed
-table contract to the backend, binds the returned MetaTable UID to the class,
-and retargets the SQLAlchemy table to the backend-owned physical table name.
+MetaTable migration workflow sends the canonical time-indexed table contract to
+the backend, binds the returned MetaTable UID to the class, and retargets the
+SQLAlchemy table to the backend-owned physical table name.
 The DataFrame returned by `update()` must match that table contract.
 
 `__metatable_extra_hash_components__` is part of the storage-table identity. The
@@ -189,7 +189,7 @@ test-specific values in this mapping.
 
 MetaTable foreign keys target a registered `MetaTable.uid`. For platform-managed
 storage, declare the FK with `MetaTableForeignKey(TargetModel, column=...)` and
-let `register()` recursively register unresolved parent targets. This first
+let migration tooling resolve/register unresolved parent targets. This first
 tutorial keeps the runnable example focused on a single table; the FK authoring
 surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
@@ -237,9 +237,8 @@ storage model, put that dependency storage reference in the config, not as an
 extra constructor argument. A config field typed as
 `type[PlatformTimeIndexMetaData]` is hashed by the registered
 `TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. If that
-class is not yet bound, config serialization calls `StorageClass.register()`
-before reading the UID, so dependency storage classes do not need manual
-pre-registration either.
+class is not yet bound, config serialization fails and tells the user to run
+the MetaTable migration workflow.
 
 ### DataNode Recipe
 
@@ -445,7 +444,9 @@ from src.data_nodes.example_nodes import (
 
 
 def main():
-    account_meta_table = Account.register()
+    account_meta_table = Account.get_meta_table()
+    if account_meta_table is None:
+        raise RuntimeError("Run MetaTable migrations before this tutorial step.")
     account_uid = uuid.UUID("00000000-0000-4000-8000-000000000001")
     upsert_account(
         account_meta_table,

@@ -161,15 +161,18 @@ class Account(PlatformManagedMetaTable, Base):
         },
     )
 
-
-account_meta_table = Account.register()
 ```
 
-Registration metadata belongs on the class. Do not pass description, labels,
-provisioning, data-source UID, hash namespace, time-index fields, or storage
-layout into `register()`.
+Registration metadata belongs on the class. Do not call `Account.register()`
+directly for platform-managed models. Add platform-managed models to the
+selected `AlembicMetaTableMigration.metatable_models` list and let
+`mainsequence migrations upgrade --provider ... --to head` resolve/register and
+bind them.
 
-For platform-managed registration, the data source is resolved from the active Main Sequence project/session, the same way DataNode does. Do not require or thread a `data_source_uid` through normal platform-managed example code.
+For platform-managed migration registration, the data source is resolved from
+the active Main Sequence project/session, the same way DataNode does. Do not
+require or thread a `data_source_uid` through normal platform-managed example
+code.
 
 Only call `build_registration_request()` when the task explicitly needs to inspect or validate the payload before registration.
 
@@ -183,7 +186,8 @@ Do not add an environment variable for namespace in examples.
 
 Do not add generic labels such as `"meta-table"` or `"platform-managed"` to examples. Keep labels specific to the example or domain.
 
-Do not add a `MAINSEQUENCE_META_TABLE_REGISTER` toggle in registration examples. Registration examples should register directly.
+Do not add a `MAINSEQUENCE_META_TABLE_REGISTER` toggle in platform-managed
+examples. Platform-managed examples should be migration-first.
 
 ### 3. Register parent tables before child tables
 
@@ -192,8 +196,8 @@ Foreign-key contracts reference the target `MetaTable` UID.
 For `PlatformManagedMetaTable`, define foreign keys with
 `MetaTableForeignKey(TargetModel, column=...)`. Do not write raw SQLAlchemy
 table fullnames, `Parent.__table__.c.<column>` targets, or explicit target UID
-maps in the platform-managed path. Registration is the lifecycle path:
-`register()` recursively registers unresolved target model classes, stores each
+maps in the platform-managed path. Migration is the lifecycle path. Migration
+tooling resolves/registers unresolved target model classes, stores each
 returned `MetaTable` in a local process registry keyed by `storage_hash`, and
 uses the target `MetaTable.uid` in the child FK contract.
 
@@ -215,16 +219,19 @@ account_uid: Mapped[uuid.UUID] = mapped_column(
 Every participating table must include `__metatable_description__` describing
 both the schema and the table's intention.
 
-Example registration order:
+Provider scope:
 
 ```python
-asset_meta_table = Asset.register()
+migration = AlembicMetaTableMigration(
+    ...,
+    metatable_models=[Account, Asset],
+)
 ```
 
-The child registration registers `Account` first if it has not already been
-registered in the current process. The local registry prevents duplicate backend
-registration attempts for the same `storage_hash` and raises a clear error for
-recursive registration cycles.
+Migration tooling registers `Account` first if `Asset` depends on it and it has
+not already been bound in the current process. The local registry prevents
+duplicate backend registration attempts for the same `storage_hash` and raises
+a clear error for recursive registration cycles.
 
 For `external_registered`, there is no platform-managed parent lookup. Register
 the parent first, then build the child registration request with
@@ -278,17 +285,25 @@ migration request models, or use SDK helper functions directly. The backend
 request shape is reference material in the tutorial; the user-facing path is:
 
 ```bash
-mainsequence migrations register-version-table --provider mainsequence_migrations:migration
-mainsequence migrations revision --provider mainsequence_migrations:migration --autogenerate -m "change"
+mainsequence migrations current --provider mainsequence_migrations:migration
+mainsequence migrations revision --provider mainsequence_migrations:migration
 mainsequence migrations render --provider mainsequence_migrations:migration --to head
 mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
 mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
 ```
 
+`current` and `upgrade` automatically register the provider's
+`AlembicVersionMetaTable` binding when backend migration state is needed.
+`revision` accepts optional `-m/--message`; if omitted, the CLI uses
+`migration`. `revision --autogenerate` is optional and requires an explicit
+`--sqlalchemy-url` for the baseline database.
+
 The SQL must be Alembic-rendered from the selected provider. After SQL apply
 succeeds, register or refresh only the application MetaTable catalog bindings
-listed in `migration.metatable_models`. A migration is not complete until both
-backend SQL execution and catalog sync succeed.
+listed in `migration.metatable_models`. Do not pass the Alembic version-table
+data source into those application model registrations; each model uses its
+own normal MetaTable data-source binding. A migration is not complete until
+both backend SQL execution and catalog sync succeed.
 
 Do not use SDK-managed migration artifact tables, artifact sync helpers, or custom
 `operations()` migration modules.

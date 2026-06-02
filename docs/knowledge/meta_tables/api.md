@@ -45,13 +45,18 @@ to inspect table contracts, bind platform-managed physical names, compile
 governed SQL operations, and define the provider-based Alembic migration scope
 used by MetaTable schema migrations.
 
-## Registration
+## Registration Primitive
 
-SDK call:
+Low-level SDK call:
 
 ```python
 meta_table = MetaTable.register(request)
 ```
+
+For platform-managed SQLAlchemy models this is SDK plumbing used by the
+migration workflow, not a bootstrap call users should place in application
+code. External-registered callers may still build a request and call this
+primitive directly when the application owns the physical table lifecycle.
 
 Backend route:
 
@@ -81,9 +86,9 @@ client omits `table_contract.physical.table_name`. The backend owns physical
 name allocation and returns `physical_table_name` on the registered `MetaTable`.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
-registration derive the same configured `storage_hash` from storage-relevant
-configuration. After registration the SDK privately rebinds the SQLAlchemy
-table name to the backend physical table name. The lower-level
+migration-managed registration derive the same configured `storage_hash` from
+storage-relevant configuration. After migration-managed registration the SDK
+privately rebinds the SQLAlchemy table name to the backend physical table name. The lower-level
 `metatable_tablename(...)` helper remains available when callers need to set an
 initial logical `__tablename__` explicitly.
 
@@ -303,14 +308,15 @@ SDK custom operation plans.
 
 After a successful CLI `upgrade`, the SDK syncs provider-scoped application
 MetaTables on the client side by exact `identifier`. That catalog sync is not
-encoded as affected-table lists in the backend migration request.
+encoded as affected-table lists in the backend migration request, and it does
+not copy the Alembic version-table data source into application model
+registration. Each model registers through its own normal data-source binding.
 
 The request body contains the rendered SQL artifact directly:
 
 ```json
 {
   "version": "metatable-migration.v1",
-  "data_source_uid": "uuid",
   "alembic_version_meta_table_uid": "uuid",
   "package": "sdk_examples",
   "migration_namespace": "sdk-examples",
@@ -326,9 +332,7 @@ The request body contains the rendered SQL artifact directly:
     "direction": "upgrade",
     "alembic_version_table": "public.alembic_version"
   },
-  "manifest_sha256": "64 lowercase hex chars",
   "sql": "Alembic-rendered SQL text",
-  "sql_sha256": "64 lowercase hex chars",
   "statement_boundaries": [],
   "dry_run": false
 }
@@ -336,9 +340,10 @@ The request body contains the rendered SQL artifact directly:
 
 `alembic_version_meta_table_uid` is the UID of the registered
 `AlembicVersionMetaTable` catalog binding for Alembic's version table. It is not
-the UID of the table being migrated. The backend executes the SQL and updates
-Alembic's version table; MetaTable catalog registration or refresh happens in a
-separate project tooling step scoped by `migration.metatable_models`.
+the UID of the table being migrated. The backend resolves the target data
+source from this MetaTable, executes the SQL, and updates Alembic's version
+table; MetaTable catalog registration or refresh happens in a separate project
+tooling step scoped by `migration.metatable_models`.
 
 The apply request does not include affected-table lists, old/new contract
 hashes, SDK migration-row UIDs, custom operation names, idempotency keys, or
@@ -350,7 +355,6 @@ Status reads use:
 status = MetaTable.get_migration_status(
     {
         "alembic_version_meta_table_uid": alembic_version_meta_table.uid,
-        "data_source_uid": data_source_uid,
         "package": migration.package,
         "migration_namespace": migration.migration_namespace,
     }

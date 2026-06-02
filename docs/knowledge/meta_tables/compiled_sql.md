@@ -105,11 +105,11 @@ the field as `meta_table_uid`, which is the TS Manager server contract.
 Use `compile_sqlalchemy_statement(...)` to turn a SQLAlchemy statement into the
 backend compiled SQL protocol.
 
-For platform-managed SQLAlchemy models, compile statements after
-`Model.register()` succeeds. Registration privately rebinds
-`Model.__table__.name` from the logical `storage_hash` to the backend
-`physical_table_name`, so compiled SQL targets the table TS Manager actually
-created.
+For platform-managed SQLAlchemy models, compile statements after the MetaTable
+migration workflow has registered and bound the model. Migration-managed
+registration privately rebinds `Model.__table__.name` from the logical
+`storage_hash` to the backend `physical_table_name`, so compiled SQL targets
+the table TS Manager actually created.
 
 ```python
 from sqlalchemy import select

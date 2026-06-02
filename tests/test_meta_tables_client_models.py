@@ -257,7 +257,6 @@ def test_meta_table_apply_migration_posts_alembic_sql_artifact(monkeypatch):
     result = meta_table_models.MetaTable.apply_migration(
         meta_table_models.AlembicMigrationOperation(
             alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             package="msm",
             migration_namespace="markets",
             revision="001",
@@ -279,6 +278,7 @@ def test_meta_table_apply_migration_posts_alembic_sql_artifact(monkeypatch):
     assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
+    assert "data_source_uid" not in captured["payload"]["json"]
     assert captured["payload"]["json"]["sql"] == ("CREATE TABLE asset (uid uuid PRIMARY KEY);")
     assert captured["payload"]["json"]["dry_run"] is True
     removed_payload_keys = [
@@ -324,7 +324,6 @@ def test_meta_table_get_migration_status_posts_alembic_scope(monkeypatch):
     result = meta_table_models.MetaTable.get_migration_status(
         {
             "alembic_version_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             "package": "msm",
             "migration_namespace": "markets",
         }
@@ -338,6 +337,42 @@ def test_meta_table_get_migration_status_posts_alembic_scope(monkeypatch):
     assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     )
+    assert "data_source_uid" not in captured["payload"]["json"]
+
+
+def test_alembic_migration_requests_reject_client_data_source_uid():
+    with pytest.raises(ValidationError):
+        meta_table_models.AlembicMigrationStatusRequest(
+            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        )
+
+    with pytest.raises(ValidationError):
+        meta_table_models.AlembicMigrationOperation(
+            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            revision="001",
+            manifest={"revision": "001"},
+            sql="SELECT 1;",
+        )
+
+
+def test_alembic_migration_responses_allow_missing_data_source_uid():
+    status = meta_table_models.AlembicMigrationStatusResponse(
+        ok=True,
+        alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        alembic_version_table="public.alembic_version",
+    )
+    apply = meta_table_models.AlembicMigrationApplyResponse(
+        ok=True,
+        alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        alembic_version_table="public.alembic_version",
+        revision="001",
+        direction="upgrade",
+    )
+
+    assert status.data_source_uid is None
+    assert apply.data_source_uid is None
 
 
 def test_meta_table_get_schema_graph_requests_incoming_edges(monkeypatch):

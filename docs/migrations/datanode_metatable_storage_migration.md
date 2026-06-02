@@ -11,9 +11,9 @@ a `PlatformTimeIndexMetaData` SQLAlchemy model owns the table contract, and the
 | --- | --- |
 | Node declares schema with methods such as `get_table_metadata()` and `get_column_metadata()`. | A `PlatformTimeIndexMetaData` SQLAlchemy model declares the schema. |
 | Node metadata mixes table identity, columns, and update behavior. | Storage identity lives on the storage class; update identity lives in `DataNodeConfiguration`. |
-| Registration is implicit or manually glued together from table metadata. | Registration is the SDK lifecycle: `StorageClass.register()` is a get-or-create operation inferred from class metadata and the active project/session. |
+| Registration is implicit or manually glued together from table metadata. | Registration is migration-first: add the storage class to the MetaTable migration provider and run `mainsequence migrations upgrade`. |
 | Foreign keys are raw SQLAlchemy targets or backend UID maps. | Foreign keys use `MetaTableForeignKey(TargetModel, column=...)`. |
-| `storage_table` had to be registered before node construction. | Output `storage_table` auto-registers when `DataNode` / `PersistManager` sees an unbound class. Config-stored storage classes also auto-register before UID hashing. |
+| `storage_table` had to be registered before node construction. | Output `storage_table` must be registered by the MetaTable migration workflow before `DataNode` / `PersistManager` uses it. Config-stored storage classes fail if they are not already bound. |
 
 ## The New Mental Model
 
@@ -40,28 +40,15 @@ UIDs in `DataNodeConfiguration`.
 
 ## Public Registration Rule
 
-For platform-managed SDK storage classes, the public registration call is:
+For platform-managed SDK storage classes, the public registration path is the
+MetaTable migration workflow:
 
-```python
-StorageClass.register()
+```bash
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
 ```
 
-or, when you need a request timeout:
-
-```python
-StorageClass.register(timeout=timeout)
-```
-
-Do not pass these to platform-managed model `register()`:
-
-```python
-StorageClass.register(
-    data_source_uid=data_source_uid,  # wrong
-    introspect=False,                 # wrong
-    description="...",                # wrong
-    labels=["..."],                   # wrong
-)
-```
+Do not call `StorageClass.register()` directly in application/bootstrap code.
+The method remains SDK plumbing for migration tooling.
 
 Those values are inferred:
 
@@ -284,18 +271,10 @@ node = DerivedMetricsNode(
 )
 ```
 
-Before hashing that config, the SDK registers `DailyMetricsStorage` if it is not
-already bound, then hashes by the returned `TimeIndexMetaData.uid`.
-
-Explicit `StorageClass.register()` is still useful when your code needs the
-returned metadata object:
-
-```python
-storage_metadata = DailyMetricsStorage.register()
-print(storage_metadata.uid)
-```
-
-It is not required as a manual pre-construction step.
+Before hashing that config, the SDK requires `DailyMetricsStorage` to already be
+bound by the migration workflow, then hashes by the bound `TimeIndexMetaData.uid`.
+If it is not bound, config serialization fails and tells the user to run
+migrations.
 
 ## Old Code To Delete
 
@@ -485,7 +464,7 @@ For each old DataNode:
 12. [ ] Delete manual UID binding, manual `data_source_uid` threading, and direct register kwargs.
 13. [ ] Add contract tests comparing the storage columns/indexes to the frame returned by `update()`.
 14. [ ] Add an import smoke test for the library package.
-15. [ ] Run one live update against an authenticated project to verify registration and row writes.
+15. [ ] Run `mainsequence migrations upgrade --provider <provider> --to head` against an authenticated project to verify storage registration, then run one live update to verify row writes.
 
 ## Validation Tests To Add
 
@@ -501,10 +480,11 @@ At minimum, add tests for:
 - `hash_excluded` fields do not alter `update_hash`
 - `MetaTableForeignKey` targets resolve through model classes, not table names
 
-Offline tests should avoid backend calls by monkeypatching `register()` or using
-SDK model constructors for returned metadata. Live tests should run with a real
-project/session and verify idempotency: a second run should reuse the same
-registered storage table and append/update rows according to the node logic.
+Offline tests should avoid backend calls by monkeypatching the migration
+registration plumbing or using SDK model constructors for returned metadata.
+Live tests should run with a real project/session and verify idempotency: a
+second migration run should reuse the same registered storage table, and a node
+run should append/update rows according to the node logic.
 
 ## Common Mistakes
 

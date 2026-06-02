@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
+from collections.abc import Callable
 from typing import Any
 
 import click
@@ -13,6 +15,7 @@ from mainsequence.client.metatables import (
     AlembicMigrationStatusRequest,
     MetaTable,
 )
+from mainsequence.logconf import logger
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     PackagedAlembicMigrationArtifact,
@@ -66,26 +69,47 @@ def _registry_uid(migration: AlembicMetaTableMigration) -> str:
     uid = migration.alembic_registry.get_meta_table_uid()
     if uid in (None, ""):
         raise typer.BadParameter(
-            "Alembic registry MetaTable UID is not bound. Run register-version-table "
-            "or set __metatable_uid__ on the registry class.",
+            "Alembic registry MetaTable UID is not bound. Run current or upgrade "
+            "to auto-register the registry, or set __metatable_uid__ on the registry class.",
             param_hint="--provider",
         )
     return str(uid)
 
 
+def _model_reference(model: type[Any]) -> str:
+    module = getattr(model, "__module__", None)
+    qualname = getattr(model, "__qualname__", None)
+    if module and qualname:
+        return f"{module}.{qualname}"
+    return repr(model)
+
+
+def _log_metatable_registration_callback(
+    migration: AlembicMetaTableMigration,
+) -> Callable[[type[Any], str], None]:
+    def _log(model: type[Any], identifier: str) -> None:
+        logger.info(
+            "Registering migration MetaTable",
+            identifier=identifier,
+            model=_model_reference(model),
+            package=migration.package,
+            migration_namespace=migration.migration_namespace,
+        )
+
+    return _log
+
+
 def _ensure_registry(
     migration: AlembicMetaTableMigration,
     *,
-    data_source_uid: str | None,
     timeout: float | None,
 ) -> None:
-    migration.ensure_alembic_registry(data_source_uid=data_source_uid, timeout=timeout)
+    migration.ensure_alembic_registry(timeout=timeout)
 
 
 def _status_request(migration: AlembicMetaTableMigration) -> AlembicMigrationStatusRequest:
     return AlembicMigrationStatusRequest(
         alembic_version_meta_table_uid=_registry_uid(migration),
-        data_source_uid=migration.resolve_data_source_uid(),
         package=migration.package,
         migration_namespace=migration.migration_namespace,
     )
@@ -117,7 +141,6 @@ def _operation(
 ) -> AlembicMigrationOperation:
     return AlembicMigrationOperation(
         alembic_version_meta_table_uid=_registry_uid(migration),
-        data_source_uid=migration.resolve_data_source_uid(),
         package=migration.package,
         migration_namespace=migration.migration_namespace,
         revision=str(artifact.manifest["revision"]),
@@ -152,39 +175,35 @@ def _alembic_config(
     return config
 
 
-@migrations.command("register-version-table")
-def register_version_table(
-    provider: str | None = typer.Option(
-        None,
-        "--provider",
-        help="Migration provider reference, for example msm.migrations:migration.",
-    ),
-    data_source_uid: str | None = typer.Option(
-        None,
-        "--data-source-uid",
-        help="Explicit override for cross-data-source workflows.",
-    ),
-    timeout: float | None = typer.Option(None, "--timeout"),
-    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
-) -> None:
-    """Register the provider's Alembic version table as an external MetaTable."""
+def _next_sequential_revision_id(migration: AlembicMetaTableMigration) -> str:
+    try:
+        from alembic.script import ScriptDirectory
+    except ImportError as exc:
+        raise RuntimeError("Alembic is required for revision generation.") from exc
 
-    migration = _load_migration(provider)
-    meta_table = migration.register_alembic_registry(
-        data_source_uid=data_source_uid,
-        timeout=timeout,
+    script = ScriptDirectory.from_config(
+        _alembic_config(migration, sqlalchemy_url="postgresql://")
     )
-    _emit(
-        {
-            "uid": migration.alembic_registry.get_meta_table_uid()
-            or getattr(meta_table, "uid", None),
-            "data_source_uid": migration.alembic_registry.get_data_source_uid(),
-            "alembic_version_table": migration.alembic_version_table,
-            "package": migration.package,
-            "migration_namespace": migration.migration_namespace,
-        },
-        json_output=json_output,
-    )
+    heads = list(script.get_heads())
+    if len(heads) > 1:
+        raise typer.BadParameter(
+            "Sequential revision IDs require a single Alembic head. Pass --rev-id "
+            "explicitly for branched histories.",
+            param_hint="--rev-id",
+        )
+    if heads and not re.fullmatch(r"\d{4,}", str(heads[0])):
+        raise typer.BadParameter(
+            "Sequential revision IDs require the current Alembic head to be numeric. "
+            "Pass --rev-id explicitly for non-numeric histories.",
+            param_hint="--rev-id",
+        )
+
+    numeric_revisions: list[int] = []
+    for revision in script.walk_revisions():
+        revision_id = str(revision.revision)
+        if re.fullmatch(r"\d{4,}", revision_id):
+            numeric_revisions.append(int(revision_id))
+    return f"{max(numeric_revisions, default=0) + 1:04d}"
 
 
 @migrations.command("current")
@@ -194,26 +213,30 @@ def current(
         "--provider",
         help="Migration provider reference, for example msm.migrations:migration.",
     ),
-    data_source_uid: str | None = typer.Option(
-        None,
-        "--data-source-uid",
-        help="Explicit override for cross-data-source workflows.",
-    ),
     timeout: float | None = typer.Option(None, "--timeout"),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Read current Alembic revision through the provider's registry MetaTable."""
 
     migration = _load_migration(provider)
-    _ensure_registry(migration, data_source_uid=data_source_uid, timeout=timeout)
+    _ensure_registry(migration, timeout=timeout)
     status = MetaTable.get_migration_status(_status_request(migration), timeout=timeout)
     _emit(status, json_output=json_output)
 
 
 @migrations.command("revision")
 def revision(
-    message: str = typer.Option(..., "--message", "-m", help="Alembic revision message."),
-    autogenerate: bool = typer.Option(False, "--autogenerate", help="Use Alembic autogenerate."),
+    message: str | None = typer.Option(
+        None,
+        "--message",
+        "-m",
+        help="Alembic revision message. Defaults to 'migration'.",
+    ),
+    autogenerate: bool = typer.Option(
+        False,
+        "--autogenerate",
+        help="Use Alembic autogenerate. Requires --sqlalchemy-url.",
+    ),
     provider: str | None = typer.Option(
         None,
         "--provider",
@@ -221,10 +244,10 @@ def revision(
     ),
     rev_id: str | None = typer.Option(None, "--rev-id", help="Explicit Alembic revision id."),
     head: str = typer.Option("head", "--head", help="Alembic head to base the revision on."),
-    sqlalchemy_url: str = typer.Option(
-        "postgresql://",
+    sqlalchemy_url: str | None = typer.Option(
+        None,
         "--sqlalchemy-url",
-        help="SQLAlchemy URL passed to the Alembic environment.",
+        help="SQLAlchemy URL passed to the Alembic environment. Required for --autogenerate.",
     ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
@@ -236,11 +259,19 @@ def revision(
         raise typer.BadParameter("Alembic is required for revision generation.") from exc
 
     migration = _load_migration(provider)
+    resolved_message = (message or "").strip() or "migration"
+    if autogenerate and not sqlalchemy_url:
+        raise typer.BadParameter(
+            "--sqlalchemy-url is required with --autogenerate because Alembic "
+            "must connect to a baseline database to compute the diff.",
+            param_hint="--sqlalchemy-url",
+        )
+    resolved_rev_id = rev_id or _next_sequential_revision_id(migration)
     script = command.revision(
-        _alembic_config(migration, sqlalchemy_url=sqlalchemy_url),
-        message=message,
+        _alembic_config(migration, sqlalchemy_url=sqlalchemy_url or "postgresql://"),
+        message=resolved_message,
         autogenerate=autogenerate,
-        rev_id=rev_id,
+        rev_id=resolved_rev_id,
         head=head,
     )
     _emit(
@@ -284,6 +315,9 @@ def render(
     migration = _load_migration(provider)
     if direction not in {"upgrade", "downgrade"}:
         raise typer.BadParameter("direction must be 'upgrade' or 'downgrade'.")
+    migration.resolve_or_register_metatable_models(
+        on_register_metatable=_log_metatable_registration_callback(migration),
+    )
     artifact = _render_artifact(
         migration,
         target_revision=target_revision,
@@ -305,11 +339,6 @@ def upgrade(
         "--provider",
         help="Migration provider reference, for example msm.migrations:migration.",
     ),
-    data_source_uid: str | None = typer.Option(
-        None,
-        "--data-source-uid",
-        help="Explicit override for cross-data-source workflows.",
-    ),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without executing SQL."),
     sqlalchemy_url: str = typer.Option(
         "postgresql://",
@@ -322,7 +351,11 @@ def upgrade(
     """Dry-run or apply an Alembic-rendered SQL artifact through the backend."""
 
     migration = _load_migration(provider)
-    _ensure_registry(migration, data_source_uid=data_source_uid, timeout=timeout)
+    _ensure_registry(migration, timeout=timeout)
+    migration.resolve_or_register_metatable_models(
+        timeout=timeout,
+        on_register_metatable=_log_metatable_registration_callback(migration),
+    )
     status = MetaTable.get_migration_status(_status_request(migration), timeout=timeout)
     current_revision = status.current_revision
     artifact = _render_artifact(

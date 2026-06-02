@@ -8,12 +8,13 @@ There are two registration modes:
 - `external_registered`: your application creates and migrates the physical
   table. TS Manager registers metadata, permissions, search/discovery, and
   governed execution for that table.
-- `platform_managed`: your application sends a neutral table contract. TS
+- `platform_managed`: migration tooling sends the neutral table contract. TS
   Manager creates the physical table through the configured
-  `DynamicTableDataSource` when the backend supports table DDL.
+  `DynamicTableDataSource` when `mainsequence migrations upgrade` resolves a
+  missing provider-scoped model.
 
-The registration examples call TS Manager by default. The compiled query example
-prints the operation by default and executes only when explicitly requested.
+The external-registered examples call TS Manager by default. Platform-managed
+examples are migration-first and do not call `Model.register()` directly.
 
 ## Environment
 
@@ -32,7 +33,7 @@ export MAINSEQUENCE_META_TABLE_TIMEOUT="120"
 Use platform-managed mode when TS Manager should create the physical tables and
 own the table naming boundary.
 
-Register and create tables through TS Manager:
+Inspect the model declarations:
 
 ```bash
 python -m examples.meta_tables.platform_managed.account_asset
@@ -46,20 +47,20 @@ class Account(PlatformManagedMetaTable, Base):
     __metatable_identifier__ = "Account"
 ```
 
-That makes the physical table name equal to the same configured `storage_hash`
-sent during registration, which prevents user table-name collisions inside the
-platform data-source boundary and rotates the name when the table shape changes.
-Changing `__metatable_identifier__` changes the backend logical name, not the
-configured physical table name.
+The model classes are registered by migration tooling through the provider in
+`examples.meta_tables.migrations:migration`. Do not call `Account.register()` or
+`Asset.register()` in application/bootstrap code.
 
 The platform-managed example uses SQLAlchemy naming conventions for index and
 foreign-key names. Those names are generated after the configured table name is
 known, avoiding a circular dependency between table-name hashing and database
 object names.
 
-Foreign-key targets are resolved by registration order. The example registers
-`Account` first; `Asset.register()` then inspects the SQLAlchemy foreign key and
-looks up the registered Account MetaTable in the same platform data source.
+Foreign-key targets are resolved by the migration workflow. When
+`migrations upgrade` resolves provider-scoped models, it registers missing
+platform-managed parent targets through the existing backend registration path
+inside the migration context, then binds SQLAlchemy models to returned backend
+physical table names before Alembic SQL is rendered.
 
 ## External Managed
 
@@ -136,13 +137,8 @@ It defines:
 Run the lifecycle with the provider:
 
 ```bash
-mainsequence migrations register-version-table \
-  --provider examples.meta_tables.migrations:migration
-
 mainsequence migrations revision \
-  --provider examples.meta_tables.migrations:migration \
-  --autogenerate \
-  -m "example migration"
+  --provider examples.meta_tables.migrations:migration
 
 mainsequence migrations render \
   --provider examples.meta_tables.migrations:migration \
@@ -157,6 +153,12 @@ mainsequence migrations upgrade \
   --provider examples.meta_tables.migrations:migration \
   --to head
 ```
+
+The provider's `AlembicVersionMetaTable` binding is registered automatically
+by commands that need backend migration state, such as `current` and
+`upgrade`. `revision` accepts an optional `-m/--message`; if omitted, the CLI
+uses `migration`. `revision --autogenerate` is optional and requires an
+explicit `--sqlalchemy-url` for the baseline database.
 
 The final `upgrade` applies Alembic SQL and then syncs the provider-scoped
 MetaTables listed in `metatable_models`. Sync resolves existing catalog rows by
