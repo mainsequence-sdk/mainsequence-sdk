@@ -228,18 +228,26 @@ def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook
 
     filter_calls = []
 
-    def fake_filter(*, identifier, timeout=None):
-        filter_calls.append((identifier, timeout))
-        if identifier == "global.first":
-            return [types.SimpleNamespace(uid="existing-first-uid")]
-        return []
+    def fake_filter(**kwargs):
+        filter_calls.append(kwargs)
+        return [
+            types.SimpleNamespace(
+                identifier="global.first",
+                uid="existing-first-uid",
+            )
+        ]
 
     monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
 
     registered = migration.sync_metatable_catalog(timeout=15)
 
     assert [meta_table.uid for meta_table in registered] == ["first-uid", "second-uid"]
-    assert filter_calls == [("global.first", 15), ("global.second", 15)]
+    assert filter_calls == [
+        {
+            "identifier__in": ["global.first", "global.second"],
+            "timeout": 15,
+        }
+    ]
     assert events == [
         ("bind", "first", "existing-first-uid"),
         ("first", 15),
@@ -273,7 +281,13 @@ def test_alembic_metatable_migration_registers_missing_platform_managed_model(
         metatable_models=[Asset],
     )
 
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(lambda **kwargs: []))
+    filter_calls = []
+
+    def fake_filter(**kwargs):
+        filter_calls.append(kwargs)
+        return []
+
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
 
     captured = {}
 
@@ -292,11 +306,102 @@ def test_alembic_metatable_migration_registers_missing_platform_managed_model(
     resolved = migration.resolve_or_register_metatable_models(timeout=20)
 
     assert [meta_table.uid for meta_table in resolved] == ["asset-meta-table-uid"]
+    assert filter_calls == [
+        {
+            "identifier__in": ["markets.Asset"],
+            "timeout": 20,
+        }
+    ]
     assert captured["request"].identifier == "markets.Asset"
     assert captured["timeout"] == 20
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
     assert Asset.get_physical_table_name() == "mt_asset"
     assert Asset.__table__.name == "mt_asset"
+
+
+def test_alembic_metatable_migration_bulk_resolves_existing_models(monkeypatch):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    class Account(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Account"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        account_number: Mapped[int] = mapped_column(Integer)
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset, Account],
+    )
+
+    filter_calls = []
+
+    def fake_filter(**kwargs):
+        filter_calls.append(kwargs)
+        return [
+            types.SimpleNamespace(
+                identifier="markets.Asset",
+                uid="asset-meta-table-uid",
+                data_source_uid="data-source-uid",
+                storage_hash="asset-storage-hash",
+                physical_table_name="mt_asset",
+            ),
+            types.SimpleNamespace(
+                identifier="markets.Account",
+                uid="account-meta-table-uid",
+                data_source_uid="data-source-uid",
+                storage_hash="account-storage-hash",
+                physical_table_name="mt_account",
+            ),
+        ]
+
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
+    monkeypatch.setattr(
+        MetaTable,
+        "register",
+        staticmethod(lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError())),
+    )
+
+    events = []
+    resolved = migration.resolve_or_register_metatable_models(
+        timeout=30,
+        on_metatable_resolution=lambda model, identifier, status, meta_table: events.append(
+            (identifier, status, meta_table.uid)
+        ),
+    )
+
+    assert filter_calls == [
+        {
+            "identifier__in": ["markets.Asset", "markets.Account"],
+            "timeout": 30,
+        }
+    ]
+    assert [meta_table.uid for meta_table in resolved] == [
+        "asset-meta-table-uid",
+        "account-meta-table-uid",
+    ]
+    assert events == [
+        ("markets.Asset", "exists", "asset-meta-table-uid"),
+        ("markets.Account", "exists", "account-meta-table-uid"),
+    ]
+    assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
+    assert Account.get_meta_table_uid() == "account-meta-table-uid"
 
 
 def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails(
