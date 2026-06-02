@@ -105,6 +105,8 @@ def _write_provider_with_register_hook(
 
 
             class AccountModel:
+                __metatable_identifier__ = "global.account"
+
                 @classmethod
                 def register(cls, *, data_source_uid=None, timeout=None):
                     EVENTS.append(("register", "account", data_source_uid, timeout))
@@ -179,8 +181,10 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
 
     operations = []
+    status_calls = []
 
     def fake_status(request, *, timeout=None):
+        status_calls.append(request)
         return AlembicMigrationStatusResponse(
             ok=True,
             alembic_version_meta_table_uid=request.alembic_version_meta_table_uid,
@@ -234,11 +238,12 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
 
     result = runner.invoke(
         cli_mod.app,
-        ["migrations", "upgrade", "--provider", provider_ref, "--to", "head", "--apply", "--json"],
+        ["migrations", "upgrade", "--provider", provider_ref, "--to", "head", "--json"],
     )
 
     assert result.exit_code == 0
     assert [operation.dry_run for operation in operations] == [True, False]
+    assert len(status_calls) == 2
     assert {operation.sql for operation in operations} == {"CREATE TABLE asset (uid integer);"}
     assert {operation.data_source_uid for operation in operations} == {"data-source-uid"}
     assert {operation.alembic_version_meta_table_uid for operation in operations} == {
@@ -247,9 +252,87 @@ def test_migrations_upgrade_dry_runs_then_applies_same_artifact(
     payload = json.loads(result.output)
     assert payload["validation"]["status"] == "validated"
     assert payload["apply"]["status"] == "applied"
+    assert payload["registered"] == []
 
 
-def test_migrations_upgrade_apply_register_metatables_runs_provider_hook(
+def test_migrations_upgrade_dry_run_does_not_apply_or_sync_catalog(
+    cli_mod,
+    runner,
+    monkeypatch,
+    tmp_path,
+):
+    module_name = "dry_run_migration_provider_with_hook"
+    provider_ref = _write_provider_with_register_hook(tmp_path, module_name=module_name)
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+
+    operations = []
+
+    def fake_status(request, *, timeout=None):
+        return AlembicMigrationStatusResponse(
+            ok=True,
+            alembic_version_meta_table_uid=request.alembic_version_meta_table_uid,
+            alembic_version_table="public.alembic_version",
+            data_source_uid=request.data_source_uid,
+            package=request.package,
+            migration_namespace=request.migration_namespace,
+            current_revision=None,
+            current_revisions=[],
+        )
+
+    def fake_render(migration, **kwargs):
+        return PackagedAlembicMigrationArtifact(
+            manifest={
+                "package": migration.package,
+                "migration_namespace": migration.migration_namespace,
+                "revision": "0001_initial",
+                "down_revision": None,
+                "direction": "upgrade",
+                "alembic_version_table": "public.alembic_version",
+            },
+            sql="CREATE TABLE account (uid integer);",
+            statement_boundaries=[],
+        )
+
+    def fake_apply(operation, *, timeout=None):
+        operations.append(operation)
+        return AlembicMigrationApplyResponse(
+            ok=True,
+            dry_run=operation.dry_run,
+            alembic_version_meta_table_uid=operation.alembic_version_meta_table_uid,
+            alembic_version_table="public.alembic_version",
+            data_source_uid=operation.data_source_uid,
+            package=operation.package,
+            migration_namespace=operation.migration_namespace,
+            revision=operation.revision,
+            direction=operation.direction,
+            status="validated",
+            current_revision=None,
+            current_revisions=[],
+        )
+
+    monkeypatch.setattr(migration_cli.MetaTable, "get_migration_status", staticmethod(fake_status))
+    monkeypatch.setattr(migration_cli.MetaTable, "apply_migration", staticmethod(fake_apply))
+    monkeypatch.setattr(migration_cli.MetaTable, "filter", staticmethod(lambda **kwargs: []))
+    monkeypatch.setattr(
+        migration_cli,
+        "render_packaged_alembic_migration_for_provider",
+        fake_render,
+    )
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["migrations", "upgrade", "--provider", provider_ref, "--to", "head", "--dry-run"],
+    )
+
+    assert result.exit_code == 0
+    assert [operation.dry_run for operation in operations] == [True]
+    provider_module = importlib.import_module(module_name)
+    assert provider_module.EVENTS == []
+
+
+def test_migrations_upgrade_syncs_catalog_and_runs_provider_hook(
     cli_mod,
     runner,
     monkeypatch,
@@ -305,6 +388,7 @@ def test_migrations_upgrade_apply_register_metatables_runs_provider_hook(
 
     monkeypatch.setattr(migration_cli.MetaTable, "get_migration_status", staticmethod(fake_status))
     monkeypatch.setattr(migration_cli.MetaTable, "apply_migration", staticmethod(fake_apply))
+    monkeypatch.setattr(migration_cli.MetaTable, "filter", staticmethod(lambda **kwargs: []))
     monkeypatch.setattr(
         migration_cli,
         "render_packaged_alembic_migration_for_provider",
@@ -320,8 +404,6 @@ def test_migrations_upgrade_apply_register_metatables_runs_provider_hook(
             provider_ref,
             "--to",
             "head",
-            "--apply",
-            "--register-metatables",
             "--json",
         ],
     )

@@ -310,13 +310,7 @@ def upgrade(
         "--data-source-uid",
         help="Explicit override for cross-data-source workflows.",
     ),
-    apply: bool = typer.Option(False, "--apply", help="Apply after validating dry-run."),
     dry_run: bool = typer.Option(False, "--dry-run", help="Validate without executing SQL."),
-    register_metatables: bool = typer.Option(
-        False,
-        "--register-metatables",
-        help="Register provider MetaTable models after a successful apply.",
-    ),
     sqlalchemy_url: str = typer.Option(
         "postgresql://",
         "--sqlalchemy-url",
@@ -326,9 +320,6 @@ def upgrade(
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
     """Dry-run or apply an Alembic-rendered SQL artifact through the backend."""
-
-    if apply and dry_run:
-        raise typer.BadParameter("Use either --apply or --dry-run, not both.")
 
     migration = _load_migration(provider)
     _ensure_registry(migration, data_source_uid=data_source_uid, timeout=timeout)
@@ -349,7 +340,7 @@ def upgrade(
         dry_run=True,
     )
     validation = MetaTable.apply_migration(validation_operation, timeout=timeout)
-    if not apply:
+    if dry_run:
         _emit(validation, json_output=json_output)
         return
     if not validation.ok:
@@ -358,13 +349,21 @@ def upgrade(
 
     apply_operation = validation_operation.model_copy(update={"dry_run": False})
     result = MetaTable.apply_migration(apply_operation, timeout=timeout)
-    registered = []
-    if register_metatables and result.ok:
-        registered = migration.register_metatables(timeout=timeout)
+    if not result.ok:
+        _emit(result, json_output=json_output)
+        raise typer.Exit(code=1)
+    applied_status = MetaTable.get_migration_status(_status_request(migration), timeout=timeout)
+    registered = migration.sync_metatable_catalog(timeout=timeout)
 
     if json_output or _json_output_enabled():
         _emit(
-            {"validation": validation, "apply": result, "registered": registered}, json_output=True
+            {
+                "validation": validation,
+                "apply": result,
+                "status": applied_status,
+                "registered": registered,
+            },
+            json_output=True,
         )
         return
     _emit(result, json_output=False)

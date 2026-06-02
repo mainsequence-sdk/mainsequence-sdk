@@ -176,19 +176,31 @@ def test_alembic_metatable_migration_requires_callable_after_register_hook():
         )
 
 
-def test_alembic_metatable_migration_calls_after_register_hook_after_all_models():
+def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook(monkeypatch):
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     events = []
 
     class FirstModel:
+        __metatable_identifier__ = "global.first"
+
+        @classmethod
+        def _bind_meta_table(cls, meta_table):
+            events.append(("bind", "first", meta_table.uid))
+
         @classmethod
         def register(cls, *, data_source_uid=None, timeout=None):
             events.append(("first", data_source_uid, timeout))
             return types.SimpleNamespace(uid="first-uid")
 
     class SecondModel:
+        __metatable_identifier__ = "global.second"
+
+        @classmethod
+        def _bind_meta_table(cls, meta_table):
+            events.append(("bind", "second", meta_table.uid))
+
         @classmethod
         def register(cls, *, data_source_uid=None, timeout=None):
             events.append(("second", data_source_uid, timeout))
@@ -207,29 +219,47 @@ def test_alembic_metatable_migration_calls_after_register_hook_after_all_models(
         after_register_metatables=after_register,
     )
 
-    registered = migration.register_metatables(timeout=15)
+    filter_calls = []
+
+    def fake_filter(*, identifier, timeout=None):
+        filter_calls.append((identifier, timeout))
+        if identifier == "global.first":
+            return [types.SimpleNamespace(uid="existing-first-uid")]
+        return []
+
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
+
+    registered = migration.sync_metatable_catalog(timeout=15)
 
     assert [meta_table.uid for meta_table in registered] == ["first-uid", "second-uid"]
+    assert filter_calls == [("global.first", 15), ("global.second", 15)]
     assert events == [
+        ("bind", "first", "existing-first-uid"),
         ("first", "data-source-uid", 15),
         ("second", "data-source-uid", 15),
         ("hook", ["first-uid", "second-uid"]),
     ]
 
 
-def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails():
+def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails(
+    monkeypatch,
+):
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     events = []
 
     class FirstModel:
+        __metatable_identifier__ = "global.first"
+
         @classmethod
         def register(cls, *, data_source_uid=None, timeout=None):
             events.append(("first", data_source_uid, timeout))
             return types.SimpleNamespace(uid="first-uid")
 
     class FailingModel:
+        __metatable_identifier__ = "global.failing"
+
         @classmethod
         def register(cls, *, data_source_uid=None, timeout=None):
             events.append(("failing", data_source_uid, timeout))
@@ -248,13 +278,50 @@ def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_
         after_register_metatables=after_register,
     )
 
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(lambda **kwargs: []))
+
     with pytest.raises(RuntimeError, match="registration failed"):
-        migration.register_metatables(timeout=15)
+        migration.sync_metatable_catalog(timeout=15)
 
     assert events == [
         ("first", "data-source-uid", 15),
         ("failing", "data-source-uid", 15),
     ]
+
+
+def test_alembic_metatable_migration_fails_on_duplicate_identifier(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class AssetModel:
+        __metatable_identifier__ = "global.asset"
+
+        @classmethod
+        def register(cls, *, data_source_uid=None, timeout=None):
+            raise AssertionError("register should not run for duplicate identifiers")
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[AssetModel],
+    )
+
+    monkeypatch.setattr(
+        MetaTable,
+        "filter",
+        staticmethod(
+            lambda **kwargs: [
+                types.SimpleNamespace(uid="first"),
+                types.SimpleNamespace(uid="second"),
+            ]
+        ),
+    )
+
+    with pytest.raises(ValueError, match="not globally unique"):
+        migration.sync_metatable_catalog(timeout=15)
 
 
 def test_load_alembic_metatable_migration_provider_by_reference(tmp_path, monkeypatch):

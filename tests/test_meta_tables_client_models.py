@@ -74,6 +74,25 @@ def _meta_table_response(**overrides):
     return payload
 
 
+def test_metatable_identifier_field_descriptions_state_org_global_uniqueness():
+    expected = "globally unique per organization"
+
+    assert (
+        expected
+        in meta_table_models.MetaTableRegistrationRequest.model_fields[
+            "identifier"
+        ].description
+    )
+    assert expected in meta_table_models.MetaTable.model_fields["identifier"].description
+    assert (
+        expected
+        in meta_table_models.TimeIndexMetaTableRegistrationRequest.model_fields[
+            "identifier"
+        ].description
+    )
+    assert expected in meta_table_models.TableMetaData.model_fields["identifier"].description
+
+
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     captured = {}
 

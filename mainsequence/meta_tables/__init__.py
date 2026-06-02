@@ -69,6 +69,10 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "register_external_sqlalchemy_model",
     ),
+    "resolve_metatable_identifier": (
+        ".sqlalchemy_contracts",
+        "resolve_metatable_identifier",
+    ),
     "render_packaged_alembic_migration": (
         ".migrations",
         "render_packaged_alembic_migration",

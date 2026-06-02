@@ -20,6 +20,7 @@ from mainsequence.client.metatables import (
     MetaTableRegistrationRequest,
 )
 from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
+from mainsequence.meta_tables.sqlalchemy_contracts import resolve_metatable_identifier
 
 DEFAULT_ALEMBIC_VERSION_IDENTIFIER = "alembic_version"
 DEFAULT_ALEMBIC_VERSION_NAMESPACE = "mainsequence.migrations"
@@ -289,7 +290,7 @@ class AlembicMetaTableMigration:
             return meta_table
         return self.register_alembic_registry(data_source_uid=data_source_uid, timeout=timeout)
 
-    def register_metatables(
+    def sync_metatable_catalog(
         self,
         *,
         data_source_uid: str | None = None,
@@ -298,9 +299,15 @@ class AlembicMetaTableMigration:
         resolved_data_source_uid = self.resolve_data_source_uid(data_source_uid)
         registered: list[Any] = []
         for model in self.metatable_models:
-            registered.append(
-                model.register(data_source_uid=resolved_data_source_uid, timeout=timeout)
-            )
+            identifier = resolve_metatable_identifier(model)
+            existing_meta_table = _get_metatable_by_identifier(identifier, timeout=timeout)
+            if existing_meta_table is not None:
+                _bind_model_to_existing_metatable(model, existing_meta_table)
+            register = getattr(model, "register", None)
+            if not callable(register):
+                model_name = getattr(model, "__qualname__", repr(model))
+                raise TypeError(f"Migration MetaTable model {model_name} must define register().")
+            registered.append(register(data_source_uid=resolved_data_source_uid, timeout=timeout))
         if self.after_register_metatables is not None:
             self.after_register_metatables(registered)
         return registered
@@ -575,6 +582,32 @@ def _object_value(obj: Any, *names: str) -> Any:
         if value not in (None, ""):
             return value
     return None
+
+
+def _get_metatable_by_identifier(
+    identifier: str,
+    *,
+    timeout: int | float | tuple[float, float] | None = None,
+) -> MetaTable | None:
+    matches = MetaTable.filter(identifier=identifier, timeout=timeout)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        raise ValueError(
+            f"MetaTable identifier {identifier!r} is not globally unique; "
+            f"found {len(matches)} catalog rows."
+        )
+    return matches[0]
+
+
+def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None:
+    bind = getattr(model, "_bind_meta_table", None)
+    if not callable(bind):
+        model_name = getattr(model, "__qualname__", repr(model))
+        raise TypeError(
+            f"Migration MetaTable model {model_name} cannot bind an existing MetaTable row."
+        )
+    bind(meta_table)
 
 
 __all__ = [

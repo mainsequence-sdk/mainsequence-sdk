@@ -105,6 +105,12 @@ or every installed package to decide what to migrate.
 derived catalog that must refresh after the provider-scoped MetaTable models are
 registered successfully.
 
+Application MetaTable catalog sync resolves by exact `identifier` only. Explicit
+`__metatable_identifier__` values are used as-is. When omitted, the SDK derives
+the identifier from `[project].name` in `pyproject.toml` plus
+`<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
+model moves or is renamed but should keep the same platform identity.
+
 ## Alembic Version MetaTable
 
 `AlembicVersionMetaTable` registers a catalog pointer for Alembic's version
@@ -165,19 +171,13 @@ mainsequence migrations revision --provider mainsequence_migrations:migration --
 mainsequence migrations register-version-table --provider mainsequence_migrations:migration
 mainsequence migrations render --provider mainsequence_migrations:migration --to head
 mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --apply
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
 ```
 
-Use `--register-metatables` on `upgrade --apply` when the project should also
-register provider-scoped application MetaTables after SQL execution:
-
-```bash
-mainsequence migrations upgrade \
-  --provider mainsequence_migrations:migration \
-  --to head \
-  --apply \
-  --register-metatables
-```
+`upgrade --dry-run` validates the rendered SQL and revision precondition only.
+`upgrade` applies the rendered SQL and then syncs the provider-scoped
+application MetaTables by identifier. The command succeeds only when both
+backend SQL execution and catalog sync succeed.
 
 If the provider defines `after_register_metatables`, the CLI runs that hook only
 after the provider-scoped MetaTable registration succeeds. The hook receives the

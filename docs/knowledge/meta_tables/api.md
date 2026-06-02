@@ -66,7 +66,7 @@ Request fields:
 | `data_source_uid` | TS Manager `DynamicTableDataSource` that owns connection, credentials, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `storage_hash` | Collision-resistant platform table identifier. |
-| `identifier` | Human logical table name, such as `Asset`. |
+| `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization and are used to resolve migrated MetaTables. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |
@@ -300,6 +300,10 @@ the package, migration namespace, Alembic script location, target metadata, and
 The operation carries an Alembic-rendered SQL artifact plus manifest metadata.
 It does not reference a client-defined SDK artifact table and it does not accept
 SDK custom operation plans.
+
+After a successful CLI `upgrade`, the SDK syncs provider-scoped application
+MetaTables on the client side by exact `identifier`. That catalog sync is not
+encoded as affected-table lists in the backend migration request.
 
 The request body contains the rendered SQL artifact directly:
 

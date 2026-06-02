@@ -260,11 +260,18 @@ For contract evolution, define or update one selected
 - set `package`, `migration_namespace`, `script_location`, and `target_metadata`
 - set `alembic_registry` to an `AlembicVersionMetaTable` subclass
 - list the post-apply catalog scope in `metatable_models`
-- generate, render, dry-run, apply, and optionally refresh catalog bindings
+- generate, render, dry-run, apply, and refresh catalog bindings
   through `mainsequence migrations ...` commands
 
 `alembic_version_meta_table_uid` is the UID of the catalog binding for Alembic's
 version table. It is not the UID of the table being migrated.
+
+Application MetaTable catalog sync resolves existing rows by exact
+`identifier`. If a model declares `__metatable_identifier__`, that value is the
+global identity. If it does not, the SDK derives the identifier from
+`[project].name` in `pyproject.toml` plus
+`<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
+class is renamed or moved but must keep the same platform identity.
 
 Do not ask users to construct backend migration payloads, call low-level
 migration request models, or use SDK helper functions directly. The backend
@@ -275,12 +282,13 @@ mainsequence migrations register-version-table --provider mainsequence_migration
 mainsequence migrations revision --provider mainsequence_migrations:migration --autogenerate -m "change"
 mainsequence migrations render --provider mainsequence_migrations:migration --to head
 mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --apply --register-metatables
+mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
 ```
 
 The SQL must be Alembic-rendered from the selected provider. After SQL apply
 succeeds, register or refresh only the application MetaTable catalog bindings
-listed in `migration.metatable_models`.
+listed in `migration.metatable_models`. A migration is not complete until both
+backend SQL execution and catalog sync succeed.
 
 Do not use SDK-managed migration artifact tables, artifact sync helpers, or custom
 `operations()` migration modules.
@@ -336,6 +344,7 @@ Do not claim success until you have checked:
 - migrations are scoped by an `AlembicMetaTableMigration` provider
 - the provider's Alembic version-table binding is registered before apply/current
 - post-apply catalog registration is scoped to `migration.metatable_models`
+- catalog sync resolves application MetaTables by exact `identifier`
 - user-facing migration instructions stay on the documented CLI/provider lifecycle
 
 For related tables, also check:

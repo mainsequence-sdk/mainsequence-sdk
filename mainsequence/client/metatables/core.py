@@ -453,7 +453,13 @@ class MetaTableRegistrationRequest(BasePydanticModel):
     management_mode: MetaTableManagementMode
     storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     table_contract: MetaTableContract | dict[str, Any]
-    identifier: str | None = None
+    identifier: str | None = Field(
+        default=None,
+        description=(
+            "Optional logical MetaTable identifier. Non-empty values are globally "
+            "unique per organization and are used to resolve migrated MetaTables."
+        ),
+    )
     namespace: str | None = None
     description: str | None = None
     protect_from_deletion: bool = False
@@ -869,7 +875,13 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     data_source: int | DynamicTableDataSource | dict[str, Any] | None = None
     data_source_uid: str | None = None
     storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
-    identifier: str | None = None
+    identifier: str | None = Field(
+        default=None,
+        description=(
+            "Optional logical MetaTable identifier. Non-empty values are globally "
+            "unique per organization and are used to resolve migrated MetaTables."
+        ),
+    )
     namespace: str | None = None
     description: str | None = None
     labels: list[str] = Field(default_factory=list)
@@ -1387,7 +1399,13 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
         max_length=63,
         description="Canonical logical storage identity for the time-indexed MetaTable",
     )
-    identifier: str | None = Field(None, description="Optional published storage identifier")
+    identifier: str | None = Field(
+        None,
+        description=(
+            "Optional published storage identifier. Non-empty values are globally "
+            "unique per organization."
+        ),
+    )
     namespace: str | None = Field(None, description="Optional published storage namespace")
     description: str | None = Field(None, description="Optional storage description")
     labels: list[str] = Field(default_factory=list)
@@ -2405,7 +2423,13 @@ class DataNodeUpdateDetails(BaseUpdateDetails, BasePydanticModel, BaseObjectOrm)
 
 
 class TableMetaData(BaseModel):
-    identifier: str = None
+    identifier: str | None = Field(
+        default=None,
+        description=(
+            "Optional logical MetaTable identifier. Non-empty values are globally "
+            "unique per organization."
+        ),
+    )
     description: str | None = None
 
 

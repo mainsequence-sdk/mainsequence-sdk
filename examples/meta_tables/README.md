@@ -155,10 +155,15 @@ mainsequence migrations upgrade \
 
 mainsequence migrations upgrade \
   --provider examples.meta_tables.migrations:migration \
-  --to head \
-  --apply \
-  --register-metatables
+  --to head
 ```
+
+The final `upgrade` applies Alembic SQL and then syncs the provider-scoped
+MetaTables listed in `metatable_models`. Sync resolves existing catalog rows by
+exact `identifier`. If a model does not declare `__metatable_identifier__`, the
+SDK defaults it to `<pyproject project name>:<model module>.<model qualname>`.
+If a model is renamed or moved, pin the old identifier explicitly to preserve
+the same platform identity.
 
 When running the example outside an attached project context, set the data
 source binding explicitly:

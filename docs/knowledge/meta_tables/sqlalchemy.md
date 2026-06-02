@@ -60,8 +60,10 @@ class Account(PlatformManagedMetaTable, Base):
 
 The `__metatable_identifier__` attribute is logical backend metadata. It is
 sent during registration but does not contribute to the configured
-`storage_hash`. The mapped columns, indexes, and foreign keys do contribute to
-the configured storage identity.
+`storage_hash`. When present, it must be globally unique per organization and
+is the stable lookup key used to resolve migrated MetaTables. The mapped
+columns, indexes, and foreign keys do contribute to the configured storage
+identity.
 
 Use `__metatable_extra_hash_components__` to add stable, deterministic
 storage-identity components when two table classes could otherwise hash to the

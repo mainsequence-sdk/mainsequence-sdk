@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pathlib
+import sys
 from collections.abc import Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, ClassVar
@@ -1453,10 +1455,81 @@ def _resolve_identifier(model_or_table: Any, *, identifier: str | None) -> str:
         identifier
         or getattr(model_or_table, "__metatable_identifier__", None)
         or _table_info_value(model_or_table, "identifier")
-        or getattr(model_or_table, "__name__", None)
-        or _table_name(_resolve_table(model_or_table))
     )
+    if resolved_identifier in (None, ""):
+        return _default_metatable_identifier(model_or_table)
     return str(resolved_identifier)
+
+
+def resolve_metatable_identifier(
+    model_or_table: Any,
+    *,
+    identifier: str | None = None,
+) -> str:
+    """Resolve the globally stable MetaTable identifier for a SQLAlchemy model."""
+
+    return _resolve_identifier(model_or_table, identifier=identifier)
+
+
+def _default_metatable_identifier(model_or_table: Any) -> str:
+    module, qualname = _resolve_model_path(
+        model_or_table,
+        table_model_module=None,
+        table_model_qualname=None,
+    )
+    if module == "sqlalchemy":
+        raise ValueError(
+            "MetaTable SQLAlchemy contracts require __metatable_identifier__ for "
+            "plain SQLAlchemy Table objects."
+        )
+
+    project_name = _resolve_pyproject_project_name(model_or_table)
+    if project_name in (None, ""):
+        raise ValueError(
+            "MetaTable SQLAlchemy contracts require __metatable_identifier__ when "
+            "[project].name cannot be resolved from pyproject.toml."
+        )
+    return f"{project_name}:{module}.{qualname}"
+
+
+def _resolve_pyproject_project_name(model_or_table: Any) -> str | None:
+    candidate_dirs: list[pathlib.Path] = []
+    module_name = getattr(model_or_table, "__module__", None)
+    if module_name:
+        module = sys.modules.get(str(module_name))
+        module_file = getattr(module, "__file__", None) if module is not None else None
+        if module_file:
+            candidate_dirs.append(pathlib.Path(module_file).resolve().parent)
+    candidate_dirs.append(pathlib.Path.cwd().resolve())
+
+    seen: set[pathlib.Path] = set()
+    for start_dir in candidate_dirs:
+        for path in (start_dir, *start_dir.parents):
+            if path in seen:
+                continue
+            seen.add(path)
+            pyproject_path = path / "pyproject.toml"
+            if not pyproject_path.exists():
+                continue
+            project_name = _read_pyproject_project_name(pyproject_path)
+            if project_name not in (None, ""):
+                return project_name
+    return None
+
+
+def _read_pyproject_project_name(pyproject_path: pathlib.Path) -> str | None:
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # pragma: no cover - Python < 3.11 fallback.
+        return None
+    try:
+        pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    project_name = pyproject.get("project", {}).get("name")
+    if project_name in (None, ""):
+        return None
+    return str(project_name).strip() or None
 
 
 def _resolve_namespace(model_or_table: Any, *, namespace: str | None) -> str:
@@ -2343,6 +2416,7 @@ __all__ = [
     "metatable_tablename",
     "platform_managed_registration_request_from_sqlalchemy_model",
     "register_external_sqlalchemy_model",
+    "resolve_metatable_identifier",
     "table_contract_from_sqlalchemy_model",
     "time_indexed_registration_request_from_sqlalchemy_model",
 ]

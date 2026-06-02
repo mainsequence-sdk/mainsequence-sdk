@@ -239,6 +239,64 @@ def _dynamic_table_data_source(uid: str = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     )
 
 
+def test_default_metatable_identifier_uses_pyproject_and_model_path(tmp_path, monkeypatch):
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "alpha-project"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    table = FakeTable("asset")
+    AssetModel = type(
+        "AssetModel",
+        (),
+        {
+            "__module__": "project.models.assets",
+            "__qualname__": "Outer.AssetModel",
+            "__metatable_namespace__": "example.assets",
+            "__table__": table,
+        },
+    )
+
+    assert (
+        sqlalchemy_contracts.resolve_metatable_identifier(AssetModel)
+        == "alpha-project:project.models.assets.Outer.AssetModel"
+    )
+
+
+def test_explicit_metatable_identifier_does_not_require_pyproject(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    table = FakeTable("asset")
+    AssetModel = type(
+        "AssetModel",
+        (),
+        {
+            "__module__": "project.models.assets",
+            "__metatable_namespace__": "example.assets",
+            "__metatable_identifier__": "global.asset",
+            "__table__": table,
+        },
+    )
+
+    assert sqlalchemy_contracts.resolve_metatable_identifier(AssetModel) == "global.asset"
+
+
+def test_default_metatable_identifier_requires_pyproject_project_name(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    table = FakeTable("asset")
+    AssetModel = type(
+        "AssetModel",
+        (),
+        {
+            "__module__": "project.models.assets",
+            "__metatable_namespace__": "example.assets",
+            "__table__": table,
+        },
+    )
+
+    with pytest.raises(ValueError, match=r"\[project\]\.name"):
+        sqlalchemy_contracts.resolve_metatable_identifier(AssetModel)
+
+
 def test_platform_managed_registration_request_from_sqlalchemy_metadata():
     table_name = metatable_tablename(namespace="example.assets", identifier="Account")
     account_table = FakeTable(

@@ -46,6 +46,7 @@ registration, and backend execution. It supplies:
 - the `AlembicVersionMetaTable` binding for Alembic's physical version table
 - the MetaTable model classes that project tooling may register or refresh
   after SQL execution
+- the optional post-registration catalog hook
 
 `AlembicVersionMetaTable` is a catalog binding for Alembic's version table. It
 registers as a normal `external_registered` MetaTable with the minimal Alembic
@@ -138,7 +139,7 @@ host project must choose the provider being operated on.
 that must happen after provider-scoped MetaTable registration. The SDK calls it
 only after every model in `migration.metatable_models` has registered or
 refreshed successfully. The hook receives the ordered registered MetaTable
-objects returned by `migration.register_metatables()`:
+objects returned by `migration.sync_metatable_catalog()`:
 
 ```python
 def refresh_markets_catalog_from_registered_metatables(registered_metatables):
@@ -180,6 +181,55 @@ The CLI must not require `data_source_uid` in project config. The target data
 source comes from the selected provider's MetaTable registration context,
 especially the `AlembicVersionMetaTable` binding. CLI flags may override it
 only for explicit cross-data-source workflows.
+
+## Stable MetaTable Identity For Catalog Sync
+
+Application MetaTable catalog sync uses `identifier` as the only stable lookup
+key. It must not resolve application MetaTables by `data_source_uid`,
+namespace, storage hash, physical table name, or the newly constructed
+SQLAlchemy table shape.
+
+When a model declares `__metatable_identifier__`, that value is used exactly.
+The user is then responsible for global uniqueness:
+
+```python
+class AssetTypeTable(PlatformManagedMetaTable, Base):
+    __metatable_identifier__ = "msm.asset_type"
+```
+
+When a model does not declare `__metatable_identifier__`, the SDK derives a
+default identifier from the project and the Python model path:
+
+```text
+<pyproject project name>:<model.__module__>.<model.__qualname__>
+```
+
+Example:
+
+```text
+mainsequencemarkets:src.msm.models.assets.AssetTypeTable
+```
+
+The project prefix comes from `[project].name` in the nearest project
+`pyproject.toml`, normalized only enough to be deterministic. This prevents
+different projects that both define `src.Test` from colliding. If the project
+name cannot be resolved and the model does not define
+`__metatable_identifier__`, the SDK must fail and require an explicit
+identifier.
+
+Catalog sync after a migration must:
+
+1. Resolve each model's stable identifier.
+2. Fetch the existing `MetaTable` by exact `identifier`.
+3. If found, bind the changed model class to that existing MetaTable UID,
+   storage hash, and physical table name before registration refresh.
+4. If not found, perform initial catalog registration for that identifier.
+5. If more than one MetaTable exists for the identifier, fail because the
+   identifier is not globally unique.
+
+This is the mechanism that lets Alembic change a shape-addressed
+`PlatformManagedMetaTable` without losing the original catalog path. The new
+SQLAlchemy class shape must not decide which deployed MetaTable is refreshed.
 
 ## Alembic Version MetaTable Registration Contract
 
@@ -529,20 +579,24 @@ The exact status request JSON is:
 Status is read-only. It does not inspect, create, or refresh application
 MetaTables.
 
-### 8. Register Or Refresh Application MetaTables Separately
+### 8. Register Or Refresh Application MetaTables By Identifier
 
 After Alembic applies the physical schema change, project tooling registers or
 refreshes the application MetaTable catalog bindings listed on the selected
-provider:
+provider. This is part of the migration success path, not an optional separate
+operation:
 
 ```python
-registered_metatables = migration.register_metatables(data_source_uid=data_source_uid)
+registered_metatables = migration.sync_metatable_catalog()
 ```
 
-That catalog step uses normal MetaTable registration and validation. It is not
-part of the Alembic migration apply request. The provider controls the catalog
-scope; imported-but-unlisted MetaTable classes are not registered by migration
-tooling.
+That catalog step resolves each model by stable `identifier` first. If the
+MetaTable already exists, the SDK binds the model to that existing MetaTable and
+refreshes registration metadata for that same catalog path. If it does not
+exist, the SDK performs the initial registration for that identifier.
+
+The provider controls the catalog scope; imported-but-unlisted MetaTable
+classes are not registered by migration tooling.
 
 If `migration.after_register_metatables` is configured, the SDK calls it after
 the provider-scoped catalog registration succeeds:
@@ -565,7 +619,7 @@ mainsequence migrations revision --autogenerate -m "initial"
 mainsequence migrations register-version-table
 mainsequence migrations render --to head
 mainsequence migrations upgrade --to head --dry-run
-mainsequence migrations upgrade --to head --apply
+mainsequence migrations upgrade --to head
 ```
 
 All commands resolve the same provider object by convention or by
@@ -585,15 +639,15 @@ Command responsibilities:
 - `render` renders Alembic offline SQL for the requested transition without
   sending it to the backend.
 - `upgrade --dry-run` renders SQL and sends the exact backend request with
-  `dry_run=true`.
-- `upgrade --apply` first dry-runs, then sends the same rendered artifact with
-  `dry_run=false`, then refreshes current revision state.
+  `dry_run=true`, then exits without SQL execution or catalog sync.
+- `upgrade` first dry-runs, then sends the same rendered artifact with
+  `dry_run=false`, reads current revision state, resolves and refreshes
+  provider-scoped MetaTables by stable identifier, and runs
+  `migration.after_register_metatables` when configured.
 
-Catalog registration for `migration.metatable_models` can be a separate command
-or an explicit post-apply flag, but it must not be hidden inside backend SQL
-execution. When catalog registration is requested and
-`migration.after_register_metatables` is configured, the CLI must run the hook
-after all provider-scoped MetaTables have registered successfully.
+There is no `--register-metatables` flag in the final workflow. Catalog sync is
+part of `upgrade` success. The command exits successfully only when both backend
+SQL execution and provider-scoped catalog sync succeed.
 
 ## Request Contract
 
@@ -754,6 +808,12 @@ Required extension points:
   autogenerate/rendering must never scan every imported SQLAlchemy model.
 - `AlembicMetaTableMigration` must accept `metatable_models`; catalog
   registration must be scoped to that list.
+- Application MetaTable catalog sync must resolve by exact `identifier` only.
+  It must not use `data_source_uid`, namespace, storage hash, physical table
+  name, or the newly constructed SQLAlchemy table shape as the catalog identity.
+- Models without explicit `__metatable_identifier__` must default to
+  `<pyproject project name>:<model.__module__>.<model.__qualname__>`. Missing
+  project name means the SDK must require an explicit identifier.
 - `AlembicMetaTableMigration` must accept an optional
   `after_register_metatables` hook for project-specific catalog refresh after
   provider-scoped MetaTable registration.
@@ -843,8 +903,24 @@ stable identifier.
   `migration.alembic_registry`.
 - [x] Make render/dry-run/apply build the exact backend request shape in this
   ADR and reuse the same rendered SQL artifact between dry-run and apply.
-- [x] Add optional post-apply catalog registration for
-  `migration.metatable_models`.
+- [x] Make `upgrade` perform provider-scoped catalog sync by default after
+  backend SQL apply succeeds, with no `--register-metatables` flag.
+- [x] Add stable identifier defaults:
+  `<pyproject project name>:<model.__module__>.<model.__qualname__>`.
+- [x] Make migration catalog sync resolve existing application MetaTables by
+  exact `identifier` only, bind models to existing catalog rows before refresh,
+  initial-register missing identifiers, and fail on duplicate identifiers.
+- [x] Update `docs/tutorial/metatable_migrations.md` so the user-facing flow is
+  one `mainsequence migrations upgrade --provider ... --to head` path with
+  identifier-based catalog sync.
+- [x] Update `docs/knowledge/meta_tables/migrations.md` and
+  `docs/knowledge/meta_tables/api.md` to remove the `--register-metatables`
+  workflow and document identifier-based catalog sync.
+- [x] Update MetaTable examples to use the final upgrade flow and show default
+  identifier behavior plus explicit identifier pinning for renamed/moved model
+  classes.
+- [x] Update the MetaTable skill so migration guidance follows the final ADR
+  workflow and does not mention optional `--register-metatables`.
 - [x] Add optional `after_register_metatables` provider hook and run it after
   successful provider-scoped MetaTable registration.
 - [x] Add CLI/provider tests covering initial migration, current revision, SQL

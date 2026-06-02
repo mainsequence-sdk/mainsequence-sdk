@@ -136,6 +136,19 @@ The provider supplies:
 The SDK must not infer migrations from every imported SQLAlchemy model or every
 installed dependency. The selected provider controls the migration scope.
 
+Application MetaTables are resolved by exact `identifier` during catalog sync.
+If a model declares `__metatable_identifier__`, that value is used exactly. If
+it does not, the SDK derives one from `[project].name` in `pyproject.toml` plus
+the model path:
+
+```text
+<pyproject project name>:<model.__module__>.<model.__qualname__>
+```
+
+If the project name cannot be resolved, set `__metatable_identifier__`
+explicitly. If a model is renamed or moved but should keep the same platform
+identity, pin the old identifier on the class.
+
 If you do not want a root-level `mainsequence_migrations.py`, put the same
 provider object in your package, for example `sdk_examples/migrations/__init__.py`,
 and pass it explicitly:
@@ -364,29 +377,21 @@ mainsequence migrations upgrade \
   --dry-run
 ```
 
-Apply the same rendered artifact after validation:
+Apply the same rendered artifact after validation and sync provider-scoped
+MetaTables:
 
 ```bash
 mainsequence migrations upgrade \
   --provider mainsequence_migrations:migration \
-  --to head \
-  --apply
-```
-
-To also register the provider-scoped application MetaTables after a successful
-apply:
-
-```bash
-mainsequence migrations upgrade \
-  --provider mainsequence_migrations:migration \
-  --to head \
-  --apply \
-  --register-metatables
+  --to head
 ```
 
 The backend checks the current Alembic revision, executes the Alembic-rendered
 SQL transactionally when supported, and relies on Alembic SQL to update the
-physical `alembic_version` table.
+physical `alembic_version` table. After SQL apply succeeds, the CLI refreshes
+only the MetaTables listed in `migration.metatable_models` by exact
+`identifier`; the command succeeds only if both SQL execution and catalog sync
+succeed.
 
 ## 9. Backend Request Shape For Reference
 
@@ -419,23 +424,25 @@ registered Alembic version table, current revision, and rendered Alembic SQL:
 }
 ```
 
-For `--apply`, the CLI sends the same rendered artifact again with
-`dry_run=false` after validation. The apply request does not contain
+For apply, the CLI sends the same rendered artifact again with `dry_run=false`
+after validation. The apply request does not contain
 affected-table lists, old/new contract hashes, custom operation names,
 idempotency keys, lock keys, or migration-row UIDs.
 
 ## 10. Catalog Registration Scope
 
-After SQL execution, project tooling may register or refresh only the models
+After SQL execution, project tooling registers or refreshes only the models
 listed by the selected provider:
 
 ```python
-registered = migration.register_metatables()
+registered = migration.sync_metatable_catalog()
 ```
 
-This catalog step is separate from backend SQL execution. The provider controls
-scope; imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by
-migration tooling.
+This catalog step resolves by exact `identifier`, binds changed model classes
+to existing MetaTable rows when present, initial-registers missing identifiers,
+and fails if an identifier is duplicated. The provider controls scope;
+imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by migration
+tooling.
 
 Projects that maintain a derived catalog can attach an optional provider hook:
 
@@ -451,9 +458,8 @@ migration = AlembicMetaTableMigration(
 ```
 
 The hook receives the ordered registered MetaTable objects and runs only after
-`--apply --register-metatables` has successfully applied SQL and registered the
-provider-scoped MetaTables. It does not run for `current`, `render`, `revision`,
-dry-run, or failed apply.
+`upgrade` has successfully applied SQL and synced provider-scoped MetaTables. It
+does not run for `current`, `render`, `revision`, dry-run, or failed apply.
 
 If a project migrates `AccountLimit` instead of `Account`, use the same
 provider lifecycle. The provider still owns revision discovery, version-table
