@@ -1,7 +1,9 @@
 # MetaTable Migrations
 
-MetaTable schema migrations use Alembic. The SDK does not provide a parallel
-operation-list migration language or a separate SDK artifact table.
+MetaTable schema migrations use Alembic. The SDK adds a thin coordination layer
+around Alembic so provider-scoped MetaTables can be bound to backend catalog
+state before Alembic runs. The SDK does not provide a parallel operation-list
+migration language or a separate SDK artifact table.
 
 ## Architecture
 
@@ -27,6 +29,49 @@ The SDK owns:
 - typed reservation and scoped-connection request/response models
 - CLI commands that prepare providers, reserve/bind backend names, call Alembic
   directly, and refresh provider-scoped MetaTables after successful upgrade
+
+## SDK Alembic Coordination
+
+The goal is to keep Alembic as the schema migration engine and add only the
+small amount of SDK coordination needed for Main Sequence MetaTables. The
+`mainsequence migrations ...` commands are thin wrappers around normal Alembic
+commands. They do not replace Alembic and they do not interpret a custom SDK
+migration format.
+
+Before calling Alembic, the SDK layer does only the platform-specific setup
+Alembic cannot know on its own:
+
+- load the selected `AlembicMetaTableMigration` provider
+- register or resolve the provider's `AlembicVersionMetaTable` catalog binding
+- reserve or resolve the provider-scoped platform-managed MetaTables without
+  creating physical application tables
+- bind backend physical table names, index names, and foreign-key names into the
+  provider's SQLAlchemy metadata
+- include the Alembic version MetaTable UID and provider MetaTable UIDs in the
+  migration scope
+- request a temporary table-scoped database credential from the owning
+  `DynamicTableDataSource`
+- build an Alembic `Config` with `script_location`, `sqlalchemy.url`,
+  `version_table`, `version_table_schema`, provider metadata, owner role, and
+  CLI output streams
+- call Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
+
+After Alembic `upgrade` or `downgrade`, the SDK refreshes only the
+provider-scoped MetaTable catalog rows with physical table creation disabled and
+then runs `after_register_metatables` when the provider defines that hook.
+
+The SDK layer does not:
+
+- generate SDK operation objects
+- parse Alembic revision files
+- own Alembic revision state
+- create a backend migration artifact row
+- send a rendered SQL artifact to the backend for apply
+- apply DDL through a custom backend migration endpoint
+
+Alembic executes DDL through the scoped database credential. The backend owns
+catalog reservation and credential issuance; it does not own the Alembic
+migration lifecycle.
 
 For a walkthrough that evolves the `Account` and `AccountLimit` MetaTables from
 the tutorial, see
@@ -193,18 +238,21 @@ mainsequence migrations upgrade --provider mainsequence_migrations:migration hea
 
 `revision` accepts an optional `-m/--message`. If it is omitted, the CLI passes
 `migration` to Alembic. The command prepares the provider, reserves
-platform-managed MetaTables, obtains a scoped migration connection, and calls
-Alembic `revision` directly. Autogenerate is enabled by default.
+platform-managed MetaTables, obtains a scoped migration connection, builds a
+normal Alembic `Config`, and calls Alembic `revision` directly. Autogenerate is
+enabled by default.
 
 The standard `revision` command writes an Alembic revision file for the
 provider. It does not build SDK migration operations and it does not ask the
 backend to render or apply SQL. Alembic owns revision generation.
 
-`current` and `upgrade` run the same preparation preflight as `revision`: the
-CLI registers or resolves the `AlembicVersionMetaTable`, reserves
-provider-scoped platform-managed MetaTables, binds backend physical table,
-index, and FK names into SQLAlchemy metadata, asks TS Manager for a temporary
-table-scoped migration URI, and calls Alembic directly.
+`current`, `upgrade`, and `downgrade` run the same preparation preflight as
+`revision`: the CLI registers or resolves the `AlembicVersionMetaTable`,
+reserves provider-scoped platform-managed MetaTables, binds backend physical
+table, index, and FK names into SQLAlchemy metadata, asks TS Manager for a
+temporary table-scoped migration URI, builds a normal Alembic `Config`, and
+calls Alembic directly. Alembic stdout and offline output buffers are passed
+through the CLI.
 
 There is no normal-user `render` or `upgrade --dry-run` path. Alembic is the
 execution path. The backend only provides registry reservation and the scoped

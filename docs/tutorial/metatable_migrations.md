@@ -2,6 +2,10 @@
 
 This document is only about schema migrations for MetaTables.
 
+The SDK does not implement a second migration engine. It provides a thin layer
+on top of Alembic so MetaTable catalog bindings, backend physical names, and
+scoped database credentials are ready before Alembic runs.
+
 It continues from [Part 2: Working With MetaTables](working_with_meta_tables.md),
 where the project declared these backend-managed MetaTables:
 
@@ -64,6 +68,30 @@ does not receive an SDK migration artifact row. It reserves MetaTable catalog
 rows and issues a temporary database credential; Alembic owns the migration
 execution.
 
+The SDK layer is intentionally thin. Before delegating to Alembic, it:
+
+- imports the selected provider
+- registers or resolves the provider's `AlembicVersionMetaTable`
+- reserves or resolves the provider-scoped platform-managed MetaTables without
+  creating physical application tables
+- binds backend physical table names, index names, and foreign-key names into
+  SQLAlchemy metadata
+- includes the Alembic version MetaTable UID and provider MetaTable UIDs in the
+  migration scope
+- requests a temporary table-scoped database URI from the target data source
+- builds a normal Alembic `Config` with the provider's `script_location`,
+  `target_metadata`, version-table settings, owner role, and output streams
+- calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
+
+After Alembic `upgrade` or `downgrade`, the SDK refreshes provider-scoped
+MetaTable catalog rows with physical table creation disabled. If the provider
+defines `after_register_metatables`, the hook runs after that catalog refresh.
+
+The SDK layer does not parse revision files, generate SDK operation lists,
+store backend migration artifacts, or ask the backend to apply rendered SQL.
+Alembic revision files remain the schema history and Alembic executes DDL
+through the scoped database credential.
+
 The CLI lifecycle intentionally separates three jobs:
 
 - `mainsequence migrations current` asks Alembic what revision is actually
@@ -74,6 +102,8 @@ The CLI lifecycle intentionally separates three jobs:
 - `mainsequence migrations upgrade` runs Alembic directly through the scoped
   credential, then refreshes provider-scoped MetaTable catalog bindings after
   the database schema has changed.
+- `mainsequence migrations downgrade` runs Alembic directly through the scoped
+  credential, then refreshes the same provider-scoped catalog bindings.
 
 ## 1. Define The Migration Provider
 
@@ -334,11 +364,10 @@ name, for example `-m "add account status"`; otherwise the SDK passes
 
 The Alembic version MetaTable registry is not what generates this file's table
 operations. `revision` uses the provider to find `script_location`, the
-revision template, and Alembic configuration. The registry is integrated later:
-`current` and `upgrade` auto-register or resolve the provider's
-`AlembicVersionMetaTable`, and status/apply requests send that registry UID so
-the backend can resolve the target data source and read Alembic's physical
-version table.
+revision template, and Alembic configuration, then calls Alembic directly. The
+registry is part of the thin SDK setup: commands auto-register or resolve the
+provider's `AlembicVersionMetaTable`, and scoped-credential requests include
+that registry UID so Alembic can read and write its physical version table.
 
 `--autogenerate` is optional and not the standard path. If used, Alembic must
 connect to an explicit baseline database through `--sqlalchemy-url` so it can
@@ -377,10 +406,9 @@ def downgrade() -> None:
     op.drop_column("account", "status", schema="public")
 ```
 
-For platform-managed physical names, project tooling must render Alembic SQL
-against the existing physical table names from the MetaTable catalog. The
-provider controls that mapping through its Alembic environment and metadata
-setup.
+For platform-managed physical names, the SDK reservation step binds Alembic's
+SQLAlchemy metadata to the existing physical table names from the MetaTable
+catalog before Alembic renders or executes SQL.
 
 ## 6. Check Current Revision
 
@@ -396,6 +424,10 @@ database, not from the local filesystem or from the newest package revision.
 The CLI prepares the provider, asks the backend for a scoped migration
 connection, and lets Alembic read the version table directly.
 
+If Alembic prints no current revision, the CLI reports that explicitly. That
+means the version table is empty or Alembic found no current revision for the
+prepared migration scope.
+
 ## 7. Apply With Alembic
 
 Apply the provider migration:
@@ -406,9 +438,8 @@ mainsequence migrations upgrade \
   head
 ```
 
-`upgrade` is the mutation path. It reserves provider-scoped MetaTables, binds
-backend physical table/index/FK names into SQLAlchemy metadata, obtains a
-temporary scoped database credential, and calls Alembic `upgrade` directly.
+`upgrade` is the mutation path. It runs the thin SDK setup, obtains a temporary
+scoped database credential, and calls Alembic `upgrade` directly.
 
 After Alembic succeeds, the CLI refreshes only the MetaTables listed in
 `migration.metatable_models` by exact
@@ -467,7 +498,8 @@ version MetaTable UID plus the reserved provider MetaTable UIDs:
 
 The Alembic version MetaTable is part of the scope because Alembic reads and
 writes its version table before it runs application DDL. The returned URI is
-secret. The CLI passes it to Alembic and does not print it.
+secret. The CLI passes it to Alembic and does not print it. Alembic's normal
+stdout and offline output buffers are forwarded through the CLI.
 
 ## 9. Catalog Registration Scope
 
@@ -510,6 +542,7 @@ binding, request identity, and post-apply catalog scope.
 Keep migrations when a deployed table must evolve in place. The migration files
 are the database schema history. The `AlembicMetaTableMigration` provider is the
 SDK boundary for selecting that history, Alembic metadata, version-table
-binding, and catalog scope. Alembic owns DDL and revision state. TS Manager
-executes Alembic-rendered SQL. Project tooling registers or refreshes
-provider-scoped catalog bindings after the physical schema has changed.
+binding, and catalog scope. The SDK layer prepares backend bindings and scoped
+credentials, then delegates to Alembic. Alembic owns DDL execution and revision
+state. Project tooling registers or refreshes provider-scoped catalog bindings
+after the physical schema has changed.
