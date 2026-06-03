@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from mainsequence.client.metatables import (
+    DynamicTableDataSource,
     ManagedMetaTableReservationRequest,
     ManagedMetaTableReservationTable,
     MetaTable,
@@ -64,7 +65,8 @@ class AlembicVersionMetaTable:
     def build_registration_request(
         cls,
         *,
-        data_source_uid: str,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         identifier: str | None = None,
         namespace: str | None = None,
         description: str | None = None,
@@ -104,9 +106,14 @@ class AlembicVersionMetaTable:
             identifier=resolved_identifier,
             schema=resolved_schema,
         )
+        resolved_data_source_uid = _resolve_model_data_source_uid(
+            cls,
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+        )
 
         return MetaTableRegistrationRequest(
-            data_source_uid=str(data_source_uid),
+            data_source_uid=resolved_data_source_uid,
             management_mode="external_registered",
             storage_hash=storage_hash,
             identifier=resolved_identifier,
@@ -142,12 +149,14 @@ class AlembicVersionMetaTable:
     def register(
         cls,
         *,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
         **kwargs: Any,
     ) -> MetaTable:
-        resolved_data_source_uid = _resolve_model_data_source_uid(cls)
         request = cls.build_registration_request(
-            data_source_uid=resolved_data_source_uid,
+            data_source=data_source,
+            data_source_uid=data_source_uid,
             **kwargs,
         )
         meta_table = MetaTable.register(request, timeout=timeout)
@@ -247,19 +256,31 @@ class AlembicMetaTableMigration:
     def register_alembic_registry(
         self,
         *,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTable:
-        return self.alembic_registry.register(timeout=timeout)
+        return self.alembic_registry.register(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            timeout=timeout,
+        )
 
     def ensure_alembic_registry(
         self,
         *,
+        data_source: DynamicTableDataSource | None = None,
+        data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
     ) -> MetaTable:
         meta_table = self.alembic_registry.get_meta_table()
         if meta_table is not None:
             return meta_table
-        return self.register_alembic_registry(timeout=timeout)
+        return self.register_alembic_registry(
+            data_source=data_source,
+            data_source_uid=data_source_uid,
+            timeout=timeout,
+        )
 
     def sync_metatable_catalog(
         self,
@@ -326,7 +347,6 @@ class AlembicMetaTableMigration:
                 reservation_table = _reservation_table_from_registration_request(request)
                 response = MetaTable.reserve_managed(
                     ManagedMetaTableReservationRequest(
-                        data_source_uid=data_source_uid,
                         tables=[reservation_table],
                     ),
                     timeout=timeout,
@@ -565,10 +585,17 @@ def _reservation_order(models: Sequence[type[Any]]) -> list[type[Any]]:
 def _reservation_table_from_registration_request(
     request: Any,
 ) -> ManagedMetaTableReservationTable:
+    data_source_uid = getattr(request, "data_source_uid", None)
+    if data_source_uid in (None, ""):
+        raise ValueError(
+            "Managed MetaTable reservation requires the model registration "
+            "request data_source_uid; data-source ownership is table-scoped, "
+            "not a reservation-request default."
+        )
     return ManagedMetaTableReservationTable(
         identifier=str(request.identifier),
         namespace=request.namespace,
-        data_source_uid=getattr(request, "data_source_uid", None),
+        data_source_uid=str(data_source_uid),
         storage_hash=getattr(request, "storage_hash", None),
         physical_table_name=_request_contract_physical_table_name(request),
         description=getattr(request, "description", None),

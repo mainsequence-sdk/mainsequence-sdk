@@ -91,6 +91,116 @@ def test_metatable_identifier_field_descriptions_state_org_global_uniqueness():
     assert expected in meta_table_models.TableMetaData.model_fields["identifier"].description
 
 
+def test_managed_reservation_response_accepts_backend_contract_shape():
+    response = meta_table_models.ManagedMetaTableReservationResponse(
+        ok=True,
+        version="managed-metatable-reservation.v1",
+        tables=[
+            {
+                "identifier": "mainsequence.examples.Asset",
+                "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "management_mode": "platform_managed",
+                "storage_hash": "asset",
+                "physical_table_name": "asset",
+                "created": True,
+                "matched_by": None,
+                "reservation_status": "reserved",
+                "contract_hash": "contract-sha256",
+                "table_contract": {
+                    "version": "relational-table.v1",
+                    "physical": {"table_name": "asset"},
+                    "columns": [],
+                    "indexes": [],
+                    "foreign_keys": [],
+                },
+            }
+        ],
+    )
+
+    assert response.ok is True
+    item = response.tables[0]
+    assert item.created is True
+    assert item.matched_by is None
+    assert item.contract_hash == "contract-sha256"
+    assert not hasattr(item, "existing")
+    assert (
+        "TS Manager accepted"
+        in meta_table_models.ManagedMetaTableReservationResponse.model_fields[
+            "ok"
+        ].description
+    )
+    assert (
+        "Physical table name reserved"
+        in meta_table_models.ManagedMetaTableReservationItem.model_fields[
+            "physical_table_name"
+        ].description
+    )
+    response_without_version = meta_table_models.ManagedMetaTableReservationResponse(
+        ok=True,
+        tables=[
+            {
+                "identifier": "mainsequence.examples.Asset",
+                "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "management_mode": "platform_managed",
+                "storage_hash": "asset",
+                "physical_table_name": "asset",
+                "created": True,
+                "matched_by": None,
+                "reservation_status": "reserved",
+                "table_contract": {
+                    "version": "relational-table.v1",
+                    "physical": {"table_name": "asset"},
+                    "columns": [],
+                    "indexes": [],
+                    "foreign_keys": [],
+                },
+            }
+        ],
+    )
+    assert response.version == "managed-metatable-reservation.v1"
+    assert response_without_version.version is None
+    assert "version" not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
+    assert (
+        "data_source_uid"
+        not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
+    )
+    assert (
+        "Public UID of the DynamicTableDataSource"
+        in meta_table_models.ManagedMetaTableReservationTable.model_fields[
+            "data_source_uid"
+        ].description
+    )
+    assert (
+        "management_mode"
+        not in meta_table_models.ManagedMetaTableReservationTable.model_fields
+    )
+    request = meta_table_models.ManagedMetaTableReservationRequest(
+        tables=[
+            meta_table_models.ManagedMetaTableReservationTable(
+                identifier="mainsequence.examples.Asset",
+                data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                storage_hash="asset",
+                table_contract={
+                    "version": "relational-table.v1",
+                    "physical": {},
+                    "columns": [],
+                    "indexes": [],
+                    "foreign_keys": [],
+                },
+            )
+        ],
+    )
+    request_payload = request.model_dump(mode="json", exclude_none=True)
+    assert "version" not in request_payload
+    assert "data_source_uid" not in request_payload
+    assert (
+        request_payload["tables"][0]["data_source_uid"]
+        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    )
+
+
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     captured = {}
 
@@ -291,6 +401,7 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
         captured.update(kwargs)
         return _Response(
             {
+                "ok": True,
                 "version": "managed-metatable-reservation.v1",
                 "tables": [
                     {
@@ -309,7 +420,9 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                             "foreign_keys": [],
                         },
                         "reservation_status": "reserved",
-                        "existing": False,
+                        "created": True,
+                        "matched_by": None,
+                        "contract_hash": "contract-sha256",
                     }
                 ],
             }
@@ -324,7 +437,6 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
 
     result = meta_table_models.MetaTable.reserve_managed(
         meta_table_models.ManagedMetaTableReservationRequest(
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
             tables=[
                 meta_table_models.ManagedMetaTableReservationTable(
                     identifier="Asset",
@@ -347,8 +459,14 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
     assert result.tables[0].physical_table_name == "mt_asset_physical"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/meta_table/reserve-managed/")
-    assert captured["payload"]["json"]["version"] == "managed-metatable-reservation.v1"
-    assert captured["payload"]["json"]["tables"][0]["management_mode"] == "platform_managed"
+    assert "version" not in captured["payload"]["json"]
+    assert "data_source_uid" not in captured["payload"]["json"]
+    assert (
+        captured["payload"]["json"]["tables"][0]["data_source_uid"]
+        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    )
+    assert "management_mode" not in captured["payload"]["json"]["tables"][0]
+    assert result.tables[0].management_mode == "platform_managed"
     assert captured["payload"]["json"]["tables"][0]["table_contract"]["indexes"][0] == {
         "columns": ["symbol"],
         "unique": False,

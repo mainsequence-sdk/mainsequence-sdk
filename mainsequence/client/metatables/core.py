@@ -448,9 +448,11 @@ class MetaTableCompiledSQLOperation(BasePydanticModel):
     limits: MetaTableOperationLimits | None = None
 
 
-class MetaTableRegistrationRequest(BasePydanticModel):
-    data_source_uid: str
-    management_mode: MetaTableManagementMode
+class MetaTableRequestFields(BasePydanticModel):
+    data_source_uid: str = Field(
+        ...,
+        description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
+    )
     storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     table_contract: MetaTableContract | dict[str, Any]
     identifier: str | None = Field(
@@ -465,14 +467,18 @@ class MetaTableRegistrationRequest(BasePydanticModel):
     protect_from_deletion: bool = False
     open_for_everyone: bool = False
     labels: list[str] = Field(default_factory=list)
-    provisioning: dict[str, Any] | None = None
-    introspect: bool = False
 
     @model_validator(mode="after")
-    def _normalize_table_contract(self) -> MetaTableRegistrationRequest:
+    def _normalize_table_contract(self) -> MetaTableRequestFields:
         if isinstance(self.table_contract, Mapping):
             self.table_contract = _normalize_contract_mapping(self.table_contract)
         return self
+
+
+class MetaTableRegistrationRequest(MetaTableRequestFields):
+    management_mode: MetaTableManagementMode
+    provisioning: dict[str, Any] | None = None
+    introspect: bool = False
 
 
 class MetaTableValidateContractRequest(BasePydanticModel):
@@ -508,46 +514,131 @@ class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
 
-class ManagedMetaTableReservationTable(BasePydanticModel):
-    identifier: str
-    namespace: str | None = None
-    data_source_uid: str | None = None
-    management_mode: Literal["platform_managed"] = "platform_managed"
-    storage_hash: str | None = None
-    physical_table_name: str | None = None
-    description: str | None = None
-    labels: list[str] = Field(default_factory=list)
-    protect_from_deletion: bool = False
-    open_for_everyone: bool = False
-    table_contract: MetaTableContract | dict[str, Any]
-    time_index_name: str | None = None
-    partition_strategy: str | None = None
+class ManagedMetaTableReservationTable(MetaTableRequestFields):
+    physical_table_name: str | None = Field(
+        None,
+        description=(
+            "Optional physical table name to reserve. If omitted, TS Manager "
+            "returns its canonical platform-managed table name."
+        ),
+    )
+    description: str | None = Field(
+        None,
+        description="Optional human-readable MetaTable description.",
+    )
+    labels: list[str] = Field(
+        default_factory=list,
+        description="Optional labels to associate with the reserved MetaTable.",
+    )
+    protect_from_deletion: bool = Field(
+        False,
+        description="Whether the reserved MetaTable should be protected from deletion.",
+    )
+    open_for_everyone: bool = Field(
+        False,
+        description="Whether the reserved MetaTable should be visible to everyone.",
+    )
+    table_contract: MetaTableContract | dict[str, Any] = Field(
+        ...,
+        description=(
+            "Relational table contract used to reserve physical, index, and "
+            "foreign-key names before Alembic renders SQL."
+        ),
+    )
+    time_index_name: str | None = Field(
+        None,
+        description="Optional time-index column name for time-indexed reservations.",
+    )
+    partition_strategy: str | None = Field(
+        None,
+        description="Optional backend partition strategy for time-indexed reservations.",
+    )
 
 
 class ManagedMetaTableReservationRequest(BasePydanticModel):
-    version: Literal["managed-metatable-reservation.v1"] = "managed-metatable-reservation.v1"
-    data_source_uid: str | None = None
-    tables: list[ManagedMetaTableReservationTable]
+    tables: list[ManagedMetaTableReservationTable] = Field(
+        ...,
+        description="Managed MetaTables to reserve in a single backend request.",
+    )
 
 
 class ManagedMetaTableReservationItem(BasePydanticModel):
-    identifier: str
-    namespace: str | None = None
-    meta_table_uid: str
-    data_source_uid: str
-    management_mode: str
-    storage_hash: str
-    physical_table_name: str
-    table_contract: dict[str, Any]
-    reservation_status: str
-    existing: bool
+    identifier: str | None = Field(
+        None,
+        description="Reserved organization-global logical MetaTable identifier.",
+    )
+    namespace: str | None = Field(
+        None,
+        description="Resolved namespace for the reserved MetaTable, when returned.",
+    )
+    meta_table_uid: str = Field(
+        ...,
+        description="Public UID of the reserved or matched backend MetaTable row.",
+    )
+    data_source_uid: str = Field(
+        ...,
+        description="Public UID of the DynamicTableDataSource that owns this reservation.",
+    )
+    management_mode: Literal["platform_managed"] = Field(
+        ...,
+        description="Backend-confirmed management mode for this reservation.",
+    )
+    storage_hash: str = Field(
+        ...,
+        description="Reserved storage hash for the MetaTable.",
+    )
+    physical_table_name: str = Field(
+        ...,
+        description="Physical table name reserved for Alembic SQL rendering.",
+    )
+    table_contract: dict[str, Any] = Field(
+        ...,
+        description=(
+            "Backend-normalized contract containing resolved physical table, "
+            "index, and foreign-key names."
+        ),
+    )
+    reservation_status: str = Field(
+        ...,
+        description="Reservation lifecycle status returned by TS Manager.",
+    )
+    created: bool = Field(
+        ...,
+        description="True when TS Manager created a new reservation row.",
+    )
+    matched_by: str | None = Field(
+        None,
+        description=(
+            "Backend match strategy for existing reservations, such as "
+            "'identifier' or 'storage_hash'. Null when a row was newly created."
+        ),
+    )
+    contract_hash: str | None = Field(
+        None,
+        description="Backend canonical hash of the reserved table contract.",
+    )
 
     model_config = ConfigDict(extra="allow")
 
 
 class ManagedMetaTableReservationResponse(BasePydanticModel):
-    version: Literal["managed-metatable-reservation.v1"] = "managed-metatable-reservation.v1"
-    tables: list[ManagedMetaTableReservationItem]
+    ok: bool = Field(
+        ...,
+        description="Whether TS Manager accepted and processed the reservation request.",
+    )
+    version: str | None = Field(
+        None,
+        description=(
+            "Opaque managed MetaTable reservation response schema version "
+            "returned by TS Manager, when present."
+        ),
+    )
+    tables: list[ManagedMetaTableReservationItem] = Field(
+        ...,
+        description="Reserved MetaTable name plans returned by TS Manager.",
+    )
+
+    model_config = ConfigDict(extra="allow")
 
 
 class DataSource(BasePydanticModel, BaseObjectOrm):

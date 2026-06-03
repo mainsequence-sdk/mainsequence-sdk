@@ -56,6 +56,23 @@ def test_alembic_version_metatable_builds_external_registration_request():
     assert len(request.storage_hash) <= 63
 
 
+def test_alembic_version_metatable_uses_session_data_source(monkeypatch):
+    import mainsequence.client.metatables as metatables
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = None
+
+    monkeypatch.setattr(
+        metatables,
+        "get_session_data_source",
+        lambda: types.SimpleNamespace(uid="session-data-source-uid"),
+    )
+
+    request = ProjectAlembicVersion.build_registration_request()
+
+    assert request.data_source_uid == "session-data-source-uid"
+
+
 def test_project_can_scope_alembic_version_metatable():
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __alembic_version_schema__ = "markets"
@@ -169,6 +186,42 @@ def test_alembic_metatable_migration_registers_registry_from_bound_data_source(m
 
     assert captured["request"].data_source_uid == "data-source-uid"
     assert ProjectAlembicVersion.get_meta_table_uid() == "registry-uid"
+
+
+def test_alembic_metatable_migration_registers_registry_from_session_data_source(
+    monkeypatch,
+):
+    import mainsequence.client.metatables as metatables
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = None
+        __metatable_data_source_uid__ = None
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    captured = {}
+
+    monkeypatch.setattr(
+        metatables,
+        "get_session_data_source",
+        lambda: types.SimpleNamespace(uid="session-data-source-uid"),
+    )
+
+    def fake_register(request, *, timeout=None):
+        captured["request"] = request
+        return types.SimpleNamespace(uid="registry-uid", data_source_uid=request.data_source_uid)
+
+    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+
+    migration.register_alembic_registry()
+
+    assert captured["request"].data_source_uid == "session-data-source-uid"
+    assert ProjectAlembicVersion.get_data_source_uid() == "session-data-source-uid"
 
 
 def test_alembic_metatable_migration_requires_callable_after_register_hook():
