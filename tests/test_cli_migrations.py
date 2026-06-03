@@ -359,7 +359,7 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert "[alembic] DEBUG alembic.command: fake revision command log" in output
 
 
-def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
+def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -376,23 +376,40 @@ def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
 
     monkeypatch.setattr(command, "upgrade", fake_upgrade)
 
-    def fake_refresh(self, timeout=None, on_metatable_registered=None):
-        captured["refresh_timeout"] = timeout
-        if on_metatable_registered is not None:
+    def fake_finalize(
+        self,
+        prepared=None,
+        alembic_revision=None,
+        timeout=None,
+        on_metatable_finalized=None,
+        on_metatable_finalize_status=None,
+    ):
+        captured["finalize_timeout"] = timeout
+        captured["finalize_prepared"] = prepared
+        captured["finalize_revision"] = alembic_revision
+        if on_metatable_finalized is not None:
             class Asset:
                 __metatable_identifier__ = "markets.Asset"
 
-            on_metatable_registered(
+            on_metatable_finalized(
                 Asset,
                 types.SimpleNamespace(
                     identifier="markets.Asset",
-                    uid="asset-meta-table-uid",
+                    meta_table_uid="asset-meta-table-uid",
                     physical_table_name="mt_asset",
+                    provisioning_status="active",
                 ),
             )
-        return []
+        return types.SimpleNamespace(
+            ok=True,
+            finalized_count=1,
+            active_count=1,
+            reserved_count=0,
+            failed_count=0,
+            tables=[],
+        )
 
-    monkeypatch.setattr(AlembicMetaTableMigration, "refresh_metatable_catalog", fake_refresh)
+    monkeypatch.setattr(AlembicMetaTableMigration, "finalize_metatable_catalog", fake_finalize)
 
     result = runner.invoke(
         cli_mod.app,
@@ -406,9 +423,10 @@ def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
     ]
     assert captured["upgrade_revision"] == "head"
     assert captured["upgrade_url"] == "postgresql://temporary-secret"
-    assert captured["refresh_timeout"] == 7.0
+    assert captured["finalize_timeout"] == 7.0
+    assert captured["finalize_revision"] == "head"
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
-    assert "POST /orm/api/ts_manager/meta_table/register/" in output
-    assert "registered MetaTable identifier=markets.Asset" in output
+    assert "POST /orm/api/ts_manager/meta_table/finalize-managed/" in output
+    assert "finalized MetaTable identifier=markets.Asset" in output
     assert "physical_table=mt_asset" in output

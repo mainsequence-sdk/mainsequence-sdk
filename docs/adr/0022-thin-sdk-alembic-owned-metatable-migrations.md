@@ -45,7 +45,7 @@ The SDK migration path must become a thin Alembic adapter:
 ```text
 SDK provider -> reserve MetaTables -> bind SQLAlchemy metadata
              -> ask backend for scoped migration URI -> invoke Alembic normally
-             -> refresh MetaTable registry/catalog after successful upgrade
+             -> finalize reserved MetaTables after successful upgrade
 ```
 
 The SDK must not be the migration executor. It should only:
@@ -56,7 +56,9 @@ The SDK must not be the migration executor. It should only:
 4. bind returned backend names into SQLAlchemy metadata before Alembic runs;
 5. build an Alembic `Config` with the backend-issued migration URI;
 6. invoke Alembic command APIs for revision/current/upgrade/downgrade;
-7. refresh MetaTable catalog registrations after successful Alembic execution.
+7. call the backend batch finalization endpoint after successful Alembic
+   execution so reserved MetaTables become active only after their physical
+   tables exist.
 
 ## Preserved APIs
 
@@ -272,29 +274,35 @@ Using the same reservation/binding step prevents `current`, `revision`, and
 3. reserve and bind platform-managed MetaTables;
 4. issue a scoped migration connection for the reserved MetaTable UID scope;
 5. call Alembic `upgrade(...)` directly;
-6. after success, register/refresh provider `metatable_models` with
-   `provisioning.create_table=false`;
+6. after success, call `POST /orm/api/ts_manager/meta_table/finalize-managed/`
+   once with the provider MetaTable UIDs;
 7. call `after_register_metatables` with an
-   `AlembicMetaTableCatalogRefreshContext` containing the refreshed rows and
+   `AlembicMetaTableCatalogRefreshContext` containing the finalized rows and
    `reserved_policy="reconcile"` for post-Alembic catalog writes.
 
 There should not be separate normal-user commands for "render SQL" and "apply
 SQL to backend". Alembic is the apply path.
 
-## Final Catalog Refresh
+## Final Catalog Finalization
 
-After Alembic succeeds, the SDK must refresh MetaTable catalog rows without
-asking the backend to create physical tables:
+After Alembic succeeds, the SDK must finalize the reserved MetaTable rows. This
+is not registration and must not send labels, storage hashes, full contracts, or
+`provisioning.create_table=false` payloads.
 
 ```python
-model.register(provisioning={"create_table": False})
+response = migration.finalize_metatable_catalog(prepared=prepared)
 ```
 
-or an equivalent refresh helper.
+The SDK calls the backend once:
 
-The refresh must preserve the MetaTable UID and storage hash obtained from the
-reservation/bind step. It must not recompute a new shape-derived storage hash
-and accidentally register a second table.
+```text
+POST /orm/api/ts_manager/meta_table/finalize-managed/
+```
+
+The backend introspects the reserved physical names created by Alembic and flips
+each row from `reserved` to `active`. If any table is still missing or invalid,
+the SDK raises `AlembicProviderPhysicalStateError` and does not run
+`after_register_metatables`.
 
 ## Explicit Name Policy
 
@@ -353,8 +361,12 @@ normal tutorial workflow.
   role when `owner_role_name` is present.
 - [x] Update migration CLI commands to call Alembic directly instead of backend
   SQL artifact apply endpoints.
-- [x] Refresh provider MetaTables after successful Alembic upgrade with physical
-  creation disabled.
+- [x] Finalize reserved provider MetaTables after successful Alembic
+  upgrade/downgrade through the backend batch finalize endpoint.
+- [x] Add typed SDK request/response models for schema-management,
+  finalize-managed, and Alembic provider reset.
+- [x] Add `mainsequence migrations reset --confirm-reset` for explicit
+  provider-scoped repair workflows.
 - [x] Allow explicit `MetaTableForeignKey(name=...)`.
 - [x] Allow unnamed SQLAlchemy indexes before reservation and bind backend
   returned names before Alembic autogenerate/upgrade.

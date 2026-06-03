@@ -2,11 +2,14 @@
 
 Date: 2026-06-01
 
-Status: Proposed
+Status: Superseded
 
 Superseded in part by
 [ADR 0021: Migration-First Platform-Managed MetaTables](0021-platform-managed-metatables-migration-first.md)
-for platform-managed lifecycle details.
+for platform-managed lifecycle details, by
+[ADR 0022: Thin SDK Alembic-Owned MetaTable Migrations](0022-thin-sdk-alembic-owned-metatable-migrations.md)
+for the direct-Alembic SDK flow, and by backend ADR 013 for
+Alembic-managed finalization and reset semantics.
 
 ## Context
 
@@ -22,10 +25,10 @@ The intended lifecycle is:
 ```text
 SQLAlchemy models
 -> Alembic revision
--> Alembic renders SQL
--> SDK sends the Alembic-rendered SQL artifact to the backend
--> backend executes SQL
--> project finalizes MetaTable catalog state
+-> SDK reserves provider MetaTables and obtains a scoped database URI
+-> Alembic executes current/revision/upgrade directly
+-> SDK calls backend finalize-managed once for the provider MetaTable UIDs
+-> project finalizes derived catalog state after backend finalization succeeds
 ```
 
 Alembic owns schema diffs, revision files, downgrade/upgrade semantics, and the

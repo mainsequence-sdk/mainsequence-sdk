@@ -119,6 +119,11 @@ def _storage_time_indexed_contract(storage: Any) -> tuple[str, list[str], dict[s
 
 
 MetaTableManagementMode = Literal["external_registered", "platform_managed"]
+MetaTableSchemaManagementMode = Literal[
+    "backend_managed",
+    "alembic_managed",
+    "external_registered",
+]
 MetaTableOperation = Literal["select", "insert", "update", "delete", "upsert"]
 COMPILED_SQL_V1 = "compiled-sql.v1"
 MetaTableCompiledSQLVersion = Literal["compiled-sql.v1"]
@@ -484,6 +489,14 @@ class MetaTableRequestFields(BasePydanticModel):
     description: str | None = None
     protect_from_deletion: bool = False
     labels: list[str] = Field(default_factory=list)
+    schema_management: SchemaManagementRequest | dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Formal schema lifecycle ownership contract. Use "
+            "mode='alembic_managed' for MetaTables whose physical DDL is owned "
+            "by an Alembic provider and finalized after Alembic runs."
+        ),
+    )
 
     @model_validator(mode="after")
     def _normalize_table_contract(self) -> MetaTableRequestFields:
@@ -508,6 +521,49 @@ class MetaTableValidateContractRequest(BasePydanticModel):
         if isinstance(self.table_contract, Mapping):
             self.table_contract = _normalize_contract_mapping(self.table_contract)
         return self
+
+
+class AlembicManagementRequest(BasePydanticModel):
+    package: str = Field(
+        ...,
+        description="Client package or migration stream package that owns the Alembic revisions.",
+    )
+    migration_namespace: str = Field(
+        ...,
+        description="Provider-scoped migration namespace inside the package.",
+    )
+    provider_key: str | None = Field(
+        None,
+        description=(
+            "Stable provider key for this Alembic stream. When omitted, TS "
+            "Manager derives package:migration_namespace."
+        ),
+    )
+    alembic_version_meta_table_uid: str | None = Field(
+        None,
+        description=(
+            "Optional MetaTable UID for the Alembic version table that tracks "
+            "this provider stream."
+        ),
+    )
+    revision: str | None = Field(
+        None,
+        description="Optional last finalized Alembic revision for this MetaTable.",
+    )
+
+
+class SchemaManagementRequest(BasePydanticModel):
+    mode: MetaTableSchemaManagementMode = Field(
+        ...,
+        description=(
+            "Schema lifecycle owner. Alembic-managed rows are reserved before "
+            "Alembic creates tables and activated through finalize-managed."
+        ),
+    )
+    alembic: AlembicManagementRequest | dict[str, Any] | None = Field(
+        None,
+        description="Alembic lifecycle metadata. Required when mode is alembic_managed.",
+    )
 
 
 class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
@@ -615,6 +671,10 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
             "index, and foreign-key names."
         ),
     )
+    schema_management: dict[str, Any] | None = Field(
+        None,
+        description="Backend-normalized schema lifecycle ownership contract.",
+    )
     created: bool = Field(
         ...,
         description="True when TS Manager created a new reservation row.",
@@ -649,6 +709,184 @@ class ManagedMetaTableReservationResponse(BasePydanticModel):
     tables: list[ManagedMetaTableReservationItem] = Field(
         ...,
         description="Reserved MetaTable name plans returned by TS Manager.",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ManagedMetaTableFinalizeRequest(BasePydanticModel):
+    meta_table_uids: list[str] = Field(
+        ...,
+        min_length=1,
+        description="Reserved Alembic-managed MetaTable UIDs to reconcile and activate.",
+    )
+    migration_package: str | None = Field(
+        None,
+        description="Alembic provider package that owns these MetaTables.",
+    )
+    migration_namespace: str | None = Field(
+        None,
+        description="Alembic provider namespace that owns these MetaTables.",
+    )
+    alembic_version_meta_table_uid: str | None = Field(
+        None,
+        description="MetaTable UID for the Alembic version table, when known.",
+    )
+    alembic_revision: str | None = Field(
+        None,
+        description="Revision label to store after successful finalization, when known.",
+    )
+
+
+class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
+    meta_table_uid: str = Field(..., description="Public UID of the finalized MetaTable.")
+    identifier: str | None = Field(
+        None,
+        description="Organization-global logical MetaTable identifier, when present.",
+    )
+    storage_hash: str = Field(..., description="Canonical MetaTable storage hash.")
+    physical_table_name: str | None = Field(
+        None,
+        description="Physical table name reconciled against the data source.",
+    )
+    previous_provisioning_status: str = Field(
+        ...,
+        description="Provisioning status before the finalize-managed attempt.",
+    )
+    provisioning_status: str = Field(
+        ...,
+        description="Provisioning status after the finalize-managed attempt.",
+    )
+    table_kind: str = Field(..., description="Backend table kind after reconciliation.")
+    time_indexed: bool = Field(..., description="Whether the MetaTable is time-indexed.")
+    finalized: bool = Field(
+        ...,
+        description="True when this row was reconciled and activated by this call.",
+    )
+    physical_table_exists: bool = Field(
+        ...,
+        description="Whether the backend found the physical table during reconciliation.",
+    )
+    schema_management: dict[str, Any] | None = Field(
+        None,
+        description="Backend-normalized schema lifecycle ownership contract.",
+    )
+    contract_hash: str | None = Field(
+        None,
+        description="Backend canonical hash of the reconciled table contract.",
+    )
+    error: dict[str, Any] | None = Field(
+        None,
+        description="Per-table structured error when finalization did not activate this row.",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ManagedMetaTableFinalizeResponse(BasePydanticModel):
+    ok: bool = Field(
+        ...,
+        description="True only when every requested MetaTable is active after finalization.",
+    )
+    finalized_count: int = Field(..., description="Number of rows finalized by this call.")
+    active_count: int = Field(..., description="Number of requested rows now active.")
+    reserved_count: int = Field(..., description="Number of requested rows still reserved.")
+    failed_count: int = Field(..., description="Number of requested rows with errors.")
+    tables: list[ManagedMetaTableFinalizeTableResult] = Field(
+        ...,
+        description="Per-MetaTable finalization results.",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+class AlembicProviderResetRequest(BasePydanticModel):
+    migration_package: str = Field(
+        ...,
+        description="Alembic provider package, for example 'msm'.",
+    )
+    migration_namespace: str = Field(
+        ...,
+        description="Alembic provider namespace, for example 'mainsequence.examples'.",
+    )
+    data_source_uid: str = Field(
+        ...,
+        description="DynamicTableDataSource UID that owns the provider MetaTables.",
+    )
+    confirm_reset: Literal[True] = Field(
+        ...,
+        description="Must be true. This endpoint is destructive and provider-scoped.",
+    )
+    drop_physical_tables: bool = Field(
+        True,
+        description="Drop provider physical tables before reserving catalog rows.",
+    )
+    clear_alembic_version_table: bool = Field(
+        True,
+        description="Clear the provider Alembic version table after physical reset.",
+    )
+    include_reserved: bool = Field(
+        True,
+        description="Include already-reserved provider MetaTables in the reset result.",
+    )
+
+
+class AlembicProviderResetTableResult(BasePydanticModel):
+    meta_table_uid: str = Field(..., description="Public UID of the reset MetaTable.")
+    identifier: str | None = Field(None, description="Logical MetaTable identifier.")
+    storage_hash: str = Field(..., description="Canonical MetaTable storage hash.")
+    physical_table_name: str | None = Field(None, description="Physical table name.")
+    previous_provisioning_status: str = Field(
+        ...,
+        description="Provisioning status before the reset attempt.",
+    )
+    provisioning_status: str = Field(
+        ...,
+        description="Provisioning status after the reset attempt.",
+    )
+    physical_table_exists: bool = Field(
+        ...,
+        description="Whether the physical table existed before reset completed.",
+    )
+    physical_table_dropped: bool = Field(
+        ...,
+        description="Whether this physical table was dropped by reset.",
+    )
+    error: dict[str, Any] | None = Field(
+        None,
+        description="Per-table structured reset error, when present.",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+
+class AlembicProviderResetResponse(BasePydanticModel):
+    ok: bool = Field(..., description="Whether the provider reset completed without errors.")
+    migration_provider_key: str = Field(..., description="Resolved provider key.")
+    migration_package: str = Field(..., description="Alembic provider package.")
+    migration_namespace: str = Field(..., description="Alembic provider namespace.")
+    data_source_uid: str = Field(..., description="Provider DynamicTableDataSource UID.")
+    meta_table_uids: list[str] = Field(..., description="Provider MetaTable UIDs reset.")
+    dropped_physical_tables: list[str] = Field(
+        default_factory=list,
+        description="Physical table names dropped during reset.",
+    )
+    cleared_alembic_version_table: bool = Field(
+        ...,
+        description="Whether the provider Alembic version table was cleared.",
+    )
+    deleted_or_reserved_catalog_rows: list[str] = Field(
+        default_factory=list,
+        description="Catalog row UIDs deleted or moved to reserved by reset.",
+    )
+    failed_count: int = Field(..., description="Number of reset failures.")
+    tables: list[AlembicProviderResetTableResult] = Field(
+        default_factory=list,
+        description="Per-MetaTable reset results.",
+    )
+    errors: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Provider-level reset errors.",
     )
 
     model_config = ConfigDict(extra="allow")
@@ -1045,6 +1283,8 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "namespace": ["exact", "contains", "in", "isnull"],
         "management_mode": ["exact", "in"],
         "provisioning_status": ["exact", "in"],
+        "schema_management_mode": ["exact", "in"],
+        "migration_provider_key": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
@@ -1093,6 +1333,13 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     labels: list[str] = Field(default_factory=list)
     management_mode: MetaTableManagementMode
     provisioning_status: Literal["reserved", "active"] = "active"
+    schema_management_mode: MetaTableSchemaManagementMode = "backend_managed"
+    schema_management: dict[str, Any] = Field(default_factory=dict)
+    migration_package: str | None = None
+    migration_namespace: str | None = None
+    migration_provider_key: str | None = None
+    alembic_version_meta_table_uid: str | None = None
+    alembic_revision: str | None = None
     physical_table_name: str
     table_contract: dict[str, Any] = Field(default_factory=dict)
     contract_version: str = "relational-table.v1"
@@ -1307,6 +1554,48 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             on_status=on_status,
         )
         return ManagedMetaTableReservationResponse(**response_json)
+
+    @classmethod
+    def finalize_managed(
+        cls,
+        request: ManagedMetaTableFinalizeRequest | Mapping[str, Any] | None = None,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_status: Callable[[str], Any] | None = None,
+        **kwargs: Any,
+    ) -> ManagedMetaTableFinalizeResponse:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = request if request is not None else ManagedMetaTableFinalizeRequest(**kwargs)
+        response_json = cls._post_action(
+            "finalize-managed",
+            payload,
+            timeout=timeout,
+            expected_statuses=(200, 409),
+            on_status=on_status,
+        )
+        return ManagedMetaTableFinalizeResponse(**response_json)
+
+    @classmethod
+    def alembic_provider_reset(
+        cls,
+        request: AlembicProviderResetRequest | Mapping[str, Any] | None = None,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_status: Callable[[str], Any] | None = None,
+        **kwargs: Any,
+    ) -> AlembicProviderResetResponse:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = request if request is not None else AlembicProviderResetRequest(**kwargs)
+        response_json = cls._post_action(
+            "alembic-provider-reset",
+            payload,
+            timeout=timeout,
+            expected_statuses=(200, 409),
+            on_status=on_status,
+        )
+        return AlembicProviderResetResponse(**response_json)
 
     @classmethod
     def validate_contract(
@@ -1669,6 +1958,14 @@ class TimeIndexMetaTableRegistrationRequest(BasePydanticModel):
     description: str | None = Field(None, description="Optional storage description")
     labels: list[str] = Field(default_factory=list)
     protect_from_deletion: bool = False
+    schema_management: SchemaManagementRequest | dict[str, Any] | None = Field(
+        None,
+        description=(
+            "Formal schema lifecycle ownership contract. Use "
+            "mode='alembic_managed' for time-indexed MetaTables created by "
+            "an Alembic provider."
+        ),
+    )
     provisioning: dict[str, Any] = Field(
         default_factory=lambda: {"create_table": True, "if_not_exists": True}
     )
@@ -4521,9 +4818,18 @@ TimeIndexedProfile.model_rebuild()
 TimeIndexMetaData.model_rebuild()
 DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()
+MetaTableRequestFields.model_rebuild()
+MetaTableRegistrationRequest.model_rebuild()
+ManagedMetaTableReservationTable.model_rebuild()
+TimeIndexMetaTableRegistrationRequest.model_rebuild()
+MetaTable.model_rebuild()
 
 
 __all__ = [
+    "AlembicManagementRequest",
+    "AlembicProviderResetRequest",
+    "AlembicProviderResetResponse",
+    "AlembicProviderResetTableResult",
     "BaseColumnMetaData",
     "BaseUpdateStatistics",
     "ColumnMetaData",
@@ -4543,6 +4849,9 @@ __all__ = [
     "ManagedMetaTableReservationRequest",
     "ManagedMetaTableReservationResponse",
     "ManagedMetaTableReservationTable",
+    "ManagedMetaTableFinalizeRequest",
+    "ManagedMetaTableFinalizeResponse",
+    "ManagedMetaTableFinalizeTableResult",
     "MetaTable",
     "MetaTableColumnContract",
     "MetaTableColumnPayload",
@@ -4556,6 +4865,7 @@ __all__ = [
     "MetaTableIndexContract",
     "MetaTableIndexPayload",
     "MetaTableManagementMode",
+    "MetaTableSchemaManagementMode",
     "MetaTableOperation",
     "MetaTableOperationLimits",
     "MetaTableOperationScope",
@@ -4563,6 +4873,7 @@ __all__ = [
     "MetaTablePhysicalContract",
     "MetaTableRequestFields",
     "MetaTableRegistrationRequest",
+    "SchemaManagementRequest",
     "MetaTableStatementPayload",
     "MetaTableValidateContractRequest",
     "PodDataSource",

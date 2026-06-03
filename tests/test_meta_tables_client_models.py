@@ -472,6 +472,133 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
     }
 
 
+def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "ok": True,
+                "finalized_count": 1,
+                "active_count": 1,
+                "reserved_count": 0,
+                "failed_count": 0,
+                "tables": [
+                    {
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "identifier": "Asset",
+                        "storage_hash": "mt_asset_hash",
+                        "physical_table_name": "mt_asset_physical",
+                        "previous_provisioning_status": "reserved",
+                        "provisioning_status": "active",
+                        "table_kind": "relational",
+                        "time_indexed": False,
+                        "finalized": True,
+                        "physical_table_exists": True,
+                    }
+                ],
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    response = meta_table_models.MetaTable.finalize_managed(
+        meta_table_models.ManagedMetaTableFinalizeRequest(
+            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+            migration_package="msm",
+            migration_namespace="markets",
+            alembic_version_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            alembic_revision="0001",
+        )
+    )
+
+    assert response.ok is True
+    assert response.tables[0].provisioning_status == "active"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/meta_table/finalize-managed/")
+    assert captured["payload"]["json"] == {
+        "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+        "migration_package": "msm",
+        "migration_namespace": "markets",
+        "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        "alembic_revision": "0001",
+    }
+    for forbidden in (
+        "data_source_uid",
+        "management_mode",
+        "storage_hash",
+        "table_contract",
+        "labels",
+        "provisioning",
+    ):
+        assert forbidden not in captured["payload"]["json"]
+
+
+def test_meta_table_alembic_provider_reset_posts_reset_payload(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "ok": True,
+                "migration_provider_key": "msm:markets",
+                "migration_package": "msm",
+                "migration_namespace": "markets",
+                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+                "dropped_physical_tables": ["mt_asset_physical"],
+                "cleared_alembic_version_table": True,
+                "deleted_or_reserved_catalog_rows": [
+                    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                ],
+                "failed_count": 0,
+                "tables": [
+                    {
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "identifier": "Asset",
+                        "storage_hash": "mt_asset_hash",
+                        "physical_table_name": "mt_asset_physical",
+                        "previous_provisioning_status": "active",
+                        "provisioning_status": "reserved",
+                        "physical_table_exists": True,
+                        "physical_table_dropped": True,
+                    }
+                ],
+                "errors": [],
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    response = meta_table_models.MetaTable.alembic_provider_reset(
+        meta_table_models.AlembicProviderResetRequest(
+            migration_package="msm",
+            migration_namespace="markets",
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            confirm_reset=True,
+        )
+    )
+
+    assert response.ok is True
+    assert response.cleared_alembic_version_table is True
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/meta_table/alembic-provider-reset/")
+    assert captured["payload"]["json"]["confirm_reset"] is True
+    assert captured["payload"]["json"]["drop_physical_tables"] is True
+
+
 def test_removed_alembic_artifact_client_models_are_not_public():
     removed_names = [
         "ALEMBIC_MIGRATION_V1",

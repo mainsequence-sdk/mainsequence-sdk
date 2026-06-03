@@ -60,7 +60,7 @@ provider object
 -> SDK reserves provider.metatable_models and binds backend names
 -> SDK obtains a scoped migration database URI
 -> Alembic executes current/revision/upgrade directly
--> project tooling refreshes provider.metatable_models
+-> SDK finalizes reserved provider.metatable_models
 ```
 
 The backend does not receive SDK custom operations such as `add_column`, and it
@@ -83,9 +83,12 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
   `target_metadata`, version-table settings, owner role, and output streams
 - calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
 
-After Alembic `upgrade` or `downgrade`, the SDK refreshes provider-scoped
-MetaTable catalog rows with physical table creation disabled. If the provider
-defines `after_register_metatables`, the hook runs after that catalog refresh.
+After Alembic `upgrade` or `downgrade`, the SDK calls TS Manager's
+`finalize-managed` endpoint once for the reserved provider MetaTable UIDs. The
+backend introspects the physical tables Alembic created and flips the catalog
+rows from `reserved` to `active`. If the provider defines
+`after_register_metatables`, the hook runs only after finalization reports every
+provider MetaTable active.
 
 The SDK layer does not parse revision files, generate SDK operation lists,
 store backend migration artifacts, or ask the backend to apply rendered SQL.
@@ -100,10 +103,10 @@ The CLI lifecycle intentionally separates three jobs:
   file for the selected provider. Autogenerate runs against metadata after
   backend reservation has bound physical table, index, and FK names.
 - `mainsequence migrations upgrade` runs Alembic directly through the scoped
-  credential, then refreshes provider-scoped MetaTable catalog bindings after
+  credential, then finalizes provider-scoped MetaTable catalog bindings after
   the database schema has changed.
 - `mainsequence migrations downgrade` runs Alembic directly through the scoped
-  credential, then refreshes the same provider-scoped catalog bindings.
+  credential, then finalizes the same provider-scoped catalog bindings.
 
 ## 1. Define The Migration Provider
 
@@ -441,30 +444,38 @@ mainsequence migrations upgrade \
 `upgrade` is the mutation path. It runs the thin SDK setup, obtains a temporary
 scoped database credential, and calls Alembic `upgrade` directly.
 
-After Alembic succeeds, the CLI refreshes only the MetaTables listed in
-`migration.metatable_models` by exact
-`identifier`; the command succeeds only if both SQL execution and catalog sync
-succeed.
+After Alembic succeeds, the CLI finalizes only the MetaTables listed in
+`migration.metatable_models` by UID. The command succeeds only if Alembic
+execution succeeds and TS Manager reports every provider MetaTable as `active`.
+If a physical table is still missing, the SDK raises
+`AlembicProviderPhysicalStateError` before any project catalog hook runs.
 
 ## 8. Backend Coordination For Reference
 
 Users should normally apply migrations with `mainsequence migrations upgrade`.
-Before it calls Alembic, the CLI coordinates with TS Manager through two
-requests.
+Before and after Alembic runs, the CLI coordinates with TS Manager through
+three request types.
 
 First, it reserves provider-scoped platform-managed MetaTables without creating
 physical application tables:
 
 ```json
 {
-  "version": "managed-metatable-reservation.v1",
-  "data_source_uid": "dynamic-table-data-source-uid",
   "tables": [
     {
       "identifier": "sdk_examples.Asset",
       "namespace": "sdk_examples",
-      "management_mode": "platform_managed",
+      "data_source_uid": "dynamic-table-data-source-uid",
       "storage_hash": "logical-storage-hash",
+      "schema_management": {
+        "mode": "alembic_managed",
+        "alembic": {
+          "package": "sdk_examples",
+          "migration_namespace": "sdk-examples",
+          "provider_key": "sdk_examples:sdk-examples",
+          "alembic_version_meta_table_uid": "alembic-version-metatable-uid"
+        }
+      },
       "table_contract": {
         "version": "relational-table.v1",
         "physical": {},
@@ -501,19 +512,47 @@ writes its version table before it runs application DDL. The returned URI is
 secret. The CLI passes it to Alembic and does not print it. Alembic's normal
 stdout and offline output buffers are forwarded through the CLI.
 
+Third, after Alembic succeeds, it finalizes the reserved provider rows:
+
+```json
+{
+  "meta_table_uids": ["reserved-metatable-uid"],
+  "migration_package": "sdk_examples",
+  "migration_namespace": "sdk-examples",
+  "alembic_version_meta_table_uid": "alembic-version-metatable-uid",
+  "alembic_revision": "head"
+}
+```
+
+This request intentionally does not include `data_source_uid`, `storage_hash`,
+`table_contract`, labels, or provisioning options. It is a reconciliation step:
+TS Manager verifies that Alembic created the physical tables and then marks the
+reserved catalog rows active.
+
+For development repair, use the explicit provider reset path:
+
+```bash
+mainsequence migrations reset \
+  --provider mainsequence_migrations:migration \
+  --confirm-reset
+```
+
+Reset is destructive and provider-scoped. It is the supported way to drop or
+reserve Alembic-managed provider state when local Alembic revision state and
+physical tables have drifted.
+
 ## 9. Catalog Registration Scope
 
-Migration tooling reserves provider models before Alembic runs and refreshes
+Migration tooling reserves provider models before Alembic runs and finalizes
 only those models after Alembic execution:
 
 ```python
-registered = migration.refresh_metatable_catalog()
+finalize_response = migration.finalize_metatable_catalog(prepared=prepared)
 ```
 
-This catalog step registers provider rows with `provisioning.create_table=false`
-because Alembic has already performed the physical DDL. The provider controls
-scope; imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by
-migration tooling.
+This catalog step is not registration. The provider controls scope;
+imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by migration
+tooling.
 
 Projects that maintain a derived catalog can attach an optional provider hook:
 
@@ -528,8 +567,8 @@ migration = AlembicMetaTableMigration(
 )
 ```
 
-The hook receives the ordered registered MetaTable objects and runs only after
-`upgrade` has successfully applied Alembic migrations and synced
+The hook receives the ordered finalized MetaTable objects and runs only after
+`upgrade` has successfully applied Alembic migrations and finalized
 provider-scoped MetaTables. It does not run for `current`, `revision`, or
 failed `upgrade`.
 
@@ -544,5 +583,5 @@ are the database schema history. The `AlembicMetaTableMigration` provider is the
 SDK boundary for selecting that history, Alembic metadata, version-table
 binding, and catalog scope. The SDK layer prepares backend bindings and scoped
 credentials, then delegates to Alembic. Alembic owns DDL execution and revision
-state. Project tooling registers or refreshes provider-scoped catalog bindings
-after the physical schema has changed.
+state. Project tooling finalizes provider-scoped catalog bindings after the
+physical schema has changed.

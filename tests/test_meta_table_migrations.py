@@ -276,7 +276,7 @@ def test_alembic_metatable_migration_requires_callable_after_register_hook():
         )
 
 
-def test_alembic_metatable_migration_refreshes_catalog_without_create_table(monkeypatch):
+def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -299,7 +299,7 @@ def test_alembic_metatable_migration_refreshes_catalog_without_create_table(monk
                 context.package,
                 context.migration_namespace,
                 context.reserved_policy,
-                [meta_table.uid for meta_table in context.registered_metatables],
+                [meta_table.meta_table_uid for meta_table in context.registered_metatables],
             )
         )
 
@@ -315,27 +315,54 @@ def test_alembic_metatable_migration_refreshes_catalog_without_create_table(monk
 
     captured = {}
 
-    def fake_register(request, *, timeout=None):
+    ProjectAlembicVersion._bind_meta_table(
+        types.SimpleNamespace(
+            uid="registry-meta-table-uid",
+            data_source_uid="data-source-uid",
+        )
+    )
+
+    def fake_finalize(request, *, timeout=None, on_status=None):
         captured["request"] = request
         captured["timeout"] = timeout
         return types.SimpleNamespace(
-            uid="asset-meta-table-uid",
-            data_source_uid=request.data_source_uid,
-            storage_hash=request.storage_hash,
-            physical_table_name="mt_asset",
+            ok=True,
+            finalized_count=1,
+            active_count=1,
+            reserved_count=0,
+            failed_count=0,
+            tables=[
+                types.SimpleNamespace(
+                    meta_table_uid="asset-meta-table-uid",
+                    identifier="markets.Asset",
+                    data_source_uid="data-source-uid",
+                    storage_hash="mt_asset_hash",
+                    physical_table_name="mt_asset",
+                    previous_provisioning_status="reserved",
+                    provisioning_status="active",
+                    table_kind="relational",
+                    time_indexed=False,
+                    finalized=True,
+                    physical_table_exists=True,
+                )
+            ],
         )
 
-    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+    monkeypatch.setattr(MetaTable, "finalize_managed", staticmethod(fake_finalize))
 
-    registered = migration.refresh_metatable_catalog(timeout=15)
+    response = migration.finalize_metatable_catalog(
+        prepared=types.SimpleNamespace(meta_table_uids=["asset-meta-table-uid"]),
+        alembic_revision="0001",
+        timeout=15,
+    )
 
-    assert [meta_table.uid for meta_table in registered] == ["asset-meta-table-uid"]
+    assert response.ok is True
     assert captured["timeout"] == 15
-    assert captured["request"].identifier == "markets.Asset"
-    assert captured["request"].provisioning == {
-        "create_table": False,
-        "if_not_exists": True,
-    }
+    assert captured["request"].meta_table_uids == ["asset-meta-table-uid"]
+    assert captured["request"].migration_package == "msm"
+    assert captured["request"].migration_namespace == "markets"
+    assert captured["request"].alembic_version_meta_table_uid == "registry-meta-table-uid"
+    assert captured["request"].alembic_revision == "0001"
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
     assert Asset.__table__.name == "mt_asset"
     assert events == [
@@ -637,9 +664,13 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     assert next(iter(Asset.__table__.indexes)).name == "mt_asset_symbol_idx"
     assert next(iter(Asset.__table__.foreign_key_constraints)).name == ("asset_account_uid_fkey")
     assert reserved_payloads[1].table_contract.foreign_keys[0].name == ("asset_account_uid_fkey")
+    assert reserved_payloads[0].schema_management.mode == "alembic_managed"
+    assert reserved_payloads[0].schema_management.alembic.package == "sample"
+    assert reserved_payloads[0].schema_management.alembic.migration_namespace == "markets"
+    assert reserved_payloads[0].schema_management.alembic.provider_key == "sample:markets"
 
 
-def test_prepare_for_alembic_skips_reservation_for_existing_identifier(monkeypatch):
+def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_management(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -697,13 +728,30 @@ def test_prepare_for_alembic_skips_reservation_for_existing_identifier(monkeypat
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
-        assert [table.identifier for table in request.tables] == ["Asset"]
+        assert [table.identifier for table in request.tables] == ["Account", "Asset"]
         assert (
-            request.tables[0].table_contract.foreign_keys[0].target_meta_table_uid
+            request.tables[1].table_contract.foreign_keys[0].target_meta_table_uid
             == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
         )
         return types.SimpleNamespace(
             tables=[
+                types.SimpleNamespace(
+                    identifier="Account",
+                    namespace="example.assets",
+                    meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    data_source_uid="data-source-uid",
+                    management_mode="platform_managed",
+                    provisioning_status="active",
+                    storage_hash="account-storage-hash",
+                    physical_table_name="mt_account_backend",
+                    table_contract={
+                        "version": "relational-table.v1",
+                        "physical": {"table_name": "mt_account_backend"},
+                        "columns": [],
+                        "indexes": [],
+                        "foreign_keys": [],
+                    },
+                ),
                 types.SimpleNamespace(
                     identifier="Asset",
                     namespace="example.assets",
@@ -711,7 +759,7 @@ def test_prepare_for_alembic_skips_reservation_for_existing_identifier(monkeypat
                     data_source_uid="data-source-uid",
                     management_mode="platform_managed",
                     provisioning_status="reserved",
-                    storage_hash=request.tables[0].storage_hash,
+                    storage_hash=request.tables[1].storage_hash,
                     physical_table_name="mt_asset_backend",
                     table_contract={
                         "version": "relational-table.v1",
@@ -749,7 +797,8 @@ def test_prepare_for_alembic_skips_reservation_for_existing_identifier(monkeypat
     prepared = migration.prepare_for_alembic(timeout=5)
 
     assert len(filter_calls) == 1
-    assert [payload.identifier for payload in reserved_payloads] == ["Asset"]
+    assert [payload.identifier for payload in reserved_payloads] == ["Account", "Asset"]
+    assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

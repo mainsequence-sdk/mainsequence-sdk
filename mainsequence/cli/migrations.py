@@ -25,6 +25,8 @@ from mainsequence.meta_tables.migrations import (
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
 REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
 RESERVE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/reserve-managed/"
+FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
+ALEMBIC_PROVIDER_RESET_ENDPOINT = "/orm/api/ts_manager/meta_table/alembic-provider-reset/"
 
 
 class _AlembicOutput:
@@ -276,6 +278,17 @@ def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
     )
 
 
+def _emit_metatable_finalization(model: type[Any], item: Any) -> None:
+    _emit_progress(
+        _metatable_message(
+            endpoint=FINALIZE_MANAGED_ENDPOINT,
+            action="finalized",
+            model=model,
+            item=item,
+        ),
+    )
+
+
 def _prepare_alembic_config(
     migration: AlembicMetaTableMigration,
     *,
@@ -484,7 +497,7 @@ def upgrade(
     ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
-    """Run Alembic upgrade directly and refresh MetaTable catalog rows."""
+    """Run Alembic upgrade directly and finalize reserved MetaTables."""
 
     command = _load_alembic_command("upgrade")
     migration = _load_migration(provider)
@@ -498,12 +511,15 @@ def upgrade(
     _emit_status(f"Starting Alembic upgrade now target={target_revision}...")
     with _forward_alembic_logging():
         command.upgrade(config, target_revision)
-    _emit_status("Refreshing MetaTable catalog after upgrade...")
-    registered = migration.refresh_metatable_catalog(
+    _emit_status("Finalizing MetaTable catalog after upgrade...")
+    finalize_response = migration.finalize_metatable_catalog(
+        prepared=prepared,
+        alembic_revision=target_revision,
         timeout=timeout,
-        on_metatable_registered=_emit_metatable_registration,
+        on_metatable_finalized=_emit_metatable_finalization,
+        on_metatable_finalize_status=_emit_status,
     )
-    _emit_status("MetaTable catalog refresh finished.")
+    _emit_status("MetaTable catalog finalization finished.")
     _emit(
         {
             "ok": True,
@@ -511,7 +527,10 @@ def upgrade(
             "package": migration.package,
             "migration_namespace": migration.migration_namespace,
             "meta_table_uids": prepared.meta_table_uids,
-            "registered_count": len(registered),
+            "finalized_count": finalize_response.finalized_count,
+            "active_count": finalize_response.active_count,
+            "reserved_count": finalize_response.reserved_count,
+            "failed_count": finalize_response.failed_count,
         },
         json_output=json_output,
     )
@@ -529,7 +548,7 @@ def downgrade(
     ttl_seconds: int = typer.Option(900, "--ttl-seconds", min=1),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
-    """Run Alembic downgrade directly and refresh MetaTable catalog rows."""
+    """Run Alembic downgrade directly and finalize reserved MetaTables."""
 
     command = _load_alembic_command("downgrade")
     migration = _load_migration(provider)
@@ -543,12 +562,15 @@ def downgrade(
     _emit_status(f"Starting Alembic downgrade now target={target_revision}...")
     with _forward_alembic_logging():
         command.downgrade(config, target_revision)
-    _emit_status("Refreshing MetaTable catalog after downgrade...")
-    registered = migration.refresh_metatable_catalog(
+    _emit_status("Finalizing MetaTable catalog after downgrade...")
+    finalize_response = migration.finalize_metatable_catalog(
+        prepared=prepared,
+        alembic_revision=target_revision,
         timeout=timeout,
-        on_metatable_registered=_emit_metatable_registration,
+        on_metatable_finalized=_emit_metatable_finalization,
+        on_metatable_finalize_status=_emit_status,
     )
-    _emit_status("MetaTable catalog refresh finished.")
+    _emit_status("MetaTable catalog finalization finished.")
     _emit(
         {
             "ok": True,
@@ -556,7 +578,64 @@ def downgrade(
             "package": migration.package,
             "migration_namespace": migration.migration_namespace,
             "meta_table_uids": prepared.meta_table_uids,
-            "registered_count": len(registered),
+            "finalized_count": finalize_response.finalized_count,
+            "active_count": finalize_response.active_count,
+            "reserved_count": finalize_response.reserved_count,
+            "failed_count": finalize_response.failed_count,
         },
         json_output=json_output,
     )
+
+
+@migrations.command("reset")
+def reset(
+    provider: str | None = typer.Option(
+        None,
+        "--provider",
+        help="Migration provider reference, for example msm.migrations:migration.",
+    ),
+    confirm_reset: bool = typer.Option(
+        False,
+        "--confirm-reset",
+        help="Required confirmation for destructive provider-scoped reset.",
+    ),
+    drop_physical_tables: bool = typer.Option(
+        True,
+        "--drop-physical-tables/--keep-physical-tables",
+        help="Drop provider physical tables during reset.",
+    ),
+    clear_alembic_version_table: bool = typer.Option(
+        True,
+        "--clear-alembic-version-table/--keep-alembic-version-table",
+        help="Clear the provider Alembic version table during reset.",
+    ),
+    include_reserved: bool = typer.Option(
+        True,
+        "--include-reserved/--active-only",
+        help="Include already-reserved provider MetaTables in reset results.",
+    ),
+    timeout: float | None = typer.Option(None, "--timeout"),
+    json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
+) -> None:
+    """Reset an Alembic-managed provider catalog/physical state."""
+
+    if not confirm_reset:
+        raise typer.BadParameter(
+            "Pass --confirm-reset to call the destructive provider reset endpoint.",
+            param_hint="--confirm-reset",
+        )
+    migration = _load_migration(provider)
+    _emit_status(
+        "Calling provider reset endpoint "
+        f"{ALEMBIC_PROVIDER_RESET_ENDPOINT} provider={migration.migration_provider_key}..."
+    )
+    response = migration.reset_alembic_provider(
+        confirm_reset=True,
+        drop_physical_tables=drop_physical_tables,
+        clear_alembic_version_table=clear_alembic_version_table,
+        include_reserved=include_reserved,
+        timeout=timeout,
+        on_reset_status=_emit_status,
+    )
+    _emit_status("Alembic provider reset finished.")
+    _emit(response, json_output=json_output)

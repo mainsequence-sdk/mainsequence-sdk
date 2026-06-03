@@ -8,13 +8,19 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 from mainsequence.client.metatables import (
+    AlembicManagementRequest,
+    AlembicProviderResetRequest,
+    AlembicProviderResetResponse,
     DynamicTableDataSource,
+    ManagedMetaTableFinalizeRequest,
+    ManagedMetaTableFinalizeResponse,
     ManagedMetaTableReservationRequest,
     ManagedMetaTableReservationTable,
     MetaTable,
     MetaTableContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
+    SchemaManagementRequest,
     TimeIndexMetaData,
 )
 from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
@@ -49,6 +55,35 @@ class AlembicMetaTableCatalogRefreshContext:
     migration_namespace: str
     registered_metatables: list[Any]
     reserved_policy: Literal["reconcile"] | None = None
+
+
+class AlembicProviderPhysicalStateError(RuntimeError):
+    """Raised when backend finalization leaves provider MetaTables reserved."""
+
+    def __init__(
+        self,
+        *,
+        migration_provider_key: str,
+        response: ManagedMetaTableFinalizeResponse,
+    ) -> None:
+        self.migration_provider_key = migration_provider_key
+        self.response = response
+        self.missing = [
+            table
+            for table in response.tables
+            if table.provisioning_status != "active" or not table.physical_table_exists
+        ]
+        detail = ", ".join(
+            (
+                f"{table.identifier or table.meta_table_uid}"
+                f"({table.physical_table_name or 'no-physical-table'})"
+            )
+            for table in self.missing
+        )
+        super().__init__(
+            "Alembic provider physical state is not active after finalization "
+            f"provider={migration_provider_key} missing=[{detail}]"
+        )
 
 
 class AlembicVersionMetaTable:
@@ -233,6 +268,10 @@ class AlembicMetaTableMigration:
         return self.alembic_registry.alembic_table_path()
 
     @property
+    def migration_provider_key(self) -> str:
+        return f"{self.package}:{self.migration_namespace}"
+
+    @property
     def version_table(self) -> str:
         return self.alembic_registry.__alembic_version_table_name__
 
@@ -263,6 +302,23 @@ class AlembicMetaTableMigration:
         if self.include_object_hook is not None:
             return bool(self.include_object_hook(object_, name, type_, reflected, compare_to))
         return self.include_name(name, type_, {"schema_name": getattr(object_, "schema", None)})
+
+    def _schema_management_request(
+        self,
+        *,
+        alembic_version_meta_table_uid: str | None = None,
+        revision: str | None = None,
+    ) -> SchemaManagementRequest:
+        return SchemaManagementRequest(
+            mode="alembic_managed",
+            alembic=AlembicManagementRequest(
+                package=self.package,
+                migration_namespace=self.migration_namespace,
+                provider_key=self.migration_provider_key,
+                alembic_version_meta_table_uid=alembic_version_meta_table_uid,
+                revision=revision,
+            ),
+        )
 
     def register_alembic_registry(
         self,
@@ -304,6 +360,9 @@ class AlembicMetaTableMigration:
     ) -> list[Any]:
         registered: list[Any] = []
         data_source_uid = self._resolve_provider_data_source_uid()
+        schema_management = self._schema_management_request(
+            alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+        )
         with platform_managed_migration_registration_context():
             for model in self.metatable_models:
                 request = model.build_registration_request(
@@ -312,6 +371,7 @@ class AlembicMetaTableMigration:
                     _target_meta_tables=_bound_target_meta_tables(model),
                     enforce_storage_hash_name=False,
                 )
+                request.schema_management = schema_management
                 meta_table_cls = _metatable_resource_class_for_model(model)
                 meta_table = meta_table_cls.register(request, timeout=timeout)
                 if on_metatable_registered is not None:
@@ -342,6 +402,88 @@ class AlembicMetaTableMigration:
             reserved_policy="reconcile",
         )
 
+    def finalize_metatable_catalog(
+        self,
+        *,
+        prepared: PreparedAlembicMetaTableMigration | None = None,
+        alembic_revision: str | None = None,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_metatable_finalized: Callable[[type[Any], Any], Any] | None = None,
+        on_metatable_finalize_status: Callable[[str], Any] | None = None,
+    ) -> ManagedMetaTableFinalizeResponse:
+        prepared = prepared or self.prepare_for_alembic(timeout=timeout)
+        request = ManagedMetaTableFinalizeRequest(
+            meta_table_uids=prepared.meta_table_uids,
+            migration_package=self.package,
+            migration_namespace=self.migration_namespace,
+            alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+            alembic_revision=alembic_revision,
+        )
+        response = MetaTable.finalize_managed(
+            request,
+            timeout=timeout,
+            on_status=on_metatable_finalize_status,
+        )
+        finalized_by_identifier = {
+            _meta_table_identifier(item) or "": item for item in response.tables
+        }
+        finalized_by_uid = {_meta_table_uid(item) or "": item for item in response.tables}
+        finalized_for_models: list[Any] = []
+        for model in self.metatable_models:
+            identifier = resolve_metatable_identifier(model)
+            item = (
+                finalized_by_identifier.get(identifier)
+                or finalized_by_uid.get(str(getattr(model, "get_meta_table_uid", lambda: "")()))
+            )
+            if item is None:
+                continue
+            _bind_model_to_existing_metatable(model, item)
+            finalized_for_models.append(item)
+            if on_metatable_finalized is not None:
+                on_metatable_finalized(model, item)
+
+        if not response.ok:
+            raise AlembicProviderPhysicalStateError(
+                migration_provider_key=self.migration_provider_key,
+                response=response,
+            )
+
+        if self.after_register_metatables is not None:
+            self.after_register_metatables(
+                AlembicMetaTableCatalogRefreshContext(
+                    package=self.package,
+                    migration_namespace=self.migration_namespace,
+                    registered_metatables=finalized_for_models,
+                    reserved_policy="reconcile",
+                )
+            )
+        return response
+
+    def reset_alembic_provider(
+        self,
+        *,
+        confirm_reset: bool,
+        drop_physical_tables: bool = True,
+        clear_alembic_version_table: bool = True,
+        include_reserved: bool = True,
+        timeout: int | float | tuple[float, float] | None = None,
+        on_reset_status: Callable[[str], Any] | None = None,
+    ) -> AlembicProviderResetResponse:
+        request = AlembicProviderResetRequest(
+            migration_package=self.package,
+            migration_namespace=self.migration_namespace,
+            data_source_uid=self._resolve_provider_data_source_uid(),
+            confirm_reset=confirm_reset,
+            drop_physical_tables=drop_physical_tables,
+            clear_alembic_version_table=clear_alembic_version_table,
+            include_reserved=include_reserved,
+        )
+        return MetaTable.alembic_provider_reset(
+            request,
+            timeout=timeout,
+            on_status=on_reset_status,
+        )
+
     def prepare_for_alembic(
         self,
         *,
@@ -362,6 +504,9 @@ class AlembicMetaTableMigration:
         target_identifiers = {
             model: resolve_metatable_identifier(model) for model in ordered_models
         }
+        schema_management = self._schema_management_request(
+            alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+        )
         with platform_managed_migration_registration_context():
             existing_by_identifier = _get_metatables_by_model_identifier(
                 ordered_models,
@@ -375,8 +520,6 @@ class AlembicMetaTableMigration:
             pending_models: list[type[Any]] = []
             pending_tables: list[ManagedMetaTableReservationTable] = []
             for model in ordered_models:
-                if model in reserved_by_model:
-                    continue
                 identifier = target_identifiers[model]
                 existing_meta_table = existing_by_identifier.get(identifier)
                 if existing_meta_table is not None:
@@ -385,18 +528,16 @@ class AlembicMetaTableMigration:
                         _bind_backend_contract_names(model, table_contract)
                     _bind_model_to_existing_metatable(model, existing_meta_table)
                     reserved_by_model[model] = existing_meta_table
-                    continue
-
-                bound_meta_table = _bound_meta_table_for_model(model)
-                if bound_meta_table is not None and _meta_table_uid(bound_meta_table) not in (
-                    None,
-                    "",
-                ):
-                    table_contract = _meta_table_contract(bound_meta_table)
-                    if isinstance(table_contract, Mapping):
-                        _bind_backend_contract_names(model, table_contract)
-                    reserved_by_model[model] = bound_meta_table
-                    continue
+                else:
+                    bound_meta_table = _bound_meta_table_for_model(model)
+                    if bound_meta_table is not None and _meta_table_uid(bound_meta_table) not in (
+                        None,
+                        "",
+                    ):
+                        table_contract = _meta_table_contract(bound_meta_table)
+                        if isinstance(table_contract, Mapping):
+                            _bind_backend_contract_names(model, table_contract)
+                        reserved_by_model[model] = bound_meta_table
 
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
@@ -404,8 +545,15 @@ class AlembicMetaTableMigration:
                     _target_identifiers=target_identifiers,
                     enforce_storage_hash_name=False,
                 )
+                request.schema_management = schema_management
                 pending_models.append(model)
                 pending_tables.append(_reservation_table_from_registration_request(request))
+
+                bound_meta_table = reserved_by_model.get(model)
+                if bound_meta_table is not None:
+                    table_contract = _meta_table_contract(bound_meta_table)
+                    if isinstance(table_contract, Mapping):
+                        _bind_backend_contract_names(model, table_contract)
 
             if pending_tables:
                 reservation_request = ManagedMetaTableReservationRequest(
@@ -672,6 +820,7 @@ def _reservation_table_from_registration_request(
         description=getattr(request, "description", None),
         labels=list(getattr(request, "labels", None) or []),
         protect_from_deletion=bool(getattr(request, "protect_from_deletion", False)),
+        schema_management=getattr(request, "schema_management", None),
         table_contract=request.table_contract,
         time_index_name=getattr(request, "time_index_name", None),
         partition_strategy=getattr(request, "partition_strategy", None),
