@@ -218,6 +218,9 @@ def _metatable_message(
     provisioning_status = _item_value(item, "provisioning_status")
     created = _item_value(item, "created")
     matched_by = _item_value(item, "matched_by")
+    finalized = _item_value(item, "finalized")
+    physical_table_exists = _item_value(item, "physical_table_exists")
+    error = _item_value(item, "error")
 
     parts = [
         f"POST {endpoint}",
@@ -235,6 +238,12 @@ def _metatable_message(
         parts.append(f"created={created}")
     if matched_by not in (None, ""):
         parts.append(f"matched_by={matched_by}")
+    if finalized is not None:
+        parts.append(f"finalized={finalized}")
+    if physical_table_exists is not None:
+        parts.append(f"physical_table_exists={physical_table_exists}")
+    if error not in (None, "", {}):
+        parts.append(f"error={json.dumps(error, sort_keys=True, default=str)}")
     return " ".join(parts)
 
 
@@ -280,10 +289,12 @@ def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
 
 
 def _emit_metatable_finalization(model: type[Any], item: Any) -> None:
+    finalized = _item_value(item, "finalized")
+    action = "finalized" if finalized is not False else "finalize-failed"
     _emit_progress(
         _metatable_message(
             endpoint=FINALIZE_MANAGED_ENDPOINT,
-            action="finalized",
+            action=action,
             model=model,
             item=item,
         ),

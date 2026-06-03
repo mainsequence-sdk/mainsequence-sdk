@@ -78,12 +78,22 @@ class AlembicProviderPhysicalStateError(RuntimeError):
             (
                 f"{table.identifier or table.meta_table_uid}"
                 f"({table.physical_table_name or 'no-physical-table'})"
+                f":status={table.provisioning_status}"
+                f":physical_table_exists={table.physical_table_exists}"
+                f":finalized={table.finalized}"
+                + (
+                    f":error={json.dumps(table.error, sort_keys=True, default=str)}"
+                    if table.error not in (None, "", {})
+                    else ""
+                )
             )
             for table in self.missing
         )
         super().__init__(
             "Alembic provider physical state is not active after finalization "
-            f"provider={migration_provider_key} missing=[{detail}]"
+            f"provider={migration_provider_key} "
+            f"active={response.active_count} reserved={response.reserved_count} "
+            f"failed={response.failed_count} missing=[{detail}]"
         )
 
 
@@ -425,10 +435,21 @@ class AlembicMetaTableMigration:
             timeout=timeout,
             on_status=on_metatable_finalize_status,
         )
+        if on_metatable_finalize_status is not None:
+            on_metatable_finalize_status(
+                "Finalize-managed response "
+                f"ok={response.ok} finalized={response.finalized_count} "
+                f"active={response.active_count} reserved={response.reserved_count} "
+                f"failed={response.failed_count}."
+            )
         finalized_by_identifier = {
             _meta_table_identifier(item) or "": item for item in response.tables
         }
         finalized_by_uid = {_meta_table_uid(item) or "": item for item in response.tables}
+        if on_metatable_finalize_status is not None:
+            for item in response.tables:
+                if _finalize_table_failed(item):
+                    on_metatable_finalize_status(_finalize_failure_message(item))
         finalized_for_models: list[Any] = []
         for model in self.metatable_models:
             identifier = resolve_metatable_identifier(model)
@@ -1189,6 +1210,39 @@ def _meta_table_contract(meta_table: Any) -> Any:
     if isinstance(meta_table, Mapping):
         return meta_table.get("table_contract")
     return getattr(meta_table, "table_contract", None)
+
+
+def _finalize_table_failed(item: Any) -> bool:
+    provisioning_status = _meta_table_attr(item, "provisioning_status")
+    physical_table_exists = _meta_table_attr(item, "physical_table_exists")
+    finalized = _meta_table_attr(item, "finalized")
+    error = _meta_table_attr(item, "error")
+    return (
+        provisioning_status != "active"
+        or physical_table_exists is False
+        or finalized is False
+        or error not in (None, "", {})
+    )
+
+
+def _finalize_failure_message(item: Any) -> str:
+    identifier = _meta_table_identifier(item) or _meta_table_uid(item) or "<unknown>"
+    physical_table_name = _meta_table_attr(item, "physical_table_name") or "no-physical-table"
+    provisioning_status = _meta_table_attr(item, "provisioning_status")
+    physical_table_exists = _meta_table_attr(item, "physical_table_exists")
+    finalized = _meta_table_attr(item, "finalized")
+    error = _meta_table_attr(item, "error")
+    parts = [
+        "Finalize-managed table failed",
+        f"identifier={identifier}",
+        f"physical_table={physical_table_name}",
+        f"provisioning_status={provisioning_status}",
+        f"physical_table_exists={physical_table_exists}",
+        f"finalized={finalized}",
+    ]
+    if error not in (None, "", {}):
+        parts.append(f"error={json.dumps(error, sort_keys=True, default=str)}")
+    return " ".join(parts)
 
 
 def _meta_table_attr(meta_table: Any, name: str) -> Any:

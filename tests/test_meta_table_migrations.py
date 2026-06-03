@@ -422,6 +422,84 @@ def test_alembic_metatable_migration_sync_catalog_hook_has_no_reserved_policy(
     assert events == [None]
 
 
+def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "markets"
+        __metatable_identifier__ = "markets.Asset"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset],
+    )
+    ProjectAlembicVersion._bind_meta_table(
+        types.SimpleNamespace(
+            uid="registry-meta-table-uid",
+            data_source_uid="data-source-uid",
+        )
+    )
+
+    def fake_finalize(request, *, timeout=None, on_status=None):
+        return types.SimpleNamespace(
+            ok=False,
+            finalized_count=0,
+            active_count=0,
+            reserved_count=1,
+            failed_count=1,
+            tables=[
+                types.SimpleNamespace(
+                    meta_table_uid="asset-meta-table-uid",
+                    identifier="markets.Asset",
+                    data_source_uid="data-source-uid",
+                    storage_hash="mt_asset_hash",
+                    physical_table_name="mt_asset",
+                    previous_provisioning_status="reserved",
+                    provisioning_status="reserved",
+                    table_kind="relational",
+                    time_indexed=False,
+                    finalized=False,
+                    physical_table_exists=False,
+                    error={"code": "physical_table_missing"},
+                )
+            ],
+        )
+
+    monkeypatch.setattr(MetaTable, "finalize_managed", staticmethod(fake_finalize))
+    statuses = []
+
+    with pytest.raises(Exception) as exc_info:
+        migration.finalize_metatable_catalog(
+            prepared=types.SimpleNamespace(meta_table_uids=["asset-meta-table-uid"]),
+            alembic_revision="0001",
+            timeout=15,
+            on_metatable_finalize_status=statuses.append,
+        )
+
+    assert "physical_table_exists=False" in str(exc_info.value)
+    assert "failed=1" in str(exc_info.value)
+    assert statuses == [
+        "Finalize-managed response ok=False finalized=0 active=0 reserved=1 failed=1.",
+        (
+            "Finalize-managed table failed identifier=markets.Asset "
+            "physical_table=mt_asset provisioning_status=reserved "
+            "physical_table_exists=False finalized=False "
+            'error={"code": "physical_table_missing"}'
+        ),
+    ]
+
+
 def test_load_alembic_metatable_migration_provider_by_reference(tmp_path, monkeypatch):
     provider_file = tmp_path / "mainsequence_migrations.py"
     provider_file.write_text(
@@ -575,7 +653,7 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     reserved_payloads = []
     reserved_events = []
 
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(lambda **kwargs: []))
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(lambda **kwargs: []))
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
@@ -841,7 +919,7 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
 
     monkeypatch.setattr(migrations_mod, "_contracts_equivalent", lambda left, right: True)
 
-    def fake_filter(**kwargs):
+    def fake_filter_by_body(**kwargs):
         return [
             types.SimpleNamespace(
                 identifier="Account",
@@ -892,7 +970,7 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
             ),
         ]
 
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
     monkeypatch.setattr(
         MetaTable,
         "reserve_managed",

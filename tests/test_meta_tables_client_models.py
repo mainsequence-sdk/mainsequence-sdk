@@ -576,6 +576,54 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
         assert forbidden not in captured["payload"]["json"]
 
 
+def test_meta_table_finalize_managed_accepts_conflict_response(monkeypatch):
+    def fake_make_request(**kwargs):
+        return _Response(
+            {
+                "ok": False,
+                "finalized_count": 0,
+                "active_count": 0,
+                "reserved_count": 1,
+                "failed_count": 1,
+                "tables": [
+                    {
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "identifier": "Asset",
+                        "storage_hash": "mt_asset_hash",
+                        "physical_table_name": "mt_asset_physical",
+                        "previous_provisioning_status": "reserved",
+                        "provisioning_status": "reserved",
+                        "table_kind": "relational",
+                        "time_indexed": False,
+                        "finalized": False,
+                        "physical_table_exists": False,
+                        "error": {"code": "physical_table_missing"},
+                    }
+                ],
+            },
+            status_code=409,
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    response = meta_table_models.MetaTable.finalize_managed(
+        meta_table_models.ManagedMetaTableFinalizeRequest(
+            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+            migration_package="msm",
+            migration_namespace="markets",
+        )
+    )
+
+    assert response.ok is False
+    assert response.tables[0].physical_table_exists is False
+    assert response.tables[0].error == {"code": "physical_table_missing"}
+
+
 def test_meta_table_alembic_provider_reset_posts_reset_payload(monkeypatch):
     captured = {}
 
