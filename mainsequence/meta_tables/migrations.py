@@ -1099,7 +1099,16 @@ def _metadata_table_names(target_metadata: Any) -> list[str]:
     tables = getattr(target_metadata, "tables", None)
     if tables is None:
         return []
-    return [str(name) for name in tables.keys()]
+    names: list[str] = []
+    for key, table in tables.items():
+        for candidate in (
+            key,
+            getattr(table, "fullname", None),
+            getattr(table, "name", None),
+        ):
+            if candidate not in (None, ""):
+                names.append(str(candidate))
+    return list(dict.fromkeys(names))
 
 
 def _normalize_down_revision(value: Any) -> str | None:

@@ -160,6 +160,7 @@ def test_alembic_metatable_migration_uses_registry_for_version_table_config():
 
     assert migration.alembic_version_table == "public.alembic_version"
     assert migration.include_name("asset", "table", {"schema_name": "public"}) is True
+    assert migration.include_name("asset", "table", {"schema_name": None}) is True
     assert migration.include_name("ignored", "table", {"schema_name": "public"}) is False
 
 
@@ -577,15 +578,13 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     config = alembic_config_for_provider(
         migration,
         sqlalchemy_url=(
-            "postgresql://temporary-secret"
-            "?application_name=mainsequence_alembic%3Amsm%3Amarkets"
+            "postgresql://temporary-secret?application_name=mainsequence_alembic%3Amsm%3Amarkets"
         ),
         owner_role_name="ms_owner",
     )
 
     assert config.get_main_option("sqlalchemy.url") == (
-        "postgresql://temporary-secret"
-        "?application_name=mainsequence_alembic%3Amsm%3Amarkets"
+        "postgresql://temporary-secret?application_name=mainsequence_alembic%3Amsm%3Amarkets"
     )
     assert config.get_main_option("sqlalchemy.echo") == "true"
     assert config.get_main_option("version_table") == "alembic_version"
@@ -724,10 +723,7 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
         assert [table.identifier for table in request.tables] == ["Account", "Asset"]
-        assert (
-            request.tables[1].table_contract.foreign_keys[0].target_identifier
-            == "Account"
-        )
+        assert request.tables[1].table_contract.foreign_keys[0].target_identifier == "Account"
         assert request.tables[1].table_contract.foreign_keys[0].target_meta_table_uid is None
 
         response_tables = []
@@ -913,16 +909,14 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
                             {
                                 "name": "asset_account_uid_fkey",
                                 "source_columns": ["account_uid"],
-                                "target_meta_table_uid": (
-                                    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-                                ),
+                                "target_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
                                 "target_identifier": "Account",
                                 "target_columns": ["uid"],
                                 "on_delete": "cascade",
                             }
                         ],
                     },
-                )
+                ),
             ]
         )
 
@@ -1033,9 +1027,7 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
                         {
                             "name": "asset_account_uid_fkey",
                             "source_columns": ["account_uid"],
-                            "target_meta_table_uid": (
-                                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-                            ),
+                            "target_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
                             "target_identifier": "Account",
                             "target_columns": ["uid"],
                             "on_delete": "cascade",
@@ -1069,9 +1061,7 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
     ]
     assert Account.__table__.name == "mt_account_backend"
     assert Asset.__table__.name == "mt_asset_backend"
-    assert next(iter(Asset.__table__.foreign_key_constraints)).name == (
-        "asset_account_uid_fkey"
-    )
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name == ("asset_account_uid_fkey")
 
 
 def _write_alembic_package(tmp_path, package_name: str) -> None:
