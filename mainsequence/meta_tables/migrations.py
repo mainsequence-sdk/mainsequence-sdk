@@ -28,7 +28,6 @@ from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
-    _metatable_foreign_key_metadata,
     _metatable_foreign_key_target_models,
     _resolve_model_data_source_uid,
     platform_managed_migration_registration_context,
@@ -544,9 +543,6 @@ class AlembicMetaTableMigration:
                 identifier = target_identifiers[model]
                 existing_meta_table = existing_by_identifier.get(identifier)
                 if existing_meta_table is not None:
-                    table_contract = _meta_table_contract(existing_meta_table)
-                    if isinstance(table_contract, Mapping):
-                        _bind_backend_contract_names(model, table_contract)
                     _bind_model_to_existing_metatable(model, existing_meta_table)
                     reserved_by_model[model] = existing_meta_table
                 else:
@@ -555,9 +551,6 @@ class AlembicMetaTableMigration:
                         None,
                         "",
                     ):
-                        table_contract = _meta_table_contract(bound_meta_table)
-                        if isinstance(table_contract, Mapping):
-                            _bind_backend_contract_names(model, table_contract)
                         reserved_by_model[model] = bound_meta_table
 
                 request = model.build_registration_request(
@@ -616,7 +609,6 @@ class AlembicMetaTableMigration:
                     if on_metatable_reserved is not None:
                         on_metatable_reserved(model, item)
                     _bind_model_to_existing_metatable(model, item)
-                    _bind_backend_contract_names(model, item.table_contract)
                     reserved_by_model[model] = item
                     reserved_tables.append(item)
                     item_owner_role_name = getattr(item, "owner_role_name", None)
@@ -912,93 +904,6 @@ def _bound_meta_table_for_model(model: type[Any]) -> Any | None:
     uid = getattr(model, "get_meta_table_uid", lambda: None)()
     if uid not in (None, ""):
         return model
-    return None
-
-
-def _bind_backend_contract_names(model: type[Any], table_contract: Mapping[str, Any]) -> None:
-    table = getattr(model, "__table__", None)
-    if table is None:
-        return
-    _bind_backend_index_names(table, table_contract.get("indexes") or [])
-    _clear_metatable_foreign_key_names(table)
-
-
-def _bind_backend_index_names(table: Any, index_contracts: Sequence[Any]) -> None:
-    indexes = list(getattr(table, "indexes", []) or [])
-    by_signature = _group_by_signature(indexes, _sqlalchemy_index_signature)
-    fallback_indexes = sorted(indexes, key=lambda index: getattr(index, "name", None) or "")
-    fallback_index = 0
-    for contract in index_contracts:
-        contract_dict = _contract_dict(contract)
-        name = contract_dict.get("name")
-        if name in (None, ""):
-            continue
-        signature = _contract_index_signature(contract_dict)
-        candidates = by_signature.get(signature) or []
-        index = candidates.pop(0) if candidates else None
-        if index is None and fallback_index < len(fallback_indexes):
-            index = fallback_indexes[fallback_index]
-            fallback_index += 1
-        if index is not None:
-            index.name = str(name)
-
-
-def _clear_metatable_foreign_key_names(table: Any) -> None:
-    for constraint in list(getattr(table, "foreign_key_constraints", []) or []):
-        elements = list(getattr(constraint, "elements", []) or [])
-        if any(_metatable_foreign_key_metadata(element) is not None for element in elements):
-            constraint.name = None
-
-
-def _group_by_signature(
-    items: Sequence[Any], signature_fn: Callable[[Any], Any]
-) -> dict[Any, list[Any]]:
-    grouped: dict[Any, list[Any]] = {}
-    for item in items:
-        grouped.setdefault(signature_fn(item), []).append(item)
-    return grouped
-
-
-def _contract_dict(contract: Any) -> dict[str, Any]:
-    if hasattr(contract, "model_dump"):
-        return contract.model_dump(mode="json", exclude_none=True)
-    return dict(contract or {})
-
-
-def _sqlalchemy_index_signature(index: Any) -> tuple[Any, ...]:
-    columns = tuple(
-        str(column.name)
-        for column in list(getattr(index, "columns", []) or [])
-        if getattr(column, "name", None) not in (None, "")
-    )
-    expression = None if columns else str(index)
-    return (
-        columns,
-        bool(getattr(index, "unique", False)),
-        _sqlalchemy_index_method(index),
-        expression,
-    )
-
-
-def _contract_index_signature(contract: Mapping[str, Any]) -> tuple[Any, ...]:
-    columns = tuple(str(column) for column in contract.get("columns") or [])
-    expression = contract.get("expression")
-    return (
-        columns,
-        bool(contract.get("unique", False)),
-        contract.get("method"),
-        None if columns else expression,
-    )
-
-
-def _sqlalchemy_index_method(index: Any) -> str | None:
-    dialect_options = getattr(index, "dialect_options", None)
-    if isinstance(dialect_options, Mapping):
-        postgresql_options = dialect_options.get("postgresql")
-        if isinstance(postgresql_options, Mapping):
-            method = postgresql_options.get("using")
-            if method:
-                return str(method)
     return None
 
 
@@ -1428,6 +1333,20 @@ def _normalize_contract_for_comparison(value: Any) -> Any:
                     ),
                 )
                 continue
+            if key == "indexes" and isinstance(item, list):
+                normalized[key] = sorted(
+                    (
+                        _normalize_index_contract_for_comparison(index)
+                        for index in item
+                    ),
+                    key=lambda index: json.dumps(
+                        index,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                )
+                continue
             normalized[key] = _normalize_contract_for_comparison(item)
         return normalized
     if isinstance(value, list):
@@ -1441,11 +1360,19 @@ def _normalize_foreign_key_contract_for_comparison(value: Any) -> Any:
     normalized = {
         str(key): _normalize_contract_for_comparison(item)
         for key, item in value.items()
-        if key != "name"
     }
     if normalized.get("target_meta_table_uid") not in (None, ""):
         normalized.pop("target_identifier", None)
     return normalized
+
+
+def _normalize_index_contract_for_comparison(value: Any) -> Any:
+    if not isinstance(value, Mapping):
+        return _normalize_contract_for_comparison(value)
+    return {
+        str(key): _normalize_contract_for_comparison(item)
+        for key, item in value.items()
+    }
 
 
 def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:

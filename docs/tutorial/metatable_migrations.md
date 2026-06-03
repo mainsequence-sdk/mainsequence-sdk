@@ -3,7 +3,7 @@
 This document is only about schema migrations for MetaTables.
 
 The SDK does not implement a second migration engine. It provides a thin layer
-on top of Alembic so MetaTable catalog bindings, backend physical names, and
+on top of Alembic so MetaTable catalog bindings, backend physical table names, and
 scoped database credentials are ready before Alembic runs.
 
 It continues from [Part 2: Working With MetaTables](working_with_meta_tables.md),
@@ -18,9 +18,9 @@ migration provider is the normal lifecycle path; users do not call
 
 ## Why Migrations Exist
 
-Initial platform-managed registration still creates a table from a known
-contract, but migration tooling is the caller. `migrations upgrade` resolves or
-registers provider-scoped models before Alembic SQL is rendered.
+Initial platform-managed registration reserves a catalog row and physical table
+name, but Alembic creates the physical table. `migrations upgrade` resolves or
+reserves provider-scoped models before Alembic SQL is rendered.
 
 For shape-addressed platform-managed tables, the SDK derives `storage_hash` from
 storage-relevant SQLAlchemy table attributes. If you add or remove a column in
@@ -30,8 +30,11 @@ previous table. That is not a migration. It is a new table identity.
 
 Alembic migrations preserve a deployed table by changing the physical schema in
 place. For a new provider-scoped platform-managed model, migration tooling first
-uses the existing backend registration path to create and bind the physical
-table, then renders/applies Alembic SQL against that backend physical name.
+uses the backend reservation path to reserve and bind the physical table name,
+then renders/applies Alembic SQL against that name. Prefix explicit table
+identifiers, explicit physical table names, and Alembic version table names with
+the project or package name to avoid collisions in shared organizations and
+schemas.
 
 Use MetaTable migrations when:
 
@@ -57,7 +60,7 @@ The lifecycle is:
 ```text
 provider object
 -> Alembic revision from provider.target_metadata
--> SDK reserves provider.metatable_models and binds backend names
+-> SDK reserves provider.metatable_models and binds physical table names
 -> SDK obtains a scoped migration database URI
 -> Alembic executes current/revision/upgrade directly
 -> SDK finalizes reserved provider.metatable_models
@@ -75,8 +78,8 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
 - reserves or resolves the provider-scoped platform-managed MetaTables for
   commands that generate or mutate provider schema, without creating physical
   application tables
-- binds backend physical table names, index names, and foreign-key names into
-  SQLAlchemy metadata for those schema commands
+- binds backend-reserved physical table names into SQLAlchemy metadata for those
+  schema commands
 - includes the Alembic version MetaTable UID, and when needed the provider
   MetaTable UIDs, in the migration scope
 - requests a temporary table-scoped database URI from the target data source
@@ -107,7 +110,7 @@ The CLI lifecycle intentionally separates three jobs:
   recorded in the target database through a backend-issued scoped credential.
 - `mainsequence migrations revision` asks Alembic to write a normal revision
   file for the selected provider. Autogenerate runs against metadata after
-  backend reservation has bound physical table, index, and FK names.
+  backend reservation has bound physical table names.
 - `mainsequence migrations upgrade` runs Alembic directly through the scoped
   credential, then finalizes provider-scoped MetaTable catalog bindings after
   the database schema has changed.
@@ -157,9 +160,9 @@ from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
 
 class TutorialAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.alembic_version"
+    __metatable_identifier__ = "sdk_examples.alembic_version"
     __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = "alembic_version"
+    __alembic_version_table_name__ = "sdk_examples_alembic_version"
     __alembic_version_column_name__ = "version_num"
 
 
@@ -325,7 +328,7 @@ model had:
 ```python
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = "sdk_examples.Account"
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -339,7 +342,7 @@ The new model adds `status`:
 ```python
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = "sdk_examples.Account"
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -494,8 +497,11 @@ physical application tables:
 }
 ```
 
-The backend returns canonical physical table, index, and FK names. The SDK binds
-those names into SQLAlchemy metadata before Alembic runs.
+The backend returns reserved physical table names. The SDK binds those table
+names into SQLAlchemy metadata before Alembic runs. Index names remain normal
+SQLAlchemy/Alembic metadata. Platform-managed foreign-key contracts carry the
+logical relationship only; Alembic, SQLAlchemy, and the database own the
+physical FK constraint names.
 
 Second, schema-changing commands request a short-lived migration credential
 scoped to the Alembic version MetaTable UID plus the reserved provider

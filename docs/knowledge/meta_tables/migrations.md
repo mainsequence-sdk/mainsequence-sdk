@@ -12,7 +12,7 @@ The migration lifecycle is provider-based:
 ```text
 AlembicMetaTableMigration provider
 -> Alembic revision from provider.target_metadata
--> SDK reserves provider.metatable_models and binds backend names
+-> SDK reserves provider.metatable_models and binds physical table names
 -> SDK requests a scoped migration database URI
 -> Alembic executes revision/current/upgrade/downgrade directly
 -> project tooling refreshes provider.metatable_models
@@ -27,8 +27,9 @@ The SDK owns:
 - `AlembicVersionMetaTable`
 - provider discovery by convention plus explicit `--provider`
 - typed reservation and scoped-connection request/response models
-- CLI commands that prepare providers, reserve/bind backend names, call Alembic
-  directly, and refresh provider-scoped MetaTables after successful upgrade
+- CLI commands that prepare providers, reserve/bind physical table names, call
+  Alembic directly, and refresh provider-scoped MetaTables after successful
+  upgrade
 
 ## SDK Alembic Coordination
 
@@ -45,8 +46,8 @@ Alembic cannot know on its own:
 - register or resolve the provider's `AlembicVersionMetaTable` catalog binding
 - reserve or resolve the provider-scoped platform-managed MetaTables without
   creating physical application tables
-- bind backend physical table names, index names, and foreign-key names into the
-  provider's SQLAlchemy metadata
+- bind backend-reserved physical table names into the provider's SQLAlchemy
+  metadata
 - include the Alembic version MetaTable UID and provider MetaTable UIDs in the
   migration scope
 - request a temporary table-scoped database credential from the owning
@@ -71,7 +72,7 @@ The SDK layer does not:
 
 Alembic executes DDL through the scoped database credential. The backend owns
 catalog reservation and credential issuance; it does not own the Alembic
-migration lifecycle.
+migration lifecycle or FK/index naming.
 
 For a walkthrough that evolves the `Account` and `AccountLimit` MetaTables from
 the tutorial, see
@@ -156,9 +157,9 @@ def refresh_project_catalog_from_registered_metatables(
 
 class ProjectAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "sdk-examples.alembic_version"
+    __metatable_identifier__ = "sdk_examples.alembic_version"
     __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = "alembic_version"
+    __alembic_version_table_name__ = "sdk_examples_alembic_version"
 
 
 migration = AlembicMetaTableMigration(
@@ -251,38 +252,36 @@ The standard `revision` command writes an Alembic revision file for the
 provider. It does not build SDK migration operations and it does not ask the
 backend to render or apply SQL. Alembic owns revision generation.
 
-`current`, `upgrade`, and `downgrade` run the same preparation preflight as
-`revision`: the CLI registers or resolves the `AlembicVersionMetaTable`,
-reserves provider-scoped platform-managed MetaTables, binds backend physical
-table, index, and FK names into SQLAlchemy metadata, asks TS Manager for a
-temporary table-scoped migration URI, builds a normal Alembic `Config`, and
-calls Alembic directly. Alembic stdout and offline output buffers are passed
-through the CLI.
+`revision`, `upgrade`, and `downgrade` reserve provider-scoped
+platform-managed MetaTables, bind backend-reserved physical table names into
+SQLAlchemy metadata, ask TS Manager for a temporary table-scoped migration URI,
+build a normal Alembic `Config`, and call Alembic directly. `current` only needs
+the Alembic version MetaTable binding and a scoped credential for that version
+table because it is read-only for application MetaTables.
 
 There is no normal-user `render` or `upgrade --dry-run` path. Alembic is the
 execution path. The backend only provides registry reservation and the scoped
 database credential; it does not receive an SDK SQL artifact to apply.
 
-After Alembic `upgrade` succeeds, the CLI refreshes the provider-scoped catalog
-rows with physical creation disabled. The command succeeds only when both
-Alembic execution and catalog refresh succeed.
+After Alembic `upgrade` succeeds, the CLI calls `finalize-managed/` for the
+provider-scoped catalog rows. The command succeeds only when both Alembic
+execution and backend finalization succeed.
 
 If the provider defines `after_register_metatables`, the CLI runs that hook only
-after the provider-scoped MetaTable registration succeeds. The hook receives an
-`AlembicMetaTableCatalogRefreshContext`. After `upgrade`, that context carries
-`reserved_policy="reconcile"` so project catalog upserts can explicitly ask TS
-Manager to reconcile newly created physical tables. It does not run for
-`current`, `revision`, or failed `upgrade`.
+after provider-scoped backend finalization succeeds. The hook receives an
+`AlembicMetaTableCatalogRefreshContext`. It does not run for `current`,
+`revision`, or failed `upgrade`.
 
 ## Backend Coordination
 
-The migration CLI coordinates with two backend endpoints before calling
-Alembic:
+The migration CLI coordinates with backend endpoints around Alembic:
 
 - `POST /orm/api/ts_manager/meta_table/reserve-managed/` reserves or resolves
   platform-managed MetaTable rows without creating physical application tables.
 - `POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/`
   issues a temporary, table-scoped migration credential.
+- `POST /orm/api/ts_manager/meta_table/finalize-managed/` activates reserved
+  MetaTables after Alembic creates or alters the physical tables.
 
 The returned database URI is a secret and should not be printed, logged, or
 stored in project files.
@@ -292,10 +291,10 @@ stored in project files.
 MetaTables remain catalog metadata. They do not own migration execution records,
 affected-table validation, or contract reconciliation during Alembic apply.
 
-Before Alembic renders SQL, project tooling resolves/registers only the
+Before Alembic renders SQL, project tooling resolves/reserves only the
 application MetaTable classes listed in `migration.metatable_models` and binds
 them to backend physical table names. After Alembic changes physical tables,
-project tooling refreshes the same catalog scope. Provider scope prevents
+project tooling finalizes the same catalog scope. Provider scope prevents
 unrelated imported models from being registered by migration tooling.
 
 ## Removed Path

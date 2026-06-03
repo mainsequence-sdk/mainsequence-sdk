@@ -193,12 +193,12 @@ let migration tooling resolve/register unresolved parent targets. This first
 tutorial keeps the runnable example focused on a single table; the FK authoring
 surface appears below and in the [Data Nodes Knowledge Guide](../knowledge/data_nodes.md).
 
-Foreign-key names are not part of this SDK helper. Do not pass `name=...`;
-platform-managed FK contracts omit physical constraint names and let the backend
-generate them.
+Foreign-key names are not part of the platform-managed MetaTable contract.
+`MetaTableForeignKey(...)` records the logical relationship; Alembic,
+SQLAlchemy, and the database own the physical FK constraint name.
 
 !!! important
-    `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial.
+    `MetaTable.identifier` and namespace must be unique enough to find the table later. In tutorial code, generic names like `daily_random_number` are very likely to collide because someone else in your organization has probably already run the same tutorial. Prefix table identifiers with the project name, package name, or project UID.
 
     That is why this example includes `MAIN_SEQUENCE_PROJECT_UID` in the
     identifier. It gives each project a stable table identity while keeping all

@@ -17,6 +17,7 @@ from mainsequence.meta_tables import (
 )
 
 NAMESPACE = "sdk-examples"
+PROJECT_NAME = "sdk_examples"
 
 NAMING_CONVENTION = {
     "ix": "%(table_name)s_%(column_0_name)s_idx",
@@ -30,21 +31,21 @@ class Base(DeclarativeBase):
 
 
 class Account(Base):
-    __tablename__ = "account"
+    __tablename__ = f"{PROJECT_NAME}_account"
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Account"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class Asset(Base):
-    __tablename__ = "asset"
+    __tablename__ = f"{PROJECT_NAME}_asset"
     __table_args__ = (Index(None, "account_uid"),)
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Asset"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Asset"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(

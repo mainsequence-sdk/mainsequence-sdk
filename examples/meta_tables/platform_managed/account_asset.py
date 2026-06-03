@@ -12,10 +12,10 @@ from examples.meta_tables.common import (
 from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
 
 NAMESPACE = "sdk-examples"
+PROJECT_NAME = "sdk_examples"
 
 NAMING_CONVENTION = {
     "ix": "%(table_name)s_%(column_0_name)s_idx",
-    "fk": "%(table_name)s_%(column_0_name)s_fkey",
     "pk": "%(table_name)s_pkey",
 }
 
@@ -28,7 +28,7 @@ class Account(PlatformManagedMetaTable, Base):
     __table_args__ = {"schema": DEFAULT_SCHEMA}
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Account"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -41,7 +41,7 @@ class Asset(PlatformManagedMetaTable, Base):
     )
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Asset"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Asset"
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(

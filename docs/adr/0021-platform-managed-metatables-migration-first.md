@@ -103,7 +103,7 @@ platform-managed MetaTable. Resolution must:
 After resolution, Alembic renders SQL against the backend physical table names,
 not against temporary logical/hash names.
 
-After SQL apply, catalog refresh must:
+After Alembic upgrade, backend finalization must:
 
 - introspect or validate the affected physical tables;
 - refresh column, index, foreign-key, and time-index catalog projections;
@@ -112,72 +112,25 @@ After SQL apply, catalog refresh must:
 - run `after_register_metatables` with an
   `AlembicMetaTableCatalogRefreshContext` containing those final rows.
 
-If SQL apply fails after an initial hidden registration, the table exists and
-the MetaTable row remains active. That is acceptable because creation still used
-the current platform-managed backend authority path. The failed migration can be
-retried after fixing the Alembic SQL.
+If Alembic upgrade fails after reservation, the MetaTable row remains reserved
+until a later successful upgrade/finalization or an explicit reset workflow.
 
 ## Backend Contract
 
-ADR 0020's SQL apply contract remains. No new backend prepare endpoint is
-required.
-
-Platform-managed initial table creation uses the existing backend
-`MetaTable.register()` endpoint. The migration CLI is the only normal
-user-facing caller for platform-managed models:
+This ADR's SQL apply contract has been superseded by ADR 0022. Platform-managed
+initial table creation uses `reserve-managed/` plus direct Alembic execution,
+not `MetaTable.register()` plus a backend SQL apply endpoint:
 
 ```text
 migrations upgrade
--> Model.register() for missing provider-scoped platform-managed models
--> backend creates the physical table and returns physical_table_name
--> SDK binds the model
--> Alembic renders evolution SQL against the bound physical table
+-> reserve-managed/ for missing provider-scoped platform-managed models
+-> SDK binds reserved physical_table_name
+-> migration-connection/ issues a scoped database credential
+-> Alembic runs upgrade directly
+-> finalize-managed/ activates the reserved MetaTables
 ```
 
-The apply request remains an Alembic-rendered SQL artifact and still contains no
-request-side data source UID.
-
-### Apply Request
-
-```json
-{
-  "version": "metatable-migration.v1",
-  "alembic_version_meta_table_uid": "uuid",
-  "package": "msm",
-  "migration_namespace": "markets",
-  "revision": "0001",
-  "down_revision": null,
-  "direction": "upgrade",
-  "expected_current_revision": null,
-  "manifest": {},
-  "manifest_sha256": "...",
-  "sql": "CREATE TABLE backend_allocated_asset_table (...);",
-  "sql_sha256": "...",
-  "statement_boundaries": [],
-  "affected_tables": [
-    {
-      "identifier": "mainsequencemarkets:msm.models.Asset",
-      "meta_table_uid": "uuid"
-    }
-  ],
-  "dry_run": false
-}
-```
-
-### Apply Response
-
-The backend response remains the direct SQL apply response. SDK migration
-tooling performs catalog refresh after apply and then passes an
-`AlembicMetaTableCatalogRefreshContext` to `after_register_metatables`.
-
-```json
-{
-  "ok": true,
-  "previous_revision": null,
-  "applied_revision": "0001",
-  "executed_statement_count": 4
-}
-```
+There is no backend SQL apply request or apply response in the active flow.
 
 ## Sequential Alembic Revision IDs
 

@@ -152,12 +152,17 @@ table. Do not use it for labels, descriptions, runtime options, test isolation,
 backend UIDs, data-source UIDs, or updater scope. Use `hash_namespace` for test
 or experiment isolation.
 
+Prefix explicit table identifiers, explicit physical table names, and Alembic
+version table names with the project or package name. Bare names such as
+`Account`, `Asset`, or `alembic_version` can collide across projects sharing an
+organization or database schema.
+
 Register through the class API:
 
 ```python
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = "sdk_examples.Account"
     __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_description__ = (
         "Customer account master records used to scope balances, holdings, and "
@@ -222,10 +227,9 @@ tooling resolves/registers unresolved target model classes, stores each
 returned `MetaTable` in a local process registry keyed by `storage_hash`, and
 uses the target `MetaTable.uid` in the child FK contract.
 
-Do not require users to provide foreign-key names. `MetaTableForeignKey(...)`
-accepts `name=...` only as an override; when omitted, the SDK derives a stable
-PostgreSQL-safe contract name from the child table and source column after the
-column is attached to the SQLAlchemy table.
+Do not require users to provide foreign-key names. Platform-managed
+`MetaTableForeignKey(...)` contracts store logical relationships only. Alembic,
+SQLAlchemy, and the database own physical FK constraint names.
 
 Use this pattern:
 
@@ -300,6 +304,8 @@ global identity. If it does not, the SDK derives the identifier from
 `[project].name` in `pyproject.toml` plus
 `<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
 class is renamed or moved but must keep the same platform identity.
+When declaring an explicit identifier, prefix it with the project or package
+name rather than using a bare table name.
 
 Do not ask users to construct backend migration payloads, call low-level
 migration request models, or use SDK helper functions directly. The backend

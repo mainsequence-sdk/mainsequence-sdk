@@ -73,6 +73,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTable
 
 
+PROJECT_NAME = "sdk_examples"
 NAMESPACE = "sdk-examples"
 SCHEMA = "public"
 
@@ -81,7 +82,6 @@ class Base(DeclarativeBase):
     metadata = MetaData(
         naming_convention={
             "ix": "%(table_name)s_%(column_0_name)s_idx",
-            "fk": "%(table_name)s_%(column_0_name)s_fkey",
             "pk": "%(table_name)s_pkey",
         }
     )
@@ -94,7 +94,7 @@ class Account(PlatformManagedMetaTable, Base):
     )
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Account"
     __metatable_description__ = "Tutorial accounts used as parent rows for governed related tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_labels__ = ["tutorial"]
@@ -113,6 +113,11 @@ The important pieces are:
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
 - `__metatable_extra_hash_components__` adds a stable storage-identity component so similarly shaped tables cannot collide
 - `uid` is an application-level primary key, not a backend row id
+
+Prefix explicit table identifiers and explicit physical table names with the
+project or package name. Bare names such as `Account`, `Asset`, or
+`alembic_version` are easy to collide across projects sharing one organization
+or database schema.
 
 `__metatable_extra_hash_components__` is part of storage identity. Use stable
 values such as `{"storage_name": "account"}` or
@@ -152,8 +157,9 @@ physical table name. `MetaTableForeignKey` keeps the target model and target
 column as SDK metadata so migration tooling can resolve/register parent targets
 and resolve the target `MetaTable.uid`.
 
-Do not add `name=...`. Platform-managed FK contracts omit physical constraint
-names; the backend generates the actual foreign-key name.
+Platform-managed FK contracts omit physical constraint names. Alembic,
+SQLAlchemy, and the database own the physical foreign-key constraint name; the
+MetaTable backend stores the logical relationship, not the physical FK name.
 
 ```python
 class AccountLimit(PlatformManagedMetaTable, Base):
@@ -163,7 +169,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     )
 
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "AccountLimit"
+    __metatable_identifier__ = f"{PROJECT_NAME}.AccountLimit"
     __metatable_description__ = "Account limit records keyed to the owning tutorial account."
     __metatable_extra_hash_components__ = {"storage_name": "account_limit"}
     __metatable_labels__ = ["tutorial"]

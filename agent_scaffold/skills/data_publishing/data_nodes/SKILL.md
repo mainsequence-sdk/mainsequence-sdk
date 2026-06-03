@@ -148,7 +148,7 @@ class Base(DeclarativeBase):
 
 class PricesTable(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "<domain_namespace>"
-    __metatable_identifier__ = "<table_identifier>"
+    __metatable_identifier__ = "<project_name>.<table_identifier>"
     __metatable_extra_hash_components__ = {"storage_name": "<stable_storage_name>"}
     __metatable_description__ = (
         "Daily close prices keyed by asset unique identifier for portfolio and "
@@ -387,9 +387,9 @@ DataNode storage table needs a platform-managed FK, use
 `ForeignKey(Target.__table__.c.uid)`, table fullnames, or explicit target UID
 maps in DataNode examples.
 
-Do not ask users to name these foreign keys. `MetaTableForeignKey(...)` derives
-a stable contract name when `name` is omitted; `name=...` is only for deliberate
-overrides.
+Do not ask users to name these foreign keys. Platform-managed
+`MetaTableForeignKey(...)` contracts store logical relationships only. Alembic,
+SQLAlchemy, and the database own physical FK constraint names.
 
 Registration of the storage class follows the MetaTable migration lifecycle.
 Migration tooling recursively resolves/registers unresolved FK target model
@@ -402,6 +402,8 @@ Do not add DataNode configuration fields just to mutate storage metadata.
 
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
+Prefix explicit table identifiers with the project or package name rather than
+using bare names that can collide across projects.
 
 Do not put schema or published table metadata on the DataNode configuration.
 

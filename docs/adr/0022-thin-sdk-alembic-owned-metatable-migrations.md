@@ -16,9 +16,10 @@ still contains too much migration machinery:
   for a backend apply endpoint.
 - `AlembicMetaTableMigration.resolve_or_register_metatable_model(...)` creates
   missing platform-managed tables through `model.register()`.
-- SQLAlchemy authoring helpers reject explicit `MetaTableForeignKey(name=...)`
-  and require named indexes even though the backend reservation plan can now own
-  canonical names and can also accept explicit client names.
+- SQLAlchemy authoring helpers must allow explicit `MetaTableForeignKey(name=...)`
+  and unnamed indexes so Alembic can use normal SQLAlchemy naming conventions or
+  database defaults. The backend reservation plan owns physical table names, not
+  FK/index names.
 
 This keeps the SDK in the wrong position. Alembic should own revision
 generation, database connection configuration, current revision discovery,
@@ -29,8 +30,7 @@ The backend now supports the missing coordination primitives:
 
 - `POST /orm/api/ts_manager/meta_table/reserve-managed/`
   reserves or resolves platform-managed MetaTable rows without creating physical
-  tables, and returns backend-owned physical table names, index names, and
-  foreign-key names.
+  tables, and returns TS Manager-owned physical table names.
 - `POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/`
   issues a short-lived, user-scoped migration credential for the reserved table
   scope. It does not expose the stored data-source owner credential.
@@ -53,7 +53,8 @@ The SDK must not be the migration executor. It should only:
 1. discover/load the project migration provider;
 2. register or resolve the provider's `AlembicVersionMetaTable`;
 3. reserve/resolve provider-scoped platform-managed MetaTables;
-4. bind returned backend names into SQLAlchemy metadata before Alembic runs;
+4. bind returned physical table names into SQLAlchemy metadata before Alembic
+   runs;
 5. build an Alembic `Config` with the backend-issued migration URI;
 6. invoke Alembic command APIs for revision/current/upgrade/downgrade;
 7. call the backend batch finalization endpoint after successful Alembic
@@ -208,19 +209,22 @@ The method must:
 1. resolve the provider's data source from the provider models or session;
 2. build reservation table payloads from `metatable_models`;
 3. include explicit SQLAlchemy index/FK names when the user supplied them;
-4. allow omitted index/FK names so the backend can return canonical names;
+4. allow omitted index/FK names so SQLAlchemy naming conventions or the
+   database can choose physical names;
 5. emit `target_identifier` for same-batch FK targets that do not have
    `target_meta_table_uid` yet;
 6. call `MetaTable.reserve_managed(...)` once with all pending reservation
    tables, not once per model;
 7. bind each returned item back to its model by response order;
 8. mutate SQLAlchemy `Table.name` to the returned physical table name;
-9. mutate SQLAlchemy index names and FK constraint names to the returned names;
+9. leave SQLAlchemy index names and FK constraint names as authored by project
+   metadata;
 10. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
    `__metatable_storage_hash__`, and `__metatable_physical_table_name__`.
 
-After this step, Alembic autogenerate and Alembic upgrade must see the same
-names the backend reserved.
+After this step, Alembic autogenerate and Alembic upgrade must see the reserved
+physical table names. Constraint and index names remain normal Alembic/SQLAlchemy
+DDL metadata.
 
 The provider must also expose the prepared migration scope:
 
@@ -305,13 +309,14 @@ the SDK raises `AlembicProviderPhysicalStateError` and does not run
 
 ## Explicit Name Policy
 
-Backend reservation owns canonical generated names, but the SDK must accept
-explicit user names where SQLAlchemy supplies them:
+Backend reservation owns physical table names only. The SDK must accept explicit
+user names where SQLAlchemy supplies them:
 
 - explicit table names may be passed through as requested physical names;
 - explicit index names must be included in the reservation contract;
 - explicit FK names must be included in the reservation contract;
-- omitted index/FK names must be filled from the backend reservation response.
+- omitted index/FK names must remain omitted and must not be filled from the
+  backend reservation response.
 
 Therefore the SDK should remove the hard rejection of
 `MetaTableForeignKey(name=...)` and should stop requiring all SQLAlchemy indexes
@@ -349,8 +354,8 @@ normal tutorial workflow.
   it in CLI output.
 - [x] Add managed MetaTable reservation request/response models.
 - [x] Add `MetaTable.reserve_managed(...)`.
-- [x] Add provider-level reservation preparation that binds physical table,
-  index, and FK names into SQLAlchemy metadata.
+- [x] Add provider-level reservation preparation that binds physical table names
+  into SQLAlchemy metadata.
 - [x] Batch provider MetaTable reservations into one backend request and use
   `target_identifier` for same-batch FK resolution before UIDs exist.
 - [x] Change `AlembicMetaTableMigration` so missing provider models are reserved,
@@ -368,8 +373,8 @@ normal tutorial workflow.
 - [x] Add `mainsequence migrations reset --confirm-reset` for explicit
   provider-scoped repair workflows.
 - [x] Allow explicit `MetaTableForeignKey(name=...)`.
-- [x] Allow unnamed SQLAlchemy indexes before reservation and bind backend
-  returned names before Alembic autogenerate/upgrade.
+- [x] Allow unnamed SQLAlchemy indexes before reservation and keep FK/index
+  names under SQLAlchemy/Alembic ownership.
 - [x] Deprecate or remove import-time binding of `MetaTable.apply_migration` and
   `MetaTable.get_migration_status`.
 - [x] Remove normal-user documentation that asks users to hand-build or apply

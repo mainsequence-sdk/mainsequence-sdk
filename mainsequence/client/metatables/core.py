@@ -610,8 +610,9 @@ class ManagedMetaTableReservationTable(MetaTableRequestFields):
     table_contract: MetaTableContract | dict[str, Any] = Field(
         ...,
         description=(
-            "Relational table contract used to reserve physical, index, and "
-            "foreign-key names before Alembic renders SQL."
+            "Relational table contract used to reserve the physical table name "
+            "before Alembic renders SQL. Index and foreign-key names remain "
+            "client-authored or database-authored DDL metadata."
         ),
     )
     time_index_name: str | None = Field(
@@ -667,8 +668,9 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
     table_contract: dict[str, Any] = Field(
         ...,
         description=(
-            "Backend-normalized contract containing resolved physical table, "
-            "index, and foreign-key names."
+            "Backend-normalized contract containing the resolved physical table "
+            "name. Index and foreign-key names are preserved only when authored "
+            "or observed; TS Manager does not generate them."
         ),
     )
     schema_management: dict[str, Any] | None = Field(

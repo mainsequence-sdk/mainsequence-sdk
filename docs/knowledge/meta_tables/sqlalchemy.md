@@ -30,7 +30,6 @@ models that should be platform-managed.
 ```python
 NAMING_CONVENTION = {
     "ix": "%(table_name)s_%(column_0_name)s_idx",
-    "fk": "%(table_name)s_%(column_0_name)s_fkey",
     "pk": "%(table_name)s_pkey",
 }
 
@@ -49,7 +48,7 @@ class Account(PlatformManagedMetaTable, Base):
     __table_args__ = {"schema": "public"}
 
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = "sdk_examples.Account"
     __metatable_description__ = "Accounts used as the parent entity for asset and holdings tables."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
     __metatable_labels__ = ["sdk-example"]
@@ -65,6 +64,11 @@ is the stable lookup key used to resolve migrated MetaTables. The mapped
 columns, indexes, and foreign keys do contribute to the configured storage
 identity.
 
+Prefix explicit table identifiers, explicit physical table names, and Alembic
+version table names with the project or package name. Bare names such as
+`Account`, `Asset`, or `alembic_version` can collide across projects sharing the
+same organization or database schema.
+
 Use `__metatable_extra_hash_components__` to add stable, deterministic
 storage-identity components when two table classes could otherwise hash to the
 same storage name. This is common for generic or repeated storage shapes, such
@@ -73,7 +77,7 @@ as several one-index time-series tables with the same column types.
 ```python
 class DailyReturns(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "DailyReturns"
+    __metatable_identifier__ = "sdk_examples.DailyReturns"
     __metatable_description__ = "Daily return observations keyed by time for tutorial assets."
     __metatable_extra_hash_components__ = {"storage_name": "daily_returns"}
 ```
@@ -118,10 +122,10 @@ Then run:
 mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
-Migration tooling calls the existing platform-managed registration path for
-missing provider-scoped models, lets the backend create the initial physical
-table, binds `Account.__table__.name` to the returned physical table name, and
-then renders/applies Alembic SQL for schema evolution.
+Migration tooling calls the managed reservation path for missing
+provider-scoped models, lets Alembic create the initial physical table, binds
+`Account.__table__.name` to the returned physical table name, and then
+renders/applies Alembic SQL for schema creation and evolution.
 
 ## Foreign Keys
 
@@ -136,9 +140,9 @@ public SDK declaration. Migration-managed registration may rebind
 metadata. Migration tooling resolves parent targets and backend
 `MetaTable.uid` values before rendering SQL.
 
-You may provide an explicit foreign-key name with `MetaTableForeignKey(name=...)`.
-If you omit it, the SDK leaves the name unset and backend reservation returns
-the canonical physical constraint name before Alembic runs.
+Platform-managed `MetaTableForeignKey(...)` contracts omit physical constraint
+names. Alembic, SQLAlchemy, and the database own the physical FK name; backend
+reservation does not generate or manage it.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):
@@ -330,7 +334,6 @@ The SDK intentionally fails early for ambiguous metadata:
 - platform-managed tables must use `PlatformManagedMetaTable` or `metatable_tablename(...)` to derive the logical `storage_hash`
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
-- foreign keys must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - platform-managed foreign keys must use `MetaTableForeignKey(TargetModel, column=...)`
 - the migration workflow resolves `MetaTableForeignKey` target models through their stable identifiers and binds their `MetaTable.uid`
 - unsupported SQLAlchemy column types raise before registration

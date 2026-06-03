@@ -598,14 +598,14 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     )
 
 
-def test_contract_equivalence_ignores_platform_owned_fk_names_and_echoed_identifier():
+def test_contract_equivalence_compares_sdk_fk_and_index_names():
     import mainsequence.meta_tables.migrations as migrations_mod
 
     client_contract = {
         "version": "relational-table.v1",
         "physical": {"table_name": None},
         "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
-        "indexes": [],
+        "indexes": [{"columns": ["account_uid"], "unique": False}],
         "foreign_keys": [
             {
                 "source_columns": ["account_uid"],
@@ -619,10 +619,14 @@ def test_contract_equivalence_ignores_platform_owned_fk_names_and_echoed_identif
         "version": "relational-table.v1",
         "physical": {"table_name": "mt_asset_backend"},
         "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
-        "indexes": [],
+        "indexes": [
+            {
+                "columns": ["account_uid"],
+                "unique": False,
+            }
+        ],
         "foreign_keys": [
             {
-                "name": "backend_generated_fk_name",
                 "source_columns": ["account_uid"],
                 "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "target_identifier": "Account",
@@ -633,6 +637,13 @@ def test_contract_equivalence_ignores_platform_owned_fk_names_and_echoed_identif
     }
 
     assert migrations_mod._contracts_equivalent(backend_contract, client_contract)
+
+    backend_contract["indexes"][0]["name"] = "different_sdk_index_name"
+    assert not migrations_mod._contracts_equivalent(backend_contract, client_contract)
+
+    backend_contract["indexes"][0].pop("name")
+    backend_contract["foreign_keys"][0]["name"] = "different_sdk_fk_name"
+    assert not migrations_mod._contracts_equivalent(backend_contract, client_contract)
 
 
 def test_apply_mainsequence_migration_role_executes_quoted_set_role():
@@ -721,7 +732,7 @@ def test_apply_mainsequence_migration_role_preserves_existing_transaction():
     assert connection.transaction_active is True
 
 
-def test_prepare_for_alembic_binds_index_names_without_fk_name_churn(monkeypatch):
+def test_prepare_for_alembic_binds_physical_table_names_only(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -776,17 +787,8 @@ def test_prepare_for_alembic_binds_index_names_without_fk_name_churn(monkeypatch
             else:
                 uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
                 physical_name = "mt_asset_backend"
-                indexes = [{"name": "mt_asset_symbol_idx", "columns": ["symbol"], "unique": False}]
-                foreign_keys = [
-                    {
-                        "name": "asset_account_uid_fkey",
-                        "source_columns": ["account_uid"],
-                        "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                        "target_identifier": "Account",
-                        "target_columns": ["uid"],
-                        "on_delete": "cascade",
-                    }
-                ]
+                indexes = [{"columns": ["symbol"], "unique": False}]
+                foreign_keys = []
             response_tables.append(
                 types.SimpleNamespace(
                     identifier=table.identifier,
@@ -839,8 +841,8 @@ def test_prepare_for_alembic_binds_index_names_without_fk_name_churn(monkeypatch
     ]
     assert Account.__table__.name == "mt_account_backend"
     assert Asset.__table__.name == "mt_asset_backend"
-    assert next(iter(Asset.__table__.indexes)).name == "mt_asset_symbol_idx"
-    assert next(iter(Asset.__table__.foreign_key_constraints)).name is None
+    assert next(iter(Asset.__table__.indexes)).name is None
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name == "asset_account_uid_fkey"
     assert reserved_payloads[1].table_contract.foreign_keys[0].name is None
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert reserved_payloads[0].schema_management.alembic.package == "sample"

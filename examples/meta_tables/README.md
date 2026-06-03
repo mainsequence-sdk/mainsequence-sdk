@@ -51,15 +51,20 @@ The model classes are registered by migration tooling through the provider in
 `examples.meta_tables.migrations:migration`. Do not call `Account.register()` or
 `Asset.register()` in application/bootstrap code.
 
-The platform-managed example uses SQLAlchemy naming conventions for index and
-foreign-key names. Those names are generated after the configured table name is
-known, avoiding a circular dependency between table-name hashing and database
-object names.
+The examples use a `PROJECT_NAME` prefix for logical MetaTable identifiers,
+external physical table names, and the Alembic version table name. Do not use
+bare names like `Account`, `asset`, or `alembic_version` in shared schemas; they
+collide easily across projects and providers.
+
+The platform-managed example uses a SQLAlchemy naming convention for indexes.
+Platform-managed foreign-key contracts keep logical FK relationships only. The
+physical FK constraint names are not managed by the MetaTable backend and should
+not be copied into the MetaTable contract.
 
 Foreign-key targets are resolved by the migration workflow. Before Alembic runs,
 `migrations upgrade` resolves existing provider-scoped MetaTables by exact
 `identifier`, reserves missing rows through `reserve-managed`, and binds
-SQLAlchemy models to the backend physical table, index, and foreign-key names.
+SQLAlchemy models to backend physical table names and registered index names.
 After Alembic succeeds, the CLI calls backend finalization for the prepared
 provider MetaTable UIDs.
 

@@ -287,7 +287,7 @@ thin adapter that:
 1. loads the selected `AlembicMetaTableMigration` provider;
 2. registers or resolves its `AlembicVersionMetaTable`;
 3. reserves provider-scoped platform-managed MetaTables;
-4. binds backend physical table, index, and FK names into SQLAlchemy metadata;
+4. binds backend-reserved physical table names into SQLAlchemy metadata;
 5. asks the backend for a temporary scoped migration URI;
 6. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
 
@@ -296,12 +296,12 @@ Backend coordination uses:
 ```text
 POST /orm/api/ts_manager/meta_table/reserve-managed/
 POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
+POST /orm/api/ts_manager/meta_table/finalize-managed/
 ```
 
 The backend does not receive an SDK-rendered SQL artifact and does not execute a
 client-defined migration operation. After a successful Alembic `upgrade`, the
-CLI refreshes provider-scoped MetaTable catalog rows with physical table
-creation disabled.
+CLI finalizes provider-scoped MetaTable catalog rows through `finalize-managed/`.
 
 ## Backend Capabilities
 

@@ -10,13 +10,14 @@ from mainsequence.meta_tables.migrations import (
 )
 
 NAMESPACE = "sdk-examples"
+PROJECT_NAME = "sdk_examples"
 
 
 class ExampleAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "sdk-examples.alembic_version"
+    __metatable_identifier__ = f"{PROJECT_NAME}.alembic_version"
     __alembic_version_schema__ = DEFAULT_SCHEMA
-    __alembic_version_table_name__ = "alembic_version"
+    __alembic_version_table_name__ = f"{PROJECT_NAME}_alembic_version"
     __alembic_version_column_name__ = "version_num"
     __metatable_data_source_uid__ = os.getenv("MAINSEQUENCE_META_TABLE_DATA_SOURCE_UID") or None
 
