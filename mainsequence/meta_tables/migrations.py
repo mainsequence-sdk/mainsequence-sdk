@@ -785,7 +785,22 @@ def apply_mainsequence_migration_role(connection: Any, config: Any) -> None:
         raise RuntimeError("SQLAlchemy is required to apply the migration owner role.") from exc
 
     escaped_role = str(owner_role_name).replace('"', '""')
+    was_in_transaction = _connection_in_transaction(connection)
     connection.execute(text(f'SET ROLE "{escaped_role}"'))
+    if not was_in_transaction and _connection_in_transaction(connection):
+        commit = getattr(connection, "commit", None)
+        if callable(commit):
+            commit()
+
+
+def _connection_in_transaction(connection: Any) -> bool:
+    in_transaction = getattr(connection, "in_transaction", None)
+    if not callable(in_transaction):
+        return False
+    try:
+        return bool(in_transaction())
+    except Exception:
+        return False
 
 
 def resolve_alembic_revision_metadata(

@@ -616,6 +616,71 @@ def test_apply_mainsequence_migration_role_executes_quoted_set_role():
     assert connection.statements == ['SET ROLE "owner""role"']
 
 
+def test_apply_mainsequence_migration_role_commits_implicit_set_role_transaction():
+    class FakeConnection:
+        def __init__(self):
+            self.statements = []
+            self.transaction_active = False
+            self.commit_count = 0
+
+        def in_transaction(self):
+            return self.transaction_active
+
+        def execute(self, statement):
+            self.statements.append(str(statement))
+            self.transaction_active = True
+
+        def commit(self):
+            self.commit_count += 1
+            self.transaction_active = False
+
+    class FakeConfig:
+        attributes = {"mainsequence_migration_owner_role_name": "owner_role"}
+
+        def get_main_option(self, name):
+            return None
+
+    connection = FakeConnection()
+
+    apply_mainsequence_migration_role(connection, FakeConfig())
+
+    assert connection.statements == ['SET ROLE "owner_role"']
+    assert connection.commit_count == 1
+    assert connection.transaction_active is False
+
+
+def test_apply_mainsequence_migration_role_preserves_existing_transaction():
+    class FakeConnection:
+        def __init__(self):
+            self.statements = []
+            self.transaction_active = True
+            self.commit_count = 0
+
+        def in_transaction(self):
+            return self.transaction_active
+
+        def execute(self, statement):
+            self.statements.append(str(statement))
+
+        def commit(self):
+            self.commit_count += 1
+            self.transaction_active = False
+
+    class FakeConfig:
+        attributes = {"mainsequence_migration_owner_role_name": "owner_role"}
+
+        def get_main_option(self, name):
+            return None
+
+    connection = FakeConnection()
+
+    apply_mainsequence_migration_role(connection, FakeConfig())
+
+    assert connection.statements == ['SET ROLE "owner_role"']
+    assert connection.commit_count == 0
+    assert connection.transaction_active is True
+
+
 def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
