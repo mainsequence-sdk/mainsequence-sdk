@@ -1415,6 +1415,28 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             raise_for_response(response, payload=request_payload)
         return response.json()
 
+    @classmethod
+    def filter_by_body(
+        cls,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        **filters: Any,
+    ) -> list[MetaTable]:
+        response_json = cls._post_action(
+            "filter",
+            filters,
+            timeout=timeout,
+            expected_statuses=(200,),
+        )
+        if isinstance(response_json, dict) and isinstance(
+            response_json.get("results"),
+            list,
+        ):
+            return [cls(**item) for item in response_json["results"]]
+        if isinstance(response_json, list):
+            return [cls(**item) for item in response_json]
+        raise TypeError("MetaTable.filter_by_body expected a list or paginated response.")
+
     def _post_detail_action(
         self,
         action_name: str,

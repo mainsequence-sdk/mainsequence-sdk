@@ -700,10 +700,11 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
 
     filter_calls = []
 
-    def fake_filter(**kwargs):
+    def fake_filter_by_body(**kwargs):
         filter_calls.append(kwargs)
-        assert set(kwargs) == {"timeout", "identifier__in"}
-        assert kwargs["identifier__in"] == ["Account", "Asset"]
+        assert set(kwargs) == {"timeout", "identifiers", "limit"}
+        assert kwargs["identifiers"] == ["Account", "Asset"]
+        assert kwargs["limit"] == 2
         return [
             types.SimpleNamespace(
                 identifier="Account",
@@ -722,7 +723,7 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
             )
         ]
 
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
+    monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
 
     reserved_payloads = []
 

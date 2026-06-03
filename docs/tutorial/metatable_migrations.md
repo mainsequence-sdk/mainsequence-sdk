@@ -72,16 +72,22 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
 
 - imports the selected provider
 - registers or resolves the provider's `AlembicVersionMetaTable`
-- reserves or resolves the provider-scoped platform-managed MetaTables without
-  creating physical application tables
+- reserves or resolves the provider-scoped platform-managed MetaTables for
+  commands that render or mutate provider schema, without creating physical
+  application tables
 - binds backend physical table names, index names, and foreign-key names into
-  SQLAlchemy metadata
-- includes the Alembic version MetaTable UID and provider MetaTable UIDs in the
-  migration scope
+  SQLAlchemy metadata for those schema commands
+- includes the Alembic version MetaTable UID, and when needed the provider
+  MetaTable UIDs, in the migration scope
 - requests a temporary table-scoped database URI from the target data source
 - builds a normal Alembic `Config` with the provider's `script_location`,
   `target_metadata`, version-table settings, owner role, and output streams
 - calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
+
+`current` is the cheap read-only path. It registers or resolves only the
+Alembic version MetaTable, requests a credential scoped to that registry table,
+and asks Alembic for current state. It must not restage provider application
+MetaTables.
 
 After Alembic `upgrade` or `downgrade`, the SDK calls TS Manager's
 `finalize-managed` endpoint once for the reserved provider MetaTable UIDs. The
@@ -297,10 +303,10 @@ def downgrade() -> None:
 ## 3. Version Table Binding Is Automatic
 
 The provider's `AlembicVersionMetaTable` is registered automatically when a
-command needs backend migration state. `current` and `upgrade` force the same
-idempotent backend registration path before building status or apply requests;
-an in-memory bound Python object is only a cache and is never enough to prove
-that the backend `MetaTable` pointer still exists.
+command needs backend migration state. `current` uses only that registry
+MetaTable because it is read-only. `revision`, `upgrade`, and `downgrade` also
+reserve or resolve provider application MetaTables before Alembic renders or
+applies schema changes.
 
 Initial registration resolves the data source through the same resolver used by
 normal MetaTable registration. After registration, the bound
@@ -491,8 +497,9 @@ physical application tables:
 The backend returns canonical physical table, index, and FK names. The SDK binds
 those names into SQLAlchemy metadata before Alembic runs.
 
-Second, it requests a short-lived migration credential scoped to the Alembic
-version MetaTable UID plus the reserved provider MetaTable UIDs:
+Second, schema-changing commands request a short-lived migration credential
+scoped to the Alembic version MetaTable UID plus the reserved provider
+MetaTable UIDs:
 
 ```json
 {
@@ -511,6 +518,9 @@ The Alembic version MetaTable is part of the scope because Alembic reads and
 writes its version table before it runs application DDL. The returned URI is
 secret. The CLI passes it to Alembic and does not print it. Alembic's normal
 stdout and offline output buffers are forwarded through the CLI.
+
+For `current`, the credential scope contains only the Alembic version MetaTable
+UID because no provider application table should be reserved or changed.
 
 Third, after Alembic succeeds, it finalizes the reserved provider rows:
 

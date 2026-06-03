@@ -257,15 +257,14 @@ mainsequence migrations upgrade --provider msm.migrations:migration head
 
 1. load the provider;
 2. register/resolve `AlembicVersionMetaTable`;
-3. reserve and bind platform-managed MetaTables;
-4. issue a scoped migration connection for the reserved MetaTable UID scope;
-5. call Alembic current/head APIs directly.
+3. issue a scoped migration connection for the Alembic version MetaTable UID;
+4. call Alembic current/head APIs directly.
 
-All migration commands must run the same provider preparation preflight before
-invoking Alembic. Even when a command only reads Alembic version state, Alembic
-environment code may import provider metadata or inspect `target_metadata`.
-Using the same reservation/binding step prevents `current`, `revision`, and
-`upgrade` from seeing different table/index/FK names.
+`current` is read-only for provider application MetaTables. It must not call
+`reserve-managed` for the provider model list because checking Alembic version
+state should not mutate or restage 44 application catalog rows. Provider
+reservation/binding belongs to `revision`, `upgrade`, and `downgrade`, where the
+command renders or mutates provider schema.
 
 `upgrade` must:
 
@@ -343,8 +342,9 @@ normal tutorial workflow.
 - [x] Add `DynamicTableDataSourceMigrationConnectionRequest`,
   `DynamicTableDataSourceMigrationConnection`, and
   `DynamicTableDataSource.issue_migration_connection(...)`.
-- [x] Include the reserved provider `meta_table_uids` in every migration
-  connection request so the backend can authorize against table permissions.
+- [x] Include the Alembic version MetaTable UID in read-only migration
+  connection requests, and include reserved provider `meta_table_uids` only for
+  commands that render or mutate provider schema.
 - [x] Treat the returned migration URI as a secret and avoid printing or logging
   it in CLI output.
 - [x] Add managed MetaTable reservation request/response models.

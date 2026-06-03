@@ -1135,10 +1135,11 @@ def _get_metatables_by_identifier(
     if not unique_identifiers:
         return {}
 
-    filter_kwargs: dict[str, Any] = {"identifier__in": unique_identifiers}
-    if issubclass(meta_table_cls, TimeIndexMetaData):
-        filter_kwargs["include_relations_detail"] = True
-    matches = meta_table_cls.filter(timeout=timeout, **filter_kwargs)
+    matches = meta_table_cls.filter_by_body(
+        timeout=timeout,
+        identifiers=unique_identifiers,
+        limit=max(len(unique_identifiers), 1),
+    )
     if not matches:
         return {}
 
@@ -1151,7 +1152,7 @@ def _get_metatables_by_identifier(
             else:
                 raise ValueError(
                     f"Backend returned a {meta_table_cls.__name__} row without identifier "
-                    "while resolving migration provider models by identifier__in."
+                    "while resolving migration provider models by body identifiers."
                 )
         if identifier in matched_by_identifier:
             raise ValueError(

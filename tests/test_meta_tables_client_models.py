@@ -274,6 +274,42 @@ def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     }
 
 
+def test_meta_table_filter_by_body_posts_identifier_filters(monkeypatch):
+    captured = {}
+
+    def fake_make_request(**kwargs):
+        captured.update(kwargs)
+        return _Response(
+            {
+                "count": 1,
+                "next": None,
+                "previous": None,
+                "results": [_meta_table_response(identifier="Asset")],
+            }
+        )
+
+    monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
+    monkeypatch.setattr(
+        meta_table_models.MetaTable,
+        "build_session",
+        classmethod(lambda cls: SimpleNamespace(headers={})),
+    )
+
+    rows = meta_table_models.MetaTable.filter_by_body(
+        identifiers=["mainsequence.examples.Asset"],
+        limit=1,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].identifier == "Asset"
+    assert captured["r_type"] == "POST"
+    assert captured["url"].endswith("/ts_manager/meta_table/filter/")
+    assert captured["payload"]["json"] == {
+        "identifiers": ["mainsequence.examples.Asset"],
+        "limit": 1,
+    }
+
+
 def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     captured = {}
 
