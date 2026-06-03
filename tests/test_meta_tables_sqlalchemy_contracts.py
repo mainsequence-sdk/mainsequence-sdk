@@ -1504,6 +1504,7 @@ def test_metatable_foreign_key_metadata_drives_fk_contract_target_resolution():
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     )
     assert contract.foreign_keys[0].target_columns == ["uid"]
+    assert contract.foreign_keys[0].name is None
 
 
 def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_name(

@@ -721,7 +721,7 @@ def test_apply_mainsequence_migration_role_preserves_existing_transaction():
     assert connection.transaction_active is True
 
 
-def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
+def test_prepare_for_alembic_binds_index_names_without_fk_name_churn(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -840,8 +840,8 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     assert Account.__table__.name == "mt_account_backend"
     assert Asset.__table__.name == "mt_asset_backend"
     assert next(iter(Asset.__table__.indexes)).name == "mt_asset_symbol_idx"
-    assert next(iter(Asset.__table__.foreign_key_constraints)).name == ("asset_account_uid_fkey")
-    assert reserved_payloads[1].table_contract.foreign_keys[0].name == ("asset_account_uid_fkey")
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name is None
+    assert reserved_payloads[1].table_contract.foreign_keys[0].name is None
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert reserved_payloads[0].schema_management.alembic.package == "sample"
     assert reserved_payloads[0].schema_management.alembic.migration_namespace == "markets"
@@ -1101,7 +1101,7 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
     ]
     assert Account.__table__.name == "mt_account_backend"
     assert Asset.__table__.name == "mt_asset_backend"
-    assert next(iter(Asset.__table__.foreign_key_constraints)).name == ("asset_account_uid_fkey")
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name is None
 
 
 def _write_alembic_package(tmp_path, package_name: str) -> None:

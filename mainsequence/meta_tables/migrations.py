@@ -28,6 +28,7 @@ from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
+    _metatable_foreign_key_metadata,
     _metatable_foreign_key_target_models,
     _resolve_model_data_source_uid,
     platform_managed_migration_registration_context,
@@ -919,7 +920,7 @@ def _bind_backend_contract_names(model: type[Any], table_contract: Mapping[str, 
     if table is None:
         return
     _bind_backend_index_names(table, table_contract.get("indexes") or [])
-    _bind_backend_foreign_key_names(table, table_contract.get("foreign_keys") or [])
+    _clear_metatable_foreign_key_names(table)
 
 
 def _bind_backend_index_names(table: Any, index_contracts: Sequence[Any]) -> None:
@@ -942,27 +943,11 @@ def _bind_backend_index_names(table: Any, index_contracts: Sequence[Any]) -> Non
             index.name = str(name)
 
 
-def _bind_backend_foreign_key_names(table: Any, foreign_key_contracts: Sequence[Any]) -> None:
-    constraints = list(getattr(table, "foreign_key_constraints", []) or [])
-    by_signature = _group_by_signature(constraints, _sqlalchemy_foreign_key_signature)
-    fallback_constraints = sorted(
-        constraints,
-        key=lambda constraint: getattr(constraint, "name", None) or "",
-    )
-    fallback_index = 0
-    for contract in foreign_key_contracts:
-        contract_dict = _contract_dict(contract)
-        name = contract_dict.get("name")
-        if name in (None, ""):
-            continue
-        signature = _contract_foreign_key_signature(contract_dict)
-        candidates = by_signature.get(signature) or []
-        constraint = candidates.pop(0) if candidates else None
-        if constraint is None and fallback_index < len(fallback_constraints):
-            constraint = fallback_constraints[fallback_index]
-            fallback_index += 1
-        if constraint is not None:
-            constraint.name = str(name)
+def _clear_metatable_foreign_key_names(table: Any) -> None:
+    for constraint in list(getattr(table, "foreign_key_constraints", []) or []):
+        elements = list(getattr(constraint, "elements", []) or [])
+        if any(_metatable_foreign_key_metadata(element) is not None for element in elements):
+            constraint.name = None
 
 
 def _group_by_signature(
@@ -1015,25 +1000,6 @@ def _sqlalchemy_index_method(index: Any) -> str | None:
             if method:
                 return str(method)
     return None
-
-
-def _sqlalchemy_foreign_key_signature(constraint: Any) -> tuple[Any, ...]:
-    elements = list(getattr(constraint, "elements", []) or [])
-    on_delete = getattr(elements[0], "ondelete", None) if elements else None
-    on_delete = on_delete or getattr(constraint, "ondelete", None) or "restrict"
-    return (
-        tuple(str(element.parent.name) for element in elements),
-        tuple(str(element.column.name) for element in elements),
-        str(on_delete).lower(),
-    )
-
-
-def _contract_foreign_key_signature(contract: Mapping[str, Any]) -> tuple[Any, ...]:
-    return (
-        tuple(str(column) for column in contract.get("source_columns") or []),
-        tuple(str(column) for column in contract.get("target_columns") or []),
-        str(contract.get("on_delete") or "restrict").lower(),
-    )
 
 
 def _conventional_provider_refs(*, cwd: str | pathlib.Path | None = None) -> list[str]:

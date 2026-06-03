@@ -503,15 +503,6 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         from mainsequence.client.metatables import TimeIndexMetaData
 
         if not isinstance(meta_table, TimeIndexMetaData):
-            provisioning_status = (
-                meta_table.get("provisioning_status")
-                if isinstance(meta_table, Mapping)
-                else getattr(meta_table, "provisioning_status", None)
-            )
-            if provisioning_status is not None and _meta_table_uid(meta_table) not in (None, ""):
-                bound = PlatformManagedMetaTable._bind_meta_table.__func__(cls, meta_table)
-                cls.__time_index_metadata__ = bound
-                return bound
             meta_table = cls._resolve_time_index_metadata_for_bind(meta_table)
         bound = super()._bind_meta_table(meta_table)
         cls.__time_index_metadata__ = bound
@@ -2301,11 +2292,9 @@ def _foreign_key_contract(
         target_meta_table_uid, target_identifier, target_columns = sdk_target
 
     foreign_key_name = (
-        _metatable_foreign_key_explicit_name(elements)
-        if sdk_target is not None
-        else getattr(foreign_key_constraint, "name", None)
+        None if sdk_target is not None else getattr(foreign_key_constraint, "name", None)
     )
-    if not require_metatable_foreign_keys and not foreign_key_name:
+    if sdk_target is None and not require_metatable_foreign_keys and not foreign_key_name:
         raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
 
     on_delete = getattr(elements[0], "ondelete", None) or getattr(
@@ -2365,11 +2354,9 @@ def _time_indexed_meta_table_foreign_key_contract(
         target_meta_table_uid, target_identifier, target_columns = sdk_target
 
     foreign_key_name = (
-        _metatable_foreign_key_explicit_name(elements)
-        if sdk_target is not None
-        else getattr(foreign_key_constraint, "name", None)
+        None if sdk_target is not None else getattr(foreign_key_constraint, "name", None)
     )
-    if not require_metatable_foreign_keys and not foreign_key_name:
+    if sdk_target is None and not require_metatable_foreign_keys and not foreign_key_name:
         raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
 
     on_delete = getattr(elements[0], "ondelete", None) or getattr(
@@ -2448,31 +2435,6 @@ def _metatable_foreign_key_metadata(element: Any) -> Mapping[str, Any] | None:
     if not isinstance(metadata, Mapping):
         raise ValueError("MetaTableForeignKey metadata must be a mapping.")
     return metadata
-
-
-def _metatable_foreign_key_explicit_name(elements: Sequence[Any]) -> str | None:
-    names = {
-        str(metadata.get("name"))
-        for metadata in (_metatable_foreign_key_metadata(element) for element in elements)
-        if metadata is not None and metadata.get("name") not in (None, "")
-    }
-    if not names:
-        return None
-    if len(names) > 1:
-        raise ValueError("Composite MetaTableForeignKey constraints must use one FK name.")
-    return next(iter(names))
-
-
-def _derive_metatable_foreign_key_name(elements: Sequence[Any]) -> str:
-    source_columns = [str(element.parent.name) for element in elements]
-    source_table = None
-    if elements:
-        source_table = getattr(getattr(elements[0], "parent", None), "table", None)
-    source_table_name = None
-    if source_table is not None:
-        source_table_name = _table_name(source_table)
-    name_parts = [part for part in [source_table_name, "_".join(source_columns), "fkey"] if part]
-    return _truncate_postgresql_identifier("_".join(name_parts))
 
 
 def _lookup_target_meta_table_uid_by_model(
