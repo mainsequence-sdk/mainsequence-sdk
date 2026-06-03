@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import pathlib
 import sys
 from collections.abc import Callable, Mapping, Sequence
@@ -488,6 +489,8 @@ class AlembicMetaTableMigration:
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+        stage_existing_schema_management: bool = True,
+        require_existing_contract_match: bool = True,
         on_metatable_reservation_request: Callable[
             [Sequence[type[Any]], Sequence[ManagedMetaTableReservationTable]], Any
         ]
@@ -546,14 +549,21 @@ class AlembicMetaTableMigration:
                     enforce_storage_hash_name=False,
                 )
                 request.schema_management = schema_management
-                pending_models.append(model)
-                pending_tables.append(_reservation_table_from_registration_request(request))
 
                 bound_meta_table = reserved_by_model.get(model)
-                if bound_meta_table is not None:
-                    table_contract = _meta_table_contract(bound_meta_table)
-                    if isinstance(table_contract, Mapping):
-                        _bind_backend_contract_names(model, table_contract)
+                if bound_meta_table is not None and _existing_metatable_is_ready_for_alembic(
+                    bound_meta_table,
+                    request=request,
+                    migration=self,
+                    registry_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+                    stage_existing_schema_management=stage_existing_schema_management,
+                    require_existing_contract_match=require_existing_contract_match,
+                ):
+                    reserved_tables.append(bound_meta_table)
+                    continue
+
+                pending_models.append(model)
+                pending_tables.append(_reservation_table_from_registration_request(request))
 
             if pending_tables:
                 reservation_request = ManagedMetaTableReservationRequest(
@@ -1178,6 +1188,117 @@ def _meta_table_contract(meta_table: Any) -> Any:
     if isinstance(meta_table, Mapping):
         return meta_table.get("table_contract")
     return getattr(meta_table, "table_contract", None)
+
+
+def _meta_table_attr(meta_table: Any, name: str) -> Any:
+    if isinstance(meta_table, Mapping):
+        return meta_table.get(name)
+    return getattr(meta_table, name, None)
+
+
+def _schema_management_payload(meta_table: Any) -> Mapping[str, Any]:
+    payload = _meta_table_attr(meta_table, "schema_management")
+    return payload if isinstance(payload, Mapping) else {}
+
+
+def _meta_table_schema_management_mode(meta_table: Any) -> str | None:
+    mode = _meta_table_attr(meta_table, "schema_management_mode")
+    if mode in (None, ""):
+        schema_management = _schema_management_payload(meta_table)
+        mode = schema_management.get("mode")
+    return str(mode) if mode not in (None, "") else None
+
+
+def _meta_table_migration_provider_key(meta_table: Any) -> str | None:
+    provider_key = _meta_table_attr(meta_table, "migration_provider_key")
+    if provider_key in (None, ""):
+        alembic = _schema_management_payload(meta_table).get("alembic")
+        if isinstance(alembic, Mapping):
+            provider_key = alembic.get("provider_key")
+    return str(provider_key) if provider_key not in (None, "") else None
+
+
+def _meta_table_alembic_version_uid(meta_table: Any) -> str | None:
+    uid = _meta_table_attr(meta_table, "alembic_version_meta_table_uid")
+    if uid in (None, ""):
+        alembic = _schema_management_payload(meta_table).get("alembic")
+        if isinstance(alembic, Mapping):
+            uid = alembic.get("alembic_version_meta_table_uid")
+    return str(uid) if uid not in (None, "") else None
+
+
+def _existing_metatable_is_ready_for_alembic(
+    meta_table: Any,
+    *,
+    request: Any,
+    migration: AlembicMetaTableMigration,
+    registry_meta_table_uid: str | None,
+    stage_existing_schema_management: bool,
+    require_existing_contract_match: bool,
+) -> bool:
+    if _meta_table_uid(meta_table) in (None, ""):
+        return False
+    if _meta_table_attr(meta_table, "physical_table_name") in (None, ""):
+        return False
+    existing_contract = _meta_table_contract(meta_table)
+    if require_existing_contract_match and not isinstance(existing_contract, Mapping):
+        return False
+    if require_existing_contract_match and not _contracts_equivalent(
+        existing_contract,
+        getattr(request, "table_contract", None),
+    ):
+        return False
+    if not stage_existing_schema_management:
+        return True
+    if _meta_table_schema_management_mode(meta_table) != "alembic_managed":
+        return False
+    existing_provider_key = _meta_table_migration_provider_key(meta_table)
+    if existing_provider_key not in (None, migration.migration_provider_key):
+        return False
+    existing_registry_uid = _meta_table_alembic_version_uid(meta_table)
+    if registry_meta_table_uid not in (None, "") and existing_registry_uid not in (
+        None,
+        str(registry_meta_table_uid),
+    ):
+        return False
+    return True
+
+
+def _contracts_equivalent(left: Any, right: Any) -> bool:
+    return _contract_fingerprint(left) == _contract_fingerprint(right)
+
+
+def _contract_fingerprint(contract: Any) -> str:
+    return json.dumps(
+        _strip_client_metadata(_jsonable_contract(contract)),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+
+
+def _jsonable_contract(value: Any) -> Any:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json", exclude_none=True)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable_contract(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable_contract(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable_contract(item) for item in value]
+    return value
+
+
+def _strip_client_metadata(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {
+            str(key): _strip_client_metadata(item)
+            for key, item in value.items()
+            if key != "orm_class"
+        }
+    if isinstance(value, list):
+        return [_strip_client_metadata(item) for item in value]
+    return value
 
 
 def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:

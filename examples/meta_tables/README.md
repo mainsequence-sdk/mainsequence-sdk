@@ -9,9 +9,9 @@ There are two registration modes:
   table. TS Manager registers metadata, permissions, search/discovery, and
   governed execution for that table.
 - `platform_managed`: migration tooling sends the neutral table contract. TS
-  Manager creates the physical table through the configured
-  `DynamicTableDataSource` when `mainsequence migrations upgrade` resolves a
-  missing provider-scoped model.
+  Manager reserves catalog rows and backend-owned physical names before Alembic
+  runs. Alembic creates or changes the physical application tables, then TS
+  Manager finalizes the reserved catalog rows.
 
 The external-registered examples call TS Manager by default. Platform-managed
 examples are migration-first and do not call `Model.register()` directly.
@@ -30,8 +30,8 @@ export MAINSEQUENCE_META_TABLE_TIMEOUT="120"
 
 ## Platform Managed
 
-Use platform-managed mode when TS Manager should create the physical tables and
-own the table naming boundary.
+Use platform-managed mode when TS Manager should own the catalog and naming
+boundary while Alembic owns the physical schema migration.
 
 Inspect the model declarations:
 
@@ -56,11 +56,12 @@ foreign-key names. Those names are generated after the configured table name is
 known, avoiding a circular dependency between table-name hashing and database
 object names.
 
-Foreign-key targets are resolved by the migration workflow. When
-`migrations upgrade` resolves provider-scoped models, it registers missing
-platform-managed parent targets through the existing backend registration path
-inside the migration context, then binds SQLAlchemy models to returned backend
-physical table names before Alembic SQL is rendered.
+Foreign-key targets are resolved by the migration workflow. Before Alembic runs,
+`migrations upgrade` resolves existing provider-scoped MetaTables by exact
+`identifier`, reserves missing rows through `reserve-managed`, and binds
+SQLAlchemy models to the backend physical table, index, and foreign-key names.
+After Alembic succeeds, the CLI calls backend finalization for the prepared
+provider MetaTable UIDs.
 
 ## External Managed
 
@@ -132,38 +133,44 @@ It defines:
 
 - `AlembicMetaTableMigration` for provider identity and Alembic configuration
 - `ExampleAlembicVersion` as the external catalog binding for Alembic's version table
-- `metatable_models=[Account, Asset]` as the post-apply catalog scope
+- `metatable_models=[Account, Asset]` as the provider reservation and finalization scope
+- `versions/0001_initial_account_asset.py` as a normal Alembic revision that
+  creates and drops the provider-bound SQLAlchemy tables
 
 Run the lifecycle with the provider:
 
 ```bash
-mainsequence migrations revision \
+mainsequence migrations current \
   --provider examples.meta_tables.migrations:migration
 
-mainsequence migrations render \
+mainsequence migrations upgrade \
   --provider examples.meta_tables.migrations:migration \
-  --to head
+  head
+```
+
+After changing the SQLAlchemy models, generate and review a new Alembic
+revision, then apply it:
+
+```bash
+mainsequence migrations revision \
+  --provider examples.meta_tables.migrations:migration \
+  -m "describe schema change"
 
 mainsequence migrations upgrade \
   --provider examples.meta_tables.migrations:migration \
-  --to head \
-  --dry-run
-
-mainsequence migrations upgrade \
-  --provider examples.meta_tables.migrations:migration \
-  --to head
+  head
 ```
 
 The provider's `AlembicVersionMetaTable` binding is registered automatically
 by commands that need backend migration state, such as `current` and
 `upgrade`. `revision` accepts an optional `-m/--message`; if omitted, the CLI
-uses `migration`. `revision --autogenerate` is optional and requires an
-explicit `--sqlalchemy-url` for the baseline database.
+uses `migration`.
 
-The final `upgrade` applies Alembic SQL and then syncs the provider-scoped
-MetaTables listed in `metatable_models`. Sync resolves existing catalog rows by
-exact `identifier`. If a model does not declare `__metatable_identifier__`, the
-SDK defaults it to `<pyproject project name>:<model module>.<model qualname>`.
+`upgrade` first resolves existing catalog rows by exact `identifier`, reserves
+only missing rows, applies Alembic, and then finalizes the provider-scoped
+MetaTables listed in `metatable_models`. If a model does not declare
+`__metatable_identifier__`, the SDK defaults it to
+`<pyproject project name>:<model module>.<model qualname>`.
 If a model is renamed or moved, pin the old identifier explicitly to preserve
 the same platform identity.
 

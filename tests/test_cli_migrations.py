@@ -67,6 +67,8 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
     def fake_prepare_for_alembic(
         self,
         timeout=None,
+        stage_existing_schema_management=True,
+        require_existing_contract_match=True,
         on_metatable_reservation_request=None,
         on_metatable_reservation_status=None,
         on_metatable_reserved=None,
@@ -180,7 +182,6 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert captured["data_source_uid"] == "data-source-uid"
     assert captured["connection_request"].meta_table_uids == [
         "registry-meta-table-uid",
-        "meta-table-uid",
     ]
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
@@ -208,9 +209,9 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     )
     assert "[mainsequence migrations] Ensuring Alembic registry MetaTable..." in output
     assert (
-        "[mainsequence migrations] Preparing platform-managed MetaTable reservations..."
-        in output
-    )
+        "[mainsequence migrations] Skipping provider MetaTable reservations "
+        "for read-only Alembic command."
+    ) in output
     assert "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
     assert "[mainsequence migrations] Requesting scoped migration connection" in output
     assert "[mainsequence migrations] Building Alembic config..." in output
@@ -219,7 +220,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert "[mainsequence migrations] Alembic current finished." in output
 
 
-def test_migrations_current_prints_metatable_reservations(monkeypatch):
+def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -239,20 +240,13 @@ def test_migrations_current_prints_metatable_reservations(monkeypatch):
 
     assert result.exit_code == 0
     output = _combined_output(result)
+    assert "POST /orm/api/ts_manager/meta_table/reserve-managed/" not in output
+    assert "reserved MetaTable identifier=Account" not in output
+    assert captured["connection_request"].meta_table_uids == ["registry-meta-table-uid"]
     assert (
-        "Sending POST /orm/api/ts_manager/meta_table/reserve-managed/ request for "
-        "1 MetaTables identifiers=Account"
+        "[mainsequence migrations] Skipping provider MetaTable reservations "
+        "for read-only Alembic command."
     ) in output
-    assert "POST /orm/api/ts_manager/meta_table/reserve-managed/" in output
-    assert "reserved MetaTable identifier=Account" in output
-    assert "uid=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" in output
-    assert "physical_table=mt_account_backend" in output
-    assert "provisioning_status=reserved" in output
-    assert "created=False" in output
-    assert "matched_by=identifier" in output
-    assert "Serializing POST http://example.test/reserve-managed/ payload..." in output
-    assert "Sending HTTP POST http://example.test/reserve-managed/..." in output
-    assert "Received HTTP 200 from POST http://example.test/reserve-managed/." in output
 
 
 def test_migrations_current_prints_alembic_registry_registration(monkeypatch):

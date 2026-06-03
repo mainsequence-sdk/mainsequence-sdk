@@ -61,10 +61,13 @@ def main() -> None:
                 Account.__metatable_identifier__,
                 Asset.__metatable_identifier__,
             ],
-            "workflow": [
-                "mainsequence migrations revision --provider examples.meta_tables.migrations:migration",
-                "mainsequence migrations render --provider examples.meta_tables.migrations:migration --to head",
-                "mainsequence migrations upgrade --provider examples.meta_tables.migrations:migration --to head",
+            "initial_apply": [
+                "mainsequence migrations current --provider examples.meta_tables.migrations:migration",
+                "mainsequence migrations upgrade --provider examples.meta_tables.migrations:migration head",
+            ],
+            "after_model_change": [
+                "mainsequence migrations revision --provider examples.meta_tables.migrations:migration -m 'describe schema change'",
+                "mainsequence migrations upgrade --provider examples.meta_tables.migrations:migration head",
             ],
         },
     )

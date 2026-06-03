@@ -7,6 +7,7 @@ import re
 import sys
 from collections.abc import Mapping, Sequence
 from contextlib import contextmanager
+from types import SimpleNamespace
 from typing import Any
 
 import click
@@ -295,6 +296,9 @@ def _prepare_alembic_config(
     timeout: float | None,
     ttl_seconds: int,
     alembic_output: _AlembicOutput,
+    stage_existing_schema_management: bool = True,
+    require_existing_contract_match: bool = True,
+    prepare_provider_metatables: bool = True,
 ) -> tuple[Any, Any]:
     _emit_status("Ensuring Alembic registry MetaTable...")
     registry_meta_table = migration.ensure_alembic_registry(
@@ -302,13 +306,23 @@ def _prepare_alembic_config(
         on_metatable_registered=_emit_metatable_registration,
     )
 
-    _emit_status("Preparing platform-managed MetaTable reservations...")
-    prepared = migration.prepare_for_alembic(
-        timeout=timeout,
-        on_metatable_reservation_request=_emit_metatable_reservation_request,
-        on_metatable_reservation_status=_emit_status,
-        on_metatable_reserved=_emit_metatable_reservation,
-    )
+    if prepare_provider_metatables:
+        _emit_status("Preparing platform-managed MetaTable reservations...")
+        prepared = migration.prepare_for_alembic(
+            timeout=timeout,
+            stage_existing_schema_management=stage_existing_schema_management,
+            require_existing_contract_match=require_existing_contract_match,
+            on_metatable_reservation_request=_emit_metatable_reservation_request,
+            on_metatable_reservation_status=_emit_status,
+            on_metatable_reserved=_emit_metatable_reservation,
+        )
+    else:
+        _emit_status("Skipping provider MetaTable reservations for read-only Alembic command.")
+        prepared = SimpleNamespace(
+            data_source_uid=migration._resolve_provider_data_source_uid(),
+            meta_table_uids=[],
+            owner_role_name=None,
+        )
     _include_alembic_registry_in_scope(migration, prepared, registry_meta_table)
     _emit_status(
         "Prepared migration scope "
@@ -411,6 +425,9 @@ def current(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
+        stage_existing_schema_management=False,
+        require_existing_contract_match=False,
+        prepare_provider_metatables=False,
     )
     _emit_status("Starting Alembic current now...")
     with _forward_alembic_logging():
@@ -462,6 +479,7 @@ def revision(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
+        stage_existing_schema_management=False,
     )
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
     with _forward_alembic_logging():

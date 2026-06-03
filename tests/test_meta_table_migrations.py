@@ -807,6 +807,119 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
     assert Asset.__table__.name == "mt_asset_backend"
 
 
+def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
+    import mainsequence.meta_tables.migrations as migrations_mod
+
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = "registry-meta-table-uid"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Account(PlatformManagedMetaTable, Base):
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Asset"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        account_uid: Mapped[uuid.UUID] = mapped_column(
+            Uuid,
+            MetaTableForeignKey(Account, column="uid", ondelete="CASCADE"),
+            nullable=False,
+        )
+        symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    monkeypatch.setattr(migrations_mod, "_contracts_equivalent", lambda left, right: True)
+
+    def fake_filter(**kwargs):
+        return [
+            types.SimpleNamespace(
+                identifier="Account",
+                uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                data_source_uid="data-source-uid",
+                provisioning_status="active",
+                schema_management_mode="alembic_managed",
+                migration_provider_key="sample:markets",
+                alembic_version_meta_table_uid="registry-meta-table-uid",
+                storage_hash="account-storage-hash",
+                physical_table_name="mt_account_backend",
+                table_contract={
+                    "version": "relational-table.v1",
+                    "physical": {"table_name": "mt_account_backend"},
+                    "columns": [],
+                    "indexes": [],
+                    "foreign_keys": [],
+                },
+            ),
+            types.SimpleNamespace(
+                identifier="Asset",
+                uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                data_source_uid="data-source-uid",
+                provisioning_status="active",
+                schema_management_mode="alembic_managed",
+                migration_provider_key="sample:markets",
+                alembic_version_meta_table_uid="registry-meta-table-uid",
+                storage_hash="asset-storage-hash",
+                physical_table_name="mt_asset_backend",
+                table_contract={
+                    "version": "relational-table.v1",
+                    "physical": {"table_name": "mt_asset_backend"},
+                    "columns": [],
+                    "indexes": [],
+                    "foreign_keys": [
+                        {
+                            "name": "asset_account_uid_fkey",
+                            "source_columns": ["account_uid"],
+                            "target_meta_table_uid": (
+                                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                            ),
+                            "target_identifier": "Account",
+                            "target_columns": ["uid"],
+                            "on_delete": "cascade",
+                        }
+                    ],
+                },
+            ),
+        ]
+
+    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
+    monkeypatch.setattr(
+        MetaTable,
+        "reserve_managed",
+        staticmethod(lambda *args, **kwargs: pytest.fail("reserve-managed was called")),
+    )
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset],
+    )
+
+    prepared = migration.prepare_for_alembic(timeout=5)
+
+    assert prepared.meta_table_uids == [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]
+    assert Account.__table__.name == "mt_account_backend"
+    assert Asset.__table__.name == "mt_asset_backend"
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name == (
+        "asset_account_uid_fkey"
+    )
+
+
 def _write_alembic_package(tmp_path, package_name: str) -> None:
     package_dir = tmp_path / package_name
     migrations_dir = package_dir / "migrations"
