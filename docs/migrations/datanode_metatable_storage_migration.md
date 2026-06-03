@@ -107,7 +107,7 @@ class Base(DeclarativeBase):
 
 class DailyMetricsStorage(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "example-data"
-    __metatable_identifier__ = "daily_metrics"
+    __metatable_identifier__ = "example_project.daily_metrics"
     __metatable_description__ = (
         "Daily metric observations keyed by entity identifier for downstream "
         "analytics."
@@ -320,7 +320,7 @@ from mainsequence.meta_tables import (
 
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "accounts"
-    __metatable_identifier__ = "account"
+    __metatable_identifier__ = "example_project.account"
     __metatable_description__ = "Account master rows used to scope positions."
     __metatable_extra_hash_components__ = {"storage_name": "account"}
 
@@ -336,7 +336,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 class AccountPositions(PlatformTimeIndexMetaData, Base):
     __metatable_namespace__ = "positions"
-    __metatable_identifier__ = "account_positions"
+    __metatable_identifier__ = "example_project.account_positions"
     __metatable_description__ = "Time-indexed position rows keyed by account."
     __metatable_extra_hash_components__ = {"storage_name": "account_positions"}
     __time_index_name__ = "time_index"
@@ -357,6 +357,11 @@ Do not use table fullnames or `Parent.__table__.c.uid` as the public
 declaration. Registration can rebind SQLAlchemy table names to backend physical
 names. `MetaTableForeignKey` keeps the target model class as SDK metadata and
 lets recursive registration resolve the backend `MetaTable.uid`.
+
+Prefix explicit table identifiers and explicit physical table names with the
+project or package name. Bare names such as `account`, `positions`, or
+`alembic_version` are easy to collide across projects sharing an organization
+or database schema.
 
 ## Parameterized Storage Tables
 

@@ -42,9 +42,12 @@ python -m examples.meta_tables.platform_managed.account_asset
 The model definitions use:
 
 ```python
+PROJECT_NAME = "sdk_examples"
+
+
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = NAMESPACE
-    __metatable_identifier__ = "Account"
+    __metatable_identifier__ = f"{PROJECT_NAME}.Account"
 ```
 
 The model classes are registered by migration tooling through the provider in

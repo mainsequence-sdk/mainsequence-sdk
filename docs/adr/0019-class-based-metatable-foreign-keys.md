@@ -49,7 +49,7 @@ from mainsequence.meta_tables import MetaTableForeignKey, PlatformManagedMetaTab
 
 class Account(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "tutorial"
-    __metatable_identifier__ = "account"
+    __metatable_identifier__ = "tutorial.account"
     __metatable_description__ = "Accounts that own asset positions."
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -57,7 +57,7 @@ class Account(PlatformManagedMetaTable, Base):
 
 class AccountPosition(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "tutorial"
-    __metatable_identifier__ = "account_position"
+    __metatable_identifier__ = "tutorial.account_position"
     __metatable_description__ = "Positions keyed by owning account."
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -197,11 +197,12 @@ SQLAlchemy's local relationship machinery. That use is private implementation
 detail. Public docs, tutorials, and skills should not teach users to write it.
 
 Platform-managed foreign-key contracts must not include physical constraint
-names. `MetaTableForeignKey` must reject `name=...`, and contract extraction
-must not derive names from local SQLAlchemy table or column names. The SDK sends
-logical relationship intent only: source columns, target MetaTable UID, target
-columns, and delete behavior. The backend owns the actual foreign-key constraint
-name, the same way it owns platform-managed physical table names.
+names. Contract extraction must not derive names from local SQLAlchemy table or
+column names, and any transient SQLAlchemy FK name must stay out of the
+MetaTable contract. The SDK sends logical relationship intent only: source
+columns, target MetaTable UID, target columns, and delete behavior. Alembic,
+SQLAlchemy, and the database own the actual foreign-key constraint name; the
+MetaTable backend does not manage it.
 
 ## Legacy Raw Target Paths
 

@@ -304,8 +304,9 @@ global identity. If it does not, the SDK derives the identifier from
 `[project].name` in `pyproject.toml` plus
 `<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
 class is renamed or moved but must keep the same platform identity.
-When declaring an explicit identifier, prefix it with the project or package
-name rather than using a bare table name.
+When declaring an explicit identifier, explicit physical table name, or Alembic
+version table name, prefix it with the project or package name rather than using
+a bare table name.
 
 Do not ask users to construct backend migration payloads, call low-level
 migration request models, or use SDK helper functions directly. The backend

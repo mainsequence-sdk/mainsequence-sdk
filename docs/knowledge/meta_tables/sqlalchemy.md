@@ -152,7 +152,7 @@ class Asset(PlatformManagedMetaTable, Base):
     )
 
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "Asset"
+    __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_description__ = "Assets associated with an owning account."
 
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
@@ -371,7 +371,7 @@ Use:
 ```python
 class Asset(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "Asset"
+    __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_description__ = "Externally managed asset table registered as a governed MetaTable."
 ```
 

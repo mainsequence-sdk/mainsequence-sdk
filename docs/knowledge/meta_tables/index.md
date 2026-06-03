@@ -157,7 +157,7 @@ with the SQLAlchemy table shape:
 ```python
 class Asset(PlatformManagedMetaTable, Base):
     __metatable_namespace__ = "sdk-examples"
-    __metatable_identifier__ = "Asset"
+    __metatable_identifier__ = "sdk_examples.Asset"
     __metatable_extra_hash_components__ = {"storage_name": "asset"}
 ```
 

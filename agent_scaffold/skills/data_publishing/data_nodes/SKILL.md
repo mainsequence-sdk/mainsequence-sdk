@@ -402,8 +402,9 @@ Do not add DataNode configuration fields just to mutate storage metadata.
 
 Production-quality table identifiers, descriptions, labels, column docs, and
 foreign-key metadata belong to the storage class/MetaTable registration path.
-Prefix explicit table identifiers with the project or package name rather than
-using bare names that can collide across projects.
+Prefix explicit table identifiers, explicit physical table names, and Alembic
+version table names with the project or package name rather than using bare
+names that can collide across projects.
 
 Do not put schema or published table metadata on the DataNode configuration.
 

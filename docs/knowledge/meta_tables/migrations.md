@@ -209,7 +209,7 @@ The generated contract declares the Alembic revision column:
 
 ```json
 {
-  "physical": {"table_name": "alembic_version"},
+  "physical": {"table_name": "sdk_examples_alembic_version"},
   "columns": [
     {
       "name": "version_num",
@@ -222,7 +222,7 @@ The generated contract declares the Alembic revision column:
   "authoring": {
     "owner": "alembic",
     "schema": "public",
-    "version_table": "alembic_version"
+    "version_table": "sdk_examples_alembic_version"
   }
 }
 ```

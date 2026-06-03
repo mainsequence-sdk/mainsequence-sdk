@@ -62,7 +62,7 @@ revision column the backend needs to read current state:
 ```json
 {
   "version": "relational-table.v1",
-  "physical": {"table_name": "alembic_version"},
+  "physical": {"table_name": "msm_alembic_version"},
   "columns": [
     {
       "name": "version_num",
@@ -78,7 +78,7 @@ revision column the backend needs to read current state:
   "authoring": {
     "owner": "alembic",
     "schema": "public",
-    "version_table": "alembic_version"
+    "version_table": "msm_alembic_version"
   }
 }
 ```
@@ -122,7 +122,7 @@ class MarketsAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "msm"
     __metatable_identifier__ = "msm.alembic_version"
     __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = "alembic_version"
+    __alembic_version_table_name__ = "msm_alembic_version"
     __alembic_version_column_name__ = "version_num"
 
 
@@ -259,15 +259,15 @@ The SDK registration request for Alembic's version table is a normal
   "data_source_uid": "uuid",
   "management_mode": "external_registered",
   "storage_hash": "identifier-derived stable hash",
-  "identifier": "alembic_version",
-  "namespace": "mainsequence.migrations",
+  "identifier": "msm.alembic_version",
+  "namespace": "msm",
   "description": "Alembic revision state table.",
   "labels": [],
   "introspect": false,
   "table_contract": {
     "version": "relational-table.v1",
     "physical": {
-      "table_name": "alembic_version"
+      "table_name": "msm_alembic_version"
     },
     "columns": [
       {
@@ -284,7 +284,7 @@ The SDK registration request for Alembic's version table is a normal
     "authoring": {
       "owner": "alembic",
       "schema": "public",
-      "version_table": "alembic_version"
+      "version_table": "msm_alembic_version"
     }
   }
 }
@@ -324,7 +324,7 @@ class MarketsAlembicVersion(AlembicVersionMetaTable):
     __metatable_namespace__ = "msm"
     __metatable_identifier__ = "msm.alembic_version"
     __alembic_version_schema__ = "public"
-    __alembic_version_table_name__ = "alembic_version"
+    __alembic_version_table_name__ = "msm_alembic_version"
     __alembic_version_column_name__ = "version_num"
 
 
@@ -354,7 +354,7 @@ request = migration.alembic_registry.build_registration_request(
   "table_contract": {
     "version": "relational-table.v1",
     "physical": {
-      "table_name": "alembic_version"
+      "table_name": "msm_alembic_version"
     },
     "columns": [
       {
@@ -371,7 +371,7 @@ request = migration.alembic_registry.build_registration_request(
     "authoring": {
       "owner": "alembic",
       "schema": "public",
-      "version_table": "alembic_version"
+      "version_table": "msm_alembic_version"
     }
   }
 }
@@ -470,7 +470,7 @@ manifest = {
     "revision": "0001_initial",
     "down_revision": None,
     "direction": "upgrade",
-    "alembic_version_table": "public.alembic_version",
+    "alembic_version_table": "public.msm_alembic_version",
 }
 ```
 
