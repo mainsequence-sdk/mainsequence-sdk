@@ -354,18 +354,19 @@ def _emit_metatable_reservation_request(
     models: Sequence[type[Any]],
     tables: Sequence[Any],
 ) -> None:
-    identifiers = []
+    table_names = []
     for model, table in zip(models, tables, strict=True):
-        identifiers.append(
+        table_names.append(
             str(
-                _item_value(table, "identifier")
+                _item_value(table, "physical_table_name")
+                or _item_value(table, "identifier")
                 or getattr(model, "__metatable_identifier__", None)
                 or getattr(model, "__name__", repr(model))
             )
         )
     _emit_status(
         f"Sending POST {RESERVE_MANAGED_ENDPOINT} request for {len(tables)} "
-        f"MetaTables identifiers={','.join(identifiers)}"
+        f"MetaTables table_names={','.join(table_names)}"
     )
 
 

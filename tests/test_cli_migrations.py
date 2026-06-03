@@ -82,7 +82,12 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
             if on_metatable_reservation_request is not None:
                 on_metatable_reservation_request(
                     [Account],
-                    [types.SimpleNamespace(identifier="Account")],
+                    [
+                        types.SimpleNamespace(
+                            identifier="metatable_account",
+                            physical_table_name="metatable_account",
+                        )
+                    ],
                 )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
@@ -97,12 +102,12 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
             on_metatable_reserved(
                 Account,
                 types.SimpleNamespace(
-                    identifier="Account",
+                    identifier="metatable_account",
                     meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    physical_table_name="mt_account_backend",
+                    physical_table_name="metatable_account",
                     provisioning_status="reserved",
                     created=False,
-                    matched_by="identifier",
+                    matched_by="physical_table_name",
                 ),
             )
         return types.SimpleNamespace(
@@ -229,7 +234,7 @@ def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
     assert result.exit_code == 0
     output = _combined_output(result)
     assert "POST /orm/api/ts_manager/meta_table/reserve-managed/" not in output
-    assert "reserved MetaTable identifier=Account" not in output
+    assert "reserved MetaTable identifier=metatable_account" not in output
     assert captured["connection_request"].meta_table_uids == ["registry-meta-table-uid"]
     assert (
         "[mainsequence migrations] Skipping provider MetaTable reservations "

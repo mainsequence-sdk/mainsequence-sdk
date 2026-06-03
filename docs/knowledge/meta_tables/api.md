@@ -33,16 +33,14 @@ from mainsequence.meta_tables import (
     AlembicVersionMetaTable,
     PlatformManagedMetaTable,
     external_registered_registration_request_from_sqlalchemy_model,
-    metatable_configured_tablename,
-    metatable_tablename,
     register_external_sqlalchemy_model,
 )
 from mainsequence.meta_tables.compiled_sql.v1 import compile_sqlalchemy_statement
 ```
 
 SQLAlchemy is a core SDK dependency for MetaTable declarations. The SDK uses it
-to inspect table contracts, bind platform-managed physical names, compile
-governed SQL operations, and define the provider-based Alembic migration scope
+to inspect table contracts, compile governed SQL operations, and define the
+provider-based Alembic migration scope
 used by MetaTable schema migrations.
 
 ## Registration Primitive
@@ -71,7 +69,7 @@ Request fields:
 | `data_source_uid` | TS Manager `DynamicTableDataSource` that owns connection, credentials, capabilities, and execution. |
 | `management_mode` | `external_registered` or `platform_managed`. |
 | `storage_hash` | Collision-resistant platform table identifier. |
-| `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization and are used to resolve migrated MetaTables. |
+| `identifier` | Optional logical MetaTable identifier, such as `Asset`. Non-empty values are globally unique per organization. Alembic migration preparation resolves provider MetaTables by authored SQLAlchemy table name instead. |
 | `namespace` | Logical namespace, such as `sdk-examples`. |
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |
@@ -80,16 +78,14 @@ Request fields:
 | `introspect` | Ask the backend to refresh the physical metadata snapshot during registration. |
 | `table_contract` | Neutral relational contract. It does not include `data_source_uid`. |
 
-For `platform_managed`, `storage_hash` is the logical table identity and the
-client omits `table_contract.physical.table_name`. The backend owns physical
-name allocation and returns `physical_table_name` on the registered `MetaTable`.
+For `platform_managed`, `storage_hash` is the logical table identity and
+`table_contract.physical.table_name` is the authored SQLAlchemy table name that
+Alembic sees. The two values are intentionally separate.
 
 `PlatformManagedMetaTable` exists so SQLAlchemy table construction and
 migration-managed registration derive the same configured `storage_hash` from
-storage-relevant configuration. After migration-managed registration the SDK
-privately rebinds the SQLAlchemy table name to the backend physical table name. The lower-level
-`metatable_tablename(...)` helper remains available when callers need to set an
-initial logical `__tablename__` explicitly.
+storage-relevant configuration while preserving the authored physical table
+name. Prefix explicit table names with the project or package name.
 
 `__metatable_extra_hash_components__` adds deterministic fields to the
 `storage_hash` payload before registration. Use it only to disambiguate storage
@@ -287,7 +283,8 @@ thin adapter that:
 1. loads the selected `AlembicMetaTableMigration` provider;
 2. registers or resolves its `AlembicVersionMetaTable`;
 3. reserves provider-scoped platform-managed MetaTables;
-4. binds backend-reserved physical table names into SQLAlchemy metadata;
+4. binds MetaTable UID/storage metadata while preserving authored SQLAlchemy
+   table names;
 5. asks the backend for a temporary scoped migration URI;
 6. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
 

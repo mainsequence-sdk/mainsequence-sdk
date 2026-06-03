@@ -30,8 +30,9 @@ from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformTimeIndexMetaData,
     _metatable_foreign_key_target_models,
     _resolve_model_data_source_uid,
+    _resolve_table,
+    _table_name,
     platform_managed_migration_registration_context,
-    resolve_metatable_identifier,
 )
 
 DEFAULT_ALEMBIC_VERSION_IDENTIFIER = "alembic_version"
@@ -440,8 +441,8 @@ class AlembicMetaTableMigration:
                 f"active={response.active_count} reserved={response.reserved_count} "
                 f"failed={response.failed_count}."
             )
-        finalized_by_identifier = {
-            _meta_table_identifier(item) or "": item for item in response.tables
+        finalized_by_table_name = {
+            _meta_table_physical_table_name(item) or "": item for item in response.tables
         }
         finalized_by_uid = {_meta_table_uid(item) or "": item for item in response.tables}
         if on_metatable_finalize_status is not None:
@@ -450,8 +451,8 @@ class AlembicMetaTableMigration:
                     on_metatable_finalize_status(_finalize_failure_message(item))
         finalized_for_models: list[Any] = []
         for model in self.metatable_models:
-            identifier = resolve_metatable_identifier(model)
-            item = finalized_by_identifier.get(identifier) or finalized_by_uid.get(
+            table_name = _migration_table_name(model)
+            item = finalized_by_table_name.get(table_name) or finalized_by_uid.get(
                 str(getattr(model, "get_meta_table_uid", lambda: "")())
             )
             if item is None:
@@ -522,26 +523,24 @@ class AlembicMetaTableMigration:
         owner_role_name: str | None = None
 
         ordered_models = _reservation_order(self.metatable_models)
-        target_identifiers = {
-            model: resolve_metatable_identifier(model) for model in ordered_models
-        }
+        target_table_names = {model: _migration_table_name(model) for model in ordered_models}
         schema_management = self._schema_management_request(
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
         )
         with platform_managed_migration_registration_context():
-            existing_by_identifier = _get_metatables_by_model_identifier(
+            existing_by_table_name = _get_metatables_by_model_table_name(
                 ordered_models,
                 timeout=timeout,
             )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
-                    f"Found existing MetaTables by identifier count={len(existing_by_identifier)}."
+                    f"Found existing MetaTables by table name count={len(existing_by_table_name)}."
                 )
             pending_models: list[type[Any]] = []
             pending_tables: list[ManagedMetaTableReservationTable] = []
             for model in ordered_models:
-                identifier = target_identifiers[model]
-                existing_meta_table = existing_by_identifier.get(identifier)
+                table_name = target_table_names[model]
+                existing_meta_table = existing_by_table_name.get(table_name)
                 if existing_meta_table is not None:
                     _bind_model_to_existing_metatable(model, existing_meta_table)
                     reserved_by_model[model] = existing_meta_table
@@ -555,8 +554,9 @@ class AlembicMetaTableMigration:
 
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
+                    identifier=table_name,
                     _target_meta_tables=reserved_by_model,
-                    _target_identifiers=target_identifiers,
+                    _target_identifiers=target_table_names,
                     enforce_storage_hash_name=False,
                 )
                 request.schema_management = schema_management
@@ -658,17 +658,17 @@ class AlembicMetaTableMigration:
         """Reserve and bind provider-scoped models before Alembic runs."""
 
         prepared = self.prepare_for_alembic(timeout=timeout)
-        reserved_by_identifier = {
-            _meta_table_identifier(item) or "": item for item in prepared.reserved_tables
+        reserved_by_table_name = {
+            _meta_table_physical_table_name(item) or "": item for item in prepared.reserved_tables
         }
         if on_metatable_resolution is not None:
             for model in self.metatable_models:
-                identifier = resolve_metatable_identifier(model)
+                table_name = _migration_table_name(model)
                 on_metatable_resolution(
                     model,
-                    identifier,
+                    table_name,
                     "reserved",
-                    reserved_by_identifier.get(identifier) or _bound_meta_table_for_model(model),
+                    reserved_by_table_name.get(table_name) or _bound_meta_table_for_model(model),
                 )
         return prepared.reserved_tables
 
@@ -677,7 +677,6 @@ class AlembicMetaTableMigration:
         model: type[Any],
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        existing_meta_tables_by_identifier: Mapping[str, Any] | None = None,
         on_metatable_resolution: Callable[[type[Any], str, str, Any | None], Any] | None = None,
     ) -> Any | None:
         if not _is_platform_managed_metatable_model(model):
@@ -694,7 +693,7 @@ class AlembicMetaTableMigration:
         if on_metatable_resolution is not None:
             on_metatable_resolution(
                 model,
-                resolve_metatable_identifier(model),
+                _migration_table_name(model),
                 "reserved",
                 meta_table,
             )
@@ -992,99 +991,86 @@ def _normalize_down_revision(value: Any) -> str | None:
     return str(value)
 
 
-def _get_metatable_by_identifier(
-    identifier: str,
-    *,
-    timeout: int | float | tuple[float, float] | None = None,
-    meta_table_cls: type[Any] = MetaTable,
-) -> MetaTable | None:
-    matches = _get_metatables_by_identifier(
-        [identifier],
-        timeout=timeout,
-        meta_table_cls=meta_table_cls,
-    )
-    return matches.get(identifier)
+def _migration_table_name(model: type[Any]) -> str:
+    """Return the authored SQLAlchemy table name used for migration preparation."""
+
+    table_name = _table_name(_resolve_table(model))
+    if table_name in (None, ""):
+        model_name = getattr(model, "__qualname__", repr(model))
+        raise ValueError(
+            "Alembic MetaTable migrations require a SQLAlchemy table name for "
+            f"{model_name}."
+        )
+    return str(table_name)
 
 
-def _get_metatable_by_model_identifier(
-    model: type[Any],
-    *,
-    timeout: int | float | tuple[float, float] | None = None,
-) -> Any | None:
-    identifier = resolve_metatable_identifier(model)
-    return _get_metatable_by_identifier(
-        identifier,
-        timeout=timeout,
-        meta_table_cls=_metatable_resource_class_for_model(model),
-    )
-
-
-def _get_metatables_by_model_identifier(
+def _get_metatables_by_model_table_name(
     models: Sequence[type[Any]],
     *,
     timeout: int | float | tuple[float, float] | None = None,
 ) -> dict[str, Any]:
-    identifiers_by_resource: dict[type[Any], list[str]] = {}
+    table_names_by_resource: dict[type[Any], list[str]] = {}
     for model in models:
-        identifiers_by_resource.setdefault(
+        table_names_by_resource.setdefault(
             _metatable_resource_class_for_model(model),
             [],
-        ).append(resolve_metatable_identifier(model))
+        ).append(_migration_table_name(model))
 
     resolved: dict[str, Any] = {}
-    for meta_table_cls, identifiers in identifiers_by_resource.items():
-        matches = _get_metatables_by_identifier(
-            identifiers,
+    for meta_table_cls, table_names in table_names_by_resource.items():
+        matches = _get_metatables_by_table_name(
+            table_names,
             timeout=timeout,
             meta_table_cls=meta_table_cls,
         )
-        duplicate_identifiers = set(resolved).intersection(matches)
-        if duplicate_identifiers:
-            duplicate_list = ", ".join(sorted(duplicate_identifiers))
+        duplicate_table_names = set(resolved).intersection(matches)
+        if duplicate_table_names:
+            duplicate_list = ", ".join(sorted(duplicate_table_names))
             raise ValueError(
-                "MetaTable identifiers are not globally unique across provider models: "
+                "MetaTable physical table names are not unique across provider models: "
                 f"{duplicate_list}."
             )
         resolved.update(matches)
     return resolved
 
 
-def _get_metatables_by_identifier(
-    identifiers: Sequence[str],
+def _get_metatables_by_table_name(
+    table_names: Sequence[str],
     *,
     timeout: int | float | tuple[float, float] | None = None,
     meta_table_cls: type[Any] = MetaTable,
 ) -> dict[str, Any]:
-    unique_identifiers = list(dict.fromkeys(str(identifier) for identifier in identifiers))
-    if not unique_identifiers:
+    unique_table_names = list(dict.fromkeys(str(table_name) for table_name in table_names))
+    if not unique_table_names:
         return {}
 
     matches = meta_table_cls.filter_by_body(
         timeout=timeout,
-        identifiers=unique_identifiers,
-        limit=max(len(unique_identifiers), 1),
+        physical_table_name__in=unique_table_names,
+        limit=max(len(unique_table_names), 1),
     )
     if not matches:
         return {}
 
-    matched_by_identifier: dict[str, Any] = {}
+    matched_by_table_name: dict[str, Any] = {}
     for meta_table in matches:
-        identifier = _meta_table_identifier(meta_table)
-        if identifier is None:
-            if len(unique_identifiers) == 1:
-                identifier = unique_identifiers[0]
+        table_name = _meta_table_physical_table_name(meta_table)
+        if table_name is None:
+            if len(unique_table_names) == 1:
+                table_name = unique_table_names[0]
             else:
                 raise ValueError(
-                    f"Backend returned a {meta_table_cls.__name__} row without identifier "
-                    "while resolving migration provider models by body identifiers."
+                    f"Backend returned a {meta_table_cls.__name__} row without "
+                    "physical_table_name while resolving migration provider models "
+                    "by table name."
                 )
-        if identifier in matched_by_identifier:
+        if table_name in matched_by_table_name:
             raise ValueError(
-                f"MetaTable identifier {identifier!r} is not globally unique; "
+                f"MetaTable physical table name {table_name!r} is not unique; "
                 "found multiple catalog rows."
             )
-        matched_by_identifier[identifier] = meta_table
-    return matched_by_identifier
+        matched_by_table_name[table_name] = meta_table
+    return matched_by_table_name
 
 
 def _meta_table_identifier(meta_table: Any) -> str | None:
@@ -1095,6 +1081,16 @@ def _meta_table_identifier(meta_table: Any) -> str | None:
     if identifier in (None, ""):
         return None
     return str(identifier)
+
+
+def _meta_table_physical_table_name(meta_table: Any) -> str | None:
+    if isinstance(meta_table, Mapping):
+        physical_table_name = meta_table.get("physical_table_name")
+    else:
+        physical_table_name = getattr(meta_table, "physical_table_name", None)
+    if physical_table_name in (None, ""):
+        return None
+    return str(physical_table_name)
 
 
 def _meta_table_uid(meta_table: Any) -> str | None:
@@ -1261,7 +1257,7 @@ def _alembic_readiness_failure_message(
 ) -> str:
     reason, details = failure
     model_name = getattr(model, "__name__", repr(model))
-    identifier = _meta_table_identifier(meta_table) or resolve_metatable_identifier(model)
+    identifier = _meta_table_identifier(meta_table) or _migration_table_name(model)
     uid = _meta_table_uid(meta_table)
     physical_table_name = _meta_table_attr(meta_table, "physical_table_name")
     parts = [

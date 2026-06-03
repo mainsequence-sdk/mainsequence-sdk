@@ -12,7 +12,7 @@ The migration lifecycle is provider-based:
 ```text
 AlembicMetaTableMigration provider
 -> Alembic revision from provider.target_metadata
--> SDK reserves provider.metatable_models and binds physical table names
+-> SDK reserves provider.metatable_models and binds MetaTable UID/storage metadata
 -> SDK requests a scoped migration database URI
 -> Alembic executes revision/current/upgrade/downgrade directly
 -> project tooling refreshes provider.metatable_models
@@ -27,9 +27,9 @@ The SDK owns:
 - `AlembicVersionMetaTable`
 - provider discovery by convention plus explicit `--provider`
 - typed reservation and scoped-connection request/response models
-- CLI commands that prepare providers, reserve/bind physical table names, call
-  Alembic directly, and refresh provider-scoped MetaTables after successful
-  upgrade
+- CLI commands that prepare providers, reserve/bind MetaTable UID/storage
+  metadata, call Alembic directly, and refresh provider-scoped MetaTables after
+  successful upgrade
 
 ## SDK Alembic Coordination
 
@@ -46,8 +46,8 @@ Alembic cannot know on its own:
 - register or resolve the provider's `AlembicVersionMetaTable` catalog binding
 - reserve or resolve the provider-scoped platform-managed MetaTables without
   creating physical application tables
-- bind backend-reserved physical table names into the provider's SQLAlchemy
-  metadata
+- preserve authored SQLAlchemy table names and bind backend MetaTable
+  UID/storage metadata into the provider models
 - include the Alembic version MetaTable UID and provider MetaTable UIDs in the
   migration scope
 - request a temporary table-scoped database credential from the owning
@@ -190,11 +190,13 @@ or every installed package to decide what to migrate.
 derived catalog that must refresh after the provider-scoped MetaTable models are
 registered successfully.
 
-Application MetaTable catalog sync resolves by exact `identifier` only. Explicit
-`__metatable_identifier__` values are used as-is. When omitted, the SDK derives
-the identifier from `[project].name` in `pyproject.toml` plus
-`<model.__module__>.<model.__qualname__>`. Pin an explicit identifier when a
-model moves or is renamed but should keep the same platform identity.
+Application MetaTable catalog sync in the Alembic workflow resolves by the
+SQLAlchemy table name. `prepare_for_alembic()` sends each provider model's
+current `Table.name` as the reservation `identifier`, and uses the same table
+name for same-batch FK `target_identifier` references before backend UIDs
+exist. `__metatable_identifier__` is not the Alembic migration identity. A model
+move or rename keeps the same migration identity when its SQLAlchemy table name
+stays stable.
 
 ## Alembic Version MetaTable
 
@@ -253,11 +255,12 @@ provider. It does not build SDK migration operations and it does not ask the
 backend to render or apply SQL. Alembic owns revision generation.
 
 `revision`, `upgrade`, and `downgrade` reserve provider-scoped
-platform-managed MetaTables, bind backend-reserved physical table names into
-SQLAlchemy metadata, ask TS Manager for a temporary table-scoped migration URI,
-build a normal Alembic `Config`, and call Alembic directly. `current` only needs
-the Alembic version MetaTable binding and a scoped credential for that version
-table because it is read-only for application MetaTables.
+platform-managed MetaTables, bind MetaTable UID/storage metadata while
+preserving authored SQLAlchemy table names, ask TS Manager for a temporary
+table-scoped migration URI, build a normal Alembic `Config`, and call Alembic
+directly. `current` only needs the Alembic version MetaTable binding and a
+scoped credential for that version table because it is read-only for
+application MetaTables.
 
 There is no normal-user `render` or `upgrade --dry-run` path. Alembic is the
 execution path. The backend only provides registry reservation and the scoped
@@ -293,9 +296,10 @@ affected-table validation, or contract reconciliation during Alembic apply.
 
 Before Alembic renders SQL, project tooling resolves/reserves only the
 application MetaTable classes listed in `migration.metatable_models` and binds
-them to backend physical table names. After Alembic changes physical tables,
-project tooling finalizes the same catalog scope. Provider scope prevents
-unrelated imported models from being registered by migration tooling.
+their backend `MetaTable.uid`/storage metadata while preserving authored table
+names. After Alembic changes physical tables, project tooling finalizes the same
+catalog scope. Provider scope prevents unrelated imported models from being
+registered by migration tooling.
 
 ## Removed Path
 

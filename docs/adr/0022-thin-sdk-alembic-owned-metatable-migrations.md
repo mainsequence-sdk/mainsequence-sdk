@@ -18,8 +18,8 @@ still contains too much migration machinery:
   missing platform-managed tables through `model.register()`.
 - Platform-managed `MetaTableForeignKey(...)` declarations must serialize
   logical relationships only. Alembic, SQLAlchemy, and the database own physical
-  FK constraint names. The backend reservation plan owns physical table names,
-  not FK names.
+  FK constraint names. The project-authored SQLAlchemy table names are the
+  physical table names Alembic targets.
 
 This keeps the SDK in the wrong position. Alembic should own revision
 generation, database connection configuration, current revision discovery,
@@ -53,8 +53,8 @@ The SDK must not be the migration executor. It should only:
 1. discover/load the project migration provider;
 2. register or resolve the provider's `AlembicVersionMetaTable`;
 3. reserve/resolve provider-scoped platform-managed MetaTables;
-4. bind returned physical table names into SQLAlchemy metadata before Alembic
-   runs;
+4. bind returned MetaTable UID/storage metadata while preserving authored
+   SQLAlchemy table names before Alembic runs;
 5. build an Alembic `Config` with the backend-issued migration URI;
 6. invoke Alembic command APIs for revision/current/upgrade/downgrade;
 7. call the backend batch finalization endpoint after successful Alembic
@@ -149,7 +149,7 @@ and uses request/response models equivalent to:
 
 ```python
 class MetaTableRequestFields(BasePydanticModel):
-    identifier: str | None = Field(None, description="Organization-global logical MetaTable identifier.")
+    identifier: str | None = Field(None, description="Migration table identity; use authored SQLAlchemy Table.name for Alembic-managed tables.")
     namespace: str | None = Field(None, description="Optional MetaTable namespace.")
     data_source_uid: str = Field(..., description="DynamicTableDataSource UID that owns this MetaTable.")
     storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
@@ -166,7 +166,7 @@ class MetaTableRegistrationRequest(MetaTableRequestFields):
 
 
 class ManagedMetaTableReservationTable(MetaTableRequestFields):
-    physical_table_name: str | None = Field(None, description="Optional explicit physical table name to reserve.")
+    physical_table_name: str | None = Field(None, description="Authored SQLAlchemy table name Alembic will render against.")
     time_index_name: str | None = Field(None, description="Optional time-index column name.")
     partition_strategy: str | None = Field(None, description="Optional time-index partition strategy.")
 
@@ -176,14 +176,14 @@ class ManagedMetaTableReservationRequest(BasePydanticModel):
 
 
 class ManagedMetaTableReservationItem(BasePydanticModel):
-    identifier: str | None = Field(None, description="Reserved organization-global logical MetaTable identifier.")
+    identifier: str | None = Field(None, description="Reserved migration table identity.")
     namespace: str | None = Field(None, description="Resolved namespace when returned.")
     meta_table_uid: str = Field(..., description="Reserved backend MetaTable UID.")
     data_source_uid: str = Field(..., description="DynamicTableDataSource UID that owns the reservation.")
     management_mode: Literal["platform_managed"] = Field(..., description="Backend-confirmed management mode.")
     provisioning_status: Literal["reserved", "active"] = Field(..., description="First-class backend provisioning state.")
     storage_hash: str = Field(..., description="Reserved storage hash.")
-    physical_table_name: str = Field(..., description="Physical table name reserved for Alembic rendering.")
+    physical_table_name: str = Field(..., description="Backend-confirmed authored physical table name for Alembic rendering.")
     table_contract: dict[str, Any] = Field(..., description="Backend-normalized contract with resolved names.")
     created: bool = Field(..., description="Whether the backend created a new reservation row.")
     matched_by: str | None = Field(None, description="Existing-row match strategy, or null for newly created rows.")
@@ -211,21 +211,25 @@ The method must:
 3. include explicit SQLAlchemy index/FK names when the user supplied them;
 4. allow omitted index names so SQLAlchemy naming conventions or the database
    can choose physical names;
-5. emit `target_identifier` for same-batch FK targets that do not have
-   `target_meta_table_uid` yet;
-6. call `MetaTable.reserve_managed(...)` once with all pending reservation
+5. use each provider model's authored SQLAlchemy `Table.name` as the
+   reservation `identifier`;
+6. include the authored SQLAlchemy table name in `physical_table_name` so
+   Alembic renders against the project-owned table name;
+7. emit SQLAlchemy table-name `target_identifier` for same-batch FK targets
+   that do not have `target_meta_table_uid` yet;
+8. call `MetaTable.reserve_managed(...)` once with all pending reservation
    tables, not once per model;
-7. bind each returned item back to its model by response order;
-8. mutate SQLAlchemy `Table.name` to the returned physical table name;
-9. leave SQLAlchemy index names as authored by project metadata, while clearing
-   platform-managed FK constraint names before Alembic autogenerate;
-10. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
+9. bind each returned item back to its model by response order;
+10. preserve SQLAlchemy `Table.name` exactly as authored;
+11. leave SQLAlchemy FK/index names as authored by project metadata;
+12. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
    `__metatable_storage_hash__`, and `__metatable_physical_table_name__`.
 
-After this step, Alembic autogenerate and Alembic upgrade must see the reserved
-physical table names. Index names remain normal Alembic/SQLAlchemy DDL
-metadata. Platform-managed FK names are physical database details and must not
-be carried in MetaTable contracts or copied from backend reservation responses.
+After this step, Alembic autogenerate and Alembic upgrade must see the authored
+SQLAlchemy physical table names. Index names remain normal Alembic/SQLAlchemy
+DDL metadata. Platform-managed FK names are physical database details and must
+not be carried in MetaTable contracts or copied from backend reservation
+responses.
 
 The provider must also expose the prepared migration scope:
 
@@ -310,9 +314,10 @@ the SDK raises `AlembicProviderPhysicalStateError` and does not run
 
 ## Explicit Name Policy
 
-Backend reservation owns physical table names only:
+Projects own physical table names through authored SQLAlchemy `Table.name`
+values:
 
-- explicit table names may be passed through as requested physical names;
+- explicit table names are passed through as requested physical names;
 - explicit index names must be included in the reservation contract;
 - platform-managed FK names must stay out of the reservation contract;
 - omitted index names must remain omitted and must not be filled from the
@@ -355,10 +360,11 @@ normal tutorial workflow.
   it in CLI output.
 - [x] Add managed MetaTable reservation request/response models.
 - [x] Add `MetaTable.reserve_managed(...)`.
-- [x] Add provider-level reservation preparation that binds physical table names
-  into SQLAlchemy metadata.
+- [x] Add provider-level reservation preparation that binds MetaTable
+  UID/storage metadata while preserving authored SQLAlchemy table names.
 - [x] Batch provider MetaTable reservations into one backend request and use
-  `target_identifier` for same-batch FK resolution before UIDs exist.
+  SQLAlchemy table-name `target_identifier` for same-batch FK resolution before
+  UIDs exist.
 - [x] Change `AlembicMetaTableMigration` so missing provider models are reserved,
   not registered/created, before Alembic runs.
 - [x] Add an Alembic config helper that uses the backend-issued scoped

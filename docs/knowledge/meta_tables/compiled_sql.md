@@ -107,9 +107,9 @@ backend compiled SQL protocol.
 
 For platform-managed SQLAlchemy models, compile statements after the MetaTable
 migration workflow has registered and bound the model. Migration-managed
-registration privately rebinds `Model.__table__.name` from the logical
-`storage_hash` to the backend `physical_table_name`, so compiled SQL targets
-the table TS Manager actually created.
+registration binds the backend `MetaTable.uid` and storage metadata while
+preserving `Model.__table__.name`, so compiled SQL targets the authored table
+name that Alembic created.
 
 ```python
 from sqlalchemy import select

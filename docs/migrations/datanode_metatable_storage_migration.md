@@ -354,9 +354,9 @@ class AccountPositions(PlatformTimeIndexMetaData, Base):
 ```
 
 Do not use table fullnames or `Parent.__table__.c.uid` as the public
-declaration. Registration can rebind SQLAlchemy table names to backend physical
-names. `MetaTableForeignKey` keeps the target model class as SDK metadata and
-lets recursive registration resolve the backend `MetaTable.uid`.
+declaration. `MetaTableForeignKey` keeps the target model class as SDK metadata
+and lets recursive registration resolve the backend `MetaTable.uid`; the
+authored SQLAlchemy table name remains the physical table name Alembic sees.
 
 Prefix explicit table identifiers and explicit physical table names with the
 project or package name. Bare names such as `account`, `positions`, or

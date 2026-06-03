@@ -139,11 +139,10 @@ The data source is resolved from the active Main Sequence project/session, like
 DataNode.
 
 The returned `uid` is the public platform reference for this table. After
-registration, the SDK privately rebinds `Account.__table__.name` to the returned
-`physical_table_name`, so SQLAlchemy statements compile against the backend
-physical table. Keep the returned `uid` in
-configuration if another API, dashboard, or job needs to read or write the
-table later.
+registration, the SDK binds that `MetaTable.uid` and storage metadata to the
+model while preserving the authored SQLAlchemy table name. Keep the returned
+`uid` in configuration if another API, dashboard, or job needs to read or write
+the table later.
 
 ## 5. Add A Simple Related Table
 

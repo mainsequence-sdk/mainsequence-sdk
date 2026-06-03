@@ -2,7 +2,7 @@
 
 Date: 2026-06-02
 
-Status: Proposed
+Status: Superseded by ADR 0022
 
 ## Context
 
@@ -19,8 +19,8 @@ Platform-managed MetaTables currently have two competing lifecycle paths:
 Keeping both as normal user-facing paths creates a broken workflow:
 
 - users must know whether to call `Model.register()` before migrations;
-- initial platform-managed tables have no registered MetaTable row, UID, or
-  backend physical table name for Alembic to target;
+- initial platform-managed tables have no registered MetaTable row or UID for
+  the SDK to include in the scoped Alembic migration credential;
 - changed SQLAlchemy models can rotate storage identity before the SDK can
   recover the previous table;
 - `migrations upgrade` cannot be trusted as the single command that brings
@@ -80,7 +80,8 @@ The required lifecycle is:
 1. load AlembicMetaTableMigration provider
 2. ensure/register AlembicVersionMetaTable
 3. reserve or resolve provider.metatable_models
-4. bind SQLAlchemy models to returned/existing physical table names
+4. bind SQLAlchemy models to returned/existing MetaTable UID and storage
+   metadata
 5. request a temporary scoped migration connection
 6. call Alembic upgrade directly
 7. finalize reserved MetaTable catalog rows
@@ -97,10 +98,10 @@ platform-managed MetaTable. Resolution must:
 - call the existing platform-managed `register()` path when one does not exist;
 - let the backend create the initial physical table through normal
   platform-managed registration;
-- bind the SQLAlchemy model to the returned MetaTable UID, data source UID,
-  storage identity, and backend physical table name.
+- bind the SQLAlchemy model to the returned MetaTable UID, data source UID, and
+  storage identity while preserving the authored SQLAlchemy table name.
 
-After resolution, Alembic renders SQL against the backend physical table names,
+After resolution, Alembic renders SQL against authored SQLAlchemy table names,
 not against temporary logical/hash names.
 
 After Alembic upgrade, backend finalization must:
@@ -124,7 +125,7 @@ not `MetaTable.register()` plus a backend SQL apply endpoint:
 ```text
 migrations upgrade
 -> reserve-managed/ for missing provider-scoped platform-managed models
--> SDK binds reserved physical_table_name
+-> SDK binds MetaTable UID/storage metadata and preserves authored table names
 -> migration-connection/ issues a scoped database credential
 -> Alembic runs upgrade directly
 -> finalize-managed/ activates the reserved MetaTables

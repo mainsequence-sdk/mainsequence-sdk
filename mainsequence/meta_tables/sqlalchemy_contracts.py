@@ -39,7 +39,6 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
 }
 SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
 POSTGRESQL_MAX_IDENTIFIER_LENGTH = 63
-_BOUND_PHYSICAL_TO_LOGICAL_FULLNAMES: dict[str, str] = {}
 _METATABLE_FOREIGN_KEY_INFO_KEY = "mainsequence_metatable_foreign_key"
 _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] = (
     contextvars.ContextVar(
@@ -278,9 +277,9 @@ class PlatformManagedMetaTable:
 
     The class derives the logical storage hash from storage-relevant metadata
     plus the SQLAlchemy table storage shape, builds the platform registration
-    request, and registers the MetaTable through TS Manager. Registration is the
-    only public path that binds the SQLAlchemy table to the backend-owned
-    physical table name returned by TS Manager.
+    request, and registers the MetaTable through TS Manager. Binding records the
+    returned MetaTable UID and storage metadata while preserving the authored
+    SQLAlchemy table name.
     """
 
     __metatable_use_configured_table_name__ = True
@@ -304,22 +303,15 @@ class PlatformManagedMetaTable:
         if len(args) < 2:
             raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
 
-        _name, metadata, *table_items = args
+        name, metadata, *table_items = args
         kwargs = dict(kwargs)
         schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
         if not kwargs.get("schema"):
             kwargs["schema"] = schema
-        table_name = _build_configured_storage_hash(
-            namespace=_resolve_class_namespace(cls),
-            schema=schema,
-            table_storage_identity=_table_items_storage_identity(table_items),
-            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
-            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
-        )
 
         from sqlalchemy import Table
 
-        return Table(table_name, metadata, *table_items, **kwargs)
+        return Table(str(name), metadata, *table_items, **kwargs)
 
     @classmethod
     def build_registration_request(
@@ -433,20 +425,19 @@ class PlatformManagedMetaTable:
                 storage_hash = None
         if storage_hash not in (None, ""):
             cls.__metatable_storage_hash__ = str(storage_hash)
-
-        physical_table_name = _meta_table_physical_table_name(meta_table)
-        if physical_table_name not in (None, ""):
-            cls.__metatable_physical_table_name__ = str(physical_table_name)
             try:
                 table = _resolve_table(cls)
             except TypeError:
                 table = None
             if table is not None:
-                _bind_table_physical_name(
-                    table,
-                    physical_table_name=str(physical_table_name),
-                    storage_hash=str(storage_hash) if storage_hash not in (None, "") else None,
-                )
+                _bind_table_logical_identity(table, storage_hash=str(storage_hash))
+
+        try:
+            physical_table_name = _table_name(_resolve_table(cls))
+        except TypeError:
+            physical_table_name = _meta_table_physical_table_name(meta_table)
+        if physical_table_name not in (None, ""):
+            cls.__metatable_physical_table_name__ = str(physical_table_name)
 
         data_source_uid = _meta_table_data_source_uid(meta_table)
         if data_source_uid not in (None, ""):
@@ -474,7 +465,7 @@ class PlatformManagedMetaTable:
         storage_hash = getattr(cls, "__metatable_storage_hash__", None)
         if storage_hash not in (None, ""):
             return str(storage_hash)
-        return _table_name(_resolve_table(cls))
+        return metatable_configured_tablename(cls)
 
     @classmethod
     def get_physical_table_name(cls) -> str | None:
@@ -528,7 +519,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         if len(args) < 2:
             raise TypeError("SQLAlchemy __table_cls__ expected name, metadata, and columns.")
 
-        _name, metadata, *table_items = args
+        name, metadata, *table_items = args
         kwargs = dict(kwargs)
         schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
         if not kwargs.get("schema"):
@@ -543,22 +534,9 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             index_names=index_names,
         )
 
-        table_name = _build_configured_storage_hash(
-            namespace=_resolve_class_namespace(cls),
-            schema=schema,
-            table_storage_identity=_time_index_table_items_storage_identity(
-                table_items,
-                time_index_name=time_index_name,
-                index_names=index_names,
-                storage_layout=_resolve_time_index_storage_layout(cls),
-            ),
-            hash_namespace=getattr(cls, "__metatable_hash_namespace__", None),
-            extra_hash_components=getattr(cls, "__metatable_extra_hash_components__", None),
-        )
-
         from sqlalchemy import Table
 
-        return Table(table_name, metadata, *table_items, **kwargs)
+        return Table(str(name), metadata, *table_items, **kwargs)
 
     @classmethod
     def build_registration_request(
@@ -790,20 +768,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
     )
-    bound_storage_hash = _model_bound_storage_hash(model_or_table)
-    table_name = bound_storage_hash or _table_name(table)
-    if (
-        enforce_storage_hash_name
-        and bound_storage_hash is None
-        and table_name != configured_storage_hash
-    ):
-        raise ValueError(
-            "Platform-managed time-indexed SQLAlchemy tables must use the configured "
-            "time-indexed MetaTable storage hash as their initial SQLAlchemy table "
-            "name. Use PlatformTimeIndexMetaData or metatable_configured_tablename(...) "
-            "for __tablename__; registration will rebind it to the backend physical name. "
-            f"Expected {configured_storage_hash!r}, got {table_name!r}."
-        )
+    storage_hash = _model_bound_storage_hash(model_or_table) or configured_storage_hash
 
     column_contracts = [
         _column_contract(column, ordinal_position=position).model_dump(
@@ -837,7 +802,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
             data_source=data_source,
             data_source_uid=data_source_uid,
         ),
-        storage_hash=table_name,
+        storage_hash=storage_hash,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -870,7 +835,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
                     ),
                 },
             },
-            "physical": {},
+            "physical": {"table_name": _table_name(table)},
             "columns": column_contracts,
             "indexes": _default_time_indexed_meta_table_indexes(resolved_index_names),
             "foreign_keys": foreign_key_contracts,
@@ -910,13 +875,6 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         model_or_table,
         extra_hash_components=extra_hash_components,
     )
-    expected_storage_hash = build_meta_table_storage_hash(
-        namespace=resolved_namespace,
-        identifier=resolved_identifier,
-        schema=resolved_schema,
-        hash_namespace=resolved_hash_namespace,
-        extra_hash_components=resolved_extra_hash_components,
-    )
     configured_storage_hash = _build_configured_storage_hash(
         namespace=resolved_namespace,
         schema=resolved_schema,
@@ -924,32 +882,14 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         hash_namespace=resolved_hash_namespace,
         extra_hash_components=resolved_extra_hash_components,
     )
-    bound_storage_hash = _model_bound_storage_hash(model_or_table)
-    table_name = bound_storage_hash or _table_name(table)
-    if (
-        enforce_storage_hash_name
-        and table_name
-        not in {
-            expected_storage_hash,
-            configured_storage_hash,
-        }
-        and bound_storage_hash is None
-    ):
-        raise ValueError(
-            "Platform-managed SQLAlchemy tables must use the MetaTable storage hash as "
-            "their initial SQLAlchemy table name. Use PlatformManagedMetaTable or "
-            "metatable_tablename(...) for __tablename__; registration will rebind it "
-            "to the backend physical name. "
-            f"Expected {configured_storage_hash!r} or {expected_storage_hash!r}, "
-            f"got {table_name!r}."
-        )
+    storage_hash = _model_bound_storage_hash(model_or_table) or configured_storage_hash
 
     table_contract = table_contract_from_sqlalchemy_model(
         model_or_table,
         target_meta_tables=_target_meta_tables,
         target_identifier_by_model=_target_identifiers,
         schema=resolved_schema,
-        include_physical_table_name=False,
+        include_physical_table_name=True,
         require_metatable_foreign_keys=True,
     )
     return MetaTableRegistrationRequest(
@@ -959,7 +899,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
             data_source_uid=data_source_uid,
         ),
         management_mode="platform_managed",
-        storage_hash=table_name,
+        storage_hash=storage_hash,
         identifier=resolved_identifier,
         namespace=resolved_namespace,
         description=resolved_description,
@@ -1394,37 +1334,6 @@ def _model_bound_storage_hash(model_or_table: Any) -> str | None:
     return None
 
 
-def _bind_table_physical_name(
-    table: Any,
-    *,
-    physical_table_name: str,
-    storage_hash: str | None = None,
-) -> None:
-    current_name = _table_name(table)
-    _bind_table_logical_identity(table, storage_hash=storage_hash or current_name)
-    _remember_table_physical_to_logical_fullname(
-        table,
-        physical_table_name=physical_table_name,
-    )
-    if current_name == physical_table_name:
-        _set_table_fullname(table, physical_table_name)
-        return
-
-    metadata = getattr(table, "metadata", None)
-    schema = getattr(table, "schema", None)
-    remove_table = getattr(metadata, "_remove_table", None)
-    add_table = getattr(metadata, "_add_table", None)
-    if callable(remove_table) and callable(add_table):
-        remove_table(current_name, schema)
-        table.name = physical_table_name
-        _set_table_fullname(table, physical_table_name)
-        add_table(physical_table_name, schema, table)
-        return
-
-    table.name = physical_table_name
-    _set_table_fullname(table, physical_table_name)
-
-
 def _bind_table_logical_identity(table: Any, *, storage_hash: str) -> None:
     schema = getattr(table, "schema", None)
     logical_fullname = _compose_table_fullname(schema=schema, table_name=storage_hash)
@@ -1435,32 +1344,6 @@ def _bind_table_logical_identity(table: Any, *, storage_hash: str) -> None:
     if isinstance(info, MutableMapping):
         info["mainsequence_storage_hash"] = str(storage_hash)
         info["mainsequence_logical_fullname"] = logical_fullname
-
-
-def _remember_table_physical_to_logical_fullname(
-    table: Any,
-    *,
-    physical_table_name: str,
-) -> None:
-    logical_fullname = _table_reference_fullname(table)
-    if logical_fullname in (None, ""):
-        return
-
-    schema = getattr(table, "schema", None)
-    physical_fullname = _compose_table_fullname(
-        schema=schema,
-        table_name=physical_table_name,
-    )
-    _BOUND_PHYSICAL_TO_LOGICAL_FULLNAMES[physical_fullname] = str(logical_fullname)
-    _BOUND_PHYSICAL_TO_LOGICAL_FULLNAMES[str(physical_table_name)] = str(logical_fullname)
-
-
-def _set_table_fullname(table: Any, table_name: str) -> None:
-    fullname = _compose_table_fullname(schema=getattr(table, "schema", None), table_name=table_name)
-    try:
-        table.fullname = fullname
-    except Exception:
-        return
 
 
 def _compose_table_fullname(*, schema: str | None, table_name: str) -> str:
@@ -1492,8 +1375,7 @@ def _table_reference_fullname(table: Any) -> str | None:
 def _logical_fullname_for_target_fullname(table_fullname: str | None) -> str | None:
     if table_fullname in (None, ""):
         return None
-    table_fullname = str(table_fullname)
-    return _BOUND_PHYSICAL_TO_LOGICAL_FULLNAMES.get(table_fullname, table_fullname)
+    return str(table_fullname)
 
 
 def _meta_table_data_source_uid(meta_table: Any) -> str | None:

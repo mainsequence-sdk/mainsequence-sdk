@@ -42,7 +42,6 @@ from mainsequence.meta_tables import (
     AlembicVersionMetaTable,
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
-    metatable_tablename,
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
 )
@@ -78,27 +77,26 @@ table, but it does not have to equal the physical table name in this mode.
 
 ### `platform_managed`
 
-Use this when TS Manager should create the physical table through the selected
-`DynamicTableDataSource`.
+Use this when Alembic should create and evolve the physical table while TS
+Manager keeps the MetaTable catalog binding.
 
 Typical flow:
 
-1. Define SQLAlchemy models with `PlatformManagedMetaTable` or `__tablename__ = metatable_tablename(...)`.
+1. Define SQLAlchemy models with `PlatformManagedMetaTable` and project-prefixed `__tablename__` values.
 2. Add those models to `AlembicMetaTableMigration.metatable_models`.
 3. Run `mainsequence migrations upgrade --provider ... head`.
-4. Migration tooling calls the existing registration path for missing models,
-   TS Manager creates the initial physical tables, and Alembic applies schema
+4. Migration tooling reserves catalog rows for missing models, Alembic applies schema
    evolution SQL.
 
 For `platform_managed`, `storage_hash` is the logical table identity and
-`table_contract.physical.table_name` is omitted from client requests. The
-backend allocates the physical table name and returns it on the `MetaTable`.
+`storage_hash` is the logical platform identity. The authored SQLAlchemy table
+name is sent separately as `table_contract.physical.table_name` and should be
+prefixed with the project or package name.
 
-That is why the SDK exposes `PlatformManagedMetaTable` and `metatable_tablename(...)`.
+That is why the SDK exposes `PlatformManagedMetaTable`.
 The platform-managed class computes the logical storage identity from
-storage-relevant configuration, including the SQLAlchemy table shape. After
-migration-managed registration the SDK privately rebinds the SQLAlchemy table
-name to the backend physical table name so compiled SQL targets the real table.
+storage-relevant configuration, including the SQLAlchemy table shape, without
+using that identity as the SQLAlchemy table name.
 
 ## Why Choose Platform-Managed
 
@@ -143,7 +141,8 @@ way DataNode resolves its data source.
 ```python
 request = Asset.build_registration_request()
 
-assert request.table_contract.physical.table_name is None
+assert request.storage_hash != Asset.__table__.name
+assert request.table_contract.physical.table_name == Asset.__table__.name
 ```
 
 ## Storage Hashes
@@ -184,18 +183,14 @@ This attribute is part of storage identity. Changing it creates a different
 table. It is not for labels, descriptions, runtime options, test isolation,
 backend UIDs, data-source UIDs, or updater scope.
 
-For explicit low-level naming, use the helper as the SQLAlchemy table name:
+For explicit physical naming, use a project-prefixed SQLAlchemy table name:
 
 ```python
-__tablename__ = metatable_tablename(
-    namespace="sdk-examples",
-    identifier="Asset",
-)
+__tablename__ = "sdk_examples__asset"
 ```
 
-The helper builds a PostgreSQL-safe name, keeps a readable prefix, and uses the
-SDK's DataNode hash machinery for the digest when available. The generated name
-stays within PostgreSQL's 63-character identifier limit.
+Keep authored physical table names within PostgreSQL's 63-character identifier
+limit.
 
 ## Backend Responsibilities
 

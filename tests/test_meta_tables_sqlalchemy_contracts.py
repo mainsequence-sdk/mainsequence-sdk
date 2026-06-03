@@ -301,7 +301,7 @@ def test_default_metatable_identifier_requires_pyproject_project_name(tmp_path, 
 
 
 def test_platform_managed_registration_request_from_sqlalchemy_metadata():
-    table_name = metatable_tablename(namespace="example.assets", identifier="Account")
+    table_name = "example_assets__account"
     account_table = FakeTable(
         table_name,
         columns=[
@@ -323,11 +323,11 @@ def test_platform_managed_registration_request_from_sqlalchemy_metadata():
 
     assert isinstance(request, MetaTableRegistrationRequest)
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == table_name
+    assert request.storage_hash == metatable_configured_tablename(Account)
     assert request.identifier == "Account"
     assert request.namespace == "example.assets"
     assert request.provisioning == {"create_table": True, "if_not_exists": True}
-    assert request.table_contract.physical.table_name is None
+    assert request.table_contract.physical.table_name == table_name
     assert request.table_contract.columns[0].data_type == "uuid"
     assert request.table_contract.columns[0].backend_type == "UUID"
     assert request.table_contract.columns[0].primary_key is True
@@ -591,16 +591,15 @@ def test_time_index_optional_table_info_resolvers_allow_pending_declarative_clas
     ) == ["time_index", "account_uid"]
 
 
-def test_platform_managed_accepts_configured_storage_hash_table_name():
+def test_platform_managed_preserves_authored_physical_table_name():
     table = FakeTable(
-        "placeholder",
+        "example_assets__asset",
         columns=[
             FakeColumn("uid", Uuid(), nullable=False, primary_key=True),
             FakeColumn("symbol", String(64), nullable=False),
         ],
     )
     Asset = _model_class("Asset", table)
-    table.name = metatable_configured_tablename(Asset)
 
     request = platform_managed_registration_request_from_sqlalchemy_model(
         Asset,
@@ -608,8 +607,8 @@ def test_platform_managed_accepts_configured_storage_hash_table_name():
     )
 
     assert request.management_mode == "platform_managed"
-    assert request.storage_hash == table.name
-    assert request.table_contract.physical.table_name is None
+    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.table_contract.physical.table_name == "example_assets__asset"
 
 
 def test_platform_managed_metatable_build_request_uses_session_data_source(monkeypatch):
@@ -952,11 +951,10 @@ def test_platform_managed_metatable_requires_metatable_foreign_key():
 
 def test_platform_managed_metatable_register_delegates_to_meta_table_register(monkeypatch):
     table = FakeTable(
-        "placeholder",
+        "example_assets__account",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Account = _platform_model_class("Account", table)
-    table.name = metatable_configured_tablename(Account)
 
     captured = {}
 
@@ -966,7 +964,7 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
         return SimpleNamespace(
             uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=table.name,
+            storage_hash=request.storage_hash,
             physical_table_name="mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa",
         )
 
@@ -987,12 +985,12 @@ def test_platform_managed_metatable_register_delegates_to_meta_table_register(mo
     assert Account.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert Account.get_data_source_uid() == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     assert Account.get_storage_hash() == captured["request"].storage_hash
-    assert Account.get_physical_table_name() == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
-    assert Account.__table__.name == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
+    assert Account.get_physical_table_name() == "example_assets__account"
+    assert Account.__table__.name == "example_assets__account"
     assert captured["timeout"] == 15
     assert captured["request"].data_source_uid == "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
     assert captured["request"].storage_hash != Account.__table__.name
-    assert captured["request"].table_contract.physical.table_name is None
+    assert captured["request"].table_contract.physical.table_name == "example_assets__account"
     assert not hasattr(Account, "bind_meta_table")
 
 
@@ -1033,7 +1031,7 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
         table,
         index_names=["time_index", "account_uid", "unique_identifier"],
     )
-    table.name = metatable_configured_tablename(AccountHoldings)
+    table.name = "example_assets__account_holdings"
 
     request = AccountHoldings.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -1041,11 +1039,13 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
     )
 
     assert isinstance(request, TimeIndexMetaTableRegistrationRequest)
-    assert request.storage_hash == table.name
+    assert request.storage_hash == metatable_configured_tablename(AccountHoldings)
+    assert request.storage_hash != table.name
     assert request.identifier == "AccountHoldings"
     assert request.namespace == "example.assets"
     assert request.description == "Account holdings data node storage"
     assert request.time_index_name == "time_index"
+    assert request.table_contract["physical"]["table_name"] == table.name
     assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
         "time_index",
         "account_uid",
@@ -1090,7 +1090,7 @@ def test_time_index_metadata_registration_request_uses_class_metatable_descripti
     AccountHoldings.__metatable_description__ = (
         "Account holdings history used to reconstruct portfolio state."
     )
-    table.name = metatable_configured_tablename(AccountHoldings)
+    table.name = "example_assets__account_holdings"
 
     request = AccountHoldings.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -1181,7 +1181,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
         table,
         index_names=["time_index", "account_uid", "unique_identifier"],
     )
-    table.name = metatable_configured_tablename(AccountHoldings)
+    table.name = "example_assets__account_holdings"
 
     captured = {}
 
@@ -1193,7 +1193,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
             return {
                 "uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                "storage_hash": table.name,
+                "storage_hash": captured["payload"]["json"]["storage_hash"],
                 "identifier": "AccountHoldings",
                 "namespace": "example.assets",
                 "management_mode": "platform_managed",
@@ -1239,8 +1239,8 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     assert AccountHoldings.get_time_index_metadata() is registered
     assert AccountHoldings.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_storage_hash() == captured["payload"]["json"]["storage_hash"]
-    assert AccountHoldings.get_physical_table_name() == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
-    assert AccountHoldings.__table__.name == "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
+    assert AccountHoldings.get_physical_table_name() == "example_assets__account_holdings"
+    assert AccountHoldings.__table__.name == "example_assets__account_holdings"
     assert captured["r_type"] == "POST"
     assert captured["url"].endswith("/ts_manager/dynamic_table/register/")
     assert captured["timeout"] == 15
@@ -1365,7 +1365,7 @@ def test_time_index_storage_name_hash_component_separates_identical_table_shapes
     assert request.namespace == "mainsequence.examples"
 
 
-def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy():
+def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
     from sqlalchemy import Index, MetaData, String, Uuid
@@ -1381,6 +1381,7 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
         metadata = MetaData(naming_convention=naming_convention)
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __table_args__ = {"schema": "public"}
 
         __metatable_namespace__ = "example.assets"
@@ -1390,6 +1391,7 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     class Asset(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__asset"
         __table_args__ = (
             Index(None, "account_uid"),
             {"schema": "public"},
@@ -1406,13 +1408,13 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
-    assert Account.__table__.name == metatable_configured_tablename(Account)
-    assert Asset.__table__.name == metatable_configured_tablename(Asset)
+    assert Account.__table__.name == "example_assets__account"
+    assert Asset.__table__.name == "example_assets__asset"
     Account._bind_meta_table(
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=Account.__table__.name,
+            storage_hash=metatable_configured_tablename(Account),
         )
     )
 
@@ -1421,8 +1423,8 @@ def test_platform_managed_metatable_matches_configured_tablename_with_sqlalchemy
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == Asset.__table__.name
-    assert request.table_contract.physical.table_name is None
+    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.table_contract.physical.table_name == "example_assets__asset"
     assert request.table_contract.indexes[0].name
     assert request.table_contract.foreign_keys[0].name is None
 
@@ -1507,7 +1509,7 @@ def test_metatable_foreign_key_metadata_drives_fk_contract_target_resolution():
     assert contract.foreign_keys[0].name is None
 
 
-def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_name(
+def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
     monkeypatch,
 ):
     pytest.importorskip("sqlalchemy")
@@ -1520,13 +1522,14 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
         metadata = MetaData()
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    storage_hash = Account.__table__.name
+    storage_hash = metatable_configured_tablename(Account)
     physical_table_name = "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     captured = {}
 
@@ -1549,18 +1552,19 @@ def test_platform_managed_register_rebinds_sqlalchemy_table_to_backend_physical_
         Account.register()
 
     assert captured["request"].storage_hash == storage_hash
-    assert captured["request"].table_contract.physical.table_name is None
+    assert captured["request"].table_contract.physical.table_name == "example_assets__account"
     assert Account.get_storage_hash() == storage_hash
-    assert Account.get_physical_table_name() == physical_table_name
-    assert Account.__table__.name == physical_table_name
-    assert Account.__table__.fullname == f"public.{physical_table_name}"
-    assert Base.metadata.tables[f"public.{physical_table_name}"] is Account.__table__
-    assert f"public.{storage_hash}" not in Base.metadata.tables
+    assert Account.get_physical_table_name() == "example_assets__account"
+    assert Account.__table__.name == "example_assets__account"
+    assert Account.__table__.fullname == "public.example_assets__account"
+    assert Base.metadata.tables["public.example_assets__account"] is Account.__table__
+    assert f"public.{physical_table_name}" not in Base.metadata.tables
 
     compiled_sql = str(
         select(Account.__table__).compile(dialect=postgresql.dialect(paramstyle="pyformat"))
     )
-    assert f"FROM public.{physical_table_name}" in compiled_sql
+    assert "FROM public.example_assets__account" in compiled_sql
+    assert physical_table_name not in compiled_sql
     assert storage_hash not in compiled_sql
 
 
@@ -1579,7 +1583,7 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
-    account_storage_hash = Account.__table__.name
+    account_storage_hash = metatable_configured_tablename(Account)
     account_physical_table_name = "mt_aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa"
     Account._bind_meta_table(
         SimpleNamespace(
@@ -1590,7 +1594,7 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
         )
     )
 
-    assert Account.__table__.fullname == f"public.{account_physical_table_name}"
+    assert Account.__table__.fullname == "public.metatable_account"
 
     class Asset(PlatformManagedMetaTable, Base):
         __metatable_namespace__ = "example.assets"
@@ -1613,7 +1617,7 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
         foreign_key.info[sqlalchemy_contracts._METATABLE_FOREIGN_KEY_INFO_KEY]["target_model"]
         is Account
     )
-    assert Asset.__table__.name == metatable_configured_tablename(Asset)
+    assert Asset.__table__.name == "metatable_asset"
 
     request = Asset.build_registration_request(
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
@@ -1625,7 +1629,7 @@ def test_bound_parent_table_fullname_resolves_fk_and_contract_uses_logical_targe
     assert request.table_contract.foreign_keys[0].name is None
 
 
-def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
+def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
     from sqlalchemy import DateTime, Index, MetaData, String, Uuid
@@ -1635,6 +1639,7 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         metadata = MetaData()
 
     class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
         __metatable_namespace__ = "example.assets"
         __metatable_identifier__ = "Account"
 
@@ -1643,6 +1648,7 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     class AccountHoldings(PlatformTimeIndexMetaData, Base):
+        __tablename__ = "example_assets__account_holdings"
         __table_args__ = (
             Index(None, "account_uid"),
             {"schema": "public"},
@@ -1663,7 +1669,7 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         )
         unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    assert AccountHoldings.__table__.name == metatable_configured_tablename(AccountHoldings)
+    assert AccountHoldings.__table__.name == "example_assets__account_holdings"
     assert list(AccountHoldings.__table__.primary_key.columns.keys()) == []
     assert [column.name for column in AccountHoldings.__mapper__.primary_key] == [
         "time_index",
@@ -1674,7 +1680,7 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         SimpleNamespace(
             uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            storage_hash=Account.__table__.name,
+            storage_hash=metatable_configured_tablename(Account),
         )
     )
 
@@ -1682,8 +1688,9 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     )
 
-    assert request.storage_hash == AccountHoldings.__table__.name
+    assert request.storage_hash == metatable_configured_tablename(AccountHoldings)
     assert request.time_index_name == "time_index"
+    assert request.table_contract["physical"]["table_name"] == "example_assets__account_holdings"
     assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
         "time_index",
         "account_uid",
@@ -1702,18 +1709,21 @@ def test_time_index_metadata_matches_configured_tablename_with_sqlalchemy():
     assert foreign_key["on_delete"] == "restrict"
 
 
-def test_platform_managed_requires_storage_hash_table_name():
+def test_platform_managed_allows_authored_table_name_distinct_from_storage_hash():
     table = FakeTable(
         "asset",
         columns=[FakeColumn("uid", Uuid(), nullable=False, primary_key=True)],
     )
     Asset = _model_class("Asset", table)
 
-    with pytest.raises(ValueError, match="metatable_tablename"):
-        platform_managed_registration_request_from_sqlalchemy_model(
-            Asset,
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-        )
+    request = platform_managed_registration_request_from_sqlalchemy_model(
+        Asset,
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.storage_hash == metatable_configured_tablename(Asset)
+    assert request.storage_hash != "asset"
+    assert request.table_contract.physical.table_name == "asset"
 
 
 def test_external_registered_allows_physical_table_name_to_differ_from_storage_hash():

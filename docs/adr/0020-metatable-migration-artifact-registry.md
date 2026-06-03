@@ -200,50 +200,27 @@ It must not be copied into application MetaTable registrations during catalog
 sync. Each application MetaTable registers through its own normal model
 binding/configuration.
 
-## Stable MetaTable Identity For Catalog Sync
+## Stable MetaTable Identity For Alembic Catalog Sync
 
-Application MetaTable catalog sync uses `identifier` as the only stable lookup
-key. It must not resolve application MetaTables by `data_source_uid`,
-namespace, storage hash, physical table name, or the newly constructed
-SQLAlchemy table shape.
+Application MetaTable catalog sync in the Alembic workflow uses the SQLAlchemy
+table name as the stable lookup key. During `prepare_for_alembic()`, the SDK
+reads each provider model's current `Table.name`, sends that value as the
+reservation `identifier`, and emits the same value as same-batch FK
+`target_identifier` before backend UIDs exist.
 
-When a model declares `__metatable_identifier__`, that value is used exactly.
-The user is then responsible for global uniqueness:
-
-```python
-class AssetTypeTable(PlatformManagedMetaTable, Base):
-    __metatable_identifier__ = "msm.asset_type"
-```
-
-When a model does not declare `__metatable_identifier__`, the SDK derives a
-default identifier from the project and the Python model path:
-
-```text
-<pyproject project name>:<model.__module__>.<model.__qualname__>
-```
-
-Example:
-
-```text
-mainsequencemarkets:src.msm.models.assets.AssetTypeTable
-```
-
-The project prefix comes from `[project].name` in the nearest project
-`pyproject.toml`, normalized only enough to be deterministic. This prevents
-different projects that both define `src.Test` from colliding. If the project
-name cannot be resolved and the model does not define
-`__metatable_identifier__`, the SDK must fail and require an explicit
-identifier.
+`__metatable_identifier__` is not the Alembic migration identity. A model rename
+or module move does not affect migration identity as long as the SQLAlchemy
+table name is stable.
 
 Catalog sync after a migration must:
 
-1. Resolve each model's stable identifier.
-2. Fetch the existing `MetaTable` by exact `identifier`.
+1. Resolve each model's SQLAlchemy table name.
+2. Fetch the existing `MetaTable` by exact table-name `identifier`.
 3. If found, bind the changed model class to that existing MetaTable UID,
    storage hash, and physical table name before registration refresh.
-4. If not found, perform initial catalog registration for that identifier.
-5. If more than one MetaTable exists for the identifier, fail because the
-   identifier is not globally unique.
+4. If not found, reserve the missing catalog row for that table name.
+5. If more than one MetaTable exists for the table-name identifier, fail because
+   the migration identity is not unique.
 
 This is the mechanism that lets Alembic change a shape-addressed
 `PlatformManagedMetaTable` without losing the original catalog path. The new
@@ -607,8 +584,8 @@ The SDK owns:
   upgrade/downgrade directly, reset provider state, register the version table,
   reserve provider MetaTables, and finalize provider MetaTables
 - typed reservation and finalization request/response models
-- helpers that bind backend-reserved physical table names into SQLAlchemy
-  metadata before Alembic runs
+- helpers that bind MetaTable UID/storage metadata while preserving authored
+  SQLAlchemy table names before Alembic runs
 - docs and examples that show Alembic, not SDK operation lists, including the
   dedicated `docs/tutorial/metatable_migrations.md` walkthrough
 
@@ -639,15 +616,14 @@ Required extension points:
   autogenerate/rendering must never scan every imported SQLAlchemy model.
 - `AlembicMetaTableMigration` must accept `metatable_models`; catalog
   registration must be scoped to that list.
-- Application MetaTable catalog sync must resolve by exact `identifier` only.
-  It must not use `data_source_uid`, namespace, storage hash, physical table
-  name, or the newly constructed SQLAlchemy table shape as the catalog identity.
+- Application MetaTable catalog sync in the Alembic workflow must resolve by
+  exact SQLAlchemy table-name identifier.
 - Application MetaTable catalog sync must call each provider-scoped model's
   normal `register()` path without passing the Alembic registry data source.
   Each model owns its own data-source binding.
-- Models without explicit `__metatable_identifier__` must default to
-  `<pyproject project name>:<model.__module__>.<model.__qualname__>`. Missing
-  project name means the SDK must require an explicit identifier.
+- `__metatable_identifier__` must not be used as Alembic migration identity.
+  Normal non-migration MetaTable registration may still expose it as catalog
+  metadata.
 - `AlembicMetaTableMigration` must accept an optional
   `after_register_metatables` hook for project-specific catalog refresh after
   provider-scoped MetaTable registration.
@@ -737,20 +713,19 @@ stable identifier.
   in the current SDK CLI.
 - [x] Make `upgrade` perform provider-scoped backend finalization by default
   after Alembic succeeds, with no `--register-metatables` flag.
-- [x] Add stable identifier defaults:
-  `<pyproject project name>:<model.__module__>.<model.__qualname__>`.
-- [x] Make migration catalog sync resolve existing application MetaTables by
-  exact `identifier` only, bind models to existing catalog rows before refresh,
-  initial-register missing identifiers, and fail on duplicate identifiers.
+- [x] Make Alembic migration catalog sync use the SQLAlchemy table name as the
+  reservation `identifier` and same-batch FK `target_identifier`.
+- [x] Make migration catalog sync bind models to existing catalog rows before
+  refresh, reserve missing table-name identifiers, and fail on duplicate
+  table-name identifiers.
 - [x] Update `docs/tutorial/metatable_migrations.md` so the user-facing flow is
   one `mainsequence migrations upgrade --provider ... head` path with
-  identifier-based catalog sync.
+  table-name catalog sync.
 - [x] Update `docs/knowledge/meta_tables/migrations.md` and
   `docs/knowledge/meta_tables/api.md` to remove the `--register-metatables`
-  workflow and document identifier-based catalog sync.
-- [x] Update MetaTable examples to use the final upgrade flow and show default
-  identifier behavior plus explicit identifier pinning for renamed/moved model
-  classes.
+  workflow and document table-name catalog sync.
+- [x] Update MetaTable examples to use the final upgrade flow and document that
+  model renames keep identity when the SQLAlchemy table name remains stable.
 - [x] Update the MetaTable skill so migration guidance follows the final ADR
   workflow and does not mention optional `--register-metatables`.
 - [x] Add optional `after_register_metatables` provider hook and run it with an

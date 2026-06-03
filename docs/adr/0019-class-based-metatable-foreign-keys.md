@@ -18,15 +18,14 @@ ForeignKey(Account.__table__.c.uid, ondelete="RESTRICT")
 That is a valid SQLAlchemy declaration, but it is the wrong public abstraction
 for platform-managed MetaTables. It exposes the SQLAlchemy table object as if it
 were the platform storage identity. In this SDK, the platform storage identity is
-the registered `MetaTable.uid`; `Model.__table__` is local authoring state that
-registration may rebind to a backend-owned physical table name.
+the registered `MetaTable.uid`; `Model.__table__` is local SQLAlchemy authoring
+state, not the public foreign-key contract.
 
 The SDK currently needs a target `MetaTable.uid` in the foreign-key contract.
 Using SQLAlchemy table fullnames or table column objects in public examples has
 three problems:
 
-- table names and fullnames can change after platform registration binds the
-  model to the backend physical table name
+- table names and fullnames are not the platform foreign-key identity
 - column objects do not prove that the target MetaTable model has been
   registered
 - callers are forced into manual sequential registration and manual target UID

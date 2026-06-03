@@ -67,7 +67,8 @@ not be copied into the MetaTable contract.
 Foreign-key targets are resolved by the migration workflow. Before Alembic runs,
 `migrations upgrade` resolves existing provider-scoped MetaTables by exact
 `identifier`, reserves missing rows through `reserve-managed`, and binds
-SQLAlchemy models to backend physical table names and registered index names.
+SQLAlchemy models to backend `MetaTable.uid` and storage metadata while
+preserving authored table names.
 After Alembic succeeds, the CLI calls backend finalization for the prepared
 provider MetaTable UIDs.
 

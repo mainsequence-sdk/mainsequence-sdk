@@ -60,9 +60,9 @@ class Account(PlatformManagedMetaTable, Base):
 The `__metatable_identifier__` attribute is logical backend metadata. It is
 sent during registration but does not contribute to the configured
 `storage_hash`. When present, it must be globally unique per organization and
-is the stable lookup key used to resolve migrated MetaTables. The mapped
-columns, indexes, and foreign keys do contribute to the configured storage
-identity.
+is not the Alembic migration lookup key. Migration preparation resolves
+provider MetaTables by authored SQLAlchemy table name. The mapped columns,
+indexes, and foreign keys do contribute to the configured storage identity.
 
 Prefix explicit table identifiers, explicit physical table names, and Alembic
 version table names with the project or package name. Bare names such as
@@ -95,8 +95,8 @@ Build the request first when you want to inspect the payload:
 request = Account.build_registration_request()
 
 assert request.management_mode == "platform_managed"
-assert request.storage_hash == Account.__table__.name
-assert request.table_contract.physical.table_name is None
+assert request.storage_hash != Account.__table__.name
+assert request.table_contract.physical.table_name == Account.__table__.name
 ```
 
 The data source is resolved from the active Main Sequence project/session, like
@@ -134,11 +134,10 @@ backend contract. For platform-managed tables, declare the target model class
 with `MetaTableForeignKey(TargetModel, column=...)`.
 
 Do not use SQLAlchemy table fullnames or parent table column objects as the
-public SDK declaration. Migration-managed registration may rebind
-`Account.__table__.name` to the backend physical table name.
-`MetaTableForeignKey` stores the target model class and target column as SDK
-metadata. Migration tooling resolves parent targets and backend
-`MetaTable.uid` values before rendering SQL.
+public SDK declaration. `MetaTableForeignKey` stores the target model class and
+target column as SDK metadata. Migration tooling resolves parent targets and
+backend `MetaTable.uid` values before rendering SQL while preserving authored
+SQLAlchemy table names.
 
 Platform-managed `MetaTableForeignKey(...)` contracts omit physical constraint
 names. Alembic, SQLAlchemy, and the database own the physical FK name; backend
@@ -331,7 +330,7 @@ prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1
 
 The SDK intentionally fails early for ambiguous metadata:
 
-- platform-managed tables must use `PlatformManagedMetaTable` or `metatable_tablename(...)` to derive the logical `storage_hash`
+- platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive the logical `storage_hash`
 - SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
 - indexes must resolve to names, either explicitly or through SQLAlchemy naming conventions
 - platform-managed foreign keys must use `MetaTableForeignKey(TargetModel, column=...)`
