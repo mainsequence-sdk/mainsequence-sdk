@@ -254,9 +254,7 @@ class AlembicMetaTableMigration:
     target_metadata: Any
     alembic_registry: type[AlembicVersionMetaTable]
     metatable_models: Sequence[type[Any]] = field(default_factory=tuple)
-    after_register_metatables: (
-        Callable[[AlembicMetaTableCatalogRefreshContext], Any] | None
-    ) = None
+    after_register_metatables: Callable[[AlembicMetaTableCatalogRefreshContext], Any] | None = None
     include_name_hook: Any | None = None
     include_object_hook: Any | None = None
 
@@ -453,9 +451,8 @@ class AlembicMetaTableMigration:
         finalized_for_models: list[Any] = []
         for model in self.metatable_models:
             identifier = resolve_metatable_identifier(model)
-            item = (
-                finalized_by_identifier.get(identifier)
-                or finalized_by_uid.get(str(getattr(model, "get_meta_table_uid", lambda: "")()))
+            item = finalized_by_identifier.get(identifier) or finalized_by_uid.get(
+                str(getattr(model, "get_meta_table_uid", lambda: "")())
             )
             if item is None:
                 continue
@@ -538,8 +535,7 @@ class AlembicMetaTableMigration:
             )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
-                    "Found existing MetaTables by identifier "
-                    f"count={len(existing_by_identifier)}."
+                    f"Found existing MetaTables by identifier count={len(existing_by_identifier)}."
                 )
             pending_models: list[type[Any]] = []
             pending_tables: list[ManagedMetaTableReservationTable] = []
@@ -572,16 +568,26 @@ class AlembicMetaTableMigration:
                 request.schema_management = schema_management
 
                 bound_meta_table = reserved_by_model.get(model)
-                if bound_meta_table is not None and _existing_metatable_is_ready_for_alembic(
-                    bound_meta_table,
-                    request=request,
-                    migration=self,
-                    registry_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
-                    stage_existing_schema_management=stage_existing_schema_management,
-                    require_existing_contract_match=require_existing_contract_match,
-                ):
-                    reserved_tables.append(bound_meta_table)
-                    continue
+                if bound_meta_table is not None:
+                    readiness_failure = _alembic_readiness_failure(
+                        bound_meta_table,
+                        request=request,
+                        migration=self,
+                        registry_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
+                        stage_existing_schema_management=stage_existing_schema_management,
+                        require_existing_contract_match=require_existing_contract_match,
+                    )
+                    if readiness_failure is None:
+                        reserved_tables.append(bound_meta_table)
+                        continue
+                    if on_metatable_reservation_status is not None:
+                        on_metatable_reservation_status(
+                            _alembic_readiness_failure_message(
+                                model,
+                                bound_meta_table,
+                                readiness_failure,
+                            )
+                        )
 
                 pending_models.append(model)
                 pending_tables.append(_reservation_table_from_registration_request(request))
@@ -755,12 +761,14 @@ def alembic_config_for_provider(
         config.output_buffer = output_buffer
     config.set_main_option("script_location", migration.script_location)
     config.set_main_option("sqlalchemy.url", sqlalchemy_url.replace("%", "%%"))
+    config.set_main_option("sqlalchemy.echo", "true")
     config.set_main_option("version_table", migration.version_table)
     if migration.version_table_schema:
         config.set_main_option("version_table_schema", migration.version_table_schema)
     if owner_role_name not in (None, ""):
         config.set_main_option("mainsequence.owner_role_name", str(owner_role_name))
         config.attributes["mainsequence_migration_owner_role_name"] = str(owner_role_name)
+    config.attributes["mainsequence_migration_sqlalchemy_url"] = sqlalchemy_url
     config.attributes["mainsequence_migration_provider"] = migration
     config.attributes["target_metadata"] = migration.target_metadata
     config.attributes["alembic_version_table"] = migration.alembic_version_table
@@ -1306,32 +1314,89 @@ def _existing_metatable_is_ready_for_alembic(
     stage_existing_schema_management: bool,
     require_existing_contract_match: bool,
 ) -> bool:
+    return (
+        _alembic_readiness_failure(
+            meta_table,
+            request=request,
+            migration=migration,
+            registry_meta_table_uid=registry_meta_table_uid,
+            stage_existing_schema_management=stage_existing_schema_management,
+            require_existing_contract_match=require_existing_contract_match,
+        )
+        is None
+    )
+
+
+def _alembic_readiness_failure(
+    meta_table: Any,
+    *,
+    request: Any,
+    migration: AlembicMetaTableMigration,
+    registry_meta_table_uid: str | None,
+    stage_existing_schema_management: bool,
+    require_existing_contract_match: bool,
+) -> tuple[str, dict[str, Any]] | None:
     if _meta_table_uid(meta_table) in (None, ""):
-        return False
+        return "missing_uid", {}
     if _meta_table_attr(meta_table, "physical_table_name") in (None, ""):
-        return False
+        return "missing_physical_table", {}
     existing_contract = _meta_table_contract(meta_table)
     if require_existing_contract_match and not isinstance(existing_contract, Mapping):
-        return False
+        return "missing_contract", {}
     if require_existing_contract_match and not _contracts_equivalent(
         existing_contract,
         getattr(request, "table_contract", None),
     ):
-        return False
+        return "contract_mismatch", {}
     if not stage_existing_schema_management:
-        return True
-    if _meta_table_schema_management_mode(meta_table) != "alembic_managed":
-        return False
+        return None
+    existing_mode = _meta_table_schema_management_mode(meta_table)
+    if existing_mode != "alembic_managed":
+        return "not_alembic_managed", {
+            "existing_mode": existing_mode,
+            "expected_mode": "alembic_managed",
+        }
     existing_provider_key = _meta_table_migration_provider_key(meta_table)
     if existing_provider_key not in (None, migration.migration_provider_key):
-        return False
+        return "provider_key_mismatch", {
+            "existing_provider_key": existing_provider_key,
+            "expected_provider_key": migration.migration_provider_key,
+        }
     existing_registry_uid = _meta_table_alembic_version_uid(meta_table)
     if registry_meta_table_uid not in (None, "") and existing_registry_uid not in (
         None,
         str(registry_meta_table_uid),
     ):
-        return False
-    return True
+        return "alembic_registry_uid_mismatch", {
+            "existing_registry_uid": existing_registry_uid,
+            "expected_registry_uid": str(registry_meta_table_uid),
+        }
+    return None
+
+
+def _alembic_readiness_failure_message(
+    model: type[Any],
+    meta_table: Any,
+    failure: tuple[str, dict[str, Any]],
+) -> str:
+    reason, details = failure
+    model_name = getattr(model, "__name__", repr(model))
+    identifier = _meta_table_identifier(meta_table) or resolve_metatable_identifier(model)
+    uid = _meta_table_uid(meta_table)
+    physical_table_name = _meta_table_attr(meta_table, "physical_table_name")
+    parts = [
+        "Existing MetaTable not ready for Alembic fast path; reserving",
+        f"identifier={identifier}",
+        f"model={model_name}",
+        f"reason={reason}",
+    ]
+    if uid not in (None, ""):
+        parts.append(f"uid={uid}")
+    if physical_table_name not in (None, ""):
+        parts.append(f"physical_table={physical_table_name}")
+    for key, value in details.items():
+        parts.append(f"{key}={value}")
+    return " ".join(parts)
 
 
 def _contracts_equivalent(left: Any, right: Any) -> bool:

@@ -89,7 +89,7 @@ migration = AlembicMetaTableMigration(
 ```
 
 The provider should expose enough information to prepare Alembic. It should not
-render SQL for a backend apply endpoint.
+produce SQL artifacts for a backend apply endpoint.
 
 Keep `PlatformManagedMetaTable` and `PlatformTimeIndexMetaData`.
 
@@ -344,7 +344,7 @@ normal tutorial workflow.
   `DynamicTableDataSource.issue_migration_connection(...)`.
 - [x] Include the Alembic version MetaTable UID in read-only migration
   connection requests, and include reserved provider `meta_table_uids` only for
-  commands that render or mutate provider schema.
+  commands that generate or mutate provider schema.
 - [x] Treat the returned migration URI as a secret and avoid printing or logging
   it in CLI output.
 - [x] Add managed MetaTable reservation request/response models.

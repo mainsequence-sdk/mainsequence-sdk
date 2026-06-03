@@ -587,6 +587,7 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
         "postgresql://temporary-secret"
         "?application_name=mainsequence_alembic%3Amsm%3Amarkets"
     )
+    assert config.get_main_option("sqlalchemy.echo") == "true"
     assert config.get_main_option("version_table") == "alembic_version"
     assert config.get_main_option("version_table_schema") == "public"
     assert config.get_main_option("mainsequence.owner_role_name") == "ms_owner"
@@ -770,9 +771,7 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
                     existing=False,
                 )
             )
-        return types.SimpleNamespace(
-            tables=response_tables
-        )
+        return types.SimpleNamespace(tables=response_tables)
 
     monkeypatch.setattr(MetaTable, "reserve_managed", staticmethod(fake_reserve_managed))
 
@@ -928,6 +927,7 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
         )
 
     monkeypatch.setattr(MetaTable, "reserve_managed", staticmethod(fake_reserve_managed))
+    reservation_statuses = []
 
     migration = AlembicMetaTableMigration(
         package="sample",
@@ -938,10 +938,20 @@ def test_prepare_for_alembic_reserves_existing_identifier_to_stamp_schema_manage
         metatable_models=[Asset],
     )
 
-    prepared = migration.prepare_for_alembic(timeout=5)
+    prepared = migration.prepare_for_alembic(
+        timeout=5,
+        on_metatable_reservation_status=reservation_statuses.append,
+    )
 
     assert len(filter_calls) == 1
     assert [payload.identifier for payload in reserved_payloads] == ["Account", "Asset"]
+    assert any(
+        "Existing MetaTable not ready for Alembic fast path; reserving" in status
+        and "identifier=Account" in status
+        and "reason=contract_mismatch" in status
+        and "physical_table=mt_account_backend" in status
+        for status in reservation_statuses
+    )
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",

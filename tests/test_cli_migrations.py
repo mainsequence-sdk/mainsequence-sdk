@@ -6,6 +6,7 @@ import pathlib
 import sys
 import types
 
+import pytest
 from sqlalchemy import MetaData
 from typer.testing import CliRunner
 
@@ -74,6 +75,7 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
         on_metatable_reserved=None,
     ):
         if emit_reservation and on_metatable_reserved is not None:
+
             class Account:
                 __metatable_identifier__ = "Account"
 
@@ -163,12 +165,8 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
         captured["verbose"] = verbose
         captured["stdout"] = config.stdout
         captured["output_buffer"] = config.output_buffer
-        logging.getLogger("alembic.runtime.migration").info(
-            "fake alembic runtime log"
-        )
-        logging.getLogger("alembic.runtime.migration.deep").debug(
-            "fake alembic debug log"
-        )
+        logging.getLogger("alembic.runtime.migration").info("fake alembic runtime log")
+        logging.getLogger("alembic.runtime.migration.deep").debug("fake alembic debug log")
         config.print_stdout("fake alembic current output")
 
     monkeypatch.setattr(command, "current", fake_current)
@@ -191,28 +189,18 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
     assert "fake alembic current output" in output
-    assert (
-        "[alembic] INFO alembic.runtime.migration: fake alembic runtime log"
-        in output
-    )
-    assert (
-        "[alembic] DEBUG alembic.runtime.migration.deep: fake alembic debug log"
-        in output
-    )
-    assert (
-        "[mainsequence migrations] Importing Alembic command module for current..."
-        in output
-    )
-    assert (
-        "[mainsequence migrations] Imported Alembic command module for current."
-        in output
-    )
+    assert "[alembic] INFO alembic.runtime.migration: fake alembic runtime log" in output
+    assert "[alembic] DEBUG alembic.runtime.migration.deep: fake alembic debug log" in output
+    assert "[mainsequence migrations] Importing Alembic command module for current..." in output
+    assert "[mainsequence migrations] Imported Alembic command module for current." in output
     assert "[mainsequence migrations] Ensuring Alembic registry MetaTable..." in output
     assert (
         "[mainsequence migrations] Skipping provider MetaTable reservations "
         "for read-only Alembic command."
     ) in output
-    assert "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
+    assert (
+        "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
+    )
     assert "[mainsequence migrations] Requesting scoped migration connection" in output
     assert "[mainsequence migrations] Building Alembic config..." in output
     assert "[mainsequence migrations] Alembic config built." in output
@@ -353,6 +341,68 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert "[alembic] DEBUG alembic.command: fake revision command log" in output
 
 
+def test_autogenerate_preflight_rejects_existing_head_with_no_visible_tables(
+    monkeypatch,
+):
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    monkeypatch.setattr(
+        migration_cli,
+        "_alembic_script_heads",
+        lambda config: ["0001"],
+    )
+    prepared = types.SimpleNamespace(
+        reserved_tables=[
+            types.SimpleNamespace(
+                physical_table_name="mt_asset",
+                table_contract={"physical": {"schema": "main", "table_name": "mt_asset"}},
+            )
+        ]
+    )
+    config = types.SimpleNamespace(
+        attributes={"mainsequence_migration_sqlalchemy_url": "sqlite:///:memory:"}
+    )
+
+    with pytest.raises(RuntimeError, match="duplicate initial create-all"):
+        migration_cli._assert_autogenerate_baseline_visible(prepared, config)
+
+
+def test_autogenerate_preflight_allows_existing_head_with_visible_baseline(
+    monkeypatch,
+    tmp_path,
+):
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    monkeypatch.setattr(
+        migration_cli,
+        "_alembic_script_heads",
+        lambda config: ["0001"],
+    )
+    db_path = tmp_path / "baseline.db"
+    from sqlalchemy import create_engine, text
+
+    engine = create_engine(f"sqlite:///{db_path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("CREATE TABLE mt_asset (uid INTEGER PRIMARY KEY)"))
+    finally:
+        engine.dispose()
+
+    prepared = types.SimpleNamespace(
+        reserved_tables=[
+            types.SimpleNamespace(
+                physical_table_name="mt_asset",
+                table_contract={"physical": {"schema": "main", "table_name": "mt_asset"}},
+            )
+        ]
+    )
+    config = types.SimpleNamespace(
+        attributes={
+            "mainsequence_migration_sqlalchemy_url": f"sqlite:///{db_path}",
+        }
+    )
+
+    migration_cli._assert_autogenerate_baseline_visible(prepared, config)
+
+
 def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
@@ -382,6 +432,7 @@ def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
         captured["finalize_prepared"] = prepared
         captured["finalize_revision"] = alembic_revision
         if on_metatable_finalized is not None:
+
             class Asset:
                 __metatable_identifier__ = "markets.Asset"
 

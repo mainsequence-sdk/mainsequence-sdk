@@ -73,7 +73,7 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
 - imports the selected provider
 - registers or resolves the provider's `AlembicVersionMetaTable`
 - reserves or resolves the provider-scoped platform-managed MetaTables for
-  commands that render or mutate provider schema, without creating physical
+  commands that generate or mutate provider schema, without creating physical
   application tables
 - binds backend physical table names, index names, and foreign-key names into
   SQLAlchemy metadata for those schema commands

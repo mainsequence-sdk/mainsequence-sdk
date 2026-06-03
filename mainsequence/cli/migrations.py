@@ -20,6 +20,7 @@ from mainsequence.client.metatables import (
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
     alembic_config_for_provider,
+    apply_mainsequence_migration_role,
     load_alembic_metatable_migration_provider,
 )
 
@@ -71,9 +72,7 @@ def _forward_alembic_logging():
     previous_state = [(logger, logger.level, logger.propagate) for logger in loggers]
     handler = _AlembicLogHandler()
     handler.setLevel(logging.DEBUG)
-    handler.setFormatter(
-        logging.Formatter("[alembic] %(levelname)s %(name)s: %(message)s")
-    )
+    handler.setFormatter(logging.Formatter("[alembic] %(levelname)s %(name)s: %(message)s"))
     root_logger = logging.getLogger("alembic")
     root_logger.addHandler(handler)
     for logger in loggers:
@@ -121,6 +120,72 @@ def _load_alembic_command(command_name: str) -> Any:
     return command
 
 
+def _emit_alembic_script_context(
+    config: Any,
+    *,
+    target_revision: str | None = None,
+) -> None:
+    script_location = config.get_main_option("script_location")
+    version_table = config.get_main_option("version_table")
+    version_table_schema = config.get_main_option("version_table_schema")
+    version_table_label = (
+        f"{version_table_schema}.{version_table}"
+        if version_table_schema not in (None, "")
+        else version_table
+    )
+    _emit_status(
+        "Alembic script context "
+        f"script_location={script_location} version_table={version_table_label}"
+    )
+    try:
+        from alembic.script import ScriptDirectory
+    except ImportError:
+        _emit_status("Alembic ScriptDirectory is unavailable.")
+        return
+
+    try:
+        script = ScriptDirectory.from_config(config)
+    except Exception as exc:
+        _emit_status(f"Alembic script directory could not be resolved: {exc}")
+        return
+
+    _emit_status(
+        "Alembic script directory resolved "
+        f"path={getattr(script, 'dir', None)} versions={getattr(script, 'versions', None)}"
+    )
+    try:
+        heads = [str(head) for head in script.get_heads()]
+    except Exception as exc:
+        _emit_status(f"Alembic heads could not be resolved: {exc}")
+        heads = []
+    else:
+        _emit_status(f"Alembic heads={','.join(heads) if heads else '<none>'}")
+
+    if target_revision in (None, "", "base"):
+        return
+    if target_revision in ("head", "heads"):
+        for head in heads:
+            _emit_revision_path(script, head)
+        return
+    _emit_revision_path(script, target_revision)
+
+
+def _emit_revision_path(script: Any, revision: str) -> None:
+    try:
+        resolved = script.get_revision(revision)
+    except Exception as exc:
+        _emit_status(f"Alembic revision {revision} could not be resolved: {exc}")
+        return
+    if resolved is None:
+        _emit_status(f"Alembic revision {revision} was not found.")
+        return
+    _emit_status(
+        "Alembic revision resolved "
+        f"revision={resolved.revision} path={getattr(resolved, 'path', None)} "
+        f"down_revision={resolved.down_revision}"
+    )
+
+
 def _jsonable(value: Any) -> Any:
     if hasattr(value, "model_dump"):
         return value.model_dump(mode="json")
@@ -163,12 +228,42 @@ def _contract_physical_table_name(item: Any) -> Any:
     contract = _item_value(item, "table_contract")
     if contract is None:
         return None
-    physical = contract.get("physical") if isinstance(contract, Mapping) else getattr(contract, "physical", None)
+    physical = (
+        contract.get("physical")
+        if isinstance(contract, Mapping)
+        else getattr(contract, "physical", None)
+    )
     if physical is None:
         return None
     if isinstance(physical, Mapping):
         return physical.get("table_name")
     return getattr(physical, "table_name", None)
+
+
+def _contract_physical_schema(item: Any) -> Any:
+    contract = _item_value(item, "table_contract")
+    if contract is None:
+        return None
+    physical = (
+        contract.get("physical")
+        if isinstance(contract, Mapping)
+        else getattr(contract, "physical", None)
+    )
+    if physical is None:
+        return None
+    if isinstance(physical, Mapping):
+        return (
+            physical.get("schema")
+            or physical.get("schema_")
+            or physical.get("table_schema")
+            or physical.get("schema_name")
+        )
+    return (
+        getattr(physical, "schema", None)
+        or getattr(physical, "schema_", None)
+        or getattr(physical, "table_schema", None)
+        or getattr(physical, "schema_name", None)
+    )
 
 
 def _meta_table_uid(item: Any) -> str | None:
@@ -192,9 +287,7 @@ def _include_alembic_registry_in_scope(
     registry_uid = _meta_table_uid(registry_meta_table)
     if registry_uid in (None, ""):
         return
-    prepared.meta_table_uids = list(
-        dict.fromkeys([registry_uid, *list(prepared.meta_table_uids)])
-    )
+    prepared.meta_table_uids = list(dict.fromkeys([registry_uid, *list(prepared.meta_table_uids)]))
 
 
 def _metatable_message(
@@ -211,9 +304,8 @@ def _metatable_message(
         or model_name
     )
     uid = _item_value(item, "meta_table_uid") or _item_value(item, "uid")
-    physical_table_name = (
-        _item_value(item, "physical_table_name")
-        or _contract_physical_table_name(item)
+    physical_table_name = _item_value(item, "physical_table_name") or _contract_physical_table_name(
+        item
     )
     provisioning_status = _item_value(item, "provisioning_status")
     created = _item_value(item, "created")
@@ -368,6 +460,103 @@ def _prepare_alembic_config(
     return prepared, config
 
 
+def _prepared_physical_table_refs(prepared: Any) -> list[tuple[str | None, str]]:
+    refs: list[tuple[str | None, str]] = []
+    for item in getattr(prepared, "reserved_tables", []) or []:
+        table_name = _item_value(item, "physical_table_name") or _contract_physical_table_name(item)
+        if table_name in (None, ""):
+            continue
+        schema = _contract_physical_schema(item)
+        refs.append((str(schema) if schema not in (None, "") else "public", str(table_name)))
+    return list(dict.fromkeys(refs))
+
+
+def _alembic_script_heads(config: Any) -> list[str]:
+    try:
+        from alembic.script import ScriptDirectory
+    except ImportError as exc:
+        raise RuntimeError("Alembic is required for migration commands.") from exc
+    with _forward_alembic_logging():
+        return [str(head) for head in ScriptDirectory.from_config(config).get_heads()]
+
+
+def _assert_autogenerate_baseline_visible(prepared: Any, config: Any) -> None:
+    script_heads = _alembic_script_heads(config)
+    if not script_heads:
+        _emit_status("No existing Alembic heads; allowing initial autogenerate baseline.")
+        return
+
+    table_refs = _prepared_physical_table_refs(prepared)
+    if not table_refs:
+        _emit_status(
+            "No provider physical table names were available for autogenerate "
+            "baseline visibility check."
+        )
+        return
+
+    try:
+        from sqlalchemy import create_engine, inspect
+        from sqlalchemy.pool import NullPool
+    except ImportError as exc:
+        raise RuntimeError("SQLAlchemy is required for Alembic autogenerate preflight.") from exc
+
+    sqlalchemy_url = getattr(config, "attributes", {}).get("mainsequence_migration_sqlalchemy_url")
+    if sqlalchemy_url in (None, ""):
+        raise RuntimeError(
+            "Alembic autogenerate preflight cannot inspect the scoped database because "
+            "the migration SQLAlchemy URL was not attached to the Alembic config."
+        )
+
+    _emit_status(
+        "Checking Alembic autogenerate baseline visibility "
+        f"script_heads={','.join(script_heads)} table_count={len(table_refs)}..."
+    )
+    visible: list[tuple[str | None, str]] = []
+    missing: list[tuple[str | None, str]] = []
+    engine = create_engine(str(sqlalchemy_url), poolclass=NullPool)
+    try:
+        with engine.connect() as connection:
+            apply_mainsequence_migration_role(connection, config)
+            inspector = inspect(connection)
+            for schema, table_name in table_refs:
+                if inspector.has_table(table_name, schema=schema):
+                    visible.append((schema, table_name))
+                else:
+                    missing.append((schema, table_name))
+    finally:
+        engine.dispose()
+
+    if visible:
+        _emit_status(
+            "Alembic autogenerate baseline is visible "
+            f"existing_tables={len(visible)} missing_tables={len(missing)}."
+        )
+        if missing:
+            sample = ",".join(_format_table_ref(ref) for ref in missing[:5])
+            _emit_status(
+                "Some provider physical tables were not visible during preflight; "
+                f"Alembic may treat them as new if they are not intentional additions. "
+                f"sample={sample}"
+            )
+        return
+
+    sample = ",".join(_format_table_ref(ref) for ref in table_refs[:5])
+    raise RuntimeError(
+        "Refusing to autogenerate a migration because this provider already has "
+        f"Alembic head(s) {','.join(script_heads)}, but the scoped migration "
+        "connection cannot see any provider physical tables. Alembic would emit a "
+        "duplicate initial create-all migration instead of a schema diff. Apply the "
+        "existing baseline with `mainsequence migrations upgrade ... head`, or fix "
+        "the scoped migration connection/table visibility before running revision "
+        f"again. checked_sample={sample}"
+    )
+
+
+def _format_table_ref(ref: tuple[str | None, str]) -> str:
+    schema, table_name = ref
+    return f"{schema}.{table_name}" if schema not in (None, "") else table_name
+
+
 def _next_sequential_revision_id(
     migration: AlembicMetaTableMigration,
     *,
@@ -440,6 +629,7 @@ def current(
         require_existing_contract_match=False,
         prepare_provider_metatables=False,
     )
+    _emit_alembic_script_context(config)
     _emit_status("Starting Alembic current now...")
     with _forward_alembic_logging():
         command.current(config, verbose=verbose)
@@ -492,6 +682,9 @@ def revision(
         alembic_output=alembic_output,
         stage_existing_schema_management=False,
     )
+    _emit_alembic_script_context(config, target_revision=head)
+    if autogenerate:
+        _assert_autogenerate_baseline_visible(prepared, config)
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
     with _forward_alembic_logging():
         script = command.revision(
@@ -537,6 +730,7 @@ def upgrade(
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
     )
+    _emit_alembic_script_context(config, target_revision=target_revision)
     _emit_status(f"Starting Alembic upgrade now target={target_revision}...")
     with _forward_alembic_logging():
         command.upgrade(config, target_revision)
@@ -588,6 +782,7 @@ def downgrade(
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
     )
+    _emit_alembic_script_context(config, target_revision=target_revision)
     _emit_status(f"Starting Alembic downgrade now target={target_revision}...")
     with _forward_alembic_logging():
         command.downgrade(config, target_revision)

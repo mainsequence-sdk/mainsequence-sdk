@@ -52,8 +52,7 @@ platform-managed tables. The only normal user-facing path is:
 
 ```bash
 mainsequence migrations revision --provider msm.migrations:migration
-mainsequence migrations render --provider msm.migrations:migration --to head
-mainsequence migrations upgrade --provider msm.migrations:migration --to head
+mainsequence migrations upgrade --provider msm.migrations:migration head
 ```
 
 `Model.register()` may continue to exist as an SDK method, but it is no longer a
@@ -65,7 +64,7 @@ platform-managed MetaTable must fail with a clear error:
 
 ```text
 Platform-managed MetaTable '<identifier>' is not registered. Run
-`mainsequence migrations upgrade --provider <provider> --to head`.
+`mainsequence migrations upgrade --provider <provider> head`.
 ```
 
 No other SDK path should silently auto-register platform-managed MetaTables.
@@ -80,19 +79,17 @@ The required lifecycle is:
 ```text
 1. load AlembicMetaTableMigration provider
 2. ensure/register AlembicVersionMetaTable
-3. resolve or register provider.metatable_models
+3. reserve or resolve provider.metatable_models
 4. bind SQLAlchemy models to returned/existing physical table names
-5. read current Alembic revision
-6. render Alembic SQL against bound physical table names
-7. backend dry-run validates revision precondition and SQL artifact
-8. backend applies SQL
-9. SDK refreshes MetaTable catalog rows
-10. SDK runs after_register_metatables(catalog_refresh_context)
+5. request a temporary scoped migration connection
+6. call Alembic upgrade directly
+7. finalize reserved MetaTable catalog rows
+8. SDK runs after_register_metatables(catalog_refresh_context)
 ```
 
 The key change is step 3.
 
-Before SQL rendering, the SDK must resolve every provider-scoped
+Before Alembic runs, the SDK must resolve every provider-scoped
 platform-managed MetaTable. Resolution must:
 
 - resolve models by global `identifier`;
@@ -255,12 +252,11 @@ or be treated as private SDK plumbing.
 
 ## Implementation Tasks
 
-- [x] Update `AlembicMetaTableMigration` to resolve/register and bind
-  `metatable_models` before render/apply using existing registration APIs.
-- [x] Make `migrations render` resolve/register and bind models before SQL
-  rendering.
-- [x] Make `migrations upgrade` resolve/register, dry-run, apply, refresh, and run
-  `after_register_metatables` as one workflow.
+- [x] Update `AlembicMetaTableMigration` to reserve/resolve and bind
+  `metatable_models` before Alembic schema commands.
+- [x] Do not expose a normal-user `migrations render` command.
+- [x] Make `migrations upgrade` reserve/resolve, call Alembic directly,
+  finalize, and run `after_register_metatables` as one workflow.
 - [x] Add an internal migration context that allows platform-managed
   `Model.register()` only from migration tooling.
 - [x] Remove non-migration automatic registration from DataNode and MetaTable
@@ -276,8 +272,8 @@ or be treated as private SDK plumbing.
 - [x] Update MetaTable examples to be migration-first only.
 - [x] Update MetaTable skill guidance to stop recommending direct registration
   for platform-managed models.
-- [x] Add tests that `upgrade` resolves/registers and binds missing
-  platform-managed models before render.
+- [x] Add tests that `upgrade` reserves/resolves and binds missing
+  platform-managed models before Alembic runs.
 - [x] Add tests that runtime/non-migration paths fail on unregistered
   platform-managed models.
 - [x] Add tests for sequential revision IDs.
