@@ -28,7 +28,6 @@ from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
-    _metatable_foreign_key_target_models,
     _resolve_model_data_source_uid,
     _resolve_table,
     _table_name,
@@ -378,8 +377,8 @@ class AlembicMetaTableMigration:
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
                     provisioning={"create_table": create_table, "if_not_exists": True},
-                    _target_meta_tables=_bound_target_meta_tables(model),
                     enforce_storage_hash_name=False,
+                    include_foreign_keys=False,
                 )
                 request.schema_management = schema_management
                 meta_table_cls = _metatable_resource_class_for_model(model)
@@ -520,7 +519,7 @@ class AlembicMetaTableMigration:
         reserved_tables: list[Any] = []
         owner_role_name: str | None = None
 
-        ordered_models = _reservation_order(self.metatable_models)
+        ordered_models = list(dict.fromkeys(self.metatable_models))
         target_table_names = {model: _migration_table_name(model) for model in ordered_models}
         schema_management = self._schema_management_request(
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
@@ -553,9 +552,8 @@ class AlembicMetaTableMigration:
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
                     identifier=table_name,
-                    _target_meta_tables=reserved_by_model,
-                    _target_identifiers=target_table_names,
                     enforce_storage_hash_name=False,
+                    include_foreign_keys=False,
                 )
                 request.schema_management = schema_management
 
@@ -799,30 +797,6 @@ def resolve_alembic_revision_metadata(
     return str(resolved.revision), _normalize_down_revision(resolved.down_revision)
 
 
-def _reservation_order(models: Sequence[type[Any]]) -> list[type[Any]]:
-    ordered: list[type[Any]] = []
-    visiting: set[type[Any]] = set()
-    visited: set[type[Any]] = set()
-
-    def visit(model: type[Any]) -> None:
-        if model in visited:
-            return
-        if model in visiting:
-            model_name = getattr(model, "__qualname__", repr(model))
-            raise ValueError(f"MetaTable reservation cycle detected at {model_name}.")
-        visiting.add(model)
-        for target_model in _metatable_foreign_key_target_models(model):
-            visit(target_model)
-        visiting.remove(model)
-        visited.add(model)
-        if _is_platform_managed_metatable_model(model):
-            ordered.append(model)
-
-    for model in models:
-        visit(model)
-    return ordered
-
-
 def _reservation_table_from_registration_request(
     request: Any,
 ) -> ManagedMetaTableReservationTable:
@@ -859,15 +833,6 @@ def _request_contract_physical_table_name(request: Any) -> str | None:
             value = physical.get("table_name")
             return str(value) if value not in (None, "") else None
     return None
-
-
-def _bound_target_meta_tables(model: type[Any]) -> dict[type[Any], Any]:
-    targets: dict[type[Any], Any] = {}
-    for target_model in _metatable_foreign_key_target_models(model):
-        bound = _bound_meta_table_for_model(target_model)
-        if bound is not None:
-            targets[target_model] = bound
-    return targets
 
 
 def _bound_meta_table_for_model(model: type[Any]) -> Any | None:

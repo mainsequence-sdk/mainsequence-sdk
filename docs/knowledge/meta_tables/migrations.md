@@ -198,6 +198,12 @@ exist. `__metatable_identifier__` is not the Alembic migration identity. A model
 move or rename keeps the same migration identity when its SQLAlchemy table name
 stays stable.
 
+`prepare_for_alembic()` always sends the provider model batch to
+`reserve-managed/`. It does not skip reservation because a previous MetaTable
+contract matches the current SQLAlchemy model; Alembic is the authority for
+schema changes, and TS Manager reservation is the authoritative name-plan
+operation.
+
 ## Alembic Version MetaTable
 
 `AlembicVersionMetaTable` registers a catalog pointer for Alembic's version

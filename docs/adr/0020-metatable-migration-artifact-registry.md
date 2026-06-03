@@ -215,16 +215,19 @@ table name is stable.
 Catalog sync after a migration must:
 
 1. Resolve each model's SQLAlchemy table name.
-2. Fetch the existing `MetaTable` by exact table-name `identifier`.
-3. If found, bind the changed model class to that existing MetaTable UID,
-   storage hash, and physical table name before registration refresh.
-4. If not found, reserve the missing catalog row for that table name.
-5. If more than one MetaTable exists for the table-name identifier, fail because
-   the migration identity is not unique.
+2. Send every provider model to `reserve-managed/` with that table name as the
+   reservation `identifier`.
+3. Let TS Manager resolve existing catalog rows or create missing reserved
+   rows in one batch.
+4. Bind the model class to the MetaTable UID, storage hash, and physical table
+   name returned by the reservation response.
+5. Fail if TS Manager reports that the table-name identity is not unique.
 
 This is the mechanism that lets Alembic change a shape-addressed
 `PlatformManagedMetaTable` without losing the original catalog path. The new
-SQLAlchemy class shape must not decide which deployed MetaTable is refreshed.
+SQLAlchemy class shape must not decide which deployed MetaTable is refreshed,
+and the SDK must not skip reservation because a previous catalog contract
+appears to match.
 
 ## Alembic Version MetaTable Registration Contract
 

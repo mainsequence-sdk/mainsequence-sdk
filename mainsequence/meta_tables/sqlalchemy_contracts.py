@@ -331,6 +331,7 @@ class PlatformManagedMetaTable:
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
+        include_foreign_keys: bool = True,
     ) -> MetaTableRegistrationRequest:
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
@@ -352,6 +353,7 @@ class PlatformManagedMetaTable:
             hash_namespace=hash_namespace,
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
+            include_foreign_keys=include_foreign_keys,
         )
 
     @classmethod
@@ -558,6 +560,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         time_index_name: str | None = None,
         index_names: Sequence[str] | None = None,
         storage_layout: Mapping[str, Any] | None = None,
+        include_foreign_keys: bool = True,
     ) -> Any:
         resolved_data_source_uid = _resolve_model_data_source_uid(
             cls,
@@ -581,6 +584,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             time_index_name=time_index_name,
             index_names=index_names,
             storage_layout=storage_layout,
+            include_foreign_keys=include_foreign_keys,
         )
 
     @classmethod
@@ -641,17 +645,21 @@ def table_contract_from_sqlalchemy_model(
     schema: str | None = None,
     include_physical_table_name: bool = True,
     require_metatable_foreign_keys: bool = False,
+    include_foreign_keys: bool = True,
 ) -> MetaTableContract:
     table = _resolve_table(model_or_table)
     _resolve_schema(table, schema=schema)
-    resolved_targets = _resolve_target_meta_table_uid_by_fullname(
-        target_meta_tables=target_meta_tables,
-        target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
-    )
-    resolved_target_models = _resolve_target_meta_table_uid_by_model(
-        target_meta_tables=target_meta_tables,
-        model_or_table=model_or_table,
-    )
+    resolved_targets: Mapping[str, Any] = {}
+    resolved_target_models: Mapping[type[Any], Any] = {}
+    if include_foreign_keys:
+        resolved_targets = _resolve_target_meta_table_uid_by_fullname(
+            target_meta_tables=target_meta_tables,
+            target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
+        )
+        resolved_target_models = _resolve_target_meta_table_uid_by_model(
+            target_meta_tables=target_meta_tables,
+            model_or_table=model_or_table,
+        )
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=table_model_module,
@@ -679,19 +687,23 @@ def table_contract_from_sqlalchemy_model(
             _index_contract(index)
             for index in sorted(_iter_indexes(table), key=lambda item: item.name or "")
         ],
-        foreign_keys=[
-            _foreign_key_contract(
-                foreign_key_constraint,
-                target_meta_table_uid_by_model=resolved_target_models,
-                target_identifier_by_model=target_identifier_by_model or {},
-                target_meta_table_uid_by_fullname=resolved_targets,
-                require_metatable_foreign_keys=require_metatable_foreign_keys,
-            )
-            for foreign_key_constraint in sorted(
-                _iter_foreign_key_constraints(table),
-                key=lambda item: item.name or "",
-            )
-        ],
+        foreign_keys=(
+            [
+                _foreign_key_contract(
+                    foreign_key_constraint,
+                    target_meta_table_uid_by_model=resolved_target_models,
+                    target_identifier_by_model=target_identifier_by_model or {},
+                    target_meta_table_uid_by_fullname=resolved_targets,
+                    require_metatable_foreign_keys=require_metatable_foreign_keys,
+                )
+                for foreign_key_constraint in sorted(
+                    _iter_foreign_key_constraints(table),
+                    key=lambda item: item.name or "",
+                )
+            ]
+            if include_foreign_keys
+            else []
+        ),
     )
 
 
@@ -715,6 +727,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     time_index_name: str | None = None,
     index_names: Sequence[str] | None = None,
     storage_layout: Mapping[str, Any] | None = None,
+    include_foreign_keys: bool = True,
 ) -> Any:
     from mainsequence.client.metatables import TimeIndexMetaTableRegistrationRequest
 
@@ -744,10 +757,12 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         model_or_table,
         storage_layout=storage_layout,
     )
-    resolved_target_models = _resolve_target_meta_table_uid_by_model(
-        target_meta_tables=_target_meta_tables,
-        model_or_table=model_or_table,
-    )
+    resolved_target_models: Mapping[type[Any], Any] = {}
+    if include_foreign_keys:
+        resolved_target_models = _resolve_target_meta_table_uid_by_model(
+            target_meta_tables=_target_meta_tables,
+            model_or_table=model_or_table,
+        )
 
     columns = _iter_columns(table)
     _validate_time_index_contract(
@@ -777,19 +792,23 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         )
         for position, column in enumerate(columns)
     ]
-    foreign_key_contracts = [
-        _time_indexed_meta_table_foreign_key_contract(
-            foreign_key_constraint,
-            target_meta_table_uid_by_model=resolved_target_models,
-            target_identifier_by_model=_target_identifiers or {},
-            target_meta_table_uid_by_fullname={},
-            require_metatable_foreign_keys=True,
-        ).model_dump(mode="json", exclude_none=True)
-        for foreign_key_constraint in sorted(
-            _iter_foreign_key_constraints(table),
-            key=lambda item: item.name or "",
-        )
-    ]
+    foreign_key_contracts = (
+        [
+            _time_indexed_meta_table_foreign_key_contract(
+                foreign_key_constraint,
+                target_meta_table_uid_by_model=resolved_target_models,
+                target_identifier_by_model=_target_identifiers or {},
+                target_meta_table_uid_by_fullname={},
+                require_metatable_foreign_keys=True,
+            ).model_dump(mode="json", exclude_none=True)
+            for foreign_key_constraint in sorted(
+                _iter_foreign_key_constraints(table),
+                key=lambda item: item.name or "",
+            )
+        ]
+        if include_foreign_keys
+        else []
+    )
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=None,
@@ -861,6 +880,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
     enforce_storage_hash_name: bool = True,
+    include_foreign_keys: bool = True,
 ) -> MetaTableRegistrationRequest:
     table = _resolve_table(model_or_table)
     resolved_schema = _resolve_schema(table, schema=schema)
@@ -891,6 +911,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
         schema=resolved_schema,
         include_physical_table_name=True,
         require_metatable_foreign_keys=True,
+        include_foreign_keys=include_foreign_keys,
     )
     return MetaTableRegistrationRequest(
         data_source_uid=_resolve_model_data_source_uid(

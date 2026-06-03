@@ -68,8 +68,6 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
     def fake_prepare_for_alembic(
         self,
         timeout=None,
-        stage_existing_schema_management=True,
-        require_existing_contract_match=True,
         on_metatable_reservation_request=None,
         on_metatable_reservation_status=None,
         on_metatable_reserved=None,
