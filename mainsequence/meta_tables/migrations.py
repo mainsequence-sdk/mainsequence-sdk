@@ -1414,7 +1414,7 @@ def _contracts_equivalent(left: Any, right: Any) -> bool:
 
 def _contract_fingerprint(contract: Any) -> str:
     return json.dumps(
-        _strip_client_metadata(_jsonable_contract(contract)),
+        _normalize_contract_for_comparison(_jsonable_contract(contract)),
         sort_keys=True,
         separators=(",", ":"),
         default=str,
@@ -1433,16 +1433,53 @@ def _jsonable_contract(value: Any) -> Any:
     return value
 
 
-def _strip_client_metadata(value: Any) -> Any:
+def _normalize_contract_for_comparison(value: Any) -> Any:
     if isinstance(value, Mapping):
-        return {
-            str(key): _strip_client_metadata(item)
-            for key, item in value.items()
-            if key != "orm_class"
-        }
+        normalized: dict[str, Any] = {}
+        for key, item in value.items():
+            key = str(key)
+            if key == "orm_class":
+                continue
+            if key == "physical" and isinstance(item, Mapping):
+                physical = {
+                    str(physical_key): _normalize_contract_for_comparison(physical_value)
+                    for physical_key, physical_value in item.items()
+                    if physical_key != "table_name"
+                }
+                normalized[key] = physical
+                continue
+            if key == "foreign_keys" and isinstance(item, list):
+                normalized[key] = sorted(
+                    (
+                        _normalize_foreign_key_contract_for_comparison(foreign_key)
+                        for foreign_key in item
+                    ),
+                    key=lambda foreign_key: json.dumps(
+                        foreign_key,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        default=str,
+                    ),
+                )
+                continue
+            normalized[key] = _normalize_contract_for_comparison(item)
+        return normalized
     if isinstance(value, list):
-        return [_strip_client_metadata(item) for item in value]
+        return [_normalize_contract_for_comparison(item) for item in value]
     return value
+
+
+def _normalize_foreign_key_contract_for_comparison(value: Any) -> Any:
+    if not isinstance(value, Mapping):
+        return _normalize_contract_for_comparison(value)
+    normalized = {
+        str(key): _normalize_contract_for_comparison(item)
+        for key, item in value.items()
+        if key != "name"
+    }
+    if normalized.get("target_meta_table_uid") not in (None, ""):
+        normalized.pop("target_identifier", None)
+    return normalized
 
 
 def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:

@@ -593,6 +593,46 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     assert config.attributes["mainsequence_migration_provider"] is migration
     assert config.attributes["target_metadata"] is migration.target_metadata
     assert config.attributes["mainsequence_migration_owner_role_name"] == "ms_owner"
+    assert config.attributes["mainsequence_migration_sqlalchemy_url"] == (
+        "postgresql://temporary-secret?application_name=mainsequence_alembic%3Amsm%3Amarkets"
+    )
+
+
+def test_contract_equivalence_ignores_platform_owned_fk_names_and_echoed_identifier():
+    import mainsequence.meta_tables.migrations as migrations_mod
+
+    client_contract = {
+        "version": "relational-table.v1",
+        "physical": {"table_name": None},
+        "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
+        "indexes": [],
+        "foreign_keys": [
+            {
+                "source_columns": ["account_uid"],
+                "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "target_columns": ["uid"],
+                "on_delete": "cascade",
+            }
+        ],
+    }
+    backend_contract = {
+        "version": "relational-table.v1",
+        "physical": {"table_name": "mt_asset_backend"},
+        "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
+        "indexes": [],
+        "foreign_keys": [
+            {
+                "name": "backend_generated_fk_name",
+                "source_columns": ["account_uid"],
+                "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                "target_identifier": "Account",
+                "target_columns": ["uid"],
+                "on_delete": "cascade",
+            }
+        ],
+    }
+
+    assert migrations_mod._contracts_equivalent(backend_contract, client_contract)
 
 
 def test_apply_mainsequence_migration_role_executes_quoted_set_role():
