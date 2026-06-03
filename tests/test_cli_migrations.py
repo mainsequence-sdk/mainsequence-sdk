@@ -67,6 +67,7 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
         self,
         timeout=None,
         on_metatable_reservation_request=None,
+        on_metatable_reservation_status=None,
         on_metatable_reserved=None,
     ):
         if emit_reservation and on_metatable_reserved is not None:
@@ -77,6 +78,16 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
                 on_metatable_reservation_request(
                     [Account],
                     [types.SimpleNamespace(identifier="Account")],
+                )
+            if on_metatable_reservation_status is not None:
+                on_metatable_reservation_status(
+                    "Serializing POST http://example.test/reserve-managed/ payload..."
+                )
+                on_metatable_reservation_status(
+                    "Sending HTTP POST http://example.test/reserve-managed/..."
+                )
+                on_metatable_reservation_status(
+                    "Received HTTP 200 from POST http://example.test/reserve-managed/."
                 )
             on_metatable_reserved(
                 Account,
@@ -163,6 +174,14 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert captured["owner_role"] == "connection-owner"
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
+    assert (
+        "[mainsequence migrations] Importing Alembic command module for current..."
+        in output
+    )
+    assert (
+        "[mainsequence migrations] Imported Alembic command module for current."
+        in output
+    )
     assert "[mainsequence migrations] Ensuring Alembic registry MetaTable..." in output
     assert (
         "[mainsequence migrations] Preparing platform-managed MetaTable reservations..."
@@ -170,7 +189,9 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     )
     assert "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
     assert "[mainsequence migrations] Requesting scoped migration connection" in output
-    assert "[mainsequence migrations] Running Alembic current..." in output
+    assert "[mainsequence migrations] Building Alembic config..." in output
+    assert "[mainsequence migrations] Alembic config built." in output
+    assert "[mainsequence migrations] Starting Alembic current now..." in output
     assert "[mainsequence migrations] Alembic current finished." in output
 
 
@@ -205,6 +226,9 @@ def test_migrations_current_prints_metatable_reservations(monkeypatch):
     assert "provisioning_status=reserved" in output
     assert "created=False" in output
     assert "matched_by=identifier" in output
+    assert "Serializing POST http://example.test/reserve-managed/ payload..." in output
+    assert "Sending HTTP POST http://example.test/reserve-managed/..." in output
+    assert "Received HTTP 200 from POST http://example.test/reserve-managed/." in output
 
 
 def test_migrations_current_prints_alembic_registry_registration(monkeypatch):

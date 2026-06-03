@@ -334,6 +334,7 @@ class AlembicMetaTableMigration:
             [Sequence[type[Any]], Sequence[ManagedMetaTableReservationTable]], Any
         ]
         | None = None,
+        on_metatable_reservation_status: Callable[[str], Any] | None = None,
         on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> PreparedAlembicMetaTableMigration:
         data_source_uid = self._resolve_provider_data_source_uid()
@@ -383,6 +384,7 @@ class AlembicMetaTableMigration:
                 response = MetaTable.reserve_managed(
                     reservation_request,
                     timeout=timeout,
+                    on_status=on_metatable_reservation_status,
                 )
                 if len(response.tables) != len(pending_models):
                     raise RuntimeError(

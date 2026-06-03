@@ -443,7 +443,7 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
     reserved_payloads = []
     reserved_events = []
 
-    def fake_reserve_managed(request, *, timeout=None):
+    def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
         assert [table.identifier for table in request.tables] == ["Account", "Asset"]
         assert (

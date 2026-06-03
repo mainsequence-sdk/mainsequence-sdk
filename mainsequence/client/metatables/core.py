@@ -9,7 +9,7 @@ import json
 import math
 import os
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from threading import RLock
 from typing import Any, ClassVar, Generic, Literal, TypedDict, TypeVar
@@ -1130,18 +1130,31 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         *,
         timeout: int | float | tuple[float, float] | None = None,
         expected_statuses: tuple[int, ...] = (200,),
+        on_status: Callable[[str], Any] | None = None,
     ) -> dict[str, Any]:
         url = f"{cls.get_object_url().rstrip('/')}/{action_name.strip('/')}/"
+        if on_status is not None:
+            on_status(f"Serializing POST {url} payload...")
         payload_json = _payload_json(payload)
+        if on_status is not None:
+            payload_size = len(json.dumps(payload_json, default=str))
+            on_status(f"Serialized POST {url} payload bytes={payload_size}.")
         request_payload = {"json": payload_json}
+        if on_status is not None:
+            on_status(f"Building API session for POST {url}...")
+        session = cls.build_session()
+        if on_status is not None:
+            on_status(f"Sending HTTP POST {url}...")
         response = make_request(
-            s=cls.build_session(),
+            s=session,
             loaders=cls.LOADERS,
             r_type="POST",
             url=url,
             payload=request_payload,
             time_out=timeout,
         )
+        if on_status is not None:
+            on_status(f"Received HTTP {response.status_code} from POST {url}.")
         if response.status_code not in expected_statuses:
             raise_for_response(response, payload=request_payload)
         return response.json()
@@ -1271,6 +1284,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         request: ManagedMetaTableReservationRequest | Mapping[str, Any] | None = None,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+        on_status: Callable[[str], Any] | None = None,
         **kwargs: Any,
     ) -> ManagedMetaTableReservationResponse:
         if request is not None and kwargs:
@@ -1281,6 +1295,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             payload,
             timeout=timeout,
             expected_statuses=(200, 201),
+            on_status=on_status,
         )
         return ManagedMetaTableReservationResponse(**response_json)
 

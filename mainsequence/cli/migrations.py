@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+import sys
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -25,7 +26,11 @@ RESERVE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/reserve-managed/"
 
 
 def _emit_status(message: str) -> None:
-    typer.echo(f"[mainsequence migrations] {message}", err=True)
+    print(f"[mainsequence migrations] {message}", file=sys.stderr, flush=True)
+
+
+def _emit_progress(message: str) -> None:
+    print(message, file=sys.stderr, flush=True)
 
 
 def _load_migration(provider: str | None) -> AlembicMetaTableMigration:
@@ -40,6 +45,16 @@ def _load_migration(provider: str | None) -> AlembicMetaTableMigration:
         f"package={migration.package} migration_namespace={migration.migration_namespace}"
     )
     return migration
+
+
+def _load_alembic_command(command_name: str) -> Any:
+    _emit_status(f"Importing Alembic command module for {command_name}...")
+    try:
+        from alembic import command
+    except ImportError as exc:
+        raise typer.BadParameter("Alembic is required for migration commands.") from exc
+    _emit_status(f"Imported Alembic command module for {command_name}.")
+    return command
 
 
 def _jsonable(value: Any) -> Any:
@@ -134,14 +149,13 @@ def _metatable_message(
 
 
 def _emit_metatable_registration(model: type[Any], item: Any) -> None:
-    typer.echo(
+    _emit_progress(
         _metatable_message(
             endpoint=REGISTER_ENDPOINT,
             action="registered",
             model=model,
             item=item,
         ),
-        err=True,
     )
 
 
@@ -165,14 +179,13 @@ def _emit_metatable_reservation_request(
 
 
 def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
-    typer.echo(
+    _emit_progress(
         _metatable_message(
             endpoint=RESERVE_MANAGED_ENDPOINT,
             action="reserved",
             model=model,
             item=item,
         ),
-        err=True,
     )
 
 
@@ -191,6 +204,7 @@ def _prepare_alembic_config(
     prepared = migration.prepare_for_alembic(
         timeout=timeout,
         on_metatable_reservation_request=_emit_metatable_reservation_request,
+        on_metatable_reservation_status=_emit_status,
         on_metatable_reserved=_emit_metatable_reservation,
     )
     _emit_status(
@@ -214,20 +228,25 @@ def _prepare_alembic_config(
         timeout=timeout,
     )
     _emit_status("Scoped migration connection acquired.")
+    _emit_status("Building Alembic config...")
     config = alembic_config_for_provider(
         migration,
         sqlalchemy_url=connection.uri,
         owner_role_name=connection.owner_role_name or prepared.owner_role_name,
     )
+    _emit_status("Alembic config built.")
     return prepared, config
 
 
 def _next_sequential_revision_id(migration: AlembicMetaTableMigration) -> str:
+    _emit_status("Importing Alembic ScriptDirectory for revision id scan...")
     try:
         from alembic.script import ScriptDirectory
     except ImportError as exc:
         raise RuntimeError("Alembic is required for revision generation.") from exc
+    _emit_status("Imported Alembic ScriptDirectory.")
 
+    _emit_status("Scanning Alembic revision directory for next sequential id...")
     script = ScriptDirectory.from_config(
         alembic_config_for_provider(migration, sqlalchemy_url="postgresql://")
     )
@@ -250,7 +269,9 @@ def _next_sequential_revision_id(migration: AlembicMetaTableMigration) -> str:
         revision_id = str(revision.revision)
         if re.fullmatch(r"\d{4,}", revision_id):
             numeric_revisions.append(int(revision_id))
-    return f"{max(numeric_revisions, default=0) + 1:04d}"
+    next_revision_id = f"{max(numeric_revisions, default=0) + 1:04d}"
+    _emit_status(f"Next Alembic revision id is {next_revision_id}.")
+    return next_revision_id
 
 
 @migrations.command("current")
@@ -266,18 +287,14 @@ def current(
 ) -> None:
     """Read current Alembic revision through a scoped migration credential."""
 
-    try:
-        from alembic import command
-    except ImportError as exc:
-        raise typer.BadParameter("Alembic is required for migration commands.") from exc
-
+    command = _load_alembic_command("current")
     migration = _load_migration(provider)
     _, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
-    _emit_status("Running Alembic current...")
+    _emit_status("Starting Alembic current now...")
     command.current(config, verbose=verbose)
     _emit_status("Alembic current finished.")
 
@@ -308,11 +325,7 @@ def revision(
 ) -> None:
     """Create a normal Alembic revision for the selected provider."""
 
-    try:
-        from alembic import command
-    except ImportError as exc:
-        raise typer.BadParameter("Alembic is required for revision generation.") from exc
-
+    command = _load_alembic_command("revision")
     migration = _load_migration(provider)
     resolved_message = (message or "").strip() or "migration"
     resolved_rev_id = rev_id or _next_sequential_revision_id(migration)
@@ -321,7 +334,7 @@ def revision(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
-    _emit_status(f"Running Alembic revision rev_id={resolved_rev_id}...")
+    _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
     script = command.revision(
         config,
         message=resolved_message,
@@ -356,18 +369,14 @@ def upgrade(
 ) -> None:
     """Run Alembic upgrade directly and refresh MetaTable catalog rows."""
 
-    try:
-        from alembic import command
-    except ImportError as exc:
-        raise typer.BadParameter("Alembic is required for migration commands.") from exc
-
+    command = _load_alembic_command("upgrade")
     migration = _load_migration(provider)
     prepared, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
-    _emit_status(f"Running Alembic upgrade target={target_revision}...")
+    _emit_status(f"Starting Alembic upgrade now target={target_revision}...")
     command.upgrade(config, target_revision)
     _emit_status("Refreshing MetaTable catalog after upgrade...")
     registered = migration.refresh_metatable_catalog(
@@ -402,18 +411,14 @@ def downgrade(
 ) -> None:
     """Run Alembic downgrade directly and refresh MetaTable catalog rows."""
 
-    try:
-        from alembic import command
-    except ImportError as exc:
-        raise typer.BadParameter("Alembic is required for migration commands.") from exc
-
+    command = _load_alembic_command("downgrade")
     migration = _load_migration(provider)
     prepared, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
-    _emit_status(f"Running Alembic downgrade target={target_revision}...")
+    _emit_status(f"Starting Alembic downgrade now target={target_revision}...")
     command.downgrade(config, target_revision)
     _emit_status("Refreshing MetaTable catalog after downgrade...")
     registered = migration.refresh_metatable_catalog(
