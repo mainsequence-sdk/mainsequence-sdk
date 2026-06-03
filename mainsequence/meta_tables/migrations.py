@@ -5,7 +5,7 @@ import pathlib
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
 from mainsequence.client.metatables import (
     DynamicTableDataSource,
@@ -41,6 +41,14 @@ class PreparedAlembicMetaTableMigration:
     meta_table_uids: list[str]
     reserved_tables: list[Any] = field(default_factory=list)
     owner_role_name: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AlembicMetaTableCatalogRefreshContext:
+    package: str
+    migration_namespace: str
+    registered_metatables: list[Any]
+    reserved_policy: Literal["reconcile"] | None = None
 
 
 class AlembicVersionMetaTable:
@@ -200,7 +208,9 @@ class AlembicMetaTableMigration:
     target_metadata: Any
     alembic_registry: type[AlembicVersionMetaTable]
     metatable_models: Sequence[type[Any]] = field(default_factory=tuple)
-    after_register_metatables: Callable[[list[Any]], Any] | None = None
+    after_register_metatables: (
+        Callable[[AlembicMetaTableCatalogRefreshContext], Any] | None
+    ) = None
     include_name_hook: Any | None = None
     include_object_hook: Any | None = None
 
@@ -290,6 +300,7 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
         create_table: bool = False,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
+        reserved_policy: Literal["reconcile"] | None = None,
     ) -> list[Any]:
         registered: list[Any] = []
         data_source_uid = self._resolve_provider_data_source_uid()
@@ -308,7 +319,14 @@ class AlembicMetaTableMigration:
                 _bind_model_to_existing_metatable(model, meta_table)
                 registered.append(meta_table)
         if self.after_register_metatables is not None:
-            self.after_register_metatables(registered)
+            self.after_register_metatables(
+                AlembicMetaTableCatalogRefreshContext(
+                    package=self.package,
+                    migration_namespace=self.migration_namespace,
+                    registered_metatables=registered,
+                    reserved_policy=reserved_policy,
+                )
+            )
         return registered
 
     def refresh_metatable_catalog(
@@ -321,6 +339,7 @@ class AlembicMetaTableMigration:
             timeout=timeout,
             create_table=False,
             on_metatable_registered=on_metatable_registered,
+            reserved_policy="reconcile",
         )
 
     def prepare_for_alembic(
@@ -344,11 +363,30 @@ class AlembicMetaTableMigration:
             model: resolve_metatable_identifier(model) for model in ordered_models
         }
         with platform_managed_migration_registration_context():
+            existing_by_identifier = _get_metatables_by_model_identifier(
+                ordered_models,
+                timeout=timeout,
+            )
+            if on_metatable_reservation_status is not None:
+                on_metatable_reservation_status(
+                    "Found existing MetaTables by identifier "
+                    f"count={len(existing_by_identifier)}."
+                )
             pending_models: list[type[Any]] = []
             pending_tables: list[ManagedMetaTableReservationTable] = []
             for model in ordered_models:
                 if model in reserved_by_model:
                     continue
+                identifier = target_identifiers[model]
+                existing_meta_table = existing_by_identifier.get(identifier)
+                if existing_meta_table is not None:
+                    table_contract = _meta_table_contract(existing_meta_table)
+                    if isinstance(table_contract, Mapping):
+                        _bind_backend_contract_names(model, table_contract)
+                    _bind_model_to_existing_metatable(model, existing_meta_table)
+                    reserved_by_model[model] = existing_meta_table
+                    continue
+
                 bound_meta_table = _bound_meta_table_for_model(model)
                 if bound_meta_table is not None and _meta_table_uid(bound_meta_table) not in (
                     None,
@@ -1018,6 +1056,7 @@ def _is_platform_time_index_metatable_model(model: Any) -> bool:
 
 
 __all__ = [
+    "AlembicMetaTableCatalogRefreshContext",
     "AlembicMetaTableMigration",
     "AlembicVersionMetaTable",
     "DEFAULT_ALEMBIC_PROVIDER_REFERENCE",

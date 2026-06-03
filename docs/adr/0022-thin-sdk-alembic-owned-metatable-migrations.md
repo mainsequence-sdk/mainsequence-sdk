@@ -274,7 +274,9 @@ Using the same reservation/binding step prevents `current`, `revision`, and
 5. call Alembic `upgrade(...)` directly;
 6. after success, register/refresh provider `metatable_models` with
    `provisioning.create_table=false`;
-7. call `after_register_metatables` with the refreshed rows.
+7. call `after_register_metatables` with an
+   `AlembicMetaTableCatalogRefreshContext` containing the refreshed rows and
+   `reserved_policy="reconcile"` for post-Alembic catalog writes.
 
 There should not be separate normal-user commands for "render SQL" and "apply
 SQL to backend". Alembic is the apply path.

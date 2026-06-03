@@ -551,6 +551,7 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
                 {
                     "metaTableUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                     "alias": "asset",
+                    "reservedPolicy": "reconcile",
                 }
             ]
         },
@@ -562,6 +563,10 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
     assert operation.dialect == "postgresql"
     assert operation.statement.paramstyle == "pyformat"
     assert operation.scope.tables[0].meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert operation.scope.tables[0].reserved_policy == "reconcile"
+    assert operation.model_dump(mode="json", by_alias=True)["scope"]["tables"][0][
+        "reserved_policy"
+    ] == "reconcile"
 
     with pytest.raises(ValidationError):
         meta_table_models.MetaTableCompiledSQLOperation(

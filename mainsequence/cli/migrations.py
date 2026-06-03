@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 import re
 import sys
 from collections.abc import Mapping, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 import click
@@ -42,6 +44,46 @@ class _AlembicOutput:
     @property
     def has_visible_output(self) -> bool:
         return any(chunk.strip() for chunk in self._chunks)
+
+
+class _AlembicLogHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            message = self.format(record)
+        except Exception:
+            self.handleError(record)
+            return
+        print(message, file=sys.stderr, flush=True)
+
+
+@contextmanager
+def _forward_alembic_logging():
+    logger_names = {"alembic"}
+    logger_names.update(
+        name
+        for name in logging.Logger.manager.loggerDict
+        if name == "alembic" or name.startswith("alembic.")
+    )
+    loggers = [logging.getLogger(name) for name in logger_names]
+    previous_state = [(logger, logger.level, logger.propagate) for logger in loggers]
+    handler = _AlembicLogHandler()
+    handler.setLevel(logging.DEBUG)
+    handler.setFormatter(
+        logging.Formatter("[alembic] %(levelname)s %(name)s: %(message)s")
+    )
+    root_logger = logging.getLogger("alembic")
+    root_logger.addHandler(handler)
+    for logger in loggers:
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = True
+    root_logger.propagate = False
+    try:
+        yield
+    finally:
+        root_logger.removeHandler(handler)
+        for logger, level, propagate in previous_state:
+            logger.setLevel(level)
+            logger.propagate = propagate
 
 
 def _emit_status(message: str) -> None:
@@ -301,15 +343,16 @@ def _next_sequential_revision_id(
     _emit_status("Imported Alembic ScriptDirectory.")
 
     _emit_status("Scanning Alembic revision directory for next sequential id...")
-    script = ScriptDirectory.from_config(
-        alembic_config_for_provider(
-            migration,
-            sqlalchemy_url="postgresql://",
-            stdout=alembic_output,
-            output_buffer=alembic_output,
+    with _forward_alembic_logging():
+        script = ScriptDirectory.from_config(
+            alembic_config_for_provider(
+                migration,
+                sqlalchemy_url="postgresql://",
+                stdout=alembic_output,
+                output_buffer=alembic_output,
+            )
         )
-    )
-    heads = list(script.get_heads())
+        heads = list(script.get_heads())
     if len(heads) > 1:
         raise typer.BadParameter(
             "Sequential revision IDs require a single Alembic head. Pass --rev-id "
@@ -324,10 +367,11 @@ def _next_sequential_revision_id(
         )
 
     numeric_revisions: list[int] = []
-    for revision in script.walk_revisions():
-        revision_id = str(revision.revision)
-        if re.fullmatch(r"\d{4,}", revision_id):
-            numeric_revisions.append(int(revision_id))
+    with _forward_alembic_logging():
+        for revision in script.walk_revisions():
+            revision_id = str(revision.revision)
+            if re.fullmatch(r"\d{4,}", revision_id):
+                numeric_revisions.append(int(revision_id))
     next_revision_id = f"{max(numeric_revisions, default=0) + 1:04d}"
     _emit_status(f"Next Alembic revision id is {next_revision_id}.")
     return next_revision_id
@@ -356,7 +400,8 @@ def current(
         alembic_output=alembic_output,
     )
     _emit_status("Starting Alembic current now...")
-    command.current(config, verbose=verbose)
+    with _forward_alembic_logging():
+        command.current(config, verbose=verbose)
     if not alembic_output.has_visible_output:
         _emit_status(
             "Alembic current produced no revision output. The version table is "
@@ -406,13 +451,14 @@ def revision(
         alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
-    script = command.revision(
-        config,
-        message=resolved_message,
-        autogenerate=autogenerate,
-        rev_id=resolved_rev_id,
-        head=head,
-    )
+    with _forward_alembic_logging():
+        script = command.revision(
+            config,
+            message=resolved_message,
+            autogenerate=autogenerate,
+            rev_id=resolved_rev_id,
+            head=head,
+        )
     _emit_status("Alembic revision finished.")
     _emit(
         {
@@ -450,7 +496,8 @@ def upgrade(
         alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic upgrade now target={target_revision}...")
-    command.upgrade(config, target_revision)
+    with _forward_alembic_logging():
+        command.upgrade(config, target_revision)
     _emit_status("Refreshing MetaTable catalog after upgrade...")
     registered = migration.refresh_metatable_catalog(
         timeout=timeout,
@@ -494,7 +541,8 @@ def downgrade(
         alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic downgrade now target={target_revision}...")
-    command.downgrade(config, target_revision)
+    with _forward_alembic_logging():
+        command.downgrade(config, target_revision)
     _emit_status("Refreshing MetaTable catalog after downgrade...")
     registered = migration.refresh_metatable_catalog(
         timeout=timeout,

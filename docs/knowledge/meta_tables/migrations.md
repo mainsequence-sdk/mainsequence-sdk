@@ -138,6 +138,7 @@ registration step is only for the provider's `AlembicVersionMetaTable` binding.
 
 ```python
 from mainsequence.meta_tables.migrations import (
+    AlembicMetaTableCatalogRefreshContext,
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
 )
@@ -145,7 +146,11 @@ from mainsequence.meta_tables.migrations import (
 from sdk_examples.meta_tables.account_limits import Account, AccountLimit, Base
 
 
-def refresh_project_catalog_from_registered_metatables(registered_metatables):
+def refresh_project_catalog_from_registered_metatables(
+    context: AlembicMetaTableCatalogRefreshContext,
+):
+    registered_metatables = context.registered_metatables
+    reserved_policy = context.reserved_policy
     ...
 
 
@@ -263,9 +268,11 @@ rows with physical creation disabled. The command succeeds only when both
 Alembic execution and catalog refresh succeed.
 
 If the provider defines `after_register_metatables`, the CLI runs that hook only
-after the provider-scoped MetaTable registration succeeds. The hook receives the
-ordered registered MetaTable objects. It does not run for `current`,
-`revision`, or failed `upgrade`.
+after the provider-scoped MetaTable registration succeeds. The hook receives an
+`AlembicMetaTableCatalogRefreshContext`. After `upgrade`, that context carries
+`reserved_policy="reconcile"` so project catalog upserts can explicitly ask TS
+Manager to reconcile newly created physical tables. It does not run for
+`current`, `revision`, or failed `upgrade`.
 
 ## Backend Coordination
 

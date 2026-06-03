@@ -87,7 +87,7 @@ The required lifecycle is:
 7. backend dry-run validates revision precondition and SQL artifact
 8. backend applies SQL
 9. SDK refreshes MetaTable catalog rows
-10. SDK runs after_register_metatables(final_metatables)
+10. SDK runs after_register_metatables(catalog_refresh_context)
 ```
 
 The key change is step 3.
@@ -112,7 +112,8 @@ After SQL apply, catalog refresh must:
 - refresh column, index, foreign-key, and time-index catalog projections;
 - preserve the same MetaTable UID for existing tables;
 - return the final MetaTable rows to the SDK;
-- run `after_register_metatables` with those final rows.
+- run `after_register_metatables` with an
+  `AlembicMetaTableCatalogRefreshContext` containing those final rows.
 
 If SQL apply fails after an initial hidden registration, the table exists and
 the MetaTable row remains active. That is acceptable because creation still used
@@ -169,8 +170,8 @@ request-side data source UID.
 ### Apply Response
 
 The backend response remains the direct SQL apply response. SDK migration
-tooling performs catalog refresh after apply and then passes the final
-MetaTables to `after_register_metatables`.
+tooling performs catalog refresh after apply and then passes an
+`AlembicMetaTableCatalogRefreshContext` to `after_register_metatables`.
 
 ```json
 {

@@ -142,11 +142,15 @@ host project must choose the provider being operated on.
 `after_register_metatables` is an optional project hook for catalog side effects
 that must happen after provider-scoped MetaTable registration. The SDK calls it
 only after every model in `migration.metatable_models` has registered or
-refreshed successfully. The hook receives the ordered registered MetaTable
-objects returned by `migration.sync_metatable_catalog()`:
+refreshed successfully. The hook receives an
+`AlembicMetaTableCatalogRefreshContext` containing the ordered registered
+MetaTable objects, provider identity, and the reserved-table policy for any
+post-Alembic catalog writes:
 
 ```python
-def refresh_markets_catalog_from_registered_metatables(registered_metatables):
+def refresh_markets_catalog_from_registered_metatables(context):
+    registered_metatables = context.registered_metatables
+    reserved_policy = context.reserved_policy
     ...
 ```
 
@@ -615,12 +619,22 @@ If `migration.after_register_metatables` is configured, the SDK calls it after
 the provider-scoped catalog registration succeeds:
 
 ```python
-migration.after_register_metatables(registered_metatables)
+migration.after_register_metatables(
+    AlembicMetaTableCatalogRefreshContext(
+        package=migration.package,
+        migration_namespace=migration.migration_namespace,
+        registered_metatables=registered_metatables,
+        reserved_policy="reconcile",
+    )
+)
 ```
 
 This hook lets a project update project-specific catalog tables, such as a
 markets catalog derived from the registered MetaTable UIDs, without adding
 Markets-specific behavior to the SDK or backend.
+The `reserved_policy="reconcile"` value is emitted by
+`refresh_metatable_catalog()` after Alembic upgrade. Normal runtime repository
+operations omit it and keep TS Manager's default reserved-table rejection.
 
 ## CLI Workflow
 
@@ -939,8 +953,9 @@ stable identifier.
   classes.
 - [x] Update the MetaTable skill so migration guidance follows the final ADR
   workflow and does not mention optional `--register-metatables`.
-- [x] Add optional `after_register_metatables` provider hook and run it after
-  successful provider-scoped MetaTable registration.
+- [x] Add optional `after_register_metatables` provider hook and run it with an
+  `AlembicMetaTableCatalogRefreshContext` after successful provider-scoped
+  MetaTable registration.
 - [x] Add CLI/provider tests covering initial migration, current revision, SQL
   render, dry-run/apply payloads, and provider-scoped catalog registration.
 - [x] Update tutorials and examples around the provider-based Alembic lifecycle.

@@ -435,6 +435,15 @@ class MetaTableOperationScopeTable(BasePydanticModel):
     )
     alias: str | None = None
     access: Literal["read", "write"] = "read"
+    reserved_policy: Literal["reject", "reconcile"] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("reserved_policy", "reservedPolicy"),
+        description=(
+            "Reserved MetaTable policy for this scoped table. Omit for normal "
+            "operations. Use 'reconcile' only from post-Alembic catalog refresh "
+            "paths after Alembic has created the physical table."
+        ),
+    )
 
     model_config = ConfigDict(populate_by_name=True)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import pathlib
 import sys
 import types
@@ -160,6 +161,12 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
         captured["verbose"] = verbose
         captured["stdout"] = config.stdout
         captured["output_buffer"] = config.output_buffer
+        logging.getLogger("alembic.runtime.migration").info(
+            "fake alembic runtime log"
+        )
+        logging.getLogger("alembic.runtime.migration.deep").debug(
+            "fake alembic debug log"
+        )
         config.print_stdout("fake alembic current output")
 
     monkeypatch.setattr(command, "current", fake_current)
@@ -183,6 +190,14 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
     assert "fake alembic current output" in output
+    assert (
+        "[alembic] INFO alembic.runtime.migration: fake alembic runtime log"
+        in output
+    )
+    assert (
+        "[alembic] DEBUG alembic.runtime.migration.deep: fake alembic debug log"
+        in output
+    )
     assert (
         "[mainsequence migrations] Importing Alembic command module for current..."
         in output
@@ -279,6 +294,69 @@ def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
     assert "registered MetaTable identifier=msm.alembic_version" in output
     assert "uid=registry-meta-table-uid" in output
     assert "physical_table=alembic_version" in output
+
+
+def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    captured = {}
+    _patch_preflight(monkeypatch, migration_cli, migration)
+    _patch_scoped_connection(monkeypatch, migration_cli, captured)
+
+    from alembic import command
+    from alembic.script import ScriptDirectory
+
+    class FakeRevision:
+        revision = "0001"
+
+    class FakeScriptDirectory:
+        def get_heads(self):
+            return ["0001"]
+
+        def walk_revisions(self):
+            logging.getLogger("alembic.script").debug("fake revision scan log")
+            return [FakeRevision()]
+
+    monkeypatch.setattr(
+        ScriptDirectory,
+        "from_config",
+        staticmethod(lambda config: FakeScriptDirectory()),
+    )
+
+    def fake_revision(config, message, autogenerate, rev_id, head):
+        captured["message"] = message
+        captured["autogenerate"] = autogenerate
+        captured["rev_id"] = rev_id
+        captured["head"] = head
+        logging.getLogger("alembic.command").debug("fake revision command log")
+        return types.SimpleNamespace(revision=rev_id, path="/tmp/0002_migration.py")
+
+    monkeypatch.setattr(command, "revision", fake_revision)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "migrations",
+            "revision",
+            "--provider",
+            "ignored:migration",
+            "--message",
+            "schema change",
+            "--timeout",
+            "5",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["message"] == "schema change"
+    assert captured["autogenerate"] is True
+    assert captured["rev_id"] == "0002"
+    assert captured["head"] == "head"
+    output = _combined_output(result)
+    assert "[alembic] DEBUG alembic.script: fake revision scan log" in output
+    assert "[alembic] DEBUG alembic.command: fake revision command log" in output
 
 
 def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
