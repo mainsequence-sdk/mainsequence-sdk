@@ -150,7 +150,6 @@ class MetaTableRequestFields(BasePydanticModel):
     description: str | None = Field(None, description="Optional MetaTable description.")
     labels: list[str] = Field(default_factory=list, description="Labels to apply to the MetaTable.")
     protect_from_deletion: bool = Field(False, description="Whether to protect the MetaTable from deletion.")
-    open_for_everyone: bool = Field(False, description="Whether the MetaTable is visible to everyone.")
     table_contract: MetaTableContract | dict[str, Any] = Field(..., description="Relational table contract.")
 
 
@@ -176,10 +175,10 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
     meta_table_uid: str = Field(..., description="Reserved backend MetaTable UID.")
     data_source_uid: str = Field(..., description="DynamicTableDataSource UID that owns the reservation.")
     management_mode: Literal["platform_managed"] = Field(..., description="Backend-confirmed management mode.")
+    provisioning_status: Literal["reserved", "active"] = Field(..., description="First-class backend provisioning state.")
     storage_hash: str = Field(..., description="Reserved storage hash.")
     physical_table_name: str = Field(..., description="Physical table name reserved for Alembic rendering.")
     table_contract: dict[str, Any] = Field(..., description="Backend-normalized contract with resolved names.")
-    reservation_status: str = Field(..., description="Backend reservation lifecycle status.")
     created: bool = Field(..., description="Whether the backend created a new reservation row.")
     matched_by: str | None = Field(None, description="Existing-row match strategy, or null for newly created rows.")
     contract_hash: str | None = Field(None, description="Backend canonical contract hash.")
@@ -205,11 +204,14 @@ The method must:
 2. build reservation table payloads from `metatable_models`;
 3. include explicit SQLAlchemy index/FK names when the user supplied them;
 4. allow omitted index/FK names so the backend can return canonical names;
-5. call `MetaTable.reserve_managed(...)`;
-6. bind each returned item back to its model by global non-empty `identifier`;
-7. mutate SQLAlchemy `Table.name` to the returned physical table name;
-8. mutate SQLAlchemy index names and FK constraint names to the returned names;
-9. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
+5. emit `target_identifier` for same-batch FK targets that do not have
+   `target_meta_table_uid` yet;
+6. call `MetaTable.reserve_managed(...)` once with all pending reservation
+   tables, not once per model;
+7. bind each returned item back to its model by response order;
+8. mutate SQLAlchemy `Table.name` to the returned physical table name;
+9. mutate SQLAlchemy index names and FK constraint names to the returned names;
+10. bind `__metatable_uid__`, `__metatable_data_source_uid__`,
    `__metatable_storage_hash__`, and `__metatable_physical_table_name__`.
 
 After this step, Alembic autogenerate and Alembic upgrade must see the same
@@ -335,6 +337,8 @@ normal tutorial workflow.
 - [x] Add `MetaTable.reserve_managed(...)`.
 - [x] Add provider-level reservation preparation that binds physical table,
   index, and FK names into SQLAlchemy metadata.
+- [x] Batch provider MetaTable reservations into one backend request and use
+  `target_identifier` for same-batch FK resolution before UIDs exist.
 - [x] Change `AlembicMetaTableMigration` so missing provider models are reserved,
   not registered/created, before Alembic runs.
 - [x] Add an Alembic config helper that uses the backend-issued scoped

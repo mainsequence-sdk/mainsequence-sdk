@@ -293,7 +293,6 @@ class PlatformManagedMetaTable:
     __metatable_labels__: ClassVar[Sequence[str] | None] = None
     __metatable_provisioning__: ClassVar[Mapping[str, Any] | None] = None
     __metatable_protect_from_deletion__: ClassVar[bool | None] = None
-    __metatable_open_for_everyone__: ClassVar[bool | None] = None
     __metatable_introspect__: ClassVar[bool | None] = None
     __metatable_hash_namespace__: ClassVar[str | None] = None
     __metatable_extra_hash_components__: ClassVar[Mapping[str, Any] | None] = None
@@ -333,10 +332,10 @@ class PlatformManagedMetaTable:
         description: str | None = None,
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool | None = None,
-        open_for_everyone: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
         introspect: bool | None = None,
         _target_meta_tables: Mapping[Any, Any] | None = None,
+        _target_identifiers: Mapping[Any, str] | None = None,
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
@@ -354,10 +353,10 @@ class PlatformManagedMetaTable:
             description=description,
             labels=labels,
             protect_from_deletion=protect_from_deletion,
-            open_for_everyone=open_for_everyone,
             provisioning=provisioning,
             introspect=introspect,
             _target_meta_tables=_target_meta_tables,
+            _target_identifiers=_target_identifiers,
             hash_namespace=hash_namespace,
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
@@ -504,12 +503,12 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         from mainsequence.client.metatables import TimeIndexMetaData
 
         if not isinstance(meta_table, TimeIndexMetaData):
-            reservation_status = (
-                meta_table.get("reservation_status")
+            provisioning_status = (
+                meta_table.get("provisioning_status")
                 if isinstance(meta_table, Mapping)
-                else getattr(meta_table, "reservation_status", None)
+                else getattr(meta_table, "provisioning_status", None)
             )
-            if reservation_status is not None and _meta_table_uid(meta_table) not in (None, ""):
+            if provisioning_status is not None and _meta_table_uid(meta_table) not in (None, ""):
                 bound = PlatformManagedMetaTable._bind_meta_table.__func__(cls, meta_table)
                 cls.__time_index_metadata__ = bound
                 return bound
@@ -583,6 +582,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         protect_from_deletion: bool | None = None,
         provisioning: Mapping[str, Any] | None = None,
         _target_meta_tables: Mapping[Any, Any] | None = None,
+        _target_identifiers: Mapping[Any, str] | None = None,
         hash_namespace: str | None = None,
         extra_hash_components: Mapping[str, Any] | None = None,
         enforce_storage_hash_name: bool = True,
@@ -605,6 +605,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             protect_from_deletion=protect_from_deletion,
             provisioning=provisioning,
             _target_meta_tables=_target_meta_tables,
+            _target_identifiers=_target_identifiers,
             hash_namespace=hash_namespace,
             extra_hash_components=extra_hash_components,
             enforce_storage_hash_name=enforce_storage_hash_name,
@@ -666,6 +667,7 @@ def table_contract_from_sqlalchemy_model(
     table_model_module: str | None = None,
     table_model_qualname: str | None = None,
     target_meta_tables: Mapping[Any, Any] | None = None,
+    target_identifier_by_model: Mapping[Any, str] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
     schema: str | None = None,
     include_physical_table_name: bool = True,
@@ -712,6 +714,7 @@ def table_contract_from_sqlalchemy_model(
             _foreign_key_contract(
                 foreign_key_constraint,
                 target_meta_table_uid_by_model=resolved_target_models,
+                target_identifier_by_model=target_identifier_by_model or {},
                 target_meta_table_uid_by_fullname=resolved_targets,
                 require_metatable_foreign_keys=require_metatable_foreign_keys,
             )
@@ -735,6 +738,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
     protect_from_deletion: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
     _target_meta_tables: Mapping[Any, Any] | None = None,
+    _target_identifiers: Mapping[Any, str] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
@@ -821,6 +825,7 @@ def time_indexed_registration_request_from_sqlalchemy_model(
         _time_indexed_meta_table_foreign_key_contract(
             foreign_key_constraint,
             target_meta_table_uid_by_model=resolved_target_models,
+            target_identifier_by_model=_target_identifiers or {},
             target_meta_table_uid_by_fullname={},
             require_metatable_foreign_keys=True,
         ).model_dump(mode="json", exclude_none=True)
@@ -892,10 +897,10 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     description: str | None = None,
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool | None = None,
-    open_for_everyone: bool | None = None,
     provisioning: Mapping[str, Any] | None = None,
     introspect: bool | None = None,
     _target_meta_tables: Mapping[Any, Any] | None = None,
+    _target_identifiers: Mapping[Any, str] | None = None,
     schema: str | None = None,
     hash_namespace: str | None = None,
     extra_hash_components: Mapping[str, Any] | None = None,
@@ -951,6 +956,7 @@ def platform_managed_registration_request_from_sqlalchemy_model(
     table_contract = table_contract_from_sqlalchemy_model(
         model_or_table,
         target_meta_tables=_target_meta_tables,
+        target_identifier_by_model=_target_identifiers,
         schema=resolved_schema,
         include_physical_table_name=False,
         require_metatable_foreign_keys=True,
@@ -971,13 +977,6 @@ def platform_managed_registration_request_from_sqlalchemy_model(
             value=protect_from_deletion,
             attr_name="__metatable_protect_from_deletion__",
             info_key="protect_from_deletion",
-            default=False,
-        ),
-        open_for_everyone=_resolve_bool_metadata(
-            model_or_table,
-            value=open_for_everyone,
-            attr_name="__metatable_open_for_everyone__",
-            info_key="open_for_everyone",
             default=False,
         ),
         labels=_resolve_labels(model_or_table, labels=labels),
@@ -1003,7 +1002,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
     description: str | None = None,
     labels: Sequence[str] | None = None,
     protect_from_deletion: bool = False,
-    open_for_everyone: bool = False,
     introspect: bool = True,
     target_meta_tables: Mapping[Any, Any] | None = None,
     target_meta_table_uid_by_fullname: Mapping[str, Any] | None = None,
@@ -1044,7 +1042,6 @@ def external_registered_registration_request_from_sqlalchemy_model(
         namespace=resolved_namespace,
         description=resolved_description,
         protect_from_deletion=protect_from_deletion,
-        open_for_everyone=open_for_everyone,
         labels=list(labels or []),
         introspect=introspect,
         table_contract=table_contract_from_sqlalchemy_model(
@@ -2265,6 +2262,7 @@ def _foreign_key_contract(
     foreign_key_constraint: Any,
     *,
     target_meta_table_uid_by_model: Mapping[type[Any], Any],
+    target_identifier_by_model: Mapping[Any, str],
     target_meta_table_uid_by_fullname: Mapping[str, Any],
     require_metatable_foreign_keys: bool = False,
 ) -> MetaTableForeignKeyContract:
@@ -2275,6 +2273,7 @@ def _foreign_key_contract(
     sdk_target = _metatable_foreign_key_contract_target(
         elements,
         target_meta_table_uid_by_model=target_meta_table_uid_by_model,
+        target_identifier_by_model=target_identifier_by_model,
     )
     if sdk_target is None:
         if require_metatable_foreign_keys:
@@ -2296,9 +2295,10 @@ def _foreign_key_contract(
             target_table_fullname,
             target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
         )
+        target_identifier = None
         target_columns = [str(element.column.name) for element in elements]
     else:
-        target_meta_table_uid, target_columns = sdk_target
+        target_meta_table_uid, target_identifier, target_columns = sdk_target
 
     foreign_key_name = (
         _metatable_foreign_key_explicit_name(elements)
@@ -2317,6 +2317,7 @@ def _foreign_key_contract(
         name=str(foreign_key_name) if foreign_key_name else None,
         source_columns=[str(element.parent.name) for element in elements],
         target_meta_table_uid=target_meta_table_uid,
+        target_identifier=target_identifier,
         target_columns=target_columns,
         on_delete=str(on_delete or "restrict").lower(),
     )
@@ -2326,6 +2327,7 @@ def _time_indexed_meta_table_foreign_key_contract(
     foreign_key_constraint: Any,
     *,
     target_meta_table_uid_by_model: Mapping[type[Any], Any],
+    target_identifier_by_model: Mapping[Any, str],
     target_meta_table_uid_by_fullname: Mapping[str, Any],
     require_metatable_foreign_keys: bool = False,
 ) -> MetaTableForeignKeyContract:
@@ -2336,6 +2338,7 @@ def _time_indexed_meta_table_foreign_key_contract(
     sdk_target = _metatable_foreign_key_contract_target(
         elements,
         target_meta_table_uid_by_model=target_meta_table_uid_by_model,
+        target_identifier_by_model=target_identifier_by_model,
     )
     if sdk_target is None:
         if require_metatable_foreign_keys:
@@ -2356,9 +2359,10 @@ def _time_indexed_meta_table_foreign_key_contract(
             target_table_fullname,
             target_meta_table_uid_by_fullname=target_meta_table_uid_by_fullname,
         )
+        target_identifier = None
         target_columns = [str(element.column.name) for element in elements]
     else:
-        target_meta_table_uid, target_columns = sdk_target
+        target_meta_table_uid, target_identifier, target_columns = sdk_target
 
     foreign_key_name = (
         _metatable_foreign_key_explicit_name(elements)
@@ -2377,6 +2381,7 @@ def _time_indexed_meta_table_foreign_key_contract(
         name=str(foreign_key_name) if foreign_key_name else None,
         source_columns=[str(element.parent.name) for element in elements],
         target_meta_table_uid=target_meta_table_uid,
+        target_identifier=target_identifier,
         target_columns=target_columns,
         on_delete=str(on_delete or "restrict").lower(),
     )
@@ -2386,7 +2391,8 @@ def _metatable_foreign_key_contract_target(
     elements: Sequence[Any],
     *,
     target_meta_table_uid_by_model: Mapping[type[Any], Any],
-) -> tuple[str, list[str]] | None:
+    target_identifier_by_model: Mapping[Any, str],
+) -> tuple[str | None, str | None, list[str]] | None:
     metadata_by_element = [_metatable_foreign_key_metadata(element) for element in elements]
     if not any(metadata_by_element):
         return None
@@ -2418,7 +2424,18 @@ def _metatable_foreign_key_contract_target(
         target_model,
         target_meta_table_uid_by_model=target_meta_table_uid_by_model,
     )
-    return target_meta_table_uid, target_columns
+    if target_meta_table_uid not in (None, ""):
+        return target_meta_table_uid, None, target_columns
+
+    target_identifier = target_identifier_by_model.get(target_model)
+    if target_identifier not in (None, ""):
+        return None, str(target_identifier), target_columns
+
+    model_name = getattr(target_model, "__qualname__", repr(target_model))
+    raise ValueError(
+        "Missing registered target MetaTable UID or same-batch target identifier "
+        f"for MetaTableForeignKey target {model_name}."
+    )
 
 
 def _metatable_foreign_key_metadata(element: Any) -> Mapping[str, Any] | None:
@@ -2462,7 +2479,7 @@ def _lookup_target_meta_table_uid_by_model(
     target_model: type[PlatformManagedMetaTable],
     *,
     target_meta_table_uid_by_model: Mapping[type[Any], Any],
-) -> str:
+) -> str | None:
     target_uid = target_meta_table_uid_by_model.get(target_model)
     if target_uid is not None:
         return _target_meta_table_uid(target_uid)
@@ -2473,12 +2490,7 @@ def _lookup_target_meta_table_uid_by_model(
         if target_uid not in (None, ""):
             return str(target_uid)
 
-    model_name = getattr(target_model, "__qualname__", repr(target_model))
-    raise ValueError(
-        "Missing registered target MetaTable UID for MetaTableForeignKey target "
-        f"{model_name}. Register the target model through register() before building "
-        "a request directly."
-    )
+    return None
 
 
 def _lookup_target_meta_table_uid(

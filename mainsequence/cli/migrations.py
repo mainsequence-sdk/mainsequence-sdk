@@ -3,6 +3,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 import click
@@ -19,13 +20,26 @@ from mainsequence.meta_tables.migrations import (
 )
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
+REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
+RESERVE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/reserve-managed/"
+
+
+def _emit_status(message: str) -> None:
+    typer.echo(f"[mainsequence migrations] {message}", err=True)
 
 
 def _load_migration(provider: str | None) -> AlembicMetaTableMigration:
+    provider_label = provider or "<default>"
+    _emit_status(f"Loading migration provider {provider_label}...")
     try:
-        return load_alembic_metatable_migration_provider(provider)
+        migration = load_alembic_metatable_migration_provider(provider)
     except Exception as exc:
         raise typer.BadParameter(str(exc), param_hint="--provider") from exc
+    _emit_status(
+        "Loaded migration provider "
+        f"package={migration.package} migration_namespace={migration.migration_namespace}"
+    )
+    return migration
 
 
 def _jsonable(value: Any) -> Any:
@@ -60,15 +74,136 @@ def _json_output_enabled() -> bool:
     return bool(obj.get("json_output"))
 
 
+def _item_value(item: Any, key: str) -> Any:
+    if isinstance(item, Mapping):
+        return item.get(key)
+    return getattr(item, key, None)
+
+
+def _contract_physical_table_name(item: Any) -> Any:
+    contract = _item_value(item, "table_contract")
+    if contract is None:
+        return None
+    physical = contract.get("physical") if isinstance(contract, Mapping) else getattr(contract, "physical", None)
+    if physical is None:
+        return None
+    if isinstance(physical, Mapping):
+        return physical.get("table_name")
+    return getattr(physical, "table_name", None)
+
+
+def _metatable_message(
+    *,
+    endpoint: str,
+    action: str,
+    model: type[Any],
+    item: Any,
+) -> str:
+    model_name = getattr(model, "__name__", repr(model))
+    identifier = (
+        _item_value(item, "identifier")
+        or getattr(model, "__metatable_identifier__", None)
+        or model_name
+    )
+    uid = _item_value(item, "meta_table_uid") or _item_value(item, "uid")
+    physical_table_name = (
+        _item_value(item, "physical_table_name")
+        or _contract_physical_table_name(item)
+    )
+    provisioning_status = _item_value(item, "provisioning_status")
+    created = _item_value(item, "created")
+    matched_by = _item_value(item, "matched_by")
+
+    parts = [
+        f"POST {endpoint}",
+        f"{action} MetaTable identifier={identifier}",
+    ]
+    if model_name != identifier:
+        parts.append(f"model={model_name}")
+    if uid not in (None, ""):
+        parts.append(f"uid={uid}")
+    if physical_table_name not in (None, ""):
+        parts.append(f"physical_table={physical_table_name}")
+    if provisioning_status not in (None, ""):
+        parts.append(f"provisioning_status={provisioning_status}")
+    if created is not None:
+        parts.append(f"created={created}")
+    if matched_by not in (None, ""):
+        parts.append(f"matched_by={matched_by}")
+    return " ".join(parts)
+
+
+def _emit_metatable_registration(model: type[Any], item: Any) -> None:
+    typer.echo(
+        _metatable_message(
+            endpoint=REGISTER_ENDPOINT,
+            action="registered",
+            model=model,
+            item=item,
+        ),
+        err=True,
+    )
+
+
+def _emit_metatable_reservation_request(
+    models: Sequence[type[Any]],
+    tables: Sequence[Any],
+) -> None:
+    identifiers = []
+    for model, table in zip(models, tables, strict=True):
+        identifiers.append(
+            str(
+                _item_value(table, "identifier")
+                or getattr(model, "__metatable_identifier__", None)
+                or getattr(model, "__name__", repr(model))
+            )
+        )
+    _emit_status(
+        f"Sending POST {RESERVE_MANAGED_ENDPOINT} request for {len(tables)} "
+        f"MetaTables identifiers={','.join(identifiers)}"
+    )
+
+
+def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
+    typer.echo(
+        _metatable_message(
+            endpoint=RESERVE_MANAGED_ENDPOINT,
+            action="reserved",
+            model=model,
+            item=item,
+        ),
+        err=True,
+    )
+
+
 def _prepare_alembic_config(
     migration: AlembicMetaTableMigration,
     *,
     timeout: float | None,
     ttl_seconds: int,
 ) -> tuple[Any, Any]:
-    migration.ensure_alembic_registry(timeout=timeout)
-    prepared = migration.prepare_for_alembic(timeout=timeout)
+    _emit_status("Ensuring Alembic registry MetaTable...")
+    migration.ensure_alembic_registry(
+        timeout=timeout,
+        on_metatable_registered=_emit_metatable_registration,
+    )
+    _emit_status("Preparing platform-managed MetaTable reservations...")
+    prepared = migration.prepare_for_alembic(
+        timeout=timeout,
+        on_metatable_reservation_request=_emit_metatable_reservation_request,
+        on_metatable_reserved=_emit_metatable_reservation,
+    )
+    _emit_status(
+        "Prepared migration scope "
+        f"data_source_uid={prepared.data_source_uid} "
+        f"meta_table_count={len(prepared.meta_table_uids)}"
+    )
+    _emit_status(f"Loading DynamicTableDataSource uid={prepared.data_source_uid}...")
     data_source = DynamicTableDataSource.get_by_uid(prepared.data_source_uid)
+    _emit_status(
+        "Requesting scoped migration connection "
+        f"meta_table_count={len(prepared.meta_table_uids)} ttl_seconds={ttl_seconds}..."
+    )
     connection = data_source.issue_migration_connection(
         DynamicTableDataSourceMigrationConnectionRequest(
             package=migration.package,
@@ -78,6 +213,7 @@ def _prepare_alembic_config(
         ),
         timeout=timeout,
     )
+    _emit_status("Scoped migration connection acquired.")
     config = alembic_config_for_provider(
         migration,
         sqlalchemy_url=connection.uri,
@@ -141,7 +277,9 @@ def current(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
+    _emit_status("Running Alembic current...")
     command.current(config, verbose=verbose)
+    _emit_status("Alembic current finished.")
 
 
 @migrations.command("revision")
@@ -183,6 +321,7 @@ def revision(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
+    _emit_status(f"Running Alembic revision rev_id={resolved_rev_id}...")
     script = command.revision(
         config,
         message=resolved_message,
@@ -190,6 +329,7 @@ def revision(
         rev_id=resolved_rev_id,
         head=head,
     )
+    _emit_status("Alembic revision finished.")
     _emit(
         {
             "revision": getattr(script, "revision", None),
@@ -227,8 +367,14 @@ def upgrade(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
+    _emit_status(f"Running Alembic upgrade target={target_revision}...")
     command.upgrade(config, target_revision)
-    registered = migration.refresh_metatable_catalog(timeout=timeout)
+    _emit_status("Refreshing MetaTable catalog after upgrade...")
+    registered = migration.refresh_metatable_catalog(
+        timeout=timeout,
+        on_metatable_registered=_emit_metatable_registration,
+    )
+    _emit_status("MetaTable catalog refresh finished.")
     _emit(
         {
             "ok": True,
@@ -267,8 +413,14 @@ def downgrade(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
     )
+    _emit_status(f"Running Alembic downgrade target={target_revision}...")
     command.downgrade(config, target_revision)
-    registered = migration.refresh_metatable_catalog(timeout=timeout)
+    _emit_status("Refreshing MetaTable catalog after downgrade...")
+    registered = migration.refresh_metatable_catalog(
+        timeout=timeout,
+        on_metatable_registered=_emit_metatable_registration,
+    )
+    _emit_status("MetaTable catalog refresh finished.")
     _emit(
         {
             "ok": True,

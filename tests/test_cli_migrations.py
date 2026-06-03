@@ -55,22 +55,60 @@ def _migration() -> AlembicMetaTableMigration:
     )
 
 
-def _patch_preflight(monkeypatch, migration_cli, migration):
+def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=False):
     monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
     monkeypatch.setattr(
         AlembicMetaTableMigration,
         "ensure_alembic_registry",
-        lambda self, timeout=None: None,
+        lambda self, timeout=None, on_metatable_registered=None: None,
     )
-    monkeypatch.setattr(
-        AlembicMetaTableMigration,
-        "prepare_for_alembic",
-        lambda self, timeout=None: types.SimpleNamespace(
+
+    def fake_prepare_for_alembic(
+        self,
+        timeout=None,
+        on_metatable_reservation_request=None,
+        on_metatable_reserved=None,
+    ):
+        if emit_reservation and on_metatable_reserved is not None:
+            class Account:
+                __metatable_identifier__ = "Account"
+
+            if on_metatable_reservation_request is not None:
+                on_metatable_reservation_request(
+                    [Account],
+                    [types.SimpleNamespace(identifier="Account")],
+                )
+            on_metatable_reserved(
+                Account,
+                types.SimpleNamespace(
+                    identifier="Account",
+                    meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    physical_table_name="mt_account_backend",
+                    provisioning_status="reserved",
+                    created=False,
+                    matched_by="identifier",
+                ),
+            )
+        return types.SimpleNamespace(
             data_source_uid="data-source-uid",
             meta_table_uids=["meta-table-uid"],
             owner_role_name="prepared-owner",
-        ),
+        )
+
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "prepare_for_alembic",
+        fake_prepare_for_alembic,
     )
+
+
+def _combined_output(result):
+    output = result.output
+    try:
+        output += result.stderr
+    except ValueError:
+        pass
+    return output
 
 
 def _patch_scoped_connection(monkeypatch, migration_cli, captured):
@@ -124,6 +162,90 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
     assert "temporary-secret" not in result.output
+    output = _combined_output(result)
+    assert "[mainsequence migrations] Ensuring Alembic registry MetaTable..." in output
+    assert (
+        "[mainsequence migrations] Preparing platform-managed MetaTable reservations..."
+        in output
+    )
+    assert "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
+    assert "[mainsequence migrations] Requesting scoped migration connection" in output
+    assert "[mainsequence migrations] Running Alembic current..." in output
+    assert "[mainsequence migrations] Alembic current finished." in output
+
+
+def test_migrations_current_prints_metatable_reservations(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    captured = {}
+    _patch_preflight(monkeypatch, migration_cli, migration, emit_reservation=True)
+    _patch_scoped_connection(monkeypatch, migration_cli, captured)
+
+    from alembic import command
+
+    monkeypatch.setattr(command, "current", lambda config, verbose=False: None)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["migrations", "current", "--provider", "ignored:migration", "--timeout", "5"],
+    )
+
+    assert result.exit_code == 0
+    output = _combined_output(result)
+    assert (
+        "Sending POST /orm/api/ts_manager/meta_table/reserve-managed/ request for "
+        "1 MetaTables identifiers=Account"
+    ) in output
+    assert "POST /orm/api/ts_manager/meta_table/reserve-managed/" in output
+    assert "reserved MetaTable identifier=Account" in output
+    assert "uid=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa" in output
+    assert "physical_table=mt_account_backend" in output
+    assert "provisioning_status=reserved" in output
+    assert "created=False" in output
+    assert "matched_by=identifier" in output
+
+
+def test_migrations_current_prints_alembic_registry_registration(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    migration = _migration()
+    captured = {}
+    _patch_preflight(monkeypatch, migration_cli, migration)
+    _patch_scoped_connection(monkeypatch, migration_cli, captured)
+
+    def fake_ensure(self, timeout=None, on_metatable_registered=None):
+        if on_metatable_registered is not None:
+            on_metatable_registered(
+                self.alembic_registry,
+                types.SimpleNamespace(
+                    identifier="msm.alembic_version",
+                    uid="registry-meta-table-uid",
+                    table_contract={
+                        "physical": {"table_name": "alembic_version"},
+                    },
+                ),
+            )
+
+    monkeypatch.setattr(AlembicMetaTableMigration, "ensure_alembic_registry", fake_ensure)
+
+    from alembic import command
+
+    monkeypatch.setattr(command, "current", lambda config, verbose=False: None)
+
+    result = runner.invoke(
+        cli_mod.app,
+        ["migrations", "current", "--provider", "ignored:migration", "--timeout", "5"],
+    )
+
+    assert result.exit_code == 0
+    output = _combined_output(result)
+    assert "POST /orm/api/ts_manager/meta_table/register/" in output
+    assert "registered MetaTable identifier=msm.alembic_version" in output
+    assert "uid=registry-meta-table-uid" in output
+    assert "physical_table=alembic_version" in output
 
 
 def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
@@ -143,8 +265,20 @@ def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
 
     monkeypatch.setattr(command, "upgrade", fake_upgrade)
 
-    def fake_refresh(self, timeout=None):
+    def fake_refresh(self, timeout=None, on_metatable_registered=None):
         captured["refresh_timeout"] = timeout
+        if on_metatable_registered is not None:
+            class Asset:
+                __metatable_identifier__ = "markets.Asset"
+
+            on_metatable_registered(
+                Asset,
+                types.SimpleNamespace(
+                    identifier="markets.Asset",
+                    uid="asset-meta-table-uid",
+                    physical_table_name="mt_asset",
+                ),
+            )
         return []
 
     monkeypatch.setattr(AlembicMetaTableMigration, "refresh_metatable_catalog", fake_refresh)
@@ -160,3 +294,7 @@ def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
     assert captured["upgrade_url"] == "postgresql://temporary-secret"
     assert captured["refresh_timeout"] == 7.0
     assert "temporary-secret" not in result.output
+    output = _combined_output(result)
+    assert "POST /orm/api/ts_manager/meta_table/register/" in output
+    assert "registered MetaTable identifier=markets.Asset" in output
+    assert "physical_table=mt_asset" in output

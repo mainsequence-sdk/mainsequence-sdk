@@ -68,7 +68,6 @@ def _meta_table_response(**overrides):
         "creation_date": "2026-05-25T08:00:00Z",
         "created_by_user_uid": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
         "organization_owner_uid": "ffffffff-ffff-4fff-8fff-ffffffffffff",
-        "open_for_everyone": False,
     }
     payload.update(overrides)
     return payload
@@ -101,11 +100,11 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                 "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "management_mode": "platform_managed",
+                "provisioning_status": "reserved",
                 "storage_hash": "asset",
                 "physical_table_name": "asset",
                 "created": True,
                 "matched_by": None,
-                "reservation_status": "reserved",
                 "contract_hash": "contract-sha256",
                 "table_contract": {
                     "version": "relational-table.v1",
@@ -144,11 +143,11 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                 "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "management_mode": "platform_managed",
+                "provisioning_status": "reserved",
                 "storage_hash": "asset",
                 "physical_table_name": "asset",
                 "created": True,
                 "matched_by": None,
-                "reservation_status": "reserved",
                 "table_contract": {
                     "version": "relational-table.v1",
                     "physical": {"table_name": "asset"},
@@ -410,6 +409,7 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                         "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                         "management_mode": "platform_managed",
+                        "provisioning_status": "reserved",
                         "storage_hash": "mt_asset_hash",
                         "physical_table_name": "mt_asset_physical",
                         "table_contract": {
@@ -419,7 +419,6 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                             "indexes": [{"name": "mt_asset_symbol_idx", "columns": ["symbol"]}],
                             "foreign_keys": [],
                         },
-                        "reservation_status": "reserved",
                         "created": True,
                         "matched_by": None,
                         "contract_hash": "contract-sha256",

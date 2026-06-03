@@ -342,7 +342,6 @@ request = migration.alembic_registry.build_registration_request(
   "namespace": "msm",
   "description": "Alembic revision state table.",
   "protect_from_deletion": false,
-  "open_for_everyone": false,
   "labels": [],
   "introspect": false,
   "table_contract": {

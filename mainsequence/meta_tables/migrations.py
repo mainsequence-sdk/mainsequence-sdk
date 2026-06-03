@@ -72,7 +72,6 @@ class AlembicVersionMetaTable:
         description: str | None = None,
         labels: Sequence[str] | None = None,
         protect_from_deletion: bool = False,
-        open_for_everyone: bool = False,
         introspect: bool = False,
         table_name: str | None = None,
         schema: str | None = None,
@@ -120,7 +119,6 @@ class AlembicVersionMetaTable:
             namespace=resolved_namespace,
             description=resolved_description,
             protect_from_deletion=protect_from_deletion,
-            open_for_everyone=open_for_everyone,
             labels=list(labels or []),
             introspect=introspect,
             table_contract=MetaTableContract(
@@ -152,6 +150,7 @@ class AlembicVersionMetaTable:
         data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
+        on_registered: Callable[[type[Any], Any], Any] | None = None,
         **kwargs: Any,
     ) -> MetaTable:
         request = cls.build_registration_request(
@@ -160,6 +159,8 @@ class AlembicVersionMetaTable:
             **kwargs,
         )
         meta_table = MetaTable.register(request, timeout=timeout)
+        if on_registered is not None:
+            on_registered(cls, meta_table)
         cls._bind_meta_table(meta_table)
         return meta_table
 
@@ -259,11 +260,13 @@ class AlembicMetaTableMigration:
         data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
+        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
         return self.alembic_registry.register(
             data_source=data_source,
             data_source_uid=data_source_uid,
             timeout=timeout,
+            on_registered=on_metatable_registered,
         )
 
     def ensure_alembic_registry(
@@ -272,6 +275,7 @@ class AlembicMetaTableMigration:
         data_source: DynamicTableDataSource | None = None,
         data_source_uid: str | None = None,
         timeout: int | float | tuple[float, float] | None = None,
+        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
         meta_table = self.alembic_registry.get_meta_table()
         if meta_table is not None:
@@ -280,6 +284,7 @@ class AlembicMetaTableMigration:
             data_source=data_source,
             data_source_uid=data_source_uid,
             timeout=timeout,
+            on_metatable_registered=on_metatable_registered,
         )
 
     def sync_metatable_catalog(
@@ -287,6 +292,7 @@ class AlembicMetaTableMigration:
         *,
         timeout: int | float | tuple[float, float] | None = None,
         create_table: bool = False,
+        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
     ) -> list[Any]:
         registered: list[Any] = []
         data_source_uid = self._resolve_provider_data_source_uid()
@@ -300,6 +306,8 @@ class AlembicMetaTableMigration:
                 )
                 meta_table_cls = _metatable_resource_class_for_model(model)
                 meta_table = meta_table_cls.register(request, timeout=timeout)
+                if on_metatable_registered is not None:
+                    on_metatable_registered(model, meta_table)
                 _bind_model_to_existing_metatable(model, meta_table)
                 registered.append(meta_table)
         if self.after_register_metatables is not None:
@@ -310,13 +318,23 @@ class AlembicMetaTableMigration:
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+        on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
     ) -> list[Any]:
-        return self.sync_metatable_catalog(timeout=timeout, create_table=False)
+        return self.sync_metatable_catalog(
+            timeout=timeout,
+            create_table=False,
+            on_metatable_registered=on_metatable_registered,
+        )
 
     def prepare_for_alembic(
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+        on_metatable_reservation_request: Callable[
+            [Sequence[type[Any]], Sequence[ManagedMetaTableReservationTable]], Any
+        ]
+        | None = None,
+        on_metatable_reserved: Callable[[type[Any], Any], Any] | None = None,
     ) -> PreparedAlembicMetaTableMigration:
         data_source_uid = self._resolve_provider_data_source_uid()
         reserved_by_model: dict[type[Any], Any] = {}
@@ -324,7 +342,12 @@ class AlembicMetaTableMigration:
         owner_role_name: str | None = None
 
         ordered_models = _reservation_order(self.metatable_models)
+        target_identifiers = {
+            model: resolve_metatable_identifier(model) for model in ordered_models
+        }
         with platform_managed_migration_registration_context():
+            pending_models: list[type[Any]] = []
+            pending_tables: list[ManagedMetaTableReservationTable] = []
             for model in ordered_models:
                 if model in reserved_by_model:
                     continue
@@ -342,29 +365,40 @@ class AlembicMetaTableMigration:
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
                     _target_meta_tables=reserved_by_model,
+                    _target_identifiers=target_identifiers,
                     enforce_storage_hash_name=False,
                 )
-                reservation_table = _reservation_table_from_registration_request(request)
+                pending_models.append(model)
+                pending_tables.append(_reservation_table_from_registration_request(request))
+
+            if pending_tables:
+                reservation_request = ManagedMetaTableReservationRequest(
+                    tables=pending_tables,
+                )
+                if on_metatable_reservation_request is not None:
+                    on_metatable_reservation_request(
+                        pending_models,
+                        reservation_request.tables,
+                    )
                 response = MetaTable.reserve_managed(
-                    ManagedMetaTableReservationRequest(
-                        tables=[reservation_table],
-                    ),
+                    reservation_request,
                     timeout=timeout,
                 )
-                if len(response.tables) != 1:
-                    model_name = getattr(model, "__qualname__", repr(model))
+                if len(response.tables) != len(pending_models):
                     raise RuntimeError(
-                        "MetaTable reservation expected one response row for "
-                        f"{model_name}; got {len(response.tables)}."
+                        "MetaTable reservation response row count mismatch; "
+                        f"requested {len(pending_models)}, got {len(response.tables)}."
                     )
-                item = response.tables[0]
-                _bind_model_to_existing_metatable(model, item)
-                _bind_backend_contract_names(model, item.table_contract)
-                reserved_by_model[model] = item
-                reserved_tables.append(item)
-                item_owner_role_name = getattr(item, "owner_role_name", None)
-                if item_owner_role_name not in (None, ""):
-                    owner_role_name = str(item_owner_role_name)
+                for model, item in zip(pending_models, response.tables, strict=True):
+                    if on_metatable_reserved is not None:
+                        on_metatable_reserved(model, item)
+                    _bind_model_to_existing_metatable(model, item)
+                    _bind_backend_contract_names(model, item.table_contract)
+                    reserved_by_model[model] = item
+                    reserved_tables.append(item)
+                    item_owner_role_name = getattr(item, "owner_role_name", None)
+                    if item_owner_role_name not in (None, ""):
+                        owner_role_name = str(item_owner_role_name)
 
         meta_table_uids = []
         for model in ordered_models:
@@ -601,7 +635,6 @@ def _reservation_table_from_registration_request(
         description=getattr(request, "description", None),
         labels=list(getattr(request, "labels", None) or []),
         protect_from_deletion=bool(getattr(request, "protect_from_deletion", False)),
-        open_for_everyone=bool(getattr(request, "open_for_everyone", False)),
         table_contract=request.table_contract,
         time_index_name=getattr(request, "time_index_name", None),
         partition_strategy=getattr(request, "partition_strategy", None),

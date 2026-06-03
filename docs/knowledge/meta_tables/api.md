@@ -76,7 +76,6 @@ Request fields:
 | `description` | Optional discovery text. |
 | `labels` | Optional table labels. |
 | `protect_from_deletion` | Prevent accidental deletion through the platform. |
-| `open_for_everyone` | Organization-wide visibility when the caller is allowed to set it. |
 | `provisioning` | Platform-managed DDL options, such as `create_table` and `if_not_exists`. |
 | `introspect` | Ask the backend to refresh the physical metadata snapshot during registration. |
 | `table_contract` | Neutral relational contract. It does not include `data_source_uid`. |

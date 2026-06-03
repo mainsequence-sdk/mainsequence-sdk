@@ -296,14 +296,23 @@ class MetaTableIndexContract(BasePydanticModel):
 class MetaTableForeignKeyContract(BasePydanticModel):
     name: str | None = None
     source_columns: list[str] = Field(default_factory=list)
-    target_meta_table_uid: str = Field(
-        ...,
+    target_meta_table_uid: str | None = Field(
+        None,
         validation_alias=AliasChoices("target_meta_table_uid", "targetMetaTableUid"),
     )
+    target_identifier: str | None = None
     target_columns: list[str] = Field(default_factory=list)
     on_delete: str = "restrict"
 
     model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="after")
+    def _require_target(self) -> MetaTableForeignKeyContract:
+        if self.target_meta_table_uid in (None, "") and self.target_identifier in (None, ""):
+            raise ValueError(
+                "MetaTable foreign keys require target_meta_table_uid or target_identifier."
+            )
+        return self
 
 
 class MetaTableContract(BasePydanticModel):
@@ -465,7 +474,6 @@ class MetaTableRequestFields(BasePydanticModel):
     namespace: str | None = None
     description: str | None = None
     protect_from_deletion: bool = False
-    open_for_everyone: bool = False
     labels: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -534,10 +542,6 @@ class ManagedMetaTableReservationTable(MetaTableRequestFields):
         False,
         description="Whether the reserved MetaTable should be protected from deletion.",
     )
-    open_for_everyone: bool = Field(
-        False,
-        description="Whether the reserved MetaTable should be visible to everyone.",
-    )
     table_contract: MetaTableContract | dict[str, Any] = Field(
         ...,
         description=(
@@ -583,6 +587,10 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
         ...,
         description="Backend-confirmed management mode for this reservation.",
     )
+    provisioning_status: Literal["reserved", "active"] = Field(
+        ...,
+        description="First-class backend provisioning state for the reserved MetaTable.",
+    )
     storage_hash: str = Field(
         ...,
         description="Reserved storage hash for the MetaTable.",
@@ -597,10 +605,6 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
             "Backend-normalized contract containing resolved physical table, "
             "index, and foreign-key names."
         ),
-    )
-    reservation_status: str = Field(
-        ...,
-        description="Reservation lifecycle status returned by TS Manager.",
     )
     created: bool = Field(
         ...,
@@ -1031,6 +1035,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         "data_source__uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
         "management_mode": ["exact", "in"],
+        "provisioning_status": ["exact", "in"],
         "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
@@ -1078,6 +1083,7 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     description: str | None = None
     labels: list[str] = Field(default_factory=list)
     management_mode: MetaTableManagementMode
+    provisioning_status: Literal["reserved", "active"] = "active"
     physical_table_name: str
     table_contract: dict[str, Any] = Field(default_factory=dict)
     contract_version: str = "relational-table.v1"
@@ -1092,7 +1098,6 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     creation_date: datetime.datetime | None = None
     created_by_user_uid: str | None = None
     organization_owner_uid: str | None = None
-    open_for_everyone: bool = False
     registration: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(populate_by_name=True)
@@ -4532,6 +4537,7 @@ __all__ = [
     "MetaTableOperationScope",
     "MetaTableOperationScopeTable",
     "MetaTablePhysicalContract",
+    "MetaTableRequestFields",
     "MetaTableRegistrationRequest",
     "MetaTableStatementPayload",
     "MetaTableValidateContractRequest",

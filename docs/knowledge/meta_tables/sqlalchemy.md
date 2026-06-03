@@ -348,7 +348,6 @@ request = Asset.build_registration_request(
     labels=["assets", "reference"],
     description="Tradable asset master table.",
     protect_from_deletion=True,
-    open_for_everyone=False,
 )
 ```
 

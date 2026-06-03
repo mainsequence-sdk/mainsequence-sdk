@@ -441,36 +441,46 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
 
     reserved_payloads = []
+    reserved_events = []
 
     def fake_reserve_managed(request, *, timeout=None):
-        table = request.tables[0]
-        reserved_payloads.append(table)
-        if table.identifier == "Account":
-            uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-            physical_name = "mt_account_backend"
-            indexes = []
-            foreign_keys = []
-        else:
-            uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
-            physical_name = "mt_asset_backend"
-            indexes = [{"name": "mt_asset_symbol_idx", "columns": ["symbol"], "unique": False}]
-            foreign_keys = [
-                {
-                    "name": "asset_account_uid_fkey",
-                    "source_columns": ["account_uid"],
-                    "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    "target_columns": ["uid"],
-                    "on_delete": "cascade",
-                }
-            ]
-        return types.SimpleNamespace(
-            tables=[
+        reserved_payloads.extend(request.tables)
+        assert [table.identifier for table in request.tables] == ["Account", "Asset"]
+        assert (
+            request.tables[1].table_contract.foreign_keys[0].target_identifier
+            == "Account"
+        )
+        assert request.tables[1].table_contract.foreign_keys[0].target_meta_table_uid is None
+
+        response_tables = []
+        for table in request.tables:
+            if table.identifier == "Account":
+                uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+                physical_name = "mt_account_backend"
+                indexes = []
+                foreign_keys = []
+            else:
+                uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+                physical_name = "mt_asset_backend"
+                indexes = [{"name": "mt_asset_symbol_idx", "columns": ["symbol"], "unique": False}]
+                foreign_keys = [
+                    {
+                        "name": "asset_account_uid_fkey",
+                        "source_columns": ["account_uid"],
+                        "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "target_identifier": "Account",
+                        "target_columns": ["uid"],
+                        "on_delete": "cascade",
+                    }
+                ]
+            response_tables.append(
                 types.SimpleNamespace(
                     identifier=table.identifier,
                     namespace=table.namespace,
                     meta_table_uid=uid,
-                    data_source_uid=request.data_source_uid,
+                    data_source_uid="data-source-uid",
                     management_mode="platform_managed",
+                    provisioning_status="reserved",
                     storage_hash=table.storage_hash,
                     physical_table_name=physical_name,
                     table_contract={
@@ -480,10 +490,11 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
                         "indexes": indexes,
                         "foreign_keys": foreign_keys,
                     },
-                    reservation_status="reserved",
                     existing=False,
                 )
-            ]
+            )
+        return types.SimpleNamespace(
+            tables=response_tables
         )
 
     monkeypatch.setattr(MetaTable, "reserve_managed", staticmethod(fake_reserve_managed))
@@ -497,9 +508,18 @@ def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
         metatable_models=[Asset],
     )
 
-    prepared = migration.prepare_for_alembic(timeout=5)
+    prepared = migration.prepare_for_alembic(
+        timeout=5,
+        on_metatable_reserved=lambda model, item: reserved_events.append(
+            (model.__name__, item.identifier, item.physical_table_name)
+        ),
+    )
 
     assert [payload.identifier for payload in reserved_payloads] == ["Account", "Asset"]
+    assert reserved_events == [
+        ("Account", "Account", "mt_account_backend"),
+        ("Asset", "Asset", "mt_asset_backend"),
+    ]
     assert prepared.data_source_uid == "data-source-uid"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
