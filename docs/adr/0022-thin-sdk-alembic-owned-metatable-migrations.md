@@ -65,7 +65,10 @@ Keep `AlembicVersionMetaTable`.
 It remains the SDK class that registers a catalog pointer to Alembic's version
 table. It is not a migration ledger and it does not validate application table
 contracts. It exists so the platform can discover and display the Alembic
-version table through the MetaTable registry.
+version table through the MetaTable registry. Migration commands must force an
+idempotent backend registration for this pointer before issuing migration
+credentials; the SDK's in-memory bound `AlembicVersionMetaTable` object is only
+a cache and must not be treated as proof that the backend catalog row exists.
 
 Keep `AlembicMetaTableMigration`, but narrow its responsibility.
 

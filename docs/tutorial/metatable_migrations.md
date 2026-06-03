@@ -264,8 +264,10 @@ def downgrade() -> None:
 ## 3. Version Table Binding Is Automatic
 
 The provider's `AlembicVersionMetaTable` is registered automatically when a
-command needs backend migration state. `current` and `upgrade` call the same
-registration path before building status or apply requests.
+command needs backend migration state. `current` and `upgrade` force the same
+idempotent backend registration path before building status or apply requests;
+an in-memory bound Python object is only a cache and is never enough to prove
+that the backend `MetaTable` pointer still exists.
 
 Initial registration resolves the data source through the same resolver used by
 normal MetaTable registration. After registration, the bound

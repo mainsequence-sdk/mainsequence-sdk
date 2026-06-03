@@ -224,6 +224,42 @@ def test_alembic_metatable_migration_registers_registry_from_session_data_source
     assert ProjectAlembicVersion.get_data_source_uid() == "session-data-source-uid"
 
 
+def test_ensure_alembic_registry_forces_backend_registration_for_stale_cache(monkeypatch):
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = "stale-registry-uid"
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable__ = types.SimpleNamespace(
+            uid="stale-registry-uid",
+            data_source_uid="data-source-uid",
+        )
+
+    migration = AlembicMetaTableMigration(
+        package="msm",
+        migration_namespace="markets",
+        script_location="msm:alembic",
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+    captured = {}
+
+    def fake_register(request, *, timeout=None):
+        captured["request"] = request
+        captured["timeout"] = timeout
+        return types.SimpleNamespace(
+            uid="fresh-registry-uid",
+            data_source_uid=request.data_source_uid,
+        )
+
+    monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
+
+    meta_table = migration.ensure_alembic_registry(timeout=7)
+
+    assert captured["request"].data_source_uid == "data-source-uid"
+    assert captured["timeout"] == 7
+    assert meta_table.uid == "fresh-registry-uid"
+    assert ProjectAlembicVersion.get_meta_table_uid() == "fresh-registry-uid"
+
+
 def test_alembic_metatable_migration_requires_callable_after_register_hook():
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"

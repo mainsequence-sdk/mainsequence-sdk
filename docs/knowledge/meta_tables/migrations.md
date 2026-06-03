@@ -150,7 +150,9 @@ model moves or is renamed but should keep the same platform identity.
 `AlembicVersionMetaTable` registers a catalog pointer for Alembic's version
 table. It uses the minimal known `version_num` contract required by normal
 external MetaTable registration; Alembic and PostgreSQL remain responsible for
-the physical version table.
+the physical version table. Migration commands force this registration
+idempotently so the backend `MetaTable` pointer is recreated if it was deleted;
+the SDK class cache is not considered authoritative.
 
 The generated contract declares the Alembic revision column:
 

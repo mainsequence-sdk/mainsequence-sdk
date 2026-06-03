@@ -277,9 +277,6 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_registered: Callable[[type[Any], Any], Any] | None = None,
     ) -> MetaTable:
-        meta_table = self.alembic_registry.get_meta_table()
-        if meta_table is not None:
-            return meta_table
         return self.register_alembic_registry(
             data_source=data_source,
             data_source_uid=data_source_uid,
