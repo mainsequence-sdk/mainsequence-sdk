@@ -168,7 +168,10 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
 
     assert result.exit_code == 0
     assert captured["data_source_uid"] == "data-source-uid"
-    assert captured["connection_request"].meta_table_uids == ["meta-table-uid"]
+    assert captured["connection_request"].meta_table_uids == [
+        "registry-meta-table-uid",
+        "meta-table-uid",
+    ]
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
@@ -313,7 +316,10 @@ def test_migrations_upgrade_calls_alembic_and_refreshes_catalog(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert captured["connection_request"].meta_table_uids == ["meta-table-uid"]
+    assert captured["connection_request"].meta_table_uids == [
+        "registry-meta-table-uid",
+        "meta-table-uid",
+    ]
     assert captured["upgrade_revision"] == "head"
     assert captured["upgrade_url"] == "postgresql://temporary-secret"
     assert captured["refresh_timeout"] == 7.0

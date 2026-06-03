@@ -107,6 +107,32 @@ def _contract_physical_table_name(item: Any) -> Any:
     return getattr(physical, "table_name", None)
 
 
+def _meta_table_uid(item: Any) -> str | None:
+    if item is None:
+        return None
+    if isinstance(item, Mapping):
+        uid = item.get("meta_table_uid") or item.get("uid")
+    else:
+        uid = getattr(item, "meta_table_uid", None) or getattr(item, "uid", None)
+    if uid in (None, ""):
+        return None
+    return str(uid)
+
+
+def _include_alembic_registry_in_scope(
+    migration: AlembicMetaTableMigration,
+    prepared: Any,
+    registry_meta_table: Any,
+) -> None:
+    registry_meta_table = registry_meta_table or migration.alembic_registry.get_meta_table()
+    registry_uid = _meta_table_uid(registry_meta_table)
+    if registry_uid in (None, ""):
+        return
+    prepared.meta_table_uids = list(
+        dict.fromkeys([registry_uid, *list(prepared.meta_table_uids)])
+    )
+
+
 def _metatable_message(
     *,
     endpoint: str,
@@ -196,7 +222,7 @@ def _prepare_alembic_config(
     ttl_seconds: int,
 ) -> tuple[Any, Any]:
     _emit_status("Ensuring Alembic registry MetaTable...")
-    migration.ensure_alembic_registry(
+    registry_meta_table = migration.ensure_alembic_registry(
         timeout=timeout,
         on_metatable_registered=_emit_metatable_registration,
     )
@@ -207,6 +233,7 @@ def _prepare_alembic_config(
         on_metatable_reservation_status=_emit_status,
         on_metatable_reserved=_emit_metatable_reservation,
     )
+    _include_alembic_registry_in_scope(migration, prepared, registry_meta_table)
     _emit_status(
         "Prepared migration scope "
         f"data_source_uid={prepared.data_source_uid} "

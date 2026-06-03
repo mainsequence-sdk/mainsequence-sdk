@@ -225,9 +225,10 @@ prepared.data_source_uid
 prepared.owner_role_name
 ```
 
-The SDK sends `prepared.meta_table_uids` to the migration-connection endpoint so
-the backend can enforce table-level edit permissions before issuing a database
-credential.
+The SDK sends the Alembic registry MetaTable UID plus `prepared.meta_table_uids`
+to the migration-connection endpoint so the backend can enforce table-level edit
+permissions and prepare the owner role for both Alembic's version table and the
+provider tables before issuing a database credential.
 
 ## CLI Lifecycle
 

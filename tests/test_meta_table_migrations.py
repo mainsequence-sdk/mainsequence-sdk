@@ -372,11 +372,17 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
 
     config = alembic_config_for_provider(
         migration,
-        sqlalchemy_url="postgresql://temporary-secret",
+        sqlalchemy_url=(
+            "postgresql://temporary-secret"
+            "?application_name=mainsequence_alembic%3Amsm%3Amarkets"
+        ),
         owner_role_name="ms_owner",
     )
 
-    assert config.get_main_option("sqlalchemy.url") == "postgresql://temporary-secret"
+    assert config.get_main_option("sqlalchemy.url") == (
+        "postgresql://temporary-secret"
+        "?application_name=mainsequence_alembic%3Amsm%3Amarkets"
+    )
     assert config.get_main_option("version_table") == "alembic_version"
     assert config.get_main_option("version_table_schema") == "public"
     assert config.get_main_option("mainsequence.owner_role_name") == "ms_owner"

@@ -447,20 +447,25 @@ physical application tables:
 The backend returns canonical physical table, index, and FK names. The SDK binds
 those names into SQLAlchemy metadata before Alembic runs.
 
-Second, it requests a short-lived migration credential scoped to the reserved
-MetaTable UIDs:
+Second, it requests a short-lived migration credential scoped to the Alembic
+version MetaTable UID plus the reserved provider MetaTable UIDs:
 
 ```json
 {
   "purpose": "schema_migration",
   "package": "sdk_examples",
   "migration_namespace": "sdk-examples",
-  "meta_table_uids": ["reserved-metatable-uid"],
+  "meta_table_uids": [
+    "alembic-version-metatable-uid",
+    "reserved-metatable-uid"
+  ],
   "ttl_seconds": 900
 }
 ```
 
-The returned URI is secret. The CLI passes it to Alembic and does not print it.
+The Alembic version MetaTable is part of the scope because Alembic reads and
+writes its version table before it runs application DDL. The returned URI is
+secret. The CLI passes it to Alembic and does not print it.
 
 ## 9. Catalog Registration Scope
 

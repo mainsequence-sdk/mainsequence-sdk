@@ -540,7 +540,7 @@ def alembic_config_for_provider(
     if output_buffer is not None:
         config.output_buffer = output_buffer
     config.set_main_option("script_location", migration.script_location)
-    config.set_main_option("sqlalchemy.url", sqlalchemy_url)
+    config.set_main_option("sqlalchemy.url", sqlalchemy_url.replace("%", "%%"))
     config.set_main_option("version_table", migration.version_table)
     if migration.version_table_schema:
         config.set_main_option("version_table_schema", migration.version_table_schema)
