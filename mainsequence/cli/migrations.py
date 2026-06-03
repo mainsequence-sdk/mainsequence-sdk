@@ -25,6 +25,25 @@ REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
 RESERVE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/reserve-managed/"
 
 
+class _AlembicOutput:
+    def __init__(self) -> None:
+        self._chunks: list[str] = []
+
+    def write(self, data: str) -> int:
+        text = str(data)
+        self._chunks.append(text)
+        sys.stderr.write(text)
+        sys.stderr.flush()
+        return len(text)
+
+    def flush(self) -> None:
+        sys.stderr.flush()
+
+    @property
+    def has_visible_output(self) -> bool:
+        return any(chunk.strip() for chunk in self._chunks)
+
+
 def _emit_status(message: str) -> None:
     print(f"[mainsequence migrations] {message}", file=sys.stderr, flush=True)
 
@@ -220,12 +239,14 @@ def _prepare_alembic_config(
     *,
     timeout: float | None,
     ttl_seconds: int,
+    alembic_output: _AlembicOutput,
 ) -> tuple[Any, Any]:
     _emit_status("Ensuring Alembic registry MetaTable...")
     registry_meta_table = migration.ensure_alembic_registry(
         timeout=timeout,
         on_metatable_registered=_emit_metatable_registration,
     )
+
     _emit_status("Preparing platform-managed MetaTable reservations...")
     prepared = migration.prepare_for_alembic(
         timeout=timeout,
@@ -260,12 +281,18 @@ def _prepare_alembic_config(
         migration,
         sqlalchemy_url=connection.uri,
         owner_role_name=connection.owner_role_name or prepared.owner_role_name,
+        stdout=alembic_output,
+        output_buffer=alembic_output,
     )
     _emit_status("Alembic config built.")
     return prepared, config
 
 
-def _next_sequential_revision_id(migration: AlembicMetaTableMigration) -> str:
+def _next_sequential_revision_id(
+    migration: AlembicMetaTableMigration,
+    *,
+    alembic_output: _AlembicOutput,
+) -> str:
     _emit_status("Importing Alembic ScriptDirectory for revision id scan...")
     try:
         from alembic.script import ScriptDirectory
@@ -275,7 +302,12 @@ def _next_sequential_revision_id(migration: AlembicMetaTableMigration) -> str:
 
     _emit_status("Scanning Alembic revision directory for next sequential id...")
     script = ScriptDirectory.from_config(
-        alembic_config_for_provider(migration, sqlalchemy_url="postgresql://")
+        alembic_config_for_provider(
+            migration,
+            sqlalchemy_url="postgresql://",
+            stdout=alembic_output,
+            output_buffer=alembic_output,
+        )
     )
     heads = list(script.get_heads())
     if len(heads) > 1:
@@ -316,13 +348,20 @@ def current(
 
     command = _load_alembic_command("current")
     migration = _load_migration(provider)
+    alembic_output = _AlembicOutput()
     _, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
+        alembic_output=alembic_output,
     )
     _emit_status("Starting Alembic current now...")
     command.current(config, verbose=verbose)
+    if not alembic_output.has_visible_output:
+        _emit_status(
+            "Alembic current produced no revision output. The version table is "
+            "empty or Alembic found no current revision for this migration scope."
+        )
     _emit_status("Alembic current finished.")
 
 
@@ -355,11 +394,16 @@ def revision(
     command = _load_alembic_command("revision")
     migration = _load_migration(provider)
     resolved_message = (message or "").strip() or "migration"
-    resolved_rev_id = rev_id or _next_sequential_revision_id(migration)
+    alembic_output = _AlembicOutput()
+    resolved_rev_id = rev_id or _next_sequential_revision_id(
+        migration,
+        alembic_output=alembic_output,
+    )
     prepared, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
+        alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
     script = command.revision(
@@ -398,10 +442,12 @@ def upgrade(
 
     command = _load_alembic_command("upgrade")
     migration = _load_migration(provider)
+    alembic_output = _AlembicOutput()
     prepared, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
+        alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic upgrade now target={target_revision}...")
     command.upgrade(config, target_revision)
@@ -440,10 +486,12 @@ def downgrade(
 
     command = _load_alembic_command("downgrade")
     migration = _load_migration(provider)
+    alembic_output = _AlembicOutput()
     prepared, config = _prepare_alembic_config(
         migration,
         timeout=timeout,
         ttl_seconds=ttl_seconds,
+        alembic_output=alembic_output,
     )
     _emit_status(f"Starting Alembic downgrade now target={target_revision}...")
     command.downgrade(config, target_revision)

@@ -158,6 +158,9 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
         captured["sqlalchemy_url"] = config.get_main_option("sqlalchemy.url")
         captured["owner_role"] = config.get_main_option("mainsequence.owner_role_name")
         captured["verbose"] = verbose
+        captured["stdout"] = config.stdout
+        captured["output_buffer"] = config.output_buffer
+        config.print_stdout("fake alembic current output")
 
     monkeypatch.setattr(command, "current", fake_current)
 
@@ -175,8 +178,11 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
+    assert captured["stdout"] is not None
+    assert captured["output_buffer"] is not None
     assert "temporary-secret" not in result.output
     output = _combined_output(result)
+    assert "fake alembic current output" in output
     assert (
         "[mainsequence migrations] Importing Alembic command module for current..."
         in output
