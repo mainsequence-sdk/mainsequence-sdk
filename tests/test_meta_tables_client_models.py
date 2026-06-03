@@ -79,9 +79,7 @@ def test_metatable_identifier_field_descriptions_state_org_global_uniqueness():
 
     assert (
         expected
-        in meta_table_models.MetaTableRegistrationRequest.model_fields[
-            "identifier"
-        ].description
+        in meta_table_models.MetaTableRegistrationRequest.model_fields["identifier"].description
     )
     assert expected in meta_table_models.MetaTable.model_fields["identifier"].description
     assert (
@@ -220,7 +218,7 @@ def test_meta_table_execute_operation_serializes_scope_uid(monkeypatch):
     }
 
 
-def test_meta_table_apply_migration_posts_alembic_sql_artifact(monkeypatch):
+def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
@@ -228,89 +226,92 @@ def test_meta_table_apply_migration_posts_alembic_sql_artifact(monkeypatch):
         return _Response(
             {
                 "ok": True,
-                "version": meta_table_models.ALEMBIC_MIGRATION_V1,
-                "status": "validated",
-                "dry_run": True,
-                "alembic_version_meta_table_uid": ("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-                "alembic_version_table": "public.alembic_version",
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                "package": "msm",
-                "migration_namespace": "markets",
-                "revision": "001",
-                "direction": "upgrade",
-                "previous_revision": None,
-                "previous_revisions": [],
-                "current_revision": "001",
-                "current_revisions": ["001"],
-                "executed_statement_count": 0,
-                "error": None,
+                "dialect": "postgresql",
+                "credential_kind": "runtime",
+                "role_name": "ms_runtime",
+                "owner_role_name": "ms_owner",
+                "expires_at": "2026-06-02T12:00:00Z",
+                "uri": "postgresql://temporary-secret",
             }
         )
 
     monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
     monkeypatch.setattr(
-        meta_table_models.MetaTable,
+        meta_table_models.DynamicTableDataSource,
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
 
-    result = meta_table_models.MetaTable.apply_migration(
-        meta_table_models.AlembicMigrationOperation(
-            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    data_source = meta_table_models.DynamicTableDataSource(
+        uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        id=1,
+        related_resource={
+            "uid": "physical-data-source",
+            "data_source_uid": "physical-data-source",
+            "id": 10,
+            "display_name": "project-db",
+            "organization": None,
+            "organization_uid": None,
+            "class_type": "POSTGRES",
+            "status": "AVAILABLE",
+        },
+        related_resource_class_type="POSTGRES",
+    )
+    result = data_source.issue_migration_connection(
+        meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
             package="msm",
             migration_namespace="markets",
-            revision="001",
-            expected_current_revision=None,
-            manifest={"revision": "001"},
-            sql="CREATE TABLE asset (uid uuid PRIMARY KEY);",
-            statement_boundaries=[{"statement_index": 0, "start_line": 1, "end_line": 1}],
-            dry_run=True,
+            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+            ttl_seconds=60,
         )
     )
 
     assert result.ok is True
-    assert result.alembic_version_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert result.alembic_version_table == "public.alembic_version"
-    assert result.current_revision == "001"
+    assert result.uri == "postgresql://temporary-secret"
+    assert result.owner_role_name == "ms_owner"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/apply-migration/")
-    assert captured["payload"]["json"]["version"] == meta_table_models.ALEMBIC_MIGRATION_V1
-    assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert captured["url"].endswith(
+        "/ts_manager/dynamic_table_data_source/"
+        "dddddddd-dddd-4ddd-8ddd-dddddddddddd/migration-connection/"
     )
-    assert "data_source_uid" not in captured["payload"]["json"]
-    assert captured["payload"]["json"]["sql"] == ("CREATE TABLE asset (uid uuid PRIMARY KEY);")
-    assert captured["payload"]["json"]["dry_run"] is True
-    removed_payload_keys = [
-        "affected" + "_tables",
-        "old" + "_contract_hashes",
-        "new" + "_contract_hashes",
-        "idempotency" + "_key",
-        "lock" + "_key",
-        "manifest" + "_sha256",
-        "sql" + "_sha256",
-    ]
-    for key in removed_payload_keys:
-        assert key not in captured["payload"]["json"]
+    assert captured["payload"]["json"] == {
+        "purpose": "schema_migration",
+        "package": "msm",
+        "migration_namespace": "markets",
+        "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+        "ttl_seconds": 60,
+    }
 
 
-def test_meta_table_get_migration_status_posts_alembic_scope(monkeypatch):
+def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):
         captured.update(kwargs)
         return _Response(
             {
-                "ok": True,
-                "version": meta_table_models.ALEMBIC_MIGRATION_V1,
-                "alembic_version_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "alembic_version_table": "public.alembic_version",
-                "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-                "package": "msm",
-                "migration_namespace": "markets",
-                "current_revision": "001",
-                "current_revisions": ["001"],
-                "error": None,
+                "version": "managed-metatable-reservation.v1",
+                "tables": [
+                    {
+                        "identifier": "Asset",
+                        "namespace": "example.assets",
+                        "meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                        "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                        "management_mode": "platform_managed",
+                        "storage_hash": "mt_asset_hash",
+                        "physical_table_name": "mt_asset_physical",
+                        "table_contract": {
+                            "version": "relational-table.v1",
+                            "physical": {"table_name": "mt_asset_physical"},
+                            "columns": [],
+                            "indexes": [{"name": "mt_asset_symbol_idx", "columns": ["symbol"]}],
+                            "foreign_keys": [],
+                        },
+                        "reservation_status": "reserved",
+                        "existing": False,
+                    }
+                ],
             }
         )
 
@@ -321,58 +322,60 @@ def test_meta_table_get_migration_status_posts_alembic_scope(monkeypatch):
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
 
-    result = meta_table_models.MetaTable.get_migration_status(
-        {
-            "alembic_version_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            "package": "msm",
-            "migration_namespace": "markets",
-        }
+    result = meta_table_models.MetaTable.reserve_managed(
+        meta_table_models.ManagedMetaTableReservationRequest(
+            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            tables=[
+                meta_table_models.ManagedMetaTableReservationTable(
+                    identifier="Asset",
+                    namespace="example.assets",
+                    data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+                    storage_hash="mt_asset_hash",
+                    table_contract={
+                        "version": "relational-table.v1",
+                        "physical": {},
+                        "columns": [],
+                        "indexes": [{"columns": ["symbol"]}],
+                        "foreign_keys": [],
+                    },
+                )
+            ],
+        )
     )
 
-    assert result.current_revision == "001"
-    assert result.alembic_version_meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    assert result.current_revisions == ["001"]
+    assert result.tables[0].meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert result.tables[0].physical_table_name == "mt_asset_physical"
     assert captured["r_type"] == "POST"
-    assert captured["url"].endswith("/ts_manager/meta_table/migration-status/")
-    assert captured["payload"]["json"]["alembic_version_meta_table_uid"] == (
-        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-    )
-    assert "data_source_uid" not in captured["payload"]["json"]
+    assert captured["url"].endswith("/ts_manager/meta_table/reserve-managed/")
+    assert captured["payload"]["json"]["version"] == "managed-metatable-reservation.v1"
+    assert captured["payload"]["json"]["tables"][0]["management_mode"] == "platform_managed"
+    assert captured["payload"]["json"]["tables"][0]["table_contract"]["indexes"][0] == {
+        "columns": ["symbol"],
+        "unique": False,
+    }
 
 
-def test_alembic_migration_requests_reject_client_data_source_uid():
+def test_removed_alembic_artifact_client_models_are_not_public():
+    removed_names = [
+        "ALEMBIC_MIGRATION_V1",
+        "AlembicMigrationApplyResponse",
+        "AlembicMigrationOperation",
+        "AlembicMigrationStatusRequest",
+        "AlembicMigrationStatusResponse",
+    ]
+
+    for name in removed_names:
+        assert not hasattr(meta_table_models, name)
+    assert not hasattr(meta_table_models.MetaTable, "apply_migration")
+    assert not hasattr(meta_table_models.MetaTable, "get_migration_status")
+
+
+def test_migration_connection_request_validates_positive_ttl():
     with pytest.raises(ValidationError):
-        meta_table_models.AlembicMigrationStatusRequest(
-            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
+            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
+            ttl_seconds=0,
         )
-
-    with pytest.raises(ValidationError):
-        meta_table_models.AlembicMigrationOperation(
-            alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
-            revision="001",
-            manifest={"revision": "001"},
-            sql="SELECT 1;",
-        )
-
-
-def test_alembic_migration_responses_allow_missing_data_source_uid():
-    status = meta_table_models.AlembicMigrationStatusResponse(
-        ok=True,
-        alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        alembic_version_table="public.alembic_version",
-    )
-    apply = meta_table_models.AlembicMigrationApplyResponse(
-        ok=True,
-        alembic_version_meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        alembic_version_table="public.alembic_version",
-        revision="001",
-        direction="upgrade",
-    )
-
-    assert status.data_source_uid is None
-    assert apply.data_source_uid is None
 
 
 def test_meta_table_get_schema_graph_requests_incoming_edges(monkeypatch):

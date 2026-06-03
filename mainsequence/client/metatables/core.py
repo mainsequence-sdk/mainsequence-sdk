@@ -286,7 +286,7 @@ class MetaTableColumnContract(BasePydanticModel):
 
 
 class MetaTableIndexContract(BasePydanticModel):
-    name: str
+    name: str | None = None
     columns: list[str] = Field(default_factory=list)
     unique: bool = False
     method: str | None = None
@@ -485,6 +485,69 @@ class MetaTableValidateContractRequest(BasePydanticModel):
         if isinstance(self.table_contract, Mapping):
             self.table_contract = _normalize_contract_mapping(self.table_contract)
         return self
+
+
+class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
+    purpose: Literal["schema_migration"] = "schema_migration"
+    package: str = ""
+    migration_namespace: str = ""
+    meta_table_uids: list[str]
+    ttl_seconds: int = Field(default=900, ge=1)
+
+
+class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
+    ok: bool
+    data_source_uid: str
+    dialect: str
+    credential_kind: str
+    role_name: str
+    owner_role_name: str | None = None
+    expires_at: datetime.datetime
+    uri: str
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ManagedMetaTableReservationTable(BasePydanticModel):
+    identifier: str
+    namespace: str | None = None
+    data_source_uid: str | None = None
+    management_mode: Literal["platform_managed"] = "platform_managed"
+    storage_hash: str | None = None
+    physical_table_name: str | None = None
+    description: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    protect_from_deletion: bool = False
+    open_for_everyone: bool = False
+    table_contract: MetaTableContract | dict[str, Any]
+    time_index_name: str | None = None
+    partition_strategy: str | None = None
+
+
+class ManagedMetaTableReservationRequest(BasePydanticModel):
+    version: Literal["managed-metatable-reservation.v1"] = "managed-metatable-reservation.v1"
+    data_source_uid: str | None = None
+    tables: list[ManagedMetaTableReservationTable]
+
+
+class ManagedMetaTableReservationItem(BasePydanticModel):
+    identifier: str
+    namespace: str | None = None
+    meta_table_uid: str
+    data_source_uid: str
+    management_mode: str
+    storage_hash: str
+    physical_table_name: str
+    table_contract: dict[str, Any]
+    reservation_status: str
+    existing: bool
+
+    model_config = ConfigDict(extra="allow")
+
+
+class ManagedMetaTableReservationResponse(BasePydanticModel):
+    version: Literal["managed-metatable-reservation.v1"] = "managed-metatable-reservation.v1"
+    tables: list[ManagedMetaTableReservationItem]
 
 
 class DataSource(BasePydanticModel, BaseObjectOrm):
@@ -735,6 +798,44 @@ class DynamicTableDataSource(BasePydanticModel, BaseObjectOrm):
         dump = self.model_dump()
         dump["related_resource"] = self.related_resource.model_dump()
         return json.dumps(dump, **json_dumps_kwargs)
+
+    def _public_uid(self) -> str:
+        if self.uid in (None, ""):
+            raise ValueError("DynamicTableDataSource must have a uid before calling this endpoint.")
+        return str(self.uid)
+
+    def issue_migration_connection(
+        self,
+        request: DynamicTableDataSourceMigrationConnectionRequest | Mapping[str, Any] | None = None,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        **kwargs: Any,
+    ) -> DynamicTableDataSourceMigrationConnection:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = (
+            request
+            if request is not None
+            else DynamicTableDataSourceMigrationConnectionRequest(**kwargs)
+        )
+        if isinstance(payload, Mapping):
+            payload = DynamicTableDataSourceMigrationConnectionRequest(**payload)
+
+        url = (
+            f"{type(self).get_object_url().rstrip('/')}/{self._public_uid()}/migration-connection/"
+        )
+        request_payload = {"json": _payload_json(payload)}
+        response = make_request(
+            s=type(self).build_session(),
+            loaders=type(self).LOADERS,
+            r_type="POST",
+            url=url,
+            payload=request_payload,
+            time_out=timeout,
+        )
+        if response.status_code != 200:
+            raise_for_response(response, payload=request_payload)
+        return DynamicTableDataSourceMigrationConnection(**response.json())
 
     @classmethod
     def get_or_create_duck_db(cls, time_out=None, *args, **kwargs):
@@ -1067,6 +1168,25 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
             expected_statuses=(200, 201),
         )
         return cls(**response_json)
+
+    @classmethod
+    def reserve_managed(
+        cls,
+        request: ManagedMetaTableReservationRequest | Mapping[str, Any] | None = None,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+        **kwargs: Any,
+    ) -> ManagedMetaTableReservationResponse:
+        if request is not None and kwargs:
+            raise ValueError("Pass either request or keyword fields, not both.")
+        payload = request if request is not None else ManagedMetaTableReservationRequest(**kwargs)
+        response_json = cls._post_action(
+            "reserve-managed",
+            payload,
+            timeout=timeout,
+            expected_statuses=(200, 201),
+        )
+        return ManagedMetaTableReservationResponse(**response_json)
 
     @classmethod
     def validate_contract(
@@ -4291,12 +4411,18 @@ __all__ = [
     "DataNodeUpdateDetails",
     "DataSource",
     "DynamicTableDataSource",
+    "DynamicTableDataSourceMigrationConnection",
+    "DynamicTableDataSourceMigrationConnectionRequest",
     "DUCK_DB",
     "HistoricalUpdateRecord",
     "LastUpdateIndexTimePayload",
     "LastUpdateMultiIndexStatsPayload",
     "LOCAL_DATA_SOURCE_CLASS_TYPES",
     "LocalTimeSeriesHistoricalUpdate",
+    "ManagedMetaTableReservationItem",
+    "ManagedMetaTableReservationRequest",
+    "ManagedMetaTableReservationResponse",
+    "ManagedMetaTableReservationTable",
     "MetaTable",
     "MetaTableColumnContract",
     "MetaTableColumnPayload",

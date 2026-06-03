@@ -1,17 +1,19 @@
 from __future__ import annotations
 
-import datetime
 import importlib
 import textwrap
 import types
 import uuid
 
 import pytest
-from sqlalchemy import Column, DateTime, Integer, MetaData, String, Table, Uuid
+from sqlalchemy import Column, Index, Integer, MetaData, String, Table, Uuid
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.client.metatables import MetaTable, TimeIndexMetaData
-from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
+from mainsequence.client.metatables import MetaTable
+from mainsequence.meta_tables import (
+    MetaTableForeignKey,
+    PlatformManagedMetaTable,
+)
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
     DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
@@ -20,9 +22,9 @@ from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_TABLE_NAME,
     AlembicMetaTableMigration,
     AlembicVersionMetaTable,
+    alembic_config_for_provider,
+    apply_mainsequence_migration_role,
     load_alembic_metatable_migration_provider,
-    render_packaged_alembic_migration,
-    render_packaged_alembic_migration_for_provider,
 )
 
 
@@ -184,82 +186,7 @@ def test_alembic_metatable_migration_requires_callable_after_register_hook():
         )
 
 
-def test_alembic_metatable_migration_syncs_catalog_and_calls_after_register_hook(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
-        __metatable_data_source_uid__ = "data-source-uid"
-
-    events = []
-
-    class FirstModel:
-        __metatable_identifier__ = "global.first"
-
-        @classmethod
-        def _bind_meta_table(cls, meta_table):
-            events.append(("bind", "first", meta_table.uid))
-
-        @classmethod
-        def register(cls, *, timeout=None):
-            events.append(("first", timeout))
-            return types.SimpleNamespace(uid="first-uid")
-
-    class SecondModel:
-        __metatable_identifier__ = "global.second"
-
-        @classmethod
-        def _bind_meta_table(cls, meta_table):
-            events.append(("bind", "second", meta_table.uid))
-
-        @classmethod
-        def register(cls, *, timeout=None):
-            events.append(("second", timeout))
-            return types.SimpleNamespace(uid="second-uid")
-
-    def after_register(registered):
-        events.append(("hook", [meta_table.uid for meta_table in registered]))
-
-    migration = AlembicMetaTableMigration(
-        package="msm",
-        migration_namespace="markets",
-        script_location="msm:alembic",
-        target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
-        metatable_models=[FirstModel, SecondModel],
-        after_register_metatables=after_register,
-    )
-
-    filter_calls = []
-
-    def fake_filter(**kwargs):
-        filter_calls.append(kwargs)
-        return [
-            types.SimpleNamespace(
-                identifier="global.first",
-                uid="existing-first-uid",
-            )
-        ]
-
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
-
-    registered = migration.sync_metatable_catalog(timeout=15)
-
-    assert [meta_table.uid for meta_table in registered] == ["first-uid", "second-uid"]
-    assert filter_calls == [
-        {
-            "identifier__in": ["global.first", "global.second"],
-            "timeout": 15,
-        }
-    ]
-    assert events == [
-        ("bind", "first", "existing-first-uid"),
-        ("first", 15),
-        ("second", 15),
-        ("hook", ["first-uid", "second-uid"]),
-    ]
-
-
-def test_alembic_metatable_migration_registers_missing_platform_managed_model(
-    monkeypatch,
-):
+def test_alembic_metatable_migration_refreshes_catalog_without_create_table(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -273,6 +200,11 @@ def test_alembic_metatable_migration_registers_missing_platform_managed_model(
 
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
 
+    events = []
+
+    def after_register(registered):
+        events.append(("hook", [meta_table.uid for meta_table in registered]))
+
     migration = AlembicMetaTableMigration(
         package="msm",
         migration_namespace="markets",
@@ -280,15 +212,8 @@ def test_alembic_metatable_migration_registers_missing_platform_managed_model(
         target_metadata=Base.metadata,
         alembic_registry=ProjectAlembicVersion,
         metatable_models=[Asset],
+        after_register_metatables=after_register,
     )
-
-    filter_calls = []
-
-    def fake_filter(**kwargs):
-        filter_calls.append(kwargs)
-        return []
-
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
 
     captured = {}
 
@@ -304,258 +229,18 @@ def test_alembic_metatable_migration_registers_missing_platform_managed_model(
 
     monkeypatch.setattr(MetaTable, "register", staticmethod(fake_register))
 
-    resolved = migration.resolve_or_register_metatable_models(timeout=20)
+    registered = migration.refresh_metatable_catalog(timeout=15)
 
-    assert [meta_table.uid for meta_table in resolved] == ["asset-meta-table-uid"]
-    assert filter_calls == [
-        {
-            "identifier__in": ["markets.Asset"],
-            "timeout": 20,
-        }
-    ]
+    assert [meta_table.uid for meta_table in registered] == ["asset-meta-table-uid"]
+    assert captured["timeout"] == 15
     assert captured["request"].identifier == "markets.Asset"
-    assert captured["timeout"] == 20
+    assert captured["request"].provisioning == {
+        "create_table": False,
+        "if_not_exists": True,
+    }
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
-    assert Asset.get_physical_table_name() == "mt_asset"
     assert Asset.__table__.name == "mt_asset"
-
-
-def test_alembic_metatable_migration_bulk_resolves_existing_models(monkeypatch):
-    class Base(DeclarativeBase):
-        metadata = MetaData()
-
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
-        __metatable_data_source_uid__ = "data-source-uid"
-
-    class Asset(PlatformManagedMetaTable, Base):
-        __metatable_namespace__ = "markets"
-        __metatable_identifier__ = "markets.Asset"
-        __metatable_data_source_uid__ = "data-source-uid"
-
-        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-
-    class Account(PlatformManagedMetaTable, Base):
-        __metatable_namespace__ = "markets"
-        __metatable_identifier__ = "markets.Account"
-        __metatable_data_source_uid__ = "data-source-uid"
-
-        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
-        account_number: Mapped[int] = mapped_column(Integer)
-
-    migration = AlembicMetaTableMigration(
-        package="msm",
-        migration_namespace="markets",
-        script_location="msm:alembic",
-        target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
-        metatable_models=[Asset, Account],
-    )
-
-    filter_calls = []
-
-    def fake_filter(**kwargs):
-        filter_calls.append(kwargs)
-        return [
-            types.SimpleNamespace(
-                identifier="markets.Asset",
-                uid="asset-meta-table-uid",
-                data_source_uid="data-source-uid",
-                storage_hash="asset-storage-hash",
-                physical_table_name="mt_asset",
-            ),
-            types.SimpleNamespace(
-                identifier="markets.Account",
-                uid="account-meta-table-uid",
-                data_source_uid="data-source-uid",
-                storage_hash="account-storage-hash",
-                physical_table_name="mt_account",
-            ),
-        ]
-
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(fake_filter))
-    monkeypatch.setattr(
-        MetaTable,
-        "register",
-        staticmethod(lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError())),
-    )
-
-    events = []
-    resolved = migration.resolve_or_register_metatable_models(
-        timeout=30,
-        on_metatable_resolution=lambda model, identifier, status, meta_table: events.append(
-            (identifier, status, meta_table.uid)
-        ),
-    )
-
-    assert filter_calls == [
-        {
-            "identifier__in": ["markets.Asset", "markets.Account"],
-            "timeout": 30,
-        }
-    ]
-    assert [meta_table.uid for meta_table in resolved] == [
-        "asset-meta-table-uid",
-        "account-meta-table-uid",
-    ]
-    assert events == [
-        ("markets.Asset", "exists", "asset-meta-table-uid"),
-        ("markets.Account", "exists", "account-meta-table-uid"),
-    ]
-    assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
-    assert Account.get_meta_table_uid() == "account-meta-table-uid"
-
-
-def test_alembic_metatable_migration_bulk_resolves_time_index_models_with_dynamic_client(
-    monkeypatch,
-):
-    class Base(DeclarativeBase):
-        metadata = MetaData()
-
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
-        __metatable_data_source_uid__ = "data-source-uid"
-
-    class AccountHoldings(PlatformTimeIndexMetaData, Base):
-        __metatable_namespace__ = "markets"
-        __metatable_identifier__ = "markets.AccountHoldings"
-        __metatable_data_source_uid__ = "data-source-uid"
-        __time_index_name__ = "time_index"
-        __index_names__ = ["time_index", "unique_identifier"]
-
-        time_index: Mapped[datetime.datetime] = mapped_column(
-            DateTime(timezone=True),
-            nullable=False,
-        )
-        unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
-
-    migration = AlembicMetaTableMigration(
-        package="msm",
-        migration_namespace="markets",
-        script_location="msm:alembic",
-        target_metadata=Base.metadata,
-        alembic_registry=ProjectAlembicVersion,
-        metatable_models=[AccountHoldings],
-    )
-
-    filter_calls = []
-
-    def fake_time_index_filter(**kwargs):
-        filter_calls.append(kwargs)
-        return [
-            TimeIndexMetaData.model_construct(
-                identifier="markets.AccountHoldings",
-                uid="holdings-meta-table-uid",
-                data_source_uid="data-source-uid",
-                storage_hash="holdings-storage-hash",
-                physical_table_name="mt_holdings",
-            )
-        ]
-
-    monkeypatch.setattr(
-        TimeIndexMetaData,
-        "filter",
-        staticmethod(fake_time_index_filter),
-    )
-    monkeypatch.setattr(
-        MetaTable,
-        "filter",
-        staticmethod(lambda **kwargs: (_ for _ in ()).throw(AssertionError())),
-    )
-
-    resolved = migration.resolve_or_register_metatable_models(timeout=25)
-
-    assert filter_calls == [
-        {
-            "identifier__in": ["markets.AccountHoldings"],
-            "include_relations_detail": True,
-            "timeout": 25,
-        }
-    ]
-    assert [meta_table.uid for meta_table in resolved] == ["holdings-meta-table-uid"]
-    assert AccountHoldings.get_time_index_metadata() is resolved[0]
-    assert isinstance(AccountHoldings.get_time_index_metadata(), TimeIndexMetaData)
-
-
-def test_alembic_metatable_migration_does_not_call_hook_when_model_registration_fails(
-    monkeypatch,
-):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
-        __metatable_data_source_uid__ = "data-source-uid"
-
-    events = []
-
-    class FirstModel:
-        __metatable_identifier__ = "global.first"
-
-        @classmethod
-        def register(cls, *, timeout=None):
-            events.append(("first", timeout))
-            return types.SimpleNamespace(uid="first-uid")
-
-    class FailingModel:
-        __metatable_identifier__ = "global.failing"
-
-        @classmethod
-        def register(cls, *, timeout=None):
-            events.append(("failing", timeout))
-            raise RuntimeError("registration failed")
-
-    def after_register(registered):
-        events.append(("hook", registered))
-
-    migration = AlembicMetaTableMigration(
-        package="msm",
-        migration_namespace="markets",
-        script_location="msm:alembic",
-        target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
-        metatable_models=[FirstModel, FailingModel],
-        after_register_metatables=after_register,
-    )
-
-    monkeypatch.setattr(MetaTable, "filter", staticmethod(lambda **kwargs: []))
-
-    with pytest.raises(RuntimeError, match="registration failed"):
-        migration.sync_metatable_catalog(timeout=15)
-
-    assert events == [
-        ("first", 15),
-        ("failing", 15),
-    ]
-
-
-def test_alembic_metatable_migration_fails_on_duplicate_identifier(monkeypatch):
-    class ProjectAlembicVersion(AlembicVersionMetaTable):
-        __metatable_data_source_uid__ = "data-source-uid"
-
-    class AssetModel:
-        __metatable_identifier__ = "global.asset"
-
-        @classmethod
-        def register(cls, *, timeout=None):
-            raise AssertionError("register should not run for duplicate identifiers")
-
-    migration = AlembicMetaTableMigration(
-        package="msm",
-        migration_namespace="markets",
-        script_location="msm:alembic",
-        target_metadata=MetaData(),
-        alembic_registry=ProjectAlembicVersion,
-        metatable_models=[AssetModel],
-    )
-
-    monkeypatch.setattr(
-        MetaTable,
-        "filter",
-        staticmethod(
-            lambda **kwargs: [
-                types.SimpleNamespace(uid="first"),
-                types.SimpleNamespace(uid="second"),
-            ]
-        ),
-    )
-
-    with pytest.raises(ValueError, match="not globally unique"):
-        migration.sync_metatable_catalog(timeout=15)
+    assert events == [("hook", ["asset-meta-table-uid"])]
 
 
 def test_load_alembic_metatable_migration_provider_by_reference(tmp_path, monkeypatch):
@@ -616,73 +301,162 @@ def test_apply_helpers_do_not_reintroduce_data_source_override():
     import mainsequence.meta_tables.migrations as migrations
 
     assert not hasattr(migrations, "get_migration_status")
+    assert not hasattr(migrations, "render_packaged_alembic_migration")
+    assert not hasattr(migrations, "render_packaged_alembic_migration_for_provider")
 
 
-def test_render_packaged_alembic_migration_builds_artifact(tmp_path, monkeypatch):
-    package_name = "sample_alembic_package"
-    _write_alembic_package(tmp_path, package_name)
-    monkeypatch.syspath_prepend(str(tmp_path))
-    importlib.invalidate_caches()
-
-    artifact = render_packaged_alembic_migration(
-        package=package_name,
-        migration_namespace="markets",
-        revision="0001_initial",
-        down_revision=None,
-        current_revision=None,
-        alembic_version_table="public.alembic_version",
-        statement_boundaries=[{"statement_index": 0, "start_line": 1, "end_line": 5}],
-    )
-
-    assert artifact.manifest == {
-        "package": package_name,
-        "migration_namespace": "markets",
-        "revision": "0001_initial",
-        "down_revision": None,
-        "direction": "upgrade",
-        "alembic_version_table": "public.alembic_version",
-    }
-    assert "CREATE TABLE public.asset" in artifact.sql
-    assert "INSERT INTO public.alembic_version" in artifact.sql
-    assert artifact.statement_boundaries == [{"statement_index": 0, "start_line": 1, "end_line": 5}]
-
-
-def test_render_packaged_alembic_migration_requires_current_revision_for_downgrade():
-    with pytest.raises(ValueError, match="current_revision is required"):
-        render_packaged_alembic_migration(
-            package="sample",
-            migration_namespace="markets",
-            revision="base",
-            direction="downgrade",
-        )
-
-
-def test_render_packaged_alembic_migration_for_provider_resolves_head(tmp_path, monkeypatch):
-    package_name = "provider_alembic_package"
-    _write_alembic_package(tmp_path, package_name)
-    monkeypatch.syspath_prepend(str(tmp_path))
-    importlib.invalidate_caches()
-
+def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     class ProjectAlembicVersion(AlembicVersionMetaTable):
         __metatable_data_source_uid__ = "data-source-uid"
 
     migration = AlembicMetaTableMigration(
-        package=package_name,
+        package="sample",
         migration_namespace="markets",
-        script_location=f"{package_name}:migrations",
+        script_location="sample:migrations",
         target_metadata=MetaData(),
         alembic_registry=ProjectAlembicVersion,
     )
 
-    artifact = render_packaged_alembic_migration_for_provider(
+    config = alembic_config_for_provider(
         migration,
-        revision="head",
-        current_revision=None,
+        sqlalchemy_url="postgresql://temporary-secret",
+        owner_role_name="ms_owner",
     )
 
-    assert artifact.manifest["revision"] == "0001_initial"
-    assert artifact.manifest["alembic_version_table"] == "public.alembic_version"
-    assert "CREATE TABLE public.asset" in artifact.sql
+    assert config.get_main_option("sqlalchemy.url") == "postgresql://temporary-secret"
+    assert config.get_main_option("version_table") == "alembic_version"
+    assert config.get_main_option("version_table_schema") == "public"
+    assert config.get_main_option("mainsequence.owner_role_name") == "ms_owner"
+    assert config.attributes["mainsequence_migration_provider"] is migration
+    assert config.attributes["target_metadata"] is migration.target_metadata
+    assert config.attributes["mainsequence_migration_owner_role_name"] == "ms_owner"
+
+
+def test_apply_mainsequence_migration_role_executes_quoted_set_role():
+    class FakeConnection:
+        def __init__(self):
+            self.statements = []
+
+        def execute(self, statement):
+            self.statements.append(str(statement))
+
+    class FakeConfig:
+        attributes = {"mainsequence_migration_owner_role_name": 'owner"role'}
+
+        def get_main_option(self, name):
+            return None
+
+    connection = FakeConnection()
+
+    apply_mainsequence_migration_role(connection, FakeConfig())
+
+    assert connection.statements == ['SET ROLE "owner""role"']
+
+
+def test_prepare_for_alembic_reserves_and_binds_backend_names(monkeypatch):
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Account(PlatformManagedMetaTable, Base):
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    class Asset(PlatformManagedMetaTable, Base):
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Asset"
+        __table_args__ = (Index(None, "symbol"),)
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+        account_uid: Mapped[uuid.UUID] = mapped_column(
+            Uuid,
+            MetaTableForeignKey(
+                Account,
+                column="uid",
+                name="asset_account_uid_fkey",
+                ondelete="CASCADE",
+            ),
+            nullable=False,
+        )
+        symbol: Mapped[str] = mapped_column(String(64), nullable=False)
+
+    reserved_payloads = []
+
+    def fake_reserve_managed(request, *, timeout=None):
+        table = request.tables[0]
+        reserved_payloads.append(table)
+        if table.identifier == "Account":
+            uid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            physical_name = "mt_account_backend"
+            indexes = []
+            foreign_keys = []
+        else:
+            uid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+            physical_name = "mt_asset_backend"
+            indexes = [{"name": "mt_asset_symbol_idx", "columns": ["symbol"], "unique": False}]
+            foreign_keys = [
+                {
+                    "name": "asset_account_uid_fkey",
+                    "source_columns": ["account_uid"],
+                    "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "target_columns": ["uid"],
+                    "on_delete": "cascade",
+                }
+            ]
+        return types.SimpleNamespace(
+            tables=[
+                types.SimpleNamespace(
+                    identifier=table.identifier,
+                    namespace=table.namespace,
+                    meta_table_uid=uid,
+                    data_source_uid=request.data_source_uid,
+                    management_mode="platform_managed",
+                    storage_hash=table.storage_hash,
+                    physical_table_name=physical_name,
+                    table_contract={
+                        "version": "relational-table.v1",
+                        "physical": {"table_name": physical_name},
+                        "columns": [],
+                        "indexes": indexes,
+                        "foreign_keys": foreign_keys,
+                    },
+                    reservation_status="reserved",
+                    existing=False,
+                )
+            ]
+        )
+
+    monkeypatch.setattr(MetaTable, "reserve_managed", staticmethod(fake_reserve_managed))
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Asset],
+    )
+
+    prepared = migration.prepare_for_alembic(timeout=5)
+
+    assert [payload.identifier for payload in reserved_payloads] == ["Account", "Asset"]
+    assert prepared.data_source_uid == "data-source-uid"
+    assert prepared.meta_table_uids == [
+        "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    ]
+    assert Account.__table__.name == "mt_account_backend"
+    assert Asset.__table__.name == "mt_asset_backend"
+    assert next(iter(Asset.__table__.indexes)).name == "mt_asset_symbol_idx"
+    assert next(iter(Asset.__table__.foreign_key_constraints)).name == ("asset_account_uid_fkey")
+    assert reserved_payloads[1].table_contract.foreign_keys[0].name == ("asset_account_uid_fkey")
 
 
 def _write_alembic_package(tmp_path, package_name: str) -> None:

@@ -99,15 +99,13 @@ def ensure_registered_storage_table(
     if storage_table.get_time_index_metadata() is None:
         raise ValueError(
             f"{context} storage_table is not registered. Run "
-            "`mainsequence migrations upgrade --provider <provider> --to head` "
+            "`mainsequence migrations upgrade --provider <provider> head` "
             "before using this DataNode storage table."
         )
 
     storage_metadata = storage_table.get_time_index_metadata()
     if storage_metadata is None:
-        raise ValueError(
-            f"{context} storage_table is missing TimeIndexMetaData metadata."
-        )
+        raise ValueError(f"{context} storage_table is missing TimeIndexMetaData metadata.")
     from mainsequence.client.metatables import TimeIndexMetaData
 
     if not isinstance(storage_metadata, TimeIndexMetaData):

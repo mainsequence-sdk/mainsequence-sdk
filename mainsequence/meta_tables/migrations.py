@@ -1,19 +1,15 @@
 from __future__ import annotations
 
 import importlib
-import io
 import pathlib
 import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
-from pydantic import Field
-
-from mainsequence.client.base import BasePydanticModel
 from mainsequence.client.metatables import (
-    AlembicMigrationDirection,
-    AlembicMigrationStatementBoundary,
+    ManagedMetaTableReservationRequest,
+    ManagedMetaTableReservationTable,
     MetaTable,
     MetaTableContract,
     MetaTablePhysicalContract,
@@ -24,6 +20,7 @@ from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
+    _metatable_foreign_key_target_models,
     _resolve_model_data_source_uid,
     platform_managed_migration_registration_context,
     resolve_metatable_identifier,
@@ -37,12 +34,12 @@ DEFAULT_ALEMBIC_VERSION_COLUMN_NAME = "version_num"
 DEFAULT_ALEMBIC_PROVIDER_REFERENCE = "mainsequence_migrations:migration"
 
 
-class PackagedAlembicMigrationArtifact(BasePydanticModel):
-    """Alembic-rendered SQL artifact ready to embed in an apply request."""
-
-    manifest: dict[str, Any]
-    sql: str
-    statement_boundaries: list[AlembicMigrationStatementBoundary] = Field(default_factory=list)
+@dataclass(slots=True)
+class PreparedAlembicMetaTableMigration:
+    data_source_uid: str
+    meta_table_uids: list[str]
+    reserved_tables: list[Any] = field(default_factory=list)
+    owner_role_name: str | None = None
 
 
 class AlembicVersionMetaTable:
@@ -268,23 +265,120 @@ class AlembicMetaTableMigration:
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
+        create_table: bool = False,
     ) -> list[Any]:
         registered: list[Any] = []
-        existing_meta_tables = _get_metatables_by_model_identifier(
-            self.metatable_models,
-            timeout=timeout,
-        )
+        data_source_uid = self._resolve_provider_data_source_uid()
         with platform_managed_migration_registration_context():
             for model in self.metatable_models:
-                self.resolve_or_register_metatable_model(
-                    model,
-                    timeout=timeout,
-                    existing_meta_tables_by_identifier=existing_meta_tables,
+                request = model.build_registration_request(
+                    data_source_uid=data_source_uid,
+                    provisioning={"create_table": create_table, "if_not_exists": True},
+                    _target_meta_tables=_bound_target_meta_tables(model),
+                    enforce_storage_hash_name=False,
                 )
-                registered.append(model.register(timeout=timeout))
+                meta_table_cls = _metatable_resource_class_for_model(model)
+                meta_table = meta_table_cls.register(request, timeout=timeout)
+                _bind_model_to_existing_metatable(model, meta_table)
+                registered.append(meta_table)
         if self.after_register_metatables is not None:
             self.after_register_metatables(registered)
         return registered
+
+    def refresh_metatable_catalog(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> list[Any]:
+        return self.sync_metatable_catalog(timeout=timeout, create_table=False)
+
+    def prepare_for_alembic(
+        self,
+        *,
+        timeout: int | float | tuple[float, float] | None = None,
+    ) -> PreparedAlembicMetaTableMigration:
+        data_source_uid = self._resolve_provider_data_source_uid()
+        reserved_by_model: dict[type[Any], Any] = {}
+        reserved_tables: list[Any] = []
+        owner_role_name: str | None = None
+
+        ordered_models = _reservation_order(self.metatable_models)
+        with platform_managed_migration_registration_context():
+            for model in ordered_models:
+                if model in reserved_by_model:
+                    continue
+                bound_meta_table = _bound_meta_table_for_model(model)
+                if bound_meta_table is not None and _meta_table_uid(bound_meta_table) not in (
+                    None,
+                    "",
+                ):
+                    table_contract = _meta_table_contract(bound_meta_table)
+                    if isinstance(table_contract, Mapping):
+                        _bind_backend_contract_names(model, table_contract)
+                    reserved_by_model[model] = bound_meta_table
+                    continue
+
+                request = model.build_registration_request(
+                    data_source_uid=data_source_uid,
+                    _target_meta_tables=reserved_by_model,
+                    enforce_storage_hash_name=False,
+                )
+                reservation_table = _reservation_table_from_registration_request(request)
+                response = MetaTable.reserve_managed(
+                    ManagedMetaTableReservationRequest(
+                        data_source_uid=data_source_uid,
+                        tables=[reservation_table],
+                    ),
+                    timeout=timeout,
+                )
+                if len(response.tables) != 1:
+                    model_name = getattr(model, "__qualname__", repr(model))
+                    raise RuntimeError(
+                        "MetaTable reservation expected one response row for "
+                        f"{model_name}; got {len(response.tables)}."
+                    )
+                item = response.tables[0]
+                _bind_model_to_existing_metatable(model, item)
+                _bind_backend_contract_names(model, item.table_contract)
+                reserved_by_model[model] = item
+                reserved_tables.append(item)
+                item_owner_role_name = getattr(item, "owner_role_name", None)
+                if item_owner_role_name not in (None, ""):
+                    owner_role_name = str(item_owner_role_name)
+
+        meta_table_uids = []
+        for model in ordered_models:
+            meta_table = reserved_by_model.get(model) or _bound_meta_table_for_model(model)
+            uid = _meta_table_uid(meta_table)
+            if uid not in (None, ""):
+                meta_table_uids.append(str(uid))
+        return PreparedAlembicMetaTableMigration(
+            data_source_uid=data_source_uid,
+            meta_table_uids=list(dict.fromkeys(meta_table_uids)),
+            reserved_tables=reserved_tables,
+            owner_role_name=owner_role_name,
+        )
+
+    def _resolve_provider_data_source_uid(self) -> str:
+        data_source_uids: list[str] = []
+        registry_uid = self.alembic_registry.get_data_source_uid()
+        if registry_uid not in (None, ""):
+            data_source_uids.append(str(registry_uid))
+        for model in self.metatable_models:
+            data_source_uids.append(_resolve_model_data_source_uid(model))
+
+        unique_data_source_uids = list(dict.fromkeys(data_source_uids))
+        if not unique_data_source_uids:
+            raise ValueError(
+                "AlembicMetaTableMigration requires a data source uid on the "
+                "alembic registry or at least one provider MetaTable model."
+            )
+        if len(unique_data_source_uids) > 1:
+            raise ValueError(
+                "AlembicMetaTableMigration models must share one data source uid; got "
+                f"{unique_data_source_uids!r}."
+            )
+        return unique_data_source_uids[0]
 
     def resolve_or_register_metatable_models(
         self,
@@ -292,29 +386,22 @@ class AlembicMetaTableMigration:
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_resolution: Callable[[type[Any], str, str, Any | None], Any] | None = None,
     ) -> list[Any]:
-        """Resolve provider-scoped models before SQL rendering.
+        """Reserve and bind provider-scoped models before Alembic runs."""
 
-        Platform-managed models are migration-first: missing catalog rows are
-        created through the existing backend registration path inside the
-        migration workflow, then bound to the returned physical table names.
-        """
-
-        resolved: list[Any] = []
-        existing_meta_tables = _get_metatables_by_model_identifier(
-            self.metatable_models,
-            timeout=timeout,
-        )
-        with platform_managed_migration_registration_context():
+        prepared = self.prepare_for_alembic(timeout=timeout)
+        reserved_by_identifier = {
+            _meta_table_identifier(item) or "": item for item in prepared.reserved_tables
+        }
+        if on_metatable_resolution is not None:
             for model in self.metatable_models:
-                meta_table = self.resolve_or_register_metatable_model(
+                identifier = resolve_metatable_identifier(model)
+                on_metatable_resolution(
                     model,
-                    timeout=timeout,
-                    existing_meta_tables_by_identifier=existing_meta_tables,
-                    on_metatable_resolution=on_metatable_resolution,
+                    identifier,
+                    "reserved",
+                    reserved_by_identifier.get(identifier) or _bound_meta_table_for_model(model),
                 )
-                if meta_table is not None:
-                    resolved.append(meta_table)
-        return resolved
+        return prepared.reserved_tables
 
     def resolve_or_register_metatable_model(
         self,
@@ -324,23 +411,25 @@ class AlembicMetaTableMigration:
         existing_meta_tables_by_identifier: Mapping[str, Any] | None = None,
         on_metatable_resolution: Callable[[type[Any], str, str, Any | None], Any] | None = None,
     ) -> Any | None:
-        identifier = resolve_metatable_identifier(model)
-        existing_meta_table = (
-            existing_meta_tables_by_identifier.get(identifier)
-            if existing_meta_tables_by_identifier is not None
-            else _get_metatable_by_model_identifier(model, timeout=timeout)
-        )
-        if existing_meta_table is not None:
-            _bind_model_to_existing_metatable(model, existing_meta_table)
-            if on_metatable_resolution is not None:
-                on_metatable_resolution(model, identifier, "exists", existing_meta_table)
-            return existing_meta_table
-        if _is_platform_managed_metatable_model(model):
-            meta_table = model.register(timeout=timeout)
-            if on_metatable_resolution is not None:
-                on_metatable_resolution(model, identifier, "registered", meta_table)
-            return meta_table
-        return None
+        if not _is_platform_managed_metatable_model(model):
+            return None
+        prepared = AlembicMetaTableMigration(
+            package=self.package,
+            migration_namespace=self.migration_namespace,
+            script_location=self.script_location,
+            target_metadata=self.target_metadata,
+            alembic_registry=self.alembic_registry,
+            metatable_models=[model],
+        ).prepare_for_alembic(timeout=timeout)
+        meta_table = prepared.reserved_tables[0] if prepared.reserved_tables else None
+        if on_metatable_resolution is not None:
+            on_metatable_resolution(
+                model,
+                resolve_metatable_identifier(model),
+                "reserved",
+                meta_table,
+            )
+        return meta_table
 
 
 def load_alembic_metatable_migration_provider(
@@ -376,31 +465,57 @@ def load_alembic_metatable_migration_provider(
     raise RuntimeError(message)
 
 
-def render_packaged_alembic_migration_for_provider(
+def alembic_config_for_provider(
     migration: AlembicMetaTableMigration,
     *,
-    revision: str,
-    direction: AlembicMigrationDirection = "upgrade",
-    current_revision: str | None = None,
-    sqlalchemy_url: str = "postgresql://",
-    statement_boundaries: Sequence[AlembicMigrationStatementBoundary] | None = None,
-) -> PackagedAlembicMigrationArtifact:
-    resolved_revision, down_revision = resolve_alembic_revision_metadata(
-        script_location=migration.script_location,
-        revision=revision,
-    )
-    return render_packaged_alembic_migration(
-        package=migration.package,
-        migration_namespace=migration.migration_namespace,
-        revision=resolved_revision,
-        down_revision=down_revision,
-        direction=direction,
-        current_revision=current_revision,
-        script_location=migration.script_location,
-        alembic_version_table=migration.alembic_version_table,
-        sqlalchemy_url=sqlalchemy_url,
-        statement_boundaries=statement_boundaries,
-    )
+    sqlalchemy_url: str,
+    owner_role_name: str | None = None,
+    stdout: Any | None = None,
+    output_buffer: Any | None = None,
+) -> Any:
+    try:
+        from alembic.config import Config
+    except ImportError as exc:
+        raise RuntimeError("Alembic is required for MetaTable migrations.") from exc
+
+    config = Config()
+    if stdout is not None:
+        config.stdout = stdout
+    if output_buffer is not None:
+        config.output_buffer = output_buffer
+    config.set_main_option("script_location", migration.script_location)
+    config.set_main_option("sqlalchemy.url", sqlalchemy_url)
+    config.set_main_option("version_table", migration.version_table)
+    if migration.version_table_schema:
+        config.set_main_option("version_table_schema", migration.version_table_schema)
+    if owner_role_name not in (None, ""):
+        config.set_main_option("mainsequence.owner_role_name", str(owner_role_name))
+        config.attributes["mainsequence_migration_owner_role_name"] = str(owner_role_name)
+    config.attributes["mainsequence_migration_provider"] = migration
+    config.attributes["target_metadata"] = migration.target_metadata
+    config.attributes["alembic_version_table"] = migration.alembic_version_table
+    config.attributes["version_table"] = migration.version_table
+    config.attributes["version_table_schema"] = migration.version_table_schema
+    return config
+
+
+def apply_mainsequence_migration_role(connection: Any, config: Any) -> None:
+    owner_role_name = None
+    attributes = getattr(config, "attributes", None)
+    if isinstance(attributes, Mapping):
+        owner_role_name = attributes.get("mainsequence_migration_owner_role_name")
+    if owner_role_name in (None, "") and hasattr(config, "get_main_option"):
+        owner_role_name = config.get_main_option("mainsequence.owner_role_name")
+    if owner_role_name in (None, ""):
+        return
+
+    try:
+        from sqlalchemy import text
+    except ImportError as exc:
+        raise RuntimeError("SQLAlchemy is required to apply the migration owner role.") from exc
+
+    escaped_role = str(owner_role_name).replace('"', '""')
+    connection.execute(text(f'SET ROLE "{escaped_role}"'))
 
 
 def resolve_alembic_revision_metadata(
@@ -423,106 +538,202 @@ def resolve_alembic_revision_metadata(
     return str(resolved.revision), _normalize_down_revision(resolved.down_revision)
 
 
-def render_packaged_alembic_migration(
-    *,
-    package: str,
-    migration_namespace: str,
-    revision: str,
-    down_revision: str | None = None,
-    direction: AlembicMigrationDirection = "upgrade",
-    current_revision: str | None = None,
-    script_location: str | None = None,
-    alembic_version_table: str = "public.alembic_version",
-    sqlalchemy_url: str = "postgresql://",
-    statement_boundaries: Sequence[AlembicMigrationStatementBoundary] | None = None,
-) -> PackagedAlembicMigrationArtifact:
-    """
-    Render an installed package's Alembic migration SQL without applying it.
+def _reservation_order(models: Sequence[type[Any]]) -> list[type[Any]]:
+    ordered: list[type[Any]] = []
+    visiting: set[type[Any]] = set()
+    visited: set[type[Any]] = set()
 
-    This is the programmatic equivalent of ``alembic upgrade <from>:<to> --sql``
-    for a packaged Alembic environment. The returned artifact contains only the
-    manifest, rendered SQL, and optional diagnostic statement boundaries;
-    callers still build the backend apply request separately.
-    """
+    def visit(model: type[Any]) -> None:
+        if model in visited:
+            return
+        if model in visiting:
+            model_name = getattr(model, "__qualname__", repr(model))
+            raise ValueError(f"MetaTable reservation cycle detected at {model_name}.")
+        visiting.add(model)
+        for target_model in _metatable_foreign_key_target_models(model):
+            visit(target_model)
+        visiting.remove(model)
+        visited.add(model)
+        if _is_platform_managed_metatable_model(model):
+            ordered.append(model)
 
-    if direction not in {"upgrade", "downgrade"}:
-        raise ValueError("direction must be 'upgrade' or 'downgrade'.")
+    for model in models:
+        visit(model)
+    return ordered
 
-    resolved_script_location = script_location or f"{package}:migrations"
-    revision_range = _alembic_revision_range(
-        direction=direction,
-        current_revision=current_revision,
-        down_revision=down_revision,
-        revision=revision,
-    )
-    rendered_sql = _render_alembic_sql(
-        script_location=resolved_script_location,
-        sqlalchemy_url=sqlalchemy_url,
-        revision_range=revision_range,
-        direction=direction,
-        alembic_version_table=alembic_version_table,
-    )
-    manifest = {
-        "package": package,
-        "migration_namespace": migration_namespace,
-        "revision": revision,
-        "down_revision": down_revision,
-        "direction": direction,
-        "alembic_version_table": alembic_version_table,
-    }
 
-    return PackagedAlembicMigrationArtifact(
-        manifest=manifest,
-        sql=rendered_sql,
-        statement_boundaries=list(statement_boundaries or []),
+def _reservation_table_from_registration_request(
+    request: Any,
+) -> ManagedMetaTableReservationTable:
+    return ManagedMetaTableReservationTable(
+        identifier=str(request.identifier),
+        namespace=request.namespace,
+        data_source_uid=getattr(request, "data_source_uid", None),
+        storage_hash=getattr(request, "storage_hash", None),
+        physical_table_name=_request_contract_physical_table_name(request),
+        description=getattr(request, "description", None),
+        labels=list(getattr(request, "labels", None) or []),
+        protect_from_deletion=bool(getattr(request, "protect_from_deletion", False)),
+        open_for_everyone=bool(getattr(request, "open_for_everyone", False)),
+        table_contract=request.table_contract,
+        time_index_name=getattr(request, "time_index_name", None),
+        partition_strategy=getattr(request, "partition_strategy", None),
     )
 
 
-def _render_alembic_sql(
-    *,
-    script_location: str,
-    sqlalchemy_url: str,
-    revision_range: str,
-    direction: AlembicMigrationDirection,
-    alembic_version_table: str,
-) -> str:
-    try:
-        from alembic import command
-        from alembic.config import Config
-    except ImportError as exc:
-        raise RuntimeError("Alembic is required to render packaged MetaTable migrations.") from exc
-
-    sql_buffer = io.StringIO()
-    message_buffer = io.StringIO()
-    config = Config()
-    config.stdout = message_buffer
-    config.output_buffer = sql_buffer
-    config.set_main_option("script_location", script_location)
-    config.set_main_option("sqlalchemy.url", sqlalchemy_url)
-    config.attributes["alembic_version_table"] = alembic_version_table
-
-    if direction == "upgrade":
-        command.upgrade(config, revision_range, sql=True)
-    else:
-        command.downgrade(config, revision_range, sql=True)
-
-    return sql_buffer.getvalue()
+def _request_contract_physical_table_name(request: Any) -> str | None:
+    table_contract = getattr(request, "table_contract", None)
+    if isinstance(table_contract, MetaTableContract):
+        return table_contract.physical.table_name
+    if isinstance(table_contract, Mapping):
+        physical = table_contract.get("physical")
+        if isinstance(physical, Mapping):
+            value = physical.get("table_name")
+            return str(value) if value not in (None, "") else None
+    return None
 
 
-def _alembic_revision_range(
-    *,
-    direction: AlembicMigrationDirection,
-    current_revision: str | None,
-    down_revision: str | None,
-    revision: str,
-) -> str:
-    if direction == "upgrade":
-        source_revision = current_revision if current_revision is not None else down_revision
-        return f"{source_revision or 'base'}:{revision}"
+def _bound_target_meta_tables(model: type[Any]) -> dict[type[Any], Any]:
+    targets: dict[type[Any], Any] = {}
+    for target_model in _metatable_foreign_key_target_models(model):
+        bound = _bound_meta_table_for_model(target_model)
+        if bound is not None:
+            targets[target_model] = bound
+    return targets
 
-    if current_revision is None:
-        raise ValueError("current_revision is required when rendering a downgrade.")
-    return f"{current_revision}:{revision}"
+
+def _bound_meta_table_for_model(model: type[Any]) -> Any | None:
+    get_meta_table = getattr(model, "get_meta_table", None)
+    if callable(get_meta_table):
+        meta_table = get_meta_table()
+        if meta_table is not None:
+            return meta_table
+    uid = getattr(model, "get_meta_table_uid", lambda: None)()
+    if uid not in (None, ""):
+        return model
+    return None
+
+
+def _bind_backend_contract_names(model: type[Any], table_contract: Mapping[str, Any]) -> None:
+    table = getattr(model, "__table__", None)
+    if table is None:
+        return
+    _bind_backend_index_names(table, table_contract.get("indexes") or [])
+    _bind_backend_foreign_key_names(table, table_contract.get("foreign_keys") or [])
+
+
+def _bind_backend_index_names(table: Any, index_contracts: Sequence[Any]) -> None:
+    indexes = list(getattr(table, "indexes", []) or [])
+    by_signature = _group_by_signature(indexes, _sqlalchemy_index_signature)
+    fallback_indexes = sorted(indexes, key=lambda index: getattr(index, "name", None) or "")
+    fallback_index = 0
+    for contract in index_contracts:
+        contract_dict = _contract_dict(contract)
+        name = contract_dict.get("name")
+        if name in (None, ""):
+            continue
+        signature = _contract_index_signature(contract_dict)
+        candidates = by_signature.get(signature) or []
+        index = candidates.pop(0) if candidates else None
+        if index is None and fallback_index < len(fallback_indexes):
+            index = fallback_indexes[fallback_index]
+            fallback_index += 1
+        if index is not None:
+            index.name = str(name)
+
+
+def _bind_backend_foreign_key_names(table: Any, foreign_key_contracts: Sequence[Any]) -> None:
+    constraints = list(getattr(table, "foreign_key_constraints", []) or [])
+    by_signature = _group_by_signature(constraints, _sqlalchemy_foreign_key_signature)
+    fallback_constraints = sorted(
+        constraints,
+        key=lambda constraint: getattr(constraint, "name", None) or "",
+    )
+    fallback_index = 0
+    for contract in foreign_key_contracts:
+        contract_dict = _contract_dict(contract)
+        name = contract_dict.get("name")
+        if name in (None, ""):
+            continue
+        signature = _contract_foreign_key_signature(contract_dict)
+        candidates = by_signature.get(signature) or []
+        constraint = candidates.pop(0) if candidates else None
+        if constraint is None and fallback_index < len(fallback_constraints):
+            constraint = fallback_constraints[fallback_index]
+            fallback_index += 1
+        if constraint is not None:
+            constraint.name = str(name)
+
+
+def _group_by_signature(
+    items: Sequence[Any], signature_fn: Callable[[Any], Any]
+) -> dict[Any, list[Any]]:
+    grouped: dict[Any, list[Any]] = {}
+    for item in items:
+        grouped.setdefault(signature_fn(item), []).append(item)
+    return grouped
+
+
+def _contract_dict(contract: Any) -> dict[str, Any]:
+    if hasattr(contract, "model_dump"):
+        return contract.model_dump(mode="json", exclude_none=True)
+    return dict(contract or {})
+
+
+def _sqlalchemy_index_signature(index: Any) -> tuple[Any, ...]:
+    columns = tuple(
+        str(column.name)
+        for column in list(getattr(index, "columns", []) or [])
+        if getattr(column, "name", None) not in (None, "")
+    )
+    expression = None if columns else str(index)
+    return (
+        columns,
+        bool(getattr(index, "unique", False)),
+        _sqlalchemy_index_method(index),
+        expression,
+    )
+
+
+def _contract_index_signature(contract: Mapping[str, Any]) -> tuple[Any, ...]:
+    columns = tuple(str(column) for column in contract.get("columns") or [])
+    expression = contract.get("expression")
+    return (
+        columns,
+        bool(contract.get("unique", False)),
+        contract.get("method"),
+        None if columns else expression,
+    )
+
+
+def _sqlalchemy_index_method(index: Any) -> str | None:
+    dialect_options = getattr(index, "dialect_options", None)
+    if isinstance(dialect_options, Mapping):
+        postgresql_options = dialect_options.get("postgresql")
+        if isinstance(postgresql_options, Mapping):
+            method = postgresql_options.get("using")
+            if method:
+                return str(method)
+    return None
+
+
+def _sqlalchemy_foreign_key_signature(constraint: Any) -> tuple[Any, ...]:
+    elements = list(getattr(constraint, "elements", []) or [])
+    on_delete = getattr(elements[0], "ondelete", None) if elements else None
+    on_delete = on_delete or getattr(constraint, "ondelete", None) or "restrict"
+    return (
+        tuple(str(element.parent.name) for element in elements),
+        tuple(str(element.column.name) for element in elements),
+        str(on_delete).lower(),
+    )
+
+
+def _contract_foreign_key_signature(contract: Mapping[str, Any]) -> tuple[Any, ...]:
+    return (
+        tuple(str(column) for column in contract.get("source_columns") or []),
+        tuple(str(column) for column in contract.get("target_columns") or []),
+        str(contract.get("on_delete") or "restrict").lower(),
+    )
 
 
 def _conventional_provider_refs(*, cwd: str | pathlib.Path | None = None) -> list[str]:
@@ -705,6 +916,24 @@ def _meta_table_identifier(meta_table: Any) -> str | None:
     return str(identifier)
 
 
+def _meta_table_uid(meta_table: Any) -> str | None:
+    if meta_table is None:
+        return None
+    if isinstance(meta_table, Mapping):
+        uid = meta_table.get("meta_table_uid") or meta_table.get("uid")
+    else:
+        uid = getattr(meta_table, "meta_table_uid", None) or getattr(meta_table, "uid", None)
+    if uid in (None, ""):
+        return None
+    return str(uid)
+
+
+def _meta_table_contract(meta_table: Any) -> Any:
+    if isinstance(meta_table, Mapping):
+        return meta_table.get("table_contract")
+    return getattr(meta_table, "table_contract", None)
+
+
 def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:
     if _is_platform_time_index_metatable_model(model):
         return TimeIndexMetaData
@@ -738,9 +967,9 @@ __all__ = [
     "DEFAULT_ALEMBIC_VERSION_NAMESPACE",
     "DEFAULT_ALEMBIC_VERSION_SCHEMA",
     "DEFAULT_ALEMBIC_VERSION_TABLE_NAME",
-    "PackagedAlembicMigrationArtifact",
+    "PreparedAlembicMetaTableMigration",
+    "alembic_config_for_provider",
+    "apply_mainsequence_migration_role",
     "load_alembic_metatable_migration_provider",
-    "render_packaged_alembic_migration_for_provider",
-    "render_packaged_alembic_migration",
     "resolve_alembic_revision_metadata",
 ]

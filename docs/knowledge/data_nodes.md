@@ -415,8 +415,9 @@ identifier, reuses the bound MetaTable metadata, and writes the target
 `Target.__table__.c.<column>`, or explicit target UID maps for
 platform-managed DataNode storage FKs.
 
-Do not provide foreign-key names for `MetaTableForeignKey(...)`. Platform-managed
-contracts omit FK names; the backend generates physical constraint names.
+`MetaTableForeignKey(name=...)` may be used when the project needs an explicit
+constraint name. If the name is omitted, backend reservation generates the
+canonical physical constraint name before Alembic runs.
 
 Log useful operational facts:
 

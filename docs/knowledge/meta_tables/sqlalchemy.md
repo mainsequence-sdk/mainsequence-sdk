@@ -115,7 +115,7 @@ migration = AlembicMetaTableMigration(
 Then run:
 
 ```bash
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
 Migration tooling calls the existing platform-managed registration path for
@@ -136,9 +136,9 @@ public SDK declaration. Migration-managed registration may rebind
 metadata. Migration tooling resolves parent targets and backend
 `MetaTable.uid` values before rendering SQL.
 
-Do not provide a foreign-key name. `MetaTableForeignKey(...)` rejects `name=...`
-for platform-managed MetaTables because the backend generates physical
-constraint names.
+You may provide an explicit foreign-key name with `MetaTableForeignKey(name=...)`.
+If you omit it, the SDK leaves the name unset and backend reservation returns
+the canonical physical constraint name before Alembic runs.
 
 ```python
 class Asset(PlatformManagedMetaTable, Base):

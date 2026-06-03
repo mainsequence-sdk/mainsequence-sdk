@@ -184,7 +184,7 @@ class PricesTable(PlatformTimeIndexMetaData, Base):
 
 Storage registration is migration-first. Add the storage model to the
 MetaTable migration provider and run `mainsequence migrations upgrade --provider
-... --to head`. Do not call `PricesTable.register()` directly and do not rely on
+... head`. Do not call `PricesTable.register()` directly and do not rely on
 DataNode construction to register storage tables.
 
 `PlatformTimeIndexMetaData.register()` remains SDK plumbing for the migration

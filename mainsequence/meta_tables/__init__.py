@@ -14,10 +14,6 @@ _LAZY_IMPORTS = {
     "AlembicVersionMetaTable": (".migrations", "AlembicVersionMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
     "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
-    "PackagedAlembicMigrationArtifact": (
-        ".migrations",
-        "PackagedAlembicMigrationArtifact",
-    ),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "BaseConfiguration": (".data_nodes", "BaseConfiguration"),
     "APIDataNode": (".data_nodes", "APIDataNode"),
@@ -77,17 +73,18 @@ _LAZY_IMPORTS = {
         ".sqlalchemy_contracts",
         "resolve_metatable_identifier",
     ),
-    "render_packaged_alembic_migration": (
+    "alembic_config_for_provider": (".migrations", "alembic_config_for_provider"),
+    "apply_mainsequence_migration_role": (
         ".migrations",
-        "render_packaged_alembic_migration",
-    ),
-    "render_packaged_alembic_migration_for_provider": (
-        ".migrations",
-        "render_packaged_alembic_migration_for_provider",
+        "apply_mainsequence_migration_role",
     ),
     "load_alembic_metatable_migration_provider": (
         ".migrations",
         "load_alembic_metatable_migration_provider",
+    ),
+    "PreparedAlembicMetaTableMigration": (
+        ".migrations",
+        "PreparedAlembicMetaTableMigration",
     ),
     "resolve_alembic_revision_metadata": (
         ".migrations",

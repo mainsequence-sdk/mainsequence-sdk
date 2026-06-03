@@ -170,7 +170,7 @@ class DailyRandomNumber(DataNode):
 The concrete `PlatformTimeIndexMetaData` model is the storage contract.
 MetaTable registration is migration-first. Add storage models to the selected
 MetaTable migration provider and run `mainsequence migrations upgrade --provider
-... --to head` before constructing or running nodes. Do not call
+... head` before constructing or running nodes. Do not call
 `StorageClass.register()` directly in bootstrap code.
 
 The SQLAlchemy model is the first-class schema declaration for the table:

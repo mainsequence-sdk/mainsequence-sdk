@@ -44,7 +44,7 @@ For platform-managed SDK storage classes, the public registration path is the
 MetaTable migration workflow:
 
 ```bash
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
 Do not call `StorageClass.register()` directly in application/bootstrap code.
@@ -464,7 +464,7 @@ For each old DataNode:
 12. [ ] Delete manual UID binding, manual `data_source_uid` threading, and direct register kwargs.
 13. [ ] Add contract tests comparing the storage columns/indexes to the frame returned by `update()`.
 14. [ ] Add an import smoke test for the library package.
-15. [ ] Run `mainsequence migrations upgrade --provider <provider> --to head` against an authenticated project to verify storage registration, then run one live update to verify row writes.
+15. [ ] Run `mainsequence migrations upgrade --provider <provider> head` against an authenticated project to verify storage registration, then run one live update to verify row writes.
 
 ## Validation Tests To Add
 

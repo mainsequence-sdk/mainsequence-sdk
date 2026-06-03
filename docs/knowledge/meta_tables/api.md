@@ -282,92 +282,27 @@ than `max_rows`, `truncated` is `true`.
 
 ## Migration Execution
 
-SDK call:
+MetaTable schema migrations are executed by Alembic. The SDK migration CLI is a
+thin adapter that:
 
-```python
-result = MetaTable.apply_migration(operation)
-```
+1. loads the selected `AlembicMetaTableMigration` provider;
+2. registers or resolves its `AlembicVersionMetaTable`;
+3. reserves provider-scoped platform-managed MetaTables;
+4. binds backend physical table, index, and FK names into SQLAlchemy metadata;
+5. asks the backend for a temporary scoped migration URI;
+6. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
 
-`operation` is an `AlembicMigrationOperation`. `result` is an
-`AlembicMigrationApplyResponse`.
-
-Backend route:
-
-```text
-POST /orm/api/ts_manager/meta_table/apply-migration/
-```
-
-Execution expects a `metatable-migration.v1` operation. The SDK builds that
-operation from the selected `AlembicMetaTableMigration` provider, which supplies
-the package, migration namespace, Alembic script location, target metadata, and
-`AlembicVersionMetaTable` binding.
-
-The operation carries an Alembic-rendered SQL artifact plus manifest metadata.
-It does not reference a client-defined SDK artifact table and it does not accept
-SDK custom operation plans.
-
-After a successful CLI `upgrade`, the SDK syncs provider-scoped application
-MetaTables on the client side by exact `identifier`. That catalog sync is not
-encoded as affected-table lists in the backend migration request, and it does
-not copy the Alembic version-table data source into application model
-registration. Each model registers through its own normal data-source binding.
-
-The request body contains the rendered SQL artifact directly:
-
-```json
-{
-  "version": "metatable-migration.v1",
-  "alembic_version_meta_table_uid": "uuid",
-  "package": "sdk_examples",
-  "migration_namespace": "sdk-examples",
-  "revision": "0002_add_account_status",
-  "down_revision": "0001_initial",
-  "direction": "upgrade",
-  "expected_current_revision": "0001_initial",
-  "manifest": {
-    "package": "sdk_examples",
-    "migration_namespace": "sdk-examples",
-    "revision": "0002_add_account_status",
-    "down_revision": "0001_initial",
-    "direction": "upgrade",
-    "alembic_version_table": "public.alembic_version"
-  },
-  "sql": "Alembic-rendered SQL text",
-  "statement_boundaries": [],
-  "dry_run": false
-}
-```
-
-`alembic_version_meta_table_uid` is the UID of the registered
-`AlembicVersionMetaTable` catalog binding for Alembic's version table. It is not
-the UID of the table being migrated. The backend resolves the target data
-source from this MetaTable, executes the SQL, and updates Alembic's version
-table; MetaTable catalog registration or refresh happens in a separate project
-tooling step scoped by `migration.metatable_models`.
-
-The apply request does not include affected-table lists, old/new contract
-hashes, SDK migration-row UIDs, custom operation names, idempotency keys, or
-lock keys.
-
-Status reads use:
-
-```python
-status = MetaTable.get_migration_status(
-    {
-        "alembic_version_meta_table_uid": alembic_version_meta_table.uid,
-        "package": migration.package,
-        "migration_namespace": migration.migration_namespace,
-    }
-)
-```
-
-`status` is an `AlembicMigrationStatusResponse`.
-
-Backend route:
+Backend coordination uses:
 
 ```text
-POST /orm/api/ts_manager/meta_table/migration-status/
+POST /orm/api/ts_manager/meta_table/reserve-managed/
+POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
 ```
+
+The backend does not receive an SDK-rendered SQL artifact and does not execute a
+client-defined migration operation. After a successful Alembic `upgrade`, the
+CLI refreshes provider-scoped MetaTable catalog rows with physical table
+creation disabled.
 
 ## Backend Capabilities
 
@@ -384,7 +319,7 @@ the requested operation:
 | `supports_compiled_update` | `update` operations |
 | `supports_compiled_upsert` | `upsert` operations |
 | `supports_compiled_delete` | `delete` operations |
-| `supports_table_migration` | `metatable-migration.v1` apply operations |
+| `supports_table_migration` | scoped Alembic migration connections |
 
 If a capability is missing, the backend returns a structured error instead of
 falling back to direct database access.

@@ -97,7 +97,7 @@ def _(value: type[Any]) -> Any:
     if uid in (None, ""):
         raise ValueError(
             "PlatformTimeIndexMetaData config value is not registered. Run "
-            "`mainsequence migrations upgrade --provider <provider> --to head` "
+            "`mainsequence migrations upgrade --provider <provider> head` "
             "before using it in DataNode configuration."
         )
 

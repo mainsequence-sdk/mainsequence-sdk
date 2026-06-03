@@ -1442,18 +1442,28 @@ def test_metatable_foreign_key_validates_target_column_before_sqlalchemy_import(
         sqlalchemy_contracts.MetaTableForeignKey(Account, column="uid")
 
 
-def test_metatable_foreign_key_rejects_names_before_sqlalchemy_import():
-    uid_column = FakeColumn("uid", Uuid(), primary_key=True)
-    account_table = FakeTable("account", columns=[uid_column])
-    account_table.c = {"uid": uid_column}
-    Account = _platform_model_class("Account", account_table)
+def test_metatable_foreign_key_allows_explicit_names_before_sqlalchemy_import():
+    pytest.importorskip("sqlalchemy")
 
-    with pytest.raises(ValueError, match="does not accept foreign-key names"):
-        sqlalchemy_contracts.MetaTableForeignKey(
-            Account,
-            column="uid",
-            name="asset_account_uid_fkey",
-        )
+    from sqlalchemy import MetaData, Uuid
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class Account(PlatformManagedMetaTable, Base):
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+
+    foreign_key = sqlalchemy_contracts.MetaTableForeignKey(
+        Account,
+        column="uid",
+        name="asset_account_uid_fkey",
+    )
+
+    assert foreign_key.name == "asset_account_uid_fkey"
 
 
 def test_metatable_foreign_key_metadata_drives_fk_contract_target_resolution():

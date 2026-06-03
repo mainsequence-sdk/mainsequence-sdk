@@ -80,7 +80,7 @@ def _require_platform_managed_migration_registration_context(model: type[Any]) -
     raise ValueError(
         "Platform-managed MetaTable "
         f"{identifier!r} is migration-managed and cannot be registered directly. "
-        "Run `mainsequence migrations upgrade --provider <provider> --to head`."
+        "Run `mainsequence migrations upgrade --provider <provider> head`."
     )
 
 
@@ -162,12 +162,6 @@ class MetaTableForeignKey:
         comment: str | None = None,
         **dialect_kw: Any,
     ) -> Any:
-        if name is not None:
-            raise ValueError(
-                "MetaTableForeignKey does not accept foreign-key names for "
-                "platform-managed MetaTables. The backend generates physical "
-                "constraint names."
-            )
         target_column = _resolve_metatable_foreign_key_target_column(
             target_model,
             column=column,
@@ -176,6 +170,7 @@ class MetaTableForeignKey:
         foreign_key_info[_METATABLE_FOREIGN_KEY_INFO_KEY] = {
             "target_model": target_model,
             "target_column": str(column),
+            "name": name,
         }
         return ForeignKey(
             target_column,
@@ -509,6 +504,15 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         from mainsequence.client.metatables import TimeIndexMetaData
 
         if not isinstance(meta_table, TimeIndexMetaData):
+            reservation_status = (
+                meta_table.get("reservation_status")
+                if isinstance(meta_table, Mapping)
+                else getattr(meta_table, "reservation_status", None)
+            )
+            if reservation_status is not None and _meta_table_uid(meta_table) not in (None, ""):
+                bound = PlatformManagedMetaTable._bind_meta_table.__func__(cls, meta_table)
+                cls.__time_index_metadata__ = bound
+                return bound
             meta_table = cls._resolve_time_index_metadata_for_bind(meta_table)
         bound = super()._bind_meta_table(meta_table)
         cls.__time_index_metadata__ = bound
@@ -527,9 +531,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
             return TimeIndexMetaData.get_by_uid(str(meta_table_uid))
         model_name = getattr(cls, "__qualname__", cls.__name__)
         received_type = type(meta_table).__name__
-        raise TypeError(
-            f"{model_name} requires TimeIndexMetaData binding; got {received_type}."
-        )
+        raise TypeError(f"{model_name} requires TimeIndexMetaData binding; got {received_type}.")
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -1326,7 +1328,9 @@ def _target_table_fullname(target: Any) -> str:
 
 
 def _target_meta_table_uid(meta_table: Any) -> str:
-    uid = getattr(meta_table, "uid", meta_table)
+    uid = _meta_table_uid(meta_table)
+    if uid is None and isinstance(meta_table, str):
+        uid = meta_table
     if uid in (None, ""):
         raise ValueError("Target MetaTable must be a uid string or an object with a non-empty uid.")
     return str(uid)
@@ -2234,12 +2238,11 @@ def _deduplicate_identity_dicts(items: Sequence[dict[str, Any]]) -> list[dict[st
 
 
 def _index_contract(index: Any) -> MetaTableIndexContract:
-    if not getattr(index, "name", None):
-        raise ValueError("MetaTable SQLAlchemy indexes must be explicitly named.")
+    index_name = getattr(index, "name", None)
     columns = _column_names(getattr(index, "columns", []))
     expression = None if columns else str(index)
     return MetaTableIndexContract(
-        name=str(index.name),
+        name=str(index_name) if index_name else None,
         columns=columns,
         unique=bool(getattr(index, "unique", False)),
         method=_index_method(index),
@@ -2297,13 +2300,13 @@ def _foreign_key_contract(
     else:
         target_meta_table_uid, target_columns = sdk_target
 
-    foreign_key_name = None
-    if not require_metatable_foreign_keys:
-        foreign_key_name = getattr(foreign_key_constraint, "name", None) or (
-            _derive_metatable_foreign_key_name(elements) if sdk_target is not None else None
-        )
-        if not foreign_key_name:
-            raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
+    foreign_key_name = (
+        _metatable_foreign_key_explicit_name(elements)
+        if sdk_target is not None
+        else getattr(foreign_key_constraint, "name", None)
+    )
+    if not require_metatable_foreign_keys and not foreign_key_name:
+        raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
 
     on_delete = getattr(elements[0], "ondelete", None) or getattr(
         foreign_key_constraint,
@@ -2357,12 +2360,21 @@ def _time_indexed_meta_table_foreign_key_contract(
     else:
         target_meta_table_uid, target_columns = sdk_target
 
+    foreign_key_name = (
+        _metatable_foreign_key_explicit_name(elements)
+        if sdk_target is not None
+        else getattr(foreign_key_constraint, "name", None)
+    )
+    if not require_metatable_foreign_keys and not foreign_key_name:
+        raise ValueError("MetaTable SQLAlchemy foreign keys must be explicitly named.")
+
     on_delete = getattr(elements[0], "ondelete", None) or getattr(
         foreign_key_constraint,
         "ondelete",
         None,
     )
     return MetaTableForeignKeyContract(
+        name=str(foreign_key_name) if foreign_key_name else None,
         source_columns=[str(element.parent.name) for element in elements],
         target_meta_table_uid=target_meta_table_uid,
         target_columns=target_columns,
@@ -2419,6 +2431,19 @@ def _metatable_foreign_key_metadata(element: Any) -> Mapping[str, Any] | None:
     if not isinstance(metadata, Mapping):
         raise ValueError("MetaTableForeignKey metadata must be a mapping.")
     return metadata
+
+
+def _metatable_foreign_key_explicit_name(elements: Sequence[Any]) -> str | None:
+    names = {
+        str(metadata.get("name"))
+        for metadata in (_metatable_foreign_key_metadata(element) for element in elements)
+        if metadata is not None and metadata.get("name") not in (None, "")
+    }
+    if not names:
+        return None
+    if len(names) > 1:
+        raise ValueError("Composite MetaTableForeignKey constraints must use one FK name.")
+    return next(iter(names))
 
 
 def _derive_metatable_foreign_key_name(elements: Sequence[Any]) -> str:

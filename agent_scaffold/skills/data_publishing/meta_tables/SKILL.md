@@ -113,9 +113,7 @@ The only migration workflow to recommend is the Main Sequence CLI lifecycle:
 ```bash
 mainsequence migrations current --provider mainsequence_migrations:migration
 mainsequence migrations revision --provider mainsequence_migrations:migration
-mainsequence migrations render --provider mainsequence_migrations:migration --to head
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
 ### 1. SQLAlchemy metadata is the authoring source
@@ -189,8 +187,8 @@ class Account(PlatformManagedMetaTable, Base):
 Registration metadata belongs on the class. Do not call `Account.register()`
 directly for platform-managed models. Add platform-managed models to the
 selected `AlembicMetaTableMigration.metatable_models` list and let
-`mainsequence migrations upgrade --provider ... --to head` resolve/register and
-bind them.
+`mainsequence migrations upgrade --provider ... head` reserve, migrate, refresh,
+and bind them.
 
 For platform-managed migration registration, the data source is resolved from
 the active Main Sequence project/session, the same way DataNode does. Do not
@@ -310,13 +308,11 @@ request shape is reference material in the tutorial; the user-facing path is:
 ```bash
 mainsequence migrations current --provider mainsequence_migrations:migration
 mainsequence migrations revision --provider mainsequence_migrations:migration
-mainsequence migrations render --provider mainsequence_migrations:migration --to head
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head --dry-run
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
-`current` and `upgrade` automatically register the provider's
-`AlembicVersionMetaTable` binding when backend migration state is needed.
+All migration commands prepare the provider, reserve provider-scoped
+platform-managed MetaTables, bind backend names, and call Alembic directly.
 `revision` accepts optional `-m/--message`; if omitted, the CLI uses
 `migration`. `revision --autogenerate` is optional and requires an explicit
 `--sqlalchemy-url` for the baseline database.

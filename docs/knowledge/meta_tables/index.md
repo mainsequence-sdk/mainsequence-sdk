@@ -85,7 +85,7 @@ Typical flow:
 
 1. Define SQLAlchemy models with `PlatformManagedMetaTable` or `__tablename__ = metatable_tablename(...)`.
 2. Add those models to `AlembicMetaTableMigration.metatable_models`.
-3. Run `mainsequence migrations upgrade --provider ... --to head`.
+3. Run `mainsequence migrations upgrade --provider ... head`.
 4. Migration tooling calls the existing registration path for missing models,
    TS Manager creates the initial physical tables, and Alembic applies schema
    evolution SQL.

@@ -53,36 +53,27 @@ The lifecycle is:
 ```text
 provider object
 -> Alembic revision from provider.target_metadata
--> Alembic renders SQL from provider.script_location
--> SDK sends the SQL artifact with provider package/namespace identity
--> TS Manager executes SQL
--> project tooling registers or refreshes provider.metatable_models
+-> SDK reserves provider.metatable_models and binds backend names
+-> SDK obtains a scoped migration database URI
+-> Alembic executes current/revision/upgrade directly
+-> project tooling refreshes provider.metatable_models
 ```
 
-The backend receives SQL rendered by Alembic from installed project code. It
-does not receive SDK custom operations such as `add_column`, and it does not
-receive an SDK migration artifact row.
+The backend does not receive SDK custom operations such as `add_column`, and it
+does not receive an SDK migration artifact row. It reserves MetaTable catalog
+rows and issues a temporary database credential; Alembic owns the migration
+execution.
 
-The CLI lifecycle intentionally separates four jobs:
+The CLI lifecycle intentionally separates three jobs:
 
-- `mainsequence migrations current` asks the backend what Alembic revision is
-  actually recorded in the target database. This prevents the client from
-  rendering SQL from an assumed revision and lets the backend resolve the target
-  data source from the registered Alembic version MetaTable.
+- `mainsequence migrations current` asks Alembic what revision is actually
+  recorded in the target database through a backend-issued scoped credential.
 - `mainsequence migrations revision` asks Alembic to write a normal revision
-  file for the selected provider. The standard path creates a revision file
-  that the developer fills with explicit `op.create_table(...)`,
-  `op.add_column(...)`, and downgrade operations.
-- `mainsequence migrations render` resolves or registers provider-scoped
-  platform-managed MetaTables, binds SQLAlchemy models to backend physical
-  names, then runs Alembic in offline SQL mode and prints the exact SQL artifact
-  that would be sent to TS Manager. This does not apply DDL, but it can create
-  missing platform-managed catalog rows because Alembic needs stable backend
-  physical names before rendering.
-- `mainsequence migrations upgrade` is the only command that sends the rendered
-  SQL to the backend. It dry-runs the same artifact first, applies it when not
-  run with `--dry-run`, then refreshes provider-scoped MetaTable catalog
-  bindings after the database schema has changed.
+  file for the selected provider. Autogenerate runs against metadata after
+  backend reservation has bound physical table, index, and FK names.
+- `mainsequence migrations upgrade` runs Alembic directly through the scoped
+  credential, then refreshes provider-scoped MetaTable catalog bindings after
+  the database schema has changed.
 
 ## 1. Define The Migration Provider
 
@@ -400,164 +391,90 @@ mainsequence migrations current \
 
 This command is needed because the source revision must come from the target
 database, not from the local filesystem or from the newest package revision.
-The backend reads Alembic state through the registered version-table MetaTable
-and reports the revision that SQL rendering must start from.
+The CLI prepares the provider, asks the backend for a scoped migration
+connection, and lets Alembic read the version table directly.
 
-Programmatically, this is the same status request the CLI builds from the
-provider:
+## 7. Apply With Alembic
 
-```python
-from mainsequence.client.metatables import AlembicMigrationStatusRequest, MetaTable
-from mainsequence.meta_tables.migrations import load_alembic_metatable_migration_provider
-
-
-migration = load_alembic_metatable_migration_provider("mainsequence_migrations:migration")
-alembic_version_meta_table = migration.ensure_alembic_registry()
-
-status = MetaTable.get_migration_status(
-    AlembicMigrationStatusRequest(
-        alembic_version_meta_table_uid=migration.alembic_registry.get_meta_table_uid(),
-        package=migration.package,
-        migration_namespace=migration.migration_namespace,
-    )
-)
-```
-
-Use `status.current_revision` as the source revision for rendering the next
-transition.
-
-## 7. Render SQL Without Applying
-
-Render the exact SQL artifact that would be sent to TS Manager:
-
-```bash
-mainsequence migrations render \
-  --provider mainsequence_migrations:migration \
-  --to head
-```
-
-This command is needed because Alembic revisions are Python migration code, but
-the backend execution contract accepts SQL. Rendering converts the revision
-range from `current` to `--to` into a concrete SQL artifact that can be
-inspected, logged, dry-run, and reused for apply.
-
-The provider determines:
-
-- revision script location
-- package and migration namespace
-- Alembic version table path
-- target metadata and inclusion hooks
-
-Programmatic rendering uses the provider-aware helper:
-
-```python
-from mainsequence.meta_tables.migrations import render_packaged_alembic_migration_for_provider
-
-
-artifact = render_packaged_alembic_migration_for_provider(
-    migration,
-    revision="head",
-    current_revision=status.current_revision,
-)
-```
-
-`artifact.sql` is what TS Manager executes. `artifact.manifest` is metadata for
-observability and revision checks; it is not a second migration language.
-
-The CLI `render` command resolves or registers missing provider-scoped
-platform-managed MetaTables before rendering so Alembic uses backend physical
-table names. It does not apply DDL.
-
-## 8. Dry-Run And Apply
-
-Validate the rendered artifact first:
+Apply the provider migration:
 
 ```bash
 mainsequence migrations upgrade \
   --provider mainsequence_migrations:migration \
-  --to head \
-  --dry-run
+  head
 ```
 
-`upgrade --dry-run` is needed because it validates the backend request, current
-revision precondition, registry binding, and SQL artifact without executing the
-DDL or running post-apply catalog refresh. It still resolves or registers
-missing provider-scoped platform-managed MetaTables before validation, because
-the SQL artifact must be rendered against backend physical table names.
+`upgrade` is the mutation path. It reserves provider-scoped MetaTables, binds
+backend physical table/index/FK names into SQLAlchemy metadata, obtains a
+temporary scoped database credential, and calls Alembic `upgrade` directly.
 
-Apply the same rendered artifact after validation and sync provider-scoped
-MetaTables:
-
-```bash
-mainsequence migrations upgrade \
-  --provider mainsequence_migrations:migration \
-  --to head
-```
-
-`upgrade` without `--dry-run` is needed because it is the single mutation path:
-it sends the Alembic-rendered SQL to TS Manager, waits for backend execution,
-then refreshes the SDK MetaTable catalog bindings for the models listed by the
-provider.
-
-The backend checks the current Alembic revision, executes the Alembic-rendered
-SQL transactionally when supported, and relies on Alembic SQL to update the
-physical `alembic_version` table. After SQL apply succeeds, the CLI refreshes
-only the MetaTables listed in `migration.metatable_models` by exact
+After Alembic succeeds, the CLI refreshes only the MetaTables listed in
+`migration.metatable_models` by exact
 `identifier`; the command succeeds only if both SQL execution and catalog sync
 succeed.
 
-## 9. Backend Request Shape For Reference
+## 8. Backend Coordination For Reference
 
 Users should normally apply migrations with `mainsequence migrations upgrade`.
-The CLI builds and sends this backend request shape from the selected provider,
-registered Alembic version table, current revision, and rendered Alembic SQL:
+Before it calls Alembic, the CLI coordinates with TS Manager through two
+requests.
+
+First, it reserves provider-scoped platform-managed MetaTables without creating
+physical application tables:
 
 ```json
 {
-  "version": "metatable-migration.v1",
-  "alembic_version_meta_table_uid": "registered-alembic-version-metatable-uid",
-  "package": "sdk_examples",
-  "migration_namespace": "sdk-examples",
-  "revision": "0002_add_account_status",
-  "down_revision": "0001_initial",
-  "direction": "upgrade",
-  "expected_current_revision": "0001_initial",
-  "manifest": {
-    "package": "sdk_examples",
-    "migration_namespace": "sdk-examples",
-    "revision": "0002_add_account_status",
-    "down_revision": "0001_initial",
-    "direction": "upgrade",
-    "alembic_version_table": "public.alembic_version"
-  },
-  "sql": "Alembic-rendered SQL text",
-  "statement_boundaries": [],
-  "dry_run": true
+  "version": "managed-metatable-reservation.v1",
+  "data_source_uid": "dynamic-table-data-source-uid",
+  "tables": [
+    {
+      "identifier": "sdk_examples.Asset",
+      "namespace": "sdk_examples",
+      "management_mode": "platform_managed",
+      "storage_hash": "logical-storage-hash",
+      "table_contract": {
+        "version": "relational-table.v1",
+        "physical": {},
+        "columns": [],
+        "indexes": [],
+        "foreign_keys": []
+      }
+    }
+  ]
 }
 ```
 
-For apply, the CLI sends the same rendered artifact again with `dry_run=false`
-after validation. The apply request does not contain
-affected-table lists, old/new contract hashes, custom operation names,
-idempotency keys, lock keys, or migration-row UIDs.
+The backend returns canonical physical table, index, and FK names. The SDK binds
+those names into SQLAlchemy metadata before Alembic runs.
 
-## 10. Catalog Registration Scope
+Second, it requests a short-lived migration credential scoped to the reserved
+MetaTable UIDs:
 
-Migration tooling resolves/registers provider models before SQL rendering and
-refreshes only those models after SQL execution:
-
-```python
-registered = migration.sync_metatable_catalog()
+```json
+{
+  "purpose": "schema_migration",
+  "package": "sdk_examples",
+  "migration_namespace": "sdk-examples",
+  "meta_table_uids": ["reserved-metatable-uid"],
+  "ttl_seconds": 900
+}
 ```
 
-This catalog step resolves by exact `identifier`, binds changed model classes
-to existing MetaTable rows when present, registers missing platform-managed
-identifiers through the existing backend registration path inside migration
-tooling, and fails if an identifier is duplicated. It does not pass the Alembic
-version-table data source into application model registration; each model uses
-its own normal MetaTable data-source binding. The provider controls scope;
-imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by migration
-tooling.
+The returned URI is secret. The CLI passes it to Alembic and does not print it.
+
+## 9. Catalog Registration Scope
+
+Migration tooling reserves provider models before Alembic runs and refreshes
+only those models after Alembic execution:
+
+```python
+registered = migration.refresh_metatable_catalog()
+```
+
+This catalog step registers provider rows with `provisioning.create_table=false`
+because Alembic has already performed the physical DDL. The provider controls
+scope; imported-but-unlisted SQLAlchemy/MetaTable classes are ignored by
+migration tooling.
 
 Projects that maintain a derived catalog can attach an optional provider hook:
 
@@ -573,8 +490,9 @@ migration = AlembicMetaTableMigration(
 ```
 
 The hook receives the ordered registered MetaTable objects and runs only after
-`upgrade` has successfully applied SQL and synced provider-scoped MetaTables. It
-does not run for `current`, `render`, `revision`, dry-run, or failed apply.
+`upgrade` has successfully applied Alembic migrations and synced
+provider-scoped MetaTables. It does not run for `current`, `revision`, or
+failed `upgrade`.
 
 If a project migrates `AccountLimit` instead of `Account`, use the same
 provider lifecycle. The provider still owns revision discovery, version-table

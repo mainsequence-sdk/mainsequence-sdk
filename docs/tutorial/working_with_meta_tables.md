@@ -125,7 +125,7 @@ Platform-managed tables are migration-first. Add the table to the selected
 `AlembicMetaTableMigration.metatable_models` list and run migrations:
 
 ```bash
-mainsequence migrations upgrade --provider mainsequence_migrations:migration --to head
+mainsequence migrations upgrade --provider mainsequence_migrations:migration head
 ```
 
 The SDK extracts a neutral table contract from SQLAlchemy metadata and sends it
