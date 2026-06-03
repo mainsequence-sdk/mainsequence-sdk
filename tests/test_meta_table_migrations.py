@@ -599,54 +599,6 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     )
 
 
-def test_contract_equivalence_compares_sdk_fk_and_index_names():
-    import mainsequence.meta_tables.migrations as migrations_mod
-
-    client_contract = {
-        "version": "relational-table.v1",
-        "physical": {"table_name": None},
-        "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
-        "indexes": [{"columns": ["account_uid"], "unique": False}],
-        "foreign_keys": [
-            {
-                "source_columns": ["account_uid"],
-                "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "target_columns": ["uid"],
-                "on_delete": "cascade",
-            }
-        ],
-    }
-    backend_contract = {
-        "version": "relational-table.v1",
-        "physical": {"table_name": "mt_asset_backend"},
-        "columns": [{"name": "account_uid", "type": {"name": "uuid"}}],
-        "indexes": [
-            {
-                "columns": ["account_uid"],
-                "unique": False,
-            }
-        ],
-        "foreign_keys": [
-            {
-                "source_columns": ["account_uid"],
-                "target_meta_table_uid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "target_identifier": "metatable_account",
-                "target_columns": ["uid"],
-                "on_delete": "cascade",
-            }
-        ],
-    }
-
-    assert migrations_mod._contracts_equivalent(backend_contract, client_contract)
-
-    backend_contract["indexes"][0]["name"] = "different_sdk_index_name"
-    assert not migrations_mod._contracts_equivalent(backend_contract, client_contract)
-
-    backend_contract["indexes"][0].pop("name")
-    backend_contract["foreign_keys"][0]["name"] = "different_sdk_fk_name"
-    assert not migrations_mod._contracts_equivalent(backend_contract, client_contract)
-
-
 def test_apply_mainsequence_migration_role_executes_quoted_set_role():
     class FakeConnection:
         def __init__(self):
@@ -1002,13 +954,6 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         "metatable_account",
         "metatable_asset",
     ]
-    assert any(
-        "Existing MetaTable not ready for Alembic fast path; reserving" in status
-        and "identifier=metatable_account" in status
-        and "reason=contract_mismatch" in status
-        and "physical_table=metatable_account" in status
-        for status in reservation_statuses
-    )
     assert reserved_payloads[0].schema_management.mode == "alembic_managed"
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
@@ -1018,9 +963,7 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
     assert Asset.__table__.name == "metatable_asset"
 
 
-def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
-    import mainsequence.meta_tables.migrations as migrations_mod
-
+def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -1048,8 +991,6 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)
-
-    monkeypatch.setattr(migrations_mod, "_contracts_equivalent", lambda left, right: True)
 
     def fake_filter_by_body(**kwargs):
         assert set(kwargs) == {"timeout", "physical_table_name__in", "limit"}
@@ -1107,10 +1048,41 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
         ]
 
     monkeypatch.setattr(MetaTable, "filter_by_body", staticmethod(fake_filter_by_body))
+    reserved_payloads = []
+
+    def fake_reserve_managed(request, *, timeout=None, on_status=None):
+        reserved_payloads.extend(request.tables)
+        return types.SimpleNamespace(
+            tables=[
+                types.SimpleNamespace(
+                    identifier="metatable_account",
+                    namespace="example.assets",
+                    meta_table_uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    data_source_uid="data-source-uid",
+                    management_mode="platform_managed",
+                    provisioning_status="active",
+                    storage_hash="account-storage-hash",
+                    physical_table_name="metatable_account",
+                    table_contract={},
+                ),
+                types.SimpleNamespace(
+                    identifier="metatable_asset",
+                    namespace="example.assets",
+                    meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    data_source_uid="data-source-uid",
+                    management_mode="platform_managed",
+                    provisioning_status="active",
+                    storage_hash="asset-storage-hash",
+                    physical_table_name="metatable_asset",
+                    table_contract={},
+                ),
+            ]
+        )
+
     monkeypatch.setattr(
         MetaTable,
         "reserve_managed",
-        staticmethod(lambda *args, **kwargs: pytest.fail("reserve-managed was called")),
+        staticmethod(fake_reserve_managed),
     )
 
     migration = AlembicMetaTableMigration(
@@ -1124,6 +1096,10 @@ def test_prepare_for_alembic_skips_already_staged_existing_rows(monkeypatch):
 
     prepared = migration.prepare_for_alembic(timeout=5)
 
+    assert [payload.identifier for payload in reserved_payloads] == [
+        "metatable_account",
+        "metatable_asset",
+    ]
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",

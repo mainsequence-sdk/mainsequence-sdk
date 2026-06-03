@@ -508,8 +508,6 @@ class AlembicMetaTableMigration:
         self,
         *,
         timeout: int | float | tuple[float, float] | None = None,
-        stage_existing_schema_management: bool = True,
-        require_existing_contract_match: bool = True,
         on_metatable_reservation_request: Callable[
             [Sequence[type[Any]], Sequence[ManagedMetaTableReservationTable]], Any
         ]
@@ -560,28 +558,6 @@ class AlembicMetaTableMigration:
                     enforce_storage_hash_name=False,
                 )
                 request.schema_management = schema_management
-
-                bound_meta_table = reserved_by_model.get(model)
-                if bound_meta_table is not None:
-                    readiness_failure = _alembic_readiness_failure(
-                        bound_meta_table,
-                        request=request,
-                        migration=self,
-                        registry_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
-                        stage_existing_schema_management=stage_existing_schema_management,
-                        require_existing_contract_match=require_existing_contract_match,
-                    )
-                    if readiness_failure is None:
-                        reserved_tables.append(bound_meta_table)
-                        continue
-                    if on_metatable_reservation_status is not None:
-                        on_metatable_reservation_status(
-                            _alembic_readiness_failure_message(
-                                model,
-                                bound_meta_table,
-                                readiness_failure,
-                            )
-                        )
 
                 pending_models.append(model)
                 pending_tables.append(_reservation_table_from_registration_request(request))
@@ -1105,12 +1081,6 @@ def _meta_table_uid(meta_table: Any) -> str | None:
     return str(uid)
 
 
-def _meta_table_contract(meta_table: Any) -> Any:
-    if isinstance(meta_table, Mapping):
-        return meta_table.get("table_contract")
-    return getattr(meta_table, "table_contract", None)
-
-
 def _finalize_table_failed(item: Any) -> bool:
     provisioning_status = _meta_table_attr(item, "provisioning_status")
     physical_table_exists = _meta_table_attr(item, "physical_table_exists")
@@ -1148,227 +1118,6 @@ def _meta_table_attr(meta_table: Any, name: str) -> Any:
     if isinstance(meta_table, Mapping):
         return meta_table.get(name)
     return getattr(meta_table, name, None)
-
-
-def _schema_management_payload(meta_table: Any) -> Mapping[str, Any]:
-    payload = _meta_table_attr(meta_table, "schema_management")
-    return payload if isinstance(payload, Mapping) else {}
-
-
-def _meta_table_schema_management_mode(meta_table: Any) -> str | None:
-    mode = _meta_table_attr(meta_table, "schema_management_mode")
-    if mode in (None, ""):
-        schema_management = _schema_management_payload(meta_table)
-        mode = schema_management.get("mode")
-    return str(mode) if mode not in (None, "") else None
-
-
-def _meta_table_migration_provider_key(meta_table: Any) -> str | None:
-    provider_key = _meta_table_attr(meta_table, "migration_provider_key")
-    if provider_key in (None, ""):
-        alembic = _schema_management_payload(meta_table).get("alembic")
-        if isinstance(alembic, Mapping):
-            provider_key = alembic.get("provider_key")
-    return str(provider_key) if provider_key not in (None, "") else None
-
-
-def _meta_table_alembic_version_uid(meta_table: Any) -> str | None:
-    uid = _meta_table_attr(meta_table, "alembic_version_meta_table_uid")
-    if uid in (None, ""):
-        alembic = _schema_management_payload(meta_table).get("alembic")
-        if isinstance(alembic, Mapping):
-            uid = alembic.get("alembic_version_meta_table_uid")
-    return str(uid) if uid not in (None, "") else None
-
-
-def _existing_metatable_is_ready_for_alembic(
-    meta_table: Any,
-    *,
-    request: Any,
-    migration: AlembicMetaTableMigration,
-    registry_meta_table_uid: str | None,
-    stage_existing_schema_management: bool,
-    require_existing_contract_match: bool,
-) -> bool:
-    return (
-        _alembic_readiness_failure(
-            meta_table,
-            request=request,
-            migration=migration,
-            registry_meta_table_uid=registry_meta_table_uid,
-            stage_existing_schema_management=stage_existing_schema_management,
-            require_existing_contract_match=require_existing_contract_match,
-        )
-        is None
-    )
-
-
-def _alembic_readiness_failure(
-    meta_table: Any,
-    *,
-    request: Any,
-    migration: AlembicMetaTableMigration,
-    registry_meta_table_uid: str | None,
-    stage_existing_schema_management: bool,
-    require_existing_contract_match: bool,
-) -> tuple[str, dict[str, Any]] | None:
-    if _meta_table_uid(meta_table) in (None, ""):
-        return "missing_uid", {}
-    if _meta_table_attr(meta_table, "physical_table_name") in (None, ""):
-        return "missing_physical_table", {}
-    existing_contract = _meta_table_contract(meta_table)
-    if require_existing_contract_match and not isinstance(existing_contract, Mapping):
-        return "missing_contract", {}
-    if require_existing_contract_match and not _contracts_equivalent(
-        existing_contract,
-        getattr(request, "table_contract", None),
-    ):
-        return "contract_mismatch", {}
-    if not stage_existing_schema_management:
-        return None
-    existing_mode = _meta_table_schema_management_mode(meta_table)
-    if existing_mode != "alembic_managed":
-        return "not_alembic_managed", {
-            "existing_mode": existing_mode,
-            "expected_mode": "alembic_managed",
-        }
-    existing_provider_key = _meta_table_migration_provider_key(meta_table)
-    if existing_provider_key not in (None, migration.migration_provider_key):
-        return "provider_key_mismatch", {
-            "existing_provider_key": existing_provider_key,
-            "expected_provider_key": migration.migration_provider_key,
-        }
-    existing_registry_uid = _meta_table_alembic_version_uid(meta_table)
-    if registry_meta_table_uid not in (None, "") and existing_registry_uid not in (
-        None,
-        str(registry_meta_table_uid),
-    ):
-        return "alembic_registry_uid_mismatch", {
-            "existing_registry_uid": existing_registry_uid,
-            "expected_registry_uid": str(registry_meta_table_uid),
-        }
-    return None
-
-
-def _alembic_readiness_failure_message(
-    model: type[Any],
-    meta_table: Any,
-    failure: tuple[str, dict[str, Any]],
-) -> str:
-    reason, details = failure
-    model_name = getattr(model, "__name__", repr(model))
-    identifier = _meta_table_identifier(meta_table) or _migration_table_name(model)
-    uid = _meta_table_uid(meta_table)
-    physical_table_name = _meta_table_attr(meta_table, "physical_table_name")
-    parts = [
-        "Existing MetaTable not ready for Alembic fast path; reserving",
-        f"identifier={identifier}",
-        f"model={model_name}",
-        f"reason={reason}",
-    ]
-    if uid not in (None, ""):
-        parts.append(f"uid={uid}")
-    if physical_table_name not in (None, ""):
-        parts.append(f"physical_table={physical_table_name}")
-    for key, value in details.items():
-        parts.append(f"{key}={value}")
-    return " ".join(parts)
-
-
-def _contracts_equivalent(left: Any, right: Any) -> bool:
-    return _contract_fingerprint(left) == _contract_fingerprint(right)
-
-
-def _contract_fingerprint(contract: Any) -> str:
-    return json.dumps(
-        _normalize_contract_for_comparison(_jsonable_contract(contract)),
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-
-
-def _jsonable_contract(value: Any) -> Any:
-    if hasattr(value, "model_dump"):
-        return value.model_dump(mode="json", exclude_none=True)
-    if isinstance(value, Mapping):
-        return {str(key): _jsonable_contract(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_jsonable_contract(item) for item in value]
-    if isinstance(value, tuple):
-        return [_jsonable_contract(item) for item in value]
-    return value
-
-
-def _normalize_contract_for_comparison(value: Any) -> Any:
-    if isinstance(value, Mapping):
-        normalized: dict[str, Any] = {}
-        for key, item in value.items():
-            key = str(key)
-            if key == "orm_class":
-                continue
-            if key == "physical" and isinstance(item, Mapping):
-                physical = {
-                    str(physical_key): _normalize_contract_for_comparison(physical_value)
-                    for physical_key, physical_value in item.items()
-                    if physical_key != "table_name"
-                }
-                normalized[key] = physical
-                continue
-            if key == "foreign_keys" and isinstance(item, list):
-                normalized[key] = sorted(
-                    (
-                        _normalize_foreign_key_contract_for_comparison(foreign_key)
-                        for foreign_key in item
-                    ),
-                    key=lambda foreign_key: json.dumps(
-                        foreign_key,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        default=str,
-                    ),
-                )
-                continue
-            if key == "indexes" and isinstance(item, list):
-                normalized[key] = sorted(
-                    (
-                        _normalize_index_contract_for_comparison(index)
-                        for index in item
-                    ),
-                    key=lambda index: json.dumps(
-                        index,
-                        sort_keys=True,
-                        separators=(",", ":"),
-                        default=str,
-                    ),
-                )
-                continue
-            normalized[key] = _normalize_contract_for_comparison(item)
-        return normalized
-    if isinstance(value, list):
-        return [_normalize_contract_for_comparison(item) for item in value]
-    return value
-
-
-def _normalize_foreign_key_contract_for_comparison(value: Any) -> Any:
-    if not isinstance(value, Mapping):
-        return _normalize_contract_for_comparison(value)
-    normalized = {
-        str(key): _normalize_contract_for_comparison(item)
-        for key, item in value.items()
-    }
-    if normalized.get("target_meta_table_uid") not in (None, ""):
-        normalized.pop("target_identifier", None)
-    return normalized
-
-
-def _normalize_index_contract_for_comparison(value: Any) -> Any:
-    if not isinstance(value, Mapping):
-        return _normalize_contract_for_comparison(value)
-    return {
-        str(key): _normalize_contract_for_comparison(item)
-        for key, item in value.items()
-    }
 
 
 def _metatable_resource_class_for_model(model: type[Any]) -> type[Any]:

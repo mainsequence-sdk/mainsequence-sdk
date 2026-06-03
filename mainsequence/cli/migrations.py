@@ -400,8 +400,6 @@ def _prepare_alembic_config(
     timeout: float | None,
     ttl_seconds: int,
     alembic_output: _AlembicOutput,
-    stage_existing_schema_management: bool = True,
-    require_existing_contract_match: bool = True,
     prepare_provider_metatables: bool = True,
 ) -> tuple[Any, Any]:
     _emit_status("Ensuring Alembic registry MetaTable...")
@@ -414,8 +412,6 @@ def _prepare_alembic_config(
         _emit_status("Preparing platform-managed MetaTable reservations...")
         prepared = migration.prepare_for_alembic(
             timeout=timeout,
-            stage_existing_schema_management=stage_existing_schema_management,
-            require_existing_contract_match=require_existing_contract_match,
             on_metatable_reservation_request=_emit_metatable_reservation_request,
             on_metatable_reservation_status=_emit_status,
             on_metatable_reserved=_emit_metatable_reservation,
@@ -626,8 +622,6 @@ def current(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
-        stage_existing_schema_management=False,
-        require_existing_contract_match=False,
         prepare_provider_metatables=False,
     )
     _emit_alembic_script_context(config)
@@ -681,7 +675,6 @@ def revision(
         timeout=timeout,
         ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
-        stage_existing_schema_management=False,
     )
     _emit_alembic_script_context(config, target_revision=head)
     if autogenerate:
