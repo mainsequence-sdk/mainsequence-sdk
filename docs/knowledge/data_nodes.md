@@ -303,7 +303,8 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 
 - the first index is the UTC `time_index`
 - every remaining index is an identity dimension
-- uniqueness is enforced across the full index tuple
+- uniqueness is enforced across the full index tuple by the generated
+  SQLAlchemy unique index on `PlatformTimeIndexMetaData`
 - compute incremental start points from canonical `UpdateStatistics`
 - return only new rows, or as close as practical
 

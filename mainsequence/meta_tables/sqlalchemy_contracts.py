@@ -28,6 +28,7 @@ from mainsequence.client.metatables import (
 )
 
 from .hashing import build_meta_table_configured_storage_hash
+from .schema_names import schema_index_name
 
 DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "create_table": True,
@@ -322,7 +323,9 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
         from sqlalchemy import Table
 
-        return Table(str(name), metadata, *table_items, **kwargs)
+        table = Table(str(name), metadata, *table_items, **kwargs)
+        _ensure_time_index_unique_grain_index(table=table, index_names=index_names)
+        return table
 
     @classmethod
     def build_registration_request(
@@ -1389,6 +1392,75 @@ def _validate_time_index_contract(
             "PlatformTimeIndexMetaData index columns must be non-nullable. "
             f"Nullable index columns: {nullable_index_columns!r}."
         )
+
+
+def _ensure_time_index_unique_grain_index(
+    *,
+    table: Any,
+    index_names: Sequence[str],
+) -> None:
+    grain_names = [str(name) for name in index_names]
+    if _has_unique_grain_enforcement(table=table, index_names=grain_names):
+        return
+
+    from sqlalchemy import Index
+
+    Index(
+        schema_index_name(_table_name(table), grain_names, unique=True),
+        *(table.c[name] for name in grain_names),
+        unique=True,
+    )
+
+
+def _has_unique_grain_enforcement(
+    *,
+    table: Any,
+    index_names: Sequence[str],
+) -> bool:
+    for index in _iter_indexes(table):
+        if bool(getattr(index, "unique", False)) and _grain_columns_match(
+            _index_column_names(index),
+            index_names,
+        ):
+            return True
+
+    for constraint in _iter_unique_constraints(table):
+        if _grain_columns_match(_constraint_column_names(constraint), index_names):
+            return True
+
+    return False
+
+
+def _grain_columns_match(existing_names: Sequence[str], index_names: Sequence[str]) -> bool:
+    existing = [str(name) for name in existing_names]
+    expected = [str(name) for name in index_names]
+    if len(existing) != len(expected):
+        return False
+    return set(existing) == set(expected)
+
+
+def _index_column_names(index: Any) -> list[str]:
+    return [_storage_item_name(item) for item in _iter_index_items(index)]
+
+
+def _iter_unique_constraints(table: Any) -> list[Any]:
+    from sqlalchemy import UniqueConstraint
+
+    constraints = getattr(table, "constraints", None)
+    if constraints is None:
+        return []
+    return [
+        constraint
+        for constraint in constraints
+        if isinstance(constraint, UniqueConstraint)
+    ]
+
+
+def _constraint_column_names(constraint: Any) -> list[str]:
+    columns = getattr(constraint, "columns", None)
+    if columns is None:
+        return []
+    return [_storage_item_name(column) for column in columns]
 
 
 def _storage_identity_from_parts(

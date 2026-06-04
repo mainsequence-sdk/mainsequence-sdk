@@ -241,6 +241,11 @@ The returned frame must match the storage table contract:
 - value columns match the SQLAlchemy storage columns
 - no extra payload columns appear
 
+`PlatformTimeIndexMetaData` automatically adds a SQLAlchemy unique index across
+the declared `__index_names__` tuple. Do not manually repeat that full unique
+index in `__table_args__`; reserve explicit `Index(...)` declarations for
+additional lookup/performance paths.
+
 ## Auto-Registration During Construction And Hashing
 
 The SDK now registers storage classes at the places where it needs backend

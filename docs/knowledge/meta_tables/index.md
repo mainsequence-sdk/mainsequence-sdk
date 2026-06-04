@@ -202,9 +202,11 @@ hash suffix when a generated name would exceed that limit.
 
 ## Backend Responsibilities
 
-After registration, TS Manager stores a `MetaTable` row plus projection rows for
-columns, indexes, and foreign keys. Those projections power serializers, search
-documents, discovery, and query validation.
+After registration, TS Manager stores a `MetaTable` row plus the metadata needed
+for serializers, search documents, discovery, and query validation. Alembic and
+the database remain the authority for physical indexes and foreign keys; any
+backend FK/index discovery is reflected physical metadata, not an SDK-managed
+registration contract.
 
 ## Finding Foreign-Key Dependents
 

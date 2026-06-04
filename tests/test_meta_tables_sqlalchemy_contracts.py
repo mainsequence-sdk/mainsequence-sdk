@@ -22,6 +22,8 @@ from mainsequence.meta_tables import (
     external_registered_registration_request_from_sqlalchemy_model,
     platform_managed_migration_registration_context,
     platform_managed_registration_request_from_sqlalchemy_model,
+    schema_index_name,
+    sqlalchemy_naming_convention,
     table_contract_from_sqlalchemy_model,
     time_indexed_registration_request_from_sqlalchemy_model,
 )
@@ -1533,6 +1535,85 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
     assert request.table_contract.physical.table_name == "example_assets__asset"
     assert not hasattr(request.table_contract, "indexes")
     assert not hasattr(request.table_contract, "foreign_keys")
+
+
+def test_time_index_metadata_generates_unique_grain_index_with_schema_name():
+    pytest.importorskip("sqlalchemy")
+
+    from sqlalchemy import DateTime, Float, MetaData, String
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
+
+    class Prices(PlatformTimeIndexMetaData, Base):
+        __tablename__ = "ms_markets__prices__mainsequence_examples"
+        __metatable_namespace__ = "mainsequence.examples"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "asset_identifier"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        asset_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+        close: Mapped[float] = mapped_column(Float, nullable=True)
+
+    grain_indexes = [
+        index
+        for index in Prices.__table__.indexes
+        if index.unique
+        and [column.name for column in index.columns] == ["time_index", "asset_identifier"]
+    ]
+
+    assert len(grain_indexes) == 1
+    assert grain_indexes[0].name == schema_index_name(
+        "ms_markets__prices__mainsequence_examples",
+        ["time_index", "asset_identifier"],
+        unique=True,
+    )
+
+
+def test_time_index_metadata_reuses_existing_unique_grain_constraint():
+    pytest.importorskip("sqlalchemy")
+
+    from sqlalchemy import DateTime, Float, MetaData, String, UniqueConstraint
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
+
+    class Prices(PlatformTimeIndexMetaData, Base):
+        __tablename__ = "ms_markets__prices__mainsequence_examples"
+        __table_args__ = (
+            UniqueConstraint(
+                "asset_identifier",
+                "time_index",
+                name="uix_custom_asset_time",
+            ),
+        )
+        __metatable_namespace__ = "mainsequence.examples"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "asset_identifier"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        asset_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+        close: Mapped[float] = mapped_column(Float, nullable=True)
+
+    assert not Prices.__table__.indexes
+    unique_constraints = [
+        constraint
+        for constraint in Prices.__table__.constraints
+        if isinstance(constraint, UniqueConstraint)
+    ]
+    assert len(unique_constraints) == 1
+    assert [column.name for column in unique_constraints[0].columns] == [
+        "asset_identifier",
+        "time_index",
+    ]
 
 
 def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(

@@ -191,6 +191,12 @@ MetaTable migration provider and run `mainsequence migrations upgrade --provider
 ... head`. Do not call `PricesTable.register()` directly and do not rely on
 DataNode construction to register storage tables.
 
+`__index_names__` is the full DataNode storage grain. `PlatformTimeIndexMetaData`
+automatically adds a SQLAlchemy unique index over that tuple before Alembic
+autogenerate runs. Do not manually repeat the full grain unique index in
+`__table_args__`; add ordinary SQLAlchemy `Index(...)` entries only for
+additional lookup/performance paths.
+
 `PlatformTimeIndexMetaData.register()` remains SDK plumbing for the migration
 workflow. Do not manually attach an existing UID, reconstruct a generic
 `MetaTable`, or use manual bind helpers as an authoring step.

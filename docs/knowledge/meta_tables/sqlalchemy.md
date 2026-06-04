@@ -194,11 +194,14 @@ The client sends only the explicit time-indexed table contract:
 - `namespace`
 - `description`
 - `time_index_name`
-- `table_contract`, which owns columns, indexes, and foreign keys
+- `table_contract`, which owns columns
 
-The backend derives identity dimensions, update progress grain, uniqueness,
-tail-delete scope, physical indexes, and the time-indexed profile from the
-MetaTable contract.
+`__index_names__` declares the full DataNode grain. The SDK adds a normal
+SQLAlchemy unique index over that tuple before Alembic autogenerate runs, so
+the database enforces one row per `(time_index, dimensions...)` observation.
+Foreign keys, the generated unique grain index, and any additional lookup
+indexes are Alembic-owned DDL metadata. TS Manager does not manage index or
+foreign-key contracts.
 
 ```python
 class AccountHoldings(PlatformTimeIndexMetaData, Base):
@@ -236,6 +239,9 @@ assert request.table_contract["authoring"]["time_indexed"]["index_names"] == [
     "unique_identifier",
 ]
 ```
+
+Do not manually repeat the full `__index_names__` unique index. Add ordinary
+SQLAlchemy `Index(...)` entries only for workload-specific lookup performance.
 
 Validation is intentionally strict:
 

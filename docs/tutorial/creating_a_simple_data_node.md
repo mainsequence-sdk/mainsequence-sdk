@@ -308,7 +308,10 @@ are different rows, even though they share the same timestamp and security.
 time-indexed storage MetaTable. The foreign key is ordinary SQLAlchemy/Alembic
 DDL metadata, while `PlatformTimeIndexMetaData` still uses the full
 `__index_names__` tuple as the ORM identity and sends that tuple as
-`index_names`.
+`index_names`. The SDK also adds a normal SQLAlchemy unique index over the full
+`__index_names__` tuple, so Alembic creates database uniqueness for each
+`(time_index, dimensions...)` observation. Add extra `Index(...)` entries only
+for workload-specific lookup performance.
 
 Add these models to `src/data_nodes/example_nodes.py` when your DataNode
 publishes account/security observations:
