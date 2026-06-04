@@ -71,8 +71,9 @@ Each list item must explicitly declare Alembic ownership with:
 ```
 
 The backend maps that request flag to its internal
-`schema_management_mode="alembic_managed"` model field. The SDK must not rely on
-the endpoint alone to imply Alembic management.
+`schema_management_mode="alembic_managed"` model field and enforces deletion protection.
+The SDK must not rely on the endpoint alone to imply Alembic management and must not own
+`protect_from_deletion` for this flow.
 
 ## Request Shape
 
@@ -94,7 +95,6 @@ The relational MetaTable reservation payload must include:
     "migration_provider_key": "msm:mainsequence.examples",
     "alembic_version_meta_table_uid": "00000000-0000-4000-8000-000000000000",
     "alembic_revision": null,
-    "protect_from_deletion": true,
     "physical_table_name": "ms_markets__asset__mainsequence_examples",
     "table_contract": {
       "version": "relational-table.v1",
@@ -127,7 +127,6 @@ also include first-class DynamicTable fields:
     "migration_provider_key": "msm:mainsequence.examples",
     "alembic_version_meta_table_uid": "00000000-0000-4000-8000-000000000000",
     "alembic_revision": null,
-    "protect_from_deletion": true,
     "physical_table_name": "ms_markets__prices__mainsequence_examples",
     "time_index_name": "time_index",
     "partition_strategy": "backend_default",
@@ -215,7 +214,7 @@ the old reservation conflict-diagnostic engine.
 - [x] Change `AlembicMetaTableMigration.prepare_for_alembic()` to split
   reservation rows by model type and call the correct typed endpoint before
   provisioning.
-- [x] Ensure every reservation row includes `is_alembic_managed=true`.
+- [ ] Ensure every reservation row includes `is_alembic_managed=true`.
 - [x] Ensure every reservation row includes
   `provisioning_status="reserved"`.
 - [x] Ensure `PlatformTimeIndexMetaData` rows include `time_index_name` and

@@ -536,10 +536,12 @@ class AlembicMetaTableMigration:
                 if existing_meta_table is not None:
                     _bind_model_to_existing_metatable(model, existing_meta_table)
                     reserved_by_model[model] = existing_meta_table
+                    continue
                 else:
                     bound_meta_table = _bound_meta_table_for_model(model)
                     if bound_meta_table is not None:
                         reserved_by_model[model] = bound_meta_table
+                        continue
 
                 request = model.build_registration_request(
                     data_source_uid=data_source_uid,
