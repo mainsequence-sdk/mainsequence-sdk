@@ -424,6 +424,7 @@ class AlembicMetaTableMigration:
             meta_table_uids=prepared.meta_table_uids,
             migration_package=self.package,
             migration_namespace=self.migration_namespace,
+            migration_provider_key=self.migration_provider_key,
             alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
             alembic_revision=alembic_revision,
         )
@@ -519,9 +520,6 @@ class AlembicMetaTableMigration:
 
         ordered_models = list(dict.fromkeys(self.metatable_models))
         target_table_names = {model: _migration_table_name(model) for model in ordered_models}
-        schema_management = self._schema_management_request(
-            alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
-        )
         with platform_managed_migration_registration_context():
             existing_by_table_name = _get_metatables_by_model_table_name(
                 ordered_models,
@@ -549,13 +547,16 @@ class AlembicMetaTableMigration:
                     identifier=table_name,
                     enforce_storage_hash_name=False,
                 )
-                request.schema_management = schema_management
 
                 pending_models.append(model)
                 pending_tables.append(_reservation_table_from_registration_request(request))
 
             if pending_tables:
                 reservation_request = ManagedMetaTableReservationRequest(
+                    migration_package=self.package,
+                    migration_namespace=self.migration_namespace,
+                    migration_provider_key=self.migration_provider_key,
+                    alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
                     tables=pending_tables,
                 )
                 if on_metatable_reservation_request is not None:
@@ -815,8 +816,6 @@ def _reservation_table_from_registration_request(
         physical_table_name=_request_contract_physical_table_name(request),
         description=getattr(request, "description", None),
         labels=list(getattr(request, "labels", None) or []),
-        protect_from_deletion=bool(getattr(request, "protect_from_deletion", False)),
-        schema_management=getattr(request, "schema_management", None),
         table_contract=request.table_contract,
         time_index_name=getattr(request, "time_index_name", None),
         partition_strategy=getattr(request, "partition_strategy", None),
@@ -1072,7 +1071,6 @@ def _metatable_from_reservation_item(
     item: ManagedMetaTableReservationItem,
 ) -> MetaTable:
     resource_cls = _metatable_resource_class_for_model(model)
-    schema_management = item.schema_management or {}
     return resource_cls.model_construct(
         uid=item.meta_table_uid,
         data_source_uid=item.data_source_uid,
@@ -1081,10 +1079,10 @@ def _metatable_from_reservation_item(
         namespace=item.namespace,
         management_mode=item.management_mode,
         provisioning_status=item.provisioning_status,
-        schema_management=schema_management,
-        schema_management_mode=schema_management.get("mode", "backend_managed"),
-        migration_provider_key=schema_management.get("provider_key"),
-        alembic_version_meta_table_uid=schema_management.get("alembic_version_meta_table_uid"),
+        schema_management={},
+        schema_management_mode=item.schema_management_mode or "backend_managed",
+        migration_provider_key=item.migration_provider_key,
+        alembic_version_meta_table_uid=item.alembic_version_meta_table_uid,
         physical_table_name=item.physical_table_name,
         table_contract=item.table_contract,
     )
@@ -1095,7 +1093,6 @@ def _metatable_from_finalize_result(
     item: ManagedMetaTableFinalizeTableResult,
 ) -> MetaTable:
     resource_cls = _metatable_resource_class_for_model(model)
-    schema_management = item.schema_management or {}
     return resource_cls.model_construct(
         uid=item.meta_table_uid,
         data_source_uid=_resolve_model_data_source_uid(model),
@@ -1103,10 +1100,10 @@ def _metatable_from_finalize_result(
         identifier=item.identifier,
         management_mode="platform_managed",
         provisioning_status=item.provisioning_status,
-        schema_management=schema_management,
-        schema_management_mode=schema_management.get("mode", "backend_managed"),
-        migration_provider_key=schema_management.get("provider_key"),
-        alembic_version_meta_table_uid=schema_management.get("alembic_version_meta_table_uid"),
+        schema_management={},
+        schema_management_mode=item.schema_management_mode or "backend_managed",
+        migration_provider_key=item.migration_provider_key,
+        alembic_version_meta_table_uid=item.alembic_version_meta_table_uid,
         physical_table_name=item.physical_table_name,
         table_kind=item.table_kind,
         time_indexed=item.time_indexed,

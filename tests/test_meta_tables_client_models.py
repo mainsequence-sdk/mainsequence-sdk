@@ -96,6 +96,11 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "management_mode": "platform_managed",
                 "provisioning_status": "reserved",
+                "schema_management_mode": "alembic_managed",
+                "migration_package": "msm",
+                "migration_namespace": "markets",
+                "migration_provider_key": "msm:markets",
+                "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "storage_hash": "asset",
                 "physical_table_name": "asset",
                 "created": True,
@@ -113,6 +118,8 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     item = response.tables[0]
     assert item.created is True
     assert item.matched_by is None
+    assert item.schema_management_mode == "alembic_managed"
+    assert item.migration_provider_key == "msm:markets"
     assert not hasattr(item, "existing")
     assert (
         "TS Manager accepted"
@@ -133,6 +140,11 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                 "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                 "management_mode": "platform_managed",
                 "provisioning_status": "reserved",
+                "schema_management_mode": "alembic_managed",
+                "migration_package": "msm",
+                "migration_namespace": "markets",
+                "migration_provider_key": "msm:markets",
+                "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                 "storage_hash": "asset",
                 "physical_table_name": "asset",
                 "created": True,
@@ -152,13 +164,25 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
         "data_source_uid" not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
     )
     assert (
+        "migration_package"
+        in meta_table_models.ManagedMetaTableReservationRequest.model_fields
+    )
+    assert (
         "Public UID of the DynamicTableDataSource"
         in meta_table_models.ManagedMetaTableReservationTable.model_fields[
             "data_source_uid"
         ].description
     )
     assert "management_mode" not in meta_table_models.ManagedMetaTableReservationTable.model_fields
+    assert "schema_management" not in meta_table_models.ManagedMetaTableReservationTable.model_fields
+    assert (
+        "protect_from_deletion"
+        not in meta_table_models.ManagedMetaTableReservationTable.model_fields
+    )
     request = meta_table_models.ManagedMetaTableReservationRequest(
+        migration_package="msm",
+        migration_namespace="markets",
+        migration_provider_key="msm:markets",
         tables=[
             meta_table_models.ManagedMetaTableReservationTable(
                 identifier="mainsequence.examples.Asset",
@@ -175,7 +199,12 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     request_payload = request.model_dump(mode="json", exclude_none=True)
     assert "version" not in request_payload
     assert "data_source_uid" not in request_payload
+    assert request_payload["migration_package"] == "msm"
+    assert request_payload["migration_namespace"] == "markets"
+    assert request_payload["migration_provider_key"] == "msm:markets"
     assert request_payload["tables"][0]["data_source_uid"] == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+    assert "schema_management" not in request_payload["tables"][0]
+    assert "protect_from_deletion" not in request_payload["tables"][0]
 
 
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
@@ -405,6 +434,11 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                         "data_source_uid": "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
                         "management_mode": "platform_managed",
                         "provisioning_status": "reserved",
+                        "schema_management_mode": "alembic_managed",
+                        "migration_package": "msm",
+                        "migration_namespace": "markets",
+                        "migration_provider_key": "msm:markets",
+                        "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                         "storage_hash": "mt_asset_hash",
                         "physical_table_name": "mt_asset_physical",
                         "table_contract": {
@@ -428,6 +462,9 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
 
     result = meta_table_models.MetaTable.reserve_managed(
         meta_table_models.ManagedMetaTableReservationRequest(
+            migration_package="msm",
+            migration_namespace="markets",
+            migration_provider_key="msm:markets",
             tables=[
                 meta_table_models.ManagedMetaTableReservationTable(
                     identifier="Asset",
@@ -450,12 +487,19 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
     assert captured["url"].endswith("/ts_manager/meta_table/reserve-managed/")
     assert "version" not in captured["payload"]["json"]
     assert "data_source_uid" not in captured["payload"]["json"]
+    assert captured["payload"]["json"]["migration_package"] == "msm"
+    assert captured["payload"]["json"]["migration_namespace"] == "markets"
+    assert captured["payload"]["json"]["migration_provider_key"] == "msm:markets"
     assert (
         captured["payload"]["json"]["tables"][0]["data_source_uid"]
         == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
     )
     assert "management_mode" not in captured["payload"]["json"]["tables"][0]
+    assert "schema_management" not in captured["payload"]["json"]["tables"][0]
+    assert "protect_from_deletion" not in captured["payload"]["json"]["tables"][0]
     assert result.tables[0].management_mode == "platform_managed"
+    assert result.tables[0].schema_management_mode == "alembic_managed"
+    assert result.tables[0].migration_provider_key == "msm:markets"
     assert "indexes" not in captured["payload"]["json"]["tables"][0]["table_contract"]
     assert "foreign_keys" not in captured["payload"]["json"]["tables"][0]["table_contract"]
 
@@ -480,6 +524,12 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
                         "physical_table_name": "mt_asset_physical",
                         "previous_provisioning_status": "reserved",
                         "provisioning_status": "active",
+                        "schema_management_mode": "alembic_managed",
+                        "migration_package": "msm",
+                        "migration_namespace": "markets",
+                        "migration_provider_key": "msm:markets",
+                        "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                        "alembic_revision": "0001",
                         "table_kind": "relational",
                         "time_indexed": False,
                         "finalized": True,
@@ -501,6 +551,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
             meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
             migration_package="msm",
             migration_namespace="markets",
+            migration_provider_key="msm:markets",
             alembic_version_meta_table_uid="bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
             alembic_revision="0001",
         )
@@ -514,6 +565,7 @@ def test_meta_table_finalize_managed_posts_finalize_payload(monkeypatch):
         "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
         "migration_package": "msm",
         "migration_namespace": "markets",
+        "migration_provider_key": "msm:markets",
         "alembic_version_meta_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
         "alembic_revision": "0001",
     }

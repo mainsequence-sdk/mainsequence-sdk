@@ -535,32 +535,35 @@ class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
     model_config = ConfigDict(extra="allow")
 
 
-class ManagedMetaTableReservationTable(MetaTableRequestFields):
-    physical_table_name: str | None = Field(
-        None,
-        description=(
-            "Optional physical table name to reserve. If omitted, TS Manager "
-            "returns its canonical platform-managed table name."
-        ),
+class ManagedMetaTableReservationTable(BasePydanticModel):
+    data_source_uid: str = Field(
+        ...,
+        description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
     )
-    description: str | None = Field(
-        None,
-        description="Optional human-readable MetaTable description.",
-    )
-    labels: list[str] = Field(
-        default_factory=list,
-        description="Optional labels to associate with the reserved MetaTable.",
-    )
-    protect_from_deletion: bool = Field(
-        False,
-        description="Whether the reserved MetaTable should be protected from deletion.",
-    )
+    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
     table_contract: MetaTableContract | dict[str, Any] = Field(
         ...,
         description=(
             "Relational table contract used to reserve the physical table name "
             "before Alembic renders SQL. Index and foreign-key names remain "
             "client-authored or database-authored DDL metadata."
+        ),
+    )
+    identifier: str | None = Field(
+        default=None,
+        description=(
+            "Optional logical MetaTable identifier. Non-empty values are globally "
+            "unique per organization and are used to resolve migrated MetaTables."
+        ),
+    )
+    namespace: str | None = None
+    description: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    physical_table_name: str | None = Field(
+        None,
+        description=(
+            "Optional physical table name to reserve. If omitted, TS Manager "
+            "returns its canonical platform-managed table name."
         ),
     )
     time_index_name: str | None = Field(
@@ -572,8 +575,39 @@ class ManagedMetaTableReservationTable(MetaTableRequestFields):
         description="Optional backend partition strategy for time-indexed reservations.",
     )
 
+    @model_validator(mode="after")
+    def _normalize_table_contract(self) -> ManagedMetaTableReservationTable:
+        if isinstance(self.table_contract, Mapping):
+            self.table_contract = _normalize_contract_mapping(self.table_contract)
+        return self
+
 
 class ManagedMetaTableReservationRequest(BasePydanticModel):
+    migration_package: str = Field(
+        ...,
+        description="Alembic provider package that owns this reservation batch.",
+    )
+    migration_namespace: str = Field(
+        ...,
+        description="Alembic provider namespace that owns this reservation batch.",
+    )
+    migration_provider_key: str | None = Field(
+        None,
+        description=(
+            "Stable provider key for this Alembic stream. When omitted, TS "
+            "Manager derives package:migration_namespace."
+        ),
+    )
+    alembic_version_meta_table_uid: str | None = Field(
+        None,
+        description=(
+            "Optional MetaTable UID for the Alembic version table that tracks this provider stream."
+        ),
+    )
+    alembic_revision: str | None = Field(
+        None,
+        description="Optional Alembic revision associated with this reservation batch.",
+    )
     tables: list[ManagedMetaTableReservationTable] = Field(
         ...,
         description="Managed MetaTables to reserve in a single backend request.",
@@ -621,10 +655,23 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
             "or observed; TS Manager does not generate them."
         ),
     )
-    schema_management: dict[str, Any] | None = Field(
+    schema_management_mode: str | None = Field(
         None,
-        description="Backend-normalized schema lifecycle ownership contract.",
+        description="Backend schema management mode implied by the managed endpoint.",
     )
+    migration_package: str | None = Field(None, description="Alembic provider package.")
+    migration_namespace: str | None = Field(None, description="Alembic provider namespace.")
+    migration_provider_key: str | None = Field(None, description="Resolved provider key.")
+    alembic_version_meta_table_uid: str | None = Field(
+        None,
+        description="MetaTable UID for the provider Alembic version table, when known.",
+    )
+    alembic_revision: str | None = Field(
+        None,
+        description="Last Alembic revision recorded for this MetaTable, when known.",
+    )
+    table_kind: str | None = Field(None, description="Backend table kind for this reservation.")
+    time_indexed: bool | None = Field(None, description="Whether this reservation is time-indexed.")
     created: bool = Field(
         ...,
         description="True when TS Manager created a new reservation row.",
@@ -673,6 +720,10 @@ class ManagedMetaTableFinalizeRequest(BasePydanticModel):
         None,
         description="Alembic provider namespace that owns these MetaTables.",
     )
+    migration_provider_key: str | None = Field(
+        None,
+        description="Alembic provider key guard for these MetaTables, when known.",
+    )
     alembic_version_meta_table_uid: str | None = Field(
         None,
         description="MetaTable UID for the Alembic version table, when known.",
@@ -712,9 +763,20 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
         ...,
         description="Whether the backend found the physical table during reconciliation.",
     )
-    schema_management: dict[str, Any] | None = Field(
+    schema_management_mode: str | None = Field(
         None,
-        description="Backend-normalized schema lifecycle ownership contract.",
+        description="Backend schema management mode implied by the managed endpoint.",
+    )
+    migration_package: str | None = Field(None, description="Alembic provider package.")
+    migration_namespace: str | None = Field(None, description="Alembic provider namespace.")
+    migration_provider_key: str | None = Field(None, description="Resolved provider key.")
+    alembic_version_meta_table_uid: str | None = Field(
+        None,
+        description="MetaTable UID for the provider Alembic version table, when known.",
+    )
+    alembic_revision: str | None = Field(
+        None,
+        description="Last Alembic revision recorded for this MetaTable, when known.",
     )
     error: dict[str, Any] | None = Field(
         None,
