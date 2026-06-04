@@ -140,7 +140,7 @@ def _configure_alembic_version_locations(
     if not locations:
         return ()
     config.set_main_option("version_locations", "\n".join(locations))
-    config.set_main_option("version_path_separator", "newline")
+    config.set_main_option("path_separator", "newline")
     return locations
 
 

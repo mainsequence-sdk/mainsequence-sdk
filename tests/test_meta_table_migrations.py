@@ -696,7 +696,7 @@ def test_alembic_config_for_provider_supports_namespace_version_locations(tmp_pa
     config = alembic_config_for_provider(migration, sqlalchemy_url="postgresql://example")
 
     assert config.get_main_option("version_locations") == str(namespace_versions)
-    assert config.get_main_option("version_path_separator") == "newline"
+    assert config.get_main_option("path_separator") == "newline"
     assert config.attributes["version_locations"] == (str(namespace_versions),)
     assert config.attributes["version_path"] == str(namespace_versions)
 

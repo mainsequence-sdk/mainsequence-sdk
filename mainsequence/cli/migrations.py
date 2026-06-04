@@ -136,10 +136,13 @@ def _emit_alembic_script_context(
         if version_table_schema not in (None, "")
         else version_table
     )
+    version_locations_label = (
+        version_locations.replace("\n", ", ") if version_locations else "<default>"
+    )
     _emit_status(
         "Alembic script context "
         f"script_location={script_location} "
-        f"version_locations={version_locations or '<default>'} "
+        f"version_locations={version_locations_label} "
         f"version_table={version_table_label}"
     )
     try:

@@ -401,9 +401,7 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
         captured["script_context_version_locations"] = config.get_main_option(
             "version_locations"
         )
-        captured["script_context_version_path_separator"] = config.get_main_option(
-            "version_path_separator"
-        )
+        captured["script_context_path_separator"] = config.get_main_option("path_separator")
         return FakeScriptDirectory()
 
     monkeypatch.setattr(
@@ -414,9 +412,7 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
 
     def fake_revision(config, **kwargs):
         captured["revision_version_locations"] = config.get_main_option("version_locations")
-        captured["revision_version_path_separator"] = config.get_main_option(
-            "version_path_separator"
-        )
+        captured["revision_path_separator"] = config.get_main_option("path_separator")
         captured["version_path"] = kwargs["version_path"]
         return types.SimpleNamespace(revision=kwargs["rev_id"], path="/tmp/0005_migration.py")
 
@@ -437,9 +433,9 @@ def test_migrations_revision_passes_provider_version_path(monkeypatch):
 
     assert result.exit_code == 0
     assert captured["script_context_version_locations"] == version_location
-    assert captured["script_context_version_path_separator"] == "newline"
+    assert captured["script_context_path_separator"] == "newline"
     assert captured["revision_version_locations"] == version_location
-    assert captured["revision_version_path_separator"] == "newline"
+    assert captured["revision_path_separator"] == "newline"
     assert captured["version_path"] == version_location
 
 
