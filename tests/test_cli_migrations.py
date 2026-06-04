@@ -343,6 +343,7 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
             "ignored:migration",
             "--message",
             "schema change",
+            "--autogenerate",
             "--sqlalchemy-url",
             "sqlite:///baseline.db",
         ],
@@ -385,7 +386,13 @@ def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypa
 
     result = runner.invoke(
         cli_mod.app,
-        ["migrations", "revision", "--provider", "ignored:migration"],
+        [
+            "migrations",
+            "revision",
+            "--provider",
+            "ignored:migration",
+            "--autogenerate",
+        ],
     )
 
     assert result.exit_code != 0
@@ -394,7 +401,7 @@ def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypa
     assert "requires --sqlalchemy-url" in output
 
 
-def test_migrations_revision_no_autogenerate_does_not_touch_backend(monkeypatch):
+def test_migrations_revision_default_does_not_autogenerate_or_touch_backend(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -446,7 +453,10 @@ def test_migrations_revision_no_autogenerate_does_not_touch_backend(monkeypatch)
             "revision",
             "--provider",
             "ignored:migration",
-            "--no-autogenerate",
+            "--timeout",
+            "5",
+            "--ttl-seconds",
+            "15",
         ],
     )
 

@@ -679,7 +679,7 @@ def revision(
         help="Alembic revision message. Defaults to 'migration'.",
     ),
     autogenerate: bool = typer.Option(
-        True,
+        False,
         "--autogenerate/--no-autogenerate",
         help="Use Alembic autogenerate against the local database URL and provider metadata.",
     ),
@@ -690,10 +690,21 @@ def revision(
     ),
     rev_id: str | None = typer.Option(None, "--rev-id", help="Explicit Alembic revision id."),
     head: str = typer.Option("head", "--head", help="Alembic head to base the revision on."),
+    timeout: float | None = typer.Option(
+        None,
+        "--timeout",
+        help="Accepted for CLI compatibility; revision does not call backend APIs.",
+    ),
+    ttl_seconds: int = typer.Option(
+        900,
+        "--ttl-seconds",
+        min=1,
+        help="Accepted for CLI compatibility; revision does not request scoped credentials.",
+    ),
     sqlalchemy_url: str | None = typer.Option(
         None,
         "--sqlalchemy-url",
-        help="Local database URL for Alembic autogenerate. Required with --autogenerate.",
+        help="Local database URL for Alembic autogenerate. Required when --autogenerate is used.",
     ),
     json_output: bool = typer.Option(False, "--json", help="Emit JSON."),
 ) -> None:
@@ -710,7 +721,7 @@ def revision(
     if autogenerate and sqlalchemy_url in (None, ""):
         raise typer.BadParameter(
             "Alembic autogenerate is a local database diff and requires "
-            "--sqlalchemy-url. Pass --no-autogenerate to create an empty revision.",
+            "--sqlalchemy-url. Omit --autogenerate to create an empty revision.",
             param_hint="--sqlalchemy-url",
         )
     config = _build_revision_alembic_config(
