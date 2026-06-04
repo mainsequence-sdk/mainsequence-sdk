@@ -1474,7 +1474,7 @@ def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
         AccountHoldings._bind_meta_table(generic_meta_table)
 
 
-def test_ensure_registered_storage_table_rejects_unbound_storage():
+def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1485,9 +1485,55 @@ def test_ensure_registered_storage_table_rejects_unbound_storage():
         table,
         index_names=["time_index", "asset_uid"],
     )
+    monkeypatch.setattr(
+        TimeIndexMetaData,
+        "filter_by_body",
+        classmethod(lambda cls, **filters: []),
+    )
 
-    with pytest.raises(ValueError, match="migrations upgrade"):
+    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaData"):
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+
+
+def test_ensure_registered_storage_table_binds_existing_time_index_metadata(monkeypatch):
+    columns = [
+        FakeColumn("time_index", DateTime(timezone=True), nullable=False),
+        FakeColumn("asset_uid", Uuid(), nullable=False),
+    ]
+    table = FakeTable("example_assets__asset_snapshots", columns=columns)
+    AssetSnapshots = _time_index_model_class(
+        "AssetSnapshots",
+        table,
+        index_names=["time_index", "asset_uid"],
+    )
+    backend_metadata = TimeIndexMetaData.model_construct(
+        uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+        storage_hash="storage-hash",
+        physical_table_name="example_assets__asset_snapshots",
+    )
+    captured = {}
+
+    def fake_filter_by_body(cls, **filters):
+        captured.update(filters)
+        return [backend_metadata]
+
+    monkeypatch.setattr(
+        TimeIndexMetaData,
+        "filter_by_body",
+        classmethod(fake_filter_by_body),
+    )
+
+    assert (
+        ensure_registered_storage_table(AssetSnapshots, context="DataNode")
+        is AssetSnapshots
+    )
+    assert AssetSnapshots.get_time_index_metadata() is backend_metadata
+    assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+    assert captured == {
+        "physical_table_name__in": ["example_assets__asset_snapshots"],
+        "limit": 1,
+    }
 
 
 def test_time_index_storage_name_hash_component_separates_identical_table_shapes():

@@ -2916,6 +2916,7 @@ class TimeIndexMetaData(MetaTable):
         "uid": ["in", "exact"],
         "data_source__uid": ["in", "exact"],
         "namespace": ["exact", "contains", "in", "isnull"],
+        "physical_table_name": ["exact", "contains", "in"],
         "labels": ["exact", "in", "contains"],
     }
     FILTER_VALUE_NORMALIZERS: ClassVar[dict[str, str]] = {

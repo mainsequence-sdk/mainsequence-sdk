@@ -97,17 +97,17 @@ def ensure_registered_storage_table(
         )
 
     if storage_table.get_time_index_metadata() is None:
-        raise ValueError(
-            f"{context} storage_table is not registered. Run "
-            "`mainsequence migrations upgrade --provider <provider> head` "
-            "before using this DataNode storage table."
-        )
+        _bind_registered_storage_table(storage_table)
 
     storage_metadata = storage_table.get_time_index_metadata()
     if storage_metadata is None:
-        raise ValueError(f"{context} storage_table is missing TimeIndexMetaData metadata.")
-    from mainsequence.client.metatables import TimeIndexMetaData
-
+        raise ValueError(
+            f"{context} storage_table class is not bound to backend "
+            "TimeIndexMetaData "
+            "metadata in this Python process. The backend table may already exist; "
+            "the SDK could not resolve a unique TimeIndexMetaData row for "
+            f"{_storage_table_lookup_label(storage_table)}."
+        )
     if not isinstance(storage_metadata, TimeIndexMetaData):
         raise TypeError(
             f"{context} storage_table must bind TimeIndexMetaData metadata; "
@@ -118,6 +118,45 @@ def ensure_registered_storage_table(
     if storage_table.get_data_source_uid() in (None, ""):
         raise ValueError(f"{context} storage_table must provide a data-source UID.")
     return storage_table
+
+
+def _bind_registered_storage_table(storage_table: type[PlatformTimeIndexMetaData]) -> None:
+    matches = _registered_storage_table_matches(storage_table)
+    if len(matches) == 1:
+        storage_table._bind_meta_table(matches[0])
+
+
+def _registered_storage_table_matches(
+    storage_table: type[PlatformTimeIndexMetaData],
+) -> list[TimeIndexMetaData]:
+    table_name = _storage_table_physical_table_name(storage_table)
+    if table_name:
+        matches = TimeIndexMetaData.filter_by_body(
+            physical_table_name__in=[table_name],
+            limit=1,
+        )
+        if matches:
+            return matches
+
+    return []
+
+
+def _storage_table_physical_table_name(
+    storage_table: type[PlatformTimeIndexMetaData],
+) -> str | None:
+    physical_table_name = storage_table.get_physical_table_name()
+    if physical_table_name not in (None, ""):
+        return str(physical_table_name)
+    table = getattr(storage_table, "__table__", None)
+    table_name = getattr(table, "name", None)
+    if table_name not in (None, ""):
+        return str(table_name)
+    return None
+
+
+def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaData]) -> str:
+    table_name = _storage_table_physical_table_name(storage_table) or "<unknown-table>"
+    return f"{storage_table.__name__}(table={table_name})"
 
 
 class BasePersistManager:
