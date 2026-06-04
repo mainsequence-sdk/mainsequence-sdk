@@ -82,7 +82,7 @@ The required lifecycle is:
 3. reserve or resolve provider.metatable_models
 4. bind SQLAlchemy models to returned/existing MetaTable UID and storage
    metadata
-5. request a temporary scoped migration connection
+5. request a temporary provider migration connection
 6. call Alembic upgrade directly
 7. finalize reserved MetaTable catalog rows
 8. SDK runs after_register_metatables(catalog_refresh_context)
@@ -126,7 +126,7 @@ not `MetaTable.register()` plus a backend SQL apply endpoint:
 migrations upgrade
 -> reserve-managed/ for missing provider-scoped platform-managed models
 -> SDK binds MetaTable UID/storage metadata and preserves authored table names
--> migration-connection/ issues a scoped database credential
+-> migration-connection/ issues a provider database credential
 -> Alembic runs upgrade directly
 -> finalize-managed/ activates the reserved MetaTables
 ```

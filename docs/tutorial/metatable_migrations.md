@@ -4,7 +4,7 @@ This document is only about schema migrations for MetaTables.
 
 The SDK does not implement a second migration engine. It provides a thin layer
 on top of Alembic so MetaTable catalog bindings, authored physical table names,
-and scoped database credentials are ready before Alembic runs.
+and provider migration credentials are ready before Alembic runs.
 
 It continues from [Part 2: Working With MetaTables](working_with_meta_tables.md),
 where the project declared these backend-managed MetaTables:
@@ -80,9 +80,10 @@ The SDK layer is intentionally thin. Before delegating to Alembic, it:
   application tables
 - preserves authored SQLAlchemy table names and binds backend MetaTable
   UID/storage metadata for those schema commands
-- includes the Alembic version MetaTable UID, and when needed the provider
-  MetaTable UIDs, in the migration scope
-- requests a temporary table-scoped database URI from the target data source
+- keeps the Alembic version MetaTable UID and provider MetaTable UIDs in
+  prepared/finalization state, but does not send them to the migration
+  credential endpoint
+- requests a temporary provider migration URI from the target data source
 - builds a normal Alembic `Config` with the provider's `script_location`,
   `target_metadata`, version-table settings, owner role, and output streams
 - calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly
@@ -102,7 +103,7 @@ provider MetaTable active.
 The SDK layer does not parse revision files, generate SDK operation lists,
 store backend migration artifacts, or ask the backend to apply rendered SQL.
 Alembic revision files remain the schema history and Alembic executes DDL
-through the scoped database credential.
+through the provider migration credential.
 
 The CLI lifecycle intentionally separates three jobs:
 
@@ -385,11 +386,11 @@ include that registry UID so Alembic can read and write its physical version
 table.
 
 Autogenerate is enabled by default. If `--sqlalchemy-url` is supplied, Alembic
-reflects that database. Otherwise the CLI requests a temporary migration
-connection from the provider data source with an empty MetaTable UID scope, so
-revision generation does not register, reserve, or finalize provider
-MetaTables. For an initial migration the baseline should be an empty database;
-for later migrations it must represent the previous Alembic revision.
+reflects that database. Otherwise the CLI requests a provider migration
+connection without MetaTable UIDs, so revision generation does not register,
+reserve, or finalize provider MetaTables. For an initial migration the baseline
+should be an empty database; for later migrations it must represent the
+previous Alembic revision.
 
 The revision file is a normal Alembic revision. It should contain database DDL,
 not SDK operation lists:
@@ -455,7 +456,7 @@ mainsequence migrations upgrade \
 ```
 
 `upgrade` is the mutation path. It runs the thin SDK setup, obtains a temporary
-scoped database credential, and calls Alembic `upgrade` directly.
+provider migration credential, and calls Alembic `upgrade` directly.
 
 After Alembic succeeds, the CLI finalizes only the MetaTables listed in
 `migration.metatable_models` by UID. The command succeeds only if Alembic
@@ -503,30 +504,23 @@ Index names remain normal SQLAlchemy/Alembic metadata. Foreign keys are also
 normal SQLAlchemy/Alembic metadata; Alembic, SQLAlchemy, and the database own
 the physical FK constraint names and DDL.
 
-Second, schema-changing commands request a short-lived migration credential
-scoped to the Alembic version MetaTable UID plus the reserved provider
-MetaTable UIDs:
+Second, backend-scoped Alembic commands request a short-lived migration
+credential for the provider data source. The migration-connection endpoint does
+not receive MetaTable UIDs:
 
 ```json
 {
   "purpose": "schema_migration",
   "package": "sdk_examples",
   "migration_namespace": "sdk-examples",
-  "meta_table_uids": [
-    "alembic-version-metatable-uid",
-    "reserved-metatable-uid"
-  ],
   "ttl_seconds": 900
 }
 ```
 
-The Alembic version MetaTable is part of the scope because Alembic reads and
-writes its version table before it runs application DDL. The returned URI is
-secret. The CLI passes it to Alembic and does not print it. Alembic's normal
-stdout and offline output buffers are forwarded through the CLI.
-
-For `current`, the credential scope contains only the Alembic version MetaTable
-UID because no provider application table should be reserved or changed.
+The returned URI is secret. The CLI passes it to Alembic and does not print it.
+Alembic's normal stdout and offline output buffers are forwarded through the
+CLI. `current` still avoids provider application MetaTable reservation because
+reading Alembic version state should not restage provider tables.
 
 Third, after Alembic succeeds, it finalizes the reserved provider rows:
 

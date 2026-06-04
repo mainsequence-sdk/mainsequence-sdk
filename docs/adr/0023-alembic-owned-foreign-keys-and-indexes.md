@@ -10,7 +10,7 @@ contract portions of ADR 0022.
 ## Context
 
 Platform-managed MetaTables now use Alembic as the schema migration authority.
-The SDK reserves MetaTable rows and obtains a scoped migration connection, but
+The SDK reserves MetaTable rows and obtains a provider migration connection, but
 Alembic reads SQLAlchemy metadata, renders revisions, applies DDL, and records
 the version table state.
 

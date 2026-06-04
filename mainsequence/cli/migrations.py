@@ -448,20 +448,16 @@ def _prepare_alembic_config(
     )
     _emit_status(f"Loading DynamicTableDataSource uid={prepared.data_source_uid}...")
     data_source = DynamicTableDataSource.get_by_uid(prepared.data_source_uid)
-    _emit_status(
-        "Requesting scoped migration connection "
-        f"meta_table_count={len(prepared.meta_table_uids)} ttl_seconds={ttl_seconds}..."
-    )
+    _emit_status(f"Requesting migration connection ttl_seconds={ttl_seconds}...")
     connection = data_source.issue_migration_connection(
         DynamicTableDataSourceMigrationConnectionRequest(
             package=migration.package,
             migration_namespace=migration.migration_namespace,
-            meta_table_uids=prepared.meta_table_uids,
             ttl_seconds=ttl_seconds,
         ),
         timeout=timeout,
     )
-    _emit_status("Scoped migration connection acquired.")
+    _emit_status("Migration connection acquired.")
     _emit_status("Building Alembic config...")
     config = alembic_config_for_provider(
         migration,
@@ -489,15 +485,11 @@ def _build_revision_alembic_config(
         data_source_uid = migration._resolve_provider_data_source_uid()
         _emit_status(f"Loading DynamicTableDataSource uid={data_source_uid} for revision...")
         data_source = DynamicTableDataSource.get_by_uid(data_source_uid)
-        _emit_status(
-            "Requesting revision migration connection "
-            f"meta_table_count=0 ttl_seconds={ttl_seconds}..."
-        )
+        _emit_status(f"Requesting revision migration connection ttl_seconds={ttl_seconds}...")
         connection = data_source.issue_migration_connection(
             DynamicTableDataSourceMigrationConnectionRequest(
                 package=migration.package,
                 migration_namespace=migration.migration_namespace,
-                meta_table_uids=[],
                 ttl_seconds=ttl_seconds,
             ),
             timeout=timeout,
@@ -599,11 +591,11 @@ def _assert_autogenerate_baseline_visible(prepared: Any, config: Any) -> None:
     sample = ",".join(_format_table_ref(ref) for ref in table_refs[:5])
     raise RuntimeError(
         "Refusing to autogenerate a migration because this provider already has "
-        f"Alembic head(s) {','.join(script_heads)}, but the scoped migration "
+        f"Alembic head(s) {','.join(script_heads)}, but the migration "
         "connection cannot see any provider physical tables. Alembic would emit a "
         "duplicate initial create-all migration instead of a schema diff. Apply the "
         "existing baseline with `mainsequence migrations upgrade ... head`, or fix "
-        "the scoped migration connection/table visibility before running revision "
+        "the migration connection/table visibility before running revision "
         f"again. checked_sample={sample}"
     )
 
@@ -718,13 +710,13 @@ def revision(
     timeout: float | None = typer.Option(
         None,
         "--timeout",
-        help="Accepted for CLI compatibility; revision does not call backend APIs.",
+        help="Request timeout for the revision migration connection when --sqlalchemy-url is omitted.",
     ),
     ttl_seconds: int = typer.Option(
         900,
         "--ttl-seconds",
         min=1,
-        help="Accepted for CLI compatibility; revision does not request scoped credentials.",
+        help="TTL for the revision migration connection when --sqlalchemy-url is omitted.",
     ),
     sqlalchemy_url: str | None = typer.Option(
         None,

@@ -378,8 +378,8 @@ mainsequence migrations revision
 Alembic revision message.
 
 Autogenerate is enabled by default. If `--sqlalchemy-url` is supplied, Alembic
-reflects that database. Otherwise the CLI requests a temporary migration
-connection from the provider data source with an empty MetaTable UID scope.
+reflects that database. Otherwise the CLI requests a provider migration
+connection without MetaTable UIDs.
 
 The Alembic environment must point `target_metadata` at
 `migration.target_metadata`, and it must derive `version_table` and
@@ -419,7 +419,7 @@ emit SDK operation lists.
 ADR 0022 removed the backend migration-status helper. Current SDK tooling reads
 the current Alembic revision by configuring Alembic with the provider's
 registered version-table binding and calling Alembic `current` through the
-scoped migration connection.
+migration connection.
 
 The version table remains discoverable because the provider declares an
 `AlembicVersionMetaTable`. The backend catalog stores that MetaTable pointer;
@@ -428,7 +428,7 @@ Alembic, not a TS Manager status endpoint, reads the row content.
 ### 4. Superseded: Direct Alembic Execution
 
 ADR 0022 removes the normal-user SQL artifact path. The current SDK CLI calls
-Alembic directly through a scoped migration connection instead of exposing a
+Alembic directly through a provider migration connection instead of exposing a
 `render` command or backend SQL apply command.
 
 The older design rendered SQL from Alembic without applying it locally. It used
@@ -531,13 +531,13 @@ mainsequence migrations reset --provider module.path:migration --confirm-reset
 ```
 
 All commands resolve the same provider object by convention or by
-`--provider module.path:migration`. Runtime commands use the registered Alembic
-version MetaTable UID and, for schema-changing commands, the provider MetaTable
-UIDs to request a temporary scoped database connection from the target data
-source.
+`--provider module.path:migration`. Runtime commands request a temporary
+provider migration database connection from the target data source. MetaTable
+UIDs remain in prepared/finalization state; they are not sent to the
+migration-connection endpoint.
 
 `revision` writes a normal Alembic revision file. `current`, `upgrade`, and
-`downgrade` call Alembic directly through the scoped migration connection. The
+`downgrade` call Alembic directly through the migration connection. The
 backend does not render or apply SQL artifacts for normal users.
 
 Command responsibilities:
@@ -569,12 +569,12 @@ The active backend coordination contract is:
 
 ```text
 reserve-managed/            -> reserve MetaTable rows and physical table names
-migration-connection/       -> issue a scoped temporary database credential
+migration-connection/       -> issue a provider temporary database credential
 finalize-managed/           -> activate reserved rows after Alembic runs
 ```
 
 Alembic reads current revision state and executes upgrade/downgrade directly
-through the scoped database credential. TS Manager must not maintain SDK
+through the provider migration credential. TS Manager must not maintain SDK
 migration artifact rows, migration-run rows, or a separate SQL apply endpoint.
 
 ## SDK Responsibilities

@@ -111,14 +111,13 @@ This method calls:
 POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
 ```
 
-with a table-scoped request:
+with a provider/data-source-scoped request:
 
 ```python
 class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
     purpose: Literal["schema_migration"] = "schema_migration"
     package: str = ""
     migration_namespace: str = ""
-    meta_table_uids: list[str]
     ttl_seconds: int = 900
 ```
 
@@ -239,10 +238,10 @@ prepared.data_source_uid
 prepared.owner_role_name
 ```
 
-The SDK sends the Alembic registry MetaTable UID plus `prepared.meta_table_uids`
-to the migration-connection endpoint so the backend can enforce table-level edit
-permissions and prepare the owner role for both Alembic's version table and the
-provider tables before issuing a database credential.
+The SDK does not send `prepared.meta_table_uids` to the migration-connection
+endpoint. MetaTable UIDs remain part of the prepared/finalization state, but the
+temporary database credential request is scoped by provider data source and
+migration provider identity.
 
 ## CLI Lifecycle
 
@@ -260,8 +259,7 @@ mainsequence migrations upgrade --provider msm.migrations:migration head
 2. build a local Alembic `Config` from provider `script_location` and
    `target_metadata`;
 3. use an explicit `--sqlalchemy-url` when supplied, otherwise request a
-   temporary migration connection from the provider data source with an empty
-   MetaTable UID scope;
+   provider migration connection without MetaTable UIDs;
 4. call Alembic `revision(...)` / autogenerate against local provider metadata.
 
 `revision` is local Alembic authoring. It must not register, reserve, finalize,
@@ -272,7 +270,7 @@ reservation is an apply-time concern, not a revision-file generation concern.
 
 1. load the provider;
 2. register/resolve `AlembicVersionMetaTable`;
-3. issue a scoped migration connection for the Alembic version MetaTable UID;
+3. issue a provider migration connection without MetaTable UIDs;
 4. call Alembic current/head APIs directly.
 
 `current` is read-only for provider application MetaTables. It must not call
@@ -284,7 +282,7 @@ state should not mutate or restage application catalog rows.
 1. load the provider;
 2. register/resolve `AlembicVersionMetaTable`;
 3. reserve and bind platform-managed MetaTables;
-4. issue a scoped migration connection for the reserved MetaTable UID scope;
+4. issue a provider migration connection without MetaTable UIDs;
 5. call Alembic `upgrade(...)` directly;
 6. after success, call `POST /orm/api/ts_manager/meta_table/finalize-managed/`
    once with the provider MetaTable UIDs;
@@ -355,9 +353,8 @@ normal tutorial workflow.
 - [x] Add `DynamicTableDataSourceMigrationConnectionRequest`,
   `DynamicTableDataSourceMigrationConnection`, and
   `DynamicTableDataSource.issue_migration_connection(...)`.
-- [x] Include the Alembic version MetaTable UID in read-only migration
-  connection requests, and include reserved provider `meta_table_uids` only for
-  commands that generate or mutate provider schema.
+- [x] Do not include MetaTable UIDs in migration-connection requests. Keep
+  MetaTable UIDs in prepared/finalization state only.
 - [x] Treat the returned migration URI as a secret and avoid printing or logging
   it in CLI output.
 - [x] Add managed MetaTable reservation request/response models.

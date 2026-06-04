@@ -181,9 +181,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
 
     assert result.exit_code == 0
     assert captured["data_source_uid"] == "data-source-uid"
-    assert captured["connection_request"].meta_table_uids == [
-        "registry-meta-table-uid",
-    ]
+    assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert captured["connection_timeout"] == 5.0
     assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     assert captured["owner_role"] == "connection-owner"
@@ -204,7 +202,7 @@ def test_migrations_current_uses_scoped_connection_without_printing_secret(monke
     assert (
         "[mainsequence migrations] Loading DynamicTableDataSource uid=data-source-uid..." in output
     )
-    assert "[mainsequence migrations] Requesting scoped migration connection" in output
+    assert "[mainsequence migrations] Requesting migration connection" in output
     assert "[mainsequence migrations] Building Alembic config..." in output
     assert "[mainsequence migrations] Alembic config built." in output
     assert "[mainsequence migrations] Starting Alembic current now..." in output
@@ -233,7 +231,7 @@ def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
     output = _combined_output(result)
     assert "POST /orm/api/ts_manager/meta_table/" not in output
     assert "reserved MetaTable identifier=example_assets__account" not in output
-    assert captured["connection_request"].meta_table_uids == ["registry-meta-table-uid"]
+    assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert (
         "[mainsequence migrations] Skipping provider MetaTable reservations "
         "for read-only Alembic command."
@@ -424,7 +422,7 @@ def test_migrations_revision_default_autogenerates_without_metatable_provisionin
 
     assert result.exit_code == 0
     assert captured["data_source_uid"] == "data-source-uid"
-    assert captured["connection_request"].meta_table_uids == []
+    assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert captured["connection_request"].ttl_seconds == 15
     assert captured["connection_timeout"] == 5.0
     assert captured["autogenerate"] is True
@@ -619,10 +617,7 @@ def test_migrations_upgrade_calls_alembic_and_finalizes_catalog(monkeypatch):
     )
 
     assert result.exit_code == 0
-    assert captured["connection_request"].meta_table_uids == [
-        "registry-meta-table-uid",
-        "meta-table-uid",
-    ]
+    assert not hasattr(captured["connection_request"], "meta_table_uids")
     assert captured["upgrade_revision"] == "head"
     assert captured["upgrade_url"] == "postgresql://temporary-secret"
     assert captured["finalize_timeout"] == 7.0

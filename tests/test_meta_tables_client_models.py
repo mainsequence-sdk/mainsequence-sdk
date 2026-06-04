@@ -422,7 +422,6 @@ def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkey
         meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
             package="msm",
             migration_namespace="markets",
-            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
             ttl_seconds=60,
         )
     )
@@ -439,7 +438,6 @@ def test_dynamic_table_data_source_issue_migration_connection_posts_scope(monkey
         "purpose": "schema_migration",
         "package": "msm",
         "migration_namespace": "markets",
-        "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
         "ttl_seconds": 60,
     }
 
@@ -643,7 +641,6 @@ def test_removed_alembic_artifact_client_models_are_not_public():
 def test_migration_connection_request_validates_positive_ttl():
     with pytest.raises(ValidationError):
         meta_table_models.DynamicTableDataSourceMigrationConnectionRequest(
-            meta_table_uids=["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
             ttl_seconds=0,
         )
 

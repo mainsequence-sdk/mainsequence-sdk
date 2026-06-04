@@ -277,16 +277,16 @@ than `max_rows`, `truncated` is `true`.
 ## Migration Execution
 
 MetaTable schema migrations are executed by Alembic. The SDK migration CLI is a
-thin adapter that:
+provider adapter that:
 
 1. loads the selected `AlembicMetaTableMigration` provider;
-2. registers or resolves its `AlembicVersionMetaTable`;
-3. creates or resolves provider-scoped platform-managed MetaTable rows through
-   typed collection-create endpoints with `provisioning_status="reserved"`;
-4. binds MetaTable UID/storage metadata while preserving authored SQLAlchemy
-   table names;
-5. asks the backend for a temporary scoped migration URI;
-6. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
+2. asks the backend for a temporary migration URI when a command needs database
+   access and no explicit SQLAlchemy URL was supplied;
+3. for `current`, `upgrade`, and `downgrade`, registers or resolves its
+   `AlembicVersionMetaTable`;
+4. for `upgrade` and `downgrade`, creates or resolves provider platform-managed
+   MetaTable rows before Alembic runs and finalizes them after successful DDL;
+5. calls Alembic `current`, `revision`, `upgrade`, or `downgrade` directly.
 
 Backend coordination uses:
 
@@ -297,9 +297,11 @@ POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
 POST /orm/api/ts_manager/meta_table/finalize-managed/
 ```
 
-The backend does not receive an SDK-rendered SQL artifact and does not execute a
-client-defined migration operation. After a successful Alembic `upgrade`, the
-CLI finalizes provider-scoped MetaTable catalog rows through `finalize-managed/`.
+The migration-connection request does not include MetaTable UIDs; the provider
+and namespace define the migration context. The backend does not receive an
+SDK-rendered SQL artifact and does not execute a client-defined migration
+operation. After a successful Alembic `upgrade`, the CLI finalizes provider
+MetaTable catalog rows through `finalize-managed/`.
 
 ## Backend Capabilities
 
@@ -316,7 +318,7 @@ the requested operation:
 | `supports_compiled_update` | `update` operations |
 | `supports_compiled_upsert` | `upsert` operations |
 | `supports_compiled_delete` | `delete` operations |
-| `supports_table_migration` | scoped Alembic migration connections |
+| `supports_table_migration` | Alembic migration connections |
 
 If a capability is missing, the backend returns a structured error instead of
 falling back to direct database access.

@@ -567,7 +567,6 @@ class DynamicTableDataSourceMigrationConnectionRequest(BasePydanticModel):
     purpose: Literal["schema_migration"] = "schema_migration"
     package: str = ""
     migration_namespace: str = ""
-    meta_table_uids: list[str]
     ttl_seconds: int = Field(default=900, ge=1)
 
 
