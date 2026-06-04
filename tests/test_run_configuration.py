@@ -840,6 +840,24 @@ def test_data_node_update_output_accepts_declared_object_for_pandas_str_dtype():
     )
 
 
+def test_data_node_update_output_accepts_declared_character_varying_for_pandas_string_dtype():
+    frame = pd.DataFrame(
+        {"asset_identifier": pd.Series(["asset-1", None], dtype="string")},
+        index=pd.DatetimeIndex(
+            [pd.Timestamp("2026-04-13T00:00:00Z")] * 2,
+            name="time_index",
+        ),
+    )
+
+    UpdateRunner.validate_data_frame(
+        frame,
+        storage_class_type="timescale",
+        meta_table=_meta_table(
+            columns=[{"name": "asset_identifier", "data_type": "character varying"}],
+        ),
+    )
+
+
 def test_data_node_update_output_rejects_non_string_values_for_declared_string():
     frame = pd.DataFrame(
         {"name": ["Asset A", 123]},

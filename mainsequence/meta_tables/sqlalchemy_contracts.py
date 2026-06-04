@@ -245,8 +245,8 @@ class PlatformManagedMetaTable:
         """Attach an already-created backend MetaTable resource to this authoring model."""
         cls.__metatable__ = meta_table
         cls.__metatable_uid__ = _required_meta_table_uid(meta_table)
-        cls.__metatable_storage_hash__ = _required_meta_table_storage_hash(meta_table)
-        cls.__metatable_physical_table_name__ = _table_name(cls.__table__)
+        cls.__metatable_storage_hash__ = _meta_table_storage_hash(meta_table)
+        cls.__metatable_physical_table_name__ = _bound_physical_table_name(cls, meta_table)
         cls.__metatable_data_source_uid__ = _required_meta_table_data_source_uid(meta_table)
         return meta_table
 
@@ -731,11 +731,21 @@ def register_external_sqlalchemy_model(
 
 
 def _resolve_table(model_or_table: Any) -> Any:
+    table = _optional_sqlalchemy_table(model_or_table)
+    if table is not None:
+        return table
+    return getattr(model_or_table, "__table__", model_or_table)
+
+
+def _optional_sqlalchemy_table(model_or_table: Any) -> Any | None:
     inspected = _sqlalchemy_inspect(model_or_table, raiseerr=False)
     table = _table_from_sqlalchemy_inspection(inspected)
     if table is not None:
         return table
-    return getattr(model_or_table, "__table__", model_or_table)
+    table = getattr(model_or_table, "__table__", None)
+    if table is not None and hasattr(table, "columns"):
+        return table
+    return None
 
 
 def _table_from_sqlalchemy_inspection(inspected: Any | None) -> Any | None:
@@ -975,6 +985,13 @@ def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
     if physical_table_name in (None, ""):
         return None
     return str(physical_table_name)
+
+
+def _bound_physical_table_name(cls: type[Any], meta_table: MetaTable) -> str | None:
+    table = _optional_sqlalchemy_table(cls)
+    if table is not None:
+        return _table_name(table)
+    return _meta_table_physical_table_name(meta_table)
 
 
 def _model_bound_storage_hash(model_or_table: Any) -> str | None:

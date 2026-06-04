@@ -7,6 +7,7 @@ from opentelemetry.sdk.trace import (
 )
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.trace import (
+    ProxyTracerProvider,
     get_current_span,
     get_tracer,
     get_tracer_provider,
@@ -31,14 +32,17 @@ class TracerInstrumentator:
         from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
         from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 
-        resource = Resource(attributes={SERVICE_NAME: "tdag"})
-        set_tracer_provider(TracerProvider(resource=resource))
+        provider = get_tracer_provider()
+        if isinstance(provider, ProxyTracerProvider):
+            resource = Resource(attributes={SERVICE_NAME: "tdag"})
+            provider = TracerProvider(resource=resource)
+            set_tracer_provider(provider)
 
         end_point = os.environ.get("OTLP_ENDPOINT")
 
         if end_point is not None:
             otlp_exporter = OTLPSpanExporter(endpoint=end_point)
-            if is_port_in_use(4317, agent_host=self.agent_host) == True:
+            if is_port_in_use(4317, agent_host=self.agent_host):
                 get_tracer_provider().add_span_processor(BatchSpanProcessor(otlp_exporter))
             else:
                 get_tracer_provider().add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))

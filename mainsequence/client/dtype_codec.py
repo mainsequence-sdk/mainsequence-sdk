@@ -83,9 +83,19 @@ def normalize_dtype_token(
             )
         return LOCAL_DATETIME_NAIVE
 
-    if lowered in {"object", "str", "string", "text", "varchar", "char", "unicode"}:
+    if lowered in {
+        "object",
+        "str",
+        "string",
+        "text",
+        "varchar",
+        "char",
+        "character",
+        "character varying",
+        "unicode",
+    }:
         return STRING
-    if "varchar" in lowered:
+    if "varchar" in lowered or lowered.startswith(("character varying", "character(")):
         return STRING
     if compact in {"uuid", "uuidtype", "uuid_", "postgresqluuid"}:
         return UUID_TOKEN
