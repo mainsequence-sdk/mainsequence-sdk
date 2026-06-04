@@ -281,7 +281,8 @@ thin adapter that:
 
 1. loads the selected `AlembicMetaTableMigration` provider;
 2. registers or resolves its `AlembicVersionMetaTable`;
-3. reserves provider-scoped platform-managed MetaTables;
+3. creates or resolves provider-scoped platform-managed MetaTable rows through
+   typed collection-create endpoints with `provisioning_status="reserved"`;
 4. binds MetaTable UID/storage metadata while preserving authored SQLAlchemy
    table names;
 5. asks the backend for a temporary scoped migration URI;
@@ -290,7 +291,8 @@ thin adapter that:
 Backend coordination uses:
 
 ```text
-POST /orm/api/ts_manager/meta_table/reserve-managed/
+POST /orm/api/ts_manager/meta_table/
+POST /orm/api/ts_manager/dynamic_table/
 POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/
 POST /orm/api/ts_manager/meta_table/finalize-managed/
 ```

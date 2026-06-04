@@ -167,6 +167,12 @@ def _payload_json(payload: Mapping[str, Any] | BasePydanticModel) -> dict[str, A
     )
 
 
+def _payload_json_sequence(
+    payloads: Sequence[Mapping[str, Any] | BasePydanticModel],
+) -> list[dict[str, Any]]:
+    return [_payload_json(payload) for payload in payloads]
+
+
 def _normalize_backend_type(value: str | None) -> str | None:
     if value is None:
         return None
@@ -574,177 +580,6 @@ class DynamicTableDataSourceMigrationConnection(BasePydanticModel):
     owner_role_name: str | None = None
     expires_at: datetime.datetime
     uri: str
-
-    model_config = ConfigDict(extra="allow")
-
-
-class ManagedMetaTableReservationTable(BasePydanticModel):
-    data_source_uid: str = Field(
-        ...,
-        description="Public UID of the DynamicTableDataSource that owns this MetaTable.",
-    )
-    storage_hash: str = Field(..., max_length=63, description="Canonical table storage hash.")
-    table_contract: MetaTableContract | dict[str, Any] = Field(
-        ...,
-        description=(
-            "Relational table contract used to reserve the physical table name "
-            "before Alembic renders SQL. Index and foreign-key names remain "
-            "client-authored or database-authored DDL metadata."
-        ),
-    )
-    identifier: str | None = Field(
-        default=None,
-        description=(
-            "Optional logical MetaTable identifier. Non-empty values are globally "
-            "unique per organization and are used to resolve migrated MetaTables."
-        ),
-    )
-    namespace: str | None = None
-    description: str | None = None
-    labels: list[str] = Field(default_factory=list)
-    physical_table_name: str | None = Field(
-        None,
-        description=(
-            "Optional physical table name to reserve. If omitted, TS Manager "
-            "returns its canonical platform-managed table name."
-        ),
-    )
-    time_index_name: str | None = Field(
-        None,
-        description="Optional time-index column name for time-indexed reservations.",
-    )
-    partition_strategy: str | None = Field(
-        None,
-        description="Optional backend partition strategy for time-indexed reservations.",
-    )
-
-    @model_validator(mode="after")
-    def _normalize_table_contract(self) -> ManagedMetaTableReservationTable:
-        if isinstance(self.table_contract, Mapping):
-            self.table_contract = _normalize_contract_mapping(self.table_contract)
-        return self
-
-
-class ManagedMetaTableReservationRequest(BasePydanticModel):
-    migration_package: str = Field(
-        ...,
-        description="Alembic provider package that owns this reservation batch.",
-    )
-    migration_namespace: str = Field(
-        ...,
-        description="Alembic provider namespace that owns this reservation batch.",
-    )
-    migration_provider_key: str | None = Field(
-        None,
-        description=(
-            "Stable provider key for this Alembic stream. When omitted, TS "
-            "Manager derives package:migration_namespace."
-        ),
-    )
-    alembic_version_meta_table_uid: str | None = Field(
-        None,
-        description=(
-            "Optional MetaTable UID for the Alembic version table that tracks this provider stream."
-        ),
-    )
-    alembic_revision: str | None = Field(
-        None,
-        description="Optional Alembic revision associated with this reservation batch.",
-    )
-    tables: list[ManagedMetaTableReservationTable] = Field(
-        ...,
-        description="Managed MetaTables to reserve in a single backend request.",
-    )
-
-
-class ManagedMetaTableReservationItem(BasePydanticModel):
-    identifier: str | None = Field(
-        None,
-        description="Reserved organization-global logical MetaTable identifier.",
-    )
-    namespace: str | None = Field(
-        None,
-        description="Resolved namespace for the reserved MetaTable, when returned.",
-    )
-    meta_table_uid: str = Field(
-        ...,
-        description="Public UID of the reserved or matched backend MetaTable row.",
-    )
-    data_source_uid: str = Field(
-        ...,
-        description="Public UID of the DynamicTableDataSource that owns this reservation.",
-    )
-    management_mode: Literal["platform_managed"] = Field(
-        ...,
-        description="Backend-confirmed management mode for this reservation.",
-    )
-    provisioning_status: Literal["reserved", "active"] = Field(
-        ...,
-        description="First-class backend provisioning state for the reserved MetaTable.",
-    )
-    storage_hash: str = Field(
-        ...,
-        description="Reserved storage hash for the MetaTable.",
-    )
-    physical_table_name: str = Field(
-        ...,
-        description="Physical table name reserved for Alembic SQL rendering.",
-    )
-    table_contract: dict[str, Any] = Field(
-        ...,
-        description=(
-            "Backend-normalized contract containing the resolved physical table "
-            "name. Index and foreign-key names are preserved only when authored "
-            "or observed; TS Manager does not generate them."
-        ),
-    )
-    schema_management_mode: str | None = Field(
-        None,
-        description="Backend schema management mode implied by the managed endpoint.",
-    )
-    migration_package: str | None = Field(None, description="Alembic provider package.")
-    migration_namespace: str | None = Field(None, description="Alembic provider namespace.")
-    migration_provider_key: str | None = Field(None, description="Resolved provider key.")
-    alembic_version_meta_table_uid: str | None = Field(
-        None,
-        description="MetaTable UID for the provider Alembic version table, when known.",
-    )
-    alembic_revision: str | None = Field(
-        None,
-        description="Last Alembic revision recorded for this MetaTable, when known.",
-    )
-    table_kind: str | None = Field(None, description="Backend table kind for this reservation.")
-    time_indexed: bool | None = Field(None, description="Whether this reservation is time-indexed.")
-    created: bool = Field(
-        ...,
-        description="True when TS Manager created a new reservation row.",
-    )
-    matched_by: str | None = Field(
-        None,
-        description=(
-            "Backend match strategy for existing reservations, such as "
-            "'identifier' or 'storage_hash'. Null when a row was newly created."
-        ),
-    )
-    model_config = ConfigDict(extra="ignore")
-
-
-class ManagedMetaTableReservationResponse(BasePydanticModel):
-    ok: bool = Field(
-        ...,
-        description="Whether TS Manager accepted and processed the reservation request.",
-    )
-    version: str | None = Field(
-        None,
-        description=(
-            "Opaque managed MetaTable reservation response schema version "
-            "returned by TS Manager, when present."
-        ),
-    )
-    tables: list[ManagedMetaTableReservationItem] = Field(
-        ...,
-        description="Reserved MetaTable name plans returned by TS Manager.",
-    )
 
     model_config = ConfigDict(extra="allow")
 
@@ -1603,25 +1438,41 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
         return cls(**response_json)
 
     @classmethod
-    def reserve_managed(
+    def bulk_create(
         cls,
-        request: ManagedMetaTableReservationRequest | Mapping[str, Any] | None = None,
+        rows: Sequence[Mapping[str, Any] | BasePydanticModel],
         *,
         timeout: int | float | tuple[float, float] | None = None,
         on_status: Callable[[str], Any] | None = None,
-        **kwargs: Any,
-    ) -> ManagedMetaTableReservationResponse:
-        if request is not None and kwargs:
-            raise ValueError("Pass either request or keyword fields, not both.")
-        payload = request if request is not None else ManagedMetaTableReservationRequest(**kwargs)
-        response_json = cls._post_action(
-            "reserve-managed",
-            payload,
-            timeout=timeout,
-            expected_statuses=(200, 201),
-            on_status=on_status,
+    ) -> list[MetaTable]:
+        url = f"{cls.get_object_url().rstrip('/')}/"
+        if on_status is not None:
+            on_status(f"Serializing POST {url} payload...")
+        payload_json = _payload_json_sequence(rows)
+        if on_status is not None:
+            payload_size = len(json.dumps(payload_json, default=str))
+            on_status(f"Serialized POST {url} payload bytes={payload_size}.")
+            on_status(f"Building API session for POST {url}...")
+        session = cls.build_session()
+        request_payload = {"json": payload_json}
+        if on_status is not None:
+            on_status(f"Sending HTTP POST {url}...")
+        response = make_request(
+            s=session,
+            loaders=cls.LOADERS,
+            r_type="POST",
+            url=url,
+            payload=request_payload,
+            time_out=timeout,
         )
-        return ManagedMetaTableReservationResponse(**response_json)
+        if on_status is not None:
+            on_status(f"Received HTTP {response.status_code} from POST {url}.")
+        if response.status_code not in (200, 201):
+            raise_for_response(response, payload=request_payload)
+        response_json = response.json()
+        if not isinstance(response_json, list):
+            raise TypeError(f"{cls.__name__}.bulk_create expected a list response.")
+        return [cls(**item) for item in response_json]
 
     @classmethod
     def finalize_managed(
@@ -4886,7 +4737,6 @@ DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()
 MetaTableRequestFields.model_rebuild()
 MetaTableRegistrationRequest.model_rebuild()
-ManagedMetaTableReservationTable.model_rebuild()
 TimeIndexMetaTableRegistrationRequest.model_rebuild()
 MetaTable.model_rebuild()
 
@@ -4911,10 +4761,6 @@ __all__ = [
     "LastUpdateMultiIndexStatsPayload",
     "LOCAL_DATA_SOURCE_CLASS_TYPES",
     "LocalTimeSeriesHistoricalUpdate",
-    "ManagedMetaTableReservationItem",
-    "ManagedMetaTableReservationRequest",
-    "ManagedMetaTableReservationResponse",
-    "ManagedMetaTableReservationTable",
     "ManagedMetaTableFinalizeRequest",
     "ManagedMetaTableFinalizeResponse",
     "ManagedMetaTableFinalizeTableResult",

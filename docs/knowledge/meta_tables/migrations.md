@@ -198,11 +198,14 @@ exist. `__metatable_identifier__` is not the Alembic migration identity. A model
 move or rename keeps the same migration identity when its SQLAlchemy table name
 stays stable.
 
-`prepare_for_alembic()` always sends the provider model batch to
-`reserve-managed/`. It does not skip reservation because a previous MetaTable
-contract matches the current SQLAlchemy model; Alembic is the authority for
-schema changes, and TS Manager reservation is the authoritative name-plan
-operation.
+`prepare_for_alembic()` always sends provider model rows through typed
+collection-create endpoints. Plain `PlatformManagedMetaTable` rows go to
+`POST /orm/api/ts_manager/meta_table/`; `PlatformTimeIndexMetaData` rows go to
+`POST /orm/api/ts_manager/dynamic_table/`. The SDK sends raw JSON lists with
+`provisioning_status="reserved"` and `is_alembic_managed=true`; it does not
+wrap the rows in a reservation request object. Alembic is the authority for
+schema changes, and TS Manager is the authoritative owner of MetaTable catalog
+rows and migration-scoped credentials.
 
 ## Alembic Version MetaTable
 
@@ -285,8 +288,12 @@ after provider-scoped backend finalization succeeds. The hook receives an
 
 The migration CLI coordinates with backend endpoints around Alembic:
 
-- `POST /orm/api/ts_manager/meta_table/reserve-managed/` reserves or resolves
-  platform-managed MetaTable rows without creating physical application tables.
+- `POST /orm/api/ts_manager/meta_table/` creates or resolves regular
+  platform-managed MetaTable catalog rows without creating physical application
+  tables.
+- `POST /orm/api/ts_manager/dynamic_table/` creates or resolves time-indexed
+  platform-managed MetaTable catalog rows without creating physical application
+  tables.
 - `POST /orm/api/ts_manager/dynamic_table_data_source/<uid>/migration-connection/`
   issues a temporary, table-scoped migration credential.
 - `POST /orm/api/ts_manager/meta_table/finalize-managed/` activates reserved

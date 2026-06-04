@@ -16,6 +16,7 @@ import typer
 from mainsequence.client.metatables import (
     DynamicTableDataSource,
     DynamicTableDataSourceMigrationConnectionRequest,
+    TimeIndexMetaData,
 )
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
@@ -26,7 +27,8 @@ from mainsequence.meta_tables.migrations import (
 
 migrations = typer.Typer(help="Alembic-owned MetaTable migration commands")
 REGISTER_ENDPOINT = "/orm/api/ts_manager/meta_table/register/"
-RESERVE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/reserve-managed/"
+METATABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/meta_table/"
+DYNAMIC_TABLE_COLLECTION_ENDPOINT = "/orm/api/ts_manager/dynamic_table/"
 FINALIZE_MANAGED_ENDPOINT = "/orm/api/ts_manager/meta_table/finalize-managed/"
 ALEMBIC_PROVIDER_RESET_ENDPOINT = "/orm/api/ts_manager/meta_table/alembic-provider-reset/"
 
@@ -339,6 +341,20 @@ def _metatable_message(
     return " ".join(parts)
 
 
+def _collection_create_endpoint_for_items(items: Sequence[Any]) -> str:
+    if items and all(_item_value(item, "time_index_name") not in (None, "") for item in items):
+        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+    return METATABLE_COLLECTION_ENDPOINT
+
+
+def _collection_create_endpoint_for_item(item: Any) -> str:
+    if isinstance(item, TimeIndexMetaData):
+        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+    if _item_value(item, "time_index_name") not in (None, ""):
+        return DYNAMIC_TABLE_COLLECTION_ENDPOINT
+    return METATABLE_COLLECTION_ENDPOINT
+
+
 def _emit_metatable_registration(model: type[Any], item: Any) -> None:
     _emit_progress(
         _metatable_message(
@@ -354,6 +370,7 @@ def _emit_metatable_reservation_request(
     models: Sequence[type[Any]],
     tables: Sequence[Any],
 ) -> None:
+    endpoint = _collection_create_endpoint_for_items(tables)
     table_names = []
     for model, table in zip(models, tables, strict=True):
         table_names.append(
@@ -365,7 +382,7 @@ def _emit_metatable_reservation_request(
             )
         )
     _emit_status(
-        f"Sending POST {RESERVE_MANAGED_ENDPOINT} request for {len(tables)} "
+        f"Sending POST {endpoint} collection-create request for {len(tables)} "
         f"MetaTables table_names={','.join(table_names)}"
     )
 
@@ -373,7 +390,7 @@ def _emit_metatable_reservation_request(
 def _emit_metatable_reservation(model: type[Any], item: Any) -> None:
     _emit_progress(
         _metatable_message(
-            endpoint=RESERVE_MANAGED_ENDPOINT,
+            endpoint=_collection_create_endpoint_for_item(item),
             action="reserved",
             model=model,
             item=item,

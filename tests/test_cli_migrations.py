@@ -89,13 +89,13 @@ def _patch_preflight(monkeypatch, migration_cli, migration, *, emit_reservation=
                 )
             if on_metatable_reservation_status is not None:
                 on_metatable_reservation_status(
-                    "Serializing POST http://example.test/reserve-managed/ payload..."
+                    "Serializing POST http://example.test/ts_manager/meta_table/ payload..."
                 )
                 on_metatable_reservation_status(
-                    "Sending HTTP POST http://example.test/reserve-managed/..."
+                    "Sending HTTP POST http://example.test/ts_manager/meta_table/..."
                 )
                 on_metatable_reservation_status(
-                    "Received HTTP 200 from POST http://example.test/reserve-managed/."
+                    "Received HTTP 200 from POST http://example.test/ts_manager/meta_table/."
                 )
             on_metatable_reserved(
                 Account,
@@ -231,7 +231,7 @@ def test_migrations_current_skips_provider_metatable_reservations(monkeypatch):
 
     assert result.exit_code == 0
     output = _combined_output(result)
-    assert "POST /orm/api/ts_manager/meta_table/reserve-managed/" not in output
+    assert "POST /orm/api/ts_manager/meta_table/" not in output
     assert "reserved MetaTable identifier=example_assets__account" not in output
     assert captured["connection_request"].meta_table_uids == ["registry-meta-table-uid"]
     assert (

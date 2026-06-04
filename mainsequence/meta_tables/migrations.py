@@ -16,9 +16,6 @@ from mainsequence.client.metatables import (
     ManagedMetaTableFinalizeRequest,
     ManagedMetaTableFinalizeResponse,
     ManagedMetaTableFinalizeTableResult,
-    ManagedMetaTableReservationItem,
-    ManagedMetaTableReservationRequest,
-    ManagedMetaTableReservationTable,
     MetaTable,
     MetaTableContract,
     MetaTablePhysicalContract,
@@ -507,7 +504,7 @@ class AlembicMetaTableMigration:
         *,
         timeout: int | float | tuple[float, float] | None = None,
         on_metatable_reservation_request: Callable[
-            [Sequence[type[Any]], Sequence[ManagedMetaTableReservationTable]], Any
+            [Sequence[type[Any]], Sequence[Mapping[str, Any]]], Any
         ]
         | None = None,
         on_metatable_reservation_status: Callable[[str], Any] | None = None,
@@ -529,8 +526,10 @@ class AlembicMetaTableMigration:
                 on_metatable_reservation_status(
                     f"Found existing MetaTables by table name count={len(existing_by_table_name)}."
                 )
-            pending_models: list[type[Any]] = []
-            pending_tables: list[ManagedMetaTableReservationTable] = []
+            pending_by_resource: dict[
+                type[MetaTable],
+                list[tuple[type[Any], dict[str, Any]]],
+            ] = {}
             for model in ordered_models:
                 table_name = target_table_names[model]
                 existing_meta_table = existing_by_table_name.get(table_name)
@@ -548,40 +547,49 @@ class AlembicMetaTableMigration:
                     enforce_storage_hash_name=False,
                 )
 
-                pending_models.append(model)
-                pending_tables.append(_reservation_table_from_registration_request(request))
-
-            if pending_tables:
-                reservation_request = ManagedMetaTableReservationRequest(
-                    migration_package=self.package,
-                    migration_namespace=self.migration_namespace,
-                    migration_provider_key=self.migration_provider_key,
-                    alembic_version_meta_table_uid=self.alembic_registry.get_meta_table_uid(),
-                    tables=pending_tables,
-                )
-                if on_metatable_reservation_request is not None:
-                    on_metatable_reservation_request(
-                        pending_models,
-                        reservation_request.tables,
+                resource_cls = _metatable_resource_class_for_model(model)
+                pending_by_resource.setdefault(resource_cls, []).append(
+                    (
+                        model,
+                        _collection_create_row_from_registration_request(
+                            request,
+                            migration_package=self.package,
+                            migration_namespace=self.migration_namespace,
+                            migration_provider_key=self.migration_provider_key,
+                            alembic_version_meta_table_uid=(
+                                self.alembic_registry.get_meta_table_uid()
+                            ),
+                            alembic_revision=None,
+                        ),
                     )
-                response = MetaTable.reserve_managed(
-                    reservation_request,
+                )
+
+            for resource_cls, pending_items in pending_by_resource.items():
+                pending_models = [model for model, _row in pending_items]
+                pending_rows = [row for _model, row in pending_items]
+                if on_metatable_reservation_request is not None:
+                    on_metatable_reservation_request(pending_models, pending_rows)
+                response_tables = resource_cls.bulk_create(
+                    pending_rows,
                     timeout=timeout,
                     on_status=on_metatable_reservation_status,
                 )
-                if len(response.tables) != len(pending_models):
+                if len(response_tables) != len(pending_models):
                     raise RuntimeError(
-                        "MetaTable reservation response row count mismatch; "
-                        f"requested {len(pending_models)}, got {len(response.tables)}."
+                        f"{resource_cls.__name__}.bulk_create response row count mismatch; "
+                        f"requested {len(pending_models)}, got {len(response_tables)}."
                     )
-                for model, item in zip(pending_models, response.tables, strict=True):
+                for model, reserved_meta_table in zip(
+                    pending_models,
+                    response_tables,
+                    strict=True,
+                ):
                     if on_metatable_reserved is not None:
-                        on_metatable_reserved(model, item)
-                    reserved_meta_table = _metatable_from_reservation_item(model, item)
+                        on_metatable_reserved(model, reserved_meta_table)
                     _bind_model_to_existing_metatable(model, reserved_meta_table)
                     reserved_by_model[model] = reserved_meta_table
                     reserved_tables.append(reserved_meta_table)
-                    item_owner_role_name = getattr(item, "owner_role_name", None)
+                    item_owner_role_name = getattr(reserved_meta_table, "owner_role_name", None)
                     if item_owner_role_name not in (None, ""):
                         owner_role_name = str(item_owner_role_name)
 
@@ -798,28 +806,55 @@ def resolve_alembic_revision_metadata(
     return str(resolved.revision), _normalize_down_revision(resolved.down_revision)
 
 
-def _reservation_table_from_registration_request(
+def _collection_create_row_from_registration_request(
     request: Any,
-) -> ManagedMetaTableReservationTable:
+    *,
+    migration_package: str,
+    migration_namespace: str,
+    migration_provider_key: str | None,
+    alembic_version_meta_table_uid: str | None,
+    alembic_revision: str | None,
+) -> dict[str, Any]:
     data_source_uid = getattr(request, "data_source_uid", None)
     if data_source_uid in (None, ""):
         raise ValueError(
-            "Managed MetaTable reservation requires the model registration "
+            "Alembic MetaTable collection-create requires the model registration "
             "request data_source_uid; data-source ownership is table-scoped, "
-            "not a reservation-request default."
+            "not a provider-request default."
         )
-    return ManagedMetaTableReservationTable(
-        identifier=str(request.identifier),
-        namespace=request.namespace,
-        data_source_uid=str(data_source_uid),
-        storage_hash=getattr(request, "storage_hash", None),
-        physical_table_name=_request_contract_physical_table_name(request),
-        description=getattr(request, "description", None),
-        labels=list(getattr(request, "labels", None) or []),
-        table_contract=request.table_contract,
-        time_index_name=getattr(request, "time_index_name", None),
-        partition_strategy=getattr(request, "partition_strategy", None),
-    )
+    storage_hash = getattr(request, "storage_hash", None)
+    if storage_hash in (None, ""):
+        raise ValueError("Alembic MetaTable collection-create requires storage_hash.")
+    physical_table_name = _request_contract_physical_table_name(request)
+    if physical_table_name in (None, ""):
+        raise ValueError("Alembic MetaTable collection-create requires physical_table_name.")
+
+    row: dict[str, Any] = {
+        "data_source_uid": str(data_source_uid),
+        "storage_hash": str(storage_hash),
+        "identifier": getattr(request, "identifier", None),
+        "namespace": getattr(request, "namespace", None),
+        "description": getattr(request, "description", None),
+        "labels": list(getattr(request, "labels", None) or []),
+        "management_mode": "platform_managed",
+        "provisioning_status": "reserved",
+        "is_alembic_managed": True,
+        "migration_package": migration_package,
+        "migration_namespace": migration_namespace,
+        "migration_provider_key": migration_provider_key,
+        "alembic_version_meta_table_uid": alembic_version_meta_table_uid,
+        "alembic_revision": alembic_revision,
+        "physical_table_name": str(physical_table_name),
+        "protect_from_deletion": bool(getattr(request, "protect_from_deletion", False)),
+        "table_contract": request.table_contract,
+    }
+    time_index_name = getattr(request, "time_index_name", None)
+    if time_index_name not in (None, ""):
+        row["time_index_name"] = str(time_index_name)
+    partition_strategy = getattr(request, "partition_strategy", None)
+    if partition_strategy not in (None, ""):
+        row["partition_strategy"] = str(partition_strategy)
+    return row
 
 
 def _request_contract_physical_table_name(request: Any) -> str | None:
@@ -1064,28 +1099,6 @@ def _bind_model_to_existing_metatable(model: Any, meta_table: MetaTable) -> None
             f"Migration MetaTable model {model_name} cannot bind an existing MetaTable row."
         )
     bind(meta_table)
-
-
-def _metatable_from_reservation_item(
-    model: type[Any],
-    item: ManagedMetaTableReservationItem,
-) -> MetaTable:
-    resource_cls = _metatable_resource_class_for_model(model)
-    return resource_cls.model_construct(
-        uid=item.meta_table_uid,
-        data_source_uid=item.data_source_uid,
-        storage_hash=item.storage_hash,
-        identifier=item.identifier,
-        namespace=item.namespace,
-        management_mode=item.management_mode,
-        provisioning_status=item.provisioning_status,
-        schema_management={},
-        schema_management_mode=item.schema_management_mode or "backend_managed",
-        migration_provider_key=item.migration_provider_key,
-        alembic_version_meta_table_uid=item.alembic_version_meta_table_uid,
-        physical_table_name=item.physical_table_name,
-        table_contract=item.table_contract,
-    )
 
 
 def _metatable_from_finalize_result(
