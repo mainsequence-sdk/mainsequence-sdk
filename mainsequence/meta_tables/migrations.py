@@ -534,9 +534,15 @@ class AlembicMetaTableMigration:
                 table_name = target_table_names[model]
                 existing_meta_table = existing_by_table_name.get(table_name)
                 if existing_meta_table is not None:
-                    _bind_model_to_existing_metatable(model, existing_meta_table)
-                    reserved_by_model[model] = existing_meta_table
-                    continue
+                    if _meta_table_provisioning_status(existing_meta_table) == "active":
+                        _bind_model_to_existing_metatable(model, existing_meta_table)
+                        reserved_by_model[model] = existing_meta_table
+                        continue
+                    if on_metatable_reservation_status is not None:
+                        on_metatable_reservation_status(
+                            "Restaging existing reserved MetaTable "
+                            f"table_name={table_name} with current provider contract."
+                        )
                 else:
                     bound_meta_table = _bound_meta_table_for_model(model)
                     if bound_meta_table is not None:
@@ -1055,6 +1061,13 @@ def _meta_table_physical_table_name(meta_table: MetaTable) -> str | None:
     return str(physical_table_name)
 
 
+def _meta_table_provisioning_status(meta_table: MetaTable) -> str | None:
+    provisioning_status = meta_table.provisioning_status
+    if provisioning_status in (None, ""):
+        return None
+    return str(provisioning_status)
+
+
 def _meta_table_uid(meta_table: MetaTable) -> str | None:
     uid = meta_table.uid
     if uid in (None, ""):
@@ -1066,7 +1079,6 @@ def _finalize_table_failed(item: ManagedMetaTableFinalizeTableResult) -> bool:
     return (
         item.provisioning_status != "active"
         or item.physical_table_exists is False
-        or item.finalized is False
         or item.error not in (None, "", {})
     )
 

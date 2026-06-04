@@ -292,6 +292,12 @@ SQLAlchemy class and calling normal registration again. Shape-addressed
 foreign keys, or constraints change, so new code cannot reliably recover the
 previous shape-derived table.
 
+Do not modify Alembic revision files that have already been implemented/applied.
+MetaTable migrations are database-backed history: once a revision may exist in a
+database `alembic_version` table, changing that file corrupts the relationship
+between source history and deployed state. For any follow-up schema change,
+create a new Alembic revision on top of the current head.
+
 For contract evolution, define or update one selected
 `AlembicMetaTableMigration` provider:
 
