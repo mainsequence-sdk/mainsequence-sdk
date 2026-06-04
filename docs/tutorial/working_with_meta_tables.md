@@ -80,7 +80,6 @@ from mainsequence.meta_tables import (
 
 PROJECT_NAME = "sdk_examples"
 NAMESPACE = "sdk-examples"
-SCHEMA = "public"
 ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
 
 
@@ -92,7 +91,6 @@ class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
     __table_args__ = (
         Index(None, "region"),
-        {"schema": SCHEMA},
     )
 
     __metatable_namespace__ = NAMESPACE
@@ -111,7 +109,7 @@ The important pieces are:
 
 - `PlatformManagedMetaTable` derives the logical `storage_hash` from storage-relevant configuration and table shape
 - `schema_table_name(PROJECT_NAME, "account")` creates an explicit project-prefixed SQLAlchemy table name used by Alembic
-- `__table_args__` declares the SQLAlchemy table schema used by Alembic and storage-hash derivation
+- omit SQLAlchemy schema metadata for the default PostgreSQL schema; use `__table_args__` only for non-default schemas or other table args
 - `NAMESPACE` is a plain logical grouping for these SDK examples
 - `__metatable_identifier__` is logical backend metadata and does not rotate the configured storage identity
 - `__metatable_extra_hash_components__` adds a stable storage-identity component so similarly shaped tables cannot collide
@@ -164,7 +162,6 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_LIMIT_TABLE_NAME
     __table_args__ = (
         Index(None, "account_uid"),
-        {"schema": SCHEMA},
     )
 
     __metatable_namespace__ = NAMESPACE
@@ -176,7 +173,7 @@ class AccountLimit(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"{SCHEMA}.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     limit_type: Mapped[str] = mapped_column(String(64), nullable=False)

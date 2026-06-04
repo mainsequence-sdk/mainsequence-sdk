@@ -710,6 +710,63 @@ def test_platform_managed_schema_resolves_from_sqlalchemy_table_args_only():
     assert sqlalchemy_contracts._resolve_class_schema(Account) == "table_args_schema"
 
 
+def test_platform_managed_default_public_schema_stays_sqlalchemy_default():
+    pytest.importorskip("sqlalchemy")
+
+    from sqlalchemy import MetaData
+    from sqlalchemy import Uuid as SQLAlchemyUuid
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData()
+
+    class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
+        __table_args__ = {"schema": "public"}
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(SQLAlchemyUuid, primary_key=True)
+
+    assert Account.__table__.schema is None
+    assert sqlalchemy_contracts._resolve_schema(Account.__table__) == "public"
+
+    request = Account.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.table_contract.physical.schema_ == "public"
+
+
+def test_platform_managed_default_public_metadata_schema_stays_sqlalchemy_default():
+    pytest.importorskip("sqlalchemy")
+
+    from sqlalchemy import MetaData
+    from sqlalchemy import Uuid as SQLAlchemyUuid
+    from sqlalchemy.orm import DeclarativeBase, mapped_column
+
+    class Base(DeclarativeBase):
+        metadata = MetaData(schema="public")
+
+    class Account(PlatformManagedMetaTable, Base):
+        __tablename__ = "example_assets__account"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Account"
+
+        uid: Mapped[uuid.UUID] = mapped_column(SQLAlchemyUuid, primary_key=True)
+
+    assert Account.__table__.schema is None
+    assert Account.__table__.fullname == "example_assets__account"
+    assert "example_assets__account" in Base.metadata.tables
+    assert "public.example_assets__account" not in Base.metadata.tables
+
+    request = Account.build_registration_request(
+        data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+    )
+
+    assert request.table_contract.physical.schema_ == "public"
+
+
 def test_time_index_optional_table_info_resolvers_allow_pending_declarative_class():
     class PendingTimeIndexTable:
         __time_index_name__ = "time_index"
@@ -1663,14 +1720,15 @@ def test_platform_managed_register_preserves_authored_sqlalchemy_table_name(
     assert Account.get_storage_hash() == storage_hash
     assert Account.get_physical_table_name() == "example_assets__account"
     assert Account.__table__.name == "example_assets__account"
-    assert Account.__table__.fullname == "public.example_assets__account"
-    assert Base.metadata.tables["public.example_assets__account"] is Account.__table__
+    assert Account.__table__.schema is None
+    assert Account.__table__.fullname == "example_assets__account"
+    assert Base.metadata.tables["example_assets__account"] is Account.__table__
     assert f"public.{physical_table_name}" not in Base.metadata.tables
 
     compiled_sql = str(
         select(Account.__table__).compile(dialect=postgresql.dialect(paramstyle="pyformat"))
     )
-    assert "FROM public.example_assets__account" in compiled_sql
+    assert "FROM example_assets__account" in compiled_sql
     assert physical_table_name not in compiled_sql
     assert storage_hash not in compiled_sql
 
@@ -1702,7 +1760,8 @@ def test_bound_parent_table_foreign_key_stays_sqlalchemy_only():
         )
     )
 
-    assert Account.__table__.fullname == "public.example_assets__account"
+    assert Account.__table__.schema is None
+    assert Account.__table__.fullname == "example_assets__account"
 
     class Asset(PlatformManagedMetaTable, Base):
         __tablename__ = "example_assets__asset"
@@ -1712,7 +1771,7 @@ def test_bound_parent_table_foreign_key_stays_sqlalchemy_only():
         uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
         account_uid: Mapped[uuid.UUID] = mapped_column(
             Uuid,
-            ForeignKey("public.example_assets__account.uid", ondelete="RESTRICT"),
+            ForeignKey("example_assets__account.uid", ondelete="RESTRICT"),
             nullable=False,
         )
         symbol: Mapped[str] = mapped_column(String(64), nullable=False)

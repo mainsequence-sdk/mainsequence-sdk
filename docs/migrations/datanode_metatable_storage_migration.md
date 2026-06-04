@@ -365,7 +365,7 @@ class AccountPositions(PlatformTimeIndexMetaData, Base):
 
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
         info={
             "label": "Account UID",

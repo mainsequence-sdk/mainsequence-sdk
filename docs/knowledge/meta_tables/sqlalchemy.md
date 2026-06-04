@@ -48,7 +48,6 @@ ACCOUNT_TABLE_NAME = schema_table_name(PROJECT_NAME, "account")
 
 class Account(PlatformManagedMetaTable, Base):
     __tablename__ = ACCOUNT_TABLE_NAME
-    __table_args__ = {"schema": "public"}
 
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.Account"
@@ -148,7 +147,6 @@ class Asset(PlatformManagedMetaTable, Base):
     __tablename__ = schema_table_name(PROJECT_NAME, "asset")
     __table_args__ = (
         Index(None, "account_uid"),
-        {"schema": "public"},
     )
 
     __metatable_namespace__ = "sdk-examples"
@@ -158,7 +156,7 @@ class Asset(PlatformManagedMetaTable, Base):
     uid: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     symbol: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -208,7 +206,6 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
     __table_args__ = (
         Index(None, "account_uid"),
-        {"schema": "public"},
     )
 
     __metatable_namespace__ = "sdk-examples"
@@ -223,7 +220,7 @@ class AccountHoldings(PlatformTimeIndexMetaData, Base):
     )
     account_uid: Mapped[uuid.UUID] = mapped_column(
         Uuid,
-        ForeignKey(f"public.{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
+        ForeignKey(f"{ACCOUNT_TABLE_NAME}.uid", ondelete="RESTRICT"),
         nullable=False,
     )
     unique_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -335,7 +332,7 @@ prints the generated operation unless you set `MAINSEQUENCE_META_TABLE_EXECUTE=1
 The SDK intentionally fails early for ambiguous metadata:
 
 - platform-managed tables must use `PlatformManagedMetaTable` so the SDK can derive the logical `storage_hash`
-- SQLAlchemy models must expose schema through SQLAlchemy table metadata, usually `__table_args__`
+- default-schema tables should leave SQLAlchemy `Table.schema` unset; set schema metadata only for non-default schemas
 - project tables should use `schema_table_name(project_or_app, concept)` for project-prefixed SQLAlchemy table names when FK string targets are authored explicitly
 - Alembic owns index and foreign-key DDL; the SDK does not resolve FK target MetaTable UIDs
 - unsupported SQLAlchemy column types raise before registration

@@ -16,7 +16,11 @@ from mainsequence.client.metatables import (
     MetaTable,
     TimeIndexMetaData,
 )
-from mainsequence.meta_tables import PlatformManagedMetaTable, PlatformTimeIndexMetaData
+from mainsequence.meta_tables import (
+    PlatformManagedMetaTable,
+    PlatformTimeIndexMetaData,
+    schema_index_name,
+)
 from mainsequence.meta_tables.migrations import (
     DEFAULT_ALEMBIC_VERSION_COLUMN_NAME,
     DEFAULT_ALEMBIC_VERSION_IDENTIFIER,
@@ -1003,6 +1007,68 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
     assert row["time_index_name"] == "time_index"
     assert row["partition_strategy"] == "backend_default"
     assert "schema_management" not in row
+
+
+def test_provider_adds_time_index_grain_index_when_table_cls_is_overridden():
+    class Base(DeclarativeBase):
+        metadata = MetaData(schema="public")
+
+    class CustomTimeIndexMixin(PlatformTimeIndexMetaData):
+        __abstract__ = True
+
+        @classmethod
+        def __table_cls__(cls, *args, **kwargs):
+            name, metadata, *table_items = args
+            return Table(str(name), metadata, *table_items, **kwargs)
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_uid__ = "registry-meta-table-uid"
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    class Prices(CustomTimeIndexMixin, Base):
+        __tablename__ = "example_assets__prices"
+        __metatable_data_source_uid__ = "data-source-uid"
+        __metatable_namespace__ = "example.assets"
+        __metatable_identifier__ = "Prices"
+        __time_index_name__ = "time_index"
+        __index_names__ = ["time_index", "asset_identifier"]
+
+        time_index: Mapped[datetime.datetime] = mapped_column(
+            DateTime(timezone=True),
+            nullable=False,
+        )
+        asset_identifier: Mapped[str] = mapped_column(String(255), nullable=False)
+        close: Mapped[int] = mapped_column(Integer, nullable=True)
+
+    assert not Prices.__table__.indexes
+    assert Prices.__table__.schema == "public"
+    assert "public.example_assets__prices" in Base.metadata.tables
+
+    AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location="sample:migrations",
+        target_metadata=Base.metadata,
+        alembic_registry=ProjectAlembicVersion,
+        metatable_models=[Prices],
+    )
+
+    assert Prices.__table__.schema is None
+    assert "example_assets__prices" in Base.metadata.tables
+    assert "public.example_assets__prices" not in Base.metadata.tables
+
+    grain_indexes = [
+        index
+        for index in Prices.__table__.indexes
+        if index.unique
+        and [column.name for column in index.columns] == ["time_index", "asset_identifier"]
+    ]
+    assert len(grain_indexes) == 1
+    assert grain_indexes[0].name == schema_index_name(
+        "example_assets__prices",
+        ["time_index", "asset_identifier"],
+        unique=True,
+    )
 
 
 def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity(monkeypatch):

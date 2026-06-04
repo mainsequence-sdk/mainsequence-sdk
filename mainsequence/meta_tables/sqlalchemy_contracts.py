@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy import Table as _SQLAlchemyTable
 from sqlalchemy import inspect as _sqlalchemy_inspect
 from sqlalchemy.orm import declared_attr as _sqlalchemy_declared_attr
+from sqlalchemy.schema import BLANK_SCHEMA as _SQLALCHEMY_BLANK_SCHEMA
 
 from mainsequence.client.dtype_codec import (
     is_temporal_token,
@@ -35,6 +36,7 @@ DEFAULT_PLATFORM_MANAGED_PROVISIONING = {
     "if_not_exists": True,
 }
 SERVER_GENERATED_UUID_DEFAULT = "gen_random_uuid()"
+DEFAULT_POSTGRES_SCHEMA = "public"
 _PLATFORM_MANAGED_MIGRATION_REGISTRATION_CONTEXT: contextvars.ContextVar[bool] = (
     contextvars.ContextVar(
         "mainsequence_platform_managed_migration_registration_context",
@@ -153,8 +155,14 @@ class PlatformManagedMetaTable:
 
         name, metadata, *table_items = args
         kwargs = dict(kwargs)
-        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
-        if not kwargs.get("schema"):
+        schema = _normalize_sqlalchemy_schema(
+            kwargs.get("schema")
+            if "schema" in kwargs
+            else _resolve_class_schema(cls, metadata=metadata)
+        )
+        if schema is None:
+            kwargs["schema"] = _SQLALCHEMY_BLANK_SCHEMA
+        else:
             kwargs["schema"] = schema
 
         from sqlalchemy import Table
@@ -308,8 +316,14 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
 
         name, metadata, *table_items = args
         kwargs = dict(kwargs)
-        schema = str(kwargs.get("schema") or _resolve_class_schema(cls, metadata=metadata))
-        if not kwargs.get("schema"):
+        schema = _normalize_sqlalchemy_schema(
+            kwargs.get("schema")
+            if "schema" in kwargs
+            else _resolve_class_schema(cls, metadata=metadata)
+        )
+        if schema is None:
+            kwargs["schema"] = _SQLALCHEMY_BLANK_SCHEMA
+        else:
             kwargs["schema"] = schema
 
         columns = [item for item in table_items if _looks_like_column(item)]
@@ -416,7 +430,7 @@ def table_contract_from_sqlalchemy_model(
     include_physical_table_name: bool = True,
 ) -> MetaTableContract:
     table = _resolve_table(model_or_table)
-    _resolve_schema(table, schema=schema)
+    resolved_schema = _resolve_schema(table, schema=schema)
     module, qualname = _resolve_model_path(
         model_or_table,
         table_model_module=table_model_module,
@@ -433,6 +447,7 @@ def table_contract_from_sqlalchemy_model(
             }
         },
         physical=MetaTablePhysicalContract(
+            schema_=resolved_schema,
             table_name=_table_name(table) if include_physical_table_name else None,
         ),
         columns=[
@@ -563,7 +578,10 @@ def time_indexed_registration_request_from_sqlalchemy_model(
                     ),
                 },
             },
-            "physical": {"table_name": _table_name(table)},
+            "physical": {
+                "schema": resolved_schema,
+                "table_name": _table_name(table),
+            },
             "columns": column_contracts,
         },
     )
@@ -744,7 +762,7 @@ def _table_name(table: Any) -> str:
 def _resolve_schema(table: Any, *, schema: str | None = None) -> str:
     resolved_schema = schema or getattr(table, "schema", None)
     if not resolved_schema:
-        raise ValueError("MetaTable SQLAlchemy contracts require a SQLAlchemy table schema.")
+        return DEFAULT_POSTGRES_SCHEMA
     return str(resolved_schema)
 
 
@@ -755,7 +773,7 @@ def _resolve_class_namespace(cls: type[Any]) -> str:
     return str(resolved_namespace)
 
 
-def _resolve_class_schema(cls: type[Any], *, metadata: Any | None = None) -> str:
+def _resolve_class_schema(cls: type[Any], *, metadata: Any | None = None) -> str | None:
     table_args = getattr(cls, "__table_args__", None)
     if isinstance(table_args, Mapping):
         schema = table_args.get("schema")
@@ -765,7 +783,29 @@ def _resolve_class_schema(cls: type[Any], *, metadata: Any | None = None) -> str
         schema = None
     if schema is None and metadata is not None:
         schema = getattr(metadata, "schema", None)
-    return str(schema or "public")
+    return _normalize_sqlalchemy_schema(schema)
+
+
+def _normalize_sqlalchemy_schema(schema: Any | None) -> str | None:
+    if schema is None:
+        return None
+    schema_name = str(schema).strip()
+    if schema_name in ("", DEFAULT_POSTGRES_SCHEMA):
+        return None
+    return schema_name
+
+
+def _normalize_table_default_schema(table: Any) -> None:
+    if getattr(table, "schema", None) != DEFAULT_POSTGRES_SCHEMA:
+        return
+
+    metadata = getattr(table, "metadata", None)
+    if metadata is not None:
+        metadata._remove_table(table.name, table.schema)
+    table.schema = None
+    table.fullname = _table_name(table)
+    if metadata is not None:
+        metadata._add_table(table.name, table.schema, table)
 
 
 def _resolve_data_source_uid(

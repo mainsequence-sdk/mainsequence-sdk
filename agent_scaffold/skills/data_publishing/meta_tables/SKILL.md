@@ -137,7 +137,11 @@ first version, use Alembic. Keep the SDK model as a normal
 `PlatformManagedMetaTable` or `PlatformTimeIndexMetaData` catalog contract, and
 apply physical schema changes through the Alembic migration workflow.
 
-Schema must come from SQLAlchemy table metadata, usually `__table_args__ = {"schema": "public"}` or the tuple form ending in `{"schema": ...}`. Do not add a separate MetaTable-specific schema attribute.
+Default-schema tables must leave SQLAlchemy `Table.schema` unset; do not write
+`__table_args__ = {"schema": "public"}` for the default PostgreSQL schema. Set
+schema metadata only for non-default schemas, using `__table_args__ = {"schema":
+"custom_schema"}` or the tuple form ending in `{"schema": ...}`. Do not add a
+separate MetaTable-specific schema attribute.
 
 Always declare `__metatable_description__` on the model. The description must
 explain the table's business intention, row grain, and expected use, not only
@@ -246,7 +250,7 @@ Use this pattern:
 ```python
 account_uid: Mapped[uuid.UUID] = mapped_column(
     Uuid,
-    ForeignKey("public.sdk_examples__account.uid", ondelete="RESTRICT"),
+    ForeignKey("sdk_examples__account.uid", ondelete="RESTRICT"),
     nullable=False,
 )
 ```

@@ -27,9 +27,14 @@ from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
     PlatformTimeIndexMetaData,
+    _ensure_time_index_unique_grain_index,
+    _normalize_table_default_schema,
     _resolve_model_data_source_uid,
     _resolve_table,
+    _resolve_time_index_name,
+    _resolve_time_index_names,
     _table_name,
+    _validate_time_index_contract,
     platform_managed_migration_registration_context,
 )
 
@@ -268,6 +273,8 @@ class AlembicMetaTableMigration:
             self.after_register_metatables
         ):
             raise TypeError("after_register_metatables must be callable when provided.")
+        _normalize_provider_default_schemas(self.metatable_models)
+        _ensure_provider_time_index_grain_indexes(self.metatable_models)
 
     @property
     def alembic_version_table(self) -> str:
@@ -954,6 +961,27 @@ def _metadata_table_names(target_metadata: Any) -> list[str]:
             if candidate not in (None, ""):
                 names.append(str(candidate))
     return list(dict.fromkeys(names))
+
+
+def _normalize_provider_default_schemas(models: Sequence[type[Any]]) -> None:
+    for model in models:
+        if _is_platform_managed_metatable_model(model):
+            _normalize_table_default_schema(_resolve_table(model))
+
+
+def _ensure_provider_time_index_grain_indexes(models: Sequence[type[Any]]) -> None:
+    for model in models:
+        if not _is_platform_time_index_metatable_model(model):
+            continue
+        table = _resolve_table(model)
+        time_index_name = _resolve_time_index_name(model)
+        index_names = _resolve_time_index_names(model, time_index_name=time_index_name)
+        _validate_time_index_contract(
+            columns=list(table.columns),
+            time_index_name=time_index_name,
+            index_names=index_names,
+        )
+        _ensure_time_index_unique_grain_index(table=table, index_names=index_names)
 
 
 def _normalize_down_revision(value: Any) -> str | None:
