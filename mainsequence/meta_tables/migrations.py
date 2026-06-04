@@ -101,6 +101,49 @@ class AlembicProviderPhysicalStateError(RuntimeError):
         )
 
 
+def _normalize_optional_alembic_location(value: Any, field_name: str) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        raise ValueError(f"AlembicMetaTableMigration {field_name} cannot be empty.")
+    return text
+
+
+def _normalize_alembic_version_locations(value: str | Sequence[str] | None) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    raw_locations: Sequence[str]
+    if isinstance(value, str):
+        raw_locations = [value]
+    else:
+        raw_locations = value
+
+    locations: list[str] = []
+    seen: set[str] = set()
+    for raw_location in raw_locations:
+        location = _normalize_optional_alembic_location(raw_location, "version_locations")
+        if location is None or location in seen:
+            continue
+        seen.add(location)
+        locations.append(location)
+    if not locations:
+        raise ValueError("AlembicMetaTableMigration version_locations cannot be empty.")
+    return tuple(locations)
+
+
+def _configure_alembic_version_locations(
+    config: Any,
+    version_locations: str | Sequence[str] | None,
+) -> tuple[str, ...]:
+    locations = _normalize_alembic_version_locations(version_locations)
+    if not locations:
+        return ()
+    config.set_main_option("version_locations", "\n".join(locations))
+    config.set_main_option("version_path_separator", "newline")
+    return locations
+
+
 class AlembicVersionMetaTable:
     """MetaTable catalog binding for Alembic's version table.
 
@@ -255,6 +298,8 @@ class AlembicMetaTableMigration:
     script_location: str
     target_metadata: Any
     alembic_registry: type[AlembicVersionMetaTable]
+    version_locations: str | Sequence[str] | None = None
+    version_path: str | None = None
     metatable_models: Sequence[type[Any]] = field(default_factory=tuple)
     after_register_metatables: Callable[[AlembicMetaTableCatalogRefreshContext], Any] | None = None
     include_name_hook: Any | None = None
@@ -273,6 +318,8 @@ class AlembicMetaTableMigration:
             self.after_register_metatables
         ):
             raise TypeError("after_register_metatables must be callable when provided.")
+        self.resolved_version_locations()
+        self.resolved_version_path()
         _normalize_provider_default_schemas(self.metatable_models)
         _ensure_provider_time_index_grain_indexes(self.metatable_models)
 
@@ -291,6 +338,23 @@ class AlembicMetaTableMigration:
     @property
     def version_table_schema(self) -> str | None:
         return self.alembic_registry.__alembic_version_schema__
+
+    def resolved_version_locations(self) -> tuple[str, ...]:
+        return _normalize_alembic_version_locations(self.version_locations)
+
+    def resolved_version_path(self) -> str | None:
+        explicit = _normalize_optional_alembic_location(self.version_path, "version_path")
+        if explicit is not None:
+            return explicit
+        locations = self.resolved_version_locations()
+        if len(locations) == 1:
+            return locations[0]
+        if len(locations) > 1:
+            raise ValueError(
+                "AlembicMetaTableMigration with multiple version_locations requires "
+                "an explicit version_path for revision generation."
+            )
+        return None
 
     def include_name(self, name: str | None, type_: str, parent_names: dict[str, Any]) -> bool:
         if self.include_name_hook is not None:
@@ -750,6 +814,7 @@ def alembic_config_for_provider(
     if output_buffer is not None:
         config.output_buffer = output_buffer
     config.set_main_option("script_location", migration.script_location)
+    version_locations = _configure_alembic_version_locations(config, migration.version_locations)
     config.set_main_option("sqlalchemy.url", sqlalchemy_url.replace("%", "%%"))
     config.set_main_option("sqlalchemy.echo", "true")
     config.set_main_option("version_table", migration.version_table)
@@ -764,6 +829,8 @@ def alembic_config_for_provider(
     config.attributes["alembic_version_table"] = migration.alembic_version_table
     config.attributes["version_table"] = migration.version_table
     config.attributes["version_table_schema"] = migration.version_table_schema
+    config.attributes["version_locations"] = version_locations
+    config.attributes["version_path"] = migration.resolved_version_path()
     return config
 
 
@@ -805,6 +872,7 @@ def resolve_alembic_revision_metadata(
     *,
     script_location: str,
     revision: str,
+    version_locations: str | Sequence[str] | None = None,
 ) -> tuple[str, str | None]:
     try:
         from alembic.config import Config
@@ -814,6 +882,7 @@ def resolve_alembic_revision_metadata(
 
     config = Config()
     config.set_main_option("script_location", script_location)
+    _configure_alembic_version_locations(config, version_locations)
     script = ScriptDirectory.from_config(config)
     resolved = script.get_revision(revision)
     if resolved is None:

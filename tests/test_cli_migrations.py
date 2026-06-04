@@ -5,6 +5,7 @@ import logging
 import pathlib
 import sys
 import types
+from collections.abc import Sequence
 
 import pytest
 from sqlalchemy import MetaData
@@ -37,7 +38,11 @@ def _load_cli_module():
         return importlib.import_module("mainsequence.cli.cli")
 
 
-def _migration() -> AlembicMetaTableMigration:
+def _migration(
+    *,
+    version_locations: str | Sequence[str] | None = None,
+    version_path: str | None = None,
+) -> AlembicMetaTableMigration:
     class Registry(AlembicVersionMetaTable):
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
@@ -54,6 +59,8 @@ def _migration() -> AlembicMetaTableMigration:
         script_location="msm:alembic",
         target_metadata=MetaData(),
         alembic_registry=Registry,
+        version_locations=version_locations,
+        version_path=version_path,
     )
 
 
@@ -358,6 +365,82 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert "[alembic] DEBUG alembic.command: fake revision command log" in output
     assert "Ensuring Alembic registry MetaTable" not in output
     assert "Preparing platform-managed MetaTable reservations" not in output
+
+
+def test_migrations_revision_passes_provider_version_path(monkeypatch):
+    cli_mod = _load_cli_module()
+    runner = CliRunner()
+    migration_cli = importlib.import_module("mainsequence.cli.migrations")
+    version_location = "msm:alembic/versions/mainsequence_examples"
+    migration = _migration(version_locations=[version_location], version_path=version_location)
+    captured = {}
+    monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+
+    def fail_backend_call(*args, **kwargs):
+        raise AssertionError("revision must not provision MetaTables")
+
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "ensure_alembic_registry",
+        fail_backend_call,
+    )
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "prepare_for_alembic",
+        fail_backend_call,
+    )
+
+    from alembic import command
+    from alembic.script import ScriptDirectory
+
+    class FakeScriptDirectory:
+        def get_heads(self):
+            return ["0004"]
+
+    def fake_script_directory_from_config(config):
+        captured["script_context_version_locations"] = config.get_main_option(
+            "version_locations"
+        )
+        captured["script_context_version_path_separator"] = config.get_main_option(
+            "version_path_separator"
+        )
+        return FakeScriptDirectory()
+
+    monkeypatch.setattr(
+        ScriptDirectory,
+        "from_config",
+        staticmethod(fake_script_directory_from_config),
+    )
+
+    def fake_revision(config, **kwargs):
+        captured["revision_version_locations"] = config.get_main_option("version_locations")
+        captured["revision_version_path_separator"] = config.get_main_option(
+            "version_path_separator"
+        )
+        captured["version_path"] = kwargs["version_path"]
+        return types.SimpleNamespace(revision=kwargs["rev_id"], path="/tmp/0005_migration.py")
+
+    monkeypatch.setattr(command, "revision", fake_revision)
+
+    result = runner.invoke(
+        cli_mod.app,
+        [
+            "migrations",
+            "revision",
+            "--provider",
+            "ignored:migration",
+            "--rev-id",
+            "0005",
+            "--no-autogenerate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert captured["script_context_version_locations"] == version_location
+    assert captured["script_context_version_path_separator"] == "newline"
+    assert captured["revision_version_locations"] == version_location
+    assert captured["revision_version_path_separator"] == "newline"
+    assert captured["version_path"] == version_location
 
 
 def test_migrations_revision_default_autogenerates_without_metatable_provisioning(monkeypatch):

@@ -128,6 +128,7 @@ def _emit_alembic_script_context(
     target_revision: str | None = None,
 ) -> None:
     script_location = config.get_main_option("script_location")
+    version_locations = config.get_main_option("version_locations")
     version_table = config.get_main_option("version_table")
     version_table_schema = config.get_main_option("version_table_schema")
     version_table_label = (
@@ -137,7 +138,9 @@ def _emit_alembic_script_context(
     )
     _emit_status(
         "Alembic script context "
-        f"script_location={script_location} version_table={version_table_label}"
+        f"script_location={script_location} "
+        f"version_locations={version_locations or '<default>'} "
+        f"version_table={version_table_label}"
     )
     try:
         from alembic.script import ScriptDirectory
@@ -745,14 +748,17 @@ def revision(
     )
     _emit_alembic_script_context(config, target_revision=head)
     _emit_status(f"Starting Alembic revision now rev_id={resolved_rev_id}...")
+    revision_kwargs = {
+        "message": resolved_message,
+        "autogenerate": autogenerate,
+        "rev_id": resolved_rev_id,
+        "head": head,
+    }
+    version_path = migration.resolved_version_path()
+    if version_path is not None:
+        revision_kwargs["version_path"] = version_path
     with _forward_alembic_logging():
-        script = command.revision(
-            config,
-            message=resolved_message,
-            autogenerate=autogenerate,
-            rev_id=resolved_rev_id,
-            head=head,
-        )
+        script = command.revision(config, **revision_kwargs)
     _emit_status("Alembic revision finished.")
     _emit(
         {

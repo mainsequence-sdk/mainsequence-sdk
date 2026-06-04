@@ -34,6 +34,7 @@ from mainsequence.meta_tables.migrations import (
     alembic_config_for_provider,
     apply_mainsequence_migration_role,
     load_alembic_metatable_migration_provider,
+    resolve_alembic_revision_metadata,
 )
 
 
@@ -657,6 +658,57 @@ def test_alembic_config_for_provider_uses_scoped_url_and_owner_role():
     assert config.attributes["mainsequence_migration_sqlalchemy_url"] == (
         "postgresql://temporary-secret?application_name=mainsequence_alembic%3Amsm%3Amarkets"
     )
+
+
+def test_alembic_config_for_provider_supports_namespace_version_locations(tmp_path):
+    script_root = tmp_path / "migrations"
+    namespace_versions = script_root / "versions" / "mainsequence_examples"
+    namespace_versions.mkdir(parents=True)
+    (script_root / "env.py").write_text("", encoding="utf-8")
+    (namespace_versions / "0003_migration.py").write_text(
+        "revision = '0003'\n"
+        "down_revision = None\n"
+        "branch_labels = None\n"
+        "depends_on = None\n",
+        encoding="utf-8",
+    )
+    (namespace_versions / "0004_migration.py").write_text(
+        "revision = '0004'\n"
+        "down_revision = '0003'\n"
+        "branch_labels = None\n"
+        "depends_on = None\n",
+        encoding="utf-8",
+    )
+
+    class ProjectAlembicVersion(AlembicVersionMetaTable):
+        __metatable_data_source_uid__ = "data-source-uid"
+
+    migration = AlembicMetaTableMigration(
+        package="sample",
+        migration_namespace="markets",
+        script_location=str(script_root),
+        version_locations=[str(namespace_versions)],
+        version_path=str(namespace_versions),
+        target_metadata=MetaData(),
+        alembic_registry=ProjectAlembicVersion,
+    )
+
+    config = alembic_config_for_provider(migration, sqlalchemy_url="postgresql://example")
+
+    assert config.get_main_option("version_locations") == str(namespace_versions)
+    assert config.get_main_option("version_path_separator") == "newline"
+    assert config.attributes["version_locations"] == (str(namespace_versions),)
+    assert config.attributes["version_path"] == str(namespace_versions)
+
+    from alembic.script import ScriptDirectory
+
+    script = ScriptDirectory.from_config(config)
+    assert script.get_revision("0004").revision == "0004"
+    assert resolve_alembic_revision_metadata(
+        script_location=str(script_root),
+        version_locations=[str(namespace_versions)],
+        revision="0004",
+    ) == ("0004", "0003")
 
 
 def test_apply_mainsequence_migration_role_executes_quoted_set_role():
