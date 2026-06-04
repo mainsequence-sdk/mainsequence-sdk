@@ -29,7 +29,6 @@ design:
   `MetaTableIndexContract`.
 - table-contract builders can serialize SQLAlchemy FKs into
   `MetaTableForeignKeyContract`.
-- platform-managed storage identity can include index and FK structure.
 - docs and examples teach `MetaTableForeignKey(...)` as the public FK API.
 
 That is now the wrong mental model. It makes assistants and users believe the
@@ -51,8 +50,10 @@ For Alembic-managed platform MetaTables:
 4. MetaTable reservation, registration, finalization, and migration-scoped
    connection setup must not resolve, serialize, rename, compare, or generate
    FK/index contracts.
-5. MetaTable storage identity used by the migration path must not include FK or
-   index definitions.
+5. MetaTable storage identity must include storage-shape semantics from columns,
+   primary keys, indexes, and foreign keys. This is a local opaque fingerprint
+   input only. It must not reintroduce backend FK/index contracts or SDK
+   FK/index name ownership.
 6. Project models should use ordinary SQLAlchemy declarations:
 
 ```python
@@ -116,7 +117,12 @@ preserve the SDK-side legacy model:
 - `MetaTableContract.foreign_keys`
 - `_index_contract(...)`
 - `_default_time_indexed_meta_table_indexes(...)` as a table-contract generator
-- SDK FK/index storage-identity inputs used only to detect DDL changes
+
+The SDK must keep normalized FK/index semantics in storage identity because
+those objects affect the physical table shape. That hash input must be derived
+from SQLAlchemy metadata and must ignore generated FK/index names. The backend
+may store the resulting hash as an opaque value, but it must not be asked to
+understand or reconcile FK/index structure.
 
 Temporary guard flags such as `include_indexes=False` or
 `include_foreign_keys=False` are acceptable only as an intermediate step while
@@ -132,8 +138,9 @@ a permanent compatibility switch.
 - use table names only for MetaTable reservation identity;
 - build reservation table contracts without indexes;
 - build reservation table contracts without foreign keys;
-- build migration storage identity without indexes;
-- build migration storage identity without foreign keys;
+- build migration storage identity with normalized index and FK semantics;
+- keep generated FK/index names out of storage identity so Alembic/database
+  naming does not cause hash churn;
 - never call FK target registration or target UID resolution;
 - leave SQLAlchemy metadata intact so Alembic can still see indexes and FKs.
 
@@ -146,6 +153,8 @@ it must not become an FK/index schema-management path.
 The SDK migration layer becomes smaller and less ambiguous:
 
 - FK/index changes appear only as Alembic revision changes.
+- FK/index changes also change the SDK storage hash through normalized local
+  semantics, without creating a second FK/index contract language.
 - Alembic autogenerate no longer competes with SDK FK/index contract metadata.
 - backend MetaTable reservations only coordinate table identity and migration
   scope, not physical relational constraints.
@@ -160,7 +169,8 @@ Keeping both APIs would preserve the broken architecture.
 
 - [x] Remove FK/index serialization from Alembic migration reservation and
   catalog-sync paths.
-- [x] Remove FK/index definitions from migration storage identity.
+- [x] Keep normalized FK/index semantics in migration storage identity without
+  serializing FK/index contracts or generated names.
 - [x] Remove FK target discovery from migration provider preparation.
 - [x] Remove recursive FK target registration from platform-managed
   registration.

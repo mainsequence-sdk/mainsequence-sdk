@@ -190,7 +190,6 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
     table_contract: dict[str, Any] = Field(..., description="Backend-normalized contract with resolved names.")
     created: bool = Field(..., description="Whether the backend created a new reservation row.")
     matched_by: str | None = Field(None, description="Existing-row match strategy, or null for newly created rows.")
-    contract_hash: str | None = Field(None, description="Backend canonical contract hash.")
 
 
 class ManagedMetaTableReservationResponse(BasePydanticModel):
@@ -377,7 +376,7 @@ normal tutorial workflow.
   finalize-managed, and Alembic provider reset.
 - [x] Add `mainsequence migrations reset --confirm-reset` for explicit
   provider-scoped repair workflows.
-- [ ] Apply ADR 0023 cleanup: remove SDK FK/index contract generation from
+- [x] Apply ADR 0023 cleanup: remove SDK FK/index contract generation from
   migration resolution and remove the legacy `MetaTableForeignKey(...)` surface.
 - [x] Deprecate or remove import-time binding of `MetaTable.apply_migration` and
   `MetaTable.get_migration_status`.

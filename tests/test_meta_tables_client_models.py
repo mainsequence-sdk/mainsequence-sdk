@@ -100,7 +100,6 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
                 "physical_table_name": "asset",
                 "created": True,
                 "matched_by": None,
-                "contract_hash": "contract-sha256",
                 "table_contract": {
                     "version": "relational-table.v1",
                     "physical": {"table_name": "asset"},
@@ -114,13 +113,10 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     item = response.tables[0]
     assert item.created is True
     assert item.matched_by is None
-    assert item.contract_hash == "contract-sha256"
     assert not hasattr(item, "existing")
     assert (
         "TS Manager accepted"
-        in meta_table_models.ManagedMetaTableReservationResponse.model_fields[
-            "ok"
-        ].description
+        in meta_table_models.ManagedMetaTableReservationResponse.model_fields["ok"].description
     )
     assert (
         "Physical table name reserved"
@@ -153,8 +149,7 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     assert response_without_version.version is None
     assert "version" not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
     assert (
-        "data_source_uid"
-        not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
+        "data_source_uid" not in meta_table_models.ManagedMetaTableReservationRequest.model_fields
     )
     assert (
         "Public UID of the DynamicTableDataSource"
@@ -162,10 +157,7 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
             "data_source_uid"
         ].description
     )
-    assert (
-        "management_mode"
-        not in meta_table_models.ManagedMetaTableReservationTable.model_fields
-    )
+    assert "management_mode" not in meta_table_models.ManagedMetaTableReservationTable.model_fields
     request = meta_table_models.ManagedMetaTableReservationRequest(
         tables=[
             meta_table_models.ManagedMetaTableReservationTable(
@@ -183,10 +175,7 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     request_payload = request.model_dump(mode="json", exclude_none=True)
     assert "version" not in request_payload
     assert "data_source_uid" not in request_payload
-    assert (
-        request_payload["tables"][0]["data_source_uid"]
-        == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
-    )
+    assert request_payload["tables"][0]["data_source_uid"] == "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 
 
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
@@ -425,7 +414,6 @@ def test_meta_table_reserve_managed_posts_reservation_payload(monkeypatch):
                         },
                         "created": True,
                         "matched_by": None,
-                        "contract_hash": "contract-sha256",
                     }
                 ],
             }
@@ -603,9 +591,7 @@ def test_meta_table_alembic_provider_reset_posts_reset_payload(monkeypatch):
                 "meta_table_uids": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
                 "dropped_physical_tables": ["mt_asset_physical"],
                 "cleared_alembic_version_table": True,
-                "deleted_or_reserved_catalog_rows": [
-                    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
-                ],
+                "deleted_or_reserved_catalog_rows": ["aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"],
                 "failed_count": 0,
                 "tables": [
                     {
@@ -739,9 +725,10 @@ def test_compiled_sql_v1_protocol_is_validated_by_pydantic():
     assert operation.statement.paramstyle == "pyformat"
     assert operation.scope.tables[0].meta_table_uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert operation.scope.tables[0].reserved_policy == "reconcile"
-    assert operation.model_dump(mode="json", by_alias=True)["scope"]["tables"][0][
-        "reserved_policy"
-    ] == "reconcile"
+    assert (
+        operation.model_dump(mode="json", by_alias=True)["scope"]["tables"][0]["reserved_policy"]
+        == "reconcile"
+    )
 
     with pytest.raises(ValidationError):
         meta_table_models.MetaTableCompiledSQLOperation(

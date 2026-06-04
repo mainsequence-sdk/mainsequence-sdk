@@ -491,8 +491,7 @@ class AlembicManagementRequest(BasePydanticModel):
     alembic_version_meta_table_uid: str | None = Field(
         None,
         description=(
-            "Optional MetaTable UID for the Alembic version table that tracks "
-            "this provider stream."
+            "Optional MetaTable UID for the Alembic version table that tracks this provider stream."
         ),
     )
     revision: str | None = Field(
@@ -637,12 +636,7 @@ class ManagedMetaTableReservationItem(BasePydanticModel):
             "'identifier' or 'storage_hash'. Null when a row was newly created."
         ),
     )
-    contract_hash: str | None = Field(
-        None,
-        description="Backend canonical hash of the reserved table contract.",
-    )
-
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
 
 class ManagedMetaTableReservationResponse(BasePydanticModel):
@@ -722,16 +716,12 @@ class ManagedMetaTableFinalizeTableResult(BasePydanticModel):
         None,
         description="Backend-normalized schema lifecycle ownership contract.",
     )
-    contract_hash: str | None = Field(
-        None,
-        description="Backend canonical hash of the reconciled table contract.",
-    )
     error: dict[str, Any] | None = Field(
         None,
         description="Per-table structured error when finalization did not activate this row.",
     )
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="ignore")
 
 
 class ManagedMetaTableFinalizeResponse(BasePydanticModel):
