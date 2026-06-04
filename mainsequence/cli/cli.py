@@ -423,7 +423,7 @@ CRONTAB_SCHEDULE_MODEL_REF = "mainsequence.client.models_helpers.CrontabSchedule
 JOB_RUN_MODEL_REF = "mainsequence.client.models_helpers.JobRun"
 PROJECT_IMAGE_MODEL_REF = "mainsequence.client.models_foundry.ProjectImage"
 PROJECT_RESOURCE_MODEL_REF = "mainsequence.client.models_helpers.ProjectResource"
-DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaData"
+DATA_NODE_STORAGE_MODEL_REF = "mainsequence.client.metatables.TimeIndexMetaTable"
 META_TABLE_MODEL_REF = "mainsequence.client.metatables.MetaTable"
 CONSTANT_MODEL_REF = "mainsequence.client.models_foundry.Constant"
 SECRET_MODEL_REF = "mainsequence.client.models_foundry.Secret"
@@ -7445,7 +7445,7 @@ def data_node_storage_list_cmd(
     """
     List data node storages visible to the authenticated user.
 
-    Uses SDK client `TimeIndexMetaData.filter()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaTable.filter()` as the single source of truth.
 
     Parameters
     ----------
@@ -7482,7 +7482,7 @@ def data_node_storage_detail_cmd(
     `physical_index_plan` when the backend exposes them on the source table
     configuration.
 
-    Uses SDK client `TimeIndexMetaData.get()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaTable.get()` as the single source of truth.
 
     Parameters
     ----------
@@ -7522,7 +7522,7 @@ def data_node_storage_refresh_search_index_cmd(
     """
     Refresh the semantic search index for one data node storage.
 
-    Uses SDK client `TimeIndexMetaData.refresh_table_search_index()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaTable.refresh_table_search_index()` as the single source of truth.
 
     Examples
     --------
@@ -7596,8 +7596,8 @@ def data_node_storage_search_cmd(
     """
     Search data node storages by description metadata, column metadata, or both.
 
-    Uses SDK client `TimeIndexMetaData.description_search()` and
-    `TimeIndexMetaData.column_search()` as the single sources of truth.
+    Uses SDK client `TimeIndexMetaTable.description_search()` and
+    `TimeIndexMetaTable.column_search()` as the single sources of truth.
 
     Examples
     --------
@@ -7769,7 +7769,7 @@ def data_node_storage_column_search_cmd(
     """
     Search data node storages by column metadata.
 
-    Uses SDK client `TimeIndexMetaData.column_search()` as the single source of truth.
+    Uses SDK client `TimeIndexMetaTable.column_search()` as the single source of truth.
 
     Examples
     --------
@@ -7831,7 +7831,7 @@ def data_node_storage_delete_cmd(
     timeout: int | None = typer.Option(None, "--timeout", help="Request timeout in seconds"),
 ):
     """
-    Delete one data node storage using the SDK client `TimeIndexMetaData.delete()` path.
+    Delete one data node storage using the SDK client `TimeIndexMetaTable.delete()` path.
 
     The command always requires typed verification before the delete call is executed.
 
@@ -7861,7 +7861,7 @@ def data_node_storage_can_view_cmd(
     """
     List users who can view one data node storage.
 
-    Uses the SDK `ShareableObjectMixin.can_view()` path through the `TimeIndexMetaData` model.
+    Uses the SDK `ShareableObjectMixin.can_view()` path through the `TimeIndexMetaTable` model.
 
     Examples
     --------
@@ -7887,7 +7887,7 @@ def data_node_storage_can_edit_cmd(
     """
     List users who can edit one data node storage.
 
-    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `TimeIndexMetaData` model.
+    Uses the SDK `ShareableObjectMixin.can_edit()` path through the `TimeIndexMetaTable` model.
 
     Examples
     --------

@@ -95,7 +95,7 @@ migration = AlembicMetaTableMigration(
 The provider should expose enough information to prepare Alembic. It should not
 produce SQL artifacts for a backend apply endpoint.
 
-Keep `PlatformManagedMetaTable` and `PlatformTimeIndexMetaData`.
+Keep `PlatformManagedMetaTable` and `PlatformTimeIndexMetaTable`.
 
 They remain the SQLAlchemy authoring/registry surfaces for platform-managed
 tables. Their runtime role is to build registry contracts and bind existing or

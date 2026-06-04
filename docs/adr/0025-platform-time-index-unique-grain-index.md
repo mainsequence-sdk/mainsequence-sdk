@@ -8,7 +8,7 @@ Depends on: ADR 0023, "Alembic-Owned Foreign Keys And Indexes".
 
 ## Context
 
-`PlatformTimeIndexMetaData` models declare the DataNode storage grain with:
+`PlatformTimeIndexMetaTable` models declare the DataNode storage grain with:
 
 ```python
 __time_index_name__ = "time_index"
@@ -33,7 +33,7 @@ Alembic still renders and applies the index DDL.
 
 ## Decision
 
-`PlatformTimeIndexMetaData` must automatically add a unique SQLAlchemy index over
+`PlatformTimeIndexMetaTable` must automatically add a unique SQLAlchemy index over
 its declared full time-index grain.
 
 For:
@@ -110,7 +110,7 @@ order, and does not add a duplicate generated index.
 
 ## Required Behavior
 
-`PlatformTimeIndexMetaData` table construction must:
+`PlatformTimeIndexMetaTable` table construction must:
 
 1. resolve `__time_index_name__`;
 2. resolve `__index_names__`;
@@ -135,7 +135,7 @@ history.
 
 After this ADR is implemented, projects should create a new Alembic revision.
 Autogenerate should emit missing unique grain indexes for existing
-`PlatformTimeIndexMetaData` tables that do not already have an equivalent unique
+`PlatformTimeIndexMetaTable` tables that do not already have an equivalent unique
 index or unique constraint.
 
 The SDK migration preparation and finalization path must continue to follow ADR
@@ -149,7 +149,7 @@ The SDK migration preparation and finalization path must continue to follow ADR
 ## Implementation Tasks
 
 - [x] Add SQLAlchemy metadata generation for the unique grain index on
-  `PlatformTimeIndexMetaData`.
+  `PlatformTimeIndexMetaTable`.
 - [x] Reuse `schema_index_name(..., unique=True)` so generated names use the
   `uix__...` convention.
 - [x] Detect an existing equivalent unique `Index` or `UniqueConstraint` and

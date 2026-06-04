@@ -48,7 +48,7 @@ The central piece is reading the simulated prices table through `APIDataNode.bui
 api_node = APIDataNode.build_from_identifier(SIMULATED_PRICES_TABLE)
 ```
 
-This is the cleanest way to read a published table when you already know its identifier. It keeps the dashboard aligned with the same data contract used by the tutorial runner scripts, without manually resolving `TimeIndexMetaData` first.
+This is the cleanest way to read a published table when you already know its identifier. It keeps the dashboard aligned with the same data contract used by the tutorial runner scripts, without manually resolving `TimeIndexMetaTable` first.
 
 ### Why use `APIDataNode.build_from_identifier(...)` here?
 

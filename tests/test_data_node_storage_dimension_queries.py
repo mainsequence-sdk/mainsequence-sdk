@@ -26,8 +26,8 @@ def _source_config(index_names: list[str]) -> models_metatables.TimeIndexedProfi
     )
 
 
-def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaData:
-    return models_metatables.TimeIndexMetaData(
+def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaTable:
+    return models_metatables.TimeIndexMetaTable(
         uid="714",
         storage_hash="prices_hash",
         management_mode="platform_managed",
@@ -40,7 +40,7 @@ def _storage(index_names: list[str]) -> models_metatables.TimeIndexMetaData:
 
 
 def test_data_node_storage_has_no_initialize_source_table_method():
-    assert not hasattr(models_metatables.TimeIndexMetaData, "initialize_source_table")
+    assert not hasattr(models_metatables.TimeIndexMetaTable, "initialize_source_table")
 
 
 def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatch):
@@ -70,7 +70,7 @@ def test_get_last_observation_sends_dimension_filters_and_coordinates(monkeypatc
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -125,7 +125,7 @@ def test_get_data_between_dates_from_api_sends_dimension_range_map(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: object()),
     )
@@ -197,12 +197,12 @@ def test_get_data_between_dates_from_node_identifier_sends_canonical_dimensions(
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
-    df, storage = models_metatables.TimeIndexMetaData.get_data_between_dates_from_node_identifier(
+    df, storage = models_metatables.TimeIndexMetaTable.get_data_between_dates_from_node_identifier(
         node_identifier="prices-node",
         dimension_filters={"account_uid": ["account-a"]},
         index_coordinates=[{"account_uid": "account-a", "unique_identifier": "BTC"}],
@@ -235,7 +235,7 @@ def test_delete_after_date_sends_canonical_coordinate_scope(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: object()),
     )

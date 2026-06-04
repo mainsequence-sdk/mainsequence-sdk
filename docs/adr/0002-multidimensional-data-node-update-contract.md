@@ -50,8 +50,8 @@ computes canonical progress statistics, serializes the DataFrame using the
 registered storage contract, uploads chunks, and patches final update stats.
 
 The write path must not derive storage schema from ad hoc DataFrame metadata.
-Storage schema comes from the bound `PlatformTimeIndexMetaData` /
-`TimeIndexMetaData` contract.
+Storage schema comes from the bound `PlatformTimeIndexMetaTable` /
+`TimeIndexMetaTable` contract.
 
 ## Read Contract
 

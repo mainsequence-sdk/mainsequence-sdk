@@ -20,12 +20,12 @@ from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
     DynamicTableDataSource,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
     UpdateStatistics,
 )
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable
 
 from .. import future_registry
 
@@ -78,21 +78,21 @@ def get_data_node_source_code_git_hash(DataNodeClass: type[Any]) -> str:
 
 
 def ensure_registered_storage_table(
-    storage_table: type[PlatformTimeIndexMetaData],
+    storage_table: type[PlatformTimeIndexMetaTable],
     *,
     context: str,
-) -> type[PlatformTimeIndexMetaData]:
+) -> type[PlatformTimeIndexMetaTable]:
     if storage_table is None:
         raise TypeError(
             f"{context} storage_table is required and must be a "
-            "PlatformTimeIndexMetaData model class."
+            "PlatformTimeIndexMetaTable model class."
         )
     if not isinstance(storage_table, type) or not issubclass(
         storage_table,
-        PlatformTimeIndexMetaData,
+        PlatformTimeIndexMetaTable,
     ):
         raise TypeError(
-            f"{context} storage_table must be a PlatformTimeIndexMetaData "
+            f"{context} storage_table must be a PlatformTimeIndexMetaTable "
             f"model class; got {type(storage_table).__name__}."
         )
 
@@ -103,14 +103,14 @@ def ensure_registered_storage_table(
     if storage_metadata is None:
         raise ValueError(
             f"{context} storage_table class is not bound to backend "
-            "TimeIndexMetaData "
+            "TimeIndexMetaTable "
             "metadata in this Python process. The backend table may already exist; "
-            "the SDK could not resolve a unique TimeIndexMetaData row for "
+            "the SDK could not resolve a unique TimeIndexMetaTable row for "
             f"{_storage_table_lookup_label(storage_table)}."
         )
-    if not isinstance(storage_metadata, TimeIndexMetaData):
+    if not isinstance(storage_metadata, TimeIndexMetaTable):
         raise TypeError(
-            f"{context} storage_table must bind TimeIndexMetaData metadata; "
+            f"{context} storage_table must bind TimeIndexMetaTable metadata; "
             f"got {type(storage_metadata).__name__}."
         )
     if storage_table.get_meta_table_uid() in (None, ""):
@@ -120,18 +120,18 @@ def ensure_registered_storage_table(
     return storage_table
 
 
-def _bind_registered_storage_table(storage_table: type[PlatformTimeIndexMetaData]) -> None:
+def _bind_registered_storage_table(storage_table: type[PlatformTimeIndexMetaTable]) -> None:
     matches = _registered_storage_table_matches(storage_table)
     if len(matches) == 1:
         storage_table._bind_meta_table(matches[0])
 
 
 def _registered_storage_table_matches(
-    storage_table: type[PlatformTimeIndexMetaData],
-) -> list[TimeIndexMetaData]:
+    storage_table: type[PlatformTimeIndexMetaTable],
+) -> list[TimeIndexMetaTable]:
     table_name = _storage_table_physical_table_name(storage_table)
     if table_name:
-        matches = TimeIndexMetaData.filter_by_body(
+        matches = TimeIndexMetaTable.filter_by_body(
             physical_table_name__in=[table_name],
             limit=1,
         )
@@ -142,7 +142,7 @@ def _registered_storage_table_matches(
 
 
 def _storage_table_physical_table_name(
-    storage_table: type[PlatformTimeIndexMetaData],
+    storage_table: type[PlatformTimeIndexMetaTable],
 ) -> str | None:
     physical_table_name = storage_table.get_physical_table_name()
     if physical_table_name not in (None, ""):
@@ -154,7 +154,7 @@ def _storage_table_physical_table_name(
     return None
 
 
-def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaData]) -> str:
+def _storage_table_lookup_label(storage_table: type[PlatformTimeIndexMetaTable]) -> str:
     table_name = _storage_table_physical_table_name(storage_table) or "<unknown-table>"
     return f"{storage_table.__name__}(table={table_name})"
 
@@ -170,7 +170,7 @@ class BasePersistManager:
     def __init__(
         self,
         update_hash: str,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         description: str | None = None,
         class_name: str | None = None,
         data_node_update: Any | None = None,
@@ -185,7 +185,7 @@ class BasePersistManager:
         self._data_node_update_future: Future | None = None
         self._data_node_update_cached: Any | None = None
         self._data_node_update_lock = threading.Lock()
-        self.storage_table: type[PlatformTimeIndexMetaData] = self._validate_storage_table(
+        self.storage_table: type[PlatformTimeIndexMetaTable] = self._validate_storage_table(
             storage_table
         )
 
@@ -194,8 +194,8 @@ class BasePersistManager:
 
     @staticmethod
     def _validate_storage_table(
-        storage_table: type[PlatformTimeIndexMetaData],
-    ) -> type[PlatformTimeIndexMetaData]:
+        storage_table: type[PlatformTimeIndexMetaTable],
+    ) -> type[PlatformTimeIndexMetaTable]:
         return ensure_registered_storage_table(storage_table, context="PersistManager")
 
     @property
@@ -557,15 +557,15 @@ class APIPersistManager:
         thread.start()
 
     @property
-    def storage_table(self) -> TimeIndexMetaData:
+    def storage_table(self) -> TimeIndexMetaTable:
         if not hasattr(self, "_storage_table_cached"):
             self._storage_table_cached = self._storage_table_future.result()
         return self._storage_table_cached
 
     def _init_storage_table(self) -> None:
         try:
-            result = TimeIndexMetaData.get_or_none(
-                storage_hash=self.storage_hash,
+            result = TimeIndexMetaTable.get_or_none(
+                physical_table_name=self.storage_hash,
                 data_source__uid=self.data_source_uid,
                 include_relations_detail=True,
             )

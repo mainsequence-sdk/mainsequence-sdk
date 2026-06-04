@@ -4985,7 +4985,7 @@ def test_list_data_node_storages_uses_client_model(cli_mod, monkeypatch):
             )
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5231,7 +5231,7 @@ def test_data_node_storage_description_search_uses_client_model(cli_mod, monkeyp
             }
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5319,7 +5319,7 @@ def test_data_node_storage_column_search_uses_client_model(cli_mod, monkeypatch)
             ]
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5388,7 +5388,7 @@ def test_refresh_data_node_storage_search_index_uses_client_model(cli_mod, monke
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5470,7 +5470,7 @@ def test_delete_data_node_storage_uses_client_model(cli_mod, monkeypatch):
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5564,7 +5564,7 @@ def test_list_data_node_storage_users_can_view_uses_client_model(cli_mod, monkey
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -5640,7 +5640,7 @@ def test_add_data_node_storage_user_to_edit_uses_client_model(cli_mod, monkeypat
             return cls.get(uid=uid, timeout=timeout)
 
     fake_base.BaseObjectOrm = FakeBaseObjectOrm
-    fake_models.TimeIndexMetaData = FakeDataNodeStorage
+    fake_models.TimeIndexMetaTable = FakeDataNodeStorage
     fake_client_pkg.utils = fake_utils
 
     monkeypatch.setitem(sys.modules, "mainsequence.client", fake_client_pkg)
@@ -8320,7 +8320,7 @@ def test_run_data_node_storage_query_uses_client_model(cli_mod, monkeypatch):
     )
     assert captured == {
         "module_name": "mainsequence.client.metatables",
-        "class_name": "TimeIndexMetaData",
+        "class_name": "TimeIndexMetaTable",
         "uid": "data-node-storage-42",
         "timeout": 14,
         "sql": "SELECT 1 AS value",

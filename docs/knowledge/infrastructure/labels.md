@@ -5,7 +5,7 @@ Some SDK objects expose a `labels` field together with the client `LabelableObje
 Current examples include:
 
 - `Project`
-- `TimeIndexMetaData`
+- `TimeIndexMetaTable`
 - `MetaTable`
 - `command_center.Workspace`
 

@@ -87,7 +87,7 @@ Main Sequence applies resource-level access control, so the real operational que
 In practice, the current SDK exposes sharing behavior across several resource types:
 
 - `Project`
-- `TimeIndexMetaData`
+- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -97,7 +97,7 @@ In practice, the current SDK exposes sharing behavior across several resource ty
 Why these matter:
 
 - `Project` defines an important collaboration and execution boundary
-- `TimeIndexMetaData` is the published table boundary for shared datasets
+- `TimeIndexMetaTable` is the published table boundary for shared datasets
 - `Constant` stores shareable, non-sensitive runtime configuration
 - `Secret` stores protected credentials
 - `Bucket` holds artifacts and files that may themselves contain sensitive or controlled content
@@ -106,7 +106,7 @@ Why these matter:
 
 !!! warning "IMPORTANT"
     `Constant` and `Secret` are not the only shareable resources in the SDK.
-    `Project`, `TimeIndexMetaData`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
+    `Project`, `TimeIndexMetaTable`, `Bucket`, `Artifact`, and `ResourceRelease` also participate in the same shareable-object model.
     This guide focuses on constants and secrets because they are the simplest place to learn the pattern.
 
 That is the practical reason this topic matters early:

@@ -55,8 +55,8 @@ def _storage_with_source_config(
     index_names: list[str],
     column_dtypes_map: dict[str, str],
     columns_metadata: list[models_metatables.ColumnMetaData] | None = None,
-) -> models_metatables.TimeIndexMetaData:
-    return models_metatables.TimeIndexMetaData.model_construct(
+) -> models_metatables.TimeIndexMetaTable:
+    return models_metatables.TimeIndexMetaTable.model_construct(
         uid="data-node-storage-44",
         storage_hash="storage-hash",
         time_indexed_profile=_source_config(

@@ -40,7 +40,7 @@ The critical requirement is that the SDK must call the correct endpoint before
 provisioning:
 
 - `PlatformManagedMetaTable` must reserve through the MetaTable endpoint;
-- `PlatformTimeIndexMetaData` must reserve through the DynamicTable endpoint.
+- `PlatformTimeIndexMetaTable` must reserve through the DynamicTable endpoint.
 
 Calling the MetaTable endpoint for a time-indexed model creates the wrong
 backend model: a plain parent `MetaTable` row instead of the concrete
@@ -56,7 +56,7 @@ reserved-row create payloads and split them by SDK model type:
 
 ```text
 PlatformManagedMetaTable     -> POST /orm/api/ts_manager/meta_table/
-PlatformTimeIndexMetaData    -> POST /orm/api/ts_manager/dynamic_table/
+PlatformTimeIndexMetaTable    -> POST /orm/api/ts_manager/dynamic_table/
 ```
 
 Both calls use a raw JSON list body. There is no `{ "items": [...] }` wrapper
@@ -162,7 +162,7 @@ Add or use collection-create methods:
 
 - `MetaTable.bulk_create(...)`, posting a raw list to
   `POST /orm/api/ts_manager/meta_table/`
-- `TimeIndexMetaData.bulk_create(...)`, posting a raw list to
+- `TimeIndexMetaTable.bulk_create(...)`, posting a raw list to
   `POST /orm/api/ts_manager/dynamic_table/`
 
 The method name may remain `bulk_create(...)` as a client convenience, but the
@@ -173,7 +173,7 @@ HTTP contract is normal collection `POST` with a list body.
 1. build reservation rows from provider models;
 2. split rows by concrete SDK model class;
 3. call `MetaTable.bulk_create(...)` for `PlatformManagedMetaTable`;
-4. call `TimeIndexMetaData.bulk_create(...)` for `PlatformTimeIndexMetaData`;
+4. call `TimeIndexMetaTable.bulk_create(...)` for `PlatformTimeIndexMetaTable`;
 5. include `is_alembic_managed=true` on every row;
 6. include `provisioning_status="reserved"` on every row;
 7. include provider metadata:
@@ -183,7 +183,7 @@ HTTP contract is normal collection `POST` with a list body.
    against the correct SQLAlchemy table name;
 9. include `time_index_name` and `partition_strategy` only for the
    time-indexed endpoint;
-10. bind returned `MetaTable` and `TimeIndexMetaData` rows back to the
+10. bind returned `MetaTable` and `TimeIndexMetaTable` rows back to the
     SQLAlchemy models that produced each reservation intent;
 11. keep `finalize_managed(...)` as the post-Alembic activation call.
 
@@ -209,7 +209,7 @@ the old reservation conflict-diagnostic engine.
   need them.
 - [x] Add or update `MetaTable.bulk_create(...)` to post a raw list to
   `/orm/api/ts_manager/meta_table/`.
-- [x] Add or update `TimeIndexMetaData.bulk_create(...)` to post a raw list to
+- [x] Add or update `TimeIndexMetaTable.bulk_create(...)` to post a raw list to
   `/orm/api/ts_manager/dynamic_table/`.
 - [x] Change `AlembicMetaTableMigration.prepare_for_alembic()` to split
   reservation rows by model type and call the correct typed endpoint before
@@ -217,7 +217,7 @@ the old reservation conflict-diagnostic engine.
 - [ ] Ensure every reservation row includes `is_alembic_managed=true`.
 - [x] Ensure every reservation row includes
   `provisioning_status="reserved"`.
-- [x] Ensure `PlatformTimeIndexMetaData` rows include `time_index_name` and
+- [x] Ensure `PlatformTimeIndexMetaTable` rows include `time_index_name` and
   `partition_strategy`.
 - [x] Bind returned rows to the source SQLAlchemy models in request order per
   endpoint.
@@ -227,7 +227,7 @@ the old reservation conflict-diagnostic engine.
   `reserve-managed/`.
 - [x] Add focused SDK tests for typed reservation routing:
   `PlatformManagedMetaTable` uses `/meta_table/` and
-  `PlatformTimeIndexMetaData` uses `/dynamic_table/`.
+  `PlatformTimeIndexMetaTable` uses `/dynamic_table/`.
 - [x] Add focused SDK tests proving the request body is a raw JSON list and
   contains `is_alembic_managed=true`.
 

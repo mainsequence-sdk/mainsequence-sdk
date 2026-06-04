@@ -8,7 +8,7 @@ This guide translates the internal rules into practical, human-friendly guidance
 
 A DataNode has two separate objects:
 
-- a registered `PlatformTimeIndexMetaData` storage class, backed by a MetaTable
+- a registered `PlatformTimeIndexMetaTable` storage class, backed by a MetaTable
   UID, that owns the dataset contract
 - a DataNode update process, identified by `update_hash`, that writes into that
   registered storage table
@@ -77,12 +77,12 @@ If you want to inspect existing DataNode table identifiers from the CLI, run:
 mainsequence data-node list
 ```
 
-The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaData`.
+The `Identifier` column lists DataNode table identifiers exposed by `TimeIndexMetaTable`.
 It does not list row-level identity dimension values.
 
 ### 3.2 Labels are organization metadata only
 
-`TimeIndexMetaData` objects can also carry `labels`.
+`TimeIndexMetaTable` objects can also carry `labels`.
 
 Those labels do not change:
 
@@ -98,7 +98,7 @@ Use them only for grouping and discovery.
 A simple and scalable pattern is:
 
 - one Pydantic config object for update-scope fields,
-- one registered `PlatformTimeIndexMetaData` class for storage,
+- one registered `PlatformTimeIndexMetaTable` class for storage,
 - make the node constructor accept both `config` and `storage_table`,
 - operational runtime knobs outside `__init__`.
 
@@ -108,7 +108,7 @@ Preferred constructor shape:
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
 )
 
 
@@ -120,7 +120,7 @@ class MyNode(DataNode):
     def __init__(
         self,
         config: MyNodeConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
     ):
         self.my_field = config.my_field
         super().__init__(config=config, storage_table=storage_table)
@@ -131,14 +131,14 @@ constructor args being reflected back into hashed configuration automatically,
 and they should not create storage manually inside `update()`.
 
 The output storage table itself is not config. It remains the explicit
-`storage_table: type[PlatformTimeIndexMetaData]` constructor argument. If a node
+`storage_table: type[PlatformTimeIndexMetaTable]` constructor argument. If a node
 needs to select another DataNode's storage model as a dependency, that
 dependency storage reference is update-scope config because changing it changes
-the dependency graph. Type that field as `type[PlatformTimeIndexMetaData]`.
+the dependency graph. Type that field as `type[PlatformTimeIndexMetaTable]`.
 
-When a `PlatformTimeIndexMetaData` class appears inside a config model, the SDK
+When a `PlatformTimeIndexMetaTable` class appears inside a config model, the SDK
 hashes it by the bound
-`TimeIndexMetaData.uid` available through `StorageClass.__time_index_metadata__`.
+`TimeIndexMetaTable.uid` available through `StorageClass.__time_index_metadata__`.
 If the class is not yet bound, config serialization fails and tells the user to
 run the MetaTable migration workflow. Do not pass dependency storage classes as
 extra constructor arguments, manually attach an existing UID, reconstruct a
@@ -147,7 +147,7 @@ generic `MetaTable`, or call `StorageClass.register()` directly.
 ### 4.1 Storage meaning belongs to the storage table
 
 These define the dataset contract and table identity and should be represented
-in the `PlatformTimeIndexMetaData` SQLAlchemy model:
+in the `PlatformTimeIndexMetaTable` SQLAlchemy model:
 
 Examples:
 
@@ -254,7 +254,7 @@ If the namespace is non-empty, `DataNode` injects `hash_namespace` into the
 build configuration. That changes `update_hash`.
 
 Storage identity is not created by `DataNode`. If a test needs isolated
-storage, pass a separately registered `PlatformTimeIndexMetaData` storage class.
+storage, pass a separately registered `PlatformTimeIndexMetaTable` storage class.
 
 ### What happens during `run()`
 
@@ -304,7 +304,7 @@ Use `UpdateStatistics` to minimize work and control windows intentionally.
 - the first index is the UTC `time_index`
 - every remaining index is an identity dimension
 - uniqueness is enforced across the full index tuple by the generated
-  SQLAlchemy unique index on `PlatformTimeIndexMetaData`
+  SQLAlchemy unique index on `PlatformTimeIndexMetaTable`
 - compute incremental start points from canonical `UpdateStatistics`
 - return only new rows, or as close as practical
 
@@ -388,7 +388,7 @@ Do not:
 ## 9) Records, foreign keys, and metadata
 
 For production nodes, define the table contract on the registered
-`PlatformTimeIndexMetaData` SQLAlchemy model. Use Alembic for physical schema
+`PlatformTimeIndexMetaTable` SQLAlchemy model. Use Alembic for physical schema
 migrations.
 That is the source of truth for:
 
@@ -403,11 +403,11 @@ use, not only list its columns. Column-level descriptions still belong in
 `mapped_column(info={"description": ...})`.
 
 `DataNodeConfiguration` no longer accepts table metadata or output records.
-Stable output contracts are declared on the registered `PlatformTimeIndexMetaData`
+Stable output contracts are declared on the registered `PlatformTimeIndexMetaTable`
 storage model and exposed through the MetaTable time-indexed profile/contract.
 
 When a DataNode source table should reference another table, declare the
-relationship on the `PlatformTimeIndexMetaData` storage model with normal
+relationship on the `PlatformTimeIndexMetaTable` storage model with normal
 SQLAlchemy `ForeignKey(...)` metadata. Foreign keys are not part of
 `DataNodeConfiguration` and are not serialized into the platform-managed
 MetaTable registration contract. Alembic, SQLAlchemy, and the database own the
@@ -427,7 +427,7 @@ Avoid logging secrets.
 
 Good metadata is not just for humans reading code. It also powers search and discovery across published data nodes.
 
-`TimeIndexMetaData` now exposes two complementary search paths:
+`TimeIndexMetaTable` now exposes two complementary search paths:
 
 - `description_search(q, ...)`
 - `column_search(q, ...)`
@@ -474,7 +474,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-results = msc.TimeIndexMetaData.description_search(
+results = msc.TimeIndexMetaTable.description_search(
     "daily close price",
     data_source__id=2,
 )
@@ -501,7 +501,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-results = msc.TimeIndexMetaData.column_search(
+results = msc.TimeIndexMetaTable.column_search(
     "close",
     data_source__id=2,
 )
@@ -538,7 +538,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
 storage.refresh_table_search_index()
 ```
 
@@ -550,7 +550,7 @@ mainsequence data-node refresh-search-index <DATA_NODE_STORAGE_UID>
 
 #### Running Read-Only SQL Against A Time-Indexed Table
 
-`TimeIndexMetaData.run_query(...)` executes a raw SQL query directly against one
+`TimeIndexMetaTable.run_query(...)` executes a raw SQL query directly against one
 published time-indexed table.
 
 This is for inspection and diagnostics on the storage that already exists. It is not a substitute for building a reusable `DataNode` API contract.
@@ -571,7 +571,7 @@ Example:
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.run_query("SELECT * FROM my_table LIMIT 100")
 ```
 
@@ -606,7 +606,7 @@ mainsequence data-node run_query <DATA_NODE_STORAGE_UID> "SELECT * FROM my_table
 
 #### Tail deleting rows after a cutoff
 
-`TimeIndexMetaData.delete_after_date(...)` removes the tail of a time-indexed
+`TimeIndexMetaTable.delete_after_date(...)` removes the tail of a time-indexed
 table starting at an inclusive cutoff timestamp.
 
 This is not arbitrary range deletion:
@@ -627,7 +627,7 @@ For a normal table:
 ```python
 import mainsequence.client as msc
 
-storage = msc.TimeIndexMetaData.get(uid="<DATA_NODE_STORAGE_UID>")
+storage = msc.TimeIndexMetaTable.get(uid="<DATA_NODE_STORAGE_UID>")
 result = storage.delete_after_date("2026-04-01T00:00:00Z")
 ```
 

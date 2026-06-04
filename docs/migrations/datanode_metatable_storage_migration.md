@@ -2,14 +2,14 @@
 
 This guide is for libraries that still use the old DataNode style where the
 node declares its output schema inline. The new SDK model is storage-first:
-a `PlatformTimeIndexMetaData` SQLAlchemy model owns the table contract, and the
+a `PlatformTimeIndexMetaTable` SQLAlchemy model owns the table contract, and the
 `DataNode` only owns update logic.
 
 ## What Changed
 
 | Old DataNode | New DataNode |
 | --- | --- |
-| Node declares schema with methods such as `get_table_metadata()` and `get_column_metadata()`. | A `PlatformTimeIndexMetaData` SQLAlchemy model declares the schema. |
+| Node declares schema with methods such as `get_table_metadata()` and `get_column_metadata()`. | A `PlatformTimeIndexMetaTable` SQLAlchemy model declares the schema. |
 | Node metadata mixes table identity, columns, and update behavior. | Storage identity lives on the storage class; update identity lives in `DataNodeConfiguration`. |
 | Registration is implicit or manually glued together from table metadata. | Registration is migration-first: add the storage class to the MetaTable migration provider and run `mainsequence migrations upgrade`. |
 | Foreign keys were sometimes glued through SDK/backend UID maps. | Foreign keys are normal SQLAlchemy/Alembic DDL metadata; they are not serialized into MetaTable registration contracts. |
@@ -19,7 +19,7 @@ a `PlatformTimeIndexMetaData` SQLAlchemy model owns the table contract, and the
 
 A modern DataNode has two explicit objects:
 
-- a storage class: `type[PlatformTimeIndexMetaData]`
+- a storage class: `type[PlatformTimeIndexMetaTable]`
 - an update process: `DataNode`
 
 The storage class answers:
@@ -80,7 +80,7 @@ DataNode surface from `mainsequence.meta_tables`:
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_table_name,
 )
 ```
@@ -92,7 +92,7 @@ mixing layers.
 ### 1. Storage Class
 
 Move table identity and schema out of the node and into a
-`PlatformTimeIndexMetaData` model.
+`PlatformTimeIndexMetaTable` model.
 
 ```python
 import datetime
@@ -100,7 +100,7 @@ import datetime
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformTimeIndexMetaData, schema_table_name
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable, schema_table_name
 
 PROJECT_TABLE_APP = "example_project"
 
@@ -109,7 +109,7 @@ class Base(DeclarativeBase):
     pass
 
 
-class DailyMetricsStorage(PlatformTimeIndexMetaData, Base):
+class DailyMetricsStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = schema_table_name(PROJECT_TABLE_APP, "daily_metrics")
     __metatable_namespace__ = "example-data"
     __metatable_identifier__ = "example_project.daily_metrics"
@@ -209,14 +209,14 @@ The node receives the config and storage class, then produces rows.
 ```python
 import pandas as pd
 
-from mainsequence.meta_tables import DataNode, PlatformTimeIndexMetaData
+from mainsequence.meta_tables import DataNode, PlatformTimeIndexMetaTable
 
 
 class DailyMetricsNode(DataNode):
     def __init__(
         self,
         config: DailyMetricsConfig,
-        storage_table: type[PlatformTimeIndexMetaData] = DailyMetricsStorage,
+        storage_table: type[PlatformTimeIndexMetaTable] = DailyMetricsStorage,
         *,
         hash_namespace: str | None = None,
     ) -> None:
@@ -241,7 +241,7 @@ The returned frame must match the storage table contract:
 - value columns match the SQLAlchemy storage columns
 - no extra payload columns appear
 
-`PlatformTimeIndexMetaData` automatically adds a SQLAlchemy unique index across
+`PlatformTimeIndexMetaTable` automatically adds a SQLAlchemy unique index across
 the declared `__index_names__` tuple. Do not manually repeat that full unique
 index in `__table_args__`; reserve explicit `Index(...)` declarations for
 additional lookup/performance paths.
@@ -253,7 +253,7 @@ identity:
 
 - output `storage_table` passed to `DataNode`
 - output `storage_table` validated by `PersistManager`
-- `type[PlatformTimeIndexMetaData]` values inside `DataNodeConfiguration`
+- `type[PlatformTimeIndexMetaTable]` values inside `DataNodeConfiguration`
 
 That means this is valid:
 
@@ -271,7 +271,7 @@ This is also valid when a dependency storage class is part of config:
 
 ```python
 class SpreadConfig(DataNodeConfiguration):
-    base_storage: type[PlatformTimeIndexMetaData] = Field(
+    base_storage: type[PlatformTimeIndexMetaTable] = Field(
         ...,
         description="Storage table for the base metric series.",
     )
@@ -284,7 +284,7 @@ node = DerivedMetricsNode(
 ```
 
 Before hashing that config, the SDK requires `DailyMetricsStorage` to already be
-bound by the migration workflow, then hashes by the bound `TimeIndexMetaData.uid`.
+bound by the migration workflow, then hashes by the bound `TimeIndexMetaTable.uid`.
 If it is not bound, config serialization fails and tells the user to run
 migrations.
 
@@ -328,7 +328,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_table_name,
 )
 
@@ -354,7 +354,7 @@ class Account(PlatformManagedMetaTable, Base):
     )
 
 
-class AccountPositions(PlatformTimeIndexMetaData, Base):
+class AccountPositions(PlatformTimeIndexMetaTable, Base):
     __tablename__ = ACCOUNT_POSITIONS_TABLE_NAME
     __metatable_namespace__ = "positions"
     __metatable_identifier__ = "example_project.account_positions"
@@ -397,10 +397,10 @@ from functools import lru_cache
 from sqlalchemy import DateTime, Float, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformTimeIndexMetaData, schema_table_name
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable, schema_table_name
 
 
-class _ObservationColumns(PlatformTimeIndexMetaData, Base):
+class _ObservationColumns(PlatformTimeIndexMetaTable, Base):
     __abstract__ = True
     __time_index_name__ = "time_index"
     __index_names__ = ["time_index", "entity_identifier"]
@@ -479,7 +479,7 @@ For each old DataNode:
 
 1. [ ] Identify the output shape: index columns, payload columns, dtypes, nullable flags, and any SQLAlchemy/Alembic FK metadata.
 2. [ ] Replace old `mainsequence.tdag` imports with the modern SDK or domain-layer DataNode surface.
-3. [ ] Create a `PlatformTimeIndexMetaData` SQLAlchemy storage class.
+3. [ ] Create a `PlatformTimeIndexMetaTable` SQLAlchemy storage class.
 4. [ ] Move table identifier, namespace, descriptions, labels, and storage disambiguation to class metadata.
 5. [ ] Move column labels and descriptions to SQLAlchemy column `info`.
 6. [ ] Replace old inline metadata methods with the storage class.

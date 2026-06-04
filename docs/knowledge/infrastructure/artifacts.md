@@ -157,7 +157,7 @@ from mainsequence.client import Artifact
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
 )
 
 
@@ -170,7 +170,7 @@ class ExternalPrices(DataNode):
     def __init__(
         self,
         config: ExternalPricesConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
     ):
         self.artifact_name = config.artifact_name
         self.bucket_name = config.bucket_name
@@ -186,7 +186,7 @@ class ExternalPrices(DataNode):
 ```
 
 Use Alembic for storage schema migrations. The SDK storage class can remain a
-normal `PlatformTimeIndexMetaData`; migration execution is handled by Alembic
+normal `PlatformTimeIndexMetaTable`; migration execution is handled by Alembic
 SQL, not an SDK schema-migration subclass.
 
 This is one of the cleanest ways to bridge external operational files into the `DataNode` layer.

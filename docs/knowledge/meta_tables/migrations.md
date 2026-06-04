@@ -203,7 +203,7 @@ stays stable.
 `prepare_for_alembic()` runs for `upgrade` and `downgrade`; revision generation
 does not provision provider MetaTables. When it runs, it sends provider model rows through typed
 collection-create endpoints. Plain `PlatformManagedMetaTable` rows go to
-`POST /orm/api/ts_manager/meta_table/`; `PlatformTimeIndexMetaData` rows go to
+`POST /orm/api/ts_manager/meta_table/`; `PlatformTimeIndexMetaTable` rows go to
 `POST /orm/api/ts_manager/dynamic_table/`. The SDK sends raw JSON lists with
 `provisioning_status="reserved"` and `is_alembic_managed=true`; it does not
 wrap the rows in a reservation request object. Alembic is the authority for

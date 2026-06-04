@@ -23,12 +23,14 @@ from mainsequence.client.metatables import (
     MetaTable,
     Scheduler,
     SessionDataSource,
+    TimeIndexMetaTable,
     UpdateStatistics,
 )
 from mainsequence.client.utils import META_TABLES_CONSTANTS as CONSTANTS
+from mainsequence.client.utils import DoesNotExist
 from mainsequence.instrumentation import tracer
 from mainsequence.logconf import logger
-from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable
 from mainsequence.meta_tables.data_nodes.persist_managers import (
     APIPersistManager,
     PersistManager,
@@ -161,14 +163,14 @@ class APIDataNode(DataAccessMixin):
         return cls._require_data_source_uid(data_source, context=context)
 
     @staticmethod
-    def _require_storage_hash(storage_table: Any, *, context: str) -> str:
+    def _require_physical_table_name(storage_table: Any, *, context: str) -> str:
         if isinstance(storage_table, dict):
-            storage_hash = storage_table.get("storage_hash")
+            table_name = storage_table.get("physical_table_name")
         else:
-            storage_hash = getattr(storage_table, "storage_hash", None)
-        if storage_hash in (None, ""):
-            raise ValueError(f"{context} requires storage_table.storage_hash.")
-        return str(storage_hash)
+            table_name = getattr(storage_table, "physical_table_name", None)
+        if table_name in (None, ""):
+            raise ValueError(f"{context} requires storage_table.physical_table_name.")
+        return str(table_name)
 
     @classmethod
     def build_from_local_time_serie(cls, source_table: "DataNodeUpdate") -> "APIDataNode":
@@ -193,13 +195,29 @@ class APIDataNode(DataAccessMixin):
                 storage_table,
                 context=context,
             ),
-            storage_hash=cls._require_storage_hash(storage_table, context=context),
+            storage_hash=cls._require_physical_table_name(
+                storage_table,
+                context=context,
+            ),
             storage_table=storage_table,
         )
 
     @classmethod
     def build_from_identifier(cls, identifier: str) -> "APIDataNode":
         storage_table = MetaTable.get(identifier=identifier)
+        return cls.build_from_meta_table(storage_table)
+
+    @classmethod
+    def build_from_table_name(cls, table_name: str) -> "APIDataNode":
+        storage_table = TimeIndexMetaTable.get_or_none(
+            physical_table_name=table_name,
+            include_relations_detail=True,
+        )
+        if storage_table is None:
+            raise DoesNotExist(
+                "No TimeIndexMetaTable found matching "
+                f"{{'physical_table_name': {table_name!r}}}"
+            )
         return cls.build_from_meta_table(storage_table)
 
     def __init__(
@@ -321,7 +339,7 @@ class DataNode(DataAccessMixin, ABC):
 
     Two identities matter:
 
-    - ``storage_table``: the first-class PlatformTimeIndexMetaData storage contract.
+    - ``storage_table``: the first-class PlatformTimeIndexMetaTable storage contract.
     - ``update_hash``: identifies the updater job writing to that table.
 
     This separation lets you run different updater jobs (for example, asset shards)
@@ -358,7 +376,7 @@ class DataNode(DataAccessMixin, ABC):
     def __init__(
         self,
         config: BaseConfiguration,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -375,7 +393,7 @@ class DataNode(DataAccessMixin, ABC):
         ----------
         config : BaseConfiguration
             Canonical node configuration for this node.
-        storage_table : type[PlatformTimeIndexMetaData]
+        storage_table : type[PlatformTimeIndexMetaTable]
             Explicit time-indexed platform storage model where this update
             process writes. This is runtime state, not part of the build
             configuration payload.
@@ -387,10 +405,10 @@ class DataNode(DataAccessMixin, ABC):
                 f"{self.__class__.__name__} expected config to be a BaseConfiguration; "
                 f"got {type(config).__name__}."
             )
-        if not issubclass(storage_table, PlatformTimeIndexMetaData):
+        if not issubclass(storage_table, PlatformTimeIndexMetaTable):
             raise TypeError(
                 f"{self.__class__.__name__} expected storage_table to be a subclass of "
-                f"PlatformTimeIndexMetaData; got {storage_table}."
+                f"PlatformTimeIndexMetaTable; got {storage_table}."
             )
 
         self.pre_load_routines_run = False
@@ -618,7 +636,7 @@ class DataNode(DataAccessMixin, ABC):
         cls.__init__ = wrapped_init
 
     @property
-    def storage_table(self) -> type[PlatformTimeIndexMetaData]:
+    def storage_table(self) -> type[PlatformTimeIndexMetaTable]:
         try:
             return self._storage_table
         except AttributeError as exc:
@@ -628,7 +646,7 @@ class DataNode(DataAccessMixin, ABC):
             ) from exc
 
     @storage_table.setter
-    def storage_table(self, value: type[PlatformTimeIndexMetaData]) -> None:
+    def storage_table(self, value: type[PlatformTimeIndexMetaTable]) -> None:
         self._storage_table = ensure_registered_storage_table(value, context="DataNode")
 
     @property

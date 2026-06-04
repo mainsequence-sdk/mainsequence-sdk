@@ -44,7 +44,7 @@ That provider must be authoritative for platform-managed MetaTable lifecycle.
 
 ## Decision
 
-All `PlatformManagedMetaTable` and `PlatformTimeIndexMetaData` models are
+All `PlatformManagedMetaTable` and `PlatformTimeIndexMetaTable` models are
 migration-first.
 
 Users should not call `Model.register()` to bootstrap or evolve

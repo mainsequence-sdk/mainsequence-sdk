@@ -25,7 +25,7 @@ from mainsequence.client.metatables import (
     MetaTableContract,
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
 )
 
 from .hashing import build_meta_table_configured_storage_hash
@@ -281,8 +281,8 @@ class PlatformManagedMetaTable:
         return None
 
 
-class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
-    """SQLAlchemy declarative base mixin for platform-managed TimeIndexMetaData.
+class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
+    """SQLAlchemy declarative base mixin for platform-managed TimeIndexMetaTable.
 
     This is the SDK authoring surface for time-indexed DataNode storage. It
     reuses the MetaTable column/type projection, but registers through the
@@ -291,22 +291,22 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
     ordinary non-null table columns.
     """
 
-    __time_index_metadata__: ClassVar[TimeIndexMetaData | None] = None
+    __time_index_metadata__: ClassVar[TimeIndexMetaTable | None] = None
 
     __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
     @classmethod
-    def _bind_meta_table(cls, meta_table: TimeIndexMetaData) -> TimeIndexMetaData:
-        if not isinstance(meta_table, TimeIndexMetaData):
+    def _bind_meta_table(cls, meta_table: TimeIndexMetaTable) -> TimeIndexMetaTable:
+        if not isinstance(meta_table, TimeIndexMetaTable):
             raise TypeError(
-                "PlatformTimeIndexMetaData._bind_meta_table requires TimeIndexMetaData."
+                "PlatformTimeIndexMetaTable._bind_meta_table requires TimeIndexMetaTable."
             )
         super()._bind_meta_table(meta_table)
         cls.__time_index_metadata__ = meta_table
         return meta_table
 
     @classmethod
-    def get_time_index_metadata(cls) -> TimeIndexMetaData | None:
+    def get_time_index_metadata(cls) -> TimeIndexMetaTable | None:
         return getattr(cls, "__time_index_metadata__", None)
 
     @classmethod
@@ -391,7 +391,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
         timeout: int | float | tuple[float, float] | None = None,
         _registration_stack: tuple[str, ...] = (),
     ) -> Any:
-        from mainsequence.client.metatables import TimeIndexMetaData
+        from mainsequence.client.metatables import TimeIndexMetaTable
 
         _require_platform_managed_migration_registration_context(cls)
         storage_hash = cls.get_storage_hash()
@@ -408,7 +408,7 @@ class PlatformTimeIndexMetaData(PlatformManagedMetaTable):
                 data_source=data_source,
                 data_source_uid=data_source_uid,
             )
-            time_index_metadata = TimeIndexMetaData.register(request, timeout=timeout)
+            time_index_metadata = TimeIndexMetaTable.register(request, timeout=timeout)
             cls._bind_meta_table(time_index_metadata)
             _complete_local_registration(
                 storage_hash=storage_hash,
@@ -1314,7 +1314,7 @@ def _has_time_index_contract(model_or_table: Any) -> bool:
     if getattr(model_or_table, "__dynamic_table_index_names__", None) is not None:
         return True
 
-    time_index_cls = globals().get("PlatformTimeIndexMetaData")
+    time_index_cls = globals().get("PlatformTimeIndexMetaTable")
     if isinstance(time_index_cls, type) and isinstance(model_or_table, type):
         try:
             if issubclass(model_or_table, time_index_cls):
@@ -1346,7 +1346,7 @@ def _resolve_time_index_name(
     )
     resolved = str(resolved)
     if not resolved:
-        raise ValueError("PlatformTimeIndexMetaData requires a non-empty time_index_name.")
+        raise ValueError("PlatformTimeIndexMetaTable requires a non-empty time_index_name.")
     return resolved
 
 
@@ -1377,7 +1377,7 @@ def _resolve_time_index_names(
     names = [str(name) for name in list(resolved or [])]
     if not names:
         raise ValueError(
-            "PlatformTimeIndexMetaData requires at least the time index in index_names."
+            "PlatformTimeIndexMetaTable requires at least the time index in index_names."
         )
     return names
 
@@ -1398,7 +1398,7 @@ def _resolve_time_index_storage_layout(
         return None
     if not isinstance(resolved, Mapping):
         raise ValueError(
-            "PlatformTimeIndexMetaData storage_layout must be a mapping when provided."
+            "PlatformTimeIndexMetaTable storage_layout must be a mapping when provided."
         )
     return resolved
 
@@ -1419,17 +1419,17 @@ def _validate_time_index_contract(
     names = [str(name) for name in index_names]
     if names[0] != time_index_name:
         raise ValueError(
-            "PlatformTimeIndexMetaData index_names must start with the time_index_name. "
+            "PlatformTimeIndexMetaTable index_names must start with the time_index_name. "
             f"Expected {time_index_name!r}, got {names[0]!r}."
         )
     if len(set(names)) != len(names):
-        raise ValueError("PlatformTimeIndexMetaData index_names cannot contain duplicates.")
+        raise ValueError("PlatformTimeIndexMetaTable index_names cannot contain duplicates.")
 
     columns_by_name = {str(column.name): column for column in columns}
     missing = [name for name in names if name not in columns_by_name]
     if missing:
         raise ValueError(
-            "PlatformTimeIndexMetaData index_names must all exist as table columns. "
+            "PlatformTimeIndexMetaTable index_names must all exist as table columns. "
             f"Missing columns: {missing!r}."
         )
 
@@ -1437,7 +1437,7 @@ def _validate_time_index_contract(
     time_type = _column_type_contract(time_column)["data_type"]
     if not is_temporal_token(time_type):
         raise ValueError(
-            "PlatformTimeIndexMetaData time_index_name must reference a temporal column. "
+            "PlatformTimeIndexMetaTable time_index_name must reference a temporal column. "
             f"Column {time_index_name!r} has type {time_type!r}."
         )
 
@@ -1446,7 +1446,7 @@ def _validate_time_index_contract(
     ]
     if nullable_index_columns:
         raise ValueError(
-            "PlatformTimeIndexMetaData index columns must be non-nullable. "
+            "PlatformTimeIndexMetaTable index columns must be non-nullable. "
             f"Nullable index columns: {nullable_index_columns!r}."
         )
 
@@ -1748,7 +1748,7 @@ def _looks_like_column(value: Any) -> bool:
 __all__ = [
     "DEFAULT_PLATFORM_MANAGED_PROVISIONING",
     "PlatformManagedMetaTable",
-    "PlatformTimeIndexMetaData",
+    "PlatformTimeIndexMetaTable",
     "external_registered_registration_request_from_sqlalchemy_model",
     "platform_managed_migration_registration_context",
     "platform_managed_registration_request_from_sqlalchemy_model",

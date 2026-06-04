@@ -42,7 +42,7 @@ Higher-level SDK helpers live in:
 from mainsequence.meta_tables import (
     AlembicVersionMetaTable,
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     external_registered_registration_request_from_sqlalchemy_model,
     register_external_sqlalchemy_model,
     schema_table_name,
@@ -167,10 +167,10 @@ class Asset(PlatformManagedMetaTable, Base):
     __metatable_extra_hash_components__ = {"storage_name": "asset"}
 ```
 
-For time-indexed DataNode storage, use `PlatformTimeIndexMetaData` instead of
+For time-indexed DataNode storage, use `PlatformTimeIndexMetaTable` instead of
 the generic `PlatformManagedMetaTable`. It uses the same storage-hash machinery,
 but also includes `time_index_name` and `index_names` in the stable identity and
-registers through the TimeIndexMetaData endpoint.
+registers through the TimeIndexMetaTable endpoint.
 
 For schema migrations, use Alembic with ordinary SQLAlchemy models. The SDK no
 longer provides schema-migration MetaTable bases or custom operation lists.

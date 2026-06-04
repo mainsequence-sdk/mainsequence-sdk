@@ -1,6 +1,6 @@
 ---
 name: mainsequence-data-nodes
-description: Use this skill when the task is about producing, changing, validating, or reviewing Main Sequence DataNode update processes. This skill owns DataNode update configuration, dependencies, update logic, hashing, namespaces, and validation against a PlatformTimeIndexMetaData storage contract. It does not own generic MetaTable governance, Alembic migration execution, API route contracts, scheduling, sharing policy, or storage registration internals.
+description: Use this skill when the task is about producing, changing, validating, or reviewing Main Sequence DataNode update processes. This skill owns DataNode update configuration, dependencies, update logic, hashing, namespaces, and validation against a PlatformTimeIndexMetaTable storage contract. It does not own generic MetaTable governance, Alembic migration execution, API route contracts, scheduling, sharing policy, or storage registration internals.
 ---
 
 # Main Sequence Data Nodes
@@ -10,12 +10,12 @@ description: Use this skill when the task is about producing, changing, validati
 Use this skill when the task changes a DataNode producer.
 
 A DataNode is an update process. It is not the canonical storage model. Storage
-is defined by a `PlatformTimeIndexMetaData` SQLAlchemy model. Physical schema
+is defined by a `PlatformTimeIndexMetaTable` SQLAlchemy model. Physical schema
 evolution is handled with Alembic, not a DataNode storage subclass.
 
 Canonical workflow:
 
-1. Define a `PlatformTimeIndexMetaData` storage class.
+1. Define a `PlatformTimeIndexMetaTable` storage class.
 2. Construct the DataNode with `config=...` and `storage_table=StorageClass`.
 3. Let the SDK register the output storage class automatically when needed.
 4. Return a DataFrame from `update()` that matches the storage class contract.
@@ -32,7 +32,7 @@ Canonical workflow:
   - `update()`
   - `prepare_update_statistics()`
 - design single-index or multidimensional time-first DataFrame outputs
-- validate output shape against a `PlatformTimeIndexMetaData` storage contract
+- validate output shape against a `PlatformTimeIndexMetaTable` storage contract
 - define explicit `hash_namespace(...)` validation strategy
 - write or review DataNode smoke tests
 - decide whether a consumer should use `APIDataNode`
@@ -77,7 +77,7 @@ If the task depends on one of those areas, route it explicitly instead of guessi
 Before changing code, collect or infer:
 
 - dataset meaning
-- `PlatformTimeIndexMetaData` output storage class, or the class to create
+- `PlatformTimeIndexMetaTable` output storage class, or the class to create
 - expected time index and identity index shape
 - expected columns and dtypes from the storage class
 - upstream dependencies
@@ -139,7 +139,7 @@ import datetime
 from sqlalchemy import DateTime, Float, MetaData
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from mainsequence.meta_tables import PlatformTimeIndexMetaData, schema_table_name
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable, schema_table_name
 
 PROJECT_NAME = "<project_name>"
 PRICES_TABLE_NAME = schema_table_name(PROJECT_NAME, "prices")
@@ -149,7 +149,7 @@ class Base(DeclarativeBase):
     metadata = MetaData()
 
 
-class PricesTable(PlatformTimeIndexMetaData, Base):
+class PricesTable(PlatformTimeIndexMetaTable, Base):
     __tablename__ = PRICES_TABLE_NAME
     __metatable_namespace__ = "<domain_namespace>"
     __metatable_identifier__ = "<project_name>.<table_identifier>"
@@ -191,13 +191,13 @@ MetaTable migration provider and run `mainsequence migrations upgrade --provider
 ... head`. Do not call `PricesTable.register()` directly and do not rely on
 DataNode construction to register storage tables.
 
-`__index_names__` is the full DataNode storage grain. `PlatformTimeIndexMetaData`
+`__index_names__` is the full DataNode storage grain. `PlatformTimeIndexMetaTable`
 automatically adds a SQLAlchemy unique index over that tuple before Alembic
 autogenerate runs. Do not manually repeat the full grain unique index in
 `__table_args__`; add ordinary SQLAlchemy `Index(...)` entries only for
 additional lookup/performance paths.
 
-`PlatformTimeIndexMetaData.register()` remains SDK plumbing for the migration
+`PlatformTimeIndexMetaTable.register()` remains SDK plumbing for the migration
 workflow. Do not manually attach an existing UID, reconstruct a generic
 `MetaTable`, or use manual bind helpers as an authoring step.
 
@@ -206,7 +206,7 @@ workflow. Do not manually attach an existing UID, reconstruct a generic
 The DataNode constructor should accept:
 
 - a `DataNodeConfiguration`
-- a `storage_table: type[PlatformTimeIndexMetaData]`
+- a `storage_table: type[PlatformTimeIndexMetaTable]`
 - optional `hash_namespace`
 
 The constructor `storage_table` is the output storage contract. Keep it out of
@@ -215,9 +215,9 @@ migration workflow before the node is constructed or run.
 
 If the DataNode needs to select another DataNode's storage table as a
 dependency, put that dependency storage reference in the config as
-`type[PlatformTimeIndexMetaData]`. Do not add an extra constructor argument for
+`type[PlatformTimeIndexMetaTable]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
-`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. If the
+`TimeIndexMetaTable.uid` from `StorageClass.__time_index_metadata__`. If the
 class is not yet bound, config serialization must fail and tell the user to run
 the migration workflow.
 
@@ -232,7 +232,7 @@ from typing import ClassVar
 from pydantic import Field
 
 from mainsequence.meta_tables import DataNode, DataNodeConfiguration
-from mainsequence.meta_tables import PlatformTimeIndexMetaData
+from mainsequence.meta_tables import PlatformTimeIndexMetaTable
 
 
 class PricesConfig(DataNodeConfiguration):
@@ -248,7 +248,7 @@ class PricesUpdate(DataNode):
     def __init__(
         self,
         config: PricesConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -375,7 +375,7 @@ Time index must be datetime64[ns, UTC]
 ```
 
 Use Alembic from the first version when a DataNode storage table must support
-physical schema evolution. Keep the `PlatformTimeIndexMetaData` catalog model as
+physical schema evolution. Keep the `PlatformTimeIndexMetaTable` catalog model as
 the SDK storage contract, apply Alembic-rendered SQL through the migration
 workflow, then register or refresh the MetaTable catalog binding separately.
 
@@ -390,7 +390,7 @@ Do not construct dependency graphs dynamically inside `update()`.
 
 ### 8. Foreign Keys Belong To SQLAlchemy And Alembic
 
-For new code, model foreign keys on the `PlatformTimeIndexMetaData` storage
+For new code, model foreign keys on the `PlatformTimeIndexMetaTable` storage
 class, or route the storage work to the MetaTable skill. When a DataNode storage
 table needs a platform-managed FK, use normal SQLAlchemy `ForeignKey(...)` /
 `ForeignKeyConstraint(...)` metadata on the storage class. Prefer
@@ -439,14 +439,14 @@ When reviewing an existing DataNode, look for:
 - hidden dependency creation inside `update()`
 - invalid identity-indexed output shape
 - `time_index` dtype that is not exactly `datetime64[ns, UTC]`
-- DataFrame columns that do not match the `PlatformTimeIndexMetaData` class
+- DataFrame columns that do not match the `PlatformTimeIndexMetaTable` class
 
 ## Validation Checklist
 
 Do not claim success until you have checked:
 
 - the relevant docs were read first
-- output storage is a `PlatformTimeIndexMetaData` class that the SDK can register
+- output storage is a `PlatformTimeIndexMetaTable` class that the SDK can register
 - storage has an intention-rich `__metatable_description__`
 - every storage column has an intention-rich `info.description`
 - the DataNode constructor requires `storage_table`

@@ -33,7 +33,7 @@ graph TD
     Org["Organization"] --> Users["Users"]
     Org --> Teams["Teams"]
     Users -->|membership| Teams
-    Users -->|direct access| Resources["Projects, TimeIndexMetaData, Constants, Secrets, Buckets, Artifacts, Releases"]
+    Users -->|direct access| Resources["Projects, TimeIndexMetaTable, Constants, Secrets, Buckets, Artifacts, Releases"]
     Teams -->|team access| Resources
 ```
 
@@ -149,7 +149,7 @@ That is the practical layer that answers:
 This model appears across resources such as:
 
 - `Project`
-- `TimeIndexMetaData`
+- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -195,8 +195,8 @@ Most of the time, the practical distinction is simple:
 
 For example:
 
-- on a `TimeIndexMetaData`, `view` means reading the published dataset
-- on a `TimeIndexMetaData`, `edit` means maintaining or administrating the published dataset
+- on a `TimeIndexMetaTable`, `view` means reading the published dataset
+- on a `TimeIndexMetaTable`, `edit` means maintaining or administrating the published dataset
 - on a dashboard release, `view` means opening it
 - on a constant, `edit` means changing the runtime value
 
@@ -222,7 +222,7 @@ This is why "team membership" and "team administration" should be thought of as 
 
 ### Example 1: Share a dataset to a team
 
-If a `TimeIndexMetaData` is shared to `Research` with `view` access:
+If a `TimeIndexMetaTable` is shared to `Research` with `view` access:
 
 - current members of `Research` can read the dataset
 - future members of `Research` will also inherit that read access
@@ -232,7 +232,7 @@ If a `TimeIndexMetaData` is shared to `Research` with `view` access:
 
 If one workflow maintainer needs to manage a dataset directly:
 
-- share the `TimeIndexMetaData` to that user with `edit`
+- share the `TimeIndexMetaTable` to that user with `edit`
 - do not widen access for the whole team unless that is actually intended
 
 ### Example 3: Team membership is not team administration
@@ -256,7 +256,7 @@ Keep your thinking resource by resource.
 
 In the tutorial, you already saw this pattern in practice:
 
-- `TimeIndexMetaData` controls access to published data
+- `TimeIndexMetaTable` controls access to published data
 - `Constant` and `Secret` control access to runtime configuration
 - `Bucket` and `Artifact` control access to stored files
 - `ResourceRelease` controls access to deployed experiences such as dashboards and APIs

@@ -77,12 +77,12 @@ def _import_qualified_name(module_name: str, qualname: str) -> Any:
 
 def _is_platform_time_index_metadata_class(value: Any) -> bool:
     try:
-        from mainsequence.meta_tables.sqlalchemy_contracts import PlatformTimeIndexMetaData
+        from mainsequence.meta_tables.sqlalchemy_contracts import PlatformTimeIndexMetaTable
     except ImportError:
         return False
 
     try:
-        return isinstance(value, type) and issubclass(value, PlatformTimeIndexMetaData)
+        return isinstance(value, type) and issubclass(value, PlatformTimeIndexMetaTable)
     except TypeError:
         return False
 
@@ -96,14 +96,14 @@ def _(value: type[Any]) -> Any:
     uid = getattr(time_index_metadata, "uid", None)
     if uid in (None, ""):
         raise ValueError(
-            "PlatformTimeIndexMetaData config value is not registered. Run "
+            "PlatformTimeIndexMetaTable config value is not registered. Run "
             "`mainsequence migrations upgrade --provider <provider> head` "
             "before using it in DataNode configuration."
         )
 
     if uid in (None, ""):
         raise ValueError(
-            "PlatformTimeIndexMetaData config value is missing TimeIndexMetaData metadata."
+            "PlatformTimeIndexMetaTable config value is missing TimeIndexMetaTable metadata."
         )
     return {
         "__type__": "platform_time_index_metadata",

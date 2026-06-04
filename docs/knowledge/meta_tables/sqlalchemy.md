@@ -17,7 +17,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_table_name,
     sqlalchemy_naming_convention,
 )
@@ -79,7 +79,7 @@ same storage name. This is common for generic or repeated storage shapes, such
 as several one-index time-series tables with the same column types.
 
 ```python
-class DailyReturns(PlatformTimeIndexMetaData, Base):
+class DailyReturns(PlatformTimeIndexMetaTable, Base):
     __tablename__ = schema_table_name(PROJECT_NAME, "daily_returns")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk_examples.DailyReturns"
@@ -176,7 +176,7 @@ The SDK contract serializer extracts:
 
 ## Time-Indexed DataNode Storage
 
-Use `PlatformTimeIndexMetaData` when the table is DynamicTable/DataNode storage rather
+Use `PlatformTimeIndexMetaTable` when the table is DynamicTable/DataNode storage rather
 than a generic relational MetaTable. It inherits the platform-managed MetaTable
 authoring behavior, but registers through:
 
@@ -202,7 +202,7 @@ indexes are Alembic-owned DDL metadata. TS Manager does not manage index or
 foreign-key contracts.
 
 ```python
-class AccountHoldings(PlatformTimeIndexMetaData, Base):
+class AccountHoldings(PlatformTimeIndexMetaTable, Base):
     __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
     __table_args__ = (
         Index(None, "account_uid"),
@@ -270,7 +270,7 @@ class Account(PlatformManagedMetaTable, Base):
 For time-indexed DataNode storage:
 
 ```python
-class AccountHoldings(PlatformTimeIndexMetaData, Base):
+class AccountHoldings(PlatformTimeIndexMetaTable, Base):
     __tablename__ = schema_table_name(PROJECT_NAME, "account_holdings")
     __metatable_namespace__ = "sdk-examples"
     __metatable_identifier__ = "sdk-examples.AccountHoldings"

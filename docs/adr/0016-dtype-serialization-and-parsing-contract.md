@@ -39,8 +39,8 @@ uses explicit timezone-aware values.
 
 ## Current Contract
 
-- Storage schema comes from the registered `PlatformTimeIndexMetaData` /
-  `TimeIndexMetaData` contract.
+- Storage schema comes from the registered `PlatformTimeIndexMetaTable` /
+  `TimeIndexMetaTable` contract.
 - DataNode write payloads are prepared through `prepare_dataframe_for_remote_write`.
 - DataNode read payloads are restored through the codec using the storage
   `column_dtypes_map`.

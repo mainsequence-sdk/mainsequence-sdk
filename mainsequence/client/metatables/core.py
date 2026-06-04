@@ -1819,12 +1819,12 @@ def _require_public_uid(obj: Any, object_name: str) -> str:
 
 class BaseColumnMetaData(BasePydanticModel):
     column_name: str = Field(
-        ..., max_length=63, description="Name of the column in the TimeIndexMetaData contract"
+        ..., max_length=63, description="Name of the column in the TimeIndexMetaTable contract"
     )
     dtype: str = Field(
         ...,
         max_length=100,
-        description="Portable data type from the TimeIndexMetaData contract",
+        description="Portable data type from the TimeIndexMetaTable contract",
     )
     label: str | None = Field(None, max_length=250, description="Human‐readable label")
     description: str | None = Field(None, description="Longer description of the column")
@@ -1991,9 +1991,9 @@ def _normalize_time_indexed_column_contracts(
         name = _payload_get(column, "name") or _payload_get(column, "column_name")
         data_type = _payload_get(column, "data_type") or _payload_get(column, "dtype")
         if name in (None, ""):
-            raise ValueError("TimeIndexMetaData column contracts require a non-empty name.")
+            raise ValueError("TimeIndexMetaTable column contracts require a non-empty name.")
         if data_type in (None, ""):
-            raise ValueError(f"TimeIndexMetaData column {name!r} requires a data_type.")
+            raise ValueError(f"TimeIndexMetaTable column {name!r} requires a data_type.")
         normalized.append(
             {
                 "name": str(name),
@@ -2064,18 +2064,18 @@ class TimeIndexedProfileBase:
 
 
 class TimeIndexedProfile(TimeIndexedProfileBase, BasePydanticModel):
-    """Read-only TimeIndexMetaData profile.
+    """Read-only TimeIndexMetaTable profile.
 
-    This is a value object returned by TimeIndexMetaData responses. It is not a
+    This is a value object returned by TimeIndexMetaTable responses. It is not a
     public REST resource; operations such as stats reads and column metadata
-    updates are routed through TimeIndexMetaData.
+    updates are routed through TimeIndexMetaTable.
     """
 
     dynamic_table_uid: str | None = Field(
-        None, description="Backend response alias for the related TimeIndexMetaData uid"
+        None, description="Backend response alias for the related TimeIndexMetaTable uid"
     )
     related_table_uid: str | None = Field(
-        None, description="Public uid of the related TimeIndexMetaData"
+        None, description="Public uid of the related TimeIndexMetaTable"
     )
     time_index_name: str = Field(..., max_length=100, description="Time index name")
     partition_strategy: str | None = None
@@ -2149,7 +2149,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
 
     NODE_TYPE: ClassVar[str] = "local_time_serie"
 
-    data_node_storage: str | UUID | TimeIndexMetaData
+    data_node_storage: str | UUID | TimeIndexMetaTable
     tags: list[str] | None = Field(default=[], description="List of tags")
     labels: list[str] = Field(
         default_factory=list,
@@ -2768,7 +2768,7 @@ class DataNodeUpdate(TableUpdateNode, BaseObjectOrm):
         missing_index_dtypes = [name for name in index_names if name not in column_dtypes_map]
         if missing_index_dtypes:
             raise ValueError(
-                "Every index column must exist in the TimeIndexMetaData column contract. "
+                "Every index column must exist in the TimeIndexMetaTable column contract. "
                 f"Missing: {missing_index_dtypes}"
             )
 
@@ -2908,7 +2908,7 @@ class TableMetaData(BaseModel):
     description: str | None = None
 
 
-class TimeIndexMetaData(MetaTable):
+class TimeIndexMetaTable(MetaTable):
     ENDPOINT: ClassVar[str] = "ts_manager/dynamic_table"
     FILTERSET_FIELDS: ClassVar[dict[str, list[str]]] = {
         "storage_hash": ["in", "exact", "contains"],
@@ -3067,7 +3067,7 @@ class TimeIndexMetaData(MetaTable):
         column_dtypes_map = self.column_dtypes_map
         if not time_index_name or not index_names or not column_dtypes_map:
             raise ValueError(
-                "TimeIndexMetaData is missing its time-indexed table contract. "
+                "TimeIndexMetaTable is missing its time-indexed table contract. "
                 "Expected canonical MetaTable columns plus a time_indexed_profile projection."
             )
         return time_index_name, index_names, column_dtypes_map
@@ -3131,7 +3131,7 @@ class TimeIndexMetaData(MetaTable):
         *,
         timeout: int | float | tuple[float, float] | None = None,
         **kwargs: Any,
-    ) -> TimeIndexMetaData:
+    ) -> TimeIndexMetaTable:
         if request is not None and kwargs:
             raise ValueError("Pass either request or keyword fields, not both.")
         payload = (
@@ -3155,9 +3155,9 @@ class TimeIndexMetaData(MetaTable):
         return cls(**response.json())
 
     def get_data_updates(self, *, timeout: int | None = None) -> UpdateStatistics:
-        """Fetch update-progress statistics for this TimeIndexMetaData table."""
+        """Fetch update-progress statistics for this TimeIndexMetaTable table."""
         if self.uid is None:
-            raise ValueError("TimeIndexMetaData must have a uid before fetching update stats.")
+            raise ValueError("TimeIndexMetaTable must have a uid before fetching update stats.")
 
         cls = type(self)
         url = f"{cls.get_object_url()}/{self._public_uid()}/get-stats/"
@@ -3194,17 +3194,17 @@ class TimeIndexMetaData(MetaTable):
         timeout: int | None = None,
     ) -> dict[str, Any]:
         """
-        Delete rows at or after a cutoff timestamp from this TimeIndexMetaData table.
+        Delete rows at or after a cutoff timestamp from this TimeIndexMetaTable table.
 
         This is a backend tail-delete operation:
 
-        - it hits the TimeIndexMetaData backend delete-after-date route
+        - it hits the TimeIndexMetaTable backend delete-after-date route
         - `after_date` is the inclusive cutoff
         - there is no `end_date`; this is not arbitrary range deletion
         - for multi-index tables, pass `dimension_filters` or
           `index_coordinates` to scope the tail delete
 
-        The authenticated user must have edit access to this TimeIndexMetaData.
+        The authenticated user must have edit access to this TimeIndexMetaTable.
 
         The returned payload contains the authoritative post-delete table stats,
         including `deleted_count`, `table_empty`, and index metadata. Consumers
@@ -3212,7 +3212,7 @@ class TimeIndexMetaData(MetaTable):
         detail after the delete.
         """
         if self.uid is None:
-            raise ValueError("TimeIndexMetaData must have a uid before deleting rows after a date.")
+            raise ValueError("TimeIndexMetaTable must have a uid before deleting rows after a date.")
 
         payload_body: dict[str, Any] = {
             "after_date": after_date.isoformat()
@@ -3477,7 +3477,7 @@ class TimeIndexMetaData(MetaTable):
         index_coordinates: list[dict[str, Any]] | None = None,
         dimension_range_map: list[dict[str, Any]] | None = None,
         columns: list = None,
-    ) -> [pd.DataFrame, TimeIndexMetaData]:
+    ) -> [pd.DataFrame, TimeIndexMetaTable]:
         """
         Same behaviour as get_data_between_dates_from_api,
         but calls the node-identifier endpoint and includes node_identifier in payload.
@@ -4663,7 +4663,7 @@ class PodDataSource:
             raise ValueError(f"Unsupported local DataSource class_type: {class_type!r}")
 
         # drop local tables that are not in registered in the backend anymore (probably have been deleted)
-        remote_node_storages = TimeIndexMetaData.filter(
+        remote_node_storages = TimeIndexMetaTable.filter(
             data_source__uid=local_dynamic_data_source.uid,
             list_tables=True,
         )
@@ -4732,7 +4732,7 @@ DataNodeUpdateDetails.model_rebuild()
 DataNodeUpdate.model_rebuild()
 RunConfiguration.model_rebuild()
 TimeIndexedProfile.model_rebuild()
-TimeIndexMetaData.model_rebuild()
+TimeIndexMetaTable.model_rebuild()
 DynamicTableDataSource.model_rebuild()
 DataSource.model_rebuild()
 MetaTableRequestFields.model_rebuild()
@@ -4795,7 +4795,7 @@ __all__ = [
     "COMPILED_SQL_V1",
     "TableMetaData",
     "TableUpdateNode",
-    "TimeIndexMetaData",
+    "TimeIndexMetaTable",
     "TimeIndexedProfile",
     "TimeIndexedProfileBase",
     "TimeIndexedProfileDoesNotExist",

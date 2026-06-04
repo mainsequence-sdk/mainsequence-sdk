@@ -52,7 +52,7 @@ from mainsequence.meta_tables import (
 )
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_table_name,
     sqlalchemy_naming_convention,
 )
@@ -85,7 +85,7 @@ class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
 
-class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
+class DailyRandomNumberStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = DAILY_RANDOM_NUMBER_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
@@ -102,7 +102,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     random_number: Mapped[float] = mapped_column(Float, nullable=False)
 
 
-class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
+class DailyRandomAdditionStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = DAILY_RANDOM_ADDITION_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
@@ -152,13 +152,13 @@ class DailyRandomNumber(DataNode):
     def __init__(
         self,
         config: RandomDataNodeConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
         """
         :param config: Configuration containing mean and volatility
-        :param storage_table: PlatformTimeIndexMetaData model used as output storage
+        :param storage_table: PlatformTimeIndexMetaTable model used as output storage
         """
         self.mean = config.mean
         self.std = config.std
@@ -190,7 +190,7 @@ class DailyRandomNumber(DataNode):
         return {}
 ```
 
-The concrete `PlatformTimeIndexMetaData` model is the storage contract.
+The concrete `PlatformTimeIndexMetaTable` model is the storage contract.
 MetaTable registration is migration-first. Add storage models to the selected
 MetaTable migration provider and run `mainsequence migrations upgrade --provider
 ... head` before constructing or running nodes. Do not call
@@ -257,8 +257,8 @@ configuration field.
 If a DataNode depends on another DataNode and needs to select that dependency's
 storage model, put that dependency storage reference in the config, not as an
 extra constructor argument. A config field typed as
-`type[PlatformTimeIndexMetaData]` is hashed by the registered
-`TimeIndexMetaData.uid` from `StorageClass.__time_index_metadata__`. If that
+`type[PlatformTimeIndexMetaTable]` is hashed by the registered
+`TimeIndexMetaTable.uid` from `StorageClass.__time_index_metadata__`. If that
 class is not yet bound, config serialization fails and tells the user to run
 the MetaTable migration workflow.
 
@@ -306,7 +306,7 @@ That means `(2026-01-02, account-a, AAPL)` and `(2026-01-02, account-b, AAPL)`
 are different rows, even though they share the same timestamp and security.
 `Account` is the platform-managed parent table. `AccountHoldingsStorage` is the
 time-indexed storage MetaTable. The foreign key is ordinary SQLAlchemy/Alembic
-DDL metadata, while `PlatformTimeIndexMetaData` still uses the full
+DDL metadata, while `PlatformTimeIndexMetaTable` still uses the full
 `__index_names__` tuple as the ORM identity and sends that tuple as
 `index_names`. The SDK also adds a normal SQLAlchemy unique index over the full
 `__index_names__` tuple, so Alembic creates database uniqueness for each
@@ -330,7 +330,7 @@ class Account(PlatformManagedMetaTable, Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
-class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
+class AccountHoldingsStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = ACCOUNT_HOLDINGS_TABLE_NAME
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
@@ -411,7 +411,7 @@ class AccountHoldingsSnapshot(DataNode):
     def __init__(
         self,
         config: AccountHoldingsConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -636,14 +636,14 @@ Now extend the workflow with a node that depends on `DailyRandomNumber`. Add the
 class DailyRandomAdditionConfig(DataNodeConfiguration):
     mean: float
     std: float
-    daily_random_number_storage_table: type[PlatformTimeIndexMetaData]
+    daily_random_number_storage_table: type[PlatformTimeIndexMetaTable]
 
 
 class DailyRandomAddition(DataNode):
     def __init__(
         self,
         config: DailyRandomAdditionConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -727,7 +727,7 @@ python3 scripts/random_daily_addition_launcher.py
 ```
 
 Both tutorial storage tables have friendly identifiers because their
-`PlatformTimeIndexMetaData` classes declare stable class metadata and register
+`PlatformTimeIndexMetaTable` classes declare stable class metadata and register
 through the SDK storage lifecycle. Use Alembic for storage schema migrations;
 the SDK does not provide a schema-migration storage subclass. Use
 `mainsequence project data-node-updates list` for update records and
@@ -738,7 +738,7 @@ The important thing to verify here is that the dependent node ran successfully a
 
 ## 4. DataNode Update Identity And MetaTable Storage
 
-A `PlatformTimeIndexMetaData` class is the storage contract for a DataNode
+A `PlatformTimeIndexMetaTable` class is the storage contract for a DataNode
 table. Alembic is responsible for physical schema migrations. A `DataNode` is
 the update process that produces or refreshes data for that MetaTable-backed
 table.
@@ -787,7 +787,7 @@ daily_node_high.run(debug_mode=True, force_update=True)
 Here we create two `DailyRandomNumber` nodes with different `std` (Volatility)
 configurations but the same `storage_table`. Both nodes write to the same table
 contract while keeping separate update-process identities. The tutorial table
-identifier stays stable because it comes from the `PlatformTimeIndexMetaData`
+identifier stays stable because it comes from the `PlatformTimeIndexMetaTable`
 class metadata, not from `std`.
 
 For migrated storage, keep identifiers stable in the MetaTable catalog and let

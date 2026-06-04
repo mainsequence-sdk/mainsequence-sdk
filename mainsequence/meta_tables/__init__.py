@@ -12,7 +12,7 @@ _LAZY_IMPORTS = {
     "AlembicMetaTableMigration": (".migrations", "AlembicMetaTableMigration"),
     "AlembicVersionMetaTable": (".migrations", "AlembicVersionMetaTable"),
     "PlatformManagedMetaTable": (".sqlalchemy_contracts", "PlatformManagedMetaTable"),
-    "PlatformTimeIndexMetaData": (".sqlalchemy_contracts", "PlatformTimeIndexMetaData"),
+    "PlatformTimeIndexMetaTable": (".sqlalchemy_contracts", "PlatformTimeIndexMetaTable"),
     "POSTGRES_IDENTIFIER_MAX_LENGTH": (".hashing", "POSTGRES_IDENTIFIER_MAX_LENGTH"),
     "SchemaTableNameParts": (".schema_names", "SchemaTableNameParts"),
     "BaseConfiguration": (".data_nodes", "BaseConfiguration"),

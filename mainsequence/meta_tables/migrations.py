@@ -21,12 +21,12 @@ from mainsequence.client.metatables import (
     MetaTablePhysicalContract,
     MetaTableRegistrationRequest,
     SchemaManagementRequest,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
 )
 from mainsequence.meta_tables.hashing import build_meta_table_storage_hash
 from mainsequence.meta_tables.sqlalchemy_contracts import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     _ensure_time_index_unique_grain_index,
     _normalize_table_default_schema,
     _resolve_model_data_source_uid,
@@ -1129,7 +1129,7 @@ def _finalize_failure_message(item: ManagedMetaTableFinalizeTableResult) -> str:
 
 def _metatable_resource_class_for_model(model: type[Any]) -> type[MetaTable]:
     if _is_platform_time_index_metatable_model(model):
-        return TimeIndexMetaData
+        return TimeIndexMetaTable
     return MetaTable
 
 
@@ -1170,7 +1170,7 @@ def _is_platform_managed_metatable_model(model: Any) -> bool:
 
 
 def _is_platform_time_index_metatable_model(model: Any) -> bool:
-    return isinstance(model, type) and issubclass(model, PlatformTimeIndexMetaData)
+    return isinstance(model, type) and issubclass(model, PlatformTimeIndexMetaTable)
 
 
 __all__ = [

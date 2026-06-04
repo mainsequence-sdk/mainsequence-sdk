@@ -14,11 +14,11 @@ from mainsequence.client.metatables import (
     ManagedMetaTableFinalizeResponse,
     ManagedMetaTableFinalizeTableResult,
     MetaTable,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
 )
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_index_name,
 )
 from mainsequence.meta_tables.migrations import (
@@ -945,7 +945,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
         __metatable_uid__ = "registry-meta-table-uid"
         __metatable_data_source_uid__ = "data-source-uid"
 
-    class Prices(PlatformTimeIndexMetaData, Base):
+    class Prices(PlatformTimeIndexMetaTable, Base):
         __tablename__ = "example_assets__prices"
         __metatable_data_source_uid__ = "data-source-uid"
         __metatable_namespace__ = "example.assets"
@@ -961,7 +961,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
         close: Mapped[int] = mapped_column(Integer, nullable=True)
 
     captured_rows = []
-    monkeypatch.setattr(TimeIndexMetaData, "filter_by_body", staticmethod(lambda **kwargs: []))
+    monkeypatch.setattr(TimeIndexMetaTable, "filter_by_body", staticmethod(lambda **kwargs: []))
     monkeypatch.setattr(
         MetaTable,
         "bulk_create",
@@ -972,7 +972,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
         captured_rows.extend(rows)
         return [
             _reserved_metatable(
-                TimeIndexMetaData,
+                TimeIndexMetaTable,
                 uid="cccccccc-cccc-4ccc-8ccc-cccccccccccc",
                 identifier="example_assets__prices",
                 physical_table_name="example_assets__prices",
@@ -981,7 +981,7 @@ def test_prepare_for_alembic_routes_time_indexed_models_to_dynamic_table_bulk_cr
         ]
 
     monkeypatch.setattr(
-        TimeIndexMetaData,
+        TimeIndexMetaTable,
         "bulk_create",
         staticmethod(fake_dynamic_bulk_create),
     )
@@ -1013,7 +1013,7 @@ def test_provider_adds_time_index_grain_index_when_table_cls_is_overridden():
     class Base(DeclarativeBase):
         metadata = MetaData(schema="public")
 
-    class CustomTimeIndexMixin(PlatformTimeIndexMetaData):
+    class CustomTimeIndexMixin(PlatformTimeIndexMetaTable):
         __abstract__ = True
 
         @classmethod

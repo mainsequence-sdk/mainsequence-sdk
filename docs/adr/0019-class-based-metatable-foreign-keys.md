@@ -103,7 +103,7 @@ __metatable__: ClassVar[MetaTable | None]
 method, for example `Account`, not `Account.__metatable__`.
 
 The public type should be compatible with `PlatformManagedMetaTable` subclasses,
-including `PlatformTimeIndexMetaData` because it inherits the same registration
+including `PlatformTimeIndexMetaTable` because it inherits the same registration
 path.
 
 ## Registration Semantics

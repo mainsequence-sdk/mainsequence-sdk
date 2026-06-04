@@ -16,7 +16,7 @@ import typer
 from mainsequence.client.metatables import (
     DynamicTableDataSource,
     DynamicTableDataSourceMigrationConnectionRequest,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
 )
 from mainsequence.meta_tables.migrations import (
     AlembicMetaTableMigration,
@@ -348,7 +348,7 @@ def _collection_create_endpoint_for_items(items: Sequence[Any]) -> str:
 
 
 def _collection_create_endpoint_for_item(item: Any) -> str:
-    if isinstance(item, TimeIndexMetaData):
+    if isinstance(item, TimeIndexMetaTable):
         return DYNAMIC_TABLE_COLLECTION_ENDPOINT
     if _item_value(item, "time_index_name") not in (None, ""):
         return DYNAMIC_TABLE_COLLECTION_ENDPOINT

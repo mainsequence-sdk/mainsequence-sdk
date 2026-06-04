@@ -26,7 +26,7 @@ path. Registration is no longer allowed to retarget SQLAlchemy table names for
 Alembic-managed platform MetaTables.
 
 `PlatformManagedMetaTable.register()` and
-`PlatformTimeIndexMetaData.register()` will:
+`PlatformTimeIndexMetaTable.register()` will:
 
 1. Build a registration request using the SQLAlchemy table name as
    `storage_hash`.
@@ -47,7 +47,7 @@ can make a model compile SQL against a table it did not register.
 The old free-function platform-managed registration helper is removed from the
 public SDK export surface. Platform-managed SQLAlchemy models must register
 through `PlatformManagedMetaTable.register()` or
-`PlatformTimeIndexMetaData.register()` so the backend response can be bound
+`PlatformTimeIndexMetaTable.register()` so the backend response can be bound
 back onto the declaring model.
 
 ## Consequences

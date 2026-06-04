@@ -17,7 +17,7 @@ from mainsequence.client.metatables import (
     DataNodeUpdate,
     DataNodeUpdateDetails,
     MetaTable,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
 )
 from mainsequence.client.models_foundry import (
     Project,
@@ -25,7 +25,7 @@ from mainsequence.client.models_foundry import (
 from mainsequence.meta_tables import (
     DataNode,
     DataNodeConfiguration,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
 )
 from mainsequence.meta_tables.data_nodes.persist_managers import BasePersistManager
 from mainsequence.meta_tables.data_nodes.run_operations import UpdateRunner
@@ -54,18 +54,18 @@ def _meta_table(
     )
 
 
-def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMetaData]:
-    class RuntimeStorageTable(PlatformTimeIndexMetaData):
+def _platform_storage_model(meta_table: MetaTable) -> type[PlatformTimeIndexMetaTable]:
+    class RuntimeStorageTable(PlatformTimeIndexMetaTable):
         pass
 
-    if not isinstance(meta_table, TimeIndexMetaData):
-        meta_table = TimeIndexMetaData.model_construct(**meta_table.model_dump())
+    if not isinstance(meta_table, TimeIndexMetaTable):
+        meta_table = TimeIndexMetaTable.model_construct(**meta_table.model_dump())
     RuntimeStorageTable._bind_meta_table(meta_table)
     return RuntimeStorageTable
 
 
 def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint():
-    assert issubclass(TimeIndexMetaData, MetaTable)
+    assert issubclass(TimeIndexMetaTable, MetaTable)
     for inherited_field in (
         "storage_hash",
         "management_mode",
@@ -73,9 +73,9 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
         "labels",
         "creation_date",
     ):
-        assert inherited_field not in TimeIndexMetaData.__annotations__
+        assert inherited_field not in TimeIndexMetaTable.__annotations__
 
-    storage = TimeIndexMetaData(
+    storage = TimeIndexMetaTable(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
@@ -88,12 +88,12 @@ def test_data_node_storage_inherits_meta_table_but_keeps_dynamic_table_endpoint(
     assert isinstance(storage, MetaTable)
     assert storage.management_mode == "platform_managed"
     assert storage.physical_table_name == "prices_storage_hash"
-    assert TimeIndexMetaData.get_object_url().endswith("/ts_manager/dynamic_table")
+    assert TimeIndexMetaTable.get_object_url().endswith("/ts_manager/dynamic_table")
 
 
 def test_metatable_update_models_are_not_exported_from_models_foundry():
     moved_names = [
-        "TimeIndexMetaData",
+        "TimeIndexMetaTable",
         "TimeIndexedProfile",
         "TimeIndexMetaTableRegistrationRequest",
         "DataNodeUpdate",
@@ -223,7 +223,7 @@ def test_persist_manager_passes_storage_contract_schema_to_update():
             captured.update(kwargs)
             return self
 
-    storage_metadata = TimeIndexMetaData.model_construct(
+    storage_metadata = TimeIndexMetaTable.model_construct(
         uid="data-node-storage-44",
         data_source_uid="data-source-uid",
         data_source=SimpleNamespace(
@@ -278,7 +278,7 @@ def test_persist_manager_passes_storage_contract_schema_to_update():
 
 
 def test_data_node_storage_accepts_namespace():
-    storage = TimeIndexMetaData(
+    storage = TimeIndexMetaTable(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",
@@ -316,7 +316,7 @@ def test_data_node_storage_rejects_removed_backend_fields(removed_field):
     }
 
     with pytest.raises(ValidationError):
-        TimeIndexMetaData(**payload)
+        TimeIndexMetaTable(**payload)
 
 
 def test_persist_manager_requires_storage_table_constructor_argument():
@@ -373,14 +373,14 @@ def test_persist_manager_validates_storage_table_without_creating_storage():
     ]
     assert manager.storage_table is storage_table
     assert manager.storage_metadata.uid == meta_table.uid
-    assert isinstance(manager.storage_metadata, TimeIndexMetaData)
+    assert isinstance(manager.storage_metadata, TimeIndexMetaTable)
 
 
 def test_persist_manager_rejects_unbound_platform_time_index_storage_table():
-    class UnboundStorageTable(PlatformTimeIndexMetaData):
+    class UnboundStorageTable(PlatformTimeIndexMetaTable):
         pass
 
-    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaData"):
+    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
         BasePersistManager(
             update_hash="prices-update-hash",
             storage_table=UnboundStorageTable,
@@ -485,7 +485,7 @@ def test_persist_manager_preserves_storage_table_during_update_lookup():
     assert manager.data_node_update.data_node_storage is stale_response_storage
     assert manager.storage_table is storage_table
     assert manager.storage_metadata.uid == meta_table.uid
-    assert isinstance(manager.storage_metadata, TimeIndexMetaData)
+    assert isinstance(manager.storage_metadata, TimeIndexMetaTable)
 
 
 def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
@@ -496,7 +496,7 @@ def test_data_node_accepts_platform_time_index_storage_table_runtime_argument():
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaData],
+            storage_table: type[PlatformTimeIndexMetaTable],
         ):
             super().__init__(config=config, storage_table=storage_table)
 
@@ -525,7 +525,7 @@ def test_data_node_rejects_test_node_constructor_shortcut():
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaData],
+            storage_table: type[PlatformTimeIndexMetaTable],
         ):
             super().__init__(config=config, storage_table=storage_table)
 
@@ -587,7 +587,7 @@ def test_data_node_passes_storage_table_to_persist_manager(monkeypatch):
         def __init__(
             self,
             config: Config,
-            storage_table: type[PlatformTimeIndexMetaData],
+            storage_table: type[PlatformTimeIndexMetaTable],
         ):
             super().__init__(config=config, storage_table=storage_table)
 
@@ -630,7 +630,7 @@ def test_data_node_rejects_client_meta_table_storage_argument():
 
     node = StorageTableNode.__new__(StorageTableNode)
 
-    with pytest.raises(TypeError, match="PlatformTimeIndexMetaData"):
+    with pytest.raises(TypeError, match="PlatformTimeIndexMetaTable"):
         node.storage_table = _meta_table()
 
 
@@ -642,12 +642,12 @@ def test_data_node_rejects_unbound_platform_time_index_storage_table():
         def update(self):
             return pd.DataFrame()
 
-    class UnboundStorageTable(PlatformTimeIndexMetaData):
+    class UnboundStorageTable(PlatformTimeIndexMetaTable):
         pass
 
     node = StorageTableNode.__new__(StorageTableNode)
 
-    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaData"):
+    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
         node.storage_table = UnboundStorageTable
 
 
@@ -693,7 +693,7 @@ def test_label_fields_exist_on_workspace_project_and_storage_models():
         is_initialized=True,
         labels=["research"],
     )
-    data_node_storage = TimeIndexMetaData(
+    data_node_storage = TimeIndexMetaTable(
         uid="data-node-storage-12",
         storage_hash="prices_storage_hash",
         management_mode="platform_managed",

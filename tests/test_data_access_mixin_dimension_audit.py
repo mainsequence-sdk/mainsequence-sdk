@@ -82,6 +82,7 @@ def test_api_data_node_build_from_identifier_uses_data_source_uid(monkeypatch):
     captured = {}
     storage_table = SimpleNamespace(
         storage_hash="prices_hash",
+        physical_table_name="prices_table",
         data_source_uid="data-source-uid",
     )
 
@@ -94,7 +95,7 @@ def test_api_data_node_build_from_identifier_uses_data_source_uid(monkeypatch):
     node = data_nodes.APIDataNode.build_from_identifier("prices")
 
     assert captured == {"identifier": "prices"}
-    assert node.storage_hash == "prices_hash"
+    assert node.storage_hash == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
     assert not hasattr(node, "data_source_id")
@@ -104,6 +105,7 @@ def test_api_data_node_build_from_table_uid_uses_meta_table_uid(monkeypatch):
     captured = {}
     storage_table = SimpleNamespace(
         storage_hash="prices_hash",
+        physical_table_name="prices_table",
         data_source_uid="data-source-uid",
     )
 
@@ -116,23 +118,72 @@ def test_api_data_node_build_from_table_uid_uses_meta_table_uid(monkeypatch):
     node = data_nodes.APIDataNode.build_from_table_uid("table-uid")
 
     assert captured == {"uid": "table-uid"}
-    assert node.storage_hash == "prices_hash"
+    assert node.storage_hash == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
     assert not hasattr(data_nodes.APIDataNode, "build_from_table_id")
 
 
+def test_api_data_node_build_from_table_name_uses_physical_table_name(monkeypatch):
+    captured = {}
+    storage_table = SimpleNamespace(
+        storage_hash="prices_hash",
+        physical_table_name="prices_table",
+        data_source_uid="data-source-uid",
+    )
+
+    def fake_get_or_none(**kwargs):
+        captured.update(kwargs)
+        return storage_table
+
+    monkeypatch.setattr(data_nodes.TimeIndexMetaTable, "get_or_none", fake_get_or_none)
+
+    node = data_nodes.APIDataNode.build_from_table_name("prices_table")
+
+    assert captured == {
+        "physical_table_name": "prices_table",
+        "include_relations_detail": True,
+    }
+    assert node.storage_hash == "prices_table"
+    assert node.data_source_uid == "data-source-uid"
+    assert node.storage_table is storage_table
+
+
 def test_api_data_node_build_from_meta_table_falls_back_to_nested_data_source():
     storage_table = SimpleNamespace(
         storage_hash="prices_hash",
+        physical_table_name="prices_table",
         data_source=SimpleNamespace(uid="data-source-uid"),
     )
 
     node = data_nodes.APIDataNode.build_from_meta_table(storage_table)
 
-    assert node.storage_hash == "prices_hash"
+    assert node.storage_hash == "prices_table"
     assert node.data_source_uid == "data-source-uid"
     assert node.storage_table is storage_table
+
+
+def test_api_persist_manager_resolves_storage_by_table_name_and_data_source(monkeypatch):
+    captured = {}
+    storage_table = object()
+
+    def fake_get_or_none(**kwargs):
+        captured.update(kwargs)
+        return storage_table
+
+    monkeypatch.setattr(data_nodes.TimeIndexMetaTable, "get_or_none", fake_get_or_none)
+
+    manager = data_nodes.APIPersistManager(
+        storage_hash="prices_table",
+        data_source_uid="data-source-uid",
+    )
+
+    assert manager.storage_table is storage_table
+    assert captured == {
+        "physical_table_name": "prices_table",
+        "data_source__uid": "data-source-uid",
+        "include_relations_detail": True,
+    }
 
 
 def test_api_data_node_local_persist_manager_receives_only_data_source_uid(monkeypatch):

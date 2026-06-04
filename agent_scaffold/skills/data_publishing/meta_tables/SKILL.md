@@ -134,7 +134,7 @@ SQLAlchemy table name.
 
 When a platform-managed table must support in-place contract migrations from its
 first version, use Alembic. Keep the SDK model as a normal
-`PlatformManagedMetaTable` or `PlatformTimeIndexMetaData` catalog contract, and
+`PlatformManagedMetaTable` or `PlatformTimeIndexMetaTable` catalog contract, and
 apply physical schema changes through the Alembic migration workflow.
 
 Default-schema tables must leave SQLAlchemy `Table.schema` unset; do not write

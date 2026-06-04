@@ -261,7 +261,7 @@ def test_set_local_db_uses_explicit_duckdb_source_without_hidden_creation(monkey
         classmethod(_create_dynamic),
     )
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "filter",
         classmethod(_filter_storages),
     )
@@ -324,7 +324,7 @@ def test_set_local_db_accepts_explicit_sqlite_source_without_hidden_creation(mon
         classmethod(_create_dynamic),
     )
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "filter",
         classmethod(_filter_storages),
     )
@@ -362,12 +362,12 @@ def test_delete_table_does_not_create_duckdb_source_to_classify(monkeypatch):
         lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
     )
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "delete",
         lambda self: deletes.append(self.storage_hash),
     )
 
-    storage = models_metatables.TimeIndexMetaData.model_construct(
+    storage = models_metatables.TimeIndexMetaTable.model_construct(
         storage_hash="node-storage",
         data_source=types.SimpleNamespace(
             related_resource=types.SimpleNamespace(class_type=models_metatables.DUCK_DB),
@@ -390,12 +390,12 @@ def test_delete_table_uses_sqlite_adapter_for_sqlite_storage(monkeypatch):
         lambda: types.SimpleNamespace(drop_table=lambda table: drops.append(table)),
     )
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "delete",
         lambda self: deletes.append(self.storage_hash),
     )
 
-    storage = models_metatables.TimeIndexMetaData.model_construct(
+    storage = models_metatables.TimeIndexMetaTable.model_construct(
         storage_hash="node-storage",
         data_source=types.SimpleNamespace(
             related_resource=types.SimpleNamespace(class_type=models_metatables.SQLITE),

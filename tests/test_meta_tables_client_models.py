@@ -165,7 +165,7 @@ def test_time_index_metadata_bulk_create_posts_raw_collection_payload(monkeypatc
 
     monkeypatch.setattr(meta_table_models, "make_request", fake_make_request)
     monkeypatch.setattr(
-        meta_table_models.TimeIndexMetaData,
+        meta_table_models.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: SimpleNamespace(headers={})),
     )
@@ -192,7 +192,7 @@ def test_time_index_metadata_bulk_create_posts_raw_collection_payload(monkeypatc
         },
     }
 
-    result = meta_table_models.TimeIndexMetaData.bulk_create([row])
+    result = meta_table_models.TimeIndexMetaTable.bulk_create([row])
 
     assert result[0].uid == "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
     assert captured["r_type"] == "POST"

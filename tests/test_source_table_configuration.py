@@ -116,13 +116,13 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData,
+        models_metatables.TimeIndexMetaTable,
         "build_session",
         classmethod(lambda cls: object()),
     )
 
     config = models_metatables.TimeIndexedProfile(**_source_config_payload())
-    storage = models_metatables.TimeIndexMetaData.model_construct(
+    storage = models_metatables.TimeIndexMetaTable.model_construct(
         uid="storage-uid-44",
         time_indexed_profile=config,
     )
@@ -131,7 +131,7 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
     assert captured == {
         "r_type": "GET",
-        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/storage-uid-44/get-stats/",
+        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/storage-uid-44/get-stats/",
         "timeout": None,
     }
     assert update_stats.max_time_index_value == datetime.datetime(
@@ -160,4 +160,4 @@ def test_time_indexed_profile_get_data_updates_prefers_canonical_stats(monkeypat
 
 
 def test_time_indexed_profile_column_metadata_mutation_helper_is_removed():
-    assert not hasattr(models_metatables.TimeIndexMetaData, "set_or_update_columns_metadata")
+    assert not hasattr(models_metatables.TimeIndexMetaTable, "set_or_update_columns_metadata")

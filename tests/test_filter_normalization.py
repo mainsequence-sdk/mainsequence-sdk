@@ -245,9 +245,9 @@ def test_project_image_accepts_creation_date():
 
 
 def test_data_node_storage_normalizes_namespace_filters():
-    from mainsequence.client.metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaTable
 
-    normalized = TimeIndexMetaData._normalize_filter_kwargs(
+    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
         {
             "namespace__contains": "  pytest  ",
             "namespace__in": [" alpha ", "beta"],
@@ -263,11 +263,11 @@ def test_data_node_storage_normalizes_namespace_filters():
 
 
 def test_data_node_storage_normalizes_data_source_uid_filters():
-    from mainsequence.client.metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaTable
 
     uid = uuid.UUID("dddddddd-dddd-4ddd-8ddd-dddddddddddd")
 
-    normalized = TimeIndexMetaData._normalize_filter_kwargs(
+    normalized = TimeIndexMetaTable._normalize_filter_kwargs(
         {
             "data_source__uid": {"uid": uid},
             "data_source__uid__in": [{"uid": uid}],
@@ -281,10 +281,10 @@ def test_data_node_storage_normalizes_data_source_uid_filters():
 
 
 def test_data_node_storage_rejects_data_source_id_filter():
-    from mainsequence.client.metatables import TimeIndexMetaData
+    from mainsequence.client.metatables import TimeIndexMetaTable
 
-    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaData filter"):
-        TimeIndexMetaData._normalize_filter_kwargs({"data_source__id": {"id": 7}})
+    with pytest.raises(ValueError, match="Unsupported TimeIndexMetaTable filter"):
+        TimeIndexMetaTable._normalize_filter_kwargs({"data_source__id": {"id": 7}})
 
 
 def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
@@ -321,10 +321,10 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: object())
+        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: object())
     )
 
-    storage = models_metatables.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaTable(
         uid="714",
         storage_hash="prices_hash",
         management_mode="platform_managed",
@@ -361,7 +361,7 @@ def test_data_node_storage_delete_after_date_posts_tail_delete(monkeypatch):
     assert result["deleted_count"] == 123
     assert captured == {
         "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/714/delete_after_date/",
+        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/delete_after_date/",
         "payload": {
             "json": {
                 "after_date": "2026-04-01T00:00:00Z",
@@ -392,10 +392,10 @@ def test_data_node_storage_delete_after_date_accepts_index_coordinates(monkeypat
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: object())
+        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: object())
     )
 
-    storage = models_metatables.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaTable(
         uid="714",
         storage_hash="prices_hash",
         management_mode="platform_managed",
@@ -469,10 +469,10 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
 
     monkeypatch.setattr(models_metatables, "make_request", _fake_make_request)
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: session)
+        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: session)
     )
 
-    storage = models_metatables.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaTable(
         uid="714",
         storage_hash="prices_hash",
         management_mode="platform_managed",
@@ -489,7 +489,7 @@ def test_data_node_storage_run_query_posts_plain_text_sql(monkeypatch):
     assert captured == {
         "headers": {"Content-Type": "text/plain"},
         "r_type": "POST",
-        "url": f"{models_metatables.TimeIndexMetaData.get_object_url()}/714/run_query/",
+        "url": f"{models_metatables.TimeIndexMetaTable.get_object_url()}/714/run_query/",
         "payload": {"data": "SELECT * FROM my_table LIMIT 100"},
         "timeout": 30,
     }
@@ -525,10 +525,10 @@ def test_data_node_storage_run_query_returns_structured_error_envelope(monkeypat
 
     monkeypatch.setattr(models_metatables, "make_request", lambda **_kwargs: FakeResponse())
     monkeypatch.setattr(
-        models_metatables.TimeIndexMetaData, "build_session", classmethod(lambda cls: session)
+        models_metatables.TimeIndexMetaTable, "build_session", classmethod(lambda cls: session)
     )
 
-    storage = models_metatables.TimeIndexMetaData(
+    storage = models_metatables.TimeIndexMetaTable(
         uid="714",
         storage_hash="prices_hash",
         management_mode="platform_managed",

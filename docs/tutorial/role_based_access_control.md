@@ -12,7 +12,7 @@ In this part, you will:
 
 DataNodes created in this part: **none**.
 
-Platform resources introduced in this part: **`Project`**, **`MetaTable`**, **`TimeIndexMetaData`**, **`Constant`**, **`Secret`**, **`Bucket`**, and **`ResourceRelease`**.
+Platform resources introduced in this part: **`Project`**, **`MetaTable`**, **`TimeIndexMetaTable`**, **`Constant`**, **`Secret`**, **`Bucket`**, and **`ResourceRelease`**.
 
 ## Why this comes right after your first DataNode
 
@@ -42,7 +42,7 @@ Examples of resources where access boundaries matter:
 
 - `Project`
 - `MetaTable`
-- `TimeIndexMetaData`
+- `TimeIndexMetaTable`
 - `Constant`
 - `Secret`
 - `Bucket`
@@ -51,7 +51,7 @@ Examples of resources where access boundaries matter:
 You can think of these as different layers of collaboration:
 
 - `Project`: who can work inside the code and execution boundary
-- `MetaTable` / `TimeIndexMetaData`: who can read or maintain a published table
+- `MetaTable` / `TimeIndexMetaTable`: who can read or maintain a published table
 - `Constant` and `Secret`: who can access runtime configuration
 - `Bucket`: who can access files and artifacts
 - `ResourceRelease`: who can access deployed resources such as dashboards and APIs

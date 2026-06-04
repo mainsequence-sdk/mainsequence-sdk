@@ -13,12 +13,12 @@ from mainsequence.client.metatables import (
     DynamicTableDataSource,
     MetaTable,
     MetaTableRegistrationRequest,
-    TimeIndexMetaData,
+    TimeIndexMetaTable,
     TimeIndexMetaTableRegistrationRequest,
 )
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     external_registered_registration_request_from_sqlalchemy_model,
     platform_managed_migration_registration_context,
     platform_managed_registration_request_from_sqlalchemy_model,
@@ -195,7 +195,7 @@ def _time_index_model_class(
     )
     return type(
         name,
-        (PlatformTimeIndexMetaData,),
+        (PlatformTimeIndexMetaTable,),
         attrs,
     )
 
@@ -695,7 +695,7 @@ def test_legacy_schema_migration_bases_are_not_public():
 
     removed_names = [
         "Migration" + "Managed" + "MetaTable",
-        "Migration" + "Managed" + "TimeIndexMetaData",
+        "Migration" + "Managed" + "TimeIndexMetaTable",
     ]
     for name in removed_names:
         assert not hasattr(meta_tables, name)
@@ -1446,7 +1446,7 @@ def test_time_index_metadata_bind_accepts_typed_metadata():
         index_names=["time_index", "account_uid"],
     )
 
-    typed_meta_table = TimeIndexMetaData.model_construct(
+    typed_meta_table = TimeIndexMetaTable.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         storage_hash="holdings-storage-hash",
@@ -1459,7 +1459,7 @@ def test_time_index_metadata_bind_accepts_typed_metadata():
 
 
 def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
-    class AccountHoldings(PlatformTimeIndexMetaData):
+    class AccountHoldings(PlatformTimeIndexMetaTable):
         pass
 
     generic_meta_table = MetaTable.model_construct(
@@ -1470,7 +1470,7 @@ def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
         physical_table_name="mt_holdings",
     )
 
-    with pytest.raises(TypeError, match="requires TimeIndexMetaData"):
+    with pytest.raises(TypeError, match="requires TimeIndexMetaTable"):
         AccountHoldings._bind_meta_table(generic_meta_table)
 
 
@@ -1486,12 +1486,12 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
         index_names=["time_index", "asset_uid"],
     )
     monkeypatch.setattr(
-        TimeIndexMetaData,
+        TimeIndexMetaTable,
         "filter_by_body",
         classmethod(lambda cls, **filters: []),
     )
 
-    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaData"):
+    with pytest.raises(ValueError, match="not bound to backend TimeIndexMetaTable"):
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
 
 
@@ -1506,7 +1506,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_metadata(monk
         table,
         index_names=["time_index", "asset_uid"],
     )
-    backend_metadata = TimeIndexMetaData.model_construct(
+    backend_metadata = TimeIndexMetaTable.model_construct(
         uid="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         data_source_uid="dddddddd-dddd-4ddd-8ddd-dddddddddddd",
         storage_hash="storage-hash",
@@ -1519,7 +1519,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_metadata(monk
         return [backend_metadata]
 
     monkeypatch.setattr(
-        TimeIndexMetaData,
+        TimeIndexMetaTable,
         "filter_by_body",
         classmethod(fake_filter_by_body),
     )
@@ -1649,7 +1649,7 @@ def test_time_index_metadata_generates_unique_grain_index_with_schema_name():
     class Base(DeclarativeBase):
         metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
-    class Prices(PlatformTimeIndexMetaData, Base):
+    class Prices(PlatformTimeIndexMetaTable, Base):
         __tablename__ = "ms_markets__prices__mainsequence_examples"
         __metatable_namespace__ = "mainsequence.examples"
         __time_index_name__ = "time_index"
@@ -1686,7 +1686,7 @@ def test_time_index_metadata_reuses_existing_unique_grain_constraint():
     class Base(DeclarativeBase):
         metadata = MetaData(naming_convention=sqlalchemy_naming_convention())
 
-    class Prices(PlatformTimeIndexMetaData, Base):
+    class Prices(PlatformTimeIndexMetaTable, Base):
         __tablename__ = "ms_markets__prices__mainsequence_examples"
         __table_args__ = (
             UniqueConstraint(
@@ -1851,7 +1851,7 @@ def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
         account_code: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
         name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    class AccountHoldings(PlatformTimeIndexMetaData, Base):
+    class AccountHoldings(PlatformTimeIndexMetaTable, Base):
         __tablename__ = "example_assets__account_holdings"
         __table_args__ = (
             Index(None, "account_uid"),

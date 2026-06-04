@@ -19,7 +19,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from mainsequence.client import MetaTable
 from mainsequence.meta_tables import (
     PlatformManagedMetaTable,
-    PlatformTimeIndexMetaData,
+    PlatformTimeIndexMetaTable,
     schema_table_name,
     sqlalchemy_naming_convention,
 )
@@ -91,7 +91,7 @@ class Account(PlatformManagedMetaTable, Base):
     )
 
 
-class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
+class DailyRandomNumberStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = DAILY_RANDOM_NUMBER_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_number_{PROJECT_UID}"
@@ -119,7 +119,7 @@ class DailyRandomNumberStorage(PlatformTimeIndexMetaData, Base):
     )
 
 
-class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
+class DailyRandomAdditionStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = DAILY_RANDOM_ADDITION_TABLE_NAME
     __metatable_namespace__ = "mainsequence.examples"
     __metatable_identifier__ = f"daily_random_addition_{PROJECT_UID}"
@@ -150,7 +150,7 @@ class DailyRandomAdditionStorage(PlatformTimeIndexMetaData, Base):
     )
 
 
-class AccountHoldingsStorage(PlatformTimeIndexMetaData, Base):
+class AccountHoldingsStorage(PlatformTimeIndexMetaTable, Base):
     __tablename__ = ACCOUNT_HOLDINGS_TABLE_NAME
     __table_args__ = (Index(None, "account_uid"),)
     __metatable_namespace__ = "mainsequence.examples"
@@ -283,7 +283,7 @@ class DailyRandomAdditionConfig(DataNodeConfiguration):
         description="Standard deviation for the random normal distribution.",
         examples=[1.0],
     )
-    daily_random_number_storage_table: type[PlatformTimeIndexMetaData] = Field(
+    daily_random_number_storage_table: type[PlatformTimeIndexMetaTable] = Field(
         ...,
         description="Storage table for the upstream daily random-number dependency.",
     )
@@ -323,7 +323,7 @@ class DailyRandomNumber(DataNode):
     def __init__(
         self,
         config: RandomDataNodeConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -366,7 +366,7 @@ class DailyRandomAddition(DataNode):
     def __init__(
         self,
         config: DailyRandomAdditionConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -413,7 +413,7 @@ class DailyRandomAdditionAPI(DataNode):
     def __init__(
         self,
         config: DailyRandomAdditionAPIConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -459,7 +459,7 @@ class AccountHoldingsSnapshot(DataNode):
     def __init__(
         self,
         config: AccountHoldingsConfig,
-        storage_table: type[PlatformTimeIndexMetaData],
+        storage_table: type[PlatformTimeIndexMetaTable],
         *,
         hash_namespace: str | None = None,
     ):
@@ -505,8 +505,8 @@ class AccountHoldingsSnapshot(DataNode):
 def run_graph(
     label: str,
     *,
-    number_storage_table: type[PlatformTimeIndexMetaData],
-    addition_storage_table: type[PlatformTimeIndexMetaData],
+    number_storage_table: type[PlatformTimeIndexMetaTable],
+    addition_storage_table: type[PlatformTimeIndexMetaTable],
 ):
     print(f"\n===== {label} =====")
 
@@ -560,7 +560,7 @@ def run_graph(
 def run_account_holdings_example(
     *,
     account_meta_table: MetaTable,
-    account_holdings_storage_table: type[PlatformTimeIndexMetaData],
+    account_holdings_storage_table: type[PlatformTimeIndexMetaTable],
 ):
     account_uid = upsert_account(
         account_meta_table,
