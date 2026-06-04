@@ -259,7 +259,9 @@ mainsequence migrations upgrade --provider msm.migrations:migration head
 1. load the provider;
 2. build a local Alembic `Config` from provider `script_location` and
    `target_metadata`;
-3. require an explicit local `--sqlalchemy-url` when `--autogenerate` is used;
+3. use an explicit `--sqlalchemy-url` when supplied, otherwise request a
+   temporary migration connection from the provider data source with an empty
+   MetaTable UID scope;
 4. call Alembic `revision(...)` / autogenerate against local provider metadata.
 
 `revision` is local Alembic authoring. It must not register, reserve, finalize,

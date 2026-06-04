@@ -255,9 +255,11 @@ mainsequence migrations upgrade --provider mainsequence_migrations:migration hea
 
 `revision` accepts an optional `-m/--message`. If it is omitted, the CLI passes
 `migration` to Alembic. The command builds a local Alembic `Config` from the
-provider and calls Alembic `revision` directly. Autogenerate is optional and
-requires `--sqlalchemy-url` so Alembic can reflect a local baseline database.
-`revision` does not register, reserve, or finalize provider MetaTables.
+provider and calls Alembic `revision` directly. Autogenerate is enabled by
+default. If `--sqlalchemy-url` is supplied, Alembic reflects that database;
+otherwise the CLI requests a temporary migration connection from the provider
+data source with an empty MetaTable UID scope. `revision` does not register,
+reserve, or finalize provider MetaTables.
 
 The standard `revision` command writes an Alembic revision file for the
 provider. It does not build SDK migration operations and it does not ask the

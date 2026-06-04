@@ -362,13 +362,30 @@ def test_migrations_revision_forwards_alembic_logs_and_scans_revision_id(monkeyp
     assert "Preparing platform-managed MetaTable reservations" not in output
 
 
-def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypatch):
+def test_migrations_revision_default_autogenerates_without_metatable_provisioning(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
     migration = _migration()
+    captured = {}
     monkeypatch.setattr(migration_cli, "_load_migration", lambda provider: migration)
+    _patch_scoped_connection(monkeypatch, migration_cli, captured)
 
+    def fail_backend_call(*args, **kwargs):
+        raise AssertionError("revision must not provision MetaTables")
+
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "ensure_alembic_registry",
+        fail_backend_call,
+    )
+    monkeypatch.setattr(
+        AlembicMetaTableMigration,
+        "prepare_for_alembic",
+        fail_backend_call,
+    )
+
+    from alembic import command
     from alembic.script import ScriptDirectory
 
     class FakeScriptDirectory:
@@ -384,6 +401,13 @@ def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypa
         staticmethod(lambda config: FakeScriptDirectory()),
     )
 
+    def fake_revision(config, message, autogenerate, rev_id, head):
+        captured["autogenerate"] = autogenerate
+        captured["sqlalchemy_url"] = config.get_main_option("sqlalchemy.url")
+        return types.SimpleNamespace(revision=rev_id, path="/tmp/0001_migration.py")
+
+    monkeypatch.setattr(command, "revision", fake_revision)
+
     result = runner.invoke(
         cli_mod.app,
         [
@@ -391,17 +415,26 @@ def test_migrations_revision_autogenerate_requires_local_sqlalchemy_url(monkeypa
             "revision",
             "--provider",
             "ignored:migration",
-            "--autogenerate",
+            "--timeout",
+            "5",
+            "--ttl-seconds",
+            "15",
         ],
     )
 
-    assert result.exit_code != 0
+    assert result.exit_code == 0
+    assert captured["data_source_uid"] == "data-source-uid"
+    assert captured["connection_request"].meta_table_uids == []
+    assert captured["connection_request"].ttl_seconds == 15
+    assert captured["connection_timeout"] == 5.0
+    assert captured["autogenerate"] is True
+    assert captured["sqlalchemy_url"] == "postgresql://temporary-secret"
     output = _combined_output(result)
-    assert "--sqlalchemy-url" in output
-    assert "requires --sqlalchemy-url" in output
+    assert "Ensuring Alembic registry MetaTable" not in output
+    assert "Preparing platform-managed MetaTable reservations" not in output
 
 
-def test_migrations_revision_default_does_not_autogenerate_or_touch_backend(monkeypatch):
+def test_migrations_revision_no_autogenerate_does_not_touch_backend(monkeypatch):
     cli_mod = _load_cli_module()
     runner = CliRunner()
     migration_cli = importlib.import_module("mainsequence.cli.migrations")
@@ -453,10 +486,7 @@ def test_migrations_revision_default_does_not_autogenerate_or_touch_backend(monk
             "revision",
             "--provider",
             "ignored:migration",
-            "--timeout",
-            "5",
-            "--ttl-seconds",
-            "15",
+            "--no-autogenerate",
         ],
     )
 

@@ -377,9 +377,9 @@ mainsequence migrations revision
 `-m/--message` is optional; when omitted, the CLI passes `migration` as the
 Alembic revision message.
 
-`--autogenerate` is optional and requires an explicit `--sqlalchemy-url` for a
-baseline database. The standard path creates a normal Alembic revision file
-that project code fills with explicit Alembic operations.
+Autogenerate is enabled by default. If `--sqlalchemy-url` is supplied, Alembic
+reflects that database. Otherwise the CLI requests a temporary migration
+connection from the provider data source with an empty MetaTable UID scope.
 
 The Alembic environment must point `target_metadata` at
 `migration.target_metadata`, and it must derive `version_table` and

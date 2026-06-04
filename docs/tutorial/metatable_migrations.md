@@ -384,11 +384,12 @@ such as `current`, `upgrade`, and `downgrade`, where scoped-credential requests
 include that registry UID so Alembic can read and write its physical version
 table.
 
-`--autogenerate` is optional and not the standard path. If used, Alembic must
-connect to an explicit baseline database through `--sqlalchemy-url` so it can
-compare that database with `migration.target_metadata`. For an initial
-migration the baseline should be an empty database; for later migrations it
-must represent the previous Alembic revision.
+Autogenerate is enabled by default. If `--sqlalchemy-url` is supplied, Alembic
+reflects that database. Otherwise the CLI requests a temporary migration
+connection from the provider data source with an empty MetaTable UID scope, so
+revision generation does not register, reserve, or finalize provider
+MetaTables. For an initial migration the baseline should be an empty database;
+for later migrations it must represent the previous Alembic revision.
 
 The revision file is a normal Alembic revision. It should contain database DDL,
 not SDK operation lists:

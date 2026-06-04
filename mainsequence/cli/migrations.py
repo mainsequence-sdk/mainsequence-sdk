@@ -478,12 +478,37 @@ def _build_revision_alembic_config(
     migration: AlembicMetaTableMigration,
     *,
     sqlalchemy_url: str | None,
+    requires_database: bool,
+    timeout: float | None,
+    ttl_seconds: int,
     alembic_output: _AlembicOutput,
 ) -> Any:
     _emit_status("Building local Alembic config for revision...")
+    owner_role_name = None
+    if requires_database and sqlalchemy_url in (None, ""):
+        data_source_uid = migration._resolve_provider_data_source_uid()
+        _emit_status(f"Loading DynamicTableDataSource uid={data_source_uid} for revision...")
+        data_source = DynamicTableDataSource.get_by_uid(data_source_uid)
+        _emit_status(
+            "Requesting revision migration connection "
+            f"meta_table_count=0 ttl_seconds={ttl_seconds}..."
+        )
+        connection = data_source.issue_migration_connection(
+            DynamicTableDataSourceMigrationConnectionRequest(
+                package=migration.package,
+                migration_namespace=migration.migration_namespace,
+                meta_table_uids=[],
+                ttl_seconds=ttl_seconds,
+            ),
+            timeout=timeout,
+        )
+        _emit_status("Revision migration connection acquired.")
+        sqlalchemy_url = connection.uri
+        owner_role_name = connection.owner_role_name
     config = alembic_config_for_provider(
         migration,
         sqlalchemy_url=sqlalchemy_url or "postgresql://",
+        owner_role_name=owner_role_name,
         stdout=alembic_output,
         output_buffer=alembic_output,
     )
@@ -679,7 +704,7 @@ def revision(
         help="Alembic revision message. Defaults to 'migration'.",
     ),
     autogenerate: bool = typer.Option(
-        False,
+        True,
         "--autogenerate/--no-autogenerate",
         help="Use Alembic autogenerate against the local database URL and provider metadata.",
     ),
@@ -718,15 +743,12 @@ def revision(
         migration,
         alembic_output=alembic_output,
     )
-    if autogenerate and sqlalchemy_url in (None, ""):
-        raise typer.BadParameter(
-            "Alembic autogenerate is a local database diff and requires "
-            "--sqlalchemy-url. Omit --autogenerate to create an empty revision.",
-            param_hint="--sqlalchemy-url",
-        )
     config = _build_revision_alembic_config(
         migration,
         sqlalchemy_url=sqlalchemy_url,
+        requires_database=autogenerate,
+        timeout=timeout,
+        ttl_seconds=ttl_seconds,
         alembic_output=alembic_output,
     )
     _emit_alembic_script_context(config, target_revision=head)
