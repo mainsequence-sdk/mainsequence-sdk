@@ -1190,7 +1190,7 @@ def test_platform_managed_free_function_register_path_is_not_public():
         getattr(meta_tables, missing_name)
 
 
-def test_time_index_metadata_registration_request_uses_dynamic_contract():
+def test_time_index_meta_table_registration_request_uses_dynamic_contract():
     table = FakeTable(
         "placeholder",
         columns=[
@@ -1247,7 +1247,7 @@ def test_time_index_metadata_registration_request_uses_dynamic_contract():
     assert "physical_index_plan" not in payload
 
 
-def test_time_index_metadata_registration_request_uses_class_metatable_description():
+def test_time_index_meta_table_registration_request_uses_class_metatable_description():
     table = FakeTable(
         "placeholder",
         columns=[
@@ -1273,7 +1273,7 @@ def test_time_index_metadata_registration_request_uses_class_metatable_descripti
     assert request.description == ("Account holdings history used to reconstruct portfolio state.")
 
 
-def test_time_index_metadata_configured_storage_hash_changes_with_index_grain():
+def test_time_index_meta_table_configured_storage_hash_changes_with_index_grain():
     one_index_table = FakeTable(
         "placeholder",
         columns=[
@@ -1303,7 +1303,7 @@ def test_time_index_metadata_configured_storage_hash_changes_with_index_grain():
     assert _configured_storage_hash(OneIndex) != _configured_storage_hash(ThreeIndex)
 
 
-def test_time_index_metadata_rejects_first_index_not_time_index():
+def test_time_index_meta_table_rejects_first_index_not_time_index():
     table = FakeTable(
         "placeholder",
         columns=[
@@ -1321,7 +1321,7 @@ def test_time_index_metadata_rejects_first_index_not_time_index():
         _configured_storage_hash(BadHoldings)
 
 
-def test_time_index_metadata_rejects_nullable_index_columns():
+def test_time_index_meta_table_rejects_nullable_index_columns():
     table = FakeTable(
         "placeholder",
         columns=[
@@ -1339,7 +1339,7 @@ def test_time_index_metadata_rejects_nullable_index_columns():
         _configured_storage_hash(BadHoldings)
 
 
-def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatch):
+def test_time_index_meta_table_register_posts_to_dynamic_table_endpoint(monkeypatch):
     import mainsequence.client.metatables as models_metatables
 
     table = FakeTable(
@@ -1410,7 +1410,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
 
     assert registered.uid == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_meta_table() is registered
-    assert AccountHoldings.get_time_index_metadata() is registered
+    assert AccountHoldings.get_time_index_meta_table() is registered
     assert AccountHoldings.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert AccountHoldings.get_storage_hash() == captured["payload"]["json"]["storage_hash"]
     assert AccountHoldings.get_physical_table_name() == "example_assets__account_holdings"
@@ -1432,7 +1432,7 @@ def test_time_index_metadata_register_posts_to_dynamic_table_endpoint(monkeypatc
     ]
 
 
-def test_time_index_metadata_bind_accepts_typed_metadata():
+def test_time_index_meta_table_bind_accepts_typed_metadata():
     table = FakeTable(
         "example_assets__account_holdings",
         columns=[
@@ -1455,10 +1455,10 @@ def test_time_index_metadata_bind_accepts_typed_metadata():
 
     AccountHoldings._bind_meta_table(typed_meta_table)
 
-    assert AccountHoldings.get_time_index_metadata() is typed_meta_table
+    assert AccountHoldings.get_time_index_meta_table() is typed_meta_table
 
 
-def test_time_index_metadata_bind_rejects_unflagged_generic_metatable():
+def test_time_index_meta_table_bind_rejects_unflagged_generic_metatable():
     class AccountHoldings(PlatformTimeIndexMetaTable):
         pass
 
@@ -1495,7 +1495,7 @@ def test_ensure_registered_storage_table_rejects_unbound_storage(monkeypatch):
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
 
 
-def test_ensure_registered_storage_table_binds_existing_time_index_metadata(monkeypatch):
+def test_ensure_registered_storage_table_binds_existing_time_index_meta_table(monkeypatch):
     columns = [
         FakeColumn("time_index", DateTime(timezone=True), nullable=False),
         FakeColumn("asset_uid", Uuid(), nullable=False),
@@ -1528,7 +1528,7 @@ def test_ensure_registered_storage_table_binds_existing_time_index_metadata(monk
         ensure_registered_storage_table(AssetSnapshots, context="DataNode")
         is AssetSnapshots
     )
-    assert AssetSnapshots.get_time_index_metadata() is backend_metadata
+    assert AssetSnapshots.get_time_index_meta_table() is backend_metadata
     assert AssetSnapshots.get_meta_table_uid() == "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     assert captured == {
         "physical_table_name__in": ["example_assets__asset_snapshots"],
@@ -1640,7 +1640,7 @@ def test_platform_managed_metatable_preserves_authored_tablename_with_sqlalchemy
     assert not hasattr(request.table_contract, "foreign_keys")
 
 
-def test_time_index_metadata_generates_unique_grain_index_with_schema_name():
+def test_time_index_meta_table_generates_unique_grain_index_with_schema_name():
     pytest.importorskip("sqlalchemy")
 
     from sqlalchemy import DateTime, Float, MetaData, String
@@ -1677,7 +1677,7 @@ def test_time_index_metadata_generates_unique_grain_index_with_schema_name():
     )
 
 
-def test_time_index_metadata_reuses_existing_unique_grain_constraint():
+def test_time_index_meta_table_reuses_existing_unique_grain_constraint():
     pytest.importorskip("sqlalchemy")
 
     from sqlalchemy import DateTime, Float, MetaData, String, UniqueConstraint
@@ -1833,7 +1833,7 @@ def test_bound_parent_table_foreign_key_stays_sqlalchemy_only():
     assert not hasattr(request.table_contract, "foreign_keys")
 
 
-def test_time_index_metadata_preserves_authored_tablename_with_sqlalchemy():
+def test_time_index_meta_table_preserves_authored_tablename_with_sqlalchemy():
     pytest.importorskip("sqlalchemy")
 
     from sqlalchemy import DateTime, ForeignKey, Index, MetaData, String, Uuid

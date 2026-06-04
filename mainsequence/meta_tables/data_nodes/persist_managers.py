@@ -96,10 +96,10 @@ def ensure_registered_storage_table(
             f"model class; got {type(storage_table).__name__}."
         )
 
-    if storage_table.get_time_index_metadata() is None:
+    if storage_table.get_time_index_meta_table() is None:
         _bind_registered_storage_table(storage_table)
 
-    storage_metadata = storage_table.get_time_index_metadata()
+    storage_metadata = storage_table.get_time_index_meta_table()
     if storage_metadata is None:
         raise ValueError(
             f"{context} storage_table class is not bound to backend "
@@ -200,7 +200,7 @@ class BasePersistManager:
 
     @property
     def storage_metadata(self) -> Any:
-        storage_metadata = self.storage_table.get_time_index_metadata()
+        storage_metadata = self.storage_table.get_time_index_meta_table()
         if storage_metadata is None:
             raise ValueError(
                 "PersistManager storage_table registration metadata is unavailable after register()."

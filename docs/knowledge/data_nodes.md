@@ -138,11 +138,12 @@ the dependency graph. Type that field as `type[PlatformTimeIndexMetaTable]`.
 
 When a `PlatformTimeIndexMetaTable` class appears inside a config model, the SDK
 hashes it by the bound
-`TimeIndexMetaTable.uid` available through `StorageClass.__time_index_metadata__`.
-If the class is not yet bound, config serialization fails and tells the user to
-run the MetaTable migration workflow. Do not pass dependency storage classes as
-extra constructor arguments, manually attach an existing UID, reconstruct a
-generic `MetaTable`, or call `StorageClass.register()` directly.
+`TimeIndexMetaTable.uid` available through
+`StorageClass.get_time_index_meta_table()`. If the class is not yet bound,
+config serialization fails and tells the user to run the MetaTable migration
+workflow. Do not pass dependency storage classes as extra constructor arguments,
+manually attach an existing UID, reconstruct a generic `MetaTable`, or call
+`StorageClass.register()` directly.
 
 ### 4.1 Storage meaning belongs to the storage table
 

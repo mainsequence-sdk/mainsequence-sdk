@@ -75,7 +75,7 @@ def _import_qualified_name(module_name: str, qualname: str) -> Any:
     return value
 
 
-def _is_platform_time_index_metadata_class(value: Any) -> bool:
+def _is_platform_time_index_meta_table_class(value: Any) -> bool:
     try:
         from mainsequence.meta_tables.sqlalchemy_contracts import PlatformTimeIndexMetaTable
     except ImportError:
@@ -89,11 +89,11 @@ def _is_platform_time_index_metadata_class(value: Any) -> bool:
 
 @serialize_argument.register(type)
 def _(value: type[Any]) -> Any:
-    if not _is_platform_time_index_metadata_class(value):
+    if not _is_platform_time_index_meta_table_class(value):
         return value
 
-    time_index_metadata = value.get_time_index_metadata()
-    uid = getattr(time_index_metadata, "uid", None)
+    time_index_meta_table = value.get_time_index_meta_table()
+    uid = getattr(time_index_meta_table, "uid", None)
     if uid in (None, ""):
         raise ValueError(
             "PlatformTimeIndexMetaTable config value is not registered. Run "
@@ -106,7 +106,7 @@ def _(value: type[Any]) -> Any:
             "PlatformTimeIndexMetaTable config value is missing TimeIndexMetaTable metadata."
         )
     return {
-        "__type__": "platform_time_index_metadata",
+        "__type__": "platform_time_index_meta_table",
         "uid": str(uid),
         "module": value.__module__,
         "qualname": value.__qualname__,
@@ -228,7 +228,7 @@ def parse_dictionary_before_hashing(dictionary: dict[str, Any]) -> dict[str, Any
                 # The value["items"] are already serialized dicts
 
                 local_ts_dict_to_hash[key] = [v["unique_identifier"] for v in value["items"]]
-            elif value.get("__type__") == "platform_time_index_metadata":
+            elif value.get("__type__") == "platform_time_index_meta_table":
                 local_ts_dict_to_hash[key] = value["uid"]
             else:
                 # recursively apply hash signature
@@ -377,7 +377,7 @@ class ConfigRebuilder(BaseRebuilder):
         return build_model(value)
 
     def _handle_complex_type(self, value: dict, **kwargs) -> Any:
-        if value.get("__type__") == "platform_time_index_metadata":
+        if value.get("__type__") == "platform_time_index_meta_table":
             return _import_qualified_name(value["module"], value["qualname"])
         # Special case for ORM lists within the generic complex type handler
         if value.get("__type__") == "orm_model_list":

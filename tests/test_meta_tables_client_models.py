@@ -144,7 +144,7 @@ def test_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     assert captured["payload"]["json"] == [row]
 
 
-def test_time_index_metadata_bulk_create_posts_raw_collection_payload(monkeypatch):
+def test_time_index_meta_table_bulk_create_posts_raw_collection_payload(monkeypatch):
     captured = {}
 
     def fake_make_request(**kwargs):

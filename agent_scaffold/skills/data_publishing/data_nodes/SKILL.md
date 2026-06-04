@@ -217,9 +217,9 @@ If the DataNode needs to select another DataNode's storage table as a
 dependency, put that dependency storage reference in the config as
 `type[PlatformTimeIndexMetaTable]`. Do not add an extra constructor argument for
 dependency storage tables. Config values of this type are hashed by the bound
-`TimeIndexMetaTable.uid` from `StorageClass.__time_index_metadata__`. If the
-class is not yet bound, config serialization must fail and tell the user to run
-the migration workflow.
+`TimeIndexMetaTable.uid` from `StorageClass.get_time_index_meta_table()`. If
+the class is not yet bound, config serialization must fail and tell the user to
+run the migration workflow.
 
 Do not accept `test_node`. It has been removed. Use explicit
 `hash_namespace(...)` or `hash_namespace="..."`.

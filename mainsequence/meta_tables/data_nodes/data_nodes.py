@@ -651,7 +651,7 @@ class DataNode(DataAccessMixin, ABC):
 
     @property
     def storage_metadata(self) -> Any:
-        storage_metadata = self.storage_table.get_time_index_metadata()
+        storage_metadata = self.storage_table.get_time_index_meta_table()
         if storage_metadata is None:
             raise ValueError(
                 "DataNode storage_table registration metadata is unavailable after register()."

@@ -291,7 +291,7 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
     ordinary non-null table columns.
     """
 
-    __time_index_metadata__: ClassVar[TimeIndexMetaTable | None] = None
+    __time_index_meta_table__: ClassVar[TimeIndexMetaTable | None] = None
 
     __mapper_args__ = _sqlalchemy_declared_attr.directive(_time_index_mapper_args)
 
@@ -302,12 +302,12 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
                 "PlatformTimeIndexMetaTable._bind_meta_table requires TimeIndexMetaTable."
             )
         super()._bind_meta_table(meta_table)
-        cls.__time_index_metadata__ = meta_table
+        cls.__time_index_meta_table__ = meta_table
         return meta_table
 
     @classmethod
-    def get_time_index_metadata(cls) -> TimeIndexMetaTable | None:
-        return getattr(cls, "__time_index_metadata__", None)
+    def get_time_index_meta_table(cls) -> TimeIndexMetaTable | None:
+        return getattr(cls, "__time_index_meta_table__", None)
 
     @classmethod
     def __table_cls__(cls, *args: Any, **kwargs: Any) -> Any:
@@ -408,14 +408,14 @@ class PlatformTimeIndexMetaTable(PlatformManagedMetaTable):
                 data_source=data_source,
                 data_source_uid=data_source_uid,
             )
-            time_index_metadata = TimeIndexMetaTable.register(request, timeout=timeout)
-            cls._bind_meta_table(time_index_metadata)
+            time_index_meta_table = TimeIndexMetaTable.register(request, timeout=timeout)
+            cls._bind_meta_table(time_index_meta_table)
             _complete_local_registration(
                 storage_hash=storage_hash,
                 model=cls,
-                meta_table=time_index_metadata,
+                meta_table=time_index_meta_table,
             )
-            return time_index_metadata
+            return time_index_meta_table
         except Exception:
             _clear_failed_local_registration(storage_hash=storage_hash, model=cls)
             raise

@@ -161,7 +161,7 @@ def test_offset_start_changes_update_hash(monkeypatch):
     assert storage_hash_a != storage_hash_b
 
 
-def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkeypatch):
+def test_platform_time_index_meta_table_config_hashes_by_bound_metatable_uid(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class StorageA(PlatformTimeIndexMetaTable):
@@ -173,9 +173,15 @@ def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkey
     class StorageC(PlatformTimeIndexMetaTable):
         pass
 
-    StorageA._bind_meta_table(TimeIndexMetaTable.model_construct(uid="storage-uid-a"))
-    StorageB._bind_meta_table(TimeIndexMetaTable.model_construct(uid="storage-uid-a"))
-    StorageC._bind_meta_table(TimeIndexMetaTable.model_construct(uid="storage-uid-c"))
+    StorageA._bind_meta_table(
+        TimeIndexMetaTable.model_construct(uid="storage-uid-a", data_source_uid="data-source-uid")
+    )
+    StorageB._bind_meta_table(
+        TimeIndexMetaTable.model_construct(uid="storage-uid-a", data_source_uid="data-source-uid")
+    )
+    StorageC._bind_meta_table(
+        TimeIndexMetaTable.model_construct(uid="storage-uid-c", data_source_uid="data-source-uid")
+    )
 
     class NodeConfig(BaseModel):
         dependency_storage: type[PlatformTimeIndexMetaTable]
@@ -199,7 +205,7 @@ def test_platform_time_index_metadata_config_hashes_by_bound_metadata_uid(monkey
     )
 
 
-def test_platform_time_index_metadata_config_requires_registered_before_hashing(monkeypatch):
+def test_platform_time_index_meta_table_config_requires_registered_before_hashing(monkeypatch):
     monkeypatch.setattr(build_operations, "POD_PROJECT", None, raising=False)
 
     class AutoStorage(PlatformTimeIndexMetaTable):
