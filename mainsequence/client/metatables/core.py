@@ -357,6 +357,49 @@ class MetaTableColumnPayload(BasePydanticModel):
         return _normalize_backend_type(value)
 
 
+class MetaTableIndexPayload(BasePydanticModel):
+    name: str | None = Field(None, description="Physical or database-assigned index name.")
+    columns: list[str] = Field(
+        default_factory=list,
+        description="Physical column names included in this index.",
+    )
+    unique: bool = Field(default=False, description="Whether this index is unique.")
+    method: str | None = Field(None, description="Backend index method, when known.")
+    expression: str | None = Field(
+        None,
+        description="Backend index expression, when this is an expression index.",
+    )
+    contract_fragment: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw normalized contract fragment for this projected index.",
+    )
+
+
+class MetaTableForeignKeyPayload(BasePydanticModel):
+    name: str | None = Field(None, description="Physical or database-assigned FK name.")
+    source_columns: list[str] = Field(
+        default_factory=list,
+        description="Source MetaTable physical column names.",
+    )
+    target_table_uid: str | None = Field(
+        None,
+        description="Public UID of the target MetaTable.",
+    )
+    target_table_storage_hash: str | None = Field(
+        None,
+        description="Storage hash of the target MetaTable.",
+    )
+    target_columns: list[str] = Field(
+        default_factory=list,
+        description="Target MetaTable physical column names.",
+    )
+    on_delete: str | None = Field(None, description="Foreign-key delete action.")
+    contract_fragment: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Raw normalized contract fragment for this projected foreign key.",
+    )
+
+
 class MetaTableStatementPayload(BasePydanticModel):
     sql: str = Field(..., min_length=1)
     parameters: dict[str, Any] | list[Any] = Field(default_factory=dict)
@@ -1351,6 +1394,9 @@ class MetaTable(BasePydanticModel, LabelableObjectMixin, ShareableObjectMixin, B
     introspection_snapshot: dict[str, Any] = Field(default_factory=dict)
     protect_from_deletion: bool = False
     columns: list[MetaTableColumnPayload] = Field(default_factory=list)
+    indexes_meta: list[MetaTableIndexPayload] = Field(default_factory=list)
+    foreign_keys: list[MetaTableForeignKeyPayload] = Field(default_factory=list)
+    incoming_fks: list[MetaTableForeignKeyPayload] = Field(default_factory=list)
     creation_date: datetime.datetime | None = None
     created_by_user_uid: str | None = None
     organization_owner_uid: str | None = None
@@ -4880,6 +4926,8 @@ __all__ = [
     "MetaTableCompiledSQLParamstyle",
     "MetaTableCompiledSQLVersion",
     "MetaTableContract",
+    "MetaTableForeignKeyPayload",
+    "MetaTableIndexPayload",
     "MetaTableManagementMode",
     "MetaTableSchemaManagementMode",
     "MetaTableOperation",

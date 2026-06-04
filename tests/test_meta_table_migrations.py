@@ -349,7 +349,11 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
                     time_indexed=False,
                     finalized=True,
                     physical_table_exists=True,
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="msm",
+                    migration_namespace="markets",
+                    migration_provider_key="msm:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
                 )
             ],
         )
@@ -370,6 +374,7 @@ def test_alembic_metatable_migration_finalizes_catalog_after_alembic(monkeypatch
     assert captured["request"].meta_table_uids == ["asset-meta-table-uid"]
     assert captured["request"].migration_package == "msm"
     assert captured["request"].migration_namespace == "markets"
+    assert captured["request"].migration_provider_key == "msm:markets"
     assert captured["request"].alembic_version_meta_table_uid == "registry-meta-table-uid"
     assert captured["request"].alembic_revision == "0001"
     assert Asset.get_meta_table_uid() == "asset-meta-table-uid"
@@ -483,7 +488,11 @@ def test_finalize_metatable_catalog_surfaces_missing_physical_tables(monkeypatch
                     time_indexed=False,
                     finalized=False,
                     physical_table_exists=False,
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="msm",
+                    migration_namespace="markets",
+                    migration_provider_key="msm:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
                     error={"code": "physical_table_missing"},
                 )
             ],
@@ -739,6 +748,10 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
+        assert request.migration_package == "sample"
+        assert request.migration_namespace == "markets"
+        assert request.migration_provider_key == "sample:markets"
+        assert request.alembic_version_meta_table_uid == "registry-meta-table-uid"
         assert [table.identifier for table in request.tables] == [
             "example_assets__account",
             "example_assets__asset",
@@ -747,6 +760,10 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
         assert not hasattr(request.tables[1].table_contract, "indexes")
         assert not hasattr(request.tables[0].table_contract, "foreign_keys")
         assert not hasattr(request.tables[1].table_contract, "foreign_keys")
+        assert not hasattr(request.tables[0], "schema_management")
+        assert not hasattr(request.tables[1], "schema_management")
+        assert not hasattr(request.tables[0], "protect_from_deletion")
+        assert not hasattr(request.tables[1], "protect_from_deletion")
 
         response_tables = []
         for table in request.tables:
@@ -771,7 +788,11 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
                         "physical": {"table_name": physical_name},
                         "columns": [],
                     },
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
                     created=True,
                     matched_by=None,
                     existing=False,
@@ -818,10 +839,8 @@ def test_prepare_for_alembic_preserves_authored_table_names(monkeypatch):
     assert next(iter(Asset.__table__.foreign_key_constraints)).name == "asset_account_uid_fkey"
     assert not hasattr(reserved_payloads[1].table_contract, "indexes")
     assert not hasattr(reserved_payloads[1].table_contract, "foreign_keys")
-    assert reserved_payloads[0].schema_management.mode == "alembic_managed"
-    assert reserved_payloads[0].schema_management.alembic.package == "sample"
-    assert reserved_payloads[0].schema_management.alembic.migration_namespace == "markets"
-    assert reserved_payloads[0].schema_management.alembic.provider_key == "sample:markets"
+    assert not hasattr(reserved_payloads[0], "schema_management")
+    assert not hasattr(reserved_payloads[0], "protect_from_deletion")
 
 
 def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
@@ -858,9 +877,13 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
+        assert request.migration_package == "sample"
+        assert request.migration_namespace == "markets"
+        assert request.migration_provider_key == "sample:markets"
         assert [table.identifier for table in request.tables] == ["example_assets__asset"]
         assert not hasattr(request.tables[0].table_contract, "indexes")
         assert not hasattr(request.tables[0].table_contract, "foreign_keys")
+        assert not hasattr(request.tables[0], "schema_management")
         return ManagedMetaTableReservationResponse.model_construct(
             tables=[
                 ManagedMetaTableReservationItem.model_construct(
@@ -873,7 +896,10 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
                     storage_hash=request.tables[0].storage_hash,
                     physical_table_name="example_assets__asset",
                     table_contract={},
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
                     created=True,
                     matched_by=None,
                     existing=False,
@@ -898,7 +924,7 @@ def test_prepare_for_alembic_does_not_resolve_foreign_key_targets(monkeypatch):
     assert prepared.meta_table_uids == ["bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"]
 
 
-def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_management(monkeypatch):
+def test_prepare_for_alembic_reserves_existing_table_name_with_provider_identity(monkeypatch):
     class Base(DeclarativeBase):
         metadata = MetaData()
 
@@ -961,6 +987,9 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
+        assert request.migration_package == "sample"
+        assert request.migration_namespace == "markets"
+        assert request.migration_provider_key == "sample:markets"
         assert [table.identifier for table in request.tables] == [
             "example_assets__account",
             "example_assets__asset",
@@ -969,6 +998,8 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         assert not hasattr(request.tables[1].table_contract, "indexes")
         assert not hasattr(request.tables[0].table_contract, "foreign_keys")
         assert not hasattr(request.tables[1].table_contract, "foreign_keys")
+        assert not hasattr(request.tables[0], "schema_management")
+        assert not hasattr(request.tables[1], "schema_management")
         return ManagedMetaTableReservationResponse.model_construct(
             tables=[
                 ManagedMetaTableReservationItem.model_construct(
@@ -985,7 +1016,10 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
                         "physical": {"table_name": "example_assets__account"},
                         "columns": [],
                     },
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
                     created=False,
                     matched_by="identifier",
                 ),
@@ -1003,7 +1037,10 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
                         "physical": {"table_name": "example_assets__asset"},
                         "columns": [],
                     },
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
                     created=True,
                     matched_by=None,
                 ),
@@ -1032,7 +1069,7 @@ def test_prepare_for_alembic_reserves_existing_table_name_to_stamp_schema_manage
         "example_assets__account",
         "example_assets__asset",
     ]
-    assert reserved_payloads[0].schema_management.mode == "alembic_managed"
+    assert not hasattr(reserved_payloads[0], "schema_management")
     assert prepared.meta_table_uids == [
         "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
@@ -1121,6 +1158,9 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
 
     def fake_reserve_managed(request, *, timeout=None, on_status=None):
         reserved_payloads.extend(request.tables)
+        assert request.migration_package == "sample"
+        assert request.migration_namespace == "markets"
+        assert request.migration_provider_key == "sample:markets"
         return ManagedMetaTableReservationResponse.model_construct(
             tables=[
                 ManagedMetaTableReservationItem.model_construct(
@@ -1133,7 +1173,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                     storage_hash="account-storage-hash",
                     physical_table_name="example_assets__account",
                     table_contract={},
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
                     created=False,
                     matched_by="identifier",
                 ),
@@ -1147,7 +1191,11 @@ def test_prepare_for_alembic_reserves_already_staged_existing_rows(monkeypatch):
                     storage_hash="asset-storage-hash",
                     physical_table_name="example_assets__asset",
                     table_contract={},
-                    schema_management={},
+                    schema_management_mode="alembic_managed",
+                    migration_package="sample",
+                    migration_namespace="markets",
+                    migration_provider_key="sample:markets",
+                    alembic_version_meta_table_uid="registry-meta-table-uid",
                     created=False,
                     matched_by="identifier",
                 ),

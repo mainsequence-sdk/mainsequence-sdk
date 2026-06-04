@@ -471,21 +471,16 @@ physical application tables:
 
 ```json
 {
+  "migration_package": "sdk_examples",
+  "migration_namespace": "sdk-examples",
+  "migration_provider_key": "sdk_examples:sdk-examples",
+  "alembic_version_meta_table_uid": "alembic-version-metatable-uid",
   "tables": [
     {
       "identifier": "sdk_examples.Asset",
       "namespace": "sdk_examples",
       "data_source_uid": "dynamic-table-data-source-uid",
       "storage_hash": "logical-storage-hash",
-      "schema_management": {
-        "mode": "alembic_managed",
-        "alembic": {
-          "package": "sdk_examples",
-          "migration_namespace": "sdk-examples",
-          "provider_key": "sdk_examples:sdk-examples",
-          "alembic_version_meta_table_uid": "alembic-version-metatable-uid"
-        }
-      },
       "table_contract": {
         "version": "relational-table.v1",
         "physical": {},
@@ -496,12 +491,14 @@ physical application tables:
 }
 ```
 
-The backend returns reserved MetaTable UIDs and storage metadata. The SDK binds
-that catalog metadata to the provider models while preserving the authored
-SQLAlchemy table names Alembic will render against. Index names remain normal
-SQLAlchemy/Alembic metadata. Foreign keys are also normal
-SQLAlchemy/Alembic metadata; Alembic, SQLAlchemy, and the database own the
-physical FK constraint names and DDL.
+The endpoint implies Alembic ownership and deletion protection. Provider
+identity is request-level metadata, not a per-table schema-management payload.
+The backend returns reserved MetaTable UIDs, storage metadata, and flat provider
+fields. The SDK binds that catalog metadata to the provider models while
+preserving the authored SQLAlchemy table names Alembic will render against.
+Index names remain normal SQLAlchemy/Alembic metadata. Foreign keys are also
+normal SQLAlchemy/Alembic metadata; Alembic, SQLAlchemy, and the database own
+the physical FK constraint names and DDL.
 
 Second, schema-changing commands request a short-lived migration credential
 scoped to the Alembic version MetaTable UID plus the reserved provider
@@ -535,6 +532,7 @@ Third, after Alembic succeeds, it finalizes the reserved provider rows:
   "meta_table_uids": ["reserved-metatable-uid"],
   "migration_package": "sdk_examples",
   "migration_namespace": "sdk-examples",
+  "migration_provider_key": "sdk_examples:sdk-examples",
   "alembic_version_meta_table_uid": "alembic-version-metatable-uid",
   "alembic_revision": "head"
 }

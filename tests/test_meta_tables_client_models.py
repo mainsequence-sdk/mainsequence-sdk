@@ -207,6 +207,39 @@ def test_managed_reservation_response_accepts_backend_contract_shape():
     assert "protect_from_deletion" not in request_payload["tables"][0]
 
 
+def test_metatable_accepts_projection_relation_fields():
+    meta_table = meta_table_models.MetaTable(
+        **_meta_table_response(
+            indexes_meta=[
+                {
+                    "name": "asset_symbol_idx",
+                    "columns": ["symbol"],
+                    "unique": False,
+                    "method": "btree",
+                    "expression": None,
+                    "contract_fragment": {},
+                }
+            ],
+            foreign_keys=[
+                {
+                    "name": "asset_account_uid_fkey",
+                    "source_columns": ["account_uid"],
+                    "target_table_uid": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+                    "target_table_storage_hash": "mt_account_hash",
+                    "target_columns": ["uid"],
+                    "on_delete": "cascade",
+                    "contract_fragment": {},
+                }
+            ],
+            incoming_fks=[],
+        )
+    )
+
+    assert meta_table.indexes_meta[0].name == "asset_symbol_idx"
+    assert meta_table.foreign_keys[0].target_table_storage_hash == "mt_account_hash"
+    assert meta_table.incoming_fks == []
+
+
 def test_meta_table_register_posts_contract_to_meta_table_endpoint(monkeypatch):
     captured = {}
 
